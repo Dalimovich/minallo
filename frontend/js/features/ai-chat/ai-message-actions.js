@@ -47,7 +47,7 @@ export function regenMsg(btn) {
   }
   var sendBtn = document.getElementById('aiSend');
   if (sendBtn) sendBtn.disabled = false;
-  if (typeof window.askAI === 'function') window.askAI(q, true);
+  if (typeof window.askAI === 'function') window.askAI(q, true, { forceRefresh: true });
 }
 
 export function bindMessageActionButtons(wrap) {

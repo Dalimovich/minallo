@@ -155,7 +155,7 @@ export function initAskAI(state) {
   // state: { generationStopped, currentGenId, activeTypeTimer, activeThinkTimer, aiPanel, aiMsgs, BACKEND_URL }
   // Returns the askAI function bound to app-level mutable state refs via callbacks
 
-  return function askAI(question, skipUserBubble) {
+  return function askAI(question, skipUserBubble, opts) {
     if (!question) return;
     // Abort any in-flight stream before starting a new one so the old backend
     // request is cancelled, not just orphaned in the background.
@@ -530,7 +530,8 @@ export function initAskAI(state) {
                 documentId: _activeDocId || undefined,
                 activeFileName: activeFileName || undefined,
                 openFileContext: _openFileCtx || undefined,
-                pageImages: pageImages.length ? pageImages : undefined
+                pageImages: pageImages.length ? pageImages : undefined,
+                forceRefresh: (opts && opts.forceRefresh) ? true : undefined
               })
             }).then(function (res) {
               if (!res.ok) { fallbackToRag(); return; }

@@ -37,7 +37,7 @@ export default async function handler(request, context) {
   // ── Parse body ────────────────────────────────────────────────────────────
   let body;
   try { body = await request.json(); } catch (e) { return new Response('Invalid JSON', { status: 400, headers: corsHeaders() }); }
-  const { courseId, question, mode, documentId, activeFileName, openFileContext, pageImages } = body;
+  const { courseId, question, mode, documentId, activeFileName, openFileContext, pageImages, forceRefresh } = body;
   if (!courseId || !question) return new Response('courseId and question required', { status: 400, headers: corsHeaders() });
   const activeDocId = (typeof documentId === 'string' && documentId) ? documentId : null;
   const openFileName = (typeof activeFileName === 'string' && activeFileName) ? activeFileName : null;
@@ -76,7 +76,8 @@ export default async function handler(request, context) {
       const normalizedQ = question.toLowerCase().replace(/\s+/g, ' ').trim();
 
       // 3. Check exact answer cache — stream it back quickly if found
-      const exactHit = await getExactAnswerCache(questionHash, docVersionHash, ragMode, SUPABASE_URL, SUPABASE_SERVICE_KEY);
+      // Skip cache when the user explicitly regenerated (forceRefresh=true)
+      const exactHit = !forceRefresh && await getExactAnswerCache(questionHash, docVersionHash, ragMode, SUPABASE_URL, SUPABASE_SERVICE_KEY);
       if (exactHit && exactHit.answer_json) {
         const cached = exactHit.answer_json;
         const cachedText = cached.answer || '';
@@ -91,7 +92,7 @@ export default async function handler(request, context) {
       let qType = null;
       let skipRerank = false;
 
-      const retrievalHit = await getRetrievalCache(questionHash, docVersionHash, SUPABASE_URL, SUPABASE_SERVICE_KEY);
+      const retrievalHit = !forceRefresh && await getRetrievalCache(questionHash, docVersionHash, SUPABASE_URL, SUPABASE_SERVICE_KEY);
       if (retrievalHit) {
         const entries = Array.isArray(retrievalHit.chunk_entries) ? retrievalHit.chunk_entries : [];
         const fetched = await fetchChunksByIds(userId, courseId, entries.map(e => e.id), SUPABASE_URL, SUPABASE_SERVICE_KEY);
