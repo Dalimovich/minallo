@@ -736,6 +736,26 @@ function setCourseStudyMode(co, course, mode) {
   co.querySelectorAll('[data-course-panel]').forEach(function (panel) {
     panel.classList.toggle('active', panel.getAttribute('data-course-panel') === nextMode);
   });
+
+  // New feature modules take over the flashcards / quiz panels. They mount
+  // once per course; the inline renderer below is the legacy fallback.
+  if (nextMode === 'flashcards' && typeof window.mountFlashcards === 'function') {
+    var flashPanel = co.querySelector('#coFlashPanel');
+    if (flashPanel && !flashPanel.dataset.fcMounted) {
+      flashPanel.dataset.fcMounted = '1';
+      window.mountFlashcards(flashPanel, course);
+    }
+    return;
+  }
+  if (nextMode === 'quiz' && typeof window.mountQuiz === 'function') {
+    var quizPanel = co.querySelector('#coQuizPanel');
+    if (quizPanel && !quizPanel.dataset.qzMounted) {
+      quizPanel.dataset.qzMounted = '1';
+      window.mountQuiz(quizPanel, course);
+    }
+    return;
+  }
+
   renderCourseStudyTools(co, course);
 }
 

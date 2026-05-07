@@ -1,0 +1,80 @@
+<!-- Flashcards feature — injected into a course's #coFlashPanel by flashcards.js -->
+<div class="fc-root" data-flashcards-root>
+
+  <!-- Toolbar: Generate / New deck / search / sort / view toggle -->
+  <div class="fc-toolbar">
+    <button class="fc-btn fc-btn-primary" id="fcGenerateBtn" type="button">
+      <span class="fc-btn-icon">&#x2728;</span> Generate cards
+    </button>
+    <button class="fc-btn fc-btn-secondary" id="fcNewDeckBtn" type="button">
+      <span class="fc-btn-icon">+</span> New deck
+    </button>
+
+    <div class="fc-search">
+      <span class="fc-search-icon">&#x1F50D;</span>
+      <input type="text" id="fcSearchInput" placeholder="Search flashcards…" />
+    </div>
+
+    <select class="fc-sort" id="fcSortSelect" aria-label="Sort decks">
+      <option value="recent">Recently studied</option>
+      <option value="name">By name</option>
+      <option value="size">By card count</option>
+      <option value="created">Recently created</option>
+    </select>
+
+    <div class="fc-view-toggle" role="tablist" aria-label="View mode">
+      <button class="fc-view-btn active" data-view="grid" type="button" aria-label="Grid view">&#x25A6;</button>
+      <button class="fc-view-btn" data-view="list" type="button" aria-label="List view">&#x2630;</button>
+    </div>
+  </div>
+
+  <!-- Two-pane layout: deck grid (left) + study pane (right). -->
+  <div class="fc-layout">
+
+    <div class="fc-deck-pane" id="fcDeckPane">
+      <div class="fc-deck-grid" id="fcDeckGrid">
+        <!-- Deck cards injected by flashcards.js -->
+        <div class="fc-empty">Loading decks…</div>
+      </div>
+      <div class="fc-view-all" id="fcViewAllRow">
+        <span class="fc-view-all-icon">&#x1F4C1;</span> View all decks
+        <span class="fc-view-all-chev">&#x203A;</span>
+      </div>
+    </div>
+
+    <div class="fc-study-pane" id="fcStudyPane">
+      <div class="fc-study-header">
+        <span class="fc-study-icon">&#x1F4DA;</span>
+        <div class="fc-study-meta">
+          <div class="fc-study-deck-name" id="fcStudyName">Select a deck</div>
+          <div class="fc-study-deck-count" id="fcStudyCount">0 cards</div>
+        </div>
+        <button class="fc-btn fc-btn-secondary fc-study-settings" id="fcStudySettingsBtn" type="button">
+          <span class="fc-btn-icon">&#x2699;</span> Study settings
+        </button>
+      </div>
+
+      <div class="fc-card-stage" id="fcCardStage">
+        <div class="fc-card-empty">Pick a deck to start studying.</div>
+      </div>
+
+      <div class="fc-study-progress">
+        <div class="fc-study-progress-track"><div class="fc-study-progress-bar" id="fcStudyProgressBar"></div></div>
+        <div class="fc-study-progress-label" id="fcStudyProgressLabel">0 / 0</div>
+      </div>
+
+      <div class="fc-study-controls">
+        <button class="fc-btn fc-btn-ghost" id="fcPrevBtn" type="button" disabled>
+          <span>&#x25C0;</span> Previous
+        </button>
+        <button class="fc-btn fc-btn-flip" id="fcFlipBtn" type="button" disabled>
+          <span class="fc-btn-icon">&#x21BB;</span> Flip card
+        </button>
+        <button class="fc-btn fc-btn-ghost" id="fcNextBtn" type="button" disabled>
+          Next <span>&#x25B6;</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>

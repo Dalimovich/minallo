@@ -1,0 +1,358 @@
+/* ── Quiz feature ───────────────────────────────────────────────────────────
+   Mirror of flashcards.css structure but tuned for multi-choice quizzes.    */
+
+.qz-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 4px 24px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.qz-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.qz-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 22px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.05s;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+}
+.qz-btn:active {
+  transform: scale(0.98);
+}
+.qz-btn-icon {
+  font-size: 0.95em;
+}
+.qz-btn-primary {
+  background: linear-gradient(135deg, #f97056 0%, #f5a663 100%);
+  color: #fff;
+}
+.qz-btn-primary:hover {
+  filter: brightness(1.08);
+}
+.qz-btn-secondary {
+  background: rgba(155, 93, 229, 0.12);
+  border-color: rgba(155, 93, 229, 0.32);
+  color: rgba(192, 132, 252, 0.95);
+}
+.qz-btn-secondary:hover {
+  background: rgba(155, 93, 229, 0.22);
+}
+.qz-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.qz-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.qz-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.qz-btn-submit {
+  background: linear-gradient(135deg, #06d6a0 0%, #34d399 100%);
+  color: #07110d;
+  font-weight: 800;
+  padding: 10px 22px;
+  border: 0;
+  flex: 1.2;
+  justify-content: center;
+}
+.qz-btn-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.qz-search {
+  flex: 1;
+  min-width: 220px;
+  max-width: 360px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  padding: 6px 14px;
+}
+.qz-search-icon {
+  opacity: 0.55;
+  font-size: 0.85em;
+}
+.qz-search input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  font-size: 0.82rem;
+}
+.qz-search input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+.qz-sort {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.qz-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 18px;
+}
+@media (max-width: 1100px) {
+  .qz-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.qz-list-pane {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+  padding: 16px;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+.qz-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qz-list-item {
+  background: rgba(20, 14, 40, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.qz-list-item:hover {
+  border-color: rgba(155, 93, 229, 0.4);
+}
+.qz-list-item.active {
+  background: rgba(155, 93, 229, 0.12);
+  border-color: rgba(192, 132, 252, 0.7);
+}
+.qz-list-item-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(155, 93, 229, 0.18);
+  color: rgba(192, 132, 252, 0.95);
+  border-radius: 9px;
+}
+.qz-list-item-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+.qz-list-item-meta {
+  font-size: 0.7rem;
+  opacity: 0.65;
+}
+.qz-list-item-score {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: rgba(6, 214, 160, 0.95);
+}
+.qz-list-item-score.low {
+  color: rgba(239, 68, 68, 0.9);
+}
+
+.qz-empty {
+  text-align: center;
+  padding: 48px 16px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+.qz-take-pane {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 480px;
+}
+.qz-take-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.qz-take-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(155, 93, 229, 0.18);
+  color: rgba(192, 132, 252, 0.95);
+  border-radius: 10px;
+  font-size: 1.1rem;
+}
+.qz-take-meta {
+  flex: 1;
+  min-width: 0;
+}
+.qz-take-name {
+  font-weight: 800;
+  font-size: 1rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qz-take-count {
+  font-size: 0.74rem;
+  opacity: 0.6;
+}
+.qz-take-score {
+  font-weight: 900;
+  font-size: 1.05rem;
+  background: rgba(6, 214, 160, 0.12);
+  color: rgba(6, 214, 160, 0.95);
+  padding: 6px 12px;
+  border-radius: 12px;
+}
+
+.qz-question {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 18px;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.45;
+  min-height: 100px;
+}
+.qz-question-empty {
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+  text-align: center;
+}
+
+.qz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qz-option {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.qz-option:hover:not(:disabled) {
+  background: rgba(155, 93, 229, 0.1);
+  border-color: rgba(155, 93, 229, 0.4);
+}
+.qz-option-letter {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(155, 93, 229, 0.18);
+  color: rgba(192, 132, 252, 0.95);
+  font-weight: 800;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+.qz-option.correct {
+  background: rgba(6, 214, 160, 0.12);
+  border-color: rgba(6, 214, 160, 0.5);
+}
+.qz-option.correct .qz-option-letter {
+  background: rgba(6, 214, 160, 0.3);
+  color: #fff;
+}
+.qz-option.incorrect {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+.qz-option.incorrect .qz-option-letter {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fff;
+}
+.qz-option:disabled {
+  cursor: default;
+}
+
+.qz-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.qz-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.qz-progress-bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #c084fc, #f0abfc);
+  border-radius: 4px;
+  transition: width 0.18s;
+}
+.qz-progress-label {
+  font-size: 0.74rem;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.qz-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.qz-controls .qz-btn-ghost {
+  flex: 1;
+  justify-content: center;
+}
