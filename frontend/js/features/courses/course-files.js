@@ -743,7 +743,7 @@ function setCourseStudyMode(co, course, mode) {
     var flashPanel = co.querySelector('#coFlashPanel');
     if (flashPanel && !flashPanel.dataset.fcMounted) {
       flashPanel.dataset.fcMounted = '1';
-      window.mountFlashcards(flashPanel, course);
+      window.mountFlashcards(flashPanel, course, { generate: generateStudyTool });
     }
     return;
   }
@@ -751,7 +751,7 @@ function setCourseStudyMode(co, course, mode) {
     var quizPanel = co.querySelector('#coQuizPanel');
     if (quizPanel && !quizPanel.dataset.qzMounted) {
       quizPanel.dataset.qzMounted = '1';
-      window.mountQuiz(quizPanel, course);
+      window.mountQuiz(quizPanel, course, { generate: generateStudyTool });
     }
     return;
   }
