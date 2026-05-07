@@ -63,7 +63,7 @@ export default async function handler(request, context) {
       // If the open PDF context is available, prepend it so every embedding/HyDE call
       // reflects the actual exercise topic rather than just "Löse 13.1".
       const enrichedQuestion = openCtx
-        ? 'Aufgabe-Kontext: ' + openCtx.slice(0, 500) + '\n\nFrage: ' + question
+        ? 'Aufgabe-Kontext: ' + openCtx.slice(0, 2000) + '\n\nFrage: ' + question
         : question;
 
       // 1. Base embedding — embed the enriched question so cache lookups, fetchSummaryChunks,
