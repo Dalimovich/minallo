@@ -97,6 +97,7 @@ export function buildFilesContent(course) {
           '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>' +
           ' Upload files' +
         '</button>' +
+        '<button id="coReindexAllBtn" title="Re-process all PDFs with updated AI extraction" style="font-size:.75rem;padding:5px 12px;border-radius:20px;background:rgba(99,102,241,.13);color:rgba(99,102,241,.9);border:1px solid rgba(99,102,241,.3);cursor:pointer;white-space:nowrap">&#x21BA; Reindex all</button>' +
       '</div>' +
       foldersHtml +
       '<div id="coFilesList">' + filesHtml + '</div>' +
