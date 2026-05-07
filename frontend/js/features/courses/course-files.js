@@ -350,6 +350,8 @@ export function bindFileEvents(co, course) {
           btn.style.borderColor = 'rgba(6,214,160,.3)';
           if (typeof window.showToast === 'function')
             window.showToast('Re-indexed', '"' + fname + '" is now updated for AI.');
+          // Restart status polling so the hourglass becomes 🟢 once processing finishes.
+          try { _bindRagStatus(co, course); } catch (e) {}
         })
         .catch(function () {
           btn.textContent = '↺ AI';
@@ -403,6 +405,9 @@ export function bindFileEvents(co, course) {
               done + ' succeeded' + (failed ? ', ' + failed + ' failed' : '') + '.'
             );
           }
+          // Re-bind status indicators so they pick up the new processing_status
+          // values from the DB (and start polling again for in-progress docs).
+          try { _bindRagStatus(co, course); } catch (e) {}
           return;
         }
         var t = targets[i++];
@@ -989,9 +994,27 @@ async function _bindRagStatus(co, course) {
     ragDocs = await listCourseDocuments(courseId);
   } catch (e) {}
 
+  // Multiple rows per filename can exist after retried/failed indexing runs.
+  // Prefer 'ready', then 'failed', else the most-recent — so a successful
+  // reindex isn't masked by a stale failed/in-progress row.
+  function _statusRank(s) {
+    if (s === 'ready') return 0;
+    if (s === 'failed') return 1;
+    return 2; // uploaded / extracting_text / chunking / embedding / null
+  }
   var ragMap = {};
   ragDocs.forEach(function (d) {
-    ragMap[d.file_name.toLowerCase()] = d;
+    var key = d.file_name.toLowerCase();
+    var prev = ragMap[key];
+    if (!prev) { ragMap[key] = d; return; }
+    var prevRank = _statusRank(prev.processing_status);
+    var curRank = _statusRank(d.processing_status);
+    if (curRank < prevRank) { ragMap[key] = d; return; }
+    if (curRank === prevRank) {
+      var prevTime = prev.updated_at || prev.created_at || '';
+      var curTime = d.updated_at || d.created_at || '';
+      if (curTime > prevTime) ragMap[key] = d;
+    }
   });
 
   co.querySelectorAll('.co-rag-status').forEach(function (el) {
