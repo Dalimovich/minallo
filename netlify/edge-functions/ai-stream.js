@@ -91,6 +91,10 @@ export default async function handler(request, context) {
       let rawChunks;
       let qType = null;
       let skipRerank = false;
+      // Enriched question is built once here so the reranker can also use it
+      const enrichedQuestion = openCtx
+        ? 'Aufgabe-Kontext: ' + openCtx.slice(0, 500) + '\n\nFrage: ' + question
+        : question;
 
       const retrievalHit = !forceRefresh && await getRetrievalCache(questionHash, docVersionHash, SUPABASE_URL, SUPABASE_SERVICE_KEY);
       if (retrievalHit) {
@@ -101,12 +105,6 @@ export default async function handler(request, context) {
         rawChunks = fetched.map(c => ({ ...c, similarity: simMap[c.id] || 0.5, ...(rerankMap[c.id] != null ? { rerank_score: rerankMap[c.id] } : {}) }));
         skipRerank = true;
       } else {
-        // Enrich the retrieval query with open PDF context so HyDE understands the actual exercise.
-        // "Löse 13.1" alone produces a weak embedding; prepending the extracted task context
-        // (topic, given values, keywords) makes HyDE generate a passage that matches Formelzettel chunks.
-        const enrichedQuestion = openCtx
-          ? 'Aufgabe-Kontext: ' + openCtx.slice(0, 500) + '\n\nFrage: ' + question
-          : question;
         const [hydeResult] = await Promise.all([generateHydeAndQueries(enrichedQuestion, OPENAI_API_KEY)]);
         const textsToEmbed = [enrichedQuestion];
         if (hydeResult.hypothetical) textsToEmbed.push(hydeResult.hypothetical);
@@ -197,8 +195,9 @@ export default async function handler(request, context) {
       }
 
       // 8. LLM rerank (skip if retrieval cache hit — scores already restored)
+      // Use enrichedQuestion so the reranker knows the actual exercise topic, not just "Löse 13.1"
       if (!skipRerank) {
-        rawChunks = await llmRerank(question, rawChunks, OPENAI_API_KEY);
+        rawChunks = await llmRerank(enrichedQuestion, rawChunks, OPENAI_API_KEY);
         storeRetrievalCache(userId, courseId, questionHash, docVersionHash, rawChunks, SUPABASE_URL, SUPABASE_SERVICE_KEY);
       }
 
