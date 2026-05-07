@@ -858,6 +858,12 @@ function buildPrompt(mode, lang, qType, openFileName, hasHandwritten) {
     '8. CRITICAL: Do NOT include confidence, sources, or metadata in your markdown answer text. Only in the META block.',
     TYPE_INSTRUCTIONS[qType] || '',
     '',
+    '9. FOLLOW-UP NAVIGATION RULE: When the student says "next question", "next one", "weiter", "nächste Aufgabe" etc.:',
+    '   a) If the CURRENT exercise has remaining sub-questions (b, c, d…), answer the next sub-question directly.',
+    '   b) If ALL sub-questions of the current exercise are done, do NOT jump to the next exercise automatically.',
+    '      Instead, write a one-sentence summary that the exercise is complete, then ask: "Shall I continue with the next exercise?" (or equivalent in the reply language).',
+    '   c) Only move to the next exercise after the student explicitly confirms (e.g. "yes", "ja", "continue").',
+    '',
     'After your full markdown answer, on a new line output ONLY this (fill in real values):',
     '<!--META-->{"sources":[{"file_name":"exact FILE value","pages":"exact PAGES value","section":"SECTION_ID or empty"}],"confidence":"high|medium|low"}<!--/META-->'
   ].join('\n');
