@@ -19,6 +19,7 @@ export default async function handler(request, context) {
   const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || '';
   const AI_MODEL = Deno.env.get('AI_MODEL') || 'gpt-4o';
+  const AI_NANO_MODEL = Deno.env.get('AI_NANO_MODEL') || 'gpt-4.1-nano';
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !OPENAI_API_KEY) {
     return new Response('Server misconfigured', { status: 500, headers: corsHeaders() });
@@ -197,11 +198,12 @@ export default async function handler(request, context) {
       const systemPrompt = buildPrompt(ragMode, lang, qType, openFileName);
 
       // 11. Stream OpenAI
+      const selectedModel = ['exercise', 'derivation', 'formula'].includes(qType) ? AI_MODEL : AI_NANO_MODEL;
       const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + OPENAI_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: AI_MODEL,
+          model: selectedModel,
           max_tokens: tokenBudget[qType] || 2000,
           temperature: tempMap[qType] !== undefined ? tempMap[qType] : 0.1,
           stream: true,

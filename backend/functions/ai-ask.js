@@ -20,6 +20,7 @@ const { countRecentEvents, rateLimitResponse } = require('../lib/rate-limit');
 const EMBED_MODEL = 'text-embedding-3-small';
 const EMBED_DIMENSIONS = 1536;
 const OPENAI_CHAT_MODEL = optionalEnv('AI_MODEL', 'gpt-4o');
+const OPENAI_NANO_MODEL = optionalEnv('AI_NANO_MODEL', 'gpt-4.1-nano');
 const OPENAI_FAST_MODEL = 'gpt-4o-mini'; // used for HyDE + query expansion (cheap, fast)
 const MAX_CHUNKS = 12;
 const MIN_SIMILARITY = 0.18; // raised from 0.12 — rerank now handles fine ordering, so we can be stricter
@@ -703,13 +704,13 @@ function buildContextBlock(rankedChunks, docNames, openCtx, openFileName) {
   return blocks.join('\n\n');
 }
 
-function callOpenAI(systemPrompt, contextBlock, question, maxTokens, temperature) {
+function callOpenAI(systemPrompt, contextBlock, question, maxTokens, temperature, model) {
   return new Promise(function (resolve, reject) {
     const apiKey = requireEnv('OPENAI_API_KEY');
     const userMessage =
       'COURSE CONTEXT:\n\n' + contextBlock + '\n\n---\n\nSTUDENT QUESTION:\n' + question;
     const body = JSON.stringify({
-      model: OPENAI_CHAT_MODEL,
+      model: model || OPENAI_CHAT_MODEL,
       max_tokens: maxTokens || MAX_COMPLETION_TOKENS,
       temperature: temperature !== undefined ? temperature : 0.1,
       response_format: { type: 'json_object' },
@@ -1346,10 +1347,11 @@ exports.handler = async function (event) {
   const tempMap = { exercise: 0.1, derivation: 0.1, formula: 0.1, definition: 0.1, concept: 0.15, other: 0.1 };
   const maxTokens = tokenBudget[qType] || 2000;
   const temperature = tempMap[qType] !== undefined ? tempMap[qType] : 0.1;
+  const selectedModel = ['exercise', 'derivation', 'formula'].includes(qType) ? OPENAI_CHAT_MODEL : OPENAI_NANO_MODEL;
 
   let rawResponse;
   try {
-    rawResponse = await callOpenAI(systemPrompt, contextBlock, question, maxTokens, temperature);
+    rawResponse = await callOpenAI(systemPrompt, contextBlock, question, maxTokens, temperature, selectedModel);
   } catch (e) {
     return fail(502, 'AI service unavailable');
   }
