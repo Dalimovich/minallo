@@ -779,6 +779,57 @@ function parseOpenAIResponse(text) {
   return { answer: text, sources: [], confidence: 'low', unsupported: false };
 }
 
+// ─── Citation validation ──────────────────────────────────────────────────────
+// Removes hallucinated file names and corrects page numbers that don't match
+// any retrieved chunk for the cited file.
+
+function _parsePagesStr(pagesStr) {
+  if (!pagesStr) return null;
+  const m = String(pagesStr).match(/(\d+)(?:[–\-](\d+))?/);
+  if (!m) return null;
+  return { from: parseInt(m[1], 10), to: m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10) };
+}
+
+function validateSources(sources, chunks, docNames) {
+  const knownFiles = new Set(Object.values(docNames));
+  // Build fileName → [{page_start, page_end, section_title}] from retrieved chunks
+  const fileChunkMap = {};
+  chunks.forEach(function (c) {
+    const fn = docNames[c.document_id];
+    if (!fn) return;
+    if (!fileChunkMap[fn]) fileChunkMap[fn] = [];
+    fileChunkMap[fn].push({ page_start: c.page_start, page_end: c.page_end, section_title: c.section_title || '' });
+  });
+
+  return sources
+    .filter(function (s) { return !s.file_name || knownFiles.has(s.file_name); })
+    .map(function (s) {
+      if (!s.file_name || !s.pages) return s;
+      const chunkList = fileChunkMap[s.file_name];
+      if (!chunkList || !chunkList.length) return s;
+      const cited = _parsePagesStr(s.pages);
+      if (!cited) return s;
+      // Check if cited page range overlaps with at least one chunk
+      const overlaps = chunkList.some(function (c) {
+        return c.page_start <= cited.to && c.page_end >= cited.from;
+      });
+      if (overlaps) return s;
+      // No overlap — correct to the chunk whose start page is nearest to the cited page
+      const nearest = chunkList.reduce(function (best, c) {
+        const dist = Math.min(Math.abs(c.page_start - cited.from), Math.abs(c.page_end - cited.from));
+        const bd = Math.min(Math.abs(best.page_start - cited.from), Math.abs(best.page_end - cited.from));
+        return dist < bd ? c : best;
+      });
+      const correctedPages = nearest.page_start === nearest.page_end
+        ? String(nearest.page_start)
+        : nearest.page_start + '-' + nearest.page_end;
+      return Object.assign({}, s, {
+        pages: correctedPages,
+        section: s.section || nearest.section_title || ''
+      });
+    });
+}
+
 // ─── Caching helpers ──────────────────────────────────────────────────────────
 
 function normalizeQuestion(q) {
@@ -1139,20 +1190,25 @@ exports.handler = async function (event) {
     return jsonResponse(200, Object.assign({}, exactHit.answer_json, { cached: true }));
   }
 
-  // 4. Check semantic question cache
-  const semanticHit = await getSemanticCache(
-    serviceKey,
-    user.id,
-    courseId,
-    embedding,
-    docVersionHash,
-    ragMode
-  );
-  if (semanticHit && semanticHit.answer_cache_id) {
-    const cachedAnswer = await getAnswerById(serviceKey, semanticHit.answer_cache_id);
-    if (cachedAnswer) {
-      touchAnswerCache(serviceKey, cachedAnswer.id);
-      return jsonResponse(200, Object.assign({}, cachedAnswer.answer_json, { cached: true }));
+  // 4. Check semantic question cache — skip when open file context is present.
+  // "solve 1.1" asked while PDF A is open must not reuse the answer from the same
+  // question asked while PDF B is open; the problem statements are different.
+  const hasOpenFileCtx = !!(openFileName || activeDocId || openCtx);
+  if (!hasOpenFileCtx) {
+    const semanticHit = await getSemanticCache(
+      serviceKey,
+      user.id,
+      courseId,
+      embedding,
+      docVersionHash,
+      ragMode
+    );
+    if (semanticHit && semanticHit.answer_cache_id) {
+      const cachedAnswer = await getAnswerById(serviceKey, semanticHit.answer_cache_id);
+      if (cachedAnswer) {
+        touchAnswerCache(serviceKey, cachedAnswer.id);
+        return jsonResponse(200, Object.assign({}, cachedAnswer.answer_json, { cached: true }));
+      }
     }
   }
 
@@ -1296,11 +1352,12 @@ exports.handler = async function (event) {
   // 10. Parse + self-verify (run verify in parallel while we parse)
   const result = parseOpenAIResponse(rawResponse);
 
-  // Citation validation: strip any sources the AI hallucinated
-  const validatedSources = (Array.isArray(result.sources) ? result.sources : []).filter(
-    function (s) {
-      return !s.file_name || knownFileNames.has(s.file_name);
-    }
+  // Citation validation: strip hallucinated file names, then correct page numbers that
+  // don't match any retrieved chunk (prevents citing real file but wrong page).
+  const validatedSources = validateSources(
+    Array.isArray(result.sources) ? result.sources : [],
+    rankedChunks,
+    docNames
   );
 
   // Self-verification: downgrade confidence (and retry once) when model invents claims.
@@ -1343,7 +1400,9 @@ exports.handler = async function (event) {
     answerJson
   )
     .then(function (newCacheId) {
-      if (newCacheId) {
+      // Don't store in semantic question cache for open-file requests — the answer
+      // is specific to the problem in that file and must not be reused for other files.
+      if (newCacheId && !hasOpenFileCtx) {
         storeQuestionCache(
           serviceKey,
           user.id,

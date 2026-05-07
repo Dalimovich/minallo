@@ -148,6 +148,9 @@ export function initAskAI(state) {
 
   return function askAI(question, skipUserBubble) {
     if (!question) return;
+    // Abort any in-flight stream before starting a new one so the old backend
+    // request is cancelled, not just orphaned in the background.
+    if (window._abortCurrentStream) window._abortCurrentStream();
     state.generationStopped = false;
     state.currentGenId++;
     var myGenId = state.currentGenId;
@@ -260,11 +263,58 @@ export function initAskAI(state) {
         var _openFileCtx = '';
         if (pdfFullText && pdfFullText.trim().length > 50) {
           var _rawText = pdfFullText;
-          var _match = question.match(/(\d+\.\d+|\baufgabe\s*\d+|\bexercise\s*\d+|\btask\s*\d+)/i);
-          if (_match) {
-            var _idx = _rawText.toLowerCase().indexOf(_match[0].toLowerCase());
+          // Ordered by specificity — first match wins
+          var _exercisePatterns = [
+            // German compound: Aufgabe 1.1b, Übung 2, Uebung 2, Beispiel 3, Lösung 4, Loesung 4
+            /\b(aufgabe\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(aufgabe\s*\d+\s*[a-z]\b)/i,
+            /\b(ü?bung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(uebung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(beispiel\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(l[oö]sung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(loesung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(teilaufgabe\s+[a-z\d])\b/i,
+            // English
+            /\b(exercise\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(task\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(problem\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            /\b(example\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+            // Pure numbered: 1.1b, 1.1, 3b)
+            /\b(\d+\.\d+[a-z]?)\b/i,
+            /\b(\d+\s*[a-z]\s*\))/i,  // 3b)
+            /\b(\d+[a-z])\b/i           // 1b, 3b
+          ];
+          var _matchTerm = null;
+          for (var _pi = 0; _pi < _exercisePatterns.length; _pi++) {
+            var _m = question.match(_exercisePatterns[_pi]);
+            if (_m) { _matchTerm = _m[0].trim(); break; }
+          }
+          if (_matchTerm) {
+            // Normalize ü/ö/ß for search (PDF text may use different encoding)
+            function _normDe(s) {
+              return s.replace(/ü/g, 'ue').replace(/ö/g, 'oe').replace(/ä/g, 'ae')
+                      .replace(/Ü/g, 'Ue').replace(/Ö/g, 'Oe').replace(/Ä/g, 'Ae')
+                      .replace(/ß/g, 'ss').toLowerCase();
+            }
+            var _normTerm = _normDe(_matchTerm);
+            var _normText = _normDe(_rawText);
+            var _idx = _normText.indexOf(_normTerm);
+            if (_idx < 0) {
+              // Try searching without spaces (e.g. "Aufgabe1.1" vs "Aufgabe 1.1")
+              var _compactTerm = _normTerm.replace(/\s+/g, '');
+              var _compactText = _normText.replace(/\s+/g, '');
+              var _cidx = _compactText.indexOf(_compactTerm);
+              if (_cidx >= 0) {
+                // Map compact index back to raw text index (approximate)
+                var _charCount = 0, _rawIdx = 0;
+                for (var _ri = 0; _ri < _rawText.length && _charCount < _cidx; _ri++) {
+                  if (_rawText[_ri].trim()) _charCount++;
+                  _rawIdx = _ri;
+                }
+                _idx = _rawIdx;
+              }
+            }
             if (_idx >= 0) {
-              // 200 chars before to capture context, up to 2000 chars of the exercise
               _openFileCtx = _rawText.slice(Math.max(0, _idx - 200), _idx + 2000);
             }
           }

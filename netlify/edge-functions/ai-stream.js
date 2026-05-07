@@ -249,8 +249,7 @@ export default async function handler(request, context) {
           confidence = meta.confidence || confidence;
         } catch (e) {}
       }
-      const knownFiles = new Set(Object.values(docNames));
-      sources = sources.filter(s => !s.file_name || knownFiles.has(s.file_name));
+      sources = validateSources(sources, ranked, docNames);
 
       // 13. Self-verify + store answer cache in parallel
       const cleanAnswer = fullText.replace(/<!--META-->[\s\S]*?<!--\/META-->/, '').trim();
@@ -569,6 +568,44 @@ async function fetchDocNames(docIds, supaUrl, serviceKey) {
   const map = {};
   if (Array.isArray(data)) data.forEach(d => { map[d.id] = d.file_name; });
   return map;
+}
+
+function _parsePagesStr(pagesStr) {
+  if (!pagesStr) return null;
+  const m = String(pagesStr).match(/(\d+)(?:[–\-](\d+))?/);
+  if (!m) return null;
+  return { from: parseInt(m[1], 10), to: m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10) };
+}
+
+function validateSources(sources, chunks, docNames) {
+  const knownFiles = new Set(Object.values(docNames));
+  const fileChunkMap = {};
+  chunks.forEach(c => {
+    const fn = docNames[c.document_id];
+    if (!fn) return;
+    if (!fileChunkMap[fn]) fileChunkMap[fn] = [];
+    fileChunkMap[fn].push({ page_start: c.page_start, page_end: c.page_end, section_title: c.section_title || '' });
+  });
+  return sources
+    .filter(s => !s.file_name || knownFiles.has(s.file_name))
+    .map(s => {
+      if (!s.file_name || !s.pages) return s;
+      const chunkList = fileChunkMap[s.file_name];
+      if (!chunkList || !chunkList.length) return s;
+      const cited = _parsePagesStr(s.pages);
+      if (!cited) return s;
+      const overlaps = chunkList.some(c => c.page_start <= cited.to && c.page_end >= cited.from);
+      if (overlaps) return s;
+      const nearest = chunkList.reduce((best, c) => {
+        const dist = Math.min(Math.abs(c.page_start - cited.from), Math.abs(c.page_end - cited.from));
+        const bd = Math.min(Math.abs(best.page_start - cited.from), Math.abs(best.page_end - cited.from));
+        return dist < bd ? c : best;
+      });
+      const correctedPages = nearest.page_start === nearest.page_end
+        ? String(nearest.page_start)
+        : nearest.page_start + '-' + nearest.page_end;
+      return { ...s, pages: correctedPages, section: s.section || nearest.section_title || '' };
+    });
 }
 
 function buildContext(chunks, docNames, openCtx, openFileName) {
