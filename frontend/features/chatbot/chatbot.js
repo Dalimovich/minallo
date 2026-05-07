@@ -302,13 +302,20 @@
     }
   }
 
+  var _activeFetchController = null;
+
   function _stopGeneration(bubble, raw) {
+    // Abort in-flight fetch if still pending
+    if (_activeFetchController) {
+      _activeFetchController.abort();
+      _activeFetchController = null;
+    }
     _stopTyping = true;
     if (_typeTimer) {
       clearTimeout(_typeTimer);
       _typeTimer = null;
     }
-    if (bubble) bubble.innerHTML = _rm(raw);
+    if (bubble) bubble.innerHTML = _rm(raw || '');
     _busy = false;
     _setStopMode(false);
   }
@@ -950,6 +957,8 @@
         apiContent.length === 1 && apiContent[0].type === 'text' ? apiContent[0].text : apiContent
     });
     var _fetchDone = false;
+    var _fetchController = new AbortController();
+    _activeFetchController = _fetchController;
     function _releaseBusy() {
       if (_fetchDone) return;
       _fetchDone = true;
@@ -959,13 +968,14 @@
     }
     fetch(BACKEND_URL + '/api/ai', {
       method: 'POST',
+      signal: _fetchController.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: 'Bearer ' + (window._sbToken || '')
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
+        max_tokens: 6000,
         system:
           'You are StudySphere AI, a friendly and knowledgeable assistant for university students. Always reply in ' +
           (window._lang === 'de' ? 'German' : 'English') +
@@ -984,6 +994,7 @@
       })
       .then(function (data) {
         if (thinkRow) thinkRow.remove();
+        _activeFetchController = null;
         var raw = data.error
           ? '❌ Error: ' + (data.error.message || JSON.stringify(data.error))
           : data.content
@@ -1005,50 +1016,56 @@
           msgsEl.scrollTop = msgsEl.scrollHeight;
         }
         var bubble = row.querySelector('.aip-bubble.bot');
-        var i = 0;
+        // Use word-index stepping so markdown is shown as plain text during
+        // animation (avoids the flicker of re-parsing HTML on every character).
+        // On finish we do one clean innerHTML + math render.
+        var _words = raw.match(/\S+\s*/g) || [];
+        var _wi = 0;
+        var _CBW = (window.AI_TYPING && window.AI_TYPING.chatbotWordsPerFrame) || 2;
+        var _CBI = (window.AI_TYPING && window.AI_TYPING.chatbotFrameInterval) || 22;
+        function _finishBubble(text) {
+          bubble.innerHTML = _rm(text);
+          _renderMath(bubble);
+          if (!row.querySelector('.ai-action-bar') && text.trim())
+            row.appendChild(_aiResponseActions(text, 'chatbot'));
+          _releaseBusy();
+          var m = document.getElementById('aipMsgs');
+          if (m && !_userScrolledUp) m.scrollTop = m.scrollHeight;
+        }
         function typeNext() {
           if (_stopTyping) {
-            var partial = raw.slice(0, i);
-            bubble.innerHTML = _rm(partial);
-            _history[_history.length - 1].content = partial;
+            var partial = _words.slice(0, _wi).join('');
+            _history[_history.length - 1].content = partial || raw;
             _persistCurrent();
-            if (!row.querySelector('.ai-action-bar') && partial.trim())
-              row.appendChild(_aiResponseActions(partial, 'chatbot'));
-            _releaseBusy();
-            var m = document.getElementById('aipMsgs');
-            if (m && !_userScrolledUp) m.scrollTop = m.scrollHeight;
+            _finishBubble(partial || raw);
             return;
           }
-          if (i >= raw.length) {
-            bubble.innerHTML = _rm(raw);
-            _renderMath(bubble);
-            if (!row.querySelector('.ai-action-bar'))
-              row.appendChild(_aiResponseActions(raw, 'chatbot'));
-            _releaseBusy();
-            var m = document.getElementById('aipMsgs');
-            if (m && !_userScrolledUp) m.scrollTop = m.scrollHeight;
+          if (_wi >= _words.length) {
+            _history[_history.length - 1].content = raw;
+            _persistCurrent();
+            _finishBubble(raw);
             return;
           }
           var sec = document.getElementById('psec-aipage');
           var hidden = document.hidden || (sec && sec.style.display === 'none');
           if (hidden) {
-            bubble.innerHTML = _rm(raw);
-            _renderMath(bubble);
-            i = raw.length;
+            _wi = _words.length;
             _typeTimer = setTimeout(typeNext, 0);
             return;
           }
-          bubble.innerHTML = _rm(raw.slice(0, i + 1));
-          i++;
+          _wi = Math.min(_wi + _CBW, _words.length);
+          // Plain text during animation — no markdown flicker
+          bubble.textContent = _words.slice(0, _wi).join('');
           var m = document.getElementById('aipMsgs');
           if (m && !_userScrolledUp) m.scrollTop = m.scrollHeight;
-          var _cbInterval = (window.AI_TYPING && window.AI_TYPING.chatbotCharInterval) || 6;
-          _typeTimer = setTimeout(typeNext, _cbInterval + (Math.random() > 0.93 ? 30 : 0));
+          _typeTimer = setTimeout(typeNext, _CBI + (Math.random() > 0.93 ? 40 : 0));
         }
         typeNext();
       })
       .catch(function (e) {
         if (thinkRow) thinkRow.remove();
+        _activeFetchController = null;
+        if (e && e.name === 'AbortError') { _releaseBusy(); return; }
         _appendMsg('bot', '❌ Error: ' + e.message);
         _releaseBusy();
       });
@@ -1101,7 +1118,7 @@
     if (chatSend)
       chatSend.addEventListener('click', function () {
         if (this.classList.contains('is-stop')) {
-          _stopTyping = true;
+          _stopGeneration(null, '');
           return;
         }
         var inp = document.getElementById('aipInput');

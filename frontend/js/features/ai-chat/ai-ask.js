@@ -435,25 +435,24 @@ export function initAskAI(state) {
               _autoScroll(aiMsgs);
             }
 
-            // Final render: flush remaining block + render everything
+            // Final render: clear streaming artifacts and do one clean markdown render.
+            // We don't reuse _renderedBlockCount here because finalize may prepend a
+            // warning block to fullAnswer, shifting all block indices vs what was
+            // rendered incrementally. A clean innerHTML replacement is safe at this
+            // point — the streaming typing effect has already been shown.
             function fullRender(text) {
               if (!bubble) return;
               var display = text.replace(metaPattern, '').trim();
-              var blocks = splitBlocks(display);
-
-              // Render any remaining unrendered blocks (including the last one)
-              var _fTypingSpan = bubble.querySelector('.ss-typing-span');
-              while (_renderedBlockCount < blocks.length) {
-                var div = renderBlock(blocks[_renderedBlockCount]);
-                if (_fTypingSpan) bubble.insertBefore(div, _fTypingSpan);
-                else bubble.appendChild(div);
-                applyKatexToBlock(div);
-                _renderedBlockCount++;
+              if (!display) return;
+              bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(display) : display;
+              if (window._ssEnsureKatex) {
+                window._ssEnsureKatex().then(function () {
+                  if (window._renderMath && bubble) window._renderMath(bubble);
+                  _autoScroll(aiMsgs);
+                }).catch(function () {});
+              } else if (window._renderMath) {
+                window._renderMath(bubble);
               }
-
-              // Remove the typing span
-              var typingSpan = bubble.querySelector('.ss-typing-span');
-              if (typingSpan) typingSpan.remove();
               _autoScroll(aiMsgs);
             }
 
