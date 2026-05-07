@@ -3,12 +3,14 @@
  */
 const state = {
     user: null,
+    activeSemesterId: 'ws2526',
     activeCourse: null,
     activeFile: null,
+    activeCourseSection: 'files',
     isAiGenerating: false,
     settings: {
         darkMode: false,
-        language: 'en'
+        language: localStorage.getItem('ss_lang') || 'en'
     }
 };
 
