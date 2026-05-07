@@ -342,7 +342,7 @@ export function bindFileEvents(co, course) {
       if (!sname) return;
       btn.textContent = '⏳';
       btn.style.pointerEvents = 'none';
-      indexExistingDocument(course.id, sname, fname, null, folder, Object.assign({}, _guessDocMeta(fname), { forceReindex: true }))
+      indexExistingDocument(course.id, sname, fname, _guessSourceType(fname), folder, Object.assign({}, _guessDocMeta(fname), { forceReindex: true }))
         .then(function () {
           btn.textContent = '✓ AI';
           btn.style.background = 'rgba(6,214,160,.15)';
@@ -419,7 +419,7 @@ export function bindFileEvents(co, course) {
           course.id,
           t.sname,
           t.fname,
-          null,
+          _guessSourceType(t.fname),
           t.folder,
           Object.assign({}, _guessDocMeta(t.fname), { forceReindex: true })
         ).then(function (res) {
@@ -979,6 +979,10 @@ function _guessSourceType(fileName) {
   if (n.includes('aufgabe') || n.includes('exercise') || n.includes('übung') || n.includes('ag_'))
     return 'exercise';
   if (n.includes('exam') || n.includes('klausur') || n.includes('prüfung')) return 'exam';
+  if (n.includes('formelzettel') || n.includes('formelsammlung') || n.includes('formel') ||
+      n.includes('zusammenfassung') || n.includes('summary') || n.includes('cheatsheet') ||
+      n.includes('cheat sheet') || n.includes('merkblatt') || n.includes('überblick'))
+    return 'summary';
   if (n.includes('notes') || n.includes('notiz') || n.includes('mitschrift')) return 'notes';
   return 'lecture';
 }
