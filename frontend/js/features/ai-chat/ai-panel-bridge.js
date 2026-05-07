@@ -53,6 +53,11 @@ export function initAiPanelBridge(options) {
     setAiOpen(true);
     if (aiPanel) aiPanel.classList.add('visible');
     if (aiTab) aiTab.classList.add('hidden');
+    // Restore previous Q&A for the active course (no-op if panel already has messages)
+    var _cid = window.activeCourseId || window.currentCourseId || '';
+    if (_cid && typeof window.restoreCourseHistory === 'function') {
+      window.restoreCourseHistory(_cid);
+    }
   }
 
   function pinAI() {

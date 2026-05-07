@@ -562,7 +562,7 @@ function buildSystemPrompt(mode, lang) {
     '   - Use bullet lists for enumerations, numbered lists for sequential steps.',
     '4. **Math notation:** Use KaTeX delimiters. Inline math: `$...$`. Display math: `$$...$$`. Examples: `$v_x(t) = -2ct\\sin(\\theta)$` or `$$a_n = \\frac{v^2}{r}$$`. NEVER use `\\(` or `\\[` — only `$` and `$$`. Do NOT use Unicode math letters (𝑎, 𝑣, 𝑥).',
     '5. **Citations:** After every major claim, add an inline citation using the exact FILE and PAGES from the source header: *(filename, p.X)*. If a SECTION_ID is present, include it: *(filename, p.X, Exercise 3b)*.',
-    '6. **Confidence:** Set "high" if context directly answers the question, "medium" if you used partial context + standard knowledge, "low" if mostly general knowledge.',
+    '6. **Confidence:** Set "high" when the COURSE CONTEXT directly supports the answer — even if you added a minor "(not explicitly in uploaded materials)" label for a small detail. Set "medium" ONLY when a substantial portion of the answer relies on general knowledge not in the context. Set "low" when the answer is mostly general knowledge.',
     strict
       ? '7. **Strict mode:** Always write a complete answer — NEVER refuse or say you cannot answer. Use the COURSE CONTEXT as your primary source. If a specific detail is missing from the context, fill the gap using standard academic knowledge for the subject but label it: *"(not explicitly in uploaded materials)"*. Only say "not found" for a specific sub-point, never for the whole answer.'
       : '7. **General mode:** Use the COURSE CONTEXT first, then supplement freely with outside knowledge. Label outside knowledge clearly: *"(outside knowledge)"*.',
@@ -1252,8 +1252,9 @@ exports.handler = async function (event) {
     const verification = await verifyClaims(question, contextBlock, result.answer);
     if (!verification.ok) {
       verifierIssues = verification.issues || null;
-      // First-line response: downgrade confidence based on retrieval strength.
-      verifiedConfidence = weakRetrieval ? 'low' : 'medium';
+      // Only downgrade confidence when retrieval was already weak. When retrieval
+      // is strong, the AI's own assessment is more reliable than the verifier.
+      if (weakRetrieval) verifiedConfidence = 'low';
       // Append a note to the answer so the student knows to double-check
       result.answer =
         result.answer +

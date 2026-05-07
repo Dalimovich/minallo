@@ -81,6 +81,67 @@ export function addTyping() {
   return wrap;
 }
 
+// ── Per-course chat history (localStorage) ──────────────────────────────────
+// Saves Q&A pairs keyed by courseId so the panel can restore them on open.
+
+var _HISTORY_MAX = 40; // pairs per course
+var _HISTORY_PREFIX = 'ss_course_qa_';
+
+function _historyKey(courseId) {
+  return _HISTORY_PREFIX + (courseId || 'default');
+}
+
+function _loadCourseHistory(courseId) {
+  try { return JSON.parse(localStorage.getItem(_historyKey(courseId)) || '[]'); } catch (e) { return []; }
+}
+
+function _saveCourseHistory(courseId, pairs) {
+  try {
+    if (pairs.length > _HISTORY_MAX) pairs = pairs.slice(pairs.length - _HISTORY_MAX);
+    localStorage.setItem(_historyKey(courseId), JSON.stringify(pairs));
+  } catch (e) {}
+}
+
+function _appendCourseHistory(courseId, question, answer) {
+  var pairs = _loadCourseHistory(courseId);
+  pairs.push({ q: question, a: answer, ts: Date.now() });
+  _saveCourseHistory(courseId, pairs);
+}
+
+export function restoreCourseHistory(courseId) {
+  if (!courseId) return;
+  var pairs = _loadCourseHistory(courseId);
+  if (!pairs.length) return;
+  var aiMsgs = document.getElementById('aiMsgs') || document.querySelector('.ai-msgs');
+  if (!aiMsgs) return;
+  // Only restore if the panel is currently empty (no prior messages besides system)
+  if (aiMsgs.querySelectorAll('.ai-msg-wrap:not(.typing-wrap)').length > 0) return;
+  pairs.forEach(function (pair) {
+    if (window.addUserMsg) window.addUserMsg(pair.q, true /* skipSave */);
+    var wrap = document.createElement('div');
+    wrap.className = 'ai-msg-wrap';
+    wrap.innerHTML =
+      '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>StudySphere AI</div>' +
+      '<div class="msg-body"><div class="ai-bubble bot restored-answer"></div></div>';
+    var bubble = wrap.querySelector('.ai-bubble.bot');
+    if (bubble) {
+      bubble.setAttribute('data-raw', pair.a);
+      bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(pair.a) : pair.a;
+      if (window._renderMath) {
+        var _b = bubble;
+        if (window._ssEnsureKatex) window._ssEnsureKatex().then(function () { if (window._renderMath) window._renderMath(_b); }).catch(function () {});
+        else window._renderMath(_b);
+      }
+    }
+    aiMsgs.appendChild(wrap);
+  });
+  aiMsgs.scrollTop = aiMsgs.scrollHeight;
+}
+
+export function clearCourseHistory(courseId) {
+  try { localStorage.removeItem(_historyKey(courseId)); } catch (e) {}
+}
+
 export function initAskAI(state) {
   // state: { generationStopped, currentGenId, activeTypeTimer, activeThinkTimer, aiPanel, aiMsgs, BACKEND_URL }
   // Returns the askAI function bound to app-level mutable state refs via callbacks
@@ -463,6 +524,9 @@ export function initAskAI(state) {
               fullAnswer += '\n\n' + footer;
 
               window._lastRagMeta = { courseId: _courseId, question: question, answerCacheId: null };
+
+              // Persist Q&A to localStorage for history restoration
+              _appendCourseHistory(_courseId, question, fullAnswer);
 
               // Store raw markdown on bubble so serializeChatDOM can read it correctly
               if (bubble) bubble.setAttribute('data-raw', fullAnswer);

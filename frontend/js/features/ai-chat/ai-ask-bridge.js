@@ -1,4 +1,4 @@
-import { initAskAI, addTyping, pdfToImages } from './ai-ask.js';
+import { initAskAI, addTyping, pdfToImages, restoreCourseHistory, clearCourseHistory } from './ai-ask.js';
 
 export function initAiAskBridge(state) {
   // Preserve the vision-capable askAI from ai.js (set before this bridge runs)
@@ -44,6 +44,7 @@ export function initAiAskBridge(state) {
         if (typeof window.stopGeneration === 'function') window.stopGeneration();
         return;
       }
+      if (this.disabled) return; // guard: programmatic .click() fires even on disabled buttons
       var input = document.getElementById('aiInput');
       if (!input) return;
       var q = input.value.trim();
@@ -74,7 +75,7 @@ export function initAiAskBridge(state) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         var sendBtn = document.getElementById('aiSend');
-        if (sendBtn) sendBtn.click();
+        if (sendBtn && !sendBtn.disabled) sendBtn.click();
       }
     }
   );
@@ -88,6 +89,9 @@ export function initAiAskBridge(state) {
       this.style.height = Math.min(this.scrollHeight, 120) + 'px';
     }
   );
+
+  window.restoreCourseHistory = restoreCourseHistory;
+  window.clearCourseHistory = clearCourseHistory;
 
   return {
     askAI: askAI,

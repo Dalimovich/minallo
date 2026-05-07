@@ -367,7 +367,7 @@ function buildPrompt(mode, lang, qType) {
     '4. After each major claim, add inline citation: *(filename, p.X)* or *(filename, p.X, SECTION_ID)*.',
     strict ? '5. Strict mode: ALWAYS write a complete answer — never refuse. Use COURSE CONTEXT first. Fill gaps with standard academic knowledge but label them: "(not explicitly in uploaded materials)". Never say "not found" for the whole answer, only for specific missing sub-points.'
            : '5. General mode: use COURSE CONTEXT first, then supplement with outside knowledge. Label outside knowledge clearly.',
-    '6. Set confidence: "high" if context directly answers, "medium" if partial, "low" if mostly general.',
+    '6. Set confidence: "high" when the COURSE CONTEXT directly supports the answer — even if you added a minor "(not explicitly in uploaded materials)" label for a small detail. Set "medium" ONLY when a substantial portion of the answer relies on general knowledge not in the context. Set "low" when the answer is mostly general knowledge.',
     TYPE_INSTRUCTIONS[qType] || '',
     '',
     'After your full markdown answer, on its own line output:',
