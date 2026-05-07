@@ -120,9 +120,11 @@ function _appendCourseHistory(courseId, question, answer) {
 function _renderHistoryPairs(pairs, aiMsgs) {
   if (!pairs || !pairs.length) return;
   pairs.forEach(function (pair) {
-    if (window.addUserMsg) window.addUserMsg(pair.q, true /* skipSave */);
+    var _uWrap = window.addUserMsg ? window.addUserMsg(pair.q, true /* skipSave */) : null;
+    if (_uWrap) _uWrap.setAttribute('data-restored', 'true');
     var wrap = document.createElement('div');
     wrap.className = 'ai-msg-wrap';
+    wrap.setAttribute('data-restored', 'true');
     wrap.innerHTML =
       '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>StudySphere AI</div>' +
       '<div class="msg-body"><div class="ai-bubble bot restored-answer"></div></div>';

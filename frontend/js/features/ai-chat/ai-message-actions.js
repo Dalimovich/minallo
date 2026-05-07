@@ -167,6 +167,7 @@ export function serializeChatDOM() {
   if (!aiMsgs) return msgs;
   aiMsgs.querySelectorAll('.ai-msg-wrap').forEach(function (wrap) {
     if (wrap.classList.contains('typing-wrap')) return;
+    if (wrap.getAttribute('data-restored') === 'true') return;
     var bubble = wrap.querySelector('.ai-bubble');
     if (!bubble) return;
     var role = bubble.classList.contains('user') ? 'user' : 'assistant';
