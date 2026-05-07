@@ -233,23 +233,15 @@ export function initAskAI(state) {
           userContent = question;
         }
 
-        // Use RAG if this course has indexed documents
+        // Use RAG if this course has indexed documents — always search across ALL course docs
         var _courseId = window.activeCourseId || window.currentCourseId || '';
         var _hasRag = false;
-        var _activeDocId = window.activeRagDocumentId || null;
+        var _activeDocId = window.activeRagDocumentId || null; // only set when explicitly pinned by user
         if (_courseId) {
           try {
             var _docs = await listCourseDocuments(_courseId);
             var _readyDocs = _docs.filter(function (d) { return d.processing_status === 'ready'; });
             _hasRag = _readyDocs.length > 0;
-            // If the student has a specific file open, pin retrieval to that document
-            if (!_activeDocId && window.activeFileName && _readyDocs.length > 0) {
-              var _matchDoc = _readyDocs.find(function (d) {
-                return d.file_name === window.activeFileName ||
-                  (window.activeFileName && d.file_name && d.file_name.toLowerCase() === window.activeFileName.toLowerCase());
-              });
-              if (_matchDoc) _activeDocId = _matchDoc.id;
-            }
           } catch (e) { _hasRag = false; }
         }
 
