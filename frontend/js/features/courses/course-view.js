@@ -127,6 +127,11 @@ export function showCourseSection(course, section) {
   document.getElementById('welcomeState').style.display = 'none';
   var co = document.getElementById('courseOverview');
 
+  // Preserve active tab before re-rendering so background refreshes don't kick user back to Files
+  var prevTab = null;
+  var prevActivePanel = co.querySelector('[data-course-panel].active');
+  if (prevActivePanel) prevTab = prevActivePanel.getAttribute('data-course-panel');
+
   co.style.display = 'block';
   co.innerHTML =
     '<div class="co-inner">' +
@@ -146,4 +151,10 @@ export function showCourseSection(course, section) {
 
   bindFileEvents(co, course);
   bindFolderEvents(co, course);
+
+  // Restore the tab the user was on before re-render
+  if (prevTab && prevTab !== 'files') {
+    var tabBtn = co.querySelector('[data-course-tab="' + prevTab + '"]');
+    if (tabBtn) tabBtn.click();
+  }
 }
