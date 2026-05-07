@@ -25,7 +25,11 @@ function resolveProcessUrl() {
 
 function triggerProcessing(documentId, userId) {
   const processUrl = resolveProcessUrl();
-  if (!processUrl) return Promise.resolve({ triggered: false, reason: 'no_url' });
+  console.log('[trigger-processing] resolved URL:', processUrl || '(none)', 'doc=', documentId);
+  if (!processUrl) {
+    console.warn('[trigger-processing] no URL — set PROCESS_FUNCTION_URL or rely on Netlify URL env');
+    return Promise.resolve({ triggered: false, reason: 'no_url' });
+  }
   const body = JSON.stringify({ documentId, userId });
   return new Promise(function (resolve) {
     try {
@@ -42,20 +46,21 @@ function triggerProcessing(documentId, userId) {
           }
         },
         function (res) {
-          // Background functions return 202 Accepted immediately.
+          console.log('[trigger-processing] response status:', res.statusCode, 'doc=', documentId);
           resolve({ triggered: true, status: res.statusCode });
         }
       );
       req.on('error', function (err) {
+        console.error('[trigger-processing] network error:', err && err.message, 'doc=', documentId);
         resolve({ triggered: false, reason: 'network', error: err && err.message });
       });
       req.write(body);
       req.end();
-      // Safety timeout — don't block the caller for more than 5s.
       setTimeout(function () {
         resolve({ triggered: true, status: 'timeout-resolved' });
       }, 5000);
     } catch (e) {
+      console.error('[trigger-processing] exception:', e && e.message, 'doc=', documentId);
       resolve({ triggered: false, reason: 'exception', error: e && e.message });
     }
   });
