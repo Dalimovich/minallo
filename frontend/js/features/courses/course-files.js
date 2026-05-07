@@ -394,6 +394,48 @@ export function bindFileEvents(co, course) {
       }
       updateLabel();
 
+      // Wait until the doc is 'ready' or 'failed' in the DB, polling every 3s.
+      // Up to ~3 minutes per doc. Returns the final status.
+      function _waitForDoc(docId) {
+        return new Promise(function (resolve) {
+          var attempts = 0;
+          var MAX = 60;
+          (function poll() {
+            if (attempts++ >= MAX) return resolve('timeout');
+            listCourseDocuments(course.id).then(function (docs) {
+              var d = (docs || []).find(function (x) { return x.id === docId; });
+              if (!d) return setTimeout(poll, 3000);
+              if (d.processing_status === 'ready' || d.processing_status === 'failed') {
+                return resolve(d.processing_status);
+              }
+              setTimeout(poll, 3000);
+            }).catch(function () { setTimeout(poll, 3000); });
+          })();
+        });
+      }
+
+      function _runOne(t, retry) {
+        return indexExistingDocument(
+          course.id,
+          t.sname,
+          t.fname,
+          null,
+          t.folder,
+          Object.assign({}, _guessDocMeta(t.fname), { forceReindex: true })
+        ).then(function (res) {
+          if (!res || !res.documentId) return 'failed';
+          return _waitForDoc(res.documentId);
+        }).then(function (status) {
+          if (status === 'ready') return 'ready';
+          // Auto-retry once on failure/timeout, with a small pause
+          if (!retry) {
+            return new Promise(function (r) { setTimeout(r, 1500); })
+              .then(function () { return _runOne(t, true); });
+          }
+          return status;
+        }).catch(function () { return 'failed'; });
+      }
+
       var i = 0;
       function next() {
         if (i >= targets.length) {
@@ -405,26 +447,18 @@ export function bindFileEvents(co, course) {
               done + ' succeeded' + (failed ? ', ' + failed + ' failed' : '') + '.'
             );
           }
-          // Re-bind status indicators so they pick up the new processing_status
-          // values from the DB (and start polling again for in-progress docs).
           try { _bindRagStatus(co, course); } catch (e) {}
           return;
         }
         var t = targets[i++];
-        indexExistingDocument(
-          course.id,
-          t.sname,
-          t.fname,
-          null,
-          t.folder,
-          Object.assign({}, _guessDocMeta(t.fname), { forceReindex: true })
-        )
-          .then(function () { done++; })
-          .catch(function () { failed++; })
-          .finally(function () {
-            updateLabel();
-            next();
-          });
+        _runOne(t, false).then(function (status) {
+          if (status === 'ready') done++;
+          else failed++;
+          updateLabel();
+          // Re-bind after each so the user sees green dots appear progressively
+          try { _bindRagStatus(co, course); } catch (e) {}
+          next();
+        });
       }
       next();
     });
@@ -950,10 +984,11 @@ function _guessDocMeta(fileName) {
   return meta;
 }
 
-// Simple FIFO throttle to avoid hammering the index-existing endpoint
+// Simple FIFO throttle. Concurrency 1 — pgvector HNSW serializes inserts
+// anyway, and parallel triggers cause Supabase statement_timeout cascades.
 var _ragQueue = [];
 var _ragRunning = 0;
-var _RAG_CONCURRENCY = 3;
+var _RAG_CONCURRENCY = 1;
 function _ragEnqueue(fn) {
   return new Promise(function (resolve) {
     _ragQueue.push(function () {
