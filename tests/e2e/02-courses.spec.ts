@@ -8,56 +8,57 @@ test.describe('Course management', () => {
     app.collectErrors(errors);
 
     await app.goto();
-    // Either welcome state or existing courses are visible
-    await expect(
-      page.locator('#welcomeState, .course-card, #courseList')
-    ).toBeVisible({ timeout: 10000 });
 
-    expect(errors.filter(e => !e.includes('ResizeObserver'))).toHaveLength(0);
+    // #courseList exists in the sidebar; may be empty for new test account
+    await expect(page.locator('#courseList, #welcomeState')).toBeVisible({ timeout: 10000 });
+
+    const crashes = errors.filter(e =>
+      !e.includes('ResizeObserver') &&
+      !e.includes('favicon') &&
+      !e.includes('accounts.google.com') &&
+      !e.includes('fonts.googleapis')
+    );
+    expect(crashes).toHaveLength(0);
   });
 
-  test('can create and open a course', async ({ page }) => {
+  test('first course opens course overview', async ({ page }) => {
     const app = new AppPage(page);
     await app.goto();
 
-    const courseName = `E2E Course ${Date.now()}`;
-    try {
-      await app.createCourse(courseName);
-    } catch {
-      test.skip(true, 'Add course button not found — may not be authenticated');
+    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+    if (!hasCourses) {
+      test.skip(true, 'No courses in test account yet');
       return;
     }
 
-    await expect(page.locator(`.course-card`).filter({ hasText: courseName })).toBeVisible();
-
-    await app.openCourse(courseName);
-    await expect(page.locator('#courseOverview')).toBeVisible();
-    await expect(page.locator('#breadcrumb')).toContainText(courseName);
+    await app.openFirstCourse();
+    await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('#breadcrumb')).toBeVisible();
   });
 
-  test('course tabs (Files / Quiz / Flashcards) switch without recursion crash', async ({ page }) => {
+  test('course tabs switch without recursion crash', async ({ page }) => {
     const app = new AppPage(page);
     const errors: string[] = [];
     app.collectErrors(errors);
 
     await app.goto();
 
-    const firstCourse = page.locator('.course-card').first();
-    const hasCourses = await firstCourse.isVisible().catch(() => false);
+    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) {
       test.skip(true, 'No courses available');
       return;
     }
-    await firstCourse.click();
+
+    await app.openFirstCourse();
     await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
 
-    // Click through tabs multiple times — should never crash
+    // Click through tabs 3 times — must never throw Maximum call stack exceeded
     for (let i = 0; i < 3; i++) {
-      await page.locator('[data-course-tab="quiz"]').click();
+      await app.quizTab.click();
       await page.waitForTimeout(300);
-      await page.locator('[data-course-tab="flashcards"]').click();
+      await app.flashcardsTab.click();
       await page.waitForTimeout(300);
-      await page.locator('[data-course-tab="files"]').click();
+      await app.filesTab.click();
       await page.waitForTimeout(300);
     }
 

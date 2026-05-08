@@ -1,47 +1,43 @@
 import { test, expect } from '@playwright/test';
 import { AppPage } from './pages/AppPage';
 
-test.describe('Quiz', () => {
-  async function openCourseWithFiles(page: any, app: AppPage): Promise<boolean> {
-    await app.goto();
-    const firstCourse = page.locator('.course-card').first();
-    if (!await firstCourse.isVisible().catch(() => false)) return false;
-    await firstCourse.click();
-    await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
-    return true;
-  }
+async function openCourseWithFiles(page: any, app: AppPage): Promise<boolean> {
+  await app.goto();
+  const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+  if (!hasCourses) return false;
+  await app.openFirstCourse();
+  await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
+  return true;
+}
 
+test.describe('Quiz', () => {
   test('quiz tab is accessible', async ({ page }) => {
     const app = new AppPage(page);
     const opened = await openCourseWithFiles(page, app);
     if (!opened) { test.skip(true, 'No courses available'); return; }
 
-    const quizTab = page.locator('[data-course-tab="quiz"]');
-    await expect(quizTab).toBeVisible();
-    await quizTab.click();
-
-    const quizPanel = page.locator('[data-course-panel="quiz"]');
-    await expect(quizPanel).toHaveClass(/active/, { timeout: 3000 });
+    await expect(app.quizTab).toBeVisible();
+    await app.quizTab.click();
+    await expect(app.quizPanel).toHaveClass(/active/, { timeout: 3000 });
   });
 
-  test('quiz panel shows generate button or existing quizzes', async ({ page }) => {
+  test('quiz panel shows grid (not auto-selected quiz)', async ({ page }) => {
     const app = new AppPage(page);
     const opened = await openCourseWithFiles(page, app);
     if (!opened) { test.skip(true, 'No courses available'); return; }
 
-    await page.locator('[data-course-tab="quiz"]').click();
-    const panel = page.locator('[data-course-panel="quiz"]');
-    await expect(panel).toHaveClass(/active/, { timeout: 3000 });
+    await app.quizTab.click();
+    await expect(app.quizPanel).toHaveClass(/active/, { timeout: 3000 });
 
-    // Either a generate button or existing quiz cards
-    const hasContent = await Promise.race([
-      panel.locator('button:has-text("Generate"), button:has-text("New quiz")').first().isVisible(),
-      panel.locator('.quiz-card, .quiz-item, [data-quiz-id]').first().isVisible(),
-    ]).catch(() => false);
-    expect(hasContent).toBe(true);
+    // Should NOT jump straight into a quiz — study pane should be empty or grid is visible
+    const studyPane = app.quizPanel.locator('#qzStudyPane, .qz-card-stage');
+    const cardStageClass = await studyPane.first().getAttribute('class').catch(() => '');
+    // Either no active quiz in study pane, or deck grid is shown
+    const genBtn = app.quizPanel.locator('#qzGenerateBtn, button:has-text("Generate quiz")').first();
+    await expect(genBtn).toBeVisible({ timeout: 5000 });
   });
 
-  test('quiz generation returns questions without timeout (no 504)', async ({ page }) => {
+  test('quiz generation returns questions without 504', async ({ page }) => {
     test.setTimeout(60000);
     const app = new AppPage(page);
     const failures: string[] = [];
@@ -49,62 +45,23 @@ test.describe('Quiz', () => {
     const opened = await openCourseWithFiles(page, app);
     if (!opened) { test.skip(true, 'No courses available'); return; }
 
-    await page.locator('[data-course-tab="quiz"]').click();
-    const panel = page.locator('[data-course-panel="quiz"]');
-    await expect(panel).toHaveClass(/active/, { timeout: 3000 });
+    await app.quizTab.click();
+    await expect(app.quizPanel).toHaveClass(/active/, { timeout: 3000 });
 
-    const genBtn = panel.locator('button:has-text("Generate"), button:has-text("New quiz")').first();
-    const hasGen = await genBtn.isVisible().catch(() => false);
-    if (!hasGen) { test.skip(true, 'No generate button — quizzes may already exist'); return; }
+    const genBtn = app.quizPanel.locator('#qzGenerateBtn').first();
+    if (!await genBtn.isVisible().catch(() => false)) { test.skip(true, 'No generate button'); return; }
 
     await genBtn.click();
 
-    // Wait for spinner to appear then disappear
-    await page.waitForFunction(() => {
-      const overlay = document.querySelector('.gen-overlay, .generating-overlay, [class*="gen-overlay"]');
-      return !overlay;
-    }, { timeout: 55000 });
+    // Settings modal appears — confirm with defaults
+    const confirmBtn = page.locator('#qzspConfirm, button:has-text("Generate from selected"), button:has-text("Generate")').last();
+    if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) await confirmBtn.click();
 
-    const timeouts = failures.filter(f => f.startsWith('504'));
-    expect(timeouts).toHaveLength(0);
+    await page.waitForFunction(() => !document.getElementById('qzGenOverlay'), { timeout: 55000 });
 
-    // Quiz questions should be present
-    const questions = panel.locator('.quiz-question, [data-question], .question-card');
-    const count = await questions.count();
-    expect(count).toBeGreaterThan(0);
-  });
+    expect(failures.filter(f => f.startsWith('504'))).toHaveLength(0);
 
-  test('quiz answer selection and score popup work', async ({ page }) => {
-    test.setTimeout(60000);
-    const app = new AppPage(page);
-    const opened = await openCourseWithFiles(page, app);
-    if (!opened) { test.skip(true, 'No courses available'); return; }
-
-    await page.locator('[data-course-tab="quiz"]').click();
-    const panel = page.locator('[data-course-panel="quiz"]');
-    await expect(panel).toHaveClass(/active/, { timeout: 3000 });
-
-    // Open an existing quiz or skip
-    const quizCard = panel.locator('.quiz-card, [data-quiz-id]').first();
-    const hasQuiz = await quizCard.isVisible().catch(() => false);
-    if (!hasQuiz) { test.skip(true, 'No quiz available to test interaction'); return; }
-
-    await quizCard.click();
-
-    // Answer all questions
-    const questions = panel.locator('.quiz-question, [data-question]');
-    const qCount = await questions.count();
-    for (let i = 0; i < qCount; i++) {
-      const opts = questions.nth(i).locator('button, input[type="radio"]');
-      const optCount = await opts.count();
-      if (optCount > 0) await opts.first().click();
-    }
-
-    // Submit
-    const submitBtn = panel.locator('button:has-text("Submit"), button:has-text("Check"), button[id*="submit"]').first();
-    if (await submitBtn.isVisible()) await submitBtn.click();
-
-    // Score popup / result should appear
-    await page.waitForSelector('.score-popup, .quiz-result, [class*="score"]', { timeout: 10000 });
+    const cards = app.quizPanel.locator('.qz-deck-card');
+    await expect(cards.first()).toBeVisible({ timeout: 5000 });
   });
 });

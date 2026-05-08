@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 
 export class AppPage {
   readonly page: Page;
@@ -16,93 +16,74 @@ export class AppPage {
   get emailInput() { return this.page.locator('input[type="email"]'); }
   get passwordInput() { return this.page.locator('input[type="password"]'); }
   get loginBtn() { return this.page.locator('button[id="loginBtn"], button:has-text("Sign in"), button:has-text("Log in")').first(); }
-  get logoutBtn() { return this.page.locator('button:has-text("Sign out"), button:has-text("Log out"), [id="logoutBtn"]').first(); }
 
   async login(email: string, password: string) {
     await this.emailInput.fill(email);
     await this.passwordInput.fill(password);
     await this.loginBtn.click();
-    await this.page.waitForSelector('#welcomeState, #courseOverview, .course-card', { timeout: 15000 });
+    await this.page.waitForSelector('#welcomeState, #courseOverview, #courseList .course-row', { timeout: 15000 });
   }
 
   // ── Courses ───────────────────────────────────────────────────────────────
-  get addCourseBtn() { return this.page.locator('[id="addCourseBtn"], button:has-text("Add course"), button:has-text("New course")').first(); }
-  get courseNameInput() { return this.page.locator('input[placeholder*="course"], input[id*="courseName"]').first(); }
-  get saveCourseBtn() { return this.page.locator('button:has-text("Save"), button:has-text("Create"), button[type="submit"]').first(); }
+  // Real IDs from portal.html / courses-render.js
+  get addCourseBtn() { return this.page.locator('#courseAddBtn').first(); }
+  get courseNameInput() { return this.page.locator('input[placeholder*="course"], input[id*="courseName"], input[id*="courseAdd"], #courseSearchInput').first(); }
+  get saveCourseBtn() { return this.page.locator('button:has-text("Save"), button:has-text("Create"), button:has-text("Add"), button[type="submit"]').first(); }
 
-  async createCourse(name: string) {
-    await this.addCourseBtn.click();
-    await this.courseNameInput.fill(name);
-    await this.saveCourseBtn.click();
-    await this.page.waitForSelector(`.course-card:has-text("${name}")`, { timeout: 10000 });
-  }
-
-  async openCourse(name: string) {
-    await this.page.locator(`.course-card:has-text("${name}"), [data-course-name="${name}"]`).first().click();
+  // Course items are .course-row inside #courseList
+  async openFirstCourse() {
+    await this.page.locator('#courseList .course-row').first().click();
     await this.page.waitForSelector('#courseOverview', { state: 'visible', timeout: 10000 });
   }
 
-  // ── PDF upload ────────────────────────────────────────────────────────────
-  get uploadInput() { return this.page.locator('input[type="file"]'); }
+  async openCourseByName(name: string) {
+    await this.page.locator('#courseList .course-row').filter({ hasText: name }).first().click();
+    await this.page.waitForSelector('#courseOverview', { state: 'visible', timeout: 10000 });
+  }
 
-  async uploadPdf(filePath: string) {
-    await this.uploadInput.setInputFiles(filePath);
-    // Wait for upload completion — either spinner gone or file appears in list
-    await this.page.waitForFunction(() => {
-      const spinner = document.querySelector('.upload-spinner, .uploading');
-      return !spinner;
-    }, { timeout: 30000 });
+  // ── Files ─────────────────────────────────────────────────────────────────
+  // Real class from course-render.js: .co-file  with .co-file-name inside
+  get uploadInput() { return this.page.locator('input[type="file"]'); }
+  get firstFileItem() { return this.page.locator('.co-file').first(); }
+
+  async openFirstFile() {
+    const openBtn = this.page.locator('.co-file .co-open-btn').first();
+    const hasOpenBtn = await openBtn.isVisible().catch(() => false);
+    if (hasOpenBtn) {
+      await openBtn.click();
+    } else {
+      await this.firstFileItem.click();
+    }
+    await expect(this.page.locator('#pdfView')).toBeVisible({ timeout: 15000 });
+    await this.page.waitForFunction(() => (window as any).pdfDoc != null, { timeout: 20000 });
   }
 
   // ── PDF reader ────────────────────────────────────────────────────────────
   get pdfView() { return this.page.locator('#pdfView'); }
   get pdfFileName() { return this.page.locator('#pdfFileName'); }
   get pdfPageInput() { return this.page.locator('#pdfPageInput'); }
-  get pdfNextBtn() { return this.page.locator('#pdfNext, button[aria-label*="next"], button:has-text("›")').first(); }
-  get pdfPrevBtn() { return this.page.locator('#pdfPrev, button[aria-label*="prev"], button:has-text("‹")').first(); }
 
-  async openFile(fileName: string) {
-    await this.page.locator(`.file-item:has-text("${fileName}"), [data-file-name="${fileName}"]`).first().click();
-    await expect(this.pdfView).toBeVisible({ timeout: 15000 });
-    await this.page.waitForFunction(() => window['pdfDoc'] != null, { timeout: 20000 });
-  }
-
-  // ── AI chips / notes ──────────────────────────────────────────────────────
-  get notesChip() { return this.page.locator('[data-chip="notes"], button:has-text("Notes")').first(); }
-  get notesPanel() { return this.page.locator('#notesPanel, .notes-panel').first(); }
-  get generateBtn() { return this.page.locator('#npGenerateBtn, .np-generate-btn, button:has-text("Generate")').first(); }
-  get notesContent() { return this.page.locator('#npContent, .np-content').first(); }
+  // ── Notes panel ───────────────────────────────────────────────────────────
+  // Toolbar button injected by notes-panel.js: #pdfNotesToggle
+  get notesToggleBtn() { return this.page.locator('#pdfNotesToggle'); }
+  get notesPanel() { return this.page.locator('#pdfNotesPanel'); }
+  get generateBtn() { return this.page.locator('#npGenerate'); }
+  get notesPreview() { return this.page.locator('#npPreview'); }
 
   async openNotesPanel() {
-    await this.notesChip.click();
+    await this.notesToggleBtn.click();
     await expect(this.notesPanel).toBeVisible({ timeout: 5000 });
   }
 
-  async generateNotes() {
-    await this.generateBtn.click();
-    // Wait for generation to finish (spinner gone + content visible)
-    await this.page.waitForFunction(() => {
-      const spinner = document.querySelector('.np-spinner, .np-generating');
-      return !spinner;
-    }, { timeout: 60000 });
-    await expect(this.notesContent).toBeVisible({ timeout: 5000 });
-  }
+  // ── Course tabs ───────────────────────────────────────────────────────────
+  // Real class from course-render.js: .co-course-tab with data-course-tab attribute
+  get quizTab() { return this.page.locator('.co-course-tab[data-course-tab="quiz"]'); }
+  get flashcardsTab() { return this.page.locator('.co-course-tab[data-course-tab="flashcards"]'); }
+  get filesTab() { return this.page.locator('.co-course-tab[data-course-tab="files"]'); }
 
-  // ── Quiz / Flashcards ─────────────────────────────────────────────────────
-  get quizTab() { return this.page.locator('[data-course-tab="quiz"]'); }
-  get flashcardsTab() { return this.page.locator('[data-course-tab="flashcards"]'); }
+  // Panels use data-course-panel attribute
   get quizPanel() { return this.page.locator('[data-course-panel="quiz"]'); }
   get flashcardsPanel() { return this.page.locator('[data-course-panel="flashcards"]'); }
-
-  async openQuizTab() {
-    await this.quizTab.click();
-    await expect(this.quizPanel).toHaveClass(/active/, { timeout: 5000 });
-  }
-
-  async openFlashcardsTab() {
-    await this.flashcardsTab.click();
-    await expect(this.flashcardsPanel).toHaveClass(/active/, { timeout: 5000 });
-  }
 
   // ── Console errors ────────────────────────────────────────────────────────
   collectErrors(errors: string[]) {

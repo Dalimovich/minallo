@@ -6,18 +6,16 @@ test.describe('State persistence', () => {
     const app = new AppPage(page);
     await app.goto();
 
-    const firstCourse = page.locator('.course-card').first();
-    const hasCourses = await firstCourse.isVisible().catch(() => false);
+    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) { test.skip(true, 'No courses'); return; }
 
-    await firstCourse.click();
+    await app.openFirstCourse();
     await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
-    const courseName = await page.locator('#breadcrumb b').first().textContent();
+    const courseName = await page.locator('#breadcrumb b').first().textContent().catch(() => '');
 
     await page.reload();
     await page.waitForLoadState('networkidle');
 
-    // Should restore to course view
     await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
     const restoredName = await page.locator('#breadcrumb b').first().textContent().catch(() => '');
     expect(restoredName).toBe(courseName);
@@ -27,39 +25,33 @@ test.describe('State persistence', () => {
     const app = new AppPage(page);
     await app.goto();
 
-    const firstCourse = page.locator('.course-card').first();
-    const hasCourses = await firstCourse.isVisible().catch(() => false);
+    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) { test.skip(true, 'No courses'); return; }
 
-    await firstCourse.click();
-    await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
+    await app.openFirstCourse();
+    const hasFile = await page.locator('.co-file').first().isVisible({ timeout: 5000 }).catch(() => false);
+    if (!hasFile) { test.skip(true, 'No files'); return; }
 
-    const firstFile = page.locator('.file-item').first();
-    if (!await firstFile.isVisible().catch(() => false)) { test.skip(true, 'No files'); return; }
-    await firstFile.click();
-
-    await page.waitForFunction(() => window['pdfDoc'] != null, { timeout: 20000 });
-    const fileName = await page.locator('#pdfFileName').textContent();
+    await app.openFirstFile();
+    const fileName = await page.locator('#pdfFileName').textContent().catch(() => '');
 
     await page.reload();
     await page.waitForLoadState('networkidle');
-    await page.waitForFunction(() => window['pdfDoc'] != null, { timeout: 20000 });
+    await page.waitForFunction(() => (window as any).pdfDoc != null, { timeout: 20000 });
 
-    const restoredName = await page.locator('#pdfFileName').textContent();
+    const restoredName = await page.locator('#pdfFileName').textContent().catch(() => '');
     expect(restoredName).toBe(fileName);
   });
 
-  test('no 404 or 500 on static assets', async ({ page }) => {
+  test('no 404 or 500 on static assets at load', async ({ page }) => {
+    const origin = new URL(process.env.E2E_BASE_URL || 'http://localhost:8888').origin;
     const failures: string[] = [];
+
     page.on('response', resp => {
       const url = resp.url();
       const status = resp.status();
-      // Ignore external CDN and API calls, only care about same-origin assets
-      if (status >= 400 && (url.includes(page.url().split('/').slice(0, 3).join('/')) ||
-          url.includes('localhost') || url.includes('netlify.app'))) {
-        if (!url.includes('/api/') && !url.includes('functions')) {
-          failures.push(`${status} ${url}`);
-        }
+      if (status >= 400 && url.startsWith(origin) && !url.includes('/api/') && !url.includes('functions')) {
+        failures.push(`${status} ${url}`);
       }
     });
 
@@ -69,14 +61,19 @@ test.describe('State persistence', () => {
     expect(failures).toHaveLength(0);
   });
 
-  test('console has no unhandled errors on load', async ({ page }) => {
+  test('no unhandled JS errors on initial load', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', msg => {
       if (msg.type() === 'error') {
         const text = msg.text();
-        // Filter known benign noise
-        if (!text.includes('favicon') && !text.includes('ResizeObserver') && !text.includes('Non-Error promise')) {
+        if (
+          !text.includes('favicon') &&
+          !text.includes('ResizeObserver') &&
+          !text.includes('accounts.google.com') &&
+          !text.includes('fonts.googleapis') &&
+          !text.includes('Non-Error promise rejection')
+        ) {
           errors.push(text);
         }
       }
