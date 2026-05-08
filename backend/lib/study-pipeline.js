@@ -277,7 +277,7 @@ function deduplicateChunks(chunks, maxCount) {
         Math.max(s.page_start, c.page_start) <= Math.min(s.page_end, c.page_end);
     });
     if (!overlaps) selected.push(c);
-    if (selected.length >= (maxCount || MAX_CONTEXT_CHUNKS)) break;
+    if (selected.length >= (maxCount || 25)) break;
   }
   return selected;
 }
