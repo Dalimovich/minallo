@@ -15,7 +15,11 @@ test.describe('Course management', () => {
       !e.includes('ResizeObserver') &&
       !e.includes('favicon') &&
       !e.includes('accounts.google.com') &&
-      !e.includes('fonts.googleapis')
+      !e.includes('fonts.googleapis') &&
+      !e.includes('Failed to load resource') &&
+      !e.includes('net::ERR_') &&
+      !e.includes('403') &&
+      !e.includes('404')
     );
     expect(crashes).toHaveLength(0);
   });

@@ -17,6 +17,7 @@
 
 var _autoOpenEnabled = true;
 var _saveChatEnabled = true;
+var _prevChatKey = null;
 
 async function saveSettings(patch) {
   if (!_currentUser) return;

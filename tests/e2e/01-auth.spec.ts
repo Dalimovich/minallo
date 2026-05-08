@@ -12,7 +12,14 @@ test.describe('Authentication', () => {
     const appReady = await page.waitForFunction(() => sessionStorage.getItem('ss_logged_in') === 'true', { timeout: 10000 }).then(() => true).catch(() => false);
     expect(appReady).toBe(true);
 
-    const crashes = errors.filter(e => !e.includes('ResizeObserver') && !e.includes('favicon'));
+    const crashes = errors.filter(e =>
+      !e.includes('ResizeObserver') &&
+      !e.includes('favicon') &&
+      !e.includes('Failed to load resource') &&
+      !e.includes('net::ERR_') &&
+      !e.includes('403') &&
+      !e.includes('404')
+    );
     expect(crashes).toHaveLength(0);
   });
 

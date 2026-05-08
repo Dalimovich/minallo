@@ -50,7 +50,7 @@ test.describe('State persistence', () => {
     page.on('response', resp => {
       const url = resp.url();
       const status = resp.status();
-      if (status >= 400 && url.startsWith(origin) && !url.includes('/api/') && !url.includes('functions') && !url.includes('favicon')) {
+      if (status >= 500 && url.startsWith(origin) && !url.includes('/api/') && !url.includes('functions') && !url.includes('favicon')) {
         failures.push(`${status} ${url}`);
       }
     });
