@@ -376,6 +376,86 @@
     return '';
   }
 
+  // ── API call helper ───────────────────────────────────────────────────────
+  async function _notesApi(payload) {
+    var resp = await fetch((window.BACKEND_URL || '') + '/api/notes/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
+      body: JSON.stringify(payload)
+    });
+    return resp.json();
+  }
+
+  function _setGenMsg(msg) {
+    var el = $id('npGenMsg');
+    if (el) el.textContent = msg;
+  }
+
+  // ── Generation strategy ───────────────────────────────────────────────────
+  function _groupSize(pageCount) {
+    if (pageCount <= 3)  return pageCount;  // single call
+    if (pageCount <= 10) return 3;
+    return 5;
+  }
+
+  async function _generateSingle(rangeStart, rangeEnd, currentPage) {
+    var pdfText = _getPdfTextForRange(rangeStart, rangeEnd);
+    return _notesApi({
+      courseId:    _ctx.courseId,
+      documentId:  _ctx.documentId || null,
+      tool:        _activeTab,
+      fileName:    _ctx.fileName || null,
+      pdfText:     pdfText,
+      scope:       _scope,
+      language:    _language,
+      currentPage: currentPage,
+      pageRange:   rangeStart != null ? { start: rangeStart, end: rangeEnd } : undefined
+    });
+  }
+
+  async function _generateMultiSection(rangeStart, rangeEnd) {
+    var pageCount = rangeEnd - rangeStart + 1;
+    var gs = _groupSize(pageCount);
+    var groups = [];
+    for (var p = rangeStart; p <= rangeEnd; p += gs) {
+      groups.push({ start: p, end: Math.min(p + gs - 1, rangeEnd) });
+    }
+
+    var sections = [];
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      _setGenMsg('Generating section ' + (i + 1) + ' / ' + groups.length + ' (S. ' + g.start + '–' + g.end + ')…');
+      var pdfText = _getPdfTextForRange(g.start, g.end);
+      var data = await _notesApi({
+        mode:        'section',
+        courseId:    _ctx.courseId,
+        documentId:  _ctx.documentId || null,
+        tool:        _activeTab,
+        fileName:    _ctx.fileName || null,
+        pdfText:     pdfText,
+        language:    _language,
+        pageRange:   { start: g.start, end: g.end }
+      });
+      if (data.error) throw new Error(data.error);
+      if (!data.empty && data.markdown) {
+        sections.push({ markdown: data.markdown, pageStart: g.start, pageEnd: g.end });
+      }
+    }
+
+    if (!sections.length) throw new Error('No content found in selected range.');
+
+    _setGenMsg('Merging ' + sections.length + ' sections…');
+    return _notesApi({
+      mode:       'merge',
+      courseId:   _ctx.courseId,
+      documentId: _ctx.documentId || null,
+      tool:       _activeTab,
+      fileName:   _ctx.fileName || null,
+      language:   _language,
+      sections:   sections
+    });
+  }
+
   // ── Generate ──────────────────────────────────────────────────────────────
   async function _generate() {
     if (_generating) return;
@@ -386,9 +466,7 @@
 
     _generating = true;
     var overlay = $id('npGenOverlay');
-    var genMsg  = $id('npGenMsg');
     if (overlay) overlay.style.display = 'flex';
-    if (genMsg)  genMsg.textContent = 'Generating ' + (_activeTab === 'summary' ? 'summary' : 'detailed notes') + '…';
 
     try {
       var visiblePage = typeof window._pdfVisiblePage === 'function' ? window._pdfVisiblePage() : null;
@@ -398,37 +476,25 @@
       var rangeEnd   = null;
 
       if (_scope === 'page' && currentPage) {
-        rangeStart = currentPage;
-        rangeEnd   = currentPage;
+        rangeStart = currentPage; rangeEnd = currentPage;
       } else if (_scope === 'section' && currentPage) {
-        rangeStart = Math.max(1, currentPage - 1);
-        rangeEnd   = currentPage + 1;
+        rangeStart = Math.max(1, currentPage - 1); rangeEnd = currentPage + 1;
       } else if (_scope === 'range') {
-        rangeStart = _rangeFrom;
-        rangeEnd   = _rangeTo;
+        rangeStart = _rangeFrom; rangeEnd = _rangeTo;
       }
 
-      var pdfText = _getPdfTextForRange(rangeStart, rangeEnd);
+      var pageCount = (rangeStart != null && rangeEnd != null) ? (rangeEnd - rangeStart + 1) : 0;
+      var useMulti  = _activeTab === 'notes' && pageCount > 3 && _ctx.documentId;
 
-      var payload = {
-        courseId:    _ctx.courseId,
-        documentId:  _ctx.documentId || null,
-        tool:        _activeTab,
-        fileName:    _ctx.fileName || null,
-        pdfText:     pdfText,
-        scope:       _scope,
-        language:    _language,
-        currentPage: currentPage
-      };
+      if (useMulti) {
+        _setGenMsg('Preparing ' + pageCount + '-page notes (section by section)…');
+      } else {
+        _setGenMsg('Generating ' + (_activeTab === 'summary' ? 'summary' : 'notes') + '…');
+      }
 
-      if (rangeStart != null) payload.pageRange = { start: rangeStart, end: rangeEnd };
-
-      var resp = await fetch((window.BACKEND_URL || '') + '/api/notes/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
-        body: JSON.stringify(payload)
-      });
-      var data = await resp.json();
+      var data = useMulti
+        ? await _generateMultiSection(rangeStart, rangeEnd)
+        : await _generateSingle(rangeStart, rangeEnd, currentPage);
 
       if (data.error) {
         if (typeof showToast === 'function') showToast('Generation failed', data.error);
@@ -436,7 +502,6 @@
       } else if (data.note) {
         _notesByType[_activeTab] = data.note;
         _currentNote = data.note;
-        // Add to saved list
         _savedNotes.unshift({
           id: data.note.id, title: data.note.title, type: data.note.type,
           source_page_start: data.note.source_page_start, source_page_end: data.note.source_page_end,
