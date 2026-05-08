@@ -745,6 +745,7 @@
         renderAll();
       });
     } else {
+      state.activeId = null;
       renderAll();
     }
   }
