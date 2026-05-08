@@ -18,7 +18,7 @@ setup('authenticate', async ({ page }) => {
   await page.waitForLoadState('networkidle');
 
   // Check if already authenticated (portal loaded)
-  const isLoggedIn = await page.locator('#portal, #courseList, #welcomeState').first()
+  const isLoggedIn = await page.locator('#courseAddBtn, #welcomeState').first()
     .isVisible({ timeout: 3000 }).catch(() => false);
 
   if (!isLoggedIn) {
@@ -33,7 +33,7 @@ setup('authenticate', async ({ page }) => {
     await page.locator('#authSubmit').click();
 
     // Wait for portal to appear after login
-    await page.waitForSelector('#portal, #courseList, #welcomeState', { timeout: 25000 });
+    await page.waitForSelector('#courseAddBtn, #welcomeState', { timeout: 25000 });
   } else {
     console.log('[auth.setup] Already authenticated — saving existing session');
   }

@@ -23,7 +23,7 @@ export class AppPage {
     await this.emailInput.fill(email);
     await this.passwordInput.fill(password);
     await this.loginBtn.click();
-    await this.page.waitForSelector('#portal, #courseList, #welcomeState', { timeout: 20000 });
+    await this.page.waitForSelector('#courseAddBtn, #welcomeState', { timeout: 20000 });
   }
 
   // ── Courses ───────────────────────────────────────────────────────────────
@@ -32,14 +32,14 @@ export class AppPage {
   get courseNameInput() { return this.page.locator('input[placeholder*="course"], input[id*="courseName"], input[id*="courseAdd"], #courseSearchInput').first(); }
   get saveCourseBtn() { return this.page.locator('button:has-text("Save"), button:has-text("Create"), button:has-text("Add"), button[type="submit"]').first(); }
 
-  // Course items are .course-row inside #courseList
+  // Course cards are .sd-course-card inside #sdCourseList
   async openFirstCourse() {
-    await this.page.locator('#courseList .course-row').first().click();
+    await this.page.locator('#sdCourseList .sd-course-card').first().click();
     await this.page.waitForSelector('#courseOverview', { state: 'visible', timeout: 10000 });
   }
 
   async openCourseByName(name: string) {
-    await this.page.locator('#courseList .course-row').filter({ hasText: name }).first().click();
+    await this.page.locator('#sdCourseList .sd-course-card').filter({ hasText: name }).first().click();
     await this.page.waitForSelector('#courseOverview', { state: 'visible', timeout: 10000 });
   }
 

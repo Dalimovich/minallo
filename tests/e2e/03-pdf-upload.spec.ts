@@ -31,7 +31,7 @@ test.describe('PDF Upload', () => {
     const app = new AppPage(page);
     await app.goto();
 
-    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+    const hasCourses = await page.locator('#sdCourseList .sd-course-card').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) { test.skip(true, 'No courses available'); return; }
 
     await app.openFirstCourse();
@@ -46,7 +46,7 @@ test.describe('PDF Upload', () => {
     app.collectNetworkFailures(failures);
 
     await app.goto();
-    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+    const hasCourses = await page.locator('#sdCourseList .sd-course-card').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) { test.skip(true, 'No courses available'); return; }
 
     await app.openFirstCourse();

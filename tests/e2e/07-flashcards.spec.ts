@@ -3,7 +3,7 @@ import { AppPage } from './pages/AppPage';
 
 async function openCourse(page: any, app: AppPage): Promise<boolean> {
   await app.goto();
-  const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+  const hasCourses = await page.locator('#sdCourseList .sd-course-card').first().isVisible({ timeout: 8000 }).catch(() => false);
   if (!hasCourses) return false;
   await app.openFirstCourse();
   await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });

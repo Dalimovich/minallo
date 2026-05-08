@@ -9,8 +9,7 @@ test.describe('Course management', () => {
 
     await app.goto();
 
-    // #courseList exists in the sidebar; may be empty for new test account
-    await expect(page.locator('#courseList, #welcomeState')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('#courseAddBtn, #welcomeState')).toBeVisible({ timeout: 10000 });
 
     const crashes = errors.filter(e =>
       !e.includes('ResizeObserver') &&
@@ -25,7 +24,7 @@ test.describe('Course management', () => {
     const app = new AppPage(page);
     await app.goto();
 
-    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+    const hasCourses = await page.locator('#sdCourseList .sd-course-card').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) {
       test.skip(true, 'No courses in test account yet');
       return;
@@ -43,7 +42,7 @@ test.describe('Course management', () => {
 
     await app.goto();
 
-    const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+    const hasCourses = await page.locator('#sdCourseList .sd-course-card').first().isVisible({ timeout: 8000 }).catch(() => false);
     if (!hasCourses) {
       test.skip(true, 'No courses available');
       return;

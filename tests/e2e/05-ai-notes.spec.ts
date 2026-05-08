@@ -6,7 +6,7 @@ const FORBIDDEN_TERMS = ['Platzhalter', 'Titelfolie', 'Bild einsetzen', 'hinter 
 
 async function openPdfForNotes(page: any, app: AppPage): Promise<boolean> {
   await app.goto();
-  const hasCourses = await page.locator('#courseList .course-row').first().isVisible({ timeout: 8000 }).catch(() => false);
+  const hasCourses = await page.locator('#sdCourseList .sd-course-card').first().isVisible({ timeout: 8000 }).catch(() => false);
   if (!hasCourses) return false;
   await app.openFirstCourse();
   const hasFile = await page.locator('.co-file').first().isVisible({ timeout: 5000 }).catch(() => false);
@@ -103,7 +103,7 @@ test.describe('AI Notes', () => {
     const app = new AppPage(page);
     await app.goto();
 
-    const courseRow = page.locator('#courseList .course-row').filter({ hasText: /gieß|guss|fertigungs|werkstoff/i }).first();
+    const courseRow = page.locator('#sdCourseList .sd-course-card').filter({ hasText: /gieß|guss|fertigungs|werkstoff/i }).first();
     if (!await courseRow.isVisible().catch(() => false)) { test.skip(true, 'Kokillenguss course not available'); return; }
 
     await courseRow.click();
