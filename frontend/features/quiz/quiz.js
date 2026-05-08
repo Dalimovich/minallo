@@ -741,7 +741,7 @@
             bestScore: r.score != null ? Math.round(r.score * (r.items || []).length) : null
           };
         });
-        if (state.quizzes.length) state.activeId = state.quizzes[0].id;
+        state.activeId = null;
         renderAll();
       });
     } else {

@@ -595,7 +595,7 @@
             flipped: false
           };
         });
-        if (state.decks.length) state.activeId = state.decks[0].id;
+        state.activeId = null;
         renderAll();
       });
     } else {
