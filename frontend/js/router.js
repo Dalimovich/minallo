@@ -171,8 +171,12 @@ window.openFile = function (f, c) {
 };
 
 var _origShowSection = window.showCourseSection;
+var _inShowSection = false;
 window.showCourseSection = function (c, s) {
+  if (_inShowSection) return;
+  _inShowSection = true;
   if (typeof _origShowSection === 'function') _origShowSection(c, s);
+  _inShowSection = false;
   saveState();
   _ssPushHistory(
     {
