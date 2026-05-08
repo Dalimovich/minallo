@@ -185,10 +185,22 @@
       var subEl = document.getElementById('glSkillSub');
       if (titleEl) titleEl.textContent = _glSkillNames[skill] || skill;
       if (subEl) subEl.textContent = _glSkillSubs[skill] || '';
-      _glLoadSampleTools(skill);
-      _glRenderStudyTools();
       var _glCourseForSkill = _glCourse();
-      _glLoadDbTools(_glCourseForSkill.id);
+      if (_glCourseForSkill) {
+        // Real course context — load from DB, show empty state if nothing saved yet
+        _glQuizItems = [];
+        _glCards = [];
+        _glQuizIndex = 0;
+        _glSelectedOption = null;
+        _glCardIndex = 0;
+        _glCardFlipped = false;
+        _glRenderStudyTools();
+        _glLoadDbTools(_glCourseForSkill.id);
+      } else {
+        // No real course loaded — fall back to sample tools so the panel isn't blank
+        _glLoadSampleTools(skill);
+        _glRenderStudyTools();
+      }
 
       // Swap AI chips
       var aiChipsEl = document.querySelector('.ai-chips');
@@ -337,13 +349,15 @@
 
     function _glCourse() {
       var sk = _glActiveSkill || 'general';
-      var realId = (window.activeCourseId) ||
+      var realId = window.activeCourseId ||
         (window.activeCourseRef && window.activeCourseRef.id) ||
-        ('german-' + sk);
+        null;
+      if (!realId) return null;
       return {
         id: realId,
         short: realId,
-        name: 'German ' + (_glSkillNames[sk] || sk)
+        name: (window.activeCourseRef && window.activeCourseRef.name) ||
+          'German ' + (_glSkillNames[sk] || sk)
       };
     }
 
@@ -436,6 +450,7 @@
     }
 
     async function _glLoadDbTools(courseId) {
+      if (!courseId) return;
       try {
         var quizRows = await _dbLoadQuiz(courseId);
         if (quizRows && quizRows[0] && Array.isArray(quizRows[0].items) && quizRows[0].items.length) {
@@ -452,7 +467,7 @@
           _glCardFlipped = false;
         }
       } catch (e) {
-        // keep sample tools on error
+        // leave state as-is on error
       }
       _glRenderStudyTools();
     }
@@ -507,7 +522,7 @@
     function _glRenderQuiz(body) {
       if (!_glQuizItems.length) {
         body.innerHTML =
-          '<div class="gl-study-empty">Generate a quiz from your study material.</div>';
+          '<div class="gl-study-empty">No quiz generated yet. Click <strong>Generate Quiz</strong> to create one from your uploaded files.</div>';
         return;
       }
       var item = _glNormalizeQuizItem(_glQuizItems[_glQuizIndex], _glQuizIndex);
@@ -590,7 +605,7 @@
     function _glRenderFlashcards(body) {
       if (!_glCards.length) {
         body.innerHTML =
-          '<div class="gl-study-empty">Generate flashcards from your study material.</div>';
+          '<div class="gl-study-empty">No flashcards generated yet. Click <strong>Generate Cards</strong> to create some from your uploaded files.</div>';
         return;
       }
       var card = _glCards[_glCardIndex];
@@ -716,6 +731,11 @@
 
     async function _glPickSourcesThenGenerate(tool) {
       var course = _glCourse();
+      if (!course || !course.id) {
+        if (typeof showToast === 'function')
+          showToast('No course selected', 'Open a real course first, then generate quizzes or flashcards from its uploaded files.');
+        return;
+      }
       var token = window._sbToken || '';
       try {
         var r = await fetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {
@@ -733,42 +753,66 @@
       }
     }
 
-    async function _glRunGenerate(tool, docIds) {
+    async function _glRunGenerate(tool, documentIds) {
+      var course = _glCourse();
+      if (!course || !course.id) return;
+
       var targetMode = tool === 'flashcards' ? 'cards' : 'quiz';
       _glSetToolMode(targetMode);
       var body = document.getElementById('glStudyToolBody');
       if (body)
         body.innerHTML = '<div class="gl-study-empty">Generating from your material...</div>';
-      var course = _glCourse();
+
+      var topic = _glSkillNames[_glActiveSkill] || _glActiveSkill || null;
+      var difficulty = 'medium';
+      var count = tool === 'quiz' ? 5 : 8;
+
       try {
         var payload = {
           courseId: course.id,
           tool: tool,
-          count: tool === 'quiz' ? 5 : 8,
-          difficulty: 'medium',
-          topic: _glSkillNames[_glActiveSkill] || _glActiveSkill || null,
+          count: count,
+          difficulty: difficulty,
+          topic: topic,
           seenItems: _glSeenItems()
         };
-        if (docIds && docIds.length) payload.docIds = docIds;
+        if (documentIds && documentIds.length) payload.documentIds = documentIds;
+
         var resp = await fetch(BACKEND_URL + '/api/ai/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
           body: JSON.stringify(payload)
         });
         var data = await resp.json();
+
         if (data && data.items && data.items.length) {
+          var meta = {
+            courseId: course.id,
+            courseName: course.name,
+            topic: topic,
+            difficulty: difficulty,
+            documentIds: documentIds || null,
+            count: data.items.length,
+            created_at: new Date().toISOString()
+          };
+          console.log('[practice] generated', tool, meta);
+
           if (tool === 'quiz') {
             _glQuizItems = data.items;
             _glQuizIndex = 0;
             _glSelectedOption = null;
-            _dbSaveQuiz(course.id, data.items);
+            _dbSaveQuiz(course.id, data.items).then(function () {
+              if (typeof showToast === 'function') showToast('Saved', 'Quiz saved to your study tools.');
+            });
           } else {
             _glCards = data.items.map(function (card) {
               return { front: card.front, back: card.back, source: card.source || '', bookmarked: false, confidence: null };
             });
             _glCardIndex = 0;
             _glCardFlipped = false;
-            _dbSaveCards(course.id, data.items);
+            _dbSaveCards(course.id, data.items).then(function () {
+              if (typeof showToast === 'function') showToast('Saved', 'Flashcards saved to your study tools.');
+            });
           }
         } else {
           var errMsg = (data && data.error) ? data.error : 'No indexed documents found for this course.';
