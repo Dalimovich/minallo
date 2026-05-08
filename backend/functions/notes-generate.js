@@ -198,8 +198,7 @@ function validateNotes(markdown, contextText) {
 // ── Chunk retrieval ───────────────────────────────────────────────────────────
 
 async function fetchChunks(serviceKey, userId, courseId, documentId, pageStart, pageEnd) {
-  var supaUrl = requireEnv('SUPABASE_URL').replace(/\/$/, '');
-  var url = supaUrl + '/rest/v1/document_chunks' +
+  var path = 'document_chunks' +
     '?select=chunk_text,page_start,page_end,section_title,source_type' +
     '&user_id=eq.' + encodeURIComponent(userId) +
     '&course_id=eq.' + encodeURIComponent(courseId) +
@@ -207,12 +206,11 @@ async function fetchChunks(serviceKey, userId, courseId, documentId, pageStart, 
     '&order=page_start.asc,id.asc' +
     '&limit=80';
   // Overlap filter: include chunks that overlap with [pageStart, pageEnd]
-  // chunk overlaps range if chunk.page_start <= pageEnd AND chunk.page_end >= pageStart
-  if (pageEnd   != null) url += '&page_start=lte.' + pageEnd;
-  if (pageStart != null) url += '&page_end=gte.'   + pageStart;
+  if (pageEnd   != null) path += '&page_start=lte.' + pageEnd;
+  if (pageStart != null) path += '&page_end=gte.'   + pageStart;
 
-  var result = await supaRequest(serviceKey, 'GET', url, null);
-  return Array.isArray(result) ? result : [];
+  var result = await supaRequest('GET', path, null, serviceKey);
+  return Array.isArray(result.body) ? result.body : [];
 }
 
 // ── Context builder ───────────────────────────────────────────────────────────
@@ -240,9 +238,7 @@ function buildContext(chunks, fileName) {
 // ── Save note ─────────────────────────────────────────────────────────────────
 
 async function saveNote(serviceKey, opts) {
-  var supaUrl = requireEnv('SUPABASE_URL').replace(/\/$/, '');
-  var noteRows = await supaRequest(serviceKey, 'POST',
-    supaUrl + '/rest/v1/notes?select=id',
+  var result = await supaRequest('POST', 'notes?select=id',
     {
       user_id: opts.userId,
       course_id: opts.courseId,
@@ -253,9 +249,11 @@ async function saveNote(serviceKey, opts) {
       source_page_start: opts.filterStart != null ? opts.filterStart : null,
       source_page_end:   opts.filterEnd   != null ? opts.filterEnd   : null
     },
+    serviceKey,
     { 'Prefer': 'return=representation' }
   );
-  var noteId = noteRows && noteRows[0] && noteRows[0].id;
+  var noteRows = result.body;
+  var noteId = Array.isArray(noteRows) && noteRows[0] && noteRows[0].id;
   if (!noteId) return null;
 
   if (opts.sources && opts.sources.length && opts.documentId) {
@@ -265,7 +263,7 @@ async function saveNote(serviceKey, opts) {
         return { note_id: noteId, document_id: opts.documentId, page_start: s.page_start, page_end: s.page_end };
       });
     if (sourceRows.length) {
-      await supaRequest(serviceKey, 'POST', supaUrl + '/rest/v1/note_sources', sourceRows, { 'Prefer': 'return=minimal' })
+      await supaRequest('POST', 'note_sources', sourceRows, serviceKey, { 'Prefer': 'return=minimal' })
         .catch(function () {});
     }
   }
