@@ -76,7 +76,8 @@ function _ssPortalNavId(section) {
       settings: 'psbSettings',
       subscription: 'psbSubscription',
       notes: 'psbNotes',
-      studip: 'pcStudip',
+      courses: 'pcStudip',
+      studip: 'pcStudip', // legacy alias
       chat: 'psbChat',
       notifications: 'psbNotifications',
       games: 'psbGames',
@@ -104,7 +105,7 @@ function _ssApplyHistoryState(state) {
     return;
   }
 
-  if (state.view === 'studip') {
+  if (state.view === 'studip' || state.view === 'courses') {
     showStudip();
     return;
   }
@@ -209,7 +210,7 @@ window.showPortalSection = function (sec) {
     target = _pendingPortalRestore;
     _pendingPortalRestore = null;
     setNavActive(_ssPortalNavId(target));
-    if (target === 'studip') setTimeout(sdRenderCourses, 0);
+    if (target === 'courses' || target === 'studip') setTimeout(sdRenderCourses, 0);
     if (target === 'chat') setTimeout(_chatInit, 0);
     if (target === 'editor')
       setTimeout(function () {
@@ -238,8 +239,8 @@ if (!window.location.hash || window.location.hash.indexOf('access_token') === -1
   try {
     _rst = JSON.parse(localStorage.getItem('ss_state') || '{}');
   } catch (e) {}
-  if (_rst.inApp && _rst.view === 'studip') {
-    _ssReplaceHistory({ view: 'studip' }, '#studip');
+  if (_rst.inApp && (_rst.view === 'studip' || _rst.view === 'courses')) {
+    _ssReplaceHistory({ view: 'courses' }, '#portal=courses');
   } else if (_rst.inApp && _rst.fileName) {
     _ssReplaceHistory(
       {

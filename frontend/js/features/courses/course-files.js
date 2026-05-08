@@ -706,7 +706,12 @@ function initCourseStudyTools(co, course) {
 
   co.querySelectorAll('[data-course-tab]').forEach(function (tab) {
     tab.addEventListener('click', function () {
-      setCourseStudyMode(co, course, tab.getAttribute('data-course-tab'));
+      var tabName = tab.getAttribute('data-course-tab');
+      setCourseStudyMode(co, course, tabName);
+      // Push tab to URL so refresh restores to this tab
+      if (typeof window.showCourseSection === 'function') {
+        window.showCourseSection(course, tabName);
+      }
     });
   });
 

@@ -118,7 +118,7 @@ export function openCourse(course) {
 }
 
 export function showCourseSection(course, section) {
-  section = 'files'; // only section remaining
+  section = ['files', 'quiz', 'flashcards'].includes(section) ? section : 'files';
   window.activeCourseRef = course;
   window.activeCourseSection = section;
   window.activeFileName = null;
@@ -152,9 +152,10 @@ export function showCourseSection(course, section) {
   bindFileEvents(co, course);
   bindFolderEvents(co, course);
 
-  // Restore the tab the user was on before re-render
-  if (prevTab && prevTab !== 'files') {
-    var tabBtn = co.querySelector('[data-course-tab="' + prevTab + '"]');
+  // Activate the requested tab (or restore previous tab if re-rendering)
+  var targetTab = (section !== 'files') ? section : (prevTab && prevTab !== 'files' ? prevTab : null);
+  if (targetTab) {
+    var tabBtn = co.querySelector('[data-course-tab="' + targetTab + '"]');
     if (tabBtn) tabBtn.click();
   }
 }
