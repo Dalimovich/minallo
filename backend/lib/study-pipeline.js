@@ -289,7 +289,7 @@ function fetchCourseDocIds(serviceKey, userId, courseId) {
     'GET',
     'documents?course_id=eq.' + encodeURIComponent(courseId) +
       '&user_id=eq.' + encodeURIComponent(userId) +
-      '&status=eq.indexed&select=id',
+      '&processing_status=eq.ready&select=id',
     null,
     serviceKey
   )
