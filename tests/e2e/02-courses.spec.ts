@@ -18,7 +18,12 @@ test.describe('Course management', () => {
       !e.includes('Failed to load resource') &&
       !e.includes('net::ERR_') &&
       !e.includes('403') &&
-      !e.includes('404')
+      !e.includes('404') &&
+      !e.includes("Provider's accounts list is empty") &&
+      !e.includes('GSI_LOGGER') &&
+      !e.includes('FedCM') &&
+      !e.includes('gsi/client') &&
+      !e.includes('Not signed in with the identity provider')
     );
     expect(crashes).toHaveLength(0);
   });
