@@ -513,8 +513,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     if (timeLeft() < 5000) break;
 
     const docId       = fileIds[fi];
-    const filesLeft   = fileIds.length - fi;
-    const thisCount   = Math.max(2, Math.ceil(remaining / filesLeft));
+    const thisCount   = Math.max(2, remaining);
 
     // Retrieve chunks for this file using pre-computed embeddings
     let rawChunks;
@@ -548,7 +547,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
 
     const focusPart   = topic ? '\n\n---\nFocus topic: ' + topic : '';
     const userMessage = 'COURSE CONTEXT:\n\n' + context + focusPart;
-    const maxTokens   = tool === 'flashcards' ? 1400 : Math.min(3200, 900 + thisCount * 190);
+    const maxTokens   = tool === 'flashcards' ? 1400 : Math.min(4500, 1000 + thisCount * 280);
 
     let result;
     try {
