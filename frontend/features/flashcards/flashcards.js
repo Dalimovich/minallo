@@ -287,9 +287,10 @@
           '<div class="fc-card-progress-pill">Card ' + (idx + 1) + ' / ' + d.cards.length + '</div>' +
           '<div class="fc-card-source">' + _esc(source) + '</div>' +
           '<div class="fc-card-content">' + _esc(content) + '</div>';
-        if (window.renderMathInElement) {
-          try { renderMathInElement(els.cardStage, { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false }); } catch(e) {}
-        }
+        var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false };
+        var _doMath = function() { if (window.renderMathInElement) try { renderMathInElement(els.cardStage, _katexOpts); } catch(e) {} };
+        if (window.renderMathInElement) { _doMath(); }
+        else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doMath).catch(function(){}); }
       }
       var pct = ((idx + 1) / d.cards.length) * 100;
       if (els.progressBar) els.progressBar.style.width = pct + '%';

@@ -351,12 +351,15 @@
             '<div class="qz-explanation">&#x1F4A1; ' + _esc(item.explanation) + '</div>';
         }
 
-        // Render math in question + options
-        if (window.renderMathInElement) {
+        // Render math in question + options (ensure KaTeX loaded first)
+        var _mathEls = [els.cardStage, els.options].filter(Boolean);
+        var _doMath = function() {
+          if (!window.renderMathInElement) return;
           var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false };
-          if (els.cardStage) try { renderMathInElement(els.cardStage, _katexOpts); } catch(e) {}
-          try { renderMathInElement(els.options, _katexOpts); } catch(e) {}
-        }
+          _mathEls.forEach(function(el) { try { renderMathInElement(el, _katexOpts); } catch(e) {} });
+        };
+        if (window.renderMathInElement) { _doMath(); }
+        else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doMath).catch(function(){}); }
 
         if (!isSubmitted) {
           els.options.querySelectorAll('[data-opt-idx]').forEach(function (btn) {
