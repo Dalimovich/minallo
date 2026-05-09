@@ -44,4 +44,4 @@ initMusicServices({
 });
 initStudyTimer();
 
-import './app.js';
+import './app.js?v=2';
