@@ -1,4 +1,4 @@
-import { showCourseSection } from './course-view.js';
+import { showCourseSection } from './course-view.js?v=2';
 import {
   listCourseDocuments,
   indexExistingDocument,
