@@ -50,6 +50,14 @@
     }).catch(function() {});
   }
 
+  function _dbDeleteQuiz(dbId) {
+    if (!dbId) return;
+    fetch(_supaUrl() + '/rest/v1/quiz_runs?id=eq.' + dbId, {
+      method: 'DELETE',
+      headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=minimal' })
+    }).catch(function() {});
+  }
+
   var _TEMPLATE_HTML = '<div class="qz-root" data-quiz-root>' +
     '<div class="qz-toolbar">' +
       '<button class="qz-btn qz-btn-primary" id="qzGenerateBtn" type="button"><span class="qz-btn-icon">&#x2728;</span> Generate quiz</button>' +
@@ -237,7 +245,7 @@
           : '';
         return (
           '<div class="qz-deck-card' + (isActive ? ' active' : '') + '" data-quiz-id="' + _esc(q.id) + '">' +
-            '<button class="qz-deck-menu-btn" data-quiz-delete="' + _esc(q.id) + '" title="Delete quiz">&#x22EE;</button>' +
+            '<button class="qz-deck-delete-btn" data-quiz-delete="' + _esc(q.id) + '" title="Delete quiz">&#x1F5D1;</button>' +
             '<span class="qz-deck-icon">&#x1F4CB;</span>' +
             '<div class="qz-deck-name">' + _esc(q.name) + '</div>' +
             '<div class="qz-deck-count">' + q.items.length + ' questions</div>' +
@@ -281,6 +289,7 @@
           var id = btn.getAttribute('data-quiz-delete');
           var q = state.quizzes.find(function (x) { return x.id === id; });
           if (!q || !window.confirm('Delete quiz "' + q.name + '"?')) return;
+          _dbDeleteQuiz(q._dbId);
           state.quizzes = state.quizzes.filter(function (x) { return x.id !== id; });
           if (state.activeId === id) state.activeId = state.quizzes.length ? state.quizzes[0].id : null;
           renderAll();

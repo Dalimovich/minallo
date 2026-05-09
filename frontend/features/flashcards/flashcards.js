@@ -55,6 +55,14 @@
     }).catch(function() {});
   }
 
+  function _dbDeleteDeck(dbId) {
+    if (!dbId) return;
+    fetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
+      method: 'DELETE',
+      headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=minimal' })
+    }).catch(function() {});
+  }
+
   var _TEMPLATE_HTML = '<div class="fc-root" data-flashcards-root>' +
     '<div class="fc-toolbar">' +
       '<button class="fc-btn fc-btn-primary" id="fcGenerateBtn" type="button"><span class="fc-btn-icon">&#x2728;</span> Generate cards</button>' +
@@ -237,6 +245,7 @@
           var d = state.decks.find(function (x) { return x.id === id; });
           if (!d) return;
           if (!window.confirm('Delete deck "' + d.name + '"?')) return;
+          _dbDeleteDeck(d._dbId);
           state.decks = state.decks.filter(function (x) { return x.id !== id; });
           if (state.activeId === id) state.activeId = state.decks.length ? state.decks[0].id : null;
           renderAll();
