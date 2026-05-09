@@ -173,12 +173,12 @@ function renderMails() {}
 import {
   openCourse as _openCourse,
   showCourseSection as _showCourseSection
-} from './features/courses/course-view.js?v=6';
+} from './features/courses/course-view.js?v=7';
 window.openCourse = _openCourse;
 window.showCourseSection = _showCourseSection;
 
 // _showFolderPickerPopup → features/courses/course-folders.js
-import { showFolderPickerPopup as _showFolderPickerPopup_ } from './features/courses/course-folders.js?v=4';
+import { showFolderPickerPopup as _showFolderPickerPopup_ } from './features/courses/course-folders.js?v=5';
 window._showFolderPickerPopup = _showFolderPickerPopup_;
 
 // _fetchPdfBytes / downloadFile / openFile → services/pdf-service.js + features/pdf-viewer/pdf-viewer.js

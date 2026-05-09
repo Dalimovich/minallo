@@ -1,9 +1,13 @@
-import { showCourseSection } from './course-view.js?v=6';
+import { showCourseSection } from './course-view.js?v=7';
 import {
   listCourseDocuments,
   indexExistingDocument,
   generateStudyTool
 } from '../../services/ai-service.js';
+
+// Session-level cache: prevents re-triggering files already confirmed or in-flight.
+// Key: courseId + ':' + fname.toLowerCase() → 'ready' | 'triggered'
+var _ragConfirmed = {};
 
 export function bindFileEvents(co, course) {
   var selectMode = false;
@@ -784,59 +788,70 @@ async function _bindRagStatus(co, course) {
 
   co.querySelectorAll('.co-rag-status').forEach(function (el) {
     var fname = el.dataset.fname || '';
+    var cacheKey = courseId + ':' + fname.toLowerCase();
     var doc = ragMap[fname.toLowerCase()];
     var f = _findUploadedFile(course, fname);
 
+    // Already confirmed ready this session — show green, skip all API work.
+    if (_ragConfirmed[cacheKey] === 'ready') {
+      _setRagStatus(el, 'ready');
+      return;
+    }
+
     if (doc) {
       _setRagStatus(el, doc.processing_status);
-      if (doc.processing_status === 'ready') return;
+      if (doc.processing_status === 'ready') {
+        _ragConfirmed[cacheKey] = 'ready';
+        return;
+      }
       if (doc.processing_status === 'failed') {
-        // Auto-retry failed docs aggressively — up to 5 attempts per session.
+        // Auto-retry failed docs — up to 3 attempts per session.
         var key = '_ragRetries_' + doc.id;
         var attempts = window[key] || 0;
-        if (f && attempts < 5) {
+        if (f && attempts < 3) {
           window[key] = attempts + 1;
+          _ragConfirmed[cacheKey] = 'triggered';
           _ragEnqueue(function () {
-            return _triggerRagIndex(el, fname, f, course, courseId);
+            return _triggerRagIndex(el, fname, f, course, courseId, cacheKey);
           });
         }
         return;
       }
 
-      // In-progress — show current status and poll; do NOT re-trigger, which
-      // would reset the DB row and waste the processing already in flight.
-      _setRagStatus(el, doc.processing_status);
-      // Stuck-blue recovery: if the row hasn't been touched in >7 minutes,
-      // the worker likely crashed (Lambda timeout, unhandled exception).
-      // Auto-retry once per page load — the user wants this to be seamless.
+      // In-progress — poll only; don't re-trigger unless genuinely stuck.
       var stuckSince = doc.updated_at || doc.created_at;
       var stuckMs = stuckSince ? Date.now() - new Date(stuckSince).getTime() : 0;
       var stuckKey = '_ragStuckRetries_' + doc.id;
       var stuckAttempts = window[stuckKey] || 0;
-      if (stuckMs > 7 * 60 * 1000 && f && stuckAttempts < 5) {
+      if (stuckMs > 7 * 60 * 1000 && f && stuckAttempts < 2) {
         window[stuckKey] = stuckAttempts + 1;
+        _ragConfirmed[cacheKey] = 'triggered';
         _ragEnqueue(function () {
-          return _triggerRagIndex(el, fname, f, course, courseId);
+          return _triggerRagIndex(el, fname, f, course, courseId, cacheKey);
         });
         return;
       }
-      _pollRagStatus(el, courseId, doc.id);
+      _pollRagStatus(el, courseId, doc.id, cacheKey);
     } else if (f) {
-      // Not indexed yet — auto-start
+      // Not indexed yet — trigger once per session only.
+      if (_ragConfirmed[cacheKey] === 'triggered') return;
+      _ragConfirmed[cacheKey] = 'triggered';
       _ragEnqueue(function () {
-        return _triggerRagIndex(el, fname, f, course, courseId);
+        return _triggerRagIndex(el, fname, f, course, courseId, cacheKey);
       });
     }
 
-    // Allow click only to retry a failed index
+    // Allow click only to retry a failed index.
     el.addEventListener('click', function (e) {
       e.stopPropagation();
       if (el.dataset.ragStatus !== 'failed') return;
       var fr = _findUploadedFile(course, fname);
-      if (fr)
+      if (fr) {
+        _ragConfirmed[cacheKey] = 'triggered';
         _ragEnqueue(function () {
-          return _triggerRagIndex(el, fname, fr, course, courseId);
+          return _triggerRagIndex(el, fname, fr, course, courseId, cacheKey);
         });
+      }
     });
   });
 }
@@ -856,7 +871,7 @@ function _findUploadedFile(course, fname) {
   return null;
 }
 
-async function _triggerRagIndex(el, fname, f, course, courseId) {
+async function _triggerRagIndex(el, fname, f, course, courseId, cacheKey) {
   if (!f._storageName) return;
 
   _setRagStatus(el, 'uploading');
@@ -873,8 +888,9 @@ async function _triggerRagIndex(el, fname, f, course, courseId) {
     if (result.alreadyIndexed) {
       var st = result.processingStatus || 'ready';
       _setRagStatus(el, st);
+      if (st === 'ready' && cacheKey) _ragConfirmed[cacheKey] = 'ready';
       if (st !== 'ready' && st !== 'failed' && result.documentId) {
-        _pollRagStatus(el, courseId, result.documentId);
+        _pollRagStatus(el, courseId, result.documentId, cacheKey);
       }
       return;
     }
@@ -886,8 +902,9 @@ async function _triggerRagIndex(el, fname, f, course, courseId) {
     });
     if (updated) {
       _setRagStatus(el, updated.processing_status);
+      if (updated.processing_status === 'ready' && cacheKey) _ragConfirmed[cacheKey] = 'ready';
       if (updated.processing_status !== 'ready' && updated.processing_status !== 'failed') {
-        _pollRagStatus(el, courseId, updated.id);
+        _pollRagStatus(el, courseId, updated.id, cacheKey);
       }
     }
   } catch (err) {
@@ -920,20 +937,20 @@ function _setRagStatus(el, status) {
   el.style.cursor = status === 'failed' ? 'pointer' : 'default';
 }
 
-async function _pollRagStatus(el, courseId, docId, _attempts) {
+async function _pollRagStatus(el, courseId, docId, cacheKey, _attempts) {
   _attempts = (_attempts || 0) + 1;
-  if (_attempts > 60) return; // give up after ~4 minutes
-  await new Promise(function (r) {
-    setTimeout(r, 4000);
-  });
+  if (_attempts > 60) return;
+  await new Promise(function (r) { setTimeout(r, 4000); });
   try {
     var docs = await listCourseDocuments(courseId);
-    var doc = docs.find(function (d) {
-      return d.id === docId;
-    });
+    var doc = docs.find(function (d) { return d.id === docId; });
     if (!doc) return;
     _setRagStatus(el, doc.processing_status);
-    if (doc.processing_status === 'ready' || doc.processing_status === 'failed') return;
-    _pollRagStatus(el, courseId, docId, _attempts);
+    if (doc.processing_status === 'ready') {
+      if (cacheKey) _ragConfirmed[cacheKey] = 'ready';
+      return;
+    }
+    if (doc.processing_status === 'failed') return;
+    _pollRagStatus(el, courseId, docId, cacheKey, _attempts);
   } catch (e) {}
 }
