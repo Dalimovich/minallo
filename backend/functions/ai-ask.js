@@ -785,7 +785,7 @@ function parseOpenAIResponse(text) {
   try {
     const direct = JSON.parse(stripped);
     if (direct && typeof direct === 'object') return direct;
-  } catch (e) {}
+  } catch (_e) { /* intentional */ }
   // Second try: extract {...} block and repair literal newlines inside strings
   try {
     const match = stripped.match(/\{[\s\S]*\}/);
@@ -797,7 +797,7 @@ function parseOpenAIResponse(text) {
       const parsed = JSON.parse(repaired);
       if (parsed && typeof parsed === 'object') return parsed;
     }
-  } catch (e) {}
+  } catch (_e) { /* intentional */ }
   return { answer: text, sources: [], confidence: 'low', unsupported: false };
 }
 
@@ -807,7 +807,7 @@ function parseOpenAIResponse(text) {
 
 function _parsePagesStr(pagesStr) {
   if (!pagesStr) return null;
-  const m = String(pagesStr).match(/(\d+)(?:[–\-](\d+))?/);
+  const m = String(pagesStr).match(/(\d+)(?:[–-](\d+))?/);
   if (!m) return null;
   return { from: parseInt(m[1], 10), to: m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10) };
 }
@@ -1345,7 +1345,6 @@ exports.handler = async function (event) {
 
   // 8. Build doc name map for the final ranked set (reuse allDocNames fetched above)
   const docNames = allDocNames;
-  const knownFileNames = new Set(Object.values(docNames));
 
   // 9. Build context + detect language from retrieved chunks
   const contextBlock = buildContextBlock(rankedChunks, docNames, effectiveOpenCtx, openFileName);

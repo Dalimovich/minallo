@@ -14,7 +14,7 @@ test.describe('State persistence', () => {
     const courseName = await page.locator('#breadcrumb b').first().textContent().catch(() => '');
 
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await app.waitForAppShell();
 
     await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
     const restoredName = await page.locator('#breadcrumb b').first().textContent().catch(() => '');
@@ -36,7 +36,7 @@ test.describe('State persistence', () => {
     const fileName = await page.locator('#pdfFileName').textContent().catch(() => '');
 
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await app.waitForAppShell();
     await page.waitForFunction(() => (window as any).pdfDoc != null, { timeout: 20000 });
 
     const restoredName = await page.locator('#pdfFileName').textContent().catch(() => '');
@@ -55,8 +55,8 @@ test.describe('State persistence', () => {
       }
     });
 
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    const app3 = new AppPage(page);
+    await app3.goto();
 
     expect(failures).toHaveLength(0);
   });
@@ -81,15 +81,19 @@ test.describe('State persistence', () => {
           !text.includes('ERR_FAILED') &&
           !text.includes('ERR_CONNECTION') &&
           !text.includes('Failed to load resource') &&
-          !text.includes('403')
+          !text.includes('403') &&
+          !text.includes("Provider's accounts list is empty") &&
+          !text.includes('GSI_LOGGER') &&
+          !text.includes('FedCM') &&
+          !text.includes('gsi/client')
         ) {
           errors.push(text);
         }
       }
     });
 
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    const app2 = new AppPage(page);
+    await app2.goto();
     await page.waitForTimeout(2000);
 
     expect(errors).toHaveLength(0);

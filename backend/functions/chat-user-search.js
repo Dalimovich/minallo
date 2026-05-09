@@ -1,5 +1,5 @@
 const { requireEnv } = require('../lib/env');
-const { jsonResponse, fail, handleOptions } = require('../lib/responses');
+const { jsonResponse, fail } = require('../lib/responses');
 const { supaRequest } = require('../lib/supabase-admin');
 const { verifySupabaseToken, extractBearerToken } = require('../lib/supabase-auth');
 

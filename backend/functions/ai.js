@@ -1,6 +1,6 @@
 const https = require('https');
 const { requireEnv } = require('../lib/env');
-const { jsonResponse, fail, handleOptions } = require('../lib/responses');
+const { fail, handleOptions } = require('../lib/responses');
 const { verifySupabaseToken, extractBearerToken } = require('../lib/supabase-auth');
 const { logSecurityEvent } = require('../lib/logger');
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
