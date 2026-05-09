@@ -342,6 +342,8 @@ RULES:
 8. Include why_important: one sentence on why this is exam-relevant.
 9. Include source: file name and page (copy from the [Source N] header).
 
+CRITICAL: You MUST generate EXACTLY ${count} items in the "items" array — no more, no fewer.
+
 Respond ONLY with valid JSON:
 {"items":[{"front":"...","back":"...","card_type":"formula","difficulty":"medium","why_important":"...","source":"filename, p.X"}]}`;
 }
@@ -382,6 +384,8 @@ RULES:
 8. Include source: file name and page.
 9. Write math using KaTeX notation: inline as $...$, display as $$...$$.
 10. answer must be the letter "A", "B", "C", or "D".
+
+CRITICAL: You MUST generate EXACTLY ${count} items in the "items" array — no more, no fewer.
 
 Respond ONLY with valid JSON:
 {"items":[{"question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"answer":"A","explanation":"...","difficulty":"medium","question_type":"calculation","why_important":"...","source":"filename, p.X"}]}`;
@@ -547,7 +551,9 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
 
     const focusPart   = topic ? '\n\n---\nFocus topic: ' + topic : '';
     const userMessage = 'COURSE CONTEXT:\n\n' + context + focusPart;
-    const maxTokens   = tool === 'flashcards' ? 1400 : Math.min(4500, 1000 + thisCount * 280);
+    const maxTokens   = tool === 'flashcards'
+      ? Math.min(8000, 900 + thisCount * 400)
+      : Math.min(6000, 1000 + thisCount * 320);
 
     let result;
     try {
