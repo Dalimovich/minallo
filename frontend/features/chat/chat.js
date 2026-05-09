@@ -29,6 +29,11 @@
     // Track the active file key
     var _prevChatKey = null;
 
+    // Register an unload hook so settings.js can trigger chat save without accessing this IIFE's private var
+    window._ssPreUnloadHook = function () {
+      if (_prevChatKey) saveChatForFile(_prevChatKey);
+    };
+
     // Serialize all visible messages from the DOM
     function serializeChatDOM() {
       var out = [];

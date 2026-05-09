@@ -101,7 +101,6 @@ async function saveSettings(patch) {
   function _ssUnloadSave() {
     if (typeof window._ssPreUnloadHook === 'function') window._ssPreUnloadHook();
     saveState();
-    if (typeof _prevChatKey !== 'undefined' && _prevChatKey) saveChatForFile(_prevChatKey);
   }
   window.addEventListener('beforeunload', _ssUnloadSave);
   window.addEventListener('pagehide', _ssUnloadSave);
@@ -117,7 +116,6 @@ async function saveSettings(patch) {
           localStorage.removeItem(k);
         });
       if (typeof aiMsgs !== 'undefined') aiMsgs.innerHTML = '';
-      if (typeof _prevChatKey !== 'undefined' && _prevChatKey) _prevChatKey = null;
       showToast(_t('toast_chat_cleared'), _t('toast_chat_cleared_sub'));
     });
   }
