@@ -823,7 +823,7 @@ async function _bindRagStatus(co, course) {
       var stuckMs = stuckSince ? Date.now() - new Date(stuckSince).getTime() : 0;
       var stuckKey = '_ragStuckRetries_' + doc.id;
       var stuckAttempts = window[stuckKey] || 0;
-      if (stuckMs > 7 * 60 * 1000 && f && stuckAttempts < 2) {
+      if (stuckMs > 3 * 60 * 1000 && f && stuckAttempts < 3) {
         window[stuckKey] = stuckAttempts + 1;
         _ragConfirmed[cacheKey] = 'triggered';
         _ragEnqueue(function () {
@@ -841,10 +841,11 @@ async function _bindRagStatus(co, course) {
       });
     }
 
-    // Allow click only to retry a failed index.
+    // Allow click to retry any non-ready status (failed, stuck, etc.).
     el.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (el.dataset.ragStatus !== 'failed') return;
+      var s = el.dataset.ragStatus;
+      if (s === 'ready' || s === 'uploading' || s === 'uploaded') return;
       var fr = _findUploadedFile(course, fname);
       if (fr) {
         _ragConfirmed[cacheKey] = 'triggered';
@@ -920,10 +921,10 @@ function _setRagStatus(el, status) {
       failed: 'Indexing failed — click to retry',
       uploading: 'Sending to AI…',
       uploaded: 'Processing…',
-      extracting_text: 'Extracting text…',
-      chunking: 'Chunking…',
-      embedding: 'Indexing…'
-    }[status] || 'Preparing for AI…';
+      extracting_text: 'Extracting text… (click to retry if stuck)',
+      chunking: 'Chunking… (click to retry if stuck)',
+      embedding: 'Indexing… (click to retry if stuck)'
+    }[status] || 'Preparing for AI… (click to retry if stuck)';
   el.textContent =
     {
       ready: '🟢',
@@ -934,7 +935,8 @@ function _setRagStatus(el, status) {
       chunking: '🔵',
       embedding: '🔵'
     }[status] || '⏳';
-  el.style.cursor = status === 'failed' ? 'pointer' : 'default';
+  var clickable = status !== 'ready' && status !== 'uploading' && status !== 'uploaded';
+  el.style.cursor = clickable ? 'pointer' : 'default';
 }
 
 async function _pollRagStatus(el, courseId, docId, cacheKey, _attempts) {
