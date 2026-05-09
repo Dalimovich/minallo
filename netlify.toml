@@ -143,12 +143,17 @@
     Access-Control-Max-Age = "86400"
 
 [[headers]]
-  for = "/*.js"
+  for = "/**/*.js"
   [headers.values]
     Cache-Control = "no-cache, must-revalidate"
 
 [[headers]]
-  for = "/*.css"
+  for = "/**/*.css"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/**/*.html"
   [headers.values]
     Cache-Control = "no-cache, must-revalidate"
 
