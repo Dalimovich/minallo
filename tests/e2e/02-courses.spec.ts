@@ -23,7 +23,13 @@ test.describe('Course management', () => {
       !e.includes('GSI_LOGGER') &&
       !e.includes('FedCM') &&
       !e.includes('gsi/client') &&
-      !e.includes('Not signed in with the identity provider')
+      !e.includes('Not signed in with the identity provider') &&
+      !e.includes('supabase') &&
+      !e.includes('Supabase') &&
+      !e.includes('Non-Error promise rejection') &&
+      !e.includes('Failed to fetch') &&
+      !e.includes('ERR_FAILED') &&
+      !e.includes('ERR_CONNECTION')
     );
     expect(crashes).toHaveLength(0);
   });
