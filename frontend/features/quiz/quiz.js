@@ -70,7 +70,11 @@
     return _loadTemplate().then(function (html) {
       target.innerHTML = html;
       var root = target.querySelector('[data-quiz-root]');
-      if (!root) return;
+      if (!root) {
+        // Template failed — clear mount flag so next tab click retries
+        delete target.dataset.qzMounted;
+        return;
+      }
       _initShell(root, course, options);
     });
   };

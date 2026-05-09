@@ -79,7 +79,10 @@
     return _loadTemplate().then(function (html) {
       target.innerHTML = html;
       var root = target.querySelector('[data-flashcards-root]');
-      if (!root) return;
+      if (!root) {
+        delete target.dataset.fcMounted;
+        return;
+      }
       _initShell(root, course, options);
     });
   };
