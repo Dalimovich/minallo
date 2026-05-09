@@ -1,4 +1,4 @@
-import { showCourseSection } from './course-view.js?v=2';
+import { showCourseSection } from './course-view.js?v=3';
 import { indexExistingDocument } from '../../services/ai-service.js';
 
 function _guessFolderDocMeta(fileName) {

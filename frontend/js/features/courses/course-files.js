@@ -1,4 +1,4 @@
-import { showCourseSection } from './course-view.js?v=2';
+import { showCourseSection } from './course-view.js?v=3';
 import {
   listCourseDocuments,
   indexExistingDocument,
@@ -690,12 +690,6 @@ function ensureCourseStudyData(course) {
     _coCardIndex = 0;
     _coCardFlipped = false;
   }
-  if (!_coQuizItems.length) _coQuizItems = sampleCourseQuiz(course);
-  if (!_coCards.length) {
-    _coCards = sampleCourseCards(course).map(function (card) {
-      return Object.assign({ bookmarked: false, confidence: null }, card);
-    });
-  }
 }
 
 function initCourseStudyTools(co, course) {
@@ -803,6 +797,7 @@ function renderCourseStudyTools(co, course) {
 
 function renderCourseQuiz(co, course, body) {
   ensureCourseStudyData(course);
+  if (!_coQuizItems.length) { body.innerHTML = ''; return; }
   var item = normalizeQuizItem(_coQuizItems[_coQuizIndex], _coQuizIndex, course);
   var answered = !!_coSelectedOption;
   var optionHtml = ['A', 'B', 'C', 'D']
@@ -877,6 +872,7 @@ function renderCourseQuiz(co, course, body) {
 
 function renderCourseFlashcards(co, course, body) {
   ensureCourseStudyData(course);
+  if (!_coCards.length) { body.innerHTML = ''; return; }
   var card = _coCards[_coCardIndex];
   body.innerHTML =
     '<section class="co-flash-shell" aria-live="polite">' +
