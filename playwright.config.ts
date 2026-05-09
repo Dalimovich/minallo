@@ -13,6 +13,13 @@ export default defineConfig({
     video: 'retain-on-failure',
     trace: 'retain-on-failure',
   },
+  // Only spin up local dev server when not pointing at a remote URL (i.e. local runs only)
+  webServer: process.env.E2E_BASE_URL ? undefined : {
+    command: 'npm run dev',
+    url: 'http://localhost:8888',
+    reuseExistingServer: true,
+    timeout: 60000,
+  },
   projects: [
     { name: 'setup', testMatch: '**/auth.setup.ts' },
     {
