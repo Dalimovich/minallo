@@ -16,6 +16,7 @@ const { supaRequest } = require('../lib/supabase-admin');
 const {
   langInstr,
   getMaxTokens,
+  targetWordCount,
   summaryPrompt,
   sectionSummaryPrompt,
   mergeSummaryPrompt,
@@ -30,6 +31,7 @@ const {
   cleanChunkText,
   chooseSummaryStrategy,
   buildSummaryPipeline,
+  computeEffectivePages,
   LOW_VALUE_CATEGORIES
 } = require('../lib/summary-pipeline');
 
@@ -385,13 +387,16 @@ exports.handler = async function (event) {
       };
     });
 
+    var analyzeEffective = computeEffectivePages(pipeline.keptChunks);
+
     console.log('[notes-generate analyze]', {
       total: pipeline.totalCount,
       filtered: pipeline.filteredCount,
-      groups: groups.length
+      groups: groups.length,
+      effectivePages: analyzeEffective
     });
 
-    return jsonResponse(200, { groups: groups });
+    return jsonResponse(200, { groups: groups, effectivePages: analyzeEffective });
   }
 
   // ── MERGE MODE ────────────────────────────────────────────────────────────
@@ -403,14 +408,24 @@ exports.handler = async function (event) {
       var hdr = (s.pageStart != null)
         ? '=== SECTION ' + (i + 1) + ': Seiten ' + s.pageStart + '–' + s.pageEnd + ' ==='
         : '=== SECTION ' + (i + 1) + ' ===';
+      if (s.title) hdr += ' — ' + s.title;
       return hdr + '\n\n' + s.markdown;
     }).join('\n\n');
 
-    var mergePromptFn   = tool === 'summary' ? mergeSummaryPrompt(language, detailLevel) : mergeNotesPrompt(language);
+    // Compute total effective pages from all section markdowns as a proxy for content size
+    var mergeEffectivePages = body.effectivePages != null ? Number(body.effectivePages) : null;
+    var mergeTotalWords     = mergeEffectivePages != null ? targetWordCount(detailLevel, mergeEffectivePages) : null;
+    var topicGroupTitles    = sections.map(function (s) { return s.title || null; }).filter(Boolean);
+
+    var mergePromptFn   = tool === 'summary'
+      ? mergeSummaryPrompt(language, detailLevel, mergeTotalWords, topicGroupTitles.length ? topicGroupTitles : null)
+      : mergeNotesPrompt(language);
     var mergeInstruction = tool === 'summary'
       ? 'Merge these section summaries into one final structured study summary:\n\n'
       : 'Merge these section notes into one final study note:\n\n';
-    var mergeMaxTokens  = tool === 'summary' ? getMaxTokens('summary', detailLevel) + 1000 : 5000;
+    var mergeMaxTokens = tool === 'summary'
+      ? getMaxTokens('summary', detailLevel, mergeEffectivePages) + 1000
+      : 5000;
 
     var mergedMarkdown;
     try {
@@ -488,13 +503,20 @@ exports.handler = async function (event) {
       return jsonResponse(200, { markdown: '', pageStart: secStart, pageEnd: secEnd, empty: true });
     }
 
+    var secEffectivePages = secChunks.length ? computeEffectivePages(
+      secChunks.map(function (c) { return Object.assign({}, c, { _category: c._category || classifyChunk(c) }); })
+    ) : null;
+    var secTargetWords = secEffectivePages != null ? targetWordCount(detailLevel, secEffectivePages) : null;
+    var secMaxTokens   = tool === 'summary'
+      ? getMaxTokens('summary', detailLevel, secEffectivePages)
+      : 2500;
+
     var secPrompt = tool === 'summary'
-      ? sectionSummaryPrompt(language, detailLevel, secStart, secEnd, topicTitle)
+      ? sectionSummaryPrompt(language, detailLevel, secStart, secEnd, topicTitle, secTargetWords)
       : sectionNotesPrompt(language, secStart, secEnd);
     var secInstruction = tool === 'summary'
       ? 'Erstelle eine Zusammenfassung NUR für diesen Abschnitt (S. ' + secStart + '–' + secEnd + ').'
       : 'Erstelle detaillierte Lernnotizen NUR für diesen Abschnitt.';
-    var secMaxTokens = tool === 'summary' ? Math.round(getMaxTokens('summary', detailLevel) * 0.7) : 2500;
 
     var secMarkdown;
     try {
@@ -613,8 +635,23 @@ exports.handler = async function (event) {
     }
   }
 
-  var systemPrompt = tool === 'summary' ? summaryPrompt(language, detailLevel) : notesPrompt(language);
-  var maxTokens    = getMaxTokens(tool, detailLevel);
+  // Compute effective content pages from classified chunks (summary only)
+  var genEffectivePages = null;
+  if (tool === 'summary' && context) {
+    var classifiedForWeight = (documentId ? chunks : []).map(function (c) {
+      return Object.assign({}, c, { _category: c._category || classifyChunk(c) });
+    });
+    if (classifiedForWeight.length) {
+      genEffectivePages = computeEffectivePages(classifiedForWeight);
+      console.log('[notes-generate effective pages]', genEffectivePages);
+    }
+  }
+  var genTargetWords = genEffectivePages != null ? targetWordCount(detailLevel, genEffectivePages) : null;
+
+  var systemPrompt = tool === 'summary'
+    ? summaryPrompt(language, detailLevel, genTargetWords)
+    : notesPrompt(language);
+  var maxTokens = getMaxTokens(tool, detailLevel, genEffectivePages);
 
   var pageHint = '';
   if (filterStart != null) {
@@ -652,7 +689,7 @@ exports.handler = async function (event) {
     }
   } else if (tool === 'summary') {
     var selectedPageCount = (filterStart != null && filterEnd != null) ? filterEnd - filterStart + 1 : 0;
-    var sumValidation = validateSummary(markdown, rawContextText, detailLevel, selectedPageCount);
+    var sumValidation = validateSummary(markdown, rawContextText, detailLevel, selectedPageCount, genTargetWords);
     if (!sumValidation.valid) {
       console.log('[notes-generate] summary validation failed:', sumValidation.issues, '— regenerating');
       try {

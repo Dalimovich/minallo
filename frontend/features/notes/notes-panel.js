@@ -435,6 +435,8 @@
     // ── Step 1: for summary mode, ask backend to classify and group pages ──
     var groups = [];
 
+    var effectivePages = null;
+
     if (isSummary && _ctx.documentId) {
       _setGenMsg('Analyzing document structure…');
       try {
@@ -450,6 +452,7 @@
             return { title: g.title || null, start: g.pageStart, end: g.pageEnd };
           });
         }
+        if (analyzeData.effectivePages != null) effectivePages = analyzeData.effectivePages;
       } catch (e) {
         console.warn('[notes-panel] analyze failed, falling back to fixed splits:', e.message);
       }
@@ -497,14 +500,15 @@
     // ── Step 4: merge sections ────────────────────────────────────────────
     _setGenMsg('Merging ' + sections.length + ' sections into final summary…');
     return _notesApi({
-      mode:        'merge',
-      courseId:    _ctx.courseId,
-      documentId:  _ctx.documentId || null,
-      tool:        _activeTab,
-      fileName:    _ctx.fileName || null,
-      language:    _language,
-      detailLevel: isSummary ? _detailLevel : undefined,
-      sections:    sections
+      mode:          'merge',
+      courseId:      _ctx.courseId,
+      documentId:    _ctx.documentId || null,
+      tool:          _activeTab,
+      fileName:      _ctx.fileName || null,
+      language:      _language,
+      detailLevel:   isSummary ? _detailLevel : undefined,
+      effectivePages: isSummary ? effectivePages : undefined,
+      sections:      sections
     });
   }
 

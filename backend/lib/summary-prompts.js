@@ -73,42 +73,90 @@ function sectionHeadings(lang) {
   };
 }
 
+// ── Word-count targets per effective content page ─────────────────────────────
+
+const WORDS_PER_EFFECTIVE_PAGE = {
+  brief:    [15, 30],
+  balanced: [40, 70],
+  detailed: [80, 130],
+  exam:     [90, 150]
+};
+
+/**
+ * Calculates the target word count for a summary given the detail level
+ * and effective content pages (weighted, not raw page count).
+ * effectivePages is the float from computeEffectivePages().
+ */
+function targetWordCount(detailLevel, effectivePages) {
+  var range = WORDS_PER_EFFECTIVE_PAGE[detailLevel] || WORDS_PER_EFFECTIVE_PAGE.balanced;
+  var mid   = Math.round((range[0] + range[1]) / 2);
+  return Math.max(300, Math.round((effectivePages || 10) * mid));
+}
+
 // ── Token budget ──────────────────────────────────────────────────────────────
 
-function getMaxTokens(tool, detailLevel) {
+/**
+ * Returns max_tokens for an OpenAI call.
+ * effectivePages is optional — when provided, budget scales with content.
+ * German text is token-dense: assume ~1.6 tokens per word.
+ */
+function getMaxTokens(tool, detailLevel, effectivePages) {
   if (tool === 'notes') return 4000;
+
+  if (effectivePages != null && effectivePages > 0) {
+    var words = targetWordCount(detailLevel, effectivePages);
+    var base  = Math.round(words * 1.65) + 600; // +600 for headings/structure
+    switch (detailLevel) {
+      case 'brief':    return Math.max(1500, Math.min(base, 3000));
+      case 'detailed': return Math.max(3500, Math.min(base, 8000));
+      case 'exam':     return Math.max(3000, Math.min(base, 7000));
+      default:         return Math.max(2000, Math.min(base, 5000));
+    }
+  }
+
+  // Fallback fixed budgets when no effective-page info
   switch (detailLevel) {
     case 'brief':    return 1500;
     case 'detailed': return 5000;
     case 'exam':     return 3500;
-    default:         return 3000; // balanced
+    default:         return 3000;
   }
 }
 
 // ── Detail-level instruction ──────────────────────────────────────────────────
 
-function summaryDetailInstr(detailLevel) {
+/**
+ * Returns the detail-level instruction block, optionally with a concrete word target.
+ * targetWords comes from targetWordCount() and is based on actual content density.
+ */
+function summaryDetailInstr(detailLevel, targetWords) {
+  var wordLine = targetWords
+    ? 'TARGET LENGTH: approximately ' + targetWords + ' words. This is a hard minimum — do NOT produce a shorter summary regardless of template constraints.'
+    : '';
+
   switch (detailLevel) {
     case 'brief':
       return `DETAIL LEVEL: Brief
 Write a SHORT but information-dense summary.
-Target length: ~250–450 words for 1–3 pages; scale proportionally for more.
+${wordLine || 'Target length: ~250–450 words for 1–3 pages; scale proportionally for more.'}
 Cover: main idea, 3–5 key concepts, critical formulas, 2–3 exam takeaways.
 Skip sections that have no content (e.g. omit Formeln if there are none).`;
 
     case 'detailed':
       return `DETAIL LEVEL: Detailed
-Write a COMPREHENSIVE summary thorough enough to study from without reopening the PDF.
-Target length: ~900–1500 words for 3–6 pages; scale UP significantly for more pages.
-For a 30–50 page chapter, the summary should have 8–14 major sections and be several pages long.
-Cover EVERY important concept, definition, process step, formula, comparison, list, and example in the source.
-Do NOT shorten lists, skip processes, or omit definitions.
-Reproduce important lists completely with all items.
-Include all advantages and disadvantages when listed in the source.`;
+Write a COMPREHENSIVE, topic-by-topic summary thorough enough to study from without reopening the PDF.
+${wordLine || 'For a 30–50 page chapter, the summary must be several pages long (8–14 major sections minimum).'}
+Rules:
+- Cover EVERY named method, process, material, classification, advantage, disadvantage, formula, and comparison in the source.
+- Do NOT shorten lists — reproduce them completely with ALL items.
+- Each named method/process/material gets its own subsection with: what it is, how it works, advantages, disadvantages, materials, applications.
+- Definitions must be preserved verbatim or near-verbatim.
+- The structure must follow the lecture's own topic order, not a generic template.`;
 
     case 'exam':
       return `DETAIL LEVEL: Exam-focused
 Structure around what a student needs to pass an exam on this material.
+${wordLine || 'For a large chapter, cover all exam-relevant processes, definitions, and formulas in full.'}
 Cover: exact definitions, must-know processes step by step, all formulas with variable explanations, comparison tables.
 Add a "Prüfungsfragen" section with 4–8 exam-style questions and precise model answers drawn from the source.
 Be selective but complete — every exam-relevant item must be included.`;
@@ -116,7 +164,7 @@ Be selective but complete — every exam-relevant item must be included.`;
     default: // balanced
       return `DETAIL LEVEL: Balanced
 Write a STRUCTURED summary covering all important material without excessive detail.
-Target length: ~500–900 words for 3–6 pages; scale proportionally for more.
+${wordLine || 'Target length: ~500–900 words for 3–6 pages; scale proportionally for more.'}
 Cover: main idea, all important definitions, key processes (complete but condensed), formulas, lists, comparisons, exam relevance.
 Prefer completeness over brevity when content is dense.
 Do NOT produce the same short output for 2 pages and 20 pages.`;
@@ -125,14 +173,14 @@ Do NOT produce the same short output for 2 pages and 20 pages.`;
 
 // ── Main summary prompt (single-call / small scope ≤ 6 pages) ─────────────────
 
-function summaryPrompt(lang, detailLevel) {
+function summaryPrompt(lang, detailLevel, targetWords) {
   var h = sectionHeadings(lang);
   return `You are a study assistant generating a student-focused summary of a university lecture PDF.
 
 ${langInstr(lang)}
 ${langHeadingRule(lang)}
 
-${summaryDetailInstr(detailLevel || 'balanced')}
+${summaryDetailInstr(detailLevel || 'balanced', targetWords)}
 
 STRICT RULES:
 - Use ONLY the provided PDF text. Do NOT invent, hallucinate, or add external knowledge.
@@ -197,7 +245,7 @@ Verwendete Seitenbereiche: *(S. X–Y)*`;
 
 // ── Section summary prompt (used per topic group in multi-section pipeline) ────
 
-function sectionSummaryPrompt(lang, detailLevel, pageStart, pageEnd, topicTitle) {
+function sectionSummaryPrompt(lang, detailLevel, pageStart, pageEnd, topicTitle, targetWords) {
   var pageRef = pageStart != null
     ? (pageStart === pageEnd ? 'Seite ' + pageStart : 'Seiten ' + pageStart + '–' + pageEnd)
     : 'diesem Abschnitt';
@@ -210,7 +258,7 @@ function sectionSummaryPrompt(lang, detailLevel, pageStart, pageEnd, topicTitle)
 ${langInstr(lang)}
 ${langHeadingRule(lang)}
 
-${summaryDetailInstr(detailLevel || 'balanced')}
+${summaryDetailInstr(detailLevel || 'balanced', targetWords)}
 
 SCOPE:
 ${topicLine}
@@ -236,31 +284,54 @@ Seitenreferenzen für jeden wichtigen Punkt angeben. Länge proportional zur Inh
 
 // ── Merge summary prompt ──────────────────────────────────────────────────────
 
-function mergeSummaryPrompt(lang, detailLevel) {
+/**
+ * Merge prompt for combining section summaries into one final document.
+ * topicGroupTitles: string[] — titles of each topic section that was summarised.
+ * targetWords: number — minimum word count for the merged output.
+ */
+function mergeSummaryPrompt(lang, detailLevel, targetWords, topicGroupTitles) {
   var h = sectionHeadings(lang);
+  var wordLine = targetWords
+    ? 'MINIMUM LENGTH: ' + targetWords + ' words. A short merged output will be rejected. The merged summary must be longer than any individual section.'
+    : 'The merged summary must be longer than any individual section.';
+
+  var topicBlock = '';
+  if (topicGroupTitles && topicGroupTitles.length) {
+    topicBlock = `
+REQUIRED SECTIONS — generate one ## section per topic below. Do NOT merge, skip, or compress them:
+${topicGroupTitles.map(function (t, i) { return (i + 1) + '. ' + t; }).join('\n')}
+
+Each topic section must include ALL content from the corresponding section summary.
+Do not collapse two separate topics into one bullet — they each need their own ## heading.
+`;
+  }
+
   return `You are merging multiple topic-section summaries from a university lecture PDF into one final structured study summary.
 
 ${langInstr(lang)}
 ${langHeadingRule(lang)}
 
-${summaryDetailInstr(detailLevel || 'balanced')}
+${summaryDetailInstr(detailLevel || 'balanced', targetWords)}
 
+${wordLine}
+${topicBlock}
 MERGE RULES:
 - Preserve ALL important content from ALL sections. Do NOT aggressively shorten.
 - Remove exact duplicates (identical facts stated twice), but keep near-duplicates in different contexts.
 - Keep ALL page references *(S. X)*.
-- Organise content by topic under the numbered section structure below.
+- Facts must stay attached to the correct topic — do NOT mix details from different processes or materials.
 - Do NOT invent new content — use only what is in the provided section summaries.
-- The merged summary MUST be longer than any individual section summary.
-- For a long chapter (20+ pages), the merged summary should have 8–14 major ## sections.
-- Do NOT collapse multiple distinct topics into one vague bullet.
+- For each named process/method: include what it is, how it works, advantages, disadvantages, materials used, and applications.
+- Reproduce all lists completely — do not shorten them.
 - The final Prüfungsrelevanz section must cover the most important exam points across all sections.
 
-OUTPUT: Complete Markdown document with this structure:
+OUTPUT: Complete Markdown document.
 
-# ${h.title}: [Kapitel-/Thementitel]
+# ${h.title}: [Kapitel-/Thementitel aus dem ersten Abschnitt]
 
-## 1. ${h.overview}
+${topicGroupTitles && topicGroupTitles.length
+  ? '## [section per required topic above, in order]'
+  : `## 1. ${h.overview}
 ## 2. ${h.concepts}
 ## 3. ${h.definitions}
 ## 4. ${h.terms}
@@ -269,10 +340,11 @@ OUTPUT: Complete Markdown document with this structure:
 ## 7. ${h.lists}
 ## 8. ${h.comparisons}
 ## 9. ${h.exam}
-## 10. ${h.sources}
+## 10. ${h.sources}`}
 
-Fill each section from the provided topic summaries.
-Skip a section ONLY if no content for it exists across all sections.
+## ${h.exam}
+## ${h.sources}
+
 A long chapter summary should be several pages long — do not produce a short overview.`;
 }
 
@@ -306,17 +378,25 @@ function extractKeyTerms(contextText) {
 
 /**
  * Validates a generated summary.
- * pageCount — the number of source pages selected (used for large-doc rules).
+ * pageCount — raw source page count (used for section-count rules).
+ * targetWords — word count target from targetWordCount() (used for word-count check).
  * Returns { valid, issues, missingTerms }.
  */
-function validateSummary(markdown, contextText, detailLevel, pageCount) {
+function validateSummary(markdown, contextText, detailLevel, pageCount, targetWords) {
   var issues = [];
   var pc = pageCount || 0;
   var mdLower = markdown.toLowerCase();
 
-  // ── Basic length check ──────────────────────────────────────────────────
-  var minLen = detailLevel === 'brief' ? 250 : detailLevel === 'detailed' ? 700 : 400;
-  if (markdown.length < minLen) issues.push('too_short');
+  // ── Word count check (primary length gate) ──────────────────────────────
+  if (targetWords) {
+    var wordCount = (markdown.match(/\S+/g) || []).length;
+    var minWords  = Math.round(targetWords * 0.55); // allow 45% slack before flagging
+    if (wordCount < minWords) issues.push('too_short');
+  } else {
+    // Fallback char-based check
+    var minLen = detailLevel === 'brief' ? 250 : detailLevel === 'detailed' ? 700 : 400;
+    if (markdown.length < minLen) issues.push('too_short');
+  }
 
   // ── Large-doc detailed check ────────────────────────────────────────────
   if (detailLevel === 'detailed' && pc >= 20) {
@@ -361,6 +441,7 @@ module.exports = {
   langHeadingRule,
   sectionHeadings,
   getMaxTokens,
+  targetWordCount,
   summaryDetailInstr,
   summaryPrompt,
   sectionSummaryPrompt,

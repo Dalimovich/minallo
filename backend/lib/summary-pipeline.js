@@ -214,6 +214,53 @@ function buildSummaryPipeline(chunks, includeOptional) {
   };
 }
 
+// ── Content weight estimator ──────────────────────────────────────────────────
+
+/**
+ * Estimates the "study value" of a single classified+cleaned chunk.
+ * Returns 0 for noise/title/ads; up to 2.5 for dense study content.
+ */
+function estimateChunkWeight(chunk) {
+  var cat  = chunk._category || 'core_content';
+  var text = chunk.chunk_text || '';
+
+  if (cat === 'title' || cat === 'advertisement' || cat === 'noise') return 0;
+
+  var words = (text.match(/\S+/g) || []).length;
+  var weight = 0;
+
+  // Word count contribution
+  if (words > 50)  weight += 0.5;
+  if (words > 150) weight += 0.5;
+  if (words > 300) weight += 0.5;
+
+  // Content-signal bonuses
+  if (/definition|bezeichnet\s+(?:man|wird)|versteht\s+man|ist\s+definiert/i.test(text)) weight += 0.75;
+  if (/\$\$?[^$]{3,}\$\$?|formel|gleichung|berechnung/i.test(text))                       weight += 0.75;
+  if (/vorteil|nachteil|einsatzm[öo]glichkeit|anwendung/i.test(text))                     weight += 0.75;
+  if (/schritt\s+\d|ablauf|prozess|verfahren|methode/i.test(text))                        weight += 0.75;
+  if (/vergleich|gegen[üu]ber|tabelle|\bvs\b/i.test(text))                                weight += 0.75;
+  if (/beispiel|z\.b\.|etwa\s|etwa,/i.test(text))                                         weight += 0.4;
+
+  // Cap low-value but not-zero categories
+  if (cat === 'literature')     return Math.min(weight, 0.2);
+  if (cat === 'learning_goals') return Math.min(weight, 0.5);
+
+  return Math.min(weight, 2.5);
+}
+
+/**
+ * Computes total effective pages from an array of classified+cleaned chunks.
+ * Returns a float representing the study-content equivalent page count.
+ */
+function computeEffectivePages(keptChunks) {
+  var total = 0;
+  for (var i = 0; i < keptChunks.length; i++) {
+    total += estimateChunkWeight(keptChunks[i]);
+  }
+  return Math.round(total * 10) / 10;
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -222,6 +269,8 @@ module.exports = {
   chooseSummaryStrategy,
   buildTopicGroups,
   buildSummaryPipeline,
+  estimateChunkWeight,
+  computeEffectivePages,
   LOW_VALUE_CATEGORIES,
   OPTIONAL_CATEGORIES
 };
