@@ -220,6 +220,7 @@
     panel.style.display = 'flex';
     pdfView.classList.add('pdf-split');
     _renderCurrentTab();
+    _loadNotes();
   }
 
   function _closePanel() {
@@ -860,7 +861,7 @@
       });
       if (match) {
         _ctx.documentId = match.id;
-        if (_panelOpen) _loadNotes();
+        _loadNotes();
       }
     } catch (e) {}
   }
