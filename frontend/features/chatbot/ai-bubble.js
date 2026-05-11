@@ -154,7 +154,22 @@
     if (isPanelOpen()) closePanel(); else openPanel();
   }
 
-  // Intercept the bridge's forceCloseAI/closeAI so they animate nicely
+  // Wire #aiClose directly so clicking X always animates the panel closed
+  function wireCloseBtn(panel) {
+    function tryWire() {
+      var btn = panel.querySelector('#aiClose, .ai-close');
+      if (!btn) { setTimeout(tryWire, 200); return; }
+      if (btn._ssBubbleCloseBound) return;
+      btn._ssBubbleCloseBound = true;
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        closePanel();
+      });
+    }
+    tryWire();
+  }
+
+  // Intercept the bridge's forceCloseAI so it animates nicely too
   function hookBridge() {
     window.addEventListener('ss-ready', function () {
       var origClose = window.forceCloseAI;
@@ -275,6 +290,11 @@
         bubble.addEventListener('transitionend', function done() {
           bubble.classList.remove('snapping');
           bubble.removeEventListener('transitionend', done);
+          // Reposition panel next to bubble's new snapped position
+          if (isPanelOpen()) {
+            var panel = document.getElementById('aiPanel');
+            if (panel) positionPanelNearBubble(panel);
+          }
         });
         saveBubblePos(snapped.left, snapped.top);
       }
@@ -362,6 +382,7 @@
       if (!panel) { setTimeout(wirePanel, 150); return; }
       detachPanel();
       attachPanelDrag(panel);
+      wireCloseBtn(panel);
       syncExpandedClass(bubble);
     }
     wirePanel();
