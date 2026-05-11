@@ -16,6 +16,7 @@ Run these migrations in order:
 8. `20260505_000003_evaluations.sql`
 9. `20260506_000001_processing_error.sql`
 10. `20260511_000001_ai_cache_schema_alignment.sql`
+11. `20260511_000002_hybrid_search_document_filters.sql`
 
 ## How to run
 

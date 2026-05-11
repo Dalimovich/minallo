@@ -168,6 +168,33 @@ function rpcChunks(serviceKey, supaUrl, payload) {
   });
 }
 
+function fetchDirectChunks(serviceKey, userId, courseId, docIds, limit) {
+  if (!docIds || !docIds.length) return Promise.resolve([]);
+  const ids = docIds.map(function (id) { return String(id).replace(/"/g, ''); }).join(',');
+  const basePath = 'document_chunks?user_id=eq.' + encodeURIComponent(userId) +
+    '&course_id=eq.' + encodeURIComponent(courseId) +
+    '&document_id=in.(' + ids + ')' +
+    '&order=document_id.asc&order=chunk_index.asc&limit=' + (limit || 40);
+
+  const fullSelect = '&select=id,document_id,chunk_text,page_start,page_end,source_type,section_title,is_official';
+  const minimalSelect = '&select=id,document_id,chunk_text,page_start,page_end,source_type';
+
+  return supaRequest('GET', basePath + fullSelect, null, serviceKey)
+    .then(function (r) {
+      if (Array.isArray(r.body)) return r.body;
+      return supaRequest('GET', basePath + minimalSelect, null, serviceKey)
+        .then(function (fallback) {
+          return Array.isArray(fallback.body) ? fallback.body : [];
+        });
+    })
+    .catch(function () { return []; })
+    .then(function (chunks) {
+      return chunks.map(function (c) {
+        return Object.assign({ similarity: 0.11, section_title: null, is_official: false }, c);
+      });
+    });
+}
+
 // Retrieve chunks using pre-computed embeddings (avoids re-embedding per file).
 async function retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, docIds) {
   const supaUrl = requireEnv('SUPABASE_URL');
@@ -298,6 +325,14 @@ function fetchCourseDocIds(serviceKey, userId, courseId) {
       return [];
     })
     .catch(function () { return []; });
+}
+
+function noReadyDocsError() {
+  return 'No ready indexed course documents found. Upload a file and wait until indexing finishes.';
+}
+
+function noChunksError() {
+  return 'Indexed document records were found, but no searchable text chunks were available. Re-index the file; if it is a scanned/image PDF, OCR is needed first.';
 }
 
 // ─── Context builder ──────────────────────────────────────────────────────────
@@ -550,7 +585,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
   }
 
   if (!fileIds.length) {
-    return { items: [], sources: [], error: 'No indexed course documents found. Upload and index your course files first.' };
+    return { items: [], sources: [], error: noReadyDocsError() };
   }
 
   // ── Step 3: fetch doc names (needed for formula-sheet scoring) ──────────────
@@ -561,6 +596,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
   const allSources = [];
   const seenSourceFiles = new Set();
   const seen       = Array.isArray(seenItems) ? seenItems.filter(Boolean).slice(0, 50) : [];
+  let chunksSeen   = false;
 
   // How many items to request from each file; recalculate as we go
   for (var fi = 0; fi < fileIds.length; fi++) {
@@ -580,9 +616,11 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     try {
       rawChunks = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, [docId]);
     } catch (e) {
-      continue;
+      rawChunks = [];
     }
+    if (!rawChunks.length) rawChunks = await fetchDirectChunks(serviceKey, userId, courseId, [docId], 40);
     if (!rawChunks.length) continue;
+    chunksSeen = true;
 
     const ranked    = filterAndRank(rawChunks, docNamesMap);
     const maxChunks = Math.min(thisCount * 2, 24);
@@ -637,7 +675,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
   }
 
   if (!allItems.length) {
-    return { items: [], sources: [], error: 'No indexed course documents found. Upload and index your course files first.' };
+    return { items: [], sources: [], error: chunksSeen ? 'Generation did not produce valid grounded items from the indexed files. Try again or choose a more specific topic.' : noChunksError() };
   }
 
   let finalItems = deduplicateItems(allItems).slice(0, itemCount);
@@ -650,9 +688,11 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     let repairChunks = [];
     try {
       const raw = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, [repairDocId]);
-      repairChunks = deduplicateChunks(filterAndRank(raw, docNamesMap), Math.min(shortage * 3, 20));
+      const fallbackRaw = raw.length ? raw : await fetchDirectChunks(serviceKey, userId, courseId, [repairDocId], 30);
+      repairChunks = deduplicateChunks(filterAndRank(fallbackRaw, docNamesMap), Math.min(shortage * 3, 20));
     } catch (e) {
-      // Keep partial grounded items when the repair retrieval fails.
+      const fallbackRaw = await fetchDirectChunks(serviceKey, userId, courseId, [repairDocId], 30);
+      repairChunks = deduplicateChunks(filterAndRank(fallbackRaw, docNamesMap), Math.min(shortage * 3, 20));
     }
 
     if (repairChunks.length) {
@@ -685,9 +725,11 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     let extraChunks = [];
     try {
       const raw = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, [fileIds[ri]]);
-      extraChunks = deduplicateChunks(filterAndRank(raw, docNamesMap), Math.min((itemCount - finalItems.length) * 3, 20));
+      const fallbackRaw = raw.length ? raw : await fetchDirectChunks(serviceKey, userId, courseId, [fileIds[ri]], 30);
+      extraChunks = deduplicateChunks(filterAndRank(fallbackRaw, docNamesMap), Math.min((itemCount - finalItems.length) * 3, 20));
     } catch (e) {
-      // Skip this file and try the next candidate while time remains.
+      const fallbackRaw = await fetchDirectChunks(serviceKey, userId, courseId, [fileIds[ri]], 30);
+      extraChunks = deduplicateChunks(filterAndRank(fallbackRaw, docNamesMap), Math.min((itemCount - finalItems.length) * 3, 20));
     }
     if (!extraChunks.length) continue;
 
@@ -736,7 +778,13 @@ async function runSummaryPipeline({ serviceKey, userId, courseId, tool, topic, d
     throw new Error('Retrieval failed: ' + (e.message || e));
   }
   if (!rawChunks.length) {
-    return { items: [], sources: [], error: 'No indexed course documents found.' };
+    const fallbackDocIds = docIds && docIds.length
+      ? docIds
+      : await fetchCourseDocIds(serviceKey, userId, courseId);
+    rawChunks = await fetchDirectChunks(serviceKey, userId, courseId, fallbackDocIds, 40);
+  }
+  if (!rawChunks.length) {
+    return { items: [], sources: [], error: docIds && docIds.length ? noChunksError() : noReadyDocsError() };
   }
 
   const uniqueDocIds = [...new Set(rawChunks.map(function (c) { return c.document_id; }))];
