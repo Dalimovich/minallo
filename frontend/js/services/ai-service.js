@@ -136,6 +136,7 @@ export async function indexExistingDocument(
       signal: controller.signal
     });
     clearTimeout(timeoutId);
+    if (response.status === 401) throw new Error('SESSION_EXPIRED');
     var text = await response.text();
     try {
       return JSON.parse(text);

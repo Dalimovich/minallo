@@ -428,7 +428,11 @@ export function bindFileEvents(co, course) {
               .then(function () { return _runOne(t, true); });
           }
           return result;
-        }).catch(function () { return { status: 'failed', error: null }; });
+        }).catch(function (e) {
+          var msg = e && e.message;
+          if (msg === 'SESSION_EXPIRED') return { status: 'failed', error: 'Session expired — please refresh the page and try again.' };
+          return { status: 'failed', error: null };
+        });
       }
 
       var i = 0;
