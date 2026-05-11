@@ -17,6 +17,27 @@
 
 var _autoOpenEnabled = true;
 var _saveChatEnabled = true;
+window._autoOpenEnabled = _autoOpenEnabled;
+window._saveChatEnabled = _saveChatEnabled;
+
+function applyRuntimeSettings(settings) {
+  settings = settings || {};
+  if (typeof settings.auto_open_ai === 'boolean') {
+    _autoOpenEnabled = settings.auto_open_ai;
+    window._autoOpenEnabled = _autoOpenEnabled;
+    var autoOpen = document.getElementById('settingsAutoOpen');
+    if (autoOpen) autoOpen.checked = _autoOpenEnabled;
+  }
+  if (typeof settings.save_chat_history === 'boolean') {
+    _saveChatEnabled = settings.save_chat_history;
+    window._saveChatEnabled = _saveChatEnabled;
+    var saveChat = document.getElementById('settingsSaveChat');
+    if (saveChat) saveChat.checked = _saveChatEnabled;
+  }
+}
+window.addEventListener('ss-settings-applied', function (event) {
+  applyRuntimeSettings(event.detail);
+});
 
 async function saveSettings(patch) {
   if (!_currentUser) return;
@@ -46,7 +67,8 @@ async function saveSettings(patch) {
           ? !!nightOn
           : true;
     dmToggle.addEventListener('change', function () {
-      _applyTheme(this.checked, this);
+      if (typeof window._applyTheme === 'function') window._applyTheme(this.checked, this);
+      else if (typeof _applyTheme === 'function') _applyTheme(this.checked, this);
     });
     var nightBtn = document.getElementById('nightBtn');
     if (nightBtn) {
@@ -66,15 +88,17 @@ async function saveSettings(patch) {
 
   var settingsAutoOpen = document.getElementById('settingsAutoOpen');
   if (settingsAutoOpen) {
+    if (typeof window._autoOpenEnabled === 'boolean') settingsAutoOpen.checked = window._autoOpenEnabled;
     settingsAutoOpen.addEventListener('change', function () {
       _autoOpenEnabled = this.checked;
+      window._autoOpenEnabled = _autoOpenEnabled;
     });
   }
 
   var pdfBody = document.getElementById('pdfBody');
   if (pdfBody) {
     pdfBody.addEventListener('mouseup', function () {
-      if (!_autoOpenEnabled) {
+      if (!window._autoOpenEnabled) {
         setTimeout(function () {
           var banner =
             document.getElementById('aiMsgs') &&
@@ -88,14 +112,16 @@ async function saveSettings(patch) {
 
   var settingsSaveChat = document.getElementById('settingsSaveChat');
   if (settingsSaveChat) {
+    if (typeof window._saveChatEnabled === 'boolean') settingsSaveChat.checked = window._saveChatEnabled;
     settingsSaveChat.addEventListener('change', function () {
       _saveChatEnabled = this.checked;
+      window._saveChatEnabled = _saveChatEnabled;
     });
   }
 
   var _origDeferredSave = window.deferredSave;
   window.deferredSave = function () {
-    if (_saveChatEnabled && typeof _origDeferredSave === 'function') _origDeferredSave();
+    if (window._saveChatEnabled && typeof _origDeferredSave === 'function') _origDeferredSave();
   };
 
   function _ssUnloadSave() {

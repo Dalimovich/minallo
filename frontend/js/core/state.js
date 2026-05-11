@@ -24,6 +24,11 @@ export const Store = {
             console.warn('Store.setState ignored invalid update:', update);
             return;
         }
+        if (update.settings && typeof update.settings === 'object' && !Array.isArray(update.settings)) {
+            update = Object.assign({}, update, {
+                settings: Object.assign({}, state.settings, update.settings)
+            });
+        }
         Object.assign(state, update);
         listeners.forEach(fn => fn(state));
     },

@@ -19,4 +19,5 @@ export function applySettings(s) {
   if (s.language && typeof window.applyLanguage === 'function') window.applyLanguage(s.language);
   if (s.yt_playlists && typeof window._ytApplyFromDB === 'function')
     window._ytApplyFromDB(s.yt_playlists);
+  window.dispatchEvent(new CustomEvent('ss-settings-applied', { detail: s }));
 }

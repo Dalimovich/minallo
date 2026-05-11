@@ -1041,8 +1041,11 @@ function _applyTheme(toNight, originEl) {
   var y = Math.round(rect.top + rect.height / 2);
 
   function _commitTheme() {
-    Store.setState({ settings: { darkMode: toNight } }); // Update central state
-    // UI update for body class is handled by the Store subscription
+    nightOn = !!toNight;
+    Store.setState({
+      settings: Object.assign({}, Store.getState().settings, { darkMode: nightOn })
+    });
+    document.body.classList.toggle('night', nightOn);
 
     var nbIcon = document.getElementById('nightIcon');
     if (nbIcon) {
@@ -1051,8 +1054,8 @@ function _applyTheme(toNight, originEl) {
       if (nbLbl) nbLbl.textContent = toNight ? 'Night' : 'Day';
     }
     var dm = document.getElementById('settingsDarkMode');
-    if (dm) dm.checked = toNight;
-    localStorage.setItem('ss_dark', toNight ? '1' : '0'); // Keep for early loading scripts (e.g., auth-bootstrap.js)
+    if (dm) dm.checked = nightOn;
+    localStorage.setItem('ss_dark', nightOn ? '1' : '0'); // Keep for early loading scripts (e.g., auth-bootstrap.js)
     saveState();
   }
 
@@ -1085,6 +1088,7 @@ function _applyTheme(toNight, originEl) {
     );
   });
 }
+window._applyTheme = _applyTheme;
 
 // Night mode button
 _bindIf('nightBtn', 'click', function () {
