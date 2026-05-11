@@ -62,6 +62,38 @@ function _renderSummary(text, sources) {
 
 // ─── RAG-powered generate (falls back to text prompt when no docs) ────────────
 
+var _TOOL_LABELS = {
+  flashcards: '🃏 Generate flashcards',
+  quiz: '📝 Quiz me',
+  summary: '✨ Summarise'
+};
+
+var _ragAborted = false;
+
+function _ragSetGenerating(on) {
+  var btn = document.getElementById('aiSend');
+  if (!btn) return;
+  if (on) {
+    _ragAborted = false;
+    btn.disabled = false; // keep clickable so stop works
+    btn.classList.add('is-stop');
+    btn._ragStopHandler = function () {
+      if (!btn.classList.contains('is-stop')) return;
+      _ragAborted = true;
+      _ragSetGenerating(false);
+      document.querySelectorAll('.typing-wrap').forEach(function (el) { el.remove(); });
+    };
+    btn.addEventListener('click', btn._ragStopHandler);
+  } else {
+    btn.classList.remove('is-stop');
+    btn.disabled = false;
+    if (btn._ragStopHandler) {
+      btn.removeEventListener('click', btn._ragStopHandler);
+      btn._ragStopHandler = null;
+    }
+  }
+}
+
 async function _generateWithRag(tool, level, topic) {
   var courseId = window.activeCourseId || window.currentCourseId || '';
   if (!courseId) return false;
@@ -69,6 +101,12 @@ async function _generateWithRag(tool, level, topic) {
     return false;
   });
   if (!hasRag) return false;
+
+  // Show user message bubble and lock the send button
+  var label = _TOOL_LABELS[tool] || tool;
+  if (level && (tool === 'quiz' || tool === 'summary')) label += ' (' + level + ')';
+  if (window.addUserMsg) window.addUserMsg(label);
+  _ragSetGenerating(true);
 
   // Show typing indicator while generating
   if (window.addTyping) window.addTyping();
@@ -88,16 +126,18 @@ async function _generateWithRag(tool, level, topic) {
 
     if (result.error) md = '⚠️ ' + result.error;
 
-    // Remove typing indicator and add the bot message
+    // Remove typing indicator and add the bot message (unless user stopped)
     document.querySelectorAll('.typing-wrap').forEach(function (el) {
       el.remove();
     });
-    if (window.addBotMsg) window.addBotMsg(md);
-    return true;
+    _ragSetGenerating(false);
+    if (!_ragAborted && window.addBotMsg) window.addBotMsg(md);
+    return !_ragAborted;
   } catch (e) {
     document.querySelectorAll('.typing-wrap').forEach(function (el) {
       el.remove();
     });
+    _ragSetGenerating(false);
     return false;
   }
 }
