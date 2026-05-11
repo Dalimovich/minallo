@@ -59,6 +59,7 @@ export function openFile(f, course) {
     var uid =
       f._uid || (window._currentUser && (window._currentUser.id || window._currentUser.sub));
     var isHtml = /\.html?$/i.test(f.name);
+    var isImage = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(f.name);
 
     window
       ._ufFetchBytes(uid, f._course || course, f._storageName || f.name, f._folder || null)
@@ -85,6 +86,23 @@ export function openFile(f, course) {
             '<iframe src="' +
             url +
             '" style="width:100%;height:100%;border:none;background:#fff" onload="URL.revokeObjectURL(this.src)"></iframe>';
+          window.pdfDoc = null;
+          window.pdfTotal = 0;
+          window.pdfPage = 1;
+          window.pdfFullText = '';
+          if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
+          return;
+        }
+
+        if (isImage) {
+          var ext = (f.name.match(/\.(\w+)$/) || [])[1] || 'png';
+          var mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff' };
+          var mime = mimeMap[ext.toLowerCase()] || 'image/' + ext.toLowerCase();
+          var imgBlob = new Blob([bytes], { type: mime });
+          var imgUrl = URL.createObjectURL(imgBlob);
+          document.getElementById('pdfBody').innerHTML =
+            '<div style="width:100%;height:100%;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;box-sizing:border-box">' +
+            '<img src="' + imgUrl + '" style="max-width:100%;height:auto;border-radius:8px" onload="URL.revokeObjectURL(this.src)"></div>';
           window.pdfDoc = null;
           window.pdfTotal = 0;
           window.pdfPage = 1;
@@ -148,12 +166,15 @@ export function openFile(f, course) {
       .catch(function (e) {
         var isTimeout =
           e && (e.name === 'AbortError' || (e.message && e.message.indexOf('abort') !== -1));
-        if (!isTimeout && typeof window._ufDropCachedUploadedFile === 'function')
+        // Only evict the cached entry when storage itself rejected the fetch (HTTP error),
+        // not when the browser failed to render the file (e.g. password-protected PDF).
+        var isStorageError = !isTimeout && e && e._storageError === true;
+        if (isStorageError && typeof window._ufDropCachedUploadedFile === 'function')
           window._ufDropCachedUploadedFile(f._course || course, f);
         if (typeof window.showToast === 'function')
           window.showToast(
-            isTimeout ? 'File load timed out' : 'File unavailable',
-            isTimeout ? 'Network too slow. Try again.' : 'Re-upload the PDF if needed.'
+            isTimeout ? 'File load timed out' : 'Could not display file',
+            isTimeout ? 'Network too slow. Try again.' : 'The file could not be rendered. Try re-uploading.'
           );
         window.activeCourseSection = 'files';
         try {

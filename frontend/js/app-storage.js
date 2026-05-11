@@ -347,12 +347,14 @@ async function _ufFetchBytes(uid, course, name, folder) {
     }
   } catch (e) {}
 
-  throw new Error(
+  var storageErr = new Error(
     'File not found. Path: ' +
       base +
       name +
       ' — check Supabase bucket policies allow SELECT for authenticated users.'
   );
+  storageErr._storageError = true;
+  throw storageErr;
 }
 
 // Delete one file from Supabase Storage

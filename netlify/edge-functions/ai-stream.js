@@ -55,6 +55,19 @@ export default async function handler(request, context) {
   if (!Array.isArray(courseCheck) || !courseCheck.length) {
     return new Response('Course not found', { status: 403, headers: corsHeaders() });
   }
+  if (activeDocId) {
+    const docCheckRes = await fetch(
+      SUPABASE_URL + '/rest/v1/documents?id=eq.' + encodeURIComponent(activeDocId) +
+        '&course_id=eq.' + encodeURIComponent(courseId) +
+        '&user_id=eq.' + userId +
+        '&select=id&limit=1',
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY } }
+    );
+    const docCheck = await docCheckRes.json();
+    if (!Array.isArray(docCheck) || !docCheck.length) {
+      return new Response('Document not found', { status: 403, headers: corsHeaders() });
+    }
+  }
 
   const ragMode = mode === 'general' ? 'general' : 'strict';
 
@@ -205,9 +218,10 @@ export default async function handler(request, context) {
           qType = 'exercise';
       }
 
-      const openDocId = openFileName
+      const namedOpenDocId = openFileName
         ? Object.entries(docNames).find(([, name]) => name === openFileName || name.toLowerCase() === openFileName.toLowerCase())?.[0] || null
         : null;
+      const openDocId = activeDocId || namedOpenDocId;
 
       // 7. Fetch indexed open-file chunks (works for scanned PDFs)
       let effectiveOpenCtx = openCtx;
@@ -370,8 +384,9 @@ export const config = { path: '/api/ai/stream' };
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function corsHeaders() {
+  const origin = Deno.env.get('ALLOWED_ORIGIN') || 'http://localhost:8888';
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   };
