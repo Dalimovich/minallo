@@ -100,14 +100,49 @@ export function openFile(f, course) {
           var mime = mimeMap[ext.toLowerCase()] || 'image/' + ext.toLowerCase();
           var imgBlob = new Blob([bytes], { type: mime });
           var imgUrl = URL.createObjectURL(imgBlob);
-          document.getElementById('pdfBody').innerHTML =
-            '<div style="width:100%;height:100%;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;box-sizing:border-box">' +
-            '<img src="' + imgUrl + '" style="max-width:100%;height:auto;border-radius:8px" onload="URL.revokeObjectURL(this.src)"></div>';
+          var imgWrapper = document.createElement('div');
+          imgWrapper.id = 'ssImageViewerWrap';
+          imgWrapper.style.cssText = 'width:100%;height:100%;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;box-sizing:border-box';
+          var imgEl = document.createElement('img');
+          imgEl.id = 'ssImageViewerImg';
+          imgEl.src = imgUrl;
+          imgEl.style.cssText = 'max-width:100%;height:auto;border-radius:8px;transform-origin:top center;transition:transform .15s';
+          imgEl.onload = function () { URL.revokeObjectURL(imgUrl); };
+          imgWrapper.appendChild(imgEl);
+          var pdfBody = document.getElementById('pdfBody');
+          pdfBody.innerHTML = '';
+          pdfBody.appendChild(imgWrapper);
+
           window.pdfDoc = null;
           window.pdfTotal = 0;
           window.pdfPage = 1;
           window.pdfFullText = '';
+          window._ssImageViewerActive = true;
+          if (typeof window.pdfScale === 'undefined') window.pdfScale = 0.9;
           if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
+          if (typeof window.updateZoomPct === 'function') window.updateZoomPct();
+
+          // Hook renderPages so zoom buttons scale the image via CSS transform
+          if (!window._ssImageRenderPagesOrig) {
+            window._ssImageRenderPagesOrig = window.renderPages;
+          }
+          window.renderPages = function () {
+            if (!window._ssImageViewerActive) {
+              if (typeof window._ssImageRenderPagesOrig === 'function')
+                window._ssImageRenderPagesOrig.apply(this, arguments);
+              return;
+            }
+            var el = document.getElementById('ssImageViewerImg');
+            if (el) {
+              var s = (window.pdfScale || 0.9) / 0.9;
+              el.style.transform = 'scale(' + s + ')';
+              el.style.transformOrigin = 'top center';
+            }
+            if (typeof window.updateZoomPct === 'function') window.updateZoomPct();
+          };
+
+          // Load annotation layer so the user can draw on the image
+          if (typeof window._annotLoad === 'function') window._annotLoad(f.name);
           return;
         }
 
@@ -119,6 +154,14 @@ export function openFile(f, course) {
               cMapPacked: true
             })
             .promise.then(function (pdf) {
+              // Leaving image viewer — restore original renderPages
+              if (window._ssImageViewerActive) {
+                window._ssImageViewerActive = false;
+                if (window._ssImageRenderPagesOrig) {
+                  window.renderPages = window._ssImageRenderPagesOrig;
+                  window._ssImageRenderPagesOrig = null;
+                }
+              }
               window.pdfDoc = pdf;
               window.pdfTotal = pdf.numPages;
               window.pdfPage = 1;
@@ -223,6 +266,13 @@ export function openFile(f, course) {
         .then(function () {
           return window.pdfjsLib.getDocument({ data: bytes }).promise.then(function (pdf) {
             if (_mySeq !== window._pdfOpenSeq) return;
+            if (window._ssImageViewerActive) {
+              window._ssImageViewerActive = false;
+              if (window._ssImageRenderPagesOrig) {
+                window.renderPages = window._ssImageRenderPagesOrig;
+                window._ssImageRenderPagesOrig = null;
+              }
+            }
             window.pdfDoc = pdf;
             window.pdfTotal = pdf.numPages;
             window.pdfPage = 1;
