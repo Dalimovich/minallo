@@ -561,8 +561,24 @@
         : await _generateSingle(rangeStart, rangeEnd, currentPage);
 
       if (data.error) {
-        if (typeof showToast === 'function') showToast('Generation failed', data.error);
-        _setStatus(data.error, 'err');
+        if (data.indexing) {
+          // File is still being indexed — auto-retry after 8 seconds
+          var _retryCountdown = 8;
+          _setStatus('Indexing… retrying in ' + _retryCountdown + 's', 'warn');
+          var _retryTimer = setInterval(function () {
+            _retryCountdown--;
+            _setStatus('Indexing… retrying in ' + _retryCountdown + 's', 'warn');
+            if (_retryCountdown <= 0) {
+              clearInterval(_retryTimer);
+              _generating = false;
+              if (overlay) overlay.style.display = 'none';
+              _generate(); // retry
+            }
+          }, 1000);
+        } else {
+          if (typeof showToast === 'function') showToast('Generation failed', data.error);
+          _setStatus(data.error, 'err');
+        }
       } else if (data.note) {
         _notesByType[_activeTab] = data.note;
         _currentNote = data.note;

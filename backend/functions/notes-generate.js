@@ -618,7 +618,8 @@ exports.handler = async function (event) {
       if (isNoise) {
         console.warn('[notes-generate] pdfText looks like title-slide/template noise for page', filterStart);
         return jsonResponse(200, {
-          error: 'Die Seiten ' + filterStart + '–' + filterEnd + ' wurden noch nicht indiziert. Bitte warte auf die Indizierung oder wähle "Ganzes PDF".'
+          error: 'Diese Seiten wurden noch nicht indiziert. Bitte warte kurz und versuche es erneut, oder wähle "Ganzes PDF".',
+          indexing: true
         });
       }
 
@@ -628,8 +629,9 @@ exports.handler = async function (event) {
     } else {
       return jsonResponse(200, {
         error: documentId
-          ? 'Keine indizierten Chunks für Seite ' + (filterStart || '?') + ' gefunden. Bitte warte auf die Indizierung.'
-          : 'Kein Inhalt verfügbar. Öffne zuerst ein PDF.'
+          ? 'Diese Datei wird noch indiziert. Bitte warte kurz und versuche es erneut.'
+          : 'Kein Inhalt verfügbar. Öffne zuerst ein PDF.',
+        indexing: !!documentId
       });
     }
   }
