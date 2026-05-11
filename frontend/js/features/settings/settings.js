@@ -1,6 +1,10 @@
 export function applySettings(s) {
   s = s || {};
-  if (typeof s.dark_mode === 'boolean') {
+  // Theme: localStorage is the source of truth once the user has used the app
+  // on this device. Only honour the DB value on a fresh device where ss_dark
+  // has never been written — otherwise a stale row flips the theme on every
+  // login and overrides what the user just toggled.
+  if (typeof s.dark_mode === 'boolean' && localStorage.getItem('ss_dark') === null) {
     if (typeof window._applyTheme === 'function' && window.nightOn !== s.dark_mode) {
       window._applyTheme(s.dark_mode);
     } else {

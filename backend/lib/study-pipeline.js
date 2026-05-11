@@ -88,7 +88,7 @@ function embedText(text) {
   });
 }
 
-function callOpenAI(systemPrompt, userMessage, maxTokens, model) {
+function callOpenAI(systemPrompt, userMessage, maxTokens, model, timeoutMs) {
   return new Promise(function (resolve, reject) {
     const apiKey = requireEnv('OPENAI_API_KEY');
     const body = JSON.stringify({
@@ -122,7 +122,10 @@ function callOpenAI(systemPrompt, userMessage, maxTokens, model) {
         } catch (e) { reject(e); }
       });
     });
-    req.setTimeout(45000, function () { req.destroy(new Error('OpenAI timed out')); });
+    // Cap the socket timeout so a slow OpenAI response can never outlive the
+    // Netlify 26 s function limit. Caller should pass remaining wall-clock budget.
+    const t = Math.max(3000, Math.min(timeoutMs || 22000, 22000));
+    req.setTimeout(t, function () { req.destroy(new Error('OpenAI timed out')); });
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -158,11 +161,22 @@ function rpcChunks(serviceKey, supaUrl, payload) {
       res.on('end', function () {
         try {
           const p = JSON.parse(d);
+          if (res.statusCode >= 300) {
+            console.warn('[study-pipeline] match_chunks_hybrid ' + res.statusCode + ': ' + d.slice(0, 300));
+            return resolve([]);
+          }
           resolve(Array.isArray(p) ? p : []);
-        } catch (e) { resolve([]); }
+        } catch (e) {
+          console.warn('[study-pipeline] match_chunks_hybrid parse error:', e && e.message);
+          resolve([]);
+        }
       });
     });
-    req.on('error', function () { resolve([]); });
+    req.setTimeout(8000, function () { req.destroy(new Error('rpc timed out')); });
+    req.on('error', function (e) {
+      console.warn('[study-pipeline] match_chunks_hybrid request error:', e && e.message);
+      resolve([]);
+    });
     req.write(body);
     req.end();
   });
@@ -174,7 +188,7 @@ function fetchDirectChunks(serviceKey, userId, courseId, docIds, limit) {
   const basePath = 'document_chunks?user_id=eq.' + encodeURIComponent(userId) +
     '&course_id=eq.' + encodeURIComponent(courseId) +
     '&document_id=in.(' + ids + ')' +
-    '&order=document_id.asc&order=chunk_index.asc&limit=' + (limit || 40);
+    '&order=document_id.asc,chunk_index.asc&limit=' + (limit || 40);
 
   const fullSelect = '&select=id,document_id,chunk_text,page_start,page_end,source_type,section_title,is_official';
   const minimalSelect = '&select=id,document_id,chunk_text,page_start,page_end,source_type';
@@ -196,15 +210,17 @@ function fetchDirectChunks(serviceKey, userId, courseId, docIds, limit) {
 }
 
 // Retrieve chunks using pre-computed embeddings (avoids re-embedding per file).
-async function retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, docIds) {
+// `pairs` is an array of { query, embedding } so indices stay aligned even if
+// some embedding calls failed and were dropped.
+async function retrieveWithEmbeddings(serviceKey, userId, courseId, pairs, docIds) {
   const supaUrl = requireEnv('SUPABASE_URL');
 
-  const allResults = await Promise.all(embeddings.map(function (emb, qi) {
+  const allResults = await Promise.all(pairs.map(function (pair) {
     const basePayload = {
       p_user_id:    userId,
       p_course_id:  courseId,
-      p_embedding:  '[' + emb.join(',') + ']',
-      p_query:      queries[qi] || '',
+      p_embedding:  '[' + pair.embedding.join(',') + ']',
+      p_query:      pair.query || '',
       p_match_count: CANDIDATE_LIMIT,
       p_threshold:  MIN_SIMILARITY
     };
@@ -287,8 +303,16 @@ function deduplicateChunks(chunks, maxCount) {
   for (var i = 0; i < chunks.length; i++) {
     var c = chunks[i];
     const overlaps = selected.some(function (s) {
-      return s.document_id === c.document_id &&
-        Math.max(s.page_start, c.page_start) <= Math.min(s.page_end, c.page_end);
+      if (s.document_id !== c.document_id) return false;
+      // For non-paginated docs (.md, .txt, .docx) page_start/page_end can be
+      // null. Treating null as 0 made every chunk "overlap" with every other
+      // chunk in the same doc, collapsing the context to a single chunk.
+      // Fall back to chunk id equality when page info is missing.
+      if (s.page_start == null || c.page_start == null ||
+          s.page_end == null || c.page_end == null) {
+        return s.id === c.id;
+      }
+      return Math.max(s.page_start, c.page_start) <= Math.min(s.page_end, c.page_end);
     });
     if (!overlaps) selected.push(c);
     if (selected.length >= (maxCount || 25)) break;
@@ -500,9 +524,25 @@ function normalizeGeneratedItems(tool, items) {
       }
       // Fill any missing options rather than discarding the whole item
       letters.forEach(function (l) { if (!options[l]) options[l] = '—'; });
-      const answer = typeof item.answer === 'string'
-        ? item.answer.trim().toUpperCase()
-        : letters[item.answer] || '';
+      // Models sometimes return "A) text", numeric index, or the full answer
+      // text. Try several strategies before discarding the item.
+      let answer = '';
+      if (typeof item.answer === 'string') {
+        const trimmed = item.answer.trim();
+        const letterMatch = trimmed.match(/^([A-D])\b/i);
+        if (letterMatch) {
+          answer = letterMatch[1].toUpperCase();
+        } else {
+          // Try to match by option text
+          const lower = trimmed.toLowerCase();
+          const matchedLetter = letters.find(function (l) {
+            return options[l] && options[l].toLowerCase() === lower;
+          });
+          if (matchedLetter) answer = matchedLetter;
+        }
+      } else if (typeof item.answer === 'number') {
+        answer = letters[item.answer] || '';
+      }
       if (!letters.includes(answer)) return null;
       return {
         question,
@@ -561,13 +601,14 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
 
   // ── Step 1: embed queries once ──────────────────────────────────────────────
   const queries = buildQueries(tool, topic);
-  let embeddings;
+  let pairs;
   try {
-    embeddings = await Promise.all(queries.map(function (q) {
-      return embedText(q).catch(function () { return null; });
+    const raw = await Promise.all(queries.map(function (q) {
+      return embedText(q).then(function (e) { return { query: q, embedding: e }; })
+                        .catch(function () { return null; });
     }));
-    embeddings = embeddings.filter(Boolean);
-    if (!embeddings.length) throw new Error('All embeddings failed');
+    pairs = raw.filter(Boolean);
+    if (!pairs.length) throw new Error('All embeddings failed');
   } catch (e) {
     throw new Error('Retrieval failed: ' + (e.message || e));
   }
@@ -580,7 +621,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     fileIds = await fetchCourseDocIds(serviceKey, userId, courseId);
     // Fall back: do a broad retrieval to discover which docs have chunks indexed
     if (!fileIds.length) {
-      const broad = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, null);
+      const broad = await retrieveWithEmbeddings(serviceKey, userId, courseId, pairs, null);
       fileIds = [...new Set(broad.map(function (c) { return c.document_id; }))];
     }
   }
@@ -615,7 +656,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     // Retrieve chunks for this file using pre-computed embeddings
     let rawChunks;
     try {
-      rawChunks = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, [docId]);
+      rawChunks = await retrieveWithEmbeddings(serviceKey, userId, courseId, pairs, [docId]);
     } catch (e) {
       rawChunks = [];
     }
@@ -652,7 +693,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
 
     let result;
     try {
-      result = await callOpenAI(systemPrompt, userMessage, maxTokens, model);
+      result = await callOpenAI(systemPrompt, userMessage, maxTokens, model, timeLeft());
     } catch (e) {
       console.warn('[study-pipeline] OpenAI call failed:', e && e.message);
       // Timeout or API error — return whatever we have so far
@@ -690,7 +731,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
     const repairDocId = fileIds[0];
     let repairChunks = [];
     try {
-      const raw = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, [repairDocId]);
+      const raw = await retrieveWithEmbeddings(serviceKey, userId, courseId, pairs, [repairDocId]);
       const fallbackRaw = raw.length ? raw : await fetchDirectChunks(serviceKey, userId, courseId, [repairDocId], 30);
       repairChunks = deduplicateChunks(filterAndRank(fallbackRaw, docNamesMap), Math.min(shortage * 3, 20));
     } catch (e) {
@@ -712,7 +753,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
         : Math.min(6000, 1000 + shortage * 320);
 
       try {
-        const repairResult = await callOpenAI(repairPrompt, 'COURSE CONTEXT:\n\n' + repairContext, repairTokens, model);
+        const repairResult = await callOpenAI(repairPrompt, 'COURSE CONTEXT:\n\n' + repairContext, repairTokens, model, timeLeft());
         const repairItems = deduplicateItems(finalItems.concat(normalizeGeneratedItems(tool, repairResult.items || []))).slice(0, itemCount);
         if (repairItems.length > finalItems.length) finalItems = repairItems;
       } catch (e) {
@@ -727,7 +768,7 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
   for (let ri = 1; finalItems.length < itemCount && ri < fileIds.length && timeLeft() > 5000; ri++) {
     let extraChunks = [];
     try {
-      const raw = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, [fileIds[ri]]);
+      const raw = await retrieveWithEmbeddings(serviceKey, userId, courseId, pairs, [fileIds[ri]]);
       const fallbackRaw = raw.length ? raw : await fetchDirectChunks(serviceKey, userId, courseId, [fileIds[ri]], 30);
       extraChunks = deduplicateChunks(filterAndRank(fallbackRaw, docNamesMap), Math.min((itemCount - finalItems.length) * 3, 20));
     } catch (e) {
@@ -748,7 +789,8 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
         extraPrompt,
         'COURSE CONTEXT:\n\n' + buildContext(extraChunks, docNamesMap),
         tool === 'flashcards' ? Math.min(8000, 900 + shortageNow * 400) : Math.min(6000, 1000 + shortageNow * 320),
-        model
+        model,
+        timeLeft()
       );
       finalItems = deduplicateItems(finalItems.concat(normalizeGeneratedItems(tool, extraResult.items || []))).slice(0, itemCount);
     } catch (e) {
@@ -763,20 +805,21 @@ async function runPipeline({ serviceKey, userId, courseId, tool, topic, count, d
 
 async function runSummaryPipeline({ serviceKey, userId, courseId, tool, topic, docIds, model, timeLeft }) {
   const queries = buildQueries(tool, topic);
-  let embeddings;
+  let pairs;
   try {
-    embeddings = await Promise.all(queries.map(function (q) {
-      return embedText(q).catch(function () { return null; });
+    const raw = await Promise.all(queries.map(function (q) {
+      return embedText(q).then(function (e) { return { query: q, embedding: e }; })
+                        .catch(function () { return null; });
     }));
-    embeddings = embeddings.filter(Boolean);
-    if (!embeddings.length) throw new Error('All embeddings failed');
+    pairs = raw.filter(Boolean);
+    if (!pairs.length) throw new Error('All embeddings failed');
   } catch (e) {
     throw new Error('Retrieval failed: ' + (e.message || e));
   }
 
   let rawChunks;
   try {
-    rawChunks = await retrieveWithEmbeddings(serviceKey, userId, courseId, queries, embeddings, docIds || null);
+    rawChunks = await retrieveWithEmbeddings(serviceKey, userId, courseId, pairs, docIds || null);
   } catch (e) {
     throw new Error('Retrieval failed: ' + (e.message || e));
   }
@@ -801,7 +844,7 @@ async function runSummaryPipeline({ serviceKey, userId, courseId, tool, topic, d
 
   let result;
   try {
-    result = await callOpenAI(summarySystemPrompt(), 'COURSE CONTEXT:\n\n' + context + focusPart, 1600, model);
+    result = await callOpenAI(summarySystemPrompt(), 'COURSE CONTEXT:\n\n' + context + focusPart, 1600, model, timeLeft());
   } catch (e) {
     throw new Error('Generation failed: ' + (e.message || e));
   }
