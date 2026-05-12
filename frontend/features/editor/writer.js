@@ -204,7 +204,7 @@
 
     function _edSetDocActive(has) {
       // Show/hide doc-specific topbar buttons
-      ['editorSaveBtn', 'editorDeleteBtn', 'editorDuplicateBtn', 'edAddPageBtn'].forEach(
+      ['editorSaveBtn', 'editorDeleteBtn', 'editorDuplicateBtn', 'edAddPageBtn', 'editorExportBtn'].forEach(
         function (id) {
           var el = document.getElementById(id);
           if (!el) return;
