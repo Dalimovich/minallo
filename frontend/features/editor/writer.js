@@ -2400,11 +2400,21 @@
       _wire('edDeselectBtn', _edDeselectObj);
 
       // ── Right-click context menu ───────────────────────────────────────────
-      // Build a small Copy / Paste / Duplicate / Delete menu that appears on
-      // right-click anywhere inside the editor canvas. Clipboard is shared
-      // across the whole writer session (cleared on page reload).
-      var _edClipboard = null;
+      // Copy / Paste / Duplicate / Delete that adapts to what the user
+      // right-clicked on: an object, a text selection inside a page, or
+      // empty page area (paste-only).
+      var _edClipboard = null;       // object clipboard (Shape, image, etc.)
+      var _edTextClipboard = '';     // text we copied via this menu
       var _edCtxMenu = null;
+      var _edCtx = {                 // snapshot taken at right-click time
+        hasObjSel: false,
+        hasTextSel: false,
+        textSel: '',
+        textRange: null,
+        contentEl: null,             // .ed-page-content the selection is in
+        pageIdxAtClick: 0,
+        clientX: 0, clientY: 0
+      };
 
       function _edBuildCtxMenu() {
         if (_edCtxMenu) return _edCtxMenu;
@@ -2423,11 +2433,13 @@
             'padding:8px 12px;border-radius:6px;cursor:pointer;' +
             'display:flex;align-items:center;gap:8px';
           item.addEventListener('mouseenter', function () {
-            item.style.background = 'rgba(167,139,250,.15)';
+            if (item.style.pointerEvents !== 'none')
+              item.style.background = 'rgba(167,139,250,.15)';
           });
-          item.addEventListener('mouseleave', function () {
-            item.style.background = '';
-          });
+          item.addEventListener('mouseleave', function () { item.style.background = ''; });
+          // mousedown on the item must not deselect text — preventDefault keeps
+          // the underlying Range alive until we read it inside the click.
+          item.addEventListener('mousedown', function (e) { e.preventDefault(); });
           item.addEventListener('click', function (e) {
             e.stopPropagation();
             _edHandleCtxAction(action);
@@ -2439,56 +2451,104 @@
         return _edCtxMenu;
       }
 
-      function _edShowCtxMenu(x, y) {
+      function _edSetItemEnabled(item, enabled) {
+        item.style.opacity = enabled ? '1' : '0.35';
+        item.style.pointerEvents = enabled ? 'auto' : 'none';
+      }
+
+      function _edShowCtxMenu() {
         var menu = _edBuildCtxMenu();
-        // Enable/disable items based on selection + clipboard state
-        var hasSel = !!_ed.selObj;
-        var hasClip = !!_edClipboard;
+        // Optimistic enable state based on local snapshot. We refine `paste`
+        // once navigator.clipboard.readText resolves (if the browser allows).
+        var hasObj   = _edCtx.hasObjSel;
+        var hasText  = _edCtx.hasTextSel;
+        var hasAny   = hasObj || hasText;
+        var hasLocalPaste = !!_edClipboard || !!_edTextClipboard;
         Array.prototype.forEach.call(menu.children, function (item) {
           var a = item.dataset.action;
-          var enabled = (a === 'paste') ? hasClip : hasSel;
-          item.style.opacity = enabled ? '1' : '0.35';
-          item.style.pointerEvents = enabled ? 'auto' : 'none';
+          if (a === 'copy')      _edSetItemEnabled(item, hasAny);
+          else if (a === 'duplicate') _edSetItemEnabled(item, hasObj); // text dup is weird; obj only
+          else if (a === 'delete')    _edSetItemEnabled(item, hasAny);
+          else if (a === 'paste')     _edSetItemEnabled(item, hasLocalPaste); // refined async below
         });
-        // Position, then clamp to viewport
-        menu.style.left = x + 'px';
-        menu.style.top  = y + 'px';
+        menu.style.left = _edCtx.clientX + 'px';
+        menu.style.top  = _edCtx.clientY + 'px';
         menu.style.display = 'block';
         var r = menu.getBoundingClientRect();
-        if (r.right > window.innerWidth)  menu.style.left = (x - r.width)  + 'px';
-        if (r.bottom > window.innerHeight) menu.style.top  = (y - r.height) + 'px';
+        if (r.right  > window.innerWidth)  menu.style.left = (_edCtx.clientX - r.width)  + 'px';
+        if (r.bottom > window.innerHeight) menu.style.top  = (_edCtx.clientY - r.height) + 'px';
+
+        // If the browser supports async clipboard reads, opportunistically
+        // light up Paste when the system clipboard has text.
+        if (!hasLocalPaste && navigator.clipboard && navigator.clipboard.readText) {
+          navigator.clipboard.readText().then(function (txt) {
+            if (txt && menu.style.display === 'block') {
+              var pasteItem = menu.querySelector('[data-action="paste"]');
+              if (pasteItem) _edSetItemEnabled(pasteItem, true);
+            }
+          }).catch(function () {});
+        }
       }
 
       function _edHideCtxMenu() {
         if (_edCtxMenu) _edCtxMenu.style.display = 'none';
       }
 
+      // Re-apply the snapshot's range to the document so commands (paste,
+      // delete) operate on the original text selection.
+      function _edRestoreCtxRange() {
+        if (!_edCtx.textRange) return false;
+        try {
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(_edCtx.textRange);
+          return true;
+        } catch (e) { return false; }
+      }
+
       function _edHandleCtxAction(action) {
         if (!_ed.doc) return;
+
+        // ── COPY ────────────────────────────────────────────────────────────
         if (action === 'copy') {
-          if (!_ed.selObj) return;
-          var pg0 = _ed.doc.pages[_ed.selObj.pageIdx];
-          var src = (pg0.objects || []).find(function (o) { return o.id === _ed.selObj.id; });
-          if (src) _edClipboard = _edClone(src);
+          if (_edCtx.hasTextSel) {
+            _edTextClipboard = _edCtx.textSel;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(_edCtx.textSel).catch(function () {});
+            }
+            return;
+          }
+          if (_edCtx.hasObjSel && _ed.selObj) {
+            var pg0 = _ed.doc.pages[_ed.selObj.pageIdx];
+            var src = (pg0.objects || []).find(function (o) { return o.id === _ed.selObj.id; });
+            if (src) _edClipboard = _edClone(src);
+          }
           return;
         }
-        if (action === 'paste') {
-          if (!_edClipboard) return;
-          _edPushUndo();
-          var pg1 = _ed.doc.pages[_ed.pageIdx];
-          if (!pg1.objects) pg1.objects = [];
-          var paste = _edClone(_edClipboard);
-          paste.id = _edId();
-          paste.x = (paste.x || 0) + 20;
-          paste.y = (paste.y || 0) + 20;
-          pg1.objects.push(paste);
-          _edRenderAllPages();
-          _edSelectObj(_ed.pageIdx, paste.id);
-          _edScheduleAutoSave();
+
+        // ── DELETE ──────────────────────────────────────────────────────────
+        if (action === 'delete') {
+          if (_edCtx.hasTextSel) {
+            if (_edRestoreCtxRange()) {
+              document.execCommand('delete', false, null);
+              _edScheduleAutoSave();
+            }
+            return;
+          }
+          if (_edCtx.hasObjSel && _ed.selObj) {
+            _edPushUndo();
+            var pg3 = _ed.doc.pages[_ed.selObj.pageIdx];
+            pg3.objects = (pg3.objects || []).filter(function (o) { return o.id !== _ed.selObj.id; });
+            _edDeselectObj();
+            _edRenderAllPages();
+            _edScheduleAutoSave();
+          }
           return;
         }
+
+        // ── DUPLICATE (object-only) ────────────────────────────────────────
         if (action === 'duplicate') {
-          if (!_ed.selObj) return;
+          if (!_edCtx.hasObjSel || !_ed.selObj) return;
           _edPushUndo();
           var pg2 = _ed.doc.pages[_ed.selObj.pageIdx];
           var src2 = (pg2.objects || []).find(function (o) { return o.id === _ed.selObj.id; });
@@ -2503,14 +2563,104 @@
           _edScheduleAutoSave();
           return;
         }
-        if (action === 'delete') {
-          if (!_ed.selObj) return;
-          _edPushUndo();
-          var pg3 = _ed.doc.pages[_ed.selObj.pageIdx];
-          pg3.objects = (pg3.objects || []).filter(function (o) { return o.id !== _ed.selObj.id; });
-          _edDeselectObj();
-          _edRenderAllPages();
-          _edScheduleAutoSave();
+
+        // ── PASTE ───────────────────────────────────────────────────────────
+        if (action === 'paste') {
+          // Prefer pasting text when the right-click was inside a text page,
+          // otherwise fall back to object paste.
+          function doPasteText(text) {
+            if (!text) return false;
+            // If the user right-clicked while in a text content area, restore
+            // their caret/selection and insert at that point.
+            if (_edCtx.contentEl) {
+              _edCtx.contentEl.focus();
+              if (_edRestoreCtxRange()) {
+                document.execCommand('insertText', false, text);
+                _edScheduleAutoSave();
+                return true;
+              }
+              // Range was lost — append at end of the clicked content area
+              _edCtx.contentEl.focus();
+              document.execCommand('insertText', false, text);
+              _edScheduleAutoSave();
+              return true;
+            }
+            return false;
+          }
+          function doPasteObject() {
+            if (!_edClipboard) return false;
+            _edPushUndo();
+            var pg1 = _ed.doc.pages[_ed.pageIdx];
+            if (!pg1.objects) pg1.objects = [];
+            var paste = _edClone(_edClipboard);
+            paste.id = _edId();
+            paste.x = (paste.x || 0) + 20;
+            paste.y = (paste.y || 0) + 20;
+            pg1.objects.push(paste);
+            _edRenderAllPages();
+            _edSelectObj(_ed.pageIdx, paste.id);
+            _edScheduleAutoSave();
+            return true;
+          }
+
+          // 1. Try the system clipboard first (most recent, includes external copies)
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            navigator.clipboard.readText().then(function (txt) {
+              if (txt && doPasteText(txt)) return;
+              if (_edTextClipboard && doPasteText(_edTextClipboard)) return;
+              doPasteObject();
+            }).catch(function () {
+              if (_edTextClipboard && doPasteText(_edTextClipboard)) return;
+              doPasteObject();
+            });
+            return;
+          }
+          if (_edTextClipboard && doPasteText(_edTextClipboard)) return;
+          doPasteObject();
+        }
+      }
+
+      function _edSnapshotCtxAt(e, pageEl) {
+        _edCtx.clientX = e.clientX;
+        _edCtx.clientY = e.clientY;
+        _edCtx.hasObjSel = false;
+        _edCtx.hasTextSel = false;
+        _edCtx.textSel = '';
+        _edCtx.textRange = null;
+        _edCtx.contentEl = null;
+        _edCtx.pageIdxAtClick = parseInt(pageEl.getAttribute('data-page-idx')) || _ed.pageIdx;
+
+        var objEl = e.target.closest && e.target.closest('.ed-obj');
+        if (objEl) {
+          var oid = objEl.getAttribute('data-obj-id');
+          if (!isNaN(_edCtx.pageIdxAtClick) && oid) {
+            _edSelectObj(_edCtx.pageIdxAtClick, oid);
+            _edCtx.hasObjSel = true;
+          }
+        }
+
+        // Text selection (only valid inside a .ed-page-content)
+        var sel = window.getSelection && window.getSelection();
+        if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+          var range = sel.getRangeAt(0);
+          var n = range.commonAncestorContainer;
+          if (n && n.nodeType === 3) n = n.parentNode;
+          var contentHost = n && n.closest && n.closest('.ed-page-content');
+          if (contentHost) {
+            var text = sel.toString();
+            if (text && text.length) {
+              _edCtx.hasTextSel = true;
+              _edCtx.textSel = text;
+              _edCtx.textRange = range.cloneRange();
+              _edCtx.contentEl = contentHost;
+            }
+          }
+        }
+        // If no live text selection but the click landed in a content area,
+        // remember the host so Paste knows where to drop external clipboard text.
+        if (!_edCtx.contentEl) {
+          var ce = e.target.closest && e.target.closest('.ed-page-content');
+          if (ce) _edCtx.contentEl = ce;
         }
       }
 
@@ -2518,18 +2668,11 @@
       if (canvasForCtx) {
         canvasForCtx.addEventListener('contextmenu', function (e) {
           if (!_ed.doc) return;
-          // Only intercept right-clicks on a page (the white doc area) or an
-          // object; let native menu handle outside areas.
           var pageEl = e.target.closest && e.target.closest('.ed-page');
           if (!pageEl) return;
           e.preventDefault();
-          var objEl = e.target.closest && e.target.closest('.ed-obj');
-          if (objEl) {
-            var oid  = objEl.getAttribute('data-obj-id');
-            var pidx = parseInt(pageEl.getAttribute('data-page-idx'));
-            if (!isNaN(pidx) && oid) _edSelectObj(pidx, oid);
-          }
-          _edShowCtxMenu(e.clientX, e.clientY);
+          _edSnapshotCtxAt(e, pageEl);
+          _edShowCtxMenu();
         });
       }
       // Dismiss on outside click / scroll / Escape
