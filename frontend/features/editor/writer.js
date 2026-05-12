@@ -1524,6 +1524,42 @@
       });
     }
 
+    // Save a PDF blob to disk. Uses the File System Access API
+    // (showSaveFilePicker) when available — that lets the user pick the
+    // folder and filename themselves. Falls back to a hidden <a download>
+    // for browsers without the API (Firefox, Safari, older Chromium).
+    async function _edSavePdfBlobToDisk(blob, safeTitle) {
+      var fileName = safeTitle + '.pdf';
+      if (typeof window.showSaveFilePicker === 'function') {
+        try {
+          var handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description: 'PDF document',
+              accept: { 'application/pdf': ['.pdf'] }
+            }]
+          });
+          var writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return true;
+        } catch (e) {
+          // User aborted the picker — treat as a cancel, not an error
+          if (e && (e.name === 'AbortError' || /aborted|user/i.test(e.message || ''))) return false;
+          // Any other failure (permissions, unsupported) falls through to <a download>
+        }
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+      return true;
+    }
+
     function _edExportPdf() {
       if (!_ed.doc) return;
       var btn = document.getElementById('edExportPdfBtn');
@@ -1534,16 +1570,9 @@
 
       _edGeneratePdfBlob()
         .then(function (r) {
-          var url = URL.createObjectURL(r.blob);
-          var a = document.createElement('a');
-          a.href = url;
-          a.download = r.safeTitle + '.pdf';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(function () {
-            URL.revokeObjectURL(url);
-          }, 3000);
+          return _edSavePdfBlobToDisk(r.blob, r.safeTitle).then(function (saved) {
+            if (saved) showToast('Saved', r.safeTitle + '.pdf');
+          });
         })
         .catch(function (err) {
           showToast('Export failed', err.message || 'Could not generate PDF');
