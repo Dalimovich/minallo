@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     )
     openai_embedding_dim: int = Field(1536, alias="OPENAI_EMBEDDING_DIM")
 
+    # --- Supabase Storage bucket holding the uploaded PDFs.
+    # Same env var the existing Netlify uploader reads (defaults match).
+    rag_storage_bucket: str = Field("course-documents", alias="RAG_STORAGE_BUCKET")
+
     # --- Shared secret between Netlify and this service.
     # Same env var the existing Netlify trigger-processing flow already uses
     # (see backend/lib/trigger-processing.js) so we don't introduce a second

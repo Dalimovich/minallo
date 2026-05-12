@@ -5,14 +5,11 @@ for verifying the requesting user owns the document (Phase 2's indexer
 loads the document row from `documents` and trusts user_id from there).
 """
 
+from ..config import get_settings
 from ..supabase_client import get_supabase
 
 
-# Bucket name matches the existing Netlify setup (see backend/migrations/004_storage_bucket_security.sql).
-DEFAULT_BUCKET = "documents"
-
-
-def download_document_bytes(storage_path: str, bucket: str = DEFAULT_BUCKET) -> bytes:
+def download_document_bytes(storage_path: str, bucket: str | None = None) -> bytes:
     """Return raw PDF bytes for a document at the given storage path.
 
     storage_path is what's stored in `documents.storage_path` — typically
@@ -22,4 +19,5 @@ def download_document_bytes(storage_path: str, bucket: str = DEFAULT_BUCKET) -> 
         raise ValueError("storage_path is required")
 
     sb = get_supabase()
-    return sb.storage.from_(bucket).download(storage_path)
+    target_bucket = bucket or get_settings().rag_storage_bucket
+    return sb.storage.from_(target_bucket).download(storage_path)
