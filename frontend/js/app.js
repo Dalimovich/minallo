@@ -872,6 +872,12 @@ closeAI = _aiPanelBridge.closeAI;
 forceCloseAI = _aiPanelBridge.forceCloseAI;
 pinAI = _aiPanelBridge.pinAI;
 showSelectionBanner = _aiPanelBridge.showSelectionBanner;
+
+// Expose the bridge so non-module scripts (chat.js, etc.) can read/write
+// internal panel state without relying on bare identifiers that don't
+// escape this module's scope.
+window._aiPanelBridge = _aiPanelBridge;
+window._aiMsgs = aiMsgs;
 window.openAI = openAI;
 window.closeAI = closeAI;
 window.forceCloseAI = forceCloseAI;

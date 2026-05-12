@@ -10,6 +10,11 @@
       _init();
     });
   function _init() {
+    // aiMsgs is module-scoped inside app.js (an ES module) so it doesn't leak
+    // to window. Look it up locally — app.js exposes window._aiMsgs as a
+    // fallback when this script loads before app.js has run.
+    function _msgs() { return window._aiMsgs || document.getElementById('aiMsgs'); }
+
     var chatSidebarSettingsBtn = document.getElementById('chatSidebarSettingsBtn');
     if (chatSidebarSettingsBtn) {
       chatSidebarSettingsBtn.addEventListener('click', function () {
@@ -37,7 +42,9 @@
     // Serialize all visible messages from the DOM
     function serializeChatDOM() {
       var out = [];
-      aiMsgs.querySelectorAll('.ai-msg-wrap').forEach(function (wrap) {
+      var _m = _msgs();
+      if (!_m) return out;
+      _m.querySelectorAll('.ai-msg-wrap').forEach(function (wrap) {
         // Skip typing indicators and thinking bubbles
         if (wrap.classList.contains('typing-wrap')) return;
         var bubble = wrap.querySelector('.ai-bubble');
@@ -79,7 +86,9 @@
         if (!raw) return false;
         var msgs = JSON.parse(raw);
         if (!msgs || !msgs.length) return false;
-        aiMsgs.innerHTML = '';
+        var _m = _msgs();
+        if (!_m) return false;
+        _m.innerHTML = '';
         var t = getTime();
         msgs.forEach(function (m) {
           if (m.role === 'user') {
@@ -114,7 +123,7 @@
                 if (typeof window.regenMsg === 'function') window.regenMsg(btn);
               });
             });
-            aiMsgs.appendChild(wrap);
+            _m.appendChild(wrap);
           } else {
             // Rebuild bot bubble — render from raw text, never inject stored HTML
             var wrap = document.createElement('div');
@@ -139,17 +148,19 @@
               botBubble.textContent = m.text || '';
             }
             var msgBody = wrap.querySelector('.msg-body');
-            msgBody.appendChild(_aiResponseActions(m.text || '', 'panel'));
+            if (typeof window._aiResponseActions === 'function') {
+              msgBody.appendChild(window._aiResponseActions(m.text || '', 'panel'));
+            }
             wrap.querySelectorAll('.msg-action-btn[data-action="copy"]').forEach(function (btn) {
               btn.addEventListener('click', function () {
                 if (typeof window.copyBubble === 'function') window.copyBubble(btn);
               });
             });
             if (typeof window._renderMath === 'function') window._renderMath(botBubble);
-            aiMsgs.appendChild(wrap);
+            _m.appendChild(wrap);
           }
         });
-        aiMsgs.scrollTop = aiMsgs.scrollHeight;
+        _m.scrollTop = _m.scrollHeight;
         return true;
       } catch (e) {
         console.warn('Chat load failed:', e);
@@ -187,7 +198,8 @@
       if (typeof _origOpenFileChat === 'function') _origOpenFileChat(f, c);
 
       // 4. Clear panel and load saved history (or show welcome)
-      aiMsgs.innerHTML = '';
+      var _m4 = _msgs();
+      if (_m4) _m4.innerHTML = '';
       var hadHistory = loadChatForFile(newKey);
       if (!hadHistory) {
         addBotMsg(
@@ -203,8 +215,10 @@
         note.style.cssText =
           'text-align:center;font-size:.67rem;color:rgba(37,99,235,.45);padding:6px 0 2px;font-style:italic;letter-spacing:.02em';
         note.textContent = window._t ? window._t('chat_restored') : '— Chat history restored —';
-        aiMsgs.appendChild(note);
-        aiMsgs.scrollTop = aiMsgs.scrollHeight;
+        if (_m4) {
+          _m4.appendChild(note);
+          _m4.scrollTop = _m4.scrollHeight;
+        }
       }
       saveState();
     };
@@ -257,12 +271,20 @@
     (
       document.getElementById('aiClearBtn') || { addEventListener: function () {} }
     ).addEventListener('click', function () {
-      aiMsgs.innerHTML = '';
+      var _mc = _msgs();
+      if (_mc) _mc.innerHTML = '';
       if (_prevChatKey) deleteChatForFile(_prevChatKey);
-      addBotMsg(_t('ai_chat_cleared_msg'));
-      aiPinned = false;
-      forceCloseAI();
-      setTimeout(openAI, 100);
+      if (typeof window.addBotMsg === 'function') {
+        window.addBotMsg(window._t ? window._t('ai_chat_cleared_msg') : 'Chat cleared');
+      }
+      // aiPinned lives inside app.js's module scope — use the exposed bridge
+      // so this unpin actually sticks (bare `aiPinned = false` only created a
+      // global of the same name and didn't affect the module).
+      if (window._aiPanelBridge && typeof window._aiPanelBridge.setAiPinned === 'function') {
+        window._aiPanelBridge.setAiPinned(false);
+      }
+      if (typeof window.forceCloseAI === 'function') window.forceCloseAI();
+      setTimeout(function () { if (typeof window.openAI === 'function') window.openAI(); }, 100);
     });
 
     // ── CHAT ──────────────────────────────────────────────────────────────────
