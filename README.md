@@ -104,7 +104,7 @@ frontend/
       escape-html.js
     loader.js
     router.js
-    Minallo.js
+    minallo.js
     supabase.js
   pages/
 

@@ -1,4 +1,4 @@
-// ── Minallo Section Loader ────────────────────────────────────────────────────
+// ── Minallo Section Loader ────────────────────────────────────────────────
 // Fetches each HTML section file and injects it into the DOM in order,
 // then loads app.js and fires 'ss-ready' so supabase.js can do auth init.
 // All JS runs in the same window scope — no iframes, no module boundaries.
@@ -260,7 +260,7 @@
           'Minallo — ' +
           '<button id="landingFallbackGoogleBtn" ' +
           'style="margin-left:12px;padding:10px 24px;' +
-          'background:linear-gradient(90deg,#2563eb,#0ea5e9);' +
+          'background:linear-gradient(90deg,#b87bff,#ef79c4);' +
           'border:none;border-radius:999px;color:#fff;font-weight:800;cursor:pointer">' +
           'Sign in with Google</button></div>';
       });

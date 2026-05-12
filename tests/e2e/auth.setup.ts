@@ -11,7 +11,7 @@ setup('authenticate', async ({ page }) => {
     throw new Error(
       '[auth.setup] E2E_EMAIL and E2E_PASSWORD must be set.\n' +
         'PowerShell example:\n' +
-        '$env:E2E_EMAIL="test.e2e@Minallo.test"; ' +
+        '$env:E2E_EMAIL="test.e2e@minallo.test"; ' +
         '$env:E2E_PASSWORD="test.test.123"; npm run test:e2e'
     );
   }
