@@ -95,17 +95,34 @@ test('deduplicateItems: keeps first of duplicates', () => {
   assert.equal(result[0].question, items[0].question);
 });
 
-test('normalizeGeneratedItems: drops malformed quiz items', () => {
+test('normalizeGeneratedItems: fills missing quiz options with em-dash instead of dropping the item', () => {
+  // The pipeline intentionally recovers items that came back from the model
+  // with only some options populated — we'd rather show "—" placeholders
+  // than throw away an otherwise-valid question. Items are dropped only when
+  // the answer letter is impossible to resolve.
   const result = normalizeGeneratedItems('quiz', [
     {
       question: 'What is force?',
       options: { A: 'Mass times acceleration', B: 'Energy', C: 'Power', D: 'Velocity' },
       answer: 'A'
     },
-    { question: 'Broken', options: { A: 'Only one option' }, answer: 'A' }
+    { question: 'Partial options', options: { A: 'Only one option' }, answer: 'A' }
   ]);
-  assert.equal(result.length, 1);
-  assert.equal(result[0].answer, 'A');
+  assert.equal(result.length, 2);
+  assert.equal(result[1].options.B, '—');
+  assert.equal(result[1].options.C, '—');
+  assert.equal(result[1].options.D, '—');
+});
+
+test('normalizeGeneratedItems: drops quiz items with an unresolvable answer', () => {
+  const result = normalizeGeneratedItems('quiz', [
+    {
+      question: 'Bad answer',
+      options: { A: 'one', B: 'two', C: 'three', D: 'four' },
+      answer: 'XYZ'
+    }
+  ]);
+  assert.equal(result.length, 0);
 });
 
 test('normalizeGeneratedItems: drops empty flashcards', () => {
