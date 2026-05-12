@@ -10,6 +10,7 @@ proxy passes it in the request body, and we cross-check it against the
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -44,8 +45,17 @@ class IndexDocumentResponse(BaseModel):
     error: str | None = None
 
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
 def _verify_owner(document_id: str, user_id: str) -> dict:
     """Refuse the request if the JWT-derived user_id doesn't own this document."""
+    # Cheap input validation so an empty/garbage id is rejected as 400 instead
+    # of crashing Postgres' UUID parser into a 500.
+    if not document_id or not _UUID_RE.match(document_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="documentId must be a UUID")
+    if not user_id or not _UUID_RE.match(user_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="userId must be a UUID")
     sb = get_supabase()
     result = (
         sb.table("documents")

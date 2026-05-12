@@ -29,15 +29,15 @@ def _stub_env() -> None:
 def client(monkeypatch) -> TestClient:
     """Build a TestClient with the Supabase client patched out."""
 
-    def _fake_sb(doc_user_id: str = "owner-1") -> MagicMock:
+    def _fake_sb(doc_user_id: str = "22222222-2222-4222-8222-222222222222") -> MagicMock:
         sb = MagicMock()
         # `.select(...).eq("id", X).limit(1).execute()` chain
         chain = sb.table.return_value.select.return_value.eq.return_value.limit.return_value
         chain.execute.return_value = MagicMock(data=[{
-            "id": "doc-1",
+            "id": "11111111-1111-4111-8111-111111111111",
             "user_id": doc_user_id,
             "course_id": "course-1",
-            "storage_path": "owner-1/course-1/abc.pdf",
+            "storage_path": "22222222-2222-4222-8222-222222222222/course-1/abc.pdf",
             "processing_status": "ready",
             "chunk_count": 5,
             "page_count": 12,
@@ -60,10 +60,10 @@ def test_index_document_requires_internal_token(client: TestClient) -> None:
     r = client.post(
         "/index-document",
         json={
-            "userId": "owner-1",
+            "userId": "22222222-2222-4222-8222-222222222222",
             "courseId": "course-1",
-            "documentId": "doc-1",
-            "storagePath": "owner-1/course-1/abc.pdf",
+            "documentId": "11111111-1111-4111-8111-111111111111",
+            "storagePath": "22222222-2222-4222-8222-222222222222/course-1/abc.pdf",
         },
     )
     assert r.status_code == 401
@@ -74,15 +74,15 @@ def test_index_document_owner_match_returns_200(client: TestClient) -> None:
         "/index-document",
         headers={"X-Internal-Token": "test-token"},
         json={
-            "userId": "owner-1",
+            "userId": "22222222-2222-4222-8222-222222222222",
             "courseId": "course-1",
-            "documentId": "doc-1",
-            "storagePath": "owner-1/course-1/abc.pdf",
+            "documentId": "11111111-1111-4111-8111-111111111111",
+            "storagePath": "22222222-2222-4222-8222-222222222222/course-1/abc.pdf",
         },
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["documentId"] == "doc-1"
+    assert body["documentId"] == "11111111-1111-4111-8111-111111111111"
     # Already-indexed snapshot maps to "indexed" — but the router can
     # also rewrite to "indexing" if the previous status was a failure
     # state. Both are acceptable here.
@@ -94,8 +94,8 @@ def test_index_document_rejects_wrong_owner(client: TestClient, monkeypatch) -> 
     fake = MagicMock()
     chain = fake.table.return_value.select.return_value.eq.return_value.limit.return_value
     chain.execute.return_value = MagicMock(data=[{
-        "id": "doc-1",
-        "user_id": "someone-else",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "user_id": "33333333-3333-4333-8333-333333333333",
         "course_id": "course-1",
         "storage_path": "x/y/z.pdf",
         "processing_status": "ready",
@@ -106,9 +106,9 @@ def test_index_document_rejects_wrong_owner(client: TestClient, monkeypatch) -> 
         "/index-document",
         headers={"X-Internal-Token": "test-token"},
         json={
-            "userId": "owner-1",
+            "userId": "22222222-2222-4222-8222-222222222222",
             "courseId": "course-1",
-            "documentId": "doc-1",
+            "documentId": "11111111-1111-4111-8111-111111111111",
         },
     )
     # Owner mismatch — 404 (we deliberately don't 403 to avoid leaking existence)
@@ -119,11 +119,11 @@ def test_status_endpoint(client: TestClient) -> None:
     r = client.get(
         "/document-index-status",
         headers={"X-Internal-Token": "test-token"},
-        params={"documentId": "doc-1", "userId": "owner-1"},
+        params={"documentId": "11111111-1111-4111-8111-111111111111", "userId": "22222222-2222-4222-8222-222222222222"},
     )
     assert r.status_code == 200
     body: dict[str, Any] = r.json()
-    assert body["documentId"] == "doc-1"
+    assert body["documentId"] == "11111111-1111-4111-8111-111111111111"
     assert body["status"] == "indexed"
     assert body["chunkCount"] == 5
     assert body["pageCount"] == 12
