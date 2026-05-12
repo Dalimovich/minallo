@@ -369,8 +369,8 @@
         // so their window.* functions are defined when games.js _init() wires the buttons.
         var featureSrcs = [
           'features/toast/toast.js',
-          'features/chatbot/chatbot.js',
-          'features/chatbot/ai-bubble.js',
+          'features/chatbot/chatbot.js?v=2',
+          'features/chatbot/ai-bubble.js?v=2',
           'features/chat/chat.js',
           'features/dashboard/dashboard-widget.js',
           'features/dashboard/dashboard-calendar.js',
