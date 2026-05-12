@@ -1195,11 +1195,20 @@
 
       function renderCurrentPage() {
         if (!_pdf) return;
-        // Show the friendly placeholder while pdf.js does its work — gone
-        // the moment the rendered canvas wrap takes its place below.
+        // Show the friendly placeholder while pdf.js does its work, with a
+        // minimum visible time so the polish isn't a 30 ms flash.
         canvas.innerHTML = _epdfRenderingPlaceholder(_currentPage);
+        var _placeholderShownAt = Date.now();
+        var _MIN_PLACEHOLDER_MS = 450;
         window._edPdfOverlayCanvas = null;
         _pdf.getPage(_currentPage).then(function (page) {
+          var elapsed = Date.now() - _placeholderShownAt;
+          var wait = Math.max(0, _MIN_PLACEHOLDER_MS - elapsed);
+          if (wait) {
+            return new Promise(function (r) { setTimeout(function () { r(page); }, wait); });
+          }
+          return page;
+        }).then(function (page) {
           // Clear the placeholder now that we're about to insert the real page
           canvas.innerHTML = '';
           var vp = page.getViewport({ scale: _scale });

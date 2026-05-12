@@ -1813,23 +1813,28 @@ body:not(.night) .editor-wordcount {
   transform: scale(0.85);
 }
 
-/* ── Right settings panel — breathable glass blocks ───────────────────── */
-/* Target the inline-styled right pane. We don't know an ID for the
-   whole panel, but each section uses a "TITLE" + control pattern. */
-#editorPdfEditorView aside,
+/* ── Right settings panel — keep the dark base, add a subtle inner highlight ── */
 #editorPdfEditorView [style*="border-left"] {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)) !important;
+  background:
+    linear-gradient(180deg, rgba(167, 139, 250, 0.04), transparent 30%),
+    rgba(14, 12, 26, 0.96) !important;
+  padding: 18px 14px !important;
+  gap: 18px !important;
 }
-/* Section spacing inside the right panel — pad and separate */
-#editorPdfEditorView [style*="border-left"] > div {
-  margin-bottom: 14px;
+/* Make every section title slightly more present */
+#editorPdfEditorView [style*="border-left"] [style*="text-transform: uppercase"],
+#editorPdfEditorView [style*="border-left"] [style*="text-transform:uppercase"] {
+  letter-spacing: 0.08em !important;
+  font-size: 0.66rem !important;
+  color: rgba(255, 255, 255, 0.55) !important;
+  font-weight: 800 !important;
 }
 /* Layer rows — small glass cards */
 #edPdfLayerList > div {
   background: rgba(255, 255, 255, 0.04) !important;
   border: 1px solid rgba(255, 255, 255, 0.07) !important;
   border-radius: 10px !important;
-  padding: 9px 11px !important;
+  padding: 10px 12px !important;
   margin-bottom: 6px !important;
   transition: all 160ms ease;
 }
@@ -1842,4 +1847,65 @@ body:not(.night) .editor-wordcount {
 #editorPdfEditorView > div:last-child {
   justify-content: center !important;
   gap: 16px;
+}
+
+/* ── A few more polish details that the mockup highlighted ────────────── */
+/* Filename pill — make it read as a soft chip instead of a flat block */
+#edPdfFileName {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 10px !important;
+  padding: 6px 12px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-weight: 700 !important;
+}
+/* Zoom controls — match the toolbar glass language */
+#edPdfZoomOut, #edPdfZoomIn {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 10px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  transition: all 180ms ease !important;
+}
+#edPdfZoomOut:hover, #edPdfZoomIn:hover {
+  background: rgba(96, 125, 255, 0.16) !important;
+  border-color: rgba(120, 150, 255, 0.35) !important;
+}
+#edPdfZoomLabel {
+  color: rgba(255, 255, 255, 0.75) !important;
+  font-weight: 800 !important;
+}
+/* Mode buttons (hand/cursor) — match toolbar glass + give the active one
+   the same blue/purple accent as the active tool item */
+.epdf-mode-btn {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 10px !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+  transition: all 180ms ease !important;
+}
+.epdf-mode-btn:hover {
+  background: rgba(96, 125, 255, 0.16) !important;
+  border-color: rgba(120, 150, 255, 0.35) !important;
+  color: #fff !important;
+}
+.epdf-mode-btn.epdf-mode-active {
+  background: linear-gradient(135deg, rgba(95, 86, 255, 0.28), rgba(59, 130, 246, 0.14)) !important;
+  border-color: rgba(130, 145, 255, 0.40) !important;
+  color: #c7d2ff !important;
+  box-shadow: 0 0 18px rgba(95, 86, 255, 0.22) !important;
+}
+/* Undo / Redo — same language */
+.epdf-undo-btn, .epdf-redo-btn {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 10px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-weight: 800 !important;
+  transition: all 180ms ease !important;
+}
+.epdf-undo-btn:hover, .epdf-redo-btn:hover {
+  background: rgba(96, 125, 255, 0.16) !important;
+  border-color: rgba(120, 150, 255, 0.35) !important;
+  color: #fff !important;
 }
