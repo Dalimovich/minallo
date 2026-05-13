@@ -29,3 +29,17 @@ frontend/js/**/*.js.map
 tests/e2e/.auth/
 tests/e2e/report/
 test-results/
+
+# Local scratch files that may contain secrets
+free API.txt
+*api*key*.txt
+secrets.txt
+
+# Claude Code internal worktrees
+.claude/worktrees/
+
+# Empty auto-generated lockfile (backend has no deps)
+backend/package-lock.json
+
+# Stashed Vite WIP — see history if you want to revive
+.vite-wip-backup/
