@@ -37,6 +37,8 @@ in this branch are **shadow types only** — they coexist with the
 - [x] `npx tsc -p frontend/tsconfig.json` returns clean (no errors).
 
 ### Converted (.ts shadow files alongside .js)
+
+**utils + config + services (9 files, ~470 LOC):**
 - [x] `frontend/js/utils/escape-html.ts`
 - [x] `frontend/js/utils/db-helpers.ts`
 - [x] `frontend/js/config/icons.ts`
@@ -47,7 +49,19 @@ in this branch are **shadow types only** — they coexist with the
 - [x] `frontend/js/services/storage-service.ts`
 - [x] `frontend/js/services/subscription-service.ts`
 
-9 files, ~470 LOC, all strict.
+**core (10 files, ~810 LOC):**
+- [x] `frontend/js/core/app-shell.ts`
+- [x] `frontend/js/core/console-filter.ts`
+- [x] `frontend/js/core/globals.ts`
+- [x] `frontend/js/core/navigation.ts`
+- [x] `frontend/js/core/panels.ts`
+- [x] `frontend/js/core/pdf-worker.ts`
+- [x] `frontend/js/core/portal-ui.ts`
+- [x] `frontend/js/core/pull-to-refresh.ts`
+- [x] `frontend/js/core/state-persistence.ts`
+- [x] `frontend/js/core/state.ts`
+
+**19 files total, ~1,280 LOC. `npx tsc -p frontend/tsconfig.json` clean.**
 
 ### Still to convert (in suggested order)
 
