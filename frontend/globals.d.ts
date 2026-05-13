@@ -149,10 +149,10 @@ declare global {
     addBotMsg?: (text: string) => HTMLElement | null;
     _legacyAskAI?: (q: string) => unknown;
     addTyping?: () => unknown;
-    _pdfToImages?: (...args: unknown[]) => unknown;
+    _pdfToImages?: (maxPages?: number) => Promise<string[]>;
     stopGeneration?: () => void;
-    restoreCourseHistory?: (...args: unknown[]) => unknown;
-    clearCourseHistory?: (...args: unknown[]) => unknown;
+    restoreCourseHistory?: (courseId?: string | null) => void;
+    clearCourseHistory?: (courseId: string) => void;
     _abortCurrentStream?: () => void;
     _activeStreamRender?: (() => void) | null;
     _attachedImages?: unknown[];
