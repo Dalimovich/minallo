@@ -77,10 +77,84 @@ declare global {
     // ── pdf.js + page state ────────────────────────────────────────────
     pdfjsLib?: {
       GlobalWorkerOptions: { workerSrc: string };
+      getDocument: (src: unknown) => { promise: Promise<unknown> };
     } & Record<string, unknown>;
     pdfDoc?: { numPages: number } | null;
     pdfPage?: number;
     _pdfVisiblePage?: () => number | null;
+    _fetchPdfBytes?: (path: string, onOk: (bytes: Uint8Array) => void, onErr?: () => void) => void;
+    _ssEnsurePdfJs?: () => Promise<unknown>;
+
+    // ── AI typing config (set by ai-typing-config) ─────────────────────
+    AI_TYPING?: {
+      streamTokenInterval: number;
+      fallbackWordsPerFrame: number;
+      fallbackFrameInterval: number;
+      chatbotCharInterval: number;
+      chatbotWordsPerFrame: number;
+      chatbotFrameInterval: number;
+      mathRenderTriggers: string[];
+    };
+
+    // ── AI chips ───────────────────────────────────────────────────────
+    chipPrompt?: (type: string, level?: string) => unknown;
+    closeAllOpts?: () => void;
+
+    // ── AI confetti ────────────────────────────────────────────────────
+    spawnConfetti?: () => void;
+
+    // ── AI export ──────────────────────────────────────────────────────
+    _aiMakePdfBlob?: (...args: unknown[]) => unknown;
+    _aiDownloadPdf?: (...args: unknown[]) => unknown;
+    _ufDestPicker?: (...args: unknown[]) => unknown;
+    _glMoveDestPicker?: (...args: unknown[]) => unknown;
+    _aiExportToCourse?: (...args: unknown[]) => unknown;
+    _aiShowExportModal?: (...args: unknown[]) => unknown;
+    _aiResponseActions?: (...args: unknown[]) => unknown;
+
+    // ── Auth bridge ────────────────────────────────────────────────────
+    _setAuthMode?: (mode: 'signin' | 'signup') => void;
+    _authMode?: string;
+    updateAuthIndicator?: (user: unknown) => void;
+    loadUserData?: (uid: string) => unknown;
+    applyProfile?: (profile: unknown) => unknown;
+    _applyUserTypeUI?: () => void;
+    _adminShowIfEligible?: (user: { id?: string } | null) => void;
+    _showOnboarding?: (...args: unknown[]) => void;
+    landShowAuth?: (mode?: 'signin' | 'signup') => void;
+
+    // ── Theme / settings ───────────────────────────────────────────────
+    nightOn?: boolean;
+    _applyTheme?: (toNight: boolean) => void;
+    applyLanguage?: (lang: string) => void;
+    applySettings?: (settings?: Record<string, unknown> | null) => void;
+    _autoOpenEnabled?: boolean;
+    _saveChatEnabled?: boolean;
+    _ytApplyFromDB?: (playlists: unknown) => void;
+
+    // ── Subscription gate ──────────────────────────────────────────────
+    _requirePro?: (message?: string) => boolean;
+
+    // ── Multi-summary modal state ──────────────────────────────────────
+    msmCurrentText?: string;
+    msmCurrentTitle?: string;
+    lnRenderMarkdown?: (markdown: string) => string;
+
+    // ── Portal / navigation extras ─────────────────────────────────────
+    showPortal?: () => void;
+    setNavActive?: (id: string) => void;
+
+    // ── ai-ask bridge ──────────────────────────────────────────────────
+    askAI?: (q: string, skipUserBubble?: boolean) => unknown;
+    _legacyAskAI?: (q: string) => unknown;
+    addTyping?: () => unknown;
+    _pdfToImages?: (...args: unknown[]) => unknown;
+    stopGeneration?: () => void;
+    restoreCourseHistory?: (...args: unknown[]) => unknown;
+    clearCourseHistory?: (...args: unknown[]) => unknown;
+    _abortCurrentStream?: () => void;
+    _activeStreamRender?: (() => void) | null;
+    _attachedImages?: unknown[];
   }
 }
 

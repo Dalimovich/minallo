@@ -14,6 +14,8 @@
     "useUnknownInCatchVariables": true,
 
     "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
