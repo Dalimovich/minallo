@@ -22,6 +22,16 @@ build/
 Thumbs.db
 .vscode/
 
+# TS source maps (emitted by build:frontend)
+frontend/js/**/*.js.map
+# Emitted JS (built from .ts by Netlify's build:frontend step)
+frontend/js/utils/*.js
+frontend/js/config/*.js
+frontend/js/services/*.js
+frontend/js/core/*.js
+frontend/js/features/**/*.js
+frontend/js/app.js
+
 # Playwright
 tests/e2e/.auth/
 tests/e2e/report/

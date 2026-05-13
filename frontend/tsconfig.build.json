@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "allowJs": false,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "./",
+    "rootDir": "./"
+  },
+  "include": ["./js/**/*.ts", "./globals.d.ts"],
+  "exclude": []
+}
