@@ -42,6 +42,5 @@ initMusicServices({
 });
 initStudyTimer();
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — dynamic import with cache-busting query string
 import('./app.js?v=7');
