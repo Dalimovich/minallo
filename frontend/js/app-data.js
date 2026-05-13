@@ -45,6 +45,95 @@ function _saveUserCourses() {
   }
 }
 
+// ── Background warm-up ──────────────────────────────────────────────────────
+// Once the user is authed and SEMS is populated, hit Supabase storage for
+// every course in parallel (with a small concurrency cap) so every course
+// card has its real file count AND opening any course is instant. Without
+// this each course had to lazy-load on first click, which is what made
+// users see "0 files" on cards and empty toolbars on the first open.
+
+var _coursePrewarmRan = false;
+
+function _prewarmCourses(opts) {
+  if (typeof window._ufMerge !== 'function') return; // app-storage not loaded yet
+  var uid = window._currentUser && (window._currentUser.id || window._currentUser.sub);
+  if (!uid) return; // need an authed user
+  if (_coursePrewarmRan && !(opts && opts.force)) return;
+  _coursePrewarmRan = true;
+
+  var allCourses = [];
+  Object.keys(SEMS).forEach(function (sid) {
+    (SEMS[sid].courses || []).forEach(function (c) { allCourses.push(c); });
+  });
+  if (!allCourses.length) return;
+
+  // Skip courses that already have a cache entry — they're already warm.
+  var todo = allCourses.filter(function (c) {
+    try { return !localStorage.getItem('ss_uf_cache_' + c.id); }
+    catch (e) { return true; }
+  });
+  if (!todo.length) return;
+
+  var CONCURRENCY = 4;
+  var cursor = 0;
+
+  function _persistCourseCache(c) {
+    try {
+      var payload = {
+        files: (c.files || []).filter(function (f) { return f._uploaded && !f._folder; })
+          .map(function (f) { return { name: f.name, storageName: f._storageName, size: f.size, date: f.date }; }),
+        folders: (c.userFolders || []).map(function (fd) {
+          return {
+            name: fd.name,
+            files: (fd.files || []).map(function (f) {
+              return { name: f.name, storageName: f._storageName, size: f.size, date: f.date };
+            })
+          };
+        })
+      };
+      localStorage.setItem('ss_uf_cache_' + c.id, JSON.stringify(payload));
+      var total = (c.files || []).length + (c.userFolders || []).reduce(function (s, fd) {
+        return s + ((fd.files || []).length);
+      }, 0);
+      localStorage.setItem('ss_fc_' + c.id, String(total));
+    } catch (e) {}
+  }
+
+  function _next() {
+    if (cursor >= todo.length) return Promise.resolve();
+    var c = todo[cursor++];
+    return window._ufMerge(c)
+      .then(function () { _persistCourseCache(c); })
+      .catch(function () { /* leave for the on-open path to retry */ })
+      .then(_next);
+  }
+
+  var lanes = [];
+  for (var i = 0; i < Math.min(CONCURRENCY, todo.length); i++) lanes.push(_next());
+  Promise.all(lanes).then(function () {
+    // Repaint cards so badges update without a manual refresh.
+    if (typeof window.sdRenderCourses === 'function') window.sdRenderCourses();
+  });
+}
+window._prewarmCourses = _prewarmCourses;
+
+// Fallback trigger: the primary call site is at the end of _loadUserCourses
+// (after the profile API call returns). If that call is slow or fails, this
+// poll still fires the warm-up as soon as _currentUser + _ufMerge are both
+// available — typically within ~1s of page load.
+(function _prewarmWhenReady() {
+  var attempts = 0;
+  var iv = setInterval(function () {
+    if (_coursePrewarmRan) { clearInterval(iv); return; }
+    if (window._currentUser && typeof window._ufMerge === 'function') {
+      clearInterval(iv);
+      try { _prewarmCourses(); } catch (e) {}
+    } else if (++attempts > 30) {
+      clearInterval(iv);
+    }
+  }, 500);
+})();
+
 function _loadUserCourses(data) {
   if (!data || typeof data !== 'object') return;
   Object.keys(data).forEach(function (sid) {
@@ -70,6 +159,10 @@ function _loadUserCourses(data) {
     localStorage.setItem('ss_user_courses', JSON.stringify(data));
   } catch (e) {}
   sdRenderCourses();
+  // Fire-and-forget: pre-fetch every course's files now so cards show real
+  // counts and opening a course is instant. Defer one tick so the initial
+  // render isn't blocked by parallel storage requests.
+  setTimeout(function () { try { _prewarmCourses(); } catch (e) {} }, 50);
   restoreState();
   // If a course was restored before auth completed, refresh its files from network now.
   // Skip if _currentUser isn't set yet — the post-auth _loadUserCourses call will handle it.
