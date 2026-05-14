@@ -1,4 +1,4 @@
-import { checkAdminStatus, searchUsers, setUserPlan } from '../../services/admin-service.js';
+import { checkAdminStatus, searchUsers, setUserPlan, reindexUserCourse } from '../../services/admin-service.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 
 interface AdminUser {
@@ -107,7 +107,42 @@ async function adminSearch(): Promise<void> {
         }
       });
 
-      card.append(info, actionBtn);
+      const reindexBtn = document.createElement('button');
+      reindexBtn.className = 'sub-btn';
+      reindexBtn.dataset.uid = u.id;
+      reindexBtn.style.cssText = 'width:auto;padding:8px 14px;font-size:.72rem;margin-left:6px';
+      reindexBtn.textContent = 'Reindex course…';
+      reindexBtn.addEventListener('click', async function (this: HTMLButtonElement) {
+        const uid = this.dataset.uid || '';
+        const courseId = (window.prompt('Course ID to reindex for ' + (u.email || uid) + ':') || '').trim();
+        if (!courseId) return;
+        this.disabled = true;
+        const origText = this.textContent;
+        this.textContent = 'Checking…';
+        try {
+          const dry = await reindexUserCourse(uid, courseId, true);
+          const n = typeof dry.count === 'number' ? dry.count : 0;
+          if (dry.error) throw new Error(dry.error);
+          if (!n) {
+            if (typeof window.showToast === 'function') window.showToast('No documents', 'Course "' + courseId + '" has 0 docs for this user.');
+            return;
+          }
+          if (!window.confirm('Reindex ' + n + ' document(s) in course "' + courseId + '"? This clears chunks/pages and re-runs the indexer.')) return;
+          this.textContent = 'Reindexing…';
+          const real = await reindexUserCourse(uid, courseId, false);
+          if (real.error) throw new Error(real.error);
+          if (typeof window.showToast === 'function')
+            window.showToast('Reindex queued', 'Total ' + (real.total ?? 0) + ' · kicked ' + (real.kicked ?? 0) + (real.failed ? ' · failed ' + real.failed : ''));
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (typeof window.showToast === 'function') window.showToast('Error', msg);
+        } finally {
+          this.disabled = false;
+          this.textContent = origText;
+        }
+      });
+
+      card.append(info, actionBtn, reindexBtn);
       results.appendChild(card);
     });
   } catch (e: unknown) {

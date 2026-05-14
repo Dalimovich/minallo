@@ -21,4 +21,15 @@ export async function searchUsers(query) {
 export async function setUserPlan(userId, plan) {
     await _adminFetch({ action: 'setplan', userId, plan });
 }
+export async function reindexUserCourse(userId, courseId, dryRun) {
+    const res = await fetch('/api/documents/reindex-course', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + (window._sbToken || ''),
+        },
+        body: JSON.stringify({ userId, courseId, dryRun }),
+    });
+    return res.json().catch(() => ({ error: 'Bad response' }));
+}
 //# sourceMappingURL=admin-service.js.map

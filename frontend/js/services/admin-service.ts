@@ -28,3 +28,26 @@ export async function searchUsers(query: string): Promise<unknown> {
 export async function setUserPlan(userId: string, plan: 'free' | 'pro'): Promise<void> {
   await _adminFetch({ action: 'setplan', userId, plan });
 }
+
+export interface ReindexCourseResult {
+  dryRun?: boolean;
+  count?: number;
+  total?: number;
+  kicked?: number;
+  failed?: number;
+  error?: string;
+}
+
+export async function reindexUserCourse(
+  userId: string, courseId: string, dryRun: boolean
+): Promise<ReindexCourseResult> {
+  const res = await fetch('/api/documents/reindex-course', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + (window._sbToken || ''),
+    },
+    body: JSON.stringify({ userId, courseId, dryRun }),
+  });
+  return res.json().catch(() => ({ error: 'Bad response' })) as Promise<ReindexCourseResult>;
+}

@@ -112,6 +112,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/documents/reindex-course"
+  to = "/.netlify/functions/documents-reindex-course"
+  status = 200
+
+[[redirects]]
   from = "/api/ai/evaluate"
   to = "/.netlify/functions/ai-evaluate"
   status = 200
