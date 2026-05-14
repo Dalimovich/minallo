@@ -1,10 +1,10 @@
 import https from 'https';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { supaRequest } from '../../lib/supabase-admin';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { logSecurityEvent } from '../../lib/logger';
-import { requireEnv, optionalEnv } from '../../lib/env';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { supaRequest } from '../lib/supabase-admin';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { logSecurityEvent } from '../lib/logger';
+import { requireEnv, optionalEnv } from '../lib/env';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const PAYPAL_API_BASE = optionalEnv('PAYPAL_API_BASE', 'https://api-m.paypal.com');
 const PAYPAL_PLAN_ID = optionalEnv('PAYPAL_PLAN_ID', '');

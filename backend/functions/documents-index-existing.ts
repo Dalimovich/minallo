@@ -2,12 +2,12 @@
 // Indexes a file already in the course-uploads Storage bucket. The browser
 // sends only metadata; the Python service fetches the file directly.
 
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { supaRequest } from '../../lib/supabase-admin';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { supaRequest } from '../lib/supabase-admin';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const SOURCE_BUCKET = 'course-uploads';
 

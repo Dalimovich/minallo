@@ -1,9 +1,9 @@
 // POST /api/ai/feedback — proxy to Python /feedback.
 
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();

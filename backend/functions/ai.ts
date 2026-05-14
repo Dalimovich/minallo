@@ -1,9 +1,9 @@
 // POST /api/ai — thin proxy to the Python /chat endpoint.
 
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface ChatRequestBody {
   system?: string;

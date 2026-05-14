@@ -1,8 +1,8 @@
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { stripePost } from '../../lib/stripe';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { requireEnv } from '../../lib/env';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { stripePost } from '../lib/stripe';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { requireEnv } from '../lib/env';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface StripeError { error?: { message?: string } }
 interface StripeSession { url?: string }

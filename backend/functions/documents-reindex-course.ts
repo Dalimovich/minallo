@@ -3,14 +3,14 @@
 // Marks rows as 'uploaded', clears chunks/pages, and kicks the Python
 // indexer per document. Returns counts; does not wait for completion.
 
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { supaRequest } from '../../lib/supabase-admin';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import { logSecurityEvent } from '../../lib/logger';
-import { isUuid } from '../../lib/validation';
-import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { supaRequest } from '../lib/supabase-admin';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import { logSecurityEvent } from '../lib/logger';
+import { isUuid } from '../lib/validation';
+import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../lib/types';
 
 interface AdminRow { user_id: string }
 interface DocumentRow {

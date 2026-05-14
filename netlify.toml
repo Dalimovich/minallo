@@ -7,135 +7,129 @@
 [functions]
   node_bundler = "esbuild"
 
-# AI
 [[redirects]]
   from = "/api/ai"
-  to = "/.netlify/functions/ai/index"
+  to = "/.netlify/functions/ai"
   status = 200
 
-[[redirects]]
-  from = "/api/ai/ask"
-  to = "/.netlify/functions/ai/ask"
-  status = 200
-
-[[redirects]]
-  from = "/api/ai/generate"
-  to = "/.netlify/functions/ai/generate"
-  status = 200
-
-[[redirects]]
-  from = "/api/ai/feedback"
-  to = "/.netlify/functions/ai/feedback"
-  status = 200
-
-[[redirects]]
-  from = "/api/ai/evaluate"
-  to = "/.netlify/functions/ai/evaluate"
-  status = 200
-
-# Documents
-[[redirects]]
-  from = "/api/documents/list"
-  to = "/.netlify/functions/documents/list"
-  status = 200
-
-[[redirects]]
-  from = "/api/documents/upload"
-  to = "/.netlify/functions/documents/upload"
-  status = 200
-
-[[redirects]]
-  from = "/api/documents/delete"
-  to = "/.netlify/functions/documents/delete"
-  status = 200
-
-[[redirects]]
-  from = "/api/documents/index-existing"
-  to = "/.netlify/functions/documents/index-existing"
-  status = 200
-
-[[redirects]]
-  from = "/api/documents/reindex-course"
-  to = "/.netlify/functions/documents/reindex-course"
-  status = 200
-
-# Chat
-[[redirects]]
-  from = "/api/chat-friends"
-  to = "/.netlify/functions/chat/friends"
-  status = 200
-
-[[redirects]]
-  from = "/api/chat-user-search"
-  to = "/.netlify/functions/chat/user-search"
-  status = 200
-
-[[redirects]]
-  from = "/api/chat-username-check"
-  to = "/.netlify/functions/chat/username-check"
-  status = 200
-
-[[redirects]]
-  from = "/api/send-chat-message"
-  to = "/.netlify/functions/chat/send-message"
-  status = 200
-
-[[redirects]]
-  from = "/api/report-chat-item"
-  to = "/.netlify/functions/chat/report-item"
-  status = 200
-
-[[redirects]]
-  from = "/api/join-room-by-code"
-  to = "/.netlify/functions/chat/join-room-by-code"
-  status = 200
-
-# Notes
-[[redirects]]
-  from = "/api/notes/generate"
-  to = "/.netlify/functions/notes/generate"
-  status = 200
-
-[[redirects]]
-  from = "/api/notes"
-  to = "/.netlify/functions/notes/crud"
-  status = 200
-
-# Billing (Stripe + PayPal)
 [[redirects]]
   from = "/api/create-checkout"
-  to = "/.netlify/functions/billing/create-checkout"
-  status = 200
-
-[[redirects]]
-  from = "/api/create-portal"
-  to = "/.netlify/functions/billing/create-portal"
-  status = 200
-
-[[redirects]]
-  from = "/api/verify-payment"
-  to = "/.netlify/functions/billing/verify-payment"
+  to = "/.netlify/functions/create-checkout"
   status = 200
 
 [[redirects]]
   from = "/api/stripe-webhook"
-  to = "/.netlify/functions/billing/stripe-webhook"
+  to = "/.netlify/functions/stripe-webhook"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin-users"
+  to = "/.netlify/functions/admin-users"
+  status = 200
+
+[[redirects]]
+  from = "/api/verify-payment"
+  to = "/.netlify/functions/verify-payment"
+  status = 200
+
+[[redirects]]
+  from = "/api/create-portal"
+  to = "/.netlify/functions/create-portal"
   status = 200
 
 [[redirects]]
   from = "/api/activate-paypal-subscription"
-  to = "/.netlify/functions/billing/activate-paypal-subscription"
+  to = "/.netlify/functions/activate-paypal-subscription"
+  status = 200
+
+[[redirects]]
+  from = "/api/join-room-by-code"
+  to = "/.netlify/functions/join-room-by-code"
+  status = 200
+
+[[redirects]]
+  from = "/api/send-chat-message"
+  to = "/.netlify/functions/send-chat-message"
+  status = 200
+
+[[redirects]]
+  from = "/api/chat-friends"
+  to = "/.netlify/functions/chat-friends"
   status = 200
 
 [[redirects]]
   from = "/api/public-billing-config"
-  to = "/.netlify/functions/billing/public-config"
+  to = "/.netlify/functions/public-billing-config"
   status = 200
 
-# Admin
 [[redirects]]
-  from = "/api/admin-users"
-  to = "/.netlify/functions/admin/users"
+  from = "/api/chat-user-search"
+  to = "/.netlify/functions/chat-user-search"
+  status = 200
+
+[[redirects]]
+  from = "/api/chat-username-check"
+  to = "/.netlify/functions/chat-username-check"
+  status = 200
+
+[[redirects]]
+  from = "/api/report-chat-item"
+  to = "/.netlify/functions/report-chat-item"
+  status = 200
+
+[[redirects]]
+  from = "/api/documents/upload"
+  to = "/.netlify/functions/documents-upload"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/ask"
+  to = "/.netlify/functions/ai-ask"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/generate"
+  to = "/.netlify/functions/ai-generate"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/feedback"
+  to = "/.netlify/functions/ai-feedback"
+  status = 200
+
+[[redirects]]
+  from = "/api/documents/list"
+  to = "/.netlify/functions/documents-list"
+  status = 200
+
+[[redirects]]
+  from = "/api/documents/delete"
+  to = "/.netlify/functions/documents-delete"
+  status = 200
+
+[[redirects]]
+  from = "/api/documents/index-existing"
+  to = "/.netlify/functions/documents-index-existing"
+  status = 200
+
+[[redirects]]
+  from = "/api/documents/reindex-course"
+  to = "/.netlify/functions/documents-reindex-course"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/evaluate"
+  to = "/.netlify/functions/ai-evaluate"
+  status = 200
+
+[[redirects]]
+  from = "/api/notes/generate"
+  to = "/.netlify/functions/notes-generate"
+  status = 200
+
+[[redirects]]
+  from = "/api/notes"
+  to = "/.netlify/functions/notes-crud"
   status = 200
 
 

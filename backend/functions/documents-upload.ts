@@ -2,14 +2,14 @@
 
 import crypto from 'crypto';
 import https from 'https';
-import { requireEnv, optionalEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { supaRequest } from '../../lib/supabase-admin';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import { enforceEventRateLimit } from '../../lib/rate-limit';
-import { logSecurityEvent } from '../../lib/logger';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv, optionalEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { supaRequest } from '../lib/supabase-admin';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import { enforceEventRateLimit } from '../lib/rate-limit';
+import { logSecurityEvent } from '../lib/logger';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const ALLOWED_TYPES: Record<string, string> = { 'application/pdf': 'pdf' };

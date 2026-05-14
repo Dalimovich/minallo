@@ -1,9 +1,9 @@
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail } from '../../lib/responses';
-import { getCorsHeaders } from '../../lib/cors';
-import { supaRequest } from '../../lib/supabase-admin';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail } from '../lib/responses';
+import { getCorsHeaders } from '../lib/cors';
+import { supaRequest } from '../lib/supabase-admin';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface ProfileRow { id: string }
 

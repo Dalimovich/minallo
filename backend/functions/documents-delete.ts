@@ -1,11 +1,11 @@
 // DELETE /api/documents/delete
 
 import https from 'https';
-import { requireEnv, optionalEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { supaRequest } from '../../lib/supabase-admin';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv, optionalEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { supaRequest } from '../lib/supabase-admin';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface DocumentRow {
   id: string;

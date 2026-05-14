@@ -1,10 +1,10 @@
 // /api/notes — list, update, delete
 
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { supaRequest } from '../../lib/supabase-admin';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { supaRequest } from '../lib/supabase-admin';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();

@@ -1,9 +1,9 @@
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { stripeGet } from '../../lib/stripe';
-import { supaRequest } from '../../lib/supabase-admin';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { stripeGet } from '../lib/stripe';
+import { supaRequest } from '../lib/supabase-admin';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface StripeSession {
   status?: string;

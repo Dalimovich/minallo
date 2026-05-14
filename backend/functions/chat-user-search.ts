@@ -1,11 +1,11 @@
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail } from '../../lib/responses';
-import { getCorsHeaders } from '../../lib/cors';
-import { supaRequest } from '../../lib/supabase-admin';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { countRecentEvents, rateLimitResponse } from '../../lib/rate-limit';
-import { logSecurityEvent } from '../../lib/logger';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail } from '../lib/responses';
+import { getCorsHeaders } from '../lib/cors';
+import { supaRequest } from '../lib/supabase-admin';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { countRecentEvents, rateLimitResponse } from '../lib/rate-limit';
+import { logSecurityEvent } from '../lib/logger';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const SEARCH_RATE_LIMIT_MAX = 120;
 const SEARCH_RATE_LIMIT_WINDOW = 60 * 60 * 1000;

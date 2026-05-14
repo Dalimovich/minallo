@@ -1,12 +1,12 @@
 // POST /api/ai/generate — proxy to Python /generate-{quiz,flashcards,notes}.
 
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { optionalEnv, requireEnv } from '../../lib/env';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import { enforceEventRateLimit } from '../../lib/rate-limit';
-import { logSecurityEvent } from '../../lib/logger';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { optionalEnv, requireEnv } from '../lib/env';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import { enforceEventRateLimit } from '../lib/rate-limit';
+import { logSecurityEvent } from '../lib/logger';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const _LETTERS = ['A', 'B', 'C', 'D'] as const;
 const AI_GENERATE_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GENERATE_RATE_LIMIT_MAX', '30'), 10);

@@ -1,10 +1,10 @@
-import { requireEnv } from '../../lib/env';
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { supaRequest, supaAuthAdminRequest } from '../../lib/supabase-admin';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { logSecurityEvent } from '../../lib/logger';
-import { isUuid } from '../../lib/validation';
-import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { supaRequest, supaAuthAdminRequest } from '../lib/supabase-admin';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { logSecurityEvent } from '../lib/logger';
+import { isUuid } from '../lib/validation';
+import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../lib/types';
 
 interface AdminRow { user_id: string }
 interface SubscriptionLite { plan?: string; status?: string }

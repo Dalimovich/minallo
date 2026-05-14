@@ -1,12 +1,12 @@
 // POST /api/notes/generate — proxy to Python /notes-generate.
 
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { optionalEnv, requireEnv } from '../../lib/env';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { pythonAiConfigured, forwardToPython } from '../../lib/python-ai-proxy';
-import { enforceEventRateLimit } from '../../lib/rate-limit';
-import { logSecurityEvent } from '../../lib/logger';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { optionalEnv, requireEnv } from '../lib/env';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import { enforceEventRateLimit } from '../lib/rate-limit';
+import { logSecurityEvent } from '../lib/logger';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const NOTES_RATE_LIMIT_MAX = parseInt(optionalEnv('NOTES_RATE_LIMIT_MAX', '30'), 10);
 const NOTES_RATE_LIMIT_WINDOW = parseInt(optionalEnv('NOTES_RATE_LIMIT_WINDOW_MS', String(60 * 60 * 1000)), 10);

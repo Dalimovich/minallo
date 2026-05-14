@@ -1,8 +1,8 @@
-import { jsonResponse, fail, handleOptions } from '../../lib/responses';
-import { supaRequest } from '../../lib/supabase-admin';
-import { verifySupabaseToken, extractBearerToken } from '../../lib/supabase-auth';
-import { requireEnv } from '../../lib/env';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { supaRequest } from '../lib/supabase-admin';
+import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
+import { requireEnv } from '../lib/env';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface RoomRow { id: string; name?: string; visibility?: string }
 

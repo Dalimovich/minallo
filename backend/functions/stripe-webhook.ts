@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import { requireEnv } from '../../lib/env';
-import { supaRequest } from '../../lib/supabase-admin';
-import type { LambdaResponse, NetlifyEvent } from '../../lib/types';
+import { requireEnv } from '../lib/env';
+import { supaRequest } from '../lib/supabase-admin';
+import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface StripeEvent<T = unknown> {
   type: string;
