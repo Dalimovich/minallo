@@ -1,3 +1,4 @@
+"use strict";
 // Supabase request helpers. Exposed on window._ssDb so the not-yet-migrated
 // IIFE feature scripts can still reach them; once those are TS-native too,
 // drop the window assignment.
@@ -26,7 +27,4 @@ function _userId() {
     }
 }
 window._ssDb = { supaHeaders: _supaHeaders, supaUrl: _supaUrl, userId: _userId };
-export const supaHeaders = _supaHeaders;
-export const supaUrl = _supaUrl;
-export const userId = _userId;
 //# sourceMappingURL=db-helpers.js.map

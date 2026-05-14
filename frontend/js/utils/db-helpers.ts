@@ -28,7 +28,3 @@ function _userId(): string | null {
 }
 
 window._ssDb = { supaHeaders: _supaHeaders, supaUrl: _supaUrl, userId: _userId };
-
-export const supaHeaders = _supaHeaders;
-export const supaUrl = _supaUrl;
-export const userId = _userId;

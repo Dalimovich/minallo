@@ -109,7 +109,9 @@ async function saveSettings(patch) {
             document.getElementById('aiMsgs') &&
             document.getElementById('aiMsgs').querySelector('.ai-sel-banner');
           if (banner) banner.remove();
-          if (!aiPinned) forceCloseAI();
+          var _pinned = window._aiPanelBridge && typeof window._aiPanelBridge.getAiPinned === 'function'
+            ? window._aiPanelBridge.getAiPinned() : false;
+          if (!_pinned) forceCloseAI();
         }, 50);
       }
     });
