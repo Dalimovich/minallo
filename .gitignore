@@ -38,6 +38,9 @@ secrets.txt
 # Claude Code internal worktrees
 .claude/worktrees/
 
+# Personal prompt templates (not shared)
+.claude/prompts/
+
 # Empty auto-generated lockfile (backend has no deps)
 backend/package-lock.json
 
