@@ -639,7 +639,18 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
 // Dashboard cards
 _bindIf('pcStudip', 'click', () => {
   const resumed = _showStudipResume();
-  if (!resumed) _ssPushHistory({ view: 'studip' }, '#studip');
+  if (!resumed) {
+    // Push history directly (bypassing _ssPushHistory's _ssRestoring bail),
+    // and write ss_portal_tab + ss_last_section so a refresh restores Courses.
+    // Mirrors the _finalizeNav helper in router.js for non-Courses sidebar items.
+    try {
+      sessionStorage.setItem('ss_portal_tab', 'studip');
+      localStorage.setItem('ss_last_section', 'studip');
+    } catch { /* ignore */ }
+    try {
+      history.pushState({ view: 'portal', section: 'studip' }, '', '#portal=courses');
+    } catch { /* ignore */ }
+  }
 });
 _bindIf('pcMail', 'click', () => window.open('https://mail.tu-braunschweig.de', '_blank'));
 _bindIf('pcConnect', 'click', () => window.open('https://connect.tu-braunschweig.de', '_blank'));
