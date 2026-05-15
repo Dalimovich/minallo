@@ -58,24 +58,14 @@ body.night {
   --studip-subtitle: rgba(255, 255, 255, 0.35);
 }
 body.night {
-  /* Aligned with the new landing palette (see frontend/css/new-landing.css).
-     --purple was blue-400 (#60a5fa); the landing uses sky-300 (#7dd3fc) as
-     its primary accent across CTAs, links, and icons — swapping makes
-     every in-app accent match.
-     --pink (#38bdf8) already matches landing sky-400, kept.
-     --orange (#ff8c5a) was the lone warm accent; landing has no orange,
-     so we replace it with sky-200 (#bae6fd) for visual consistency. */
-  --purple: #7dd3fc;
+  --purple: #60a5fa;
   --pink: #38bdf8;
-  --orange: #bae6fd;
+  --orange: #ff8c5a;
   --bg: #020617;
   --card: #0f172a;
   --text: #e2e8f0;
   --muted: #64748b;
   --shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
-  /* Landing-style sky glow for CTAs / focus rings. Consumers wired in task-02. */
-  --shadow-sky: 0 0 35px rgba(56, 189, 248, 0.35);
-  --shadow-sky-soft: 0 0 55px rgba(56, 189, 248, 0.18);
   --border: #1e293b;
   --dp-bg: linear-gradient(135deg, #020617 0%, #0f172a 48%, #082f49 100%);
   --dp-solid: #020617;
