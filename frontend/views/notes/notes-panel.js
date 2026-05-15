@@ -922,6 +922,14 @@
   window._notesPanel = {
     open:  _openPanel,
     close: _closePanel,
-    ctx:   function () { return _ctx; }
+    ctx:   function () { return _ctx; },
+    // Document-rail Task-02: delete the currently-loaded note for the active
+    // tab. Mirrors the legacy saved-list delete confirm/behavior; no behavior
+    // change to existing flows — this is purely an external entry point.
+    'delete': function () {
+      if (!_currentNote || !_currentNote.id) return;
+      if (!confirm('Delete this note?')) return;
+      _deleteNote(_currentNote.id);
+    }
   };
 })();

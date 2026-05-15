@@ -271,12 +271,95 @@
   stroke-width: 2;
 }
 
-/* Drawer content area — Task-02 will mount real content here. */
+/* Drawer content area — Task-02 mounts the legacy AI / Notes panels here. */
 .dr-content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty / not-ready state inside the drawer (e.g. Notes mode w/ no PDF open). */
+.dr-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+  color: #94a3b8;
+  font: 600 0.85rem/1.45 'Nunito', system-ui, sans-serif;
+}
+
+/* ── Hosted #aiPanel (AI mode) ─────────────────────────────────────────── */
+/* When the legacy floating panel is hosted in the drawer, neutralise its
+   floating-panel chrome: it should fill .dr-content and let the drawer
+   provide the outer header/border/background. */
+#aiPanel.dr-host-ai {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  transform: none !important;
+  opacity: 1 !important;
+  z-index: auto !important;
+  display: flex !important;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Drawer already has its own header (title, trash, close) — hide the legacy
+   ai-hdr while hosted to avoid double headers. The clear/close buttons inside
+   it are still in the DOM (we click #aiClearBtn programmatically from
+   #drTrash) so hide via visibility, not detachment. */
+#aiPanel.dr-host-ai .ai-hdr {
+  display: none !important;
+}
+/* The floating panel's resize handles are useless inside the drawer. */
+#aiPanel.dr-host-ai #aiResizeHandle,
+#aiPanel.dr-host-ai #aiResizeHandleTop,
+#aiPanel.dr-host-ai #aiResizeHandleCorner {
+  display: none !important;
+}
+
+/* ── Hosted #pdfNotesPanel (Notes / Summary modes) ─────────────────────── */
+#pdfNotesPanel.dr-host-notes {
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Drawer already provides title + delete + close. Hide the legacy panel's
+   own header-action icons (Export + Close) to avoid duplicates. Tabs stay
+   visible so users can switch between the generation view and Saved. */
+#pdfNotesPanel.dr-host-notes .np-header-actions {
+  display: none !important;
+}
+/* Per spec: in Notes mode the drawer shows only `Notes | Saved` tabs (hide
+   Summary tab); in Summary mode show only `Summary | Saved` (hide Notes). */
+#pdfNotesPanel.dr-host-notes.dr-mode-notes .np-tab[data-tab="summary"],
+#pdfNotesPanel.dr-host-notes.dr-mode-summary .np-tab[data-tab="notes"] {
+  display: none !important;
 }
 
 /* Decorative ambient orbs inside the drawer. */
