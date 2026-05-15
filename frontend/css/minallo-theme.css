@@ -1,0 +1,66 @@
+/* ============================================================================
+   minallo-theme.css — shared design tokens for the Minallo product surface.
+
+   This file is loaded once at the document root (see frontend/index.html)
+   and exposes a `--mn-*` token vocabulary that auth.css consumes today.
+   Landing (new-landing.css) and the rest of the app can be migrated to
+   consume these tokens in future passes — for now they keep their own
+   local var blocks, and this file only declares the shared vocabulary.
+
+   Conventions:
+   - All tokens prefixed `--mn-` to avoid clashes with --nl-* (landing) and
+     --na-* (auth-local) blocks.
+   - Numeric scale follows Tailwind's familiar 100/200/.../500 ramps so
+     the values stay legible even without a design-system doc.
+   - Dark-only. Landing is dark-only and auth is dark-only; a light variant
+     would belong in a sibling file or under a body class, not here.
+   ========================================================================= */
+
+:root {
+  /* --- Page surfaces ----------------------------------------------------- */
+  --mn-bg:           #031323;            /* base page color (landing .nl-bg) */
+  --mn-bg-deep:      #020617;            /* gradient deepest stop          */
+  --mn-bg-mid:       #082f49;            /* gradient middle stop           */
+  --mn-bg-soft:      #075985;            /* radial hotspot color           */
+
+  /* The landing's exact backdrop. Use as `background: var(--mn-bg-gradient)`
+     on any full-page surface that should feel like the landing. */
+  --mn-bg-gradient:
+    radial-gradient(circle at top left, var(--mn-bg-soft) 0, transparent 34%),
+    radial-gradient(circle at 80% 10%, #0284c7 0, transparent 28%),
+    linear-gradient(135deg, var(--mn-bg-deep) 0%, var(--mn-bg-mid) 55%, var(--mn-bg) 100%);
+
+  /* --- Slate text ramp --------------------------------------------------- */
+  --mn-ink:          #f8fafc;            /* on dark — primary text         */
+  --mn-muted:        #cbd5e1;            /* secondary text                 */
+  --mn-dim:          #94a3b8;            /* tertiary text / labels         */
+  --mn-faint:        #64748b;            /* placeholder / disabled         */
+
+  /* --- Sky accent ramp (primary brand color) ----------------------------- */
+  --mn-sky-100:      #e0f2fe;
+  --mn-sky-200:      #bae6fd;
+  --mn-sky-300:      #7dd3fc;            /* primary accent — CTAs, links  */
+  --mn-sky-400:      #38bdf8;            /* hover / pressed state         */
+  --mn-sky-500:      #0ea5e9;
+
+  /* --- Glass surfaces ---------------------------------------------------- */
+  /* Use over --mn-bg-gradient with backdrop-filter: blur(28px) for the
+     landing/auth glass-card look. Border-top brighter than border for the
+     subtle highlighted-edge effect. */
+  --mn-glass-bg:        rgba(255, 255, 255, 0.07);
+  --mn-glass-bg-hover:  rgba(255, 255, 255, 0.09);
+  --mn-glass-border:    rgba(255, 255, 255, 0.12);
+
+  /* --- Shadows ----------------------------------------------------------- */
+  --mn-shadow-card:    0 35px 100px rgba(2, 6, 23, 0.55);
+  /* The landing's signature CTA glow. Use on primary buttons + focus rings. */
+  --mn-shadow-sky:     0 0 35px rgba(56, 189, 248, 0.35);
+  --mn-shadow-sky-hover: 0 0 45px rgba(56, 189, 248, 0.50);
+
+  /* --- Other ------------------------------------------------------------- */
+  --mn-emerald-300:    #6ee7b7;          /* status dot on landing/auth logo */
+  --mn-danger:         #ef4444;          /* error banner                    */
+  --mn-radius-md:      1rem;
+  --mn-radius-lg:      1.75rem;
+  --mn-radius-xl:      2.4rem;
+}

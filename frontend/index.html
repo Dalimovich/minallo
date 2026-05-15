@@ -20,6 +20,10 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+  <!-- Shared Minallo design tokens (--mn-*). Loaded before everything so
+       both the landing and auth (today) and other surfaces (later) can
+       consume the same vocabulary. See frontend/css/minallo-theme.css. -->
+  <link rel="stylesheet" href="/css/minallo-theme.css?v=1" />
   <link rel="stylesheet" href="/css/base.css?v=5" />
   <link rel="stylesheet" href="/css/theme.css?v=5" />
   <link rel="stylesheet" href="/css/styles.css?v=5" />

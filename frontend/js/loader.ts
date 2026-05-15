@@ -229,7 +229,7 @@ interface LandingTranslation {
       // task-04: auth modal can be triggered from the landing too, ship its CSS up front.
       const authLink = document.createElement('link');
       authLink.rel = 'stylesheet';
-      authLink.href = 'css/auth.css?v=4';
+      authLink.href = 'css/auth.css?v=5';
       document.head.appendChild(authLink);
     })();
 
@@ -346,7 +346,7 @@ interface LandingTranslation {
   // Inject feature CSS
   (function () {
     [
-      'css/auth.css?v=4',
+      'css/auth.css?v=5',
       'views/toast/toast.css',
       'views/chatbot/chatbot.css',
       'views/chatbot/ai-bubble.css',

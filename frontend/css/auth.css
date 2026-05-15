@@ -12,19 +12,23 @@
    ============================================================================ */
 
 #authModal {
-  /* tokens (kept local so this file works without new-landing.css) */
-  --na-ink: #f8fafc;
-  --na-muted: #cbd5e1;
-  --na-dim: #94a3b8;
-  --na-faint: #64748b;
-  --na-bg: #031323;
-  --na-sky-100: #e0f2fe;
-  --na-sky-200: #bae6fd;
-  --na-sky-300: #7dd3fc;
-  --na-sky-400: #38bdf8;
-  --na-sky-500: #0ea5e9;
-  --na-emerald-300: #6ee7b7;
-  --na-danger: #ef4444;
+  /* Local --na-* names alias the shared Minallo design tokens
+     (frontend/css/minallo-theme.css, loaded by index.html). Auth-local
+     names are kept so the rest of this file doesn't need to change, and
+     so the modal degrades to dark-blue-ish if minallo-theme.css fails to
+     load (the fallbacks here mirror the canonical values). */
+  --na-ink:           var(--mn-ink, #f8fafc);
+  --na-muted:         var(--mn-muted, #cbd5e1);
+  --na-dim:           var(--mn-dim, #94a3b8);
+  --na-faint:         var(--mn-faint, #64748b);
+  --na-bg:            var(--mn-bg, #031323);
+  --na-sky-100:       var(--mn-sky-100, #e0f2fe);
+  --na-sky-200:       var(--mn-sky-200, #bae6fd);
+  --na-sky-300:       var(--mn-sky-300, #7dd3fc);
+  --na-sky-400:       var(--mn-sky-400, #38bdf8);
+  --na-sky-500:       var(--mn-sky-500, #0ea5e9);
+  --na-emerald-300:   var(--mn-emerald-300, #6ee7b7);
+  --na-danger:        var(--mn-danger, #ef4444);
 
   position: fixed;
   inset: 0;
