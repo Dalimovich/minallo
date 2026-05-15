@@ -102,11 +102,6 @@
             aiChipsEl.innerHTML = aiChipsEl._originalHTML;
             aiChipsEl._originalHTML = null;
           }
-          // Navigate back to the course files overview
-          if (typeof window._showFilesView === 'function') window._showFilesView();
-          if (window.activeCourseRef && typeof window.showCourseSection === 'function') {
-            window.showCourseSection(window.activeCourseRef, 'files');
-          }
         })
       );
 
@@ -241,10 +236,6 @@
       if (aiChipsEl && aiChipsEl._originalHTML) {
         aiChipsEl.innerHTML = aiChipsEl._originalHTML;
         aiChipsEl._originalHTML = null;
-      }
-      if (typeof window._showFilesView === 'function') window._showFilesView();
-      if (window.activeCourseRef && typeof window.showCourseSection === 'function') {
-        window.showCourseSection(window.activeCourseRef, 'files');
       }
     };
 
