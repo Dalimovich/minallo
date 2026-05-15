@@ -753,57 +753,95 @@ function _captureSnipRegion(x1, y1, x2, y2) {
 })();
 
 // ── AI panel resize (desktop only) ───────────────────────────────────────
+// Three handles: left edge (width), top edge (height), top-left corner (both).
+// Each persists its axis independently to localStorage; the corner handle
+// drives both axes at once.
 (function () {
-  var handle = document.getElementById('aiResizeHandle');
+  var leftHandle = document.getElementById('aiResizeHandle');
+  var topHandle = document.getElementById('aiResizeHandleTop');
+  var cornerHandle = document.getElementById('aiResizeHandleCorner');
   var panel = document.getElementById('aiPanel');
-  if (!handle || !panel) return;
+  if (!panel) return;
 
   var AI_W_MIN = 280;
   var AI_W_MAX = 600;
+  var AI_H_MIN = 240;
   var AI_W_KEY = 'ss_ai_width';
+  var AI_H_KEY = 'ss_ai_height';
 
-  // Restore saved width
-  var saved = parseInt(localStorage.getItem(AI_W_KEY), 10);
-  if (saved && saved >= AI_W_MIN && saved <= AI_W_MAX) {
-    document.documentElement.style.setProperty('--ai-w', saved + 'px');
+  // Restore saved dimensions
+  var savedW = parseInt(localStorage.getItem(AI_W_KEY), 10);
+  if (savedW && savedW >= AI_W_MIN && savedW <= AI_W_MAX) {
+    document.documentElement.style.setProperty('--ai-w', savedW + 'px');
+  }
+  var savedH = parseInt(localStorage.getItem(AI_H_KEY), 10);
+  if (savedH && savedH >= AI_H_MIN) {
+    // Clamp to parent height at restore time. If parent isn't measurable yet
+    // (still booting), trust the saved value — CSS will cap it visually.
+    var parentH = (panel.parentElement && panel.parentElement.clientHeight) || 0;
+    var clampedH = parentH > 0 ? Math.min(savedH, parentH) : savedH;
+    document.documentElement.style.setProperty('--ai-h', clampedH + 'px');
   }
 
-  var startX, startW;
-
-  handle.addEventListener('mousedown', function (e) {
+  // Shared drag bootstrap. axis: 'x' | 'y' | 'xy'. cursor: drag-cursor style.
+  function startDrag(e, handle, axis, cursor) {
     e.preventDefault();
-    startX = e.clientX;
-    startW =
-      panel.offsetWidth ||
-      parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ai-w'), 10) ||
-      340;
+    var startX = e.clientX;
+    var startY = e.clientY;
+    var rect = panel.getBoundingClientRect();
+    var startW = rect.width;
+    var startH = rect.height;
+    var parentH = (panel.parentElement && panel.parentElement.clientHeight) || startH;
     handle.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
+    document.body.style.cursor = cursor;
     document.body.style.userSelect = 'none';
 
-    function onMove(e) {
-      var delta = startX - e.clientX; // dragging left = wider
-      var newW = Math.min(AI_W_MAX, Math.max(AI_W_MIN, startW + delta));
-      document.documentElement.style.setProperty('--ai-w', newW + 'px');
+    function onMove(ev) {
+      if (axis === 'x' || axis === 'xy') {
+        // Dragging the LEFT edge leftward (decreasing clientX) widens the panel.
+        var deltaX = startX - ev.clientX;
+        var newW = Math.min(AI_W_MAX, Math.max(AI_W_MIN, startW + deltaX));
+        document.documentElement.style.setProperty('--ai-w', newW + 'px');
+      }
+      if (axis === 'y' || axis === 'xy') {
+        // Dragging the TOP edge upward (decreasing clientY) makes panel taller.
+        var deltaY = startY - ev.clientY;
+        var newH = Math.min(parentH, Math.max(AI_H_MIN, startH + deltaY));
+        document.documentElement.style.setProperty('--ai-h', newH + 'px');
+      }
     }
-
     function onUp() {
       handle.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      // Persist
-      var finalW = parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue('--ai-w'),
-        10
-      );
-      if (finalW) localStorage.setItem(AI_W_KEY, finalW);
+      var css = getComputedStyle(document.documentElement);
+      if (axis === 'x' || axis === 'xy') {
+        var finalW = parseInt(css.getPropertyValue('--ai-w'), 10);
+        if (finalW) localStorage.setItem(AI_W_KEY, finalW);
+      }
+      if (axis === 'y' || axis === 'xy') {
+        var finalH = parseInt(css.getPropertyValue('--ai-h'), 10);
+        if (finalH) localStorage.setItem(AI_H_KEY, finalH);
+      }
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     }
-
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  });
+  }
+
+  if (leftHandle)
+    leftHandle.addEventListener('mousedown', function (e) {
+      startDrag(e, leftHandle, 'x', 'col-resize');
+    });
+  if (topHandle)
+    topHandle.addEventListener('mousedown', function (e) {
+      startDrag(e, topHandle, 'y', 'row-resize');
+    });
+  if (cornerHandle)
+    cornerHandle.addEventListener('mousedown', function (e) {
+      startDrag(e, cornerHandle, 'xy', 'nw-resize');
+    });
 })();
 
 // ── Scroll-to-bottom button ───────────────────────────────────────────────

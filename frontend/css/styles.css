@@ -2900,8 +2900,13 @@ body.night .sb-acc-chev-btn {
 #aiPanel {
   position: absolute;
   right: 0;
-  top: 0;
+  /* Anchored to the bottom-right corner. Height defaults to 100% (full
+     shell) so existing behavior is unchanged; user can shrink it from
+     the top edge / corner via #aiResizeHandleTop / #aiResizeHandleCorner.
+     Using bottom + height (instead of top:0 + bottom:0) lets the panel
+     be shorter than the viewport without breaking flex layout inside. */
   bottom: 0;
+  height: var(--ai-h, 100%);
   width: 0;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(24px);
@@ -4263,11 +4268,17 @@ body.night .chip-sub-h {
   pointer-events: none;
   overflow: hidden;
 }
-/* AI panel resize handle — desktop only */
+/* AI panel resize handles — desktop only.
+   Three handles allow resizing on all four sides:
+   - #aiResizeHandle:       left edge      → col-resize (width)
+   - #aiResizeHandleTop:    top edge       → row-resize (height)
+   - #aiResizeHandleCorner: top-left 14×14 → nw-resize  (both axes)
+   The corner handle sits on top with higher z-index; the two edge
+   handles step away from the corner so they don't overlap visually. */
 #aiResizeHandle {
   position: absolute;
   left: -4px;
-  top: 0;
+  top: 14px;
   bottom: 0;
   width: 8px;
   cursor: col-resize;
@@ -4276,12 +4287,42 @@ body.night .chip-sub-h {
   transition: background 0.18s;
   pointer-events: auto;
 }
+#aiResizeHandleTop {
+  position: absolute;
+  top: -4px;
+  left: 14px;
+  right: 0;
+  height: 8px;
+  cursor: row-resize;
+  z-index: 60;
+  border-radius: 4px;
+  transition: background 0.18s;
+  pointer-events: auto;
+}
+#aiResizeHandleCorner {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 16px;
+  height: 16px;
+  cursor: nw-resize;
+  z-index: 70;
+  border-radius: 50%;
+  transition: background 0.18s;
+  pointer-events: auto;
+}
 #aiResizeHandle:hover,
-#aiResizeHandle.dragging {
+#aiResizeHandle.dragging,
+#aiResizeHandleTop:hover,
+#aiResizeHandleTop.dragging,
+#aiResizeHandleCorner:hover,
+#aiResizeHandleCorner.dragging {
   background: rgba(37, 99, 235, 0.28);
 }
 @media (hover: none), (pointer: coarse) {
-  #aiResizeHandle {
+  #aiResizeHandle,
+  #aiResizeHandleTop,
+  #aiResizeHandleCorner {
     display: none;
   }
 }
