@@ -168,6 +168,15 @@ function mountAiPanel() {
         }
         catch (_e) { /* ignore */ }
     }
+    // Pin the panel so ai-panel-bridge's mouseleave→closeAI auto-close doesn't
+    // remove `.visible` (which kills input/send) when the cursor leaves the
+    // drawer. The drawer has its own X / Esc / rail-toggle close paths.
+    if (typeof w.pinAI === 'function') {
+        try {
+            w.pinAI();
+        }
+        catch (_e) { /* ignore */ }
+    }
     // Auto-focus the input after the drawer transition (~240ms).
     window.setTimeout(() => {
         const input = document.getElementById('aiInput');

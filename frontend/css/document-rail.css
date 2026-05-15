@@ -1048,8 +1048,14 @@
 .dr-drawer .dr-host-ai .ai-bottom-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+  row-gap: 8px;
   margin-top: 6px;
+  min-width: 0;
+}
+.dr-drawer .dr-host-ai .ai-bottom-row > * {
+  min-width: 0;
 }
 
 /* Mode pill */
