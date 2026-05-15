@@ -1,419 +1,276 @@
-<!-- AUTH MODAL
+<!-- AUTH MODAL — redesigned to match the new Minallo landing aesthetic.
      One Tap is initialised in index.html (_initOneTap / _handleGoogleCredential).
      Scripts injected via innerHTML never execute, so ALL auth JS lives in index.html.
-     This file contains only the modal markup. -->
-<div
-  id="authModal"
-  style="
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    background: var(--auth-bg);
-    backdrop-filter: blur(12px);
-    display: none;
-    align-items: center;
-    justify-content: center;
-  "
->
-  <div
-    id="authBox"
-    style="
-      background: var(--auth-box-bg);
-      border: 1px solid var(--auth-box-border);
-      border-radius: 24px;
-      width: min(780px, calc(100vw - 32px));
-      max-height: calc(100vh - 32px);
-      overflow: hidden;
-      display: flex;
-      flex-direction: row;
-    "
-  >
-    <!-- Left: form -->
-    <div
-      style="
-        flex: 1;
-        padding: 40px 36px;
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        overflow-y: auto;
-      "
-    >
-      <div style="text-align: center">
-        <div
-          style="
-            font-family: 'Fredoka One', cursive;
-            font-size: 1.8rem;
-            background: linear-gradient(135deg, #3b82f6, #0ea5e9, #fb923c);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 6px;
-          "
-        >
-          Minallo
-        </div>
-        <div
-          id="authTitle"
-          style="font-size: 0.85rem; color: var(--auth-subtitle); font-weight: 700"
-        >
-          Sign in to your account
-        </div>
-      </div>
-      <div
-        id="authError"
-        style="
-          display: none;
-          background: rgba(255, 107, 55, 0.12);
-          border: 1px solid rgba(255, 107, 55, 0.3);
-          border-radius: 10px;
-          padding: 9px 14px;
-          font-size: 0.78rem;
-          font-weight: 700;
-          color: #ff6b35;
-          text-align: center;
-        "
-      ></div>
-      <div style="display: flex; flex-direction: column; gap: 12px">
-        <div style="display: flex; flex-direction: column; gap: 5px">
-          <label
-            style="
-              font-size: 0.7rem;
-              font-weight: 800;
-              color: var(--auth-label);
-              text-transform: uppercase;
-              letter-spacing: 0.04em;
-            "
-            data-i18n="auth_email_label"
-            >Email</label
-          >
-          <input
-            id="authEmail"
-            type="email"
-            placeholder="your@email.com"
-            style="
-              background: var(--auth-input-bg);
-              border: 1px solid var(--auth-input-border);
-              border-radius: 10px;
-              padding: 11px 14px;
-              font-family: 'Nunito', sans-serif;
-              font-size: 0.85rem;
-              font-weight: 700;
-              color: var(--auth-input-color);
-              outline: none;
-              transition: border-color 0.15s;
-            "
-          />
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 5px">
-          <label
-            style="
-              font-size: 0.7rem;
-              font-weight: 800;
-              color: var(--auth-label);
-              text-transform: uppercase;
-              letter-spacing: 0.04em;
-            "
-            data-i18n="auth_password_label"
-            >Password</label
-          >
-          <div style="position: relative">
-            <input
-              id="authPassword"
-              type="password"
-              placeholder="••••••••"
-              style="
-                background: var(--auth-input-bg);
-                border: 1px solid var(--auth-input-border);
-                border-radius: 10px;
-                padding: 11px 40px 11px 14px;
-                font-family: 'Nunito', sans-serif;
-                font-size: 0.85rem;
-                font-weight: 700;
-                color: var(--auth-input-color);
-                outline: none;
-                transition: border-color 0.15s;
-                width: 100%;
-              "
-            />
-            <button
-              type="button"
-              id="togglePw"
-              style="
-                position: absolute;
-                right: 10px;
-                top: 50%;
-                transform: translateY(-50%);
-                background: none;
-                border: none;
-                cursor: pointer;
-                font-size: 0.95rem;
-                line-height: 1;
-                padding: 2px 4px;
-                color: var(--auth-toggle-pw);
-              "
-              title="Show/hide password"
-            >
-              👁
-            </button>
-          </div>
-          <!-- Strength bar (shown on signup only) -->
-          <div id="pwStrengthWrap" style="display: none; margin-top: 4px">
-            <div style="display: flex; gap: 4px; margin-bottom: 4px">
-              <div
-                id="pws1"
-                style="
-                  flex: 1;
-                  height: 4px;
-                  border-radius: 4px;
-                  background: var(--auth-pw-bar);
-                  transition: background 0.3s;
-                "
-              ></div>
-              <div
-                id="pws2"
-                style="
-                  flex: 1;
-                  height: 4px;
-                  border-radius: 4px;
-                  background: var(--auth-pw-bar);
-                  transition: background 0.3s;
-                "
-              ></div>
-              <div
-                id="pws3"
-                style="
-                  flex: 1;
-                  height: 4px;
-                  border-radius: 4px;
-                  background: var(--auth-pw-bar);
-                  transition: background 0.3s;
-                "
-              ></div>
-              <div
-                id="pws4"
-                style="
-                  flex: 1;
-                  height: 4px;
-                  border-radius: 4px;
-                  background: var(--auth-pw-bar);
-                  transition: background 0.3s;
-                "
-              ></div>
-            </div>
-            <div
-              id="pwStrengthLabel"
-              style="font-size: 0.68rem; font-weight: 800; color: var(--auth-pw-label)"
-            ></div>
-          </div>
-        </div>
-        <!-- Confirm password (signup only) -->
-        <div id="authConfirmWrap" style="display: none; flex-direction: column; gap: 5px">
-          <label
-            style="
-              font-size: 0.7rem;
-              font-weight: 800;
-              color: var(--auth-label);
-              text-transform: uppercase;
-              letter-spacing: 0.04em;
-            "
-            data-i18n="auth_confirm_label"
-            >Confirm Password</label
-          >
-          <div style="position: relative">
-            <input
-              id="authConfirm"
-              type="password"
-              placeholder="••••••••"
-              style="
-                background: var(--auth-input-bg);
-                border: 1px solid var(--auth-input-border);
-                border-radius: 10px;
-                padding: 11px 40px 11px 14px;
-                font-family: 'Nunito', sans-serif;
-                font-size: 0.85rem;
-                font-weight: 700;
-                color: var(--auth-input-color);
-                outline: none;
-                transition: border-color 0.15s;
-                width: 100%;
-              "
-            />
-            <button
-              type="button"
-              id="toggleConfirm"
-              style="
-                position: absolute;
-                right: 10px;
-                top: 50%;
-                transform: translateY(-50%);
-                background: none;
-                border: none;
-                cursor: pointer;
-                font-size: 0.95rem;
-                line-height: 1;
-                padding: 2px 4px;
-                opacity: 0.5;
-              "
-              title="Show/hide password"
-            >
-              👁
-            </button>
-          </div>
-          <div
-            id="authConfirmHint"
-            style="
-              font-size: 0.68rem;
-              font-weight: 800;
-              color: var(--auth-confirm-hint);
-              margin-top: 2px;
-            "
-          ></div>
-        </div>
-      </div>
-      <button
-        id="authSubmit"
-        style="
-          padding: 13px;
-          background: linear-gradient(135deg, #3b82f6, #0ea5e9);
-          border: none;
-          border-radius: 30px;
-          font-family: 'Nunito', sans-serif;
-          font-weight: 800;
-          font-size: 0.9rem;
-          color: #fff;
-          cursor: pointer;
-          transition: all 0.2s;
-          box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
-        "
-      >
-        Sign In
-      </button>
-      <div style="display: flex; align-items: center; gap: 10px; margin: 2px 0">
-        <div style="flex: 1; height: 1px; background: var(--auth-divider)"></div>
-        <span style="font-size: 0.72rem; font-weight: 700; color: var(--auth-divider-text)"
-          >or</span
-        >
-        <div style="flex: 1; height: 1px; background: var(--auth-divider)"></div>
-      </div>
-      <button
-        id="googleSignIn"
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          padding: 12px;
-          background: var(--auth-google-bg);
-          border: 1px solid var(--auth-google-border);
-          border-radius: 30px;
-          font-family: 'Nunito', sans-serif;
-          font-weight: 800;
-          font-size: 0.9rem;
-          color: var(--auth-google-color);
-          cursor: pointer;
-          transition: all 0.2s;
-          width: 100%;
-        "
-      >
-        <svg width="18" height="18" viewBox="0 0 48 48">
-          <path
-            fill="#FFC107"
-            d="M43.6 20.1H42V20H24v8h11.3C33.6 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 2.9l5.7-5.7C34.5 6.5 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"
-          />
-          <path
-            fill="#FF3D00"
-            d="M6.3 14.7l6.6 4.8C14.6 16 19 12 24 12c3.1 0 5.8 1.1 7.9 2.9l5.7-5.7C34.5 6.5 29.5 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"
-          />
-          <path
-            fill="#4CAF50"
-            d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.5 26.7 36 24 36c-5.2 0-9.7-3.3-11.3-7.9l-6.6 5.1C9.5 39.5 16.3 44 24 44z"
-          />
-          <path
-            fill="#1976D2"
-            d="M43.6 20.1H42V20H24v8h11.3c-.8 2.3-2.4 4.3-4.4 5.6l6.2 5.2C36.9 36.6 44 31 44 24c0-1.3-.1-2.6-.4-3.9z"
-          />
-        </svg>
-        <span data-i18n="auth_google_btn">Continue with Google</span>
-      </button>
-      <label
-        style="display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none"
-      >
-        <input
-          type="checkbox"
-          id="staySignedIn"
-          style="width: 16px; height: 16px; accent-color: #3b82f6; cursor: pointer"
-          checked
-        />
-        <span
-          style="font-size: 0.78rem; font-weight: 700; color: var(--auth-stay)"
-          data-i18n="auth_stay"
-          >Stay signed in</span
-        >
-        <span
-          style="font-size: 0.68rem; color: var(--auth-stay-timeout); margin-left: auto"
-          data-i18n="auth_stay_timeout"
-          >(30 min timeout)</span
-        >
-      </label>
-      <div
-        style="text-align: center; font-size: 0.78rem; color: var(--auth-footer); font-weight: 700"
-      >
-        <span id="authSwitch" style="color: var(--purple); cursor: pointer; font-weight: 800"
-          >Don't have an account? Sign up</span
-        >
-      </div>
-    </div>
+     This file contains only the modal markup. Styles live in frontend/css/auth.css.
+     IMPORTANT: every id below is consumed by frontend/js/features/auth/auth-modal.js.
+     Do not rename. Visual treatment may evolve freely; structure must stay
+     compatible with the existing setAuthMode / submitAuth / strength-meter logic. -->
+<div id="authModal" class="na-modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <!-- Self-contained icon sprite (copied symbols + new Mail/Lock/Eye/EyeOff/X-eye).
+       Re-using the new-landing sprite ids would couple us to the landing being
+       loaded; the auth modal can appear from the in-app shell too, so we ship
+       our own symbols under the na-i-* namespace. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="na-i-graduation-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/>
+        <path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>
+      </symbol>
+      <symbol id="na-i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+        <path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>
+      </symbol>
+      <symbol id="na-i-brain-circuit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+        <path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
+        <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/>
+        <path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/>
+        <path d="M16 8V5a2 2 0 0 1 2-2"/>
+        <circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/>
+        <circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/>
+      </symbol>
+      <symbol id="na-i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+        <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+        <path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
+      </symbol>
+      <symbol id="na-i-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/>
+        <circle cx="12" cy="14" r="8"/>
+      </symbol>
+      <symbol id="na-i-languages" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/>
+        <path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>
+      </symbol>
+      <symbol id="na-i-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+        <path d="m9 12 2 2 4-4"/>
+      </symbol>
+      <symbol id="na-i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+      </symbol>
+      <!-- New (not in landing sprite) — lucide MIT -->
+      <symbol id="na-i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="20" height="16" x="2" y="4" rx="2"/>
+        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+      </symbol>
+      <symbol id="na-i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </symbol>
+      <symbol id="na-i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/>
+        <circle cx="12" cy="12" r="3"/>
+      </symbol>
+      <symbol id="na-i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/>
+        <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/>
+        <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/>
+        <path d="m2 2 20 20"/>
+      </symbol>
+    </defs>
+  </svg>
 
-    <!-- Right: cat mascot panel -->
-    <div
-      style="
-        width: 300px;
-        flex-shrink: 0;
-        background: linear-gradient(160deg, #0f172a, #1d4ed8, #2563eb);
-        border-radius: 0 24px 24px 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 36px 28px;
-        gap: 20px;
-      "
-    >
-      <img
-        src="assets/cat-mascot.jpg"
-        alt="Minallo mascot"
-        style="
-          width: 230px;
-          height: 230px;
-          object-fit: cover;
-          border-radius: 50%;
-          box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
-          border: 4px solid rgba(255, 255, 255, 0.2);
-        "
-      />
-      <div
-        style="
-          color: #fff;
-          font-family: 'Fredoka One', cursive;
-          font-size: 1.35rem;
-          text-align: center;
-          line-height: 1.3;
-        "
-      >
-        Your 24/7<br />Minallo Buddy
+  <!-- Animated decor: gradient bg, grid texture, 3 floating orbs.
+       Pointer-events: none so the form is always clickable through them. -->
+  <div class="na-bg-gradient" aria-hidden="true"></div>
+  <div class="na-grid" aria-hidden="true"></div>
+  <div class="na-orb na-orb-1" aria-hidden="true"></div>
+  <div class="na-orb na-orb-2" aria-hidden="true"></div>
+  <div class="na-orb na-orb-3" aria-hidden="true"></div>
+
+  <section class="na-shell">
+    <div id="authBox" class="na-card">
+      <!-- LEFT COLUMN: form -->
+      <div class="na-form-col">
+        <div class="na-form-glow" aria-hidden="true"></div>
+
+        <div class="na-form-inner">
+          <!-- Brand cluster -->
+          <div class="na-brand">
+            <div class="na-brand-icon">
+              <svg width="25" height="25" aria-hidden="true"><use href="#na-i-graduation-cap"/></svg>
+              <span class="na-brand-dot" aria-hidden="true"></span>
+            </div>
+            <div>
+              <h1 class="na-brand-name">Minallo</h1>
+              <p class="na-brand-tagline">Study smarter</p>
+            </div>
+          </div>
+
+          <!-- Welcome + heading + body (mode-dependent) -->
+          <div class="na-hero">
+            <div class="na-badge">
+              <svg width="14" height="14" aria-hidden="true"><use href="#na-i-sparkles"/></svg>
+              <span class="na-badge-text" data-mode="signin">Welcome back</span>
+              <span class="na-badge-text" data-mode="signup" hidden>Welcome to Minallo</span>
+            </div>
+            <h2 class="na-heading">
+              <span data-mode="signin">Sign in to your study space.</span>
+              <span data-mode="signup" hidden>Create your Minallo account.</span>
+            </h2>
+            <p class="na-body">
+              <span data-mode="signin">Continue your courses, German practice, PDF work, playlists, games, and focus sessions from one calm dashboard.</span>
+              <span data-mode="signup" hidden>Start organizing your study life with AI help, PDF tools, German practice, focus sessions, playlists, and study games.</span>
+            </p>
+          </div>
+
+          <!-- authTitle: kept for setAuthMode() backwards-compat. Hidden visually but
+               present in DOM so the JS can still write to it without throwing. -->
+          <div id="authTitle" class="na-sr-only" aria-hidden="true">Sign in to your account</div>
+
+          <!-- Error banner -->
+          <div id="authError" class="na-error" role="alert"></div>
+
+          <form class="na-form" onsubmit="event.preventDefault()">
+            <!-- Email -->
+            <label class="na-field">
+              <span class="na-field-label" data-i18n="auth_email_label">Email</span>
+              <span class="na-input-wrap">
+                <svg class="na-input-icon" width="19" height="19" aria-hidden="true"><use href="#na-i-mail"/></svg>
+                <input id="authEmail" type="email" autocomplete="email" placeholder="your@email.com" class="na-input"/>
+              </span>
+            </label>
+
+            <!-- Password -->
+            <label class="na-field">
+              <span class="na-field-label" data-i18n="auth_password_label">Password</span>
+              <span class="na-input-wrap">
+                <svg class="na-input-icon" width="19" height="19" aria-hidden="true"><use href="#na-i-lock"/></svg>
+                <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••" class="na-input"/>
+                <button type="button" id="togglePw" class="na-eye-btn" aria-label="Show or hide password" title="Show/hide password">
+                  <svg width="18" height="18" aria-hidden="true"><use href="#na-i-eye"/></svg>
+                </button>
+              </span>
+
+              <!-- Strength meter (signup only — JS toggles display) -->
+              <div id="pwStrengthWrap" class="na-strength" style="display:none">
+                <div class="na-strength-bars">
+                  <div id="pws1" class="na-strength-bar"></div>
+                  <div id="pws2" class="na-strength-bar"></div>
+                  <div id="pws3" class="na-strength-bar"></div>
+                  <div id="pws4" class="na-strength-bar"></div>
+                </div>
+                <div id="pwStrengthLabel" class="na-strength-label"></div>
+              </div>
+            </label>
+
+            <!-- Confirm password (signup only) -->
+            <label id="authConfirmWrap" class="na-field" style="display:none">
+              <span class="na-field-label" data-i18n="auth_confirm_label">Confirm Password</span>
+              <span class="na-input-wrap">
+                <svg class="na-input-icon" width="19" height="19" aria-hidden="true"><use href="#na-i-lock"/></svg>
+                <input id="authConfirm" type="password" autocomplete="new-password" placeholder="••••••••" class="na-input"/>
+                <button type="button" id="toggleConfirm" class="na-eye-btn" aria-label="Show or hide password" title="Show/hide password">
+                  <svg width="18" height="18" aria-hidden="true"><use href="#na-i-eye"/></svg>
+                </button>
+              </span>
+              <div id="authConfirmHint" class="na-confirm-hint"></div>
+            </label>
+
+            <!-- Stay-signed-in + forgot-password (signin only). Real <input type=checkbox>
+                 preserved for the existing JS that reads .checked. The visible
+                 styling is on the wrapping label. -->
+            <div class="na-signin-row" data-mode="signin">
+              <label class="na-stay">
+                <input type="checkbox" id="staySignedIn" class="na-stay-input" checked/>
+                <span class="na-stay-box" aria-hidden="true">
+                  <svg width="14" height="14" aria-hidden="true"><use href="#na-i-shield-check"/></svg>
+                </span>
+                <span class="na-stay-text" data-i18n="auth_stay">Stay signed in</span>
+              </label>
+              <a href="#forgot" class="na-forgot">Forgot password?</a>
+            </div>
+
+            <!-- Submit -->
+            <button id="authSubmit" type="submit" class="na-submit">
+              <span class="na-submit-text">
+                <span data-mode="signin">Sign in</span>
+                <span data-mode="signup" hidden>Create account</span>
+              </span>
+              <svg class="na-submit-arrow" width="18" height="18" aria-hidden="true"><use href="#na-i-arrow-right"/></svg>
+            </button>
+          </form>
+
+          <!-- Divider -->
+          <div class="na-divider">
+            <span class="na-divider-line"></span>
+            <span class="na-divider-text">or</span>
+            <span class="na-divider-line"></span>
+          </div>
+
+          <!-- Google -->
+          <button id="googleSignIn" type="button" class="na-google">
+            <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+              <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/>
+              <path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.5-5.3l-6.2-5.2C29.3 35.1 26.8 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.5 16.2 44 24 44z"/>
+              <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.5l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+            </svg>
+            <span data-mode="signin" data-i18n="auth_google_btn">Continue with Google</span>
+            <span data-mode="signup" hidden>Sign up with Google</span>
+          </button>
+
+          <!-- Switch link. The existing JS sets textContent on #authSwitch from
+               translation keys, which would overwrite any inner [data-mode] split.
+               So we keep #authSwitch as a single span and let the JS own its text. -->
+          <p class="na-switch-row">
+            <span class="na-switch-prefix" data-mode="signin">Don't have an account?</span>
+            <span class="na-switch-prefix" data-mode="signup" hidden>Already have an account?</span>
+            <span id="authSwitch" class="na-switch-link" role="button" tabindex="0">Sign up</span>
+          </p>
+        </div>
       </div>
-      <div
-        style="
-          color: rgba(255, 255, 255, 0.8);
-          font-size: 0.82rem;
-          font-weight: 700;
-          text-align: center;
-          line-height: 1.6;
-        "
-      >
-        Ask questions, get explanations,<br />and ace your degree.
-      </div>
+
+      <!-- RIGHT COLUMN: buddy panel (hidden <1024px via CSS) -->
+      <aside class="na-buddy">
+        <div class="na-buddy-glow" aria-hidden="true"></div>
+        <div class="na-buddy-grid" aria-hidden="true"></div>
+
+        <div class="na-buddy-inner">
+          <div class="na-buddy-top">
+            <div class="na-buddy-pill">24/7 study companion</div>
+            <div class="na-buddy-sparkle">
+              <svg width="20" height="20" aria-hidden="true"><use href="#na-i-sparkles"/></svg>
+            </div>
+          </div>
+
+          <div class="na-buddy-hero">
+            <div class="na-owl-wrap">
+              <div class="na-owl-glow" aria-hidden="true"></div>
+              <div class="na-owl-circle">
+                <div class="na-owl-inner" aria-hidden="true"></div>
+                <div class="na-owl-emoji">🦉</div>
+              </div>
+            </div>
+            <h3 class="na-buddy-title">Your Minallo study buddy</h3>
+            <p class="na-buddy-body">Ask questions, organize your work, practice German, and stay focused without switching tools.</p>
+          </div>
+
+          <div class="na-mini-grid">
+            <div class="na-mini-card">
+              <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-brain-circuit"/></svg></div>
+              <h4 class="na-mini-title">AI Tutor</h4>
+              <p class="na-mini-text">Course-aware help with citations.</p>
+            </div>
+            <div class="na-mini-card">
+              <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-file-text"/></svg></div>
+              <h4 class="na-mini-title">PDF Workspace</h4>
+              <p class="na-mini-text">Read, edit, and organize notes.</p>
+            </div>
+            <div class="na-mini-card">
+              <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-timer"/></svg></div>
+              <h4 class="na-mini-title">Focus Mode</h4>
+              <p class="na-mini-text">Pomodoro sessions and streaks.</p>
+            </div>
+            <div class="na-mini-card">
+              <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-languages"/></svg></div>
+              <h4 class="na-mini-title">German Practice</h4>
+              <p class="na-mini-text">Vocabulary, grammar, and examples.</p>
+            </div>
+          </div>
+        </div>
+      </aside>
     </div>
-  </div>
+  </section>
 </div>

@@ -74,6 +74,12 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
   function setAuthMode(mode: 'signin' | 'signup'): void {
     authMode = mode;
     const isSignup = mode === 'signup';
+    // task-04 new-landing: toggle visibility of mode-dependent elements
+    // (welcome badge, big heading, body, submit-text, google label,
+    // signin-only row). Both copies live in the DOM with data-mode.
+    document.querySelectorAll<HTMLElement>('[data-mode]').forEach((el) => {
+      el.hidden = el.getAttribute('data-mode') !== mode;
+    });
     if (authTitle) {
       authTitle.textContent = isSignup ? t('auth_title_signup') : t('auth_title_signin');
     }
@@ -275,6 +281,7 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
       }
     } else if (authModal) {
       authModal.style.display = 'flex';
+      pushAuthHistory();
     }
   }
 
@@ -284,7 +291,28 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
     if (authModal) authModal.style.display = 'flex';
     if (mode === 'signup' && authMode !== 'signup') setAuthMode('signup');
     else if (mode === 'signin' && authMode !== 'signin') setAuthMode('signin');
+    pushAuthHistory();
   }
+
+  // Browser back-button support: push a marker history entry when the modal
+  // opens so pressing Back closes the modal and reveals the landing again
+  // instead of leaving the site.
+  function pushAuthHistory(): void {
+    const state = history.state as { ssAuthModal?: boolean } | null;
+    if (state && state.ssAuthModal) return;
+    history.pushState({ ssAuthModal: true }, '', '#auth');
+  }
+  function closeAuthFromHistory(): void {
+    if (!authModal || authModal.style.display === 'none') return;
+    authModal.style.display = 'none';
+    const landing = document.getElementById('landing');
+    if (landing) landing.classList.remove('hidden');
+  }
+  window.addEventListener('popstate', (e: PopStateEvent) => {
+    const state = e.state as { ssAuthModal?: boolean } | null;
+    if (state && state.ssAuthModal) return;
+    closeAuthFromHistory();
+  });
 
   authSwitch?.addEventListener('click', () => {
     setAuthMode(authMode === 'signin' ? 'signup' : 'signin');

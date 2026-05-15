@@ -1,0 +1,705 @@
+<!-- Minallo new landing — fragment injected by loader.js / loader.ts.
+     Host page (index.html) already loads Nunito + Fredoka One.
+     The loader injects css/new-landing.css and js/pages/new-landing.js
+     after this fragment lands in the DOM and adds class `nl-body` to <body>. -->
+
+  <!-- ===================== ICON SPRITE =====================
+       Inline lucide.dev (MIT) icons. Reference with:
+         <svg width="N" height="N" aria-hidden="true">
+           <use href="#i-NAME"/>
+         </svg>
+       Strokes use currentColor so CSS controls the color.
+       ======================================================= -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <defs>
+      <!-- Shared attributes via <symbol> -->
+    </defs>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+    </symbol>
+    <symbol id="i-brain-circuit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+      <path d="M9 13a4.5 4.5 0 0 0 3-4"/>
+      <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
+      <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>
+      <path d="M6 18a4 4 0 0 1-1.967-.516"/>
+      <path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/>
+      <path d="M16 8V5a2 2 0 0 1 2-2"/>
+      <circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/>
+      <circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/>
+    </symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+      <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+      <path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
+    </symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+      <path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>
+    </symbol>
+    <symbol id="i-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/>
+      <circle cx="12" cy="14" r="8"/>
+    </symbol>
+    <symbol id="i-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+      <path d="m9 12 2 2 4-4"/>
+    </symbol>
+    <symbol id="i-quote" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>
+      <path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>
+    </symbol>
+    <symbol id="i-check-circle-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+    </symbol>
+    <symbol id="i-upload-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+      <path d="M12 12v9"/><path d="m16 16-4-4-4 4"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+    </symbol>
+    <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 7v14"/>
+      <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="6 3 20 12 6 21 6 3"/>
+    </symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>
+    </symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+    </symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+    </symbol>
+    <symbol id="i-layers-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+      <path d="m6.08 9.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/>
+      <path d="m6.08 14.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/>
+    </symbol>
+    <symbol id="i-graduation-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/>
+      <path d="M22 10v6"/>
+      <path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>
+    </symbol>
+    <symbol id="i-pen-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/>
+      <path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/>
+      <path d="m2.3 2.3 7.286 7.286"/>
+      <circle cx="11" cy="11" r="2"/>
+    </symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m9 18 6-6-6-6"/>
+    </symbol>
+    <symbol id="i-languages" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/>
+      <path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>
+    </symbol>
+    <symbol id="i-music-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="18" r="4"/><path d="M12 18V2l7 4"/>
+    </symbol>
+    <symbol id="i-gamepad-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/>
+      <line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/>
+      <path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>
+    </symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+      <path d="M4 22h16"/>
+      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+    </symbol>
+    <symbol id="i-layout-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="7" height="9" x="3" y="3" rx="1"/>
+      <rect width="7" height="5" x="14" y="3" rx="1"/>
+      <rect width="7" height="9" x="14" y="12" rx="1"/>
+      <rect width="7" height="5" x="3" y="16" rx="1"/>
+    </symbol>
+  </svg>
+
+  <main class="nl-main">
+
+    <!-- Background layers -->
+    <div class="nl-bg-gradient" aria-hidden="true"></div>
+    <div class="nl-grid-bg" aria-hidden="true"></div>
+    <div class="nl-orb nl-orb--1" aria-hidden="true"></div>
+    <div class="nl-orb nl-orb--2" aria-hidden="true"></div>
+    <div class="nl-orb nl-orb--3" aria-hidden="true"></div>
+
+    <!-- ===================== NAV ===================== -->
+    <nav class="nl-nav" aria-label="Primary">
+      <div class="nl-nav__inner">
+        <a href="#top" class="nl-logo">
+          <span class="nl-logo__mark" aria-hidden="true">
+            <svg width="23" height="23"><use href="#i-graduation-cap"/></svg>
+            <span class="nl-logo__pulse"></span>
+          </span>
+          <span>
+            <span class="nl-logo__name">Minallo</span>
+            <span class="nl-logo__tag" data-i18n="logo.tag">Study smarter</span>
+          </span>
+        </a>
+
+        <div class="nl-nav__links" role="menubar">
+          <a class="nl-nav__link" href="#features" data-i18n="nav.features">Features</a>
+          <a class="nl-nav__link" href="#paths" data-i18n="nav.paths">Paths</a>
+          <a class="nl-nav__link" href="#tutor" data-i18n="nav.tutor">Tutor</a>
+          <a class="nl-nav__link" href="#workflow" data-i18n="nav.workflow">Workflow</a>
+          <a class="nl-nav__link" href="#pricing" data-i18n="nav.pricing">Pricing</a>
+        </div>
+
+        <div class="nl-nav__cta">
+          <button id="nlLangBtn" type="button" class="nl-lang-btn" aria-label="Toggle language">DE</button>
+          <button id="nlNavSignIn" type="button" class="nl-btn nl-btn--ghost" data-i18n="nav.signIn">Sign in</button>
+          <button id="nlNavStartFree" type="button" class="nl-btn nl-btn--primary">
+            <span data-i18n="nav.startFree">Start free</span>
+            <svg width="16" height="16" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </button>
+        </div>
+
+        <button type="button" class="nl-nav__menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" data-nl-menu-btn>
+          <svg class="nl-nav__menu-icon nl-nav__menu-icon--menu" width="22" height="22" aria-hidden="true"><use href="#i-menu"/></svg>
+          <svg class="nl-nav__menu-icon nl-nav__menu-icon--x" width="22" height="22" aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
+      </div>
+
+      <div class="nl-nav__mobile" data-nl-mobile-menu hidden>
+        <a class="nl-nav__mobile-link" href="#features" data-nl-mobile-link data-i18n="nav.features">Features</a>
+        <a class="nl-nav__mobile-link" href="#paths" data-nl-mobile-link data-i18n="nav.paths">Paths</a>
+        <a class="nl-nav__mobile-link" href="#tutor" data-nl-mobile-link data-i18n="nav.tutor">Tutor</a>
+        <a class="nl-nav__mobile-link" href="#workflow" data-nl-mobile-link data-i18n="nav.workflow">Workflow</a>
+        <a class="nl-nav__mobile-link" href="#pricing" data-nl-mobile-link data-i18n="nav.pricing">Pricing</a>
+        <button id="nlLangBtnMobile" type="button" class="nl-lang-btn" aria-label="Toggle language">DE</button>
+      </div>
+    </nav>
+
+    <!-- ===================== HERO ===================== -->
+    <section id="top" class="nl-hero">
+      <div class="nl-hero__halo" aria-hidden="true" data-nl-parallax></div>
+      <div class="nl-hero__inner">
+        <div class="nl-hero__head nl-reveal">
+          <div class="nl-badge">
+            <svg width="16" height="16" aria-hidden="true"><use href="#i-sparkles"/></svg>
+            <span data-i18n="hero.badge">A course-aware AI study platform</span>
+          </div>
+          <h1 class="nl-hero__title" data-i18n="hero.title">Turn lecture chaos into clear, cited answers.</h1>
+          <p class="nl-hero__subtitle" data-i18n="hero.subtitle">
+            Minallo helps students upload course files, ask questions, solve exercises, edit PDFs, learn German, focus with Pomodoro, play study games, and enjoy their favorite playlists while working.
+          </p>
+          <div class="nl-hero__ctas">
+            <button id="nlHeroBuild" type="button" class="nl-btn nl-btn--primary nl-btn--block">
+              <span data-i18n="hero.buildCta">Build my study space</span>
+              <svg width="17" height="17" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+            </button>
+            <button id="nlHeroWatch" type="button" class="nl-btn nl-btn--secondary nl-btn--block">
+              <svg width="17" height="17" aria-hidden="true"><use href="#i-play"/></svg>
+              <span data-i18n="hero.watchCta">Watch preview</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ===== TutorPreview ===== -->
+        <div class="nl-hero__preview nl-reveal">
+          <div class="nl-glass nl-tutor-preview">
+            <div class="nl-tutor-preview__glow-a" aria-hidden="true"></div>
+            <div class="nl-tutor-preview__glow-b" aria-hidden="true"></div>
+
+            <div class="nl-tutor-preview__grid">
+              <!-- Left panel: course materials -->
+              <div class="nl-tp-panel">
+                <div class="nl-tp-panel__head">
+                  <div>
+                    <p class="nl-tp-panel__eyebrow" data-i18n="tutorPreview.workspace">Workspace</p>
+                    <h3 class="nl-tp-panel__title" data-i18n="tutorPreview.courseMaterials">Course materials</h3>
+                  </div>
+                  <span class="nl-tp-badge--synced" data-i18n="tutorPreview.synced">Synced</span>
+                </div>
+
+                <div class="nl-tp-tabs" role="tablist" data-nl-tabs>
+                  <button type="button" class="nl-tp-tab" role="tab" aria-selected="false" data-nl-tab="0">
+                    <span class="nl-tp-tab__row">
+                      <span class="nl-tp-tab__icon">
+                        <svg width="18" height="18" aria-hidden="true"><use href="#i-file-text"/></svg>
+                      </span>
+                      <span>
+                        <span class="nl-tp-tab__title" data-i18n="tutorPreview.tabs.lecture">Lecture PDF</span>
+                        <span class="nl-tp-tab__sub">Mechanics_lecture_03.pdf</span>
+                      </span>
+                    </span>
+                  </button>
+                  <button type="button" class="nl-tp-tab is-active" role="tab" aria-selected="true" data-nl-tab="1">
+                    <span class="nl-tp-tab__row">
+                      <span class="nl-tp-tab__icon">
+                        <svg width="18" height="18" aria-hidden="true"><use href="#i-pen-tool"/></svg>
+                      </span>
+                      <span>
+                        <span class="nl-tp-tab__title" data-i18n="tutorPreview.tabs.exercise">Exercise</span>
+                        <span class="nl-tp-tab__sub">Exercise_sheet_06.pdf</span>
+                      </span>
+                    </span>
+                  </button>
+                  <button type="button" class="nl-tp-tab" role="tab" aria-selected="false" data-nl-tab="2">
+                    <span class="nl-tp-tab__row">
+                      <span class="nl-tp-tab__icon">
+                        <svg width="18" height="18" aria-hidden="true"><use href="#i-book-open"/></svg>
+                      </span>
+                      <span>
+                        <span class="nl-tp-tab__title" data-i18n="tutorPreview.tabs.formula">Formula sheet</span>
+                        <span class="nl-tp-tab__sub">Formula_collection.pdf</span>
+                      </span>
+                    </span>
+                  </button>
+                </div>
+
+                <div class="nl-tp-retrieve">
+                  <div class="nl-tp-retrieve__head">
+                    <svg width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg>
+                    <span data-i18n="tutorPreview.smartRetrieval">Smart retrieval</span>
+                  </div>
+                  <div class="nl-tp-bar"><span class="nl-tp-bar__fill" style="width:82%"></span></div>
+                  <div class="nl-tp-bar"><span class="nl-tp-bar__fill" style="width:96%"></span></div>
+                  <div class="nl-tp-bar"><span class="nl-tp-bar__fill" style="width:68%"></span></div>
+                </div>
+              </div>
+
+              <!-- Right panel: AI tutor chat -->
+              <div class="nl-tp-chat">
+                <div class="nl-tp-chat__head">
+                  <div class="nl-tp-chat__brand">
+                    <span class="nl-tp-chat__avatar">
+                      <svg width="22" height="22" aria-hidden="true"><use href="#i-brain-circuit"/></svg>
+                    </span>
+                    <span>
+                      <span class="nl-tp-chat__name" data-i18n="tutorPreview.tutorName">Minallo AI Tutor</span><br/>
+                      <span class="nl-tp-chat__mode" data-i18n="tutorPreview.mode">Grounded answer mode</span>
+                    </span>
+                  </div>
+                  <span class="nl-tp-chat__sparkle">
+                    <svg width="22" height="22" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                  </span>
+                </div>
+
+                <div class="nl-tp-bubble--user" data-i18n="tutorPreview.userMsg">
+                  Explain exercise 6 using only my lecture notes and cite the formula.
+                </div>
+                <div class="nl-tp-bubble--ai nl-reveal">
+                  <span data-i18n="tutorPreview.aiMsg">First, we use the lecture definition of equilibrium and then substitute the values from the exercise. The relevant formula is found in your formula sheet.</span>
+                  <div class="nl-tp-formula">&Sigma;F = 0 &nbsp;&nbsp; and &nbsp;&nbsp; &Sigma;M = 0</div>
+                  <div class="nl-tp-citations">
+                    <span class="nl-tp-citation" data-i18n="tutorPreview.cite1">Citation: Lecture 03 &middot; page 12</span>
+                    <span class="nl-tp-citation" data-i18n="tutorPreview.cite2">Citation: Formula sheet &middot; page 2</span>
+                  </div>
+                </div>
+
+                <div class="nl-tp-mini">
+                  <div class="nl-tp-mini__cell">
+                    <p class="nl-tp-mini__val">3</p>
+                    <p class="nl-tp-mini__label" data-i18n="tutorPreview.miniSources">Sources</p>
+                  </div>
+                  <div class="nl-tp-mini__cell">
+                    <p class="nl-tp-mini__val">&#10003;</p>
+                    <p class="nl-tp-mini__label" data-i18n="tutorPreview.miniVerified">Verified</p>
+                  </div>
+                  <div class="nl-tp-mini__cell">
+                    <p class="nl-tp-mini__val">0</p>
+                    <p class="nl-tp-mini__label" data-i18n="tutorPreview.miniGuessing">Guessing</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hero stats -->
+        <div class="nl-hero__stats nl-hero-stats">
+          <div class="nl-stat nl-reveal">
+            <div class="nl-stat__value">PDF</div>
+            <div class="nl-stat__label" data-i18n="hero.stats.pdf">Editor, uploads, notes, and course files in one place</div>
+          </div>
+          <div class="nl-stat nl-reveal">
+            <div class="nl-stat__value">AI</div>
+            <div class="nl-stat__label" data-i18n="hero.stats.ai">Grounded tutor that uses student materials as context</div>
+          </div>
+          <div class="nl-stat nl-reveal">
+            <div class="nl-stat__value" data-i18n="hero.stats.focusLabel">Focus</div>
+            <div class="nl-stat__label" data-i18n="hero.stats.focus">Pomodoro, playlists, games, and streaks for consistency</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FEATURES ===================== -->
+    <section id="features" class="nl-section nl-features">
+      <div class="nl-container">
+        <div class="nl-features__head nl-reveal">
+          <p class="nl-eyebrow" data-i18n="features.eyebrow">Features</p>
+          <h2 class="nl-features__title" data-i18n="features.title">Everything a serious student needs, without the clutter.</h2>
+          <p class="nl-lead" data-i18n="features.lead">The design is built around one idea: the student should always know what to study next, where the answer came from, and how to stay focused.</p>
+        </div>
+
+        <div class="nl-features__grid">
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-brain-circuit"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.0.title">AI tutor trained around your course</h3>
+            <p class="nl-card__text" data-i18n="features.cards.0.text">Minallo answers from your uploaded lectures, exercises, and formula sheets instead of giving generic internet-style explanations.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-file-text"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.1.title">Cited PDF answers</h3>
+            <p class="nl-card__text" data-i18n="features.cards.1.text">Every important claim can point back to the exact document and page, so students can verify the answer instantly.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-timer"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.2.title">Focus tools built in</h3>
+            <p class="nl-card__text" data-i18n="features.cards.2.text">Pomodoro sessions, study streaks, and progress signals keep the student working instead of just collecting files.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-shield-check"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.3.title">Honest when context is missing</h3>
+            <p class="nl-card__text" data-i18n="features.cards.3.text">When the uploaded material is not enough, Minallo should say what is missing instead of hallucinating a confident answer.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-layers-3"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.4.title">Multi-source synthesis</h3>
+            <p class="nl-card__text" data-i18n="features.cards.4.text">It can combine an exercise, a lecture explanation, and a formula sheet into one clean step-by-step answer.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-zap"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.5.title">Fast repeated answers</h3>
+            <p class="nl-card__text" data-i18n="features.cards.5.text">Common repeated questions can be cached, reducing token cost and making the experience feel instant.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-languages"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.6.title">German learner mode</h3>
+            <p class="nl-card__text" data-i18n="features.cards.6.text">A separate path for vocabulary, grammar, examples, and playful German revision.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-music-2"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.7.title">Playlists while studying</h3>
+            <p class="nl-card__text" data-i18n="features.cards.7.text">Students can keep their favorite playlists close, making focus sessions feel more personal and enjoyable.</p>
+          </article>
+          <article class="nl-card nl-reveal">
+            <span class="nl-card__glow" aria-hidden="true"></span>
+            <span class="nl-icon-badge"><svg width="22" height="22"><use href="#i-gamepad-2"/></svg></span>
+            <h3 class="nl-card__title" data-i18n="features.cards.8.title">Games for motivation</h3>
+            <p class="nl-card__text" data-i18n="features.cards.8.text">Quick games and challenges give students relaxing breaks while keeping the learning mood alive.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PATHS ===================== -->
+    <section id="paths" class="nl-section nl-paths">
+      <div class="nl-container">
+        <div class="nl-paths__intro nl-reveal">
+          <div>
+            <p class="nl-eyebrow" data-i18n="paths.eyebrow">Choose your space</p>
+            <h2 class="nl-paths__title" data-i18n="paths.title">One platform, two clear journeys.</h2>
+          </div>
+          <p class="nl-paths__lead" data-i18n="paths.lead">Minallo should not feel confusing. New users choose whether they are here to manage studies or learn German, then the dashboard adapts to the tools they actually need.</p>
+        </div>
+
+        <div class="nl-paths__grid">
+          <button type="button" class="nl-path-card is-active" data-nl-path="student" aria-pressed="true">
+            <span class="nl-path-card__glow" aria-hidden="true"></span>
+            <span class="nl-path-card__head">
+              <span class="nl-path-card__icon">
+                <svg width="26" height="26" aria-hidden="true"><use href="#i-graduation-cap"/></svg>
+              </span>
+              <span class="nl-path-card__eyebrow" data-i18n="paths.studentCard.eyebrow">Courses</span>
+            </span>
+            <h3 class="nl-path-card__title" data-i18n="paths.studentCard.title">I'm a student</h3>
+            <p class="nl-path-card__desc" data-i18n="paths.studentCard.desc">For students who upload lectures, solve exercises, edit PDFs, and want AI help based on their own study material.</p>
+            <div class="nl-path-card__items">
+              <div class="nl-path-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="paths.studentCard.items.0">Course dashboard and file organization</span></div>
+              <div class="nl-path-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="paths.studentCard.items.1">Lecture-aware AI tutor with citations</span></div>
+              <div class="nl-path-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="paths.studentCard.items.2">PDF editor, notes, Pomodoro, and streaks</span></div>
+            </div>
+          </button>
+
+          <button type="button" class="nl-path-card" data-nl-path="german" aria-pressed="false">
+            <span class="nl-path-card__glow" aria-hidden="true"></span>
+            <span class="nl-path-card__head">
+              <span class="nl-path-card__icon">
+                <svg width="26" height="26" aria-hidden="true"><use href="#i-languages"/></svg>
+              </span>
+              <span class="nl-path-card__eyebrow" data-i18n="paths.germanCard.eyebrow">Language</span>
+            </span>
+            <h3 class="nl-path-card__title" data-i18n="paths.germanCard.title">I'm learning German</h3>
+            <p class="nl-path-card__desc" data-i18n="paths.germanCard.desc">For learners who want German vocabulary, grammar, useful examples, and playful practice in a separate area.</p>
+            <div class="nl-path-card__items">
+              <div class="nl-path-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="paths.germanCard.items.0">Vocabulary and grammar practice</span></div>
+              <div class="nl-path-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="paths.germanCard.items.1">Simple examples and sentence practice</span></div>
+              <div class="nl-path-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="paths.germanCard.items.2">Mini-games for revision and motivation</span></div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Active detail panel — defaults to "student". Content is re-rendered by JS in current language. -->
+        <div class="nl-glass nl-paths__detail" data-nl-path-detail="student">
+          <div class="nl-paths__detail-grid">
+            <div class="nl-paths__hero-card">
+              <div class="nl-paths__hero-head">
+                <span class="nl-paths__hero-mark" data-nl-path-icon>
+                  <svg width="26" height="26" aria-hidden="true"><use href="#i-layout-dashboard"/></svg>
+                </span>
+                <div>
+                  <p class="nl-paths__hero-sub" data-nl-path-subtitle>For university and school work</p>
+                  <h3 class="nl-paths__hero-title" data-nl-path-title>Student dashboard</h3>
+                </div>
+              </div>
+              <p class="nl-paths__hero-text" data-nl-path-desc>A focused dashboard for courses, lecture PDFs, exercises, AI explanations, PDF editing, Pomodoro sessions, streaks, and study progress.</p>
+              <div class="nl-paths__hero-items" data-nl-path-items>
+                <div class="nl-paths__hero-item"><span class="nl-check"><svg width="19" height="19"><use href="#i-check-circle-2"/></svg></span><span>Course pages for lectures, exercises, notes, and formula sheets</span></div>
+                <div class="nl-paths__hero-item"><span class="nl-check"><svg width="19" height="19"><use href="#i-check-circle-2"/></svg></span><span>AI tutor answers grounded in uploaded course documents</span></div>
+                <div class="nl-paths__hero-item"><span class="nl-check"><svg width="19" height="19"><use href="#i-check-circle-2"/></svg></span><span>PDF editor for highlighting, writing, signing, saving, and exporting</span></div>
+                <div class="nl-paths__hero-item"><span class="nl-check"><svg width="19" height="19"><use href="#i-check-circle-2"/></svg></span><span>Pomodoro timer, study streaks, dashboard stats, and progress tracking</span></div>
+              </div>
+            </div>
+
+            <div class="nl-paths__preview" data-nl-path-preview>
+              <div class="nl-paths__preview-card">
+                <span class="nl-icon-badge"><svg width="23" height="23"><use href="#i-file-text"/></svg></span>
+                <h4 class="nl-paths__preview-title">Course library</h4>
+                <p class="nl-paths__preview-text">Organize every subject and file in one clean place.</p>
+              </div>
+              <div class="nl-paths__preview-card">
+                <span class="nl-icon-badge"><svg width="23" height="23"><use href="#i-brain-circuit"/></svg></span>
+                <h4 class="nl-paths__preview-title">AI study help</h4>
+                <p class="nl-paths__preview-text">Ask questions and get cited, course-aware answers.</p>
+              </div>
+              <div class="nl-paths__preview-card">
+                <span class="nl-icon-badge"><svg width="23" height="23"><use href="#i-timer"/></svg></span>
+                <h4 class="nl-paths__preview-title">Focus mode</h4>
+                <p class="nl-paths__preview-text">Study with Pomodoro sessions and visible streaks.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== LIFESTYLE ===================== -->
+    <section class="nl-section nl-lifestyle">
+      <div class="nl-lifestyle__wrap">
+        <div class="nl-lifestyle__grid">
+          <div class="nl-reveal">
+            <p class="nl-eyebrow" data-i18n="lifestyle.eyebrow">Study vibe</p>
+            <h2 class="nl-lifestyle__title" data-i18n="lifestyle.title">Productive does not have to feel boring.</h2>
+            <p class="nl-lead" data-i18n="lifestyle.lead">Playlists and games are worth showing because they make Minallo feel like a complete student environment, not just another serious dashboard.</p>
+          </div>
+          <div class="nl-lifestyle__cards">
+            <article class="nl-lifestyle__card nl-reveal">
+              <span class="nl-icon-badge"><svg width="23" height="23"><use href="#i-music-2"/></svg></span>
+              <h3 class="nl-lifestyle__card-title" data-i18n="lifestyle.cards.0.title">Favorite playlists</h3>
+              <p class="nl-lifestyle__card-text" data-i18n="lifestyle.cards.0.text">Let users listen while studying, focusing, or practicing German.</p>
+            </article>
+            <article class="nl-lifestyle__card nl-reveal">
+              <span class="nl-icon-badge"><svg width="23" height="23"><use href="#i-gamepad-2"/></svg></span>
+              <h3 class="nl-lifestyle__card-title" data-i18n="lifestyle.cards.1.title">Study games</h3>
+              <p class="nl-lifestyle__card-text" data-i18n="lifestyle.cards.1.text">Use quick games for revision breaks, vocabulary, and motivation.</p>
+            </article>
+            <article class="nl-lifestyle__card nl-reveal">
+              <span class="nl-icon-badge"><svg width="23" height="23"><use href="#i-trophy"/></svg></span>
+              <h3 class="nl-lifestyle__card-title" data-i18n="lifestyle.cards.2.title">Streak rewards</h3>
+              <p class="nl-lifestyle__card-text" data-i18n="lifestyle.cards.2.text">Turn consistency into visible progress and small wins.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== AI TUTOR PIPELINE ===================== -->
+    <section id="tutor" class="nl-section nl-tutor">
+      <div class="nl-container">
+        <div class="nl-tutor-grid">
+          <div class="nl-reveal">
+            <p class="nl-eyebrow" data-i18n="tutor.eyebrow">AI Tutor</p>
+            <h2 class="nl-tutor__title" data-i18n="tutor.title">Not just chat. A study engine.</h2>
+            <p class="nl-lead" data-i18n="tutor.lead">A generic chatbot can explain topics. Minallo should explain your topic the way your professor's material presents it, with citations and controlled confidence.</p>
+            <div class="nl-tutor__items">
+              <div class="nl-tutor__item"><span class="nl-check"><svg width="20" height="20"><use href="#i-check-circle-2"/></svg></span><span data-i18n="tutor.items.0">Search across lectures, exercises, and formula sheets</span></div>
+              <div class="nl-tutor__item"><span class="nl-check"><svg width="20" height="20"><use href="#i-check-circle-2"/></svg></span><span data-i18n="tutor.items.1">Answer with page-level citations</span></div>
+              <div class="nl-tutor__item"><span class="nl-check"><svg width="20" height="20"><use href="#i-check-circle-2"/></svg></span><span data-i18n="tutor.items.2">Use active document as a ranking hint, not a hard limit</span></div>
+              <div class="nl-tutor__item"><span class="nl-check"><svg width="20" height="20"><use href="#i-check-circle-2"/></svg></span><span data-i18n="tutor.items.3">Cache repeated questions to reduce API cost</span></div>
+            </div>
+          </div>
+
+          <div class="nl-glass nl-pipeline nl-reveal">
+            <div class="nl-pipeline__panel">
+              <div class="nl-pipeline__head">
+                <div>
+                  <p class="nl-pipeline__eyebrow" data-i18n="pipeline.eyebrow">Answer pipeline</p>
+                  <h3 class="nl-pipeline__title" data-i18n="pipeline.title">From upload to verified response</h3>
+                </div>
+                <span style="color: var(--nl-sky-200)">
+                  <svg width="24" height="24" aria-hidden="true"><use href="#i-upload-cloud"/></svg>
+                </span>
+              </div>
+              <div class="nl-pipeline__steps">
+                <div class="nl-pipeline__step">
+                  <span class="nl-pipeline__num">1</span>
+                  <div>
+                    <h4 class="nl-pipeline__step-title" data-i18n="pipeline.steps.0.title">Upload</h4>
+                    <p class="nl-pipeline__step-text" data-i18n="pipeline.steps.0.text">Lecture PDFs, exercise sheets, notes, and formulas are added to the student workspace.</p>
+                  </div>
+                </div>
+                <div class="nl-pipeline__step">
+                  <span class="nl-pipeline__num">2</span>
+                  <div>
+                    <h4 class="nl-pipeline__step-title" data-i18n="pipeline.steps.1.title">Index</h4>
+                    <p class="nl-pipeline__step-text" data-i18n="pipeline.steps.1.text">The system extracts pages, chunks, formulas, exercises, and metadata for smarter retrieval.</p>
+                  </div>
+                </div>
+                <div class="nl-pipeline__step">
+                  <span class="nl-pipeline__num">3</span>
+                  <div>
+                    <h4 class="nl-pipeline__step-title" data-i18n="pipeline.steps.2.title">Retrieve</h4>
+                    <p class="nl-pipeline__step-text" data-i18n="pipeline.steps.2.text">Minallo selects the best context instead of sending the whole file every time.</p>
+                  </div>
+                </div>
+                <div class="nl-pipeline__step">
+                  <span class="nl-pipeline__num">4</span>
+                  <div>
+                    <h4 class="nl-pipeline__step-title" data-i18n="pipeline.steps.3.title">Answer</h4>
+                    <p class="nl-pipeline__step-text" data-i18n="pipeline.steps.3.text">The AI gives a step-by-step answer with citations and missing-context warnings.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== WORKFLOW ===================== -->
+    <section id="workflow" class="nl-section nl-workflow">
+      <div class="nl-container">
+        <div class="nl-workflow__wrap">
+          <div class="nl-workflow__grid">
+            <div class="nl-reveal">
+              <p class="nl-eyebrow" data-i18n="workflow.eyebrow">Workflow</p>
+              <h2 class="nl-workflow__title" data-i18n="workflow.title">A landing page that sells the whole experience.</h2>
+              <p class="nl-lead" data-i18n="workflow.lead">The page should immediately show that Minallo is more than a pretty chatbot. It is a student dashboard, German learner space, course tutor, PDF workspace, focus system, playlist companion, and study-game hub.</p>
+            </div>
+            <div class="nl-workflow__cards">
+              <article class="nl-workflow__card nl-reveal">
+                <span class="nl-workflow__card-mark"><svg width="20" height="20"><use href="#i-chevron-right"/></svg></span>
+                <h3 class="nl-workflow__card-title" data-i18n="workflow.cards.0.title">Ask</h3>
+                <p class="nl-workflow__card-text" data-i18n="workflow.cards.0.text">Students ask questions in natural language.</p>
+              </article>
+              <article class="nl-workflow__card nl-reveal">
+                <span class="nl-workflow__card-mark"><svg width="20" height="20"><use href="#i-chevron-right"/></svg></span>
+                <h3 class="nl-workflow__card-title" data-i18n="workflow.cards.1.title">Solve</h3>
+                <p class="nl-workflow__card-text" data-i18n="workflow.cards.1.text">Exercises become guided step-by-step explanations.</p>
+              </article>
+              <article class="nl-workflow__card nl-reveal">
+                <span class="nl-workflow__card-mark"><svg width="20" height="20"><use href="#i-chevron-right"/></svg></span>
+                <h3 class="nl-workflow__card-title" data-i18n="workflow.cards.2.title">Learn</h3>
+                <p class="nl-workflow__card-text" data-i18n="workflow.cards.2.text">German learners practice vocabulary, grammar, examples, and revision games.</p>
+              </article>
+              <article class="nl-workflow__card nl-reveal">
+                <span class="nl-workflow__card-mark"><svg width="20" height="20"><use href="#i-chevron-right"/></svg></span>
+                <h3 class="nl-workflow__card-title" data-i18n="workflow.cards.3.title">Enjoy</h3>
+                <p class="nl-workflow__card-text" data-i18n="workflow.cards.3.text">Playlists and study games keep the experience motivating.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== QUOTE ===================== -->
+    <section class="nl-section nl-quote">
+      <div class="nl-quote__inner nl-reveal">
+        <div class="nl-quote__icon">
+          <svg width="34" height="34" aria-hidden="true"><use href="#i-quote"/></svg>
+        </div>
+        <h2 class="nl-quote__title" data-i18n="quote.title">"Minallo should feel like a private tutor who has actually read the student's lecture files."</h2>
+        <p class="nl-quote__text" data-i18n="quote.text">That message is the core of the landing page: accurate, calm, beautiful, and focused on real student outcomes.</p>
+      </div>
+    </section>
+
+    <!-- ===================== PRICING ===================== -->
+    <section id="pricing" class="nl-section nl-pricing">
+      <div class="nl-container">
+        <div class="nl-pricing__grid">
+          <div class="nl-reveal">
+            <p class="nl-eyebrow" data-i18n="pricing.eyebrow">Pricing</p>
+            <h2 class="nl-pricing__title" data-i18n="pricing.title">Simple student-friendly plans.</h2>
+            <p class="nl-pricing__lead" data-i18n="pricing.lead">Keep the pricing section clean. Students and German learners should understand immediately what they get: documents, AI help, PDF tools, language practice, playlists, games, and focus features.</p>
+          </div>
+          <div class="nl-pricing__cards">
+            <article class="nl-glass nl-price-card nl-reveal">
+              <h3 class="nl-price-card__name" data-i18n="pricing.free.name">Free</h3>
+              <p class="nl-price-card__sub" data-i18n="pricing.free.sub">For trying the workspace.</p>
+              <div class="nl-price-card__price">&euro;0</div>
+              <div class="nl-price-card__items">
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.free.items.0">Limited AI questions</span></div>
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.free.items.1">Basic Pomodoro</span></div>
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.free.items.2">Upload sample documents</span></div>
+              </div>
+              <button id="nlPricingFreeCta" type="button" class="nl-btn nl-btn--secondary nl-btn--block nl-price-card__cta" data-i18n="pricing.free.cta">Start free</button>
+            </article>
+
+            <article class="nl-glass nl-price-card nl-price-card--pro nl-reveal">
+              <span class="nl-price-card__pop" data-i18n="pricing.pro.popular">Popular</span>
+              <h3 class="nl-price-card__name" data-i18n="pricing.pro.name">Student Pro</h3>
+              <p class="nl-price-card__sub" data-i18n="pricing.pro.sub">For serious study sessions.</p>
+              <div class="nl-price-card__price">&euro;11.99 <span class="nl-price-card__per" data-i18n="pricing.pro.per">/month</span></div>
+              <div class="nl-price-card__items">
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.pro.items.0">More AI tutor usage</span></div>
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.pro.items.1">Course-aware citations</span></div>
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.pro.items.2">PDF editor workspace</span></div>
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.pro.items.3">German learner mode</span></div>
+                <div class="nl-price-card__item"><span class="nl-check"><svg width="18" height="18"><use href="#i-check-circle-2"/></svg></span><span data-i18n="pricing.pro.items.4">Playlists, games, and focus dashboard</span></div>
+              </div>
+              <button id="nlPricingProCta" type="button" class="nl-btn nl-btn--primary nl-btn--block nl-price-card__cta" data-i18n="pricing.pro.cta">Upgrade study flow</button>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CTA BANNER ===================== -->
+    <section class="nl-cta">
+      <div class="nl-cta__wrap nl-reveal">
+        <div class="nl-cta__grid">
+          <div>
+            <h2 class="nl-cta__title" data-i18n="ctaBanner.title">Ready to make studying feel clear?</h2>
+            <p class="nl-cta__text" data-i18n="ctaBanner.text">Choose your path. Upload course files or practice German. Ask questions, get explanations, listen to your playlists, play quick study games, and stay focused until the work is done.</p>
+          </div>
+          <button id="nlCtaLaunch" type="button" class="nl-btn nl-btn--dark">
+            <span data-i18n="ctaBanner.cta">Launch Minallo</span>
+            <svg width="18" height="18" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FOOTER ===================== -->
+    <footer class="nl-footer">
+      <div class="nl-footer__inner">
+        <p><span data-i18n="footer.copyPre">&copy; </span><span id="nlYear">2026</span><span data-i18n="footer.copyPost"> Minallo. Built for focused students and German learners.</span></p>
+        <div class="nl-footer__links">
+          <a href="#features" data-i18n="nav.features">Features</a>
+          <a href="#paths" data-i18n="nav.paths">Paths</a>
+          <a href="#tutor" data-i18n="footer.tutor">AI Tutor</a>
+          <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
+        </div>
+      </div>
+    </footer>
+
+  </main>

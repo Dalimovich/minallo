@@ -178,25 +178,40 @@
         applyLandingTranslation(_landingLang === 'en' ? 'de' : 'en');
     };
     if (!window._ssIsLoggedIn) {
-        // Load landing-specific CSS before rendering the page
+        // Load new-landing CSS before rendering the page. The old landing.css
+        // remains in the repo (frontend/css/landing.css) but is no longer
+        // injected — the new landing replaces it visually.
         (function () {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
-            link.href = 'css/landing.css?v=5';
+            link.href = 'css/new-landing.css?v=1';
             document.head.appendChild(link);
+            // task-04: auth modal can be triggered from the landing too, ship its CSS up front.
+            const authLink = document.createElement('link');
+            authLink.rel = 'stylesheet';
+            authLink.href = 'css/auth.css?v=4';
+            document.head.appendChild(authLink);
         })();
-        fetch('pages/landing.html')
+        fetch('pages/new_landing.html')
             .then((r) => {
             if (!r.ok)
-                throw new Error('HTTP ' + r.status + ' loading landing.html');
+                throw new Error('HTTP ' + r.status + ' loading new_landing.html');
             return r.text();
         })
             .then((html) => {
             root.innerHTML = html;
-            document.body.classList.add('landing');
+            document.body.classList.add('nl-body');
+            // Inject the new-landing JS module after the fragment lands so it
+            // can find its #/data-* hooks on first query.
+            (function () {
+                const script = document.createElement('script');
+                script.src = 'js/pages/new-landing.js?v=1';
+                script.defer = true;
+                document.body.appendChild(script);
+            })();
             if (SS)
-                SS.markReady('landing', { file: 'pages/landing.html' });
-            console.log('✓ Landing page loaded');
+                SS.markReady('landing', { file: 'pages/new_landing.html' });
+            console.log('✓ New landing page loaded');
             // Re-run fade-in observer — scripts inside landing.html don't execute via innerHTML
             const fadeObserver = new IntersectionObserver((entries) => {
                 entries.forEach((e) => {
@@ -249,7 +264,7 @@
             }
         })
             .catch((err) => {
-            console.error('✗ Could not load landing.html:', err);
+            console.error('✗ Could not load new_landing.html:', err);
             root.innerHTML =
                 '<div style="display:flex;align-items:center;justify-content:center;' +
                     'height:100vh;font-family:Nunito,sans-serif;color:#3b82f6;font-size:1.1rem">' +
@@ -278,6 +293,7 @@
     // Inject feature CSS
     (function () {
         [
+            'css/auth.css?v=4',
             'views/toast/toast.css',
             'views/chatbot/chatbot.css',
             'views/chatbot/ai-bubble.css',

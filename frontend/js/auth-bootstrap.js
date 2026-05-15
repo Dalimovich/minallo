@@ -173,6 +173,10 @@ function _initOneTap() {
       cancel_on_tap_outside: false,
       auto_select: false,
       itp_support: true,
+      // Required since Chrome's FedCM rollout (Oct 2024). Without this flag
+      // Chrome silently suppresses the One Tap prompt (notification.isNotDisplayed
+      // returns 'opt_out_or_no_session' / suppressed by browser policy).
+      use_fedcm_for_prompt: true,
       nonce: hashedNonce,
       prompt_parent_id: 'ss-one-tap-parent'
     });

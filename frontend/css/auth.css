@@ -1,0 +1,760 @@
+/* ============================================================================
+   auth.css — Minallo auth-modal (task-04 new-landing port)
+
+   Self-sufficient. Does NOT depend on new-landing.css being loaded — every
+   token is defined locally and the float keyframe is duplicated as na-float.
+   All classes use the na- (new auth) prefix to avoid collisions.
+
+   The outer #authModal is toggled display:flex / display:none by existing
+   JS (auth-modal.js). Critical IDs preserved by markup; this file only
+   styles them. Do not introduce rules that depend on inline width/height
+   set by old auth.html — those are gone.
+   ============================================================================ */
+
+#authModal {
+  /* tokens (kept local so this file works without new-landing.css) */
+  --na-ink: #f8fafc;
+  --na-muted: #cbd5e1;
+  --na-dim: #94a3b8;
+  --na-faint: #64748b;
+  --na-bg: #031323;
+  --na-sky-100: #e0f2fe;
+  --na-sky-200: #bae6fd;
+  --na-sky-300: #7dd3fc;
+  --na-sky-400: #38bdf8;
+  --na-sky-500: #0ea5e9;
+  --na-emerald-300: #6ee7b7;
+  --na-danger: #ef4444;
+
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  /* JS sets display:flex/none — keep none default in case CSS loads before
+     the HTML is injected. */
+  display: none;
+  /* `safe center` falls back to flex-start when content overflows the
+     container, so the top of the card never gets clipped when the form is
+     taller than the viewport (e.g. signup mode with confirm-password +
+     strength meter). The modal itself scrolls in that case. */
+  align-items: safe center;
+  justify-content: safe center;
+  padding: 24px 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--na-ink);
+  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--na-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+#authModal ::selection {
+  background: var(--na-sky-300);
+  color: #0f172a;
+}
+
+/* --- Backgrounds: gradient + grid + 3 orbs ----------------------------------- */
+
+.na-bg-gradient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top left, #075985 0, transparent 34%),
+    radial-gradient(circle at 80% 10%, #0284c7 0, transparent 28%),
+    linear-gradient(135deg, #020617 0%, #082f49 55%, #031323 100%);
+}
+
+.na-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(circle at center, black, transparent 72%);
+          mask-image: radial-gradient(circle at center, black, transparent 72%);
+}
+
+.na-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  pointer-events: none;
+  animation: na-float 7s ease-in-out infinite;
+}
+.na-orb-1 {
+  top: 5rem;
+  left: -8rem;
+  width: 20rem;
+  height: 20rem;
+  background: rgba(56, 189, 248, 0.25);
+}
+.na-orb-2 {
+  top: 6rem;
+  right: -10rem;
+  width: 24rem;
+  height: 24rem;
+  background: rgba(59, 130, 246, 0.25);
+  animation-delay: -1.2s;
+}
+.na-orb-3 {
+  bottom: -8rem;
+  left: 33%;
+  width: 24rem;
+  height: 24rem;
+  background: rgba(103, 232, 249, 0.12);
+  animation-delay: -2.3s;
+}
+
+@keyframes na-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-22px) scale(1.08); }
+}
+
+/* --- Shell + card ----------------------------------------------------------- */
+
+.na-shell {
+  position: relative;
+  width: 100%;
+  max-width: 80rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.na-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  width: 100%;
+  /* min-width:0 on grid children prevents text/inputs forcing the card
+     wider than the viewport (the default `min-width: auto` on grid items
+     would let long content blow out the column). */
+  min-width: 0;
+  /* No max-height: let the card grow with its content. If the card is
+     taller than the viewport (e.g. signup mode with strength meter +
+     confirm field), #authModal { overflow-y: auto } scrolls the whole
+     modal so the user can reach the Google button + switch row. */
+  border-radius: 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 35px 100px rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  overflow: hidden;
+  animation: na-card-in 0.75s ease-out both;
+}
+
+@keyframes na-card-in {
+  from { opacity: 0; transform: translateY(34px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (min-width: 900px) {
+  .na-card {
+    grid-template-columns: 1.05fr 0.95fr;
+  }
+}
+
+/* --- Left column: form ------------------------------------------------------ */
+
+.na-form-col {
+  position: relative;
+  padding: 1.25rem;
+  /* Prevent the form column from forcing the card wider than the viewport
+     (grid items default to min-width: auto, which is "min-content"). */
+  min-width: 0;
+}
+@media (min-width: 640px) { .na-form-col { padding: 1.75rem; } }
+@media (min-width: 900px) { .na-form-col { padding: 2rem 2.25rem; } }
+
+.na-form-glow {
+  position: absolute;
+  left: -5rem;
+  top: 6rem;
+  width: 14rem;
+  height: 14rem;
+  border-radius: 9999px;
+  background: rgba(56, 189, 248, 0.10);
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+.na-form-inner {
+  position: relative;
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+/* Brand */
+
+.na-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+}
+
+.na-brand-icon {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  background: var(--na-sky-300);
+  color: #0f172a;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.30);
+}
+.na-brand-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--na-emerald-300);
+  box-shadow: 0 0 0 4px #020617;
+}
+.na-brand-name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.na-brand-tagline {
+  margin: -2px 0 0;
+  font-size: 0.875rem;
+  color: rgba(224, 242, 254, 0.7);
+}
+
+/* Hero block (badge + heading + body) */
+
+.na-hero {
+  margin-bottom: 1.25rem;
+}
+
+.na-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid rgba(186, 230, 253, 0.20);
+  background: rgba(125, 211, 252, 0.10);
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--na-sky-100);
+  backdrop-filter: blur(16px);
+}
+.na-badge svg { display: block; }
+
+.na-heading {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #fff;
+  line-height: 1.1;
+  /* Long words (e.g. "Minallo") on narrow viewports should wrap rather than
+     force a horizontal scroll. */
+  overflow-wrap: anywhere;
+}
+@media (min-width: 768px) {
+  .na-heading { font-size: 1.85rem; }
+}
+
+.na-body {
+  margin: 0.65rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--na-muted);
+}
+
+/* sr-only used for the legacy #authTitle hold so existing JS can write to it */
+.na-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Error banner */
+
+.na-error {
+  display: none;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fecaca;
+  text-align: center;
+}
+
+/* Form */
+
+.na-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.na-field {
+  display: block;
+  /* The existing auth-modal.js sets `style.display = 'flex'` on
+     #authConfirmWrap when entering signup mode. Without flex-direction:column
+     the label and input would lay out as a horizontal row. flex-direction
+     is harmless when display is block, so this is safe for every .na-field. */
+  flex-direction: column;
+}
+
+.na-field-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--na-dim);
+}
+
+.na-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.95rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(2, 6, 23, 0.20);
+  backdrop-filter: blur(16px);
+  transition: border-color 0.2s, background 0.2s;
+}
+.na-input-wrap:focus-within {
+  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.na-input-icon {
+  flex: none;
+  color: var(--na-faint);
+  transition: color 0.2s;
+}
+.na-input-wrap:focus-within .na-input-icon {
+  color: var(--na-sky-300);
+}
+
+.na-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.na-input::placeholder { color: var(--na-faint); }
+
+.na-eye-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--na-faint);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.na-eye-btn:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--na-sky-200);
+}
+
+/* Strength meter */
+
+.na-strength {
+  margin-top: 0.55rem;
+}
+.na-strength-bars {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.na-strength-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.10);
+  transition: background 0.3s;
+}
+.na-strength-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Confirm hint */
+
+.na-confirm-hint {
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--na-dim);
+  min-height: 1em;
+}
+
+/* Signin-only row (stay-signed-in + forgot) */
+
+.na-signin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.na-stay {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--na-muted);
+  cursor: pointer;
+  user-select: none;
+}
+/* Keep the real checkbox in the DOM (existing JS reads .checked) but visually
+   hide it — the .na-stay-box span beside it is the visual control. */
+.na-stay-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.na-stay-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  background: rgba(255, 255, 255, 0.05);
+  color: transparent;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.na-stay-input:checked + .na-stay-box {
+  background: var(--na-sky-300);
+  border-color: var(--na-sky-300);
+  color: #0f172a;
+}
+.na-stay-input:focus-visible + .na-stay-box {
+  outline: 2px solid var(--na-sky-300);
+  outline-offset: 2px;
+}
+
+.na-forgot {
+  font-weight: 700;
+  color: var(--na-sky-200);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.na-forgot:hover { color: #fff; }
+
+/* Submit */
+
+.na-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  border: 0;
+  border-radius: 0.85rem;
+  background: var(--na-sky-400);
+  color: #0f172a;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
+  transition: background 0.2s, transform 0.05s;
+}
+.na-submit:hover { background: var(--na-sky-300); }
+.na-submit:active { transform: translateY(1px); }
+.na-submit:disabled { opacity: 0.7; cursor: progress; }
+.na-submit-arrow { transition: transform 0.2s; }
+.na-submit:hover .na-submit-arrow { transform: translateX(4px); }
+
+/* Divider */
+
+.na-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+  color: var(--na-faint);
+}
+.na-divider-line {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+/* Google */
+
+.na-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 900;
+  border-radius: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  transition: border-color 0.2s, background 0.2s;
+}
+.na-google:hover {
+  border-color: rgba(125, 211, 252, 0.35);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* Switch row */
+
+.na-switch-row {
+  margin: 1rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--na-dim);
+}
+.na-switch-link {
+  margin-left: 0.35rem;
+  font-weight: 900;
+  color: var(--na-sky-200);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.na-switch-link:hover { color: #fff; }
+
+/* --- Right column: buddy panel --------------------------------------------- */
+
+.na-buddy {
+  position: relative;
+  display: none; /* hidden <900px */
+  /* Same reason as .na-form-col: don't let inner content force the grid
+     column wider than the available card width. */
+  min-width: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(125, 211, 252, 0.10);
+  padding: 1.5rem;
+  overflow: hidden;
+}
+@media (min-width: 900px) {
+  .na-buddy { display: block; }
+}
+
+.na-buddy-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(125, 211, 252, 0.36), transparent 28%),
+    linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(37, 99, 235, 0.42), rgba(2, 6, 23, 0.25));
+}
+.na-buddy-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 52px 52px;
+  -webkit-mask-image: radial-gradient(circle at center, black, transparent 70%);
+          mask-image: radial-gradient(circle at center, black, transparent 70%);
+}
+
+.na-buddy-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* No fixed min-height — let the column shrink to the form column's height
+     so the whole card fits the viewport. */
+  height: 100%;
+  gap: 1rem;
+}
+
+.na-buddy-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.na-buddy-pill {
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--na-sky-100);
+  backdrop-filter: blur(16px);
+}
+.na-buddy-sparkle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--na-sky-100);
+  backdrop-filter: blur(16px);
+}
+
+.na-buddy-hero {
+  text-align: center;
+  margin: 0 auto;
+  max-width: 28rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.na-owl-wrap {
+  position: relative;
+  margin-bottom: 1rem;
+  animation: na-owl-float 5s ease-in-out infinite;
+}
+@keyframes na-owl-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+.na-owl-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgba(125, 211, 252, 0.30);
+  filter: blur(60px);
+}
+.na-owl-circle {
+  position: relative;
+  /* Scale with viewport height so the owl never forces the card to overflow. */
+  width: clamp(9rem, 22vh, 14rem);
+  height: clamp(9rem, 22vh, 14rem);
+  border-radius: 9999px;
+  border: 1px solid rgba(186, 230, 253, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 80px rgba(56, 189, 248, 0.20);
+  backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.na-owl-inner {
+  position: absolute;
+  inset: 1rem;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.28), transparent 28%),
+    linear-gradient(135deg, rgba(125, 211, 252, 0.22), rgba(37, 99, 235, 0.32));
+}
+.na-owl-emoji {
+  position: relative;
+  font-size: clamp(3rem, 9vh, 4.5rem);
+  line-height: 1;
+}
+
+.na-buddy-title {
+  margin: 0;
+  font-size: clamp(1.5rem, 3.2vh, 2rem);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #fff;
+}
+.na-buddy-body {
+  margin: 0.75rem 0 0;
+  max-width: 24rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: rgba(240, 249, 255, 0.85);
+}
+
+.na-mini-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.na-mini-card {
+  padding: 0.75rem 0.85rem;
+  border-radius: 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.20);
+  backdrop-filter: blur(24px);
+}
+.na-mini-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.75rem;
+  background: rgba(125, 211, 252, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.15);
+  color: var(--na-sky-100);
+}
+.na-mini-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: #fff;
+}
+.na-mini-text {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--na-muted);
+}
+
+/* --- Mobile tightening ------------------------------------------------------ */
+
+@media (max-width: 640px) {
+  #authModal { padding: 16px 12px; }
+  .na-heading { font-size: 1.85rem; }
+  .na-form-col { padding: 1.5rem 1.25rem; }
+  .na-brand { margin-bottom: 1.5rem; }
+  .na-hero { margin-bottom: 1.5rem; }
+}
