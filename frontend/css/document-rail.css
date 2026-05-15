@@ -427,14 +427,18 @@
   }
 }
 
-/* Hide the scrollbar inside the hosted Notes/Summary preview and the AI
-   chat history — kept scrollable but visually clean. */
+/* Hide every scrollbar inside the drawer — content stays scrollable but
+   visually clean. Covers .dr-content (the drawer's own outer scroll, which
+   browsers can render even when content fits), the hosted Notes/Summary
+   preview and saved list, and the AI chat history. */
+.dr-drawer .dr-content,
 .dr-drawer .dr-host-notes .np-preview,
 .dr-drawer .dr-host-notes .np-saved-list,
 .dr-drawer .dr-host-ai .ai-msgs {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+.dr-drawer .dr-content::-webkit-scrollbar,
 .dr-drawer .dr-host-notes .np-preview::-webkit-scrollbar,
 .dr-drawer .dr-host-notes .np-saved-list::-webkit-scrollbar,
 .dr-drawer .dr-host-ai .ai-msgs::-webkit-scrollbar {

@@ -71,8 +71,8 @@ function saveWidth(w: number): void {
 
 const HEADER_COPY: Record<DocRailMode, { title: string; subtitle: string }> = {
   ai: { title: 'AI', subtitle: 'Ask this document' },
-  notes: { title: 'Study tools', subtitle: 'Notes, summaries & saved outputs' },
-  summary: { title: 'Study tools', subtitle: 'Notes, summaries & saved outputs' },
+  notes: { title: 'Notes', subtitle: 'AI-generated notes from this PDF' },
+  summary: { title: 'Summary', subtitle: 'AI-generated summary of this PDF' },
 };
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T | null {
