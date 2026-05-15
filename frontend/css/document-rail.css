@@ -271,11 +271,13 @@
   stroke-width: 2;
 }
 
-/* Drawer content area — Task-02 mounts the legacy AI / Notes panels here. */
+/* Drawer content area — Task-02 mounts the legacy AI / Notes panels here.
+   overflow:hidden (not auto) so the drawer never grows a scrollbar of its
+   own. The hosted panels' own scroll regions (.np-preview, .ai-msgs) handle
+   real scrolling internally. */
 .dr-content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   min-height: 0;
   display: flex;
   flex-direction: column;
