@@ -22,6 +22,7 @@ export function initNewChatbotShell() {
     initAiTools(newRoot);
     initClearAll(newRoot);
     initTextareaAutoSize(newRoot);
+    initActionCards(newRoot);
     initKeyboardShortcuts(newRoot);
     initFullbleed();
     renderSidebar(newRoot);
@@ -566,9 +567,9 @@ function appendBubbleActions(aiRow, raw) {
       <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
       <span>Regenerate</span>
     </button>
-    <button type="button" class="ncb-bubble-action" data-action="save" title="Save to notes">
-      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/></svg>
-      <span>Save to notes</span>
+    <button type="button" class="ncb-bubble-action" data-action="save" title="Bookmark this reply">
+      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+      <span>Bookmark</span>
     </button>
     <button type="button" class="ncb-bubble-action ncb-bubble-action--icon" data-action="thumb-up" aria-label="Thumbs up">
       <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
@@ -834,7 +835,10 @@ function initImportModal(root) {
             searchInput.value = '';
         // PR-10: eagerly hydrate any course whose folder list is empty so the
         // user doesn't have to "open the course first" before importing.
-        eagerlyHydrateCourses();
+        void eagerlyHydrateCourses(() => {
+            if (overlay.hidden) return;
+            renderList();
+        });
         // Build the course list each open so newly-added courses appear.
         const courses = listCourses();
         select.innerHTML = courses.length
@@ -857,6 +861,17 @@ function initImportModal(root) {
         picked.clear();
         syncCount();
         renderList();
+        if (activeCourse && (!activeCourse.userFolders || activeCourse.userFolders.length === 0)) {
+            const w = window;
+            if (w._ufMerge) {
+                try {
+                    Promise.resolve(w._ufMerge(activeCourse))
+                        .then(() => { if (!overlay.hidden) renderList(); })
+                        .catch(() => { /* ignore */ });
+                }
+                catch { /* ignore */ }
+            }
+        }
     });
     searchInput?.addEventListener('input', () => {
         searchTerm = searchInput.value.trim();
@@ -905,6 +920,24 @@ function attachImportedFolders(root, folders) {
     });
     saveChatStore();
     renderAttachChips(root);
+    updateContextPill(root);
+}
+function updateContextPill(root) {
+    const pill = root.querySelector('.ncb-chat-context-pill');
+    if (!pill)
+        return;
+    const active = chatStore.getActive();
+    const folders = active.attachedFolders;
+    if (!folders.length) {
+        pill.hidden = true;
+        pill.textContent = '';
+        return;
+    }
+    const first = folders[0].name;
+    pill.textContent = folders.length === 1
+        ? first
+        : first + ' +' + (folders.length - 1) + ' more';
+    pill.hidden = false;
 }
 function renderAttachChips(root) {
     const row = root.querySelector('.ncb-attach-row');
@@ -939,6 +972,7 @@ function renderAttachChips(root) {
             active2.attachedFolders = active2.attachedFolders.filter((f) => f.id !== id);
             saveChatStore();
             renderAttachChips(root);
+            updateContextPill(root);
         });
     });
 }
@@ -1013,7 +1047,7 @@ function renderNotesTab(root) {
         count.textContent = String(chat.savedReplies.length);
     if (chat.savedReplies.length === 0) {
         list.innerHTML =
-            '<p class="ncb-notes-empty">Save useful AI replies here by tapping the Save to notes button under any reply.</p>';
+            '<p class="ncb-notes-empty">Bookmark useful AI replies here by tapping the Bookmark button under any reply.</p>';
         return;
     }
     list.innerHTML = chat.savedReplies
@@ -1196,6 +1230,7 @@ function loadChatStore() {
     }
 }
 let _saveTimer = null;
+let _quotaToastShown = false;
 function saveChatStore() {
     if (_saveTimer != null)
         window.clearTimeout(_saveTimer);
@@ -1204,8 +1239,18 @@ function saveChatStore() {
             localStorage.setItem(NCB_STORE_KEY, JSON.stringify(chatStore.chats));
             localStorage.setItem(NCB_ACTIVE_KEY, chatStore.activeId);
         }
-        catch {
-            // quota / private mode — silently drop
+        catch (err) {
+            if (_quotaToastShown) return;
+            _quotaToastShown = true;
+            const isQuota = err && err.name === 'QuotaExceededError';
+            if (typeof window.showToast === 'function') {
+                window.showToast(
+                    isQuota ? 'Chat storage full' : 'Chats not saved',
+                    isQuota
+                        ? 'Browser storage is full. Delete some chats to keep new ones from being lost on reload.'
+                        : 'Your browser blocked storage (private mode?). Chats will not persist across reloads.'
+                );
+            }
         }
     }, 200);
 }
@@ -1312,6 +1357,7 @@ function loadActiveChatIntoCenter(root) {
     // Header title.
     if (headerTitle)
         headerTitle.textContent = chat.title;
+    updateContextPill(root);
     // Stage mode: active iff there are any messages.
     stage.dataset.state = chat.messages.length > 0 ? 'active' : 'empty';
     // Re-render messages from persisted state.
@@ -1887,24 +1933,53 @@ function attachErrorRetry(aiRow, bubble) {
     bubble.appendChild(btn);
 }
 // ---- Course folder hydration ----
-function eagerlyHydrateCourses() {
+function eagerlyHydrateCourses(onProgress) {
     const sems = getSems();
     const w = window;
     const trigger = w._ufMerge || w.listUserFolders;
     if (!trigger)
-        return;
+        return Promise.resolve();
+    const promises = [];
     Object.values(sems).forEach((sem) => {
         (sem.courses || []).forEach((c) => {
             const empty = !c.userFolders || c.userFolders.length === 0;
             if (empty && c.id) {
                 try {
-                    trigger(c.id);
+                    const r = trigger(c);
+                    const p = Promise.resolve(r)
+                        .then(() => { try { onProgress && onProgress(c); } catch { /* ignore */ } })
+                        .catch(() => { /* tolerate per-course failure */ });
+                    promises.push(p);
                 }
                 catch { /* tolerate per-course failure */ }
             }
         });
     });
+    return Promise.all(promises).then(() => undefined);
 }
+// ---- Empty-state action cards ----
+function initActionCards(root) {
+    if (root.dataset.ncbActionsBound === '1')
+        return;
+    root.dataset.ncbActionsBound = '1';
+    const cards = root.querySelectorAll('.ncb-action-card[data-prefill]');
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const prefill = card.dataset.prefill || '';
+            if (!prefill)
+                return;
+            const ta = root.querySelector('.ncb-input-textarea');
+            if (!ta)
+                return;
+            ta.value = prefill;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.focus();
+            const end = ta.value.length;
+            try { ta.setSelectionRange(end, end); } catch { /* old browsers */ }
+        });
+    });
+}
+
 // ---- Keyboard shortcuts ----
 function initKeyboardShortcuts(root) {
     if (root.dataset.ncbKbBound === '1')

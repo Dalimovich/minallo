@@ -26,6 +26,7 @@ export function initNewChatbotShell(): void {
   initAiTools(newRoot);
   initClearAll(newRoot);
   initTextareaAutoSize(newRoot);
+  initActionCards(newRoot);
   initKeyboardShortcuts(newRoot);
   initFullbleed();
 
@@ -662,9 +663,9 @@ function appendBubbleActions(aiRow: HTMLElement, raw: string): void {
       <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
       <span>Regenerate</span>
     </button>
-    <button type="button" class="ncb-bubble-action" data-action="save" title="Save to notes">
-      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/></svg>
-      <span>Save to notes</span>
+    <button type="button" class="ncb-bubble-action" data-action="save" title="Bookmark this reply">
+      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+      <span>Bookmark</span>
     </button>
     <button type="button" class="ncb-bubble-action ncb-bubble-action--icon" data-action="thumb-up" aria-label="Thumbs up">
       <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
@@ -967,7 +968,11 @@ function initImportModal(root: HTMLElement): void {
 
     // PR-10: eagerly hydrate any course whose folder list is empty so the
     // user doesn't have to "open the course first" before importing.
-    eagerlyHydrateCourses();
+    // Re-render as each course's folders/files arrive so the modal fills in.
+    void eagerlyHydrateCourses(() => {
+      if (overlay.hidden) return;
+      renderList();
+    });
 
     // Build the course list each open so newly-added courses appear.
     const courses = listCourses();
@@ -993,6 +998,18 @@ function initImportModal(root: HTMLElement): void {
     picked.clear();
     syncCount();
     renderList();
+    // If the newly selected course has no folders yet, kick off a hydration
+    // and re-render once it lands.
+    if (activeCourse && (!activeCourse.userFolders || activeCourse.userFolders.length === 0)) {
+      const w = window as unknown as { _ufMerge?: (course: SemCourse) => unknown };
+      if (w._ufMerge) {
+        try {
+          Promise.resolve(w._ufMerge(activeCourse) as unknown)
+            .then(() => { if (!overlay.hidden) renderList(); })
+            .catch(() => { /* ignore */ });
+        } catch { /* ignore */ }
+      }
+    }
   });
 
   searchInput?.addEventListener('input', () => {
@@ -1041,6 +1058,26 @@ function attachImportedFolders(root: HTMLElement, folders: ImportedFolder[]): vo
   });
   saveChatStore();
   renderAttachChips(root);
+  updateContextPill(root);
+}
+
+// Reflect the active chat's attached folders in the header context pill.
+// No attachments → hide (no fake "Course context active" text).
+function updateContextPill(root: HTMLElement): void {
+  const pill = root.querySelector<HTMLElement>('.ncb-chat-context-pill');
+  if (!pill) return;
+  const active = chatStore.getActive();
+  const folders = active.attachedFolders;
+  if (!folders.length) {
+    pill.hidden = true;
+    pill.textContent = '';
+    return;
+  }
+  const first = folders[0]!.name;
+  pill.textContent = folders.length === 1
+    ? first
+    : first + ' +' + (folders.length - 1) + ' more';
+  pill.hidden = false;
 }
 
 function renderAttachChips(root: HTMLElement): void {
@@ -1076,6 +1113,7 @@ function renderAttachChips(root: HTMLElement): void {
       active2.attachedFolders = active2.attachedFolders.filter((f) => f.id !== id);
       saveChatStore();
       renderAttachChips(root);
+      updateContextPill(root);
     });
   });
 }
@@ -1156,7 +1194,7 @@ function renderNotesTab(root: HTMLElement): void {
 
   if (chat.savedReplies.length === 0) {
     list.innerHTML =
-      '<p class="ncb-notes-empty">Save useful AI replies here by tapping the Save to notes button under any reply.</p>';
+      '<p class="ncb-notes-empty">Bookmark useful AI replies here by tapping the Bookmark button under any reply.</p>';
     return;
   }
 
@@ -1366,14 +1404,29 @@ function loadChatStore(): void {
 }
 
 let _saveTimer: number | null = null;
+let _quotaToastShown = false;
 function saveChatStore(): void {
   if (_saveTimer != null) window.clearTimeout(_saveTimer);
   _saveTimer = window.setTimeout(() => {
     try {
       localStorage.setItem(NCB_STORE_KEY, JSON.stringify(chatStore.chats));
       localStorage.setItem(NCB_ACTIVE_KEY, chatStore.activeId);
-    } catch {
-      // quota / private mode — silently drop
+    } catch (err) {
+      // Quota exceeded or private-mode write block. Tell the user once per
+      // page load so they know their chats may not persist — but don't spam
+      // toasts on every keystroke.
+      if (_quotaToastShown) return;
+      _quotaToastShown = true;
+      const w = window as unknown as { showToast?: (title: string, msg?: string) => void };
+      const isQuota = (err as DOMException)?.name === 'QuotaExceededError';
+      if (typeof w.showToast === 'function') {
+        w.showToast(
+          isQuota ? 'Chat storage full' : 'Chats not saved',
+          isQuota
+            ? 'Browser storage is full. Delete some chats to keep new ones from being lost on reload.'
+            : 'Your browser blocked storage (private mode?). Chats will not persist across reloads.'
+        );
+      }
     }
   }, 200);
 }
@@ -1481,6 +1534,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
 
   // Header title.
   if (headerTitle) headerTitle.textContent = chat.title;
+  updateContextPill(root);
 
   // Stage mode: active iff there are any messages.
   stage.dataset.state = chat.messages.length > 0 ? 'active' : 'empty';
@@ -2059,20 +2113,51 @@ function attachErrorRetry(aiRow: HTMLElement, bubble: HTMLElement | null): void 
 
 // ---- Course folder hydration ----
 
-function eagerlyHydrateCourses(): void {
+function eagerlyHydrateCourses(onProgress?: (course: SemCourse) => void): Promise<void> {
   const sems = getSems();
   const w = window as unknown as {
-    _ufMerge?: (courseId: string) => unknown;
-    listUserFolders?: (courseId: string) => unknown;
+    _ufMerge?: (course: SemCourse) => unknown;
+    listUserFolders?: (course: SemCourse) => unknown;
   };
   const trigger = w._ufMerge || w.listUserFolders;
-  if (!trigger) return;
+  if (!trigger) return Promise.resolve();
+  const promises: Promise<void>[] = [];
   Object.values(sems).forEach((sem) => {
     (sem.courses || []).forEach((c) => {
       const empty = !c.userFolders || c.userFolders.length === 0;
       if (empty && c.id) {
-        try { trigger(c.id); } catch { /* tolerate per-course failure */ }
+        try {
+          const r = trigger(c);
+          const p = Promise.resolve(r as unknown)
+            .then(() => { try { onProgress?.(c); } catch { /* ignore */ } })
+            .catch(() => { /* tolerate per-course failure */ });
+          promises.push(p);
+        } catch { /* tolerate per-course failure */ }
       }
+    });
+  });
+  return Promise.all(promises).then(() => undefined);
+}
+
+// ---- Empty-state action cards ----
+// Each card carries a data-prefill starter prompt. Clicking drops the prompt
+// into the textarea, focuses it, and (if the prompt ends with ": ") parks the
+// caret at the end so the user can keep typing.
+function initActionCards(root: HTMLElement): void {
+  if (root.dataset.ncbActionsBound === '1') return;
+  root.dataset.ncbActionsBound = '1';
+  const cards = root.querySelectorAll<HTMLButtonElement>('.ncb-action-card[data-prefill]');
+  cards.forEach((card) => {
+    card.addEventListener('click', () => {
+      const prefill = card.dataset.prefill || '';
+      if (!prefill) return;
+      const ta = root.querySelector<HTMLTextAreaElement>('.ncb-input-textarea');
+      if (!ta) return;
+      ta.value = prefill;
+      ta.dispatchEvent(new Event('input', { bubbles: true })); // trigger auto-resize
+      ta.focus();
+      const end = ta.value.length;
+      try { ta.setSelectionRange(end, end); } catch { /* old browsers */ }
     });
   });
 }

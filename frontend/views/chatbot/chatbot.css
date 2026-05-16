@@ -1063,6 +1063,19 @@ body.ncb-fullbleed .ncb-main {
   display: none;
 }
 
+/* When a chat is active, keep the composer pinned to the bottom of the
+   scrolling center column so the user can keep typing while they scroll
+   through the conversation. The blurred background covers messages
+   scrolling underneath. */
+.ncb-empty[data-state="active"] .ncb-input {
+  position: sticky;
+  bottom: 8px;
+  z-index: 5;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
 /* Chat header (above messages once active) */
 
 .ncb-chat-header {
