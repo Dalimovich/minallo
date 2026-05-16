@@ -1166,21 +1166,24 @@ body.ncb-fullbleed .ncb-main {
    never hidden behind the composer when scrolled to the end. Composer
    is ~76px tall + ~44px safe gap = 140px reserved. */
 .ncb-empty[data-state="active"] .ncb-msgs {
-  padding-bottom: 160px;
-  /* Fade out messages as they scroll up into the composer's top edge
-     so text doesn't visually collide with the composer when crossing
-     under it. The mask keeps the top opaque and fades the bottom 80px
-     of the .ncb-msgs box. */
+  /* Just enough padding so the last reply's action row (Copy /
+     Regenerate / Bookmark) clears the composer when scrolled to the
+     very bottom of a long chat. Short chats no longer get a dead
+     zone because margin-top:auto already positions msgs right above
+     the composer. */
+  padding-bottom: 24px;
+  /* Soft fade at the bottom so text gracefully disappears as it
+     approaches the composer's top edge. */
   -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
-    black calc(100% - 80px),
+    black calc(100% - 32px),
     transparent 100%
   );
           mask-image: linear-gradient(
     to bottom,
     black 0%,
-    black calc(100% - 80px),
+    black calc(100% - 32px),
     transparent 100%
   );
 }
