@@ -1141,13 +1141,15 @@ body.ncb-fullbleed .ncb-main {
    and can't escape it. */
 .ncb-empty[data-state="active"] .ncb-input {
   position: sticky;
-  bottom: max(22px, env(safe-area-inset-bottom, 0px));
+  /* Lifted ~14px higher off the bottom so the whole composer (textarea
+     + buttons) reads as floating clearly above the page edge. */
+  bottom: max(36px, env(safe-area-inset-bottom, 0px));
   z-index: 20;
   width: calc(100% - 32px);
   max-width: 720px;
   margin-left: auto;
   margin-right: auto;
-  margin-bottom: 22px;
+  margin-bottom: 36px;
   border-radius: 22px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   background: rgba(8, 15, 34, 0.94);
