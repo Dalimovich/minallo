@@ -360,8 +360,11 @@ async function doSend(
   touchActiveChat();
   saveChatStore();
 
-  // Reset input
+  // Reset input. Dispatch 'input' so auto-resize collapses the textarea
+  // back to its min-height — otherwise the post-send composer keeps the
+  // multi-line height and the placeholder floats in dead space.
   textarea.value = '';
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
   state.pasted = [];
   state.files = [];
   renderPasteRow(state, pasteRow);
@@ -1530,7 +1533,10 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   state.controller = null;
   state.isSending = false;
   if (sendBtn) setSendBtnMode(sendBtn, 'send');
-  if (textarea) textarea.value = '';
+  if (textarea) {
+    textarea.value = '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
   if (pasteRow) renderPasteRow(state, pasteRow);
   renderFilesRow(root, state);
 
