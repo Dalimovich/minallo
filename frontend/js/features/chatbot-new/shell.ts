@@ -360,10 +360,12 @@ async function doSend(
   touchActiveChat();
   saveChatStore();
 
-  // Reset input. Dispatch 'input' so auto-resize collapses the textarea
-  // back to its min-height — otherwise the post-send composer keeps the
-  // multi-line height and the placeholder floats in dead space.
+  // Reset input. Clear the value AND clear the inline height that
+  // auto-resize set while the user was typing — otherwise the textarea
+  // keeps its multi-line height even after the value is empty.
+  // Dispatch 'input' so any other listeners can react.
   textarea.value = '';
+  textarea.style.height = '';
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
   state.pasted = [];
   state.files = [];
@@ -1535,6 +1537,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   if (sendBtn) setSendBtnMode(sendBtn, 'send');
   if (textarea) {
     textarea.value = '';
+    textarea.style.height = '';
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
   if (pasteRow) renderPasteRow(state, pasteRow);
@@ -2170,12 +2173,15 @@ function initActionCards(root: HTMLElement): void {
       const ta = root.querySelector<HTMLTextAreaElement>('.ncb-input-textarea');
       if (!ta) return;
       ta.value = prefill;
-      ta.dispatchEvent(new Event('input', { bubbles: true })); // trigger auto-resize
-      // Scroll the composer into view BEFORE focusing so the user sees the
-      // prefilled text appear — focus alone often doesn't scroll the page
-      // when the composer is far above the cards.
+      // Resize manually right here so the textarea is the right size
+      // before scroll / focus. Dispatching 'input' alone sometimes fires
+      // the listener before the browser has re-laid out for the new
+      // value, leaving the textarea capped at its previous height.
+      ta.style.height = 'auto';
+      const next = Math.max(36, Math.min(96, ta.scrollHeight));
+      ta.style.height = next + 'px';
+      ta.style.overflowY = ta.scrollHeight > 96 ? 'auto' : 'hidden';
       ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Focus on next frame so the smooth scroll has a chance to start.
       window.requestAnimationFrame(() => {
         ta.focus();
         const end = ta.value.length;

@@ -297,10 +297,11 @@ async function doSend(state, stage, textarea, sendBtn, pasteRow, msgs) {
     appendUserBubble(msgs, text, images, files);
     touchActiveChat();
     saveChatStore();
-    // Reset input. Dispatch 'input' so auto-resize collapses the textarea
-    // back to its min-height — otherwise the post-send composer keeps the
-    // multi-line height and the placeholder floats in dead space.
+    // Reset input. Clear the value AND clear the inline height that
+    // auto-resize set while the user was typing — otherwise the textarea
+    // keeps its multi-line height even after the value is empty.
     textarea.value = '';
+    textarea.style.height = '';
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
     state.pasted = [];
     state.files = [];
@@ -1352,6 +1353,7 @@ function loadActiveChatIntoCenter(root) {
         setSendBtnMode(sendBtn, 'send');
     if (textarea) {
         textarea.value = '';
+        textarea.style.height = '';
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
     }
     if (pasteRow)
@@ -1978,7 +1980,12 @@ function initActionCards(root) {
             if (!ta)
                 return;
             ta.value = prefill;
-            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            // Resize manually so the textarea is the right size before
+            // scroll / focus — dispatchEvent alone can fire before layout.
+            ta.style.height = 'auto';
+            const next = Math.max(36, Math.min(96, ta.scrollHeight));
+            ta.style.height = next + 'px';
+            ta.style.overflowY = ta.scrollHeight > 96 ? 'auto' : 'hidden';
             ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
             window.requestAnimationFrame(() => {
                 ta.focus();
