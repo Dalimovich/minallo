@@ -231,6 +231,7 @@ function ensureNotesPanel() {
         catch (_e) { /* ignore */ }
     }
     else if (w._notesPanel && typeof w._notesPanel.open === 'function') {
+        // Fallback for older notes-panel.js without ensure().
         try {
             w._notesPanel.open();
         }
@@ -285,11 +286,13 @@ function mountNotesPanel(mode) {
     // the saved-list when the Saved tab is active.
     syncDrTab(panel, wantTab);
     panel.querySelectorAll('.np-tab').forEach((btn) => {
-        if (btn.dataset.drBound === '1') return;
+        if (btn.dataset.drBound === '1')
+            return;
         btn.dataset.drBound = '1';
         btn.addEventListener('click', () => {
             const t = btn.dataset.tab;
-            if (t) syncDrTab(panel, t);
+            if (t)
+                syncDrTab(panel, t);
         });
     });
 }
