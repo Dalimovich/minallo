@@ -86,6 +86,32 @@
   <link rel="stylesheet" href="/css/styles.css?v=7" />
   <link rel="stylesheet" href="/css/layout.css?v=5" />
   <link rel="stylesheet" href="/css/document-rail.css?v=15" />
+  <!-- Landing-fragment CSS preloaded in <head> so it's ready the moment
+       loader.js injects the landing HTML — no flash of unstyled content. -->
+  <link rel="stylesheet" href="/css/new-landing.css?v=1" />
+  <link rel="stylesheet" href="/css/auth.css?v=4" />
+  <style>
+    /* Visually hide the static SEO hero (still in the DOM for crawlers
+       that don't execute JS) so logged-in / human users see the splash
+       or landing instead of unstyled raw HTML. */
+    .ss-seo-hero {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+    /* Make the splash visible by default — loader.js hides it when the
+       app is mounted. Means users see the branded "M Minallo …" instead
+       of a blank flash while the landing JS bootstraps. */
+    #ss-splash { display: flex !important; }
+    body.ncb-fullbleed #ss-splash,
+    body[data-ss-ready="1"] #ss-splash { display: none !important; }
+  </style>
   </head>
   <body class="night">
     <!-- Splash screen shown while the app loads after sign-in -->
@@ -104,15 +130,22 @@
          phrasing without waiting for the SPA to hydrate. loader.js
          replaces this block with the rendered landing/app sections. -->
     <div id="ss-sections-root">
-      <main class="ss-seo-hero" role="main" style="max-width:780px;margin:48px auto;padding:24px;color:#e2e8f0;font-family:Nunito,system-ui,sans-serif;text-align:center;">
-        <h1 style="font-size:2.25rem;font-weight:800;line-height:1.15;margin:0 0 16px;color:#fff;">Minallo - AI Study Assistant for Students</h1>
-        <p style="font-size:1.05rem;line-height:1.6;margin:0;color:#cbd5e1;">
+      <main class="ss-seo-hero" role="main">
+        <h1>Minallo - AI Study Assistant for Students</h1>
+        <p>
           Minallo is an AI study assistant for students. It helps you summarize
           lecture notes, organize study materials, edit PDFs, create notes, use
           Pomodoro study sessions, and learn from your course documents with AI.
         </p>
       </main>
     </div>
+
+    <script>
+      // Hide the splash once the SPA tells us it's mounted.
+      window.addEventListener('ss-ready', function () {
+        document.body.setAttribute('data-ss-ready', '1');
+      });
+    </script>
 
     <script src="js/minallo.js?v=2"></script>
     <script src="js/config.js?v=1"></script>
