@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://minallo.de/sitemap.xml
