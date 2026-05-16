@@ -1131,12 +1131,8 @@ body.ncb-fullbleed .ncb-main {
   display: none;
 }
 
-/* When a chat is active, keep the composer pinned to the bottom of the
-   scrolling center column so the user can keep typing while they scroll
-   through the conversation. The blurred background covers messages
-   scrolling underneath. */
-/* Kill the scroller's bottom padding in active state so the composer can
-   sit flush against the bottom edge of the card. */
+/* Reset any leftover scroller padding so we control bottom spacing
+   ourselves on the composer + .ncb-msgs. */
 .ncb-empty[data-state="active"] {
   padding-bottom: 0;
 }
@@ -1144,53 +1140,67 @@ body.ncb-fullbleed .ncb-main {
   padding-bottom: 0;
 }
 
-/* Active-chat composer: pinned to the bottom of the chat column, edge to
-   edge across the card so there is no transparent strip on any side for
-   scrolling messages to peek through. Only the TOP corners are rounded
-   (the bottom meets the card's bottom edge cleanly). */
-/* Active-chat composer: pinned near the bottom of the chat column with
-   a safe-area gap so it never sits flush against the viewport edge or
-   the OS taskbar. The base .ncb-input rules already make it compact +
-   glassy — here we just anchor it and inset its content to a lane. */
+/* ============ Active-chat composer ============
+   Floating centered rounded card, lifted off the viewport bottom by a
+   safe-area amount. Lives inside the scrolling chat column via sticky
+   positioning — never fixed, so it always belongs to the chat layout
+   and can't escape it. */
 .ncb-empty[data-state="active"] .ncb-input {
   position: sticky;
-  bottom: 14px;
-  z-index: 5;
-  margin-left: -20px;
-  margin-right: -20px;
-  margin-bottom: 14px;
-  border-radius: 1.25rem 1.25rem 0 0;
-  background: rgba(8, 15, 34, 0.92);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 -12px 24px -8px rgba(0, 0, 0, 0.55);
-}
-
-/* Center inner content with a soft max-width so the composer reads as
-   a tidy lane on the opaque bar, not an edge-to-edge strip. */
-.ncb-empty[data-state="active"] .ncb-input-textarea,
-.ncb-empty[data-state="active"] .ncb-attach-row,
-.ncb-empty[data-state="active"] .ncb-files-row,
-.ncb-empty[data-state="active"] .ncb-paste-row,
-.ncb-empty[data-state="active"] .ncb-input-bottom {
+  /* Sit above the viewport / OS taskbar by at least 22px (safe-area
+     aware for iOS PWAs and Android in-display gesture bars). */
+  bottom: max(22px, env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  /* Centered floating card — not edge-to-edge. */
+  width: calc(100% - 32px);
   max-width: 760px;
   margin-left: auto;
   margin-right: auto;
+  margin-bottom: 22px;
+  /* Fully rounded on every corner since the card now floats. */
+  border-radius: 22px;
+  background: rgba(8, 15, 34, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* Allow the box-shadow to render past the card edges. */
+  overflow: visible;
 }
 
-@media (min-width: 768px) {
-  .ncb-empty[data-state="active"] .ncb-input {
-    margin-left: -40px;
-    margin-right: -40px;
-  }
-}
-
-/* Enough bottom padding that the last AI reply (including its Copy /
-   Regenerate / Bookmark action row) can scroll fully above the sticky
-   composer. Composer is ~76px tall + 14px lift + 14px below + margin =
-   ~120px reserved area. */
+/* Messages scroll above the composer. Reserve enough bottom padding
+   that the last reply's action row (Copy / Regenerate / Bookmark) is
+   never hidden behind the composer when scrolled to the end. Composer
+   is ~76px tall + ~44px safe gap = 140px reserved. */
 .ncb-empty[data-state="active"] .ncb-msgs {
-  padding-bottom: 140px;
+  padding-bottom: 160px;
+  /* Fade out messages as they scroll up into the composer's top edge
+     so text doesn't visually collide with the composer when crossing
+     under it. The mask keeps the top opaque and fades the bottom 80px
+     of the .ncb-msgs box. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 80px),
+    transparent 100%
+  );
+          mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 80px),
+    transparent 100%
+  );
+}
+
+/* Make sure no parent of the composer is clipping its shadow / safe-area
+   gap. .ncb-card has overflow:hidden by design (it owns the rounded
+   panel look), but only .ncb-center should clip via overflow-y:auto. */
+.ncb-empty {
+  overflow: visible;
+}
+.ncb-center-inner {
+  overflow: visible;
 }
 
 /* Chat header (above messages once active) */
