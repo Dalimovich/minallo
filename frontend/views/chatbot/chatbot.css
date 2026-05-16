@@ -1148,15 +1148,17 @@ body.ncb-fullbleed .ncb-main {
    edge across the card so there is no transparent strip on any side for
    scrolling messages to peek through. Only the TOP corners are rounded
    (the bottom meets the card's bottom edge cleanly). */
-/* Active-chat composer: pinned to the bottom of the chat column. The
-   base .ncb-input rules already make it compact + glassy — here we
-   just anchor it and inset its content to a comfortable lane. */
+/* Active-chat composer: pinned near the bottom of the chat column with
+   a safe-area gap so it never sits flush against the viewport edge or
+   the OS taskbar. The base .ncb-input rules already make it compact +
+   glassy — here we just anchor it and inset its content to a lane. */
 .ncb-empty[data-state="active"] .ncb-input {
   position: sticky;
-  bottom: 0;
+  bottom: 14px;
   z-index: 5;
   margin-left: -20px;
   margin-right: -20px;
+  margin-bottom: 14px;
   border-radius: 1.25rem 1.25rem 0 0;
   background: rgba(8, 15, 34, 0.92);
   backdrop-filter: blur(18px);
@@ -1183,9 +1185,12 @@ body.ncb-fullbleed .ncb-main {
   }
 }
 
-/* Breathing room so the last AI reply doesn't visually touch the composer. */
+/* Enough bottom padding that the last AI reply (including its Copy /
+   Regenerate / Bookmark action row) can scroll fully above the sticky
+   composer. Composer is ~76px tall + 14px lift + 14px below + margin =
+   ~120px reserved area. */
 .ncb-empty[data-state="active"] .ncb-msgs {
-  padding-bottom: 16px;
+  padding-bottom: 140px;
 }
 
 /* Chat header (above messages once active) */
