@@ -262,6 +262,17 @@ body.ncb-fullbleed .ncb-main {
 .ncb-empty {
   display: flex;
   flex-direction: column;
+  /* Fill the scroll column so the active-state sticky composer has
+     something to stick against. Without this, when content is short
+     the composer sits at the bottom of .ncb-empty's natural height,
+     leaving dead space below. */
+  min-height: 100%;
+}
+
+/* In active chats, let messages take all spare vertical room so the
+   composer is pushed to the very bottom of the column. */
+.ncb-empty[data-state="active"] .ncb-msgs {
+  flex: 1;
 }
 
 .ncb-empty-head {
@@ -318,6 +329,16 @@ body.ncb-fullbleed .ncb-main {
   -webkit-backdrop-filter: blur(20px);
   animation: ncb-fade-up 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: 0.04s;
+  /* Smooth visual transition when the chat flips from empty → active.
+     The composer's layout position changes (middle → bottom), which CSS
+     can't directly tween, but the radius/margin/padding/background
+     properties animate so the change reads as motion rather than a snap. */
+  transition:
+    margin 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.32s ease,
+    box-shadow 0.32s ease;
 }
 
 .ncb-input.ncb-input--placeholder {
@@ -1093,24 +1114,24 @@ body.ncb-fullbleed .ncb-main {
   box-shadow: 0 -12px 24px -8px rgba(0, 0, 0, 0.6);
   /* Inset content via padding so the textarea + button row sit in a
      narrower visual lane, while the opaque bar still reaches both card
-     edges (sealing the bottom). max-width caps it nicely on wide screens. */
-  padding-left: 60px;
-  padding-right: 60px;
+     edges (sealing the bottom). */
+  padding: 10px 60px;
+}
+.ncb-empty[data-state="active"] .ncb-input-textarea {
+  min-height: 44px;
 }
 
 @media (min-width: 768px) {
   .ncb-empty[data-state="active"] .ncb-input {
     margin-left: -40px;
     margin-right: -40px;
-    padding-left: 96px;
-    padding-right: 96px;
+    padding: 12px 96px;
   }
 }
 
 @media (min-width: 1280px) {
   .ncb-empty[data-state="active"] .ncb-input {
-    padding-left: 160px;
-    padding-right: 160px;
+    padding: 14px 160px;
   }
 }
 
