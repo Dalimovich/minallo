@@ -23,6 +23,7 @@ export function initNewChatbotShell(): void {
   initContextTabs(newRoot);
   initContextCollapse(newRoot);
   initUploads(newRoot);
+  initAiTools(newRoot);
   initFullbleed();
 
   renderSidebar(newRoot);
@@ -709,6 +710,63 @@ interface ImportedFolder {
   count: string;
 }
 
+// Data-driven import modal (PR-08). Pulls real semesters/courses/folders/files
+// from window.SEMS, supports folder drill-down with breadcrumb back, and lets
+// the user pick individual files or whole folders. Falls back to a friendly
+// empty state when no courses are loaded.
+
+interface SemFile { name: string; id?: string; folderId?: string }
+interface SemFolder { id: string; name: string; files?: SemFile[] }
+interface SemCourse {
+  id: string;
+  name?: string;
+  title?: string;
+  files?: SemFile[];
+  userFolders?: SemFolder[];
+}
+interface SemEntry { courses?: SemCourse[] }
+
+type PickedKind = 'folder' | 'file';
+interface PickedItem {
+  id: string;
+  kind: PickedKind;
+  name: string;
+  meta: string;
+  courseId: string;
+}
+
+function getSems(): Record<string, SemEntry> {
+  const w = window as unknown as { SEMS?: Record<string, SemEntry>; _SEMS?: Record<string, SemEntry> };
+  return w.SEMS || w._SEMS || {};
+}
+
+function getActiveSemId(): string | undefined {
+  const w = window as unknown as { activeSemesterId?: string; _activeSemesterId?: string };
+  return w.activeSemesterId || w._activeSemesterId;
+}
+
+function listCourses(): SemCourse[] {
+  const sems = getSems();
+  const active = getActiveSemId();
+  const seen = new Set<string>();
+  const out: SemCourse[] = [];
+  const push = (c: SemCourse | undefined): void => {
+    if (!c || !c.id || seen.has(c.id)) return;
+    seen.add(c.id);
+    out.push(c);
+  };
+  if (active && sems[active]) (sems[active].courses || []).forEach(push);
+  Object.keys(sems).forEach((sid) => {
+    if (sid === active) return;
+    (sems[sid]!.courses || []).forEach(push);
+  });
+  return out;
+}
+
+function courseLabel(c: SemCourse): string {
+  return c.name || c.title || c.id || 'Untitled course';
+}
+
 function initImportModal(root: HTMLElement): void {
   const trigger = root.querySelector<HTMLButtonElement>('.ncb-import-btn');
   const overlay = document.getElementById('ncbImportModal') as HTMLElement | null;
@@ -718,41 +776,216 @@ function initImportModal(root: HTMLElement): void {
   const closeBtn = overlay.querySelector<HTMLButtonElement>('.ncb-modal-close');
   const cancelBtn = overlay.querySelector<HTMLButtonElement>('.ncb-modal-cancel');
   const importBtn = overlay.querySelector<HTMLButtonElement>('.ncb-modal-import');
-  const folderRows = Array.from(overlay.querySelectorAll<HTMLElement>('.ncb-folder-row'));
-  const countEl = overlay.querySelector<HTMLElement>('.ncb-modal-count-num');
+  const select = overlay.querySelector<HTMLSelectElement>('.ncb-modal-select');
+  const searchInput = overlay.querySelector<HTMLInputElement>('.ncb-modal-search-input');
+  const listEl = overlay.querySelector<HTMLElement>('.ncb-folder-list');
+  const crumb = overlay.querySelector<HTMLElement>('.ncb-folder-breadcrumb');
+  const crumbPath = overlay.querySelector<HTMLElement>('.ncb-folder-crumb-path');
+  const crumbBack = overlay.querySelector<HTMLButtonElement>('.ncb-folder-back');
   const countLabel = overlay.querySelector<HTMLElement>('.ncb-modal-count');
+  if (!select || !listEl) return;
 
-  const sync = (): void => {
-    const picked = folderRows.filter((r) => r.classList.contains('ncb-folder-row--selected'));
-    if (countEl) countEl.textContent = String(picked.length);
+  // Modal-local state — reset every time the modal opens.
+  const picked = new Map<string, PickedItem>();
+  let activeCourse: SemCourse | null = null;
+  let activeFolder: SemFolder | null = null;
+  let searchTerm = '';
+
+  const syncCount = (): void => {
+    const n = picked.size;
+    const word = n === 1 ? 'item' : 'items';
     if (countLabel) {
-      const word = picked.length === 1 ? 'folder' : 'folders';
-      countLabel.innerHTML = `<span class="ncb-modal-count-num">${picked.length}</span> ${word} selected`;
+      countLabel.innerHTML = `<span class="ncb-modal-count-num">${n}</span> ${word} selected`;
     }
-    if (importBtn) importBtn.disabled = picked.length === 0;
+    if (importBtn) importBtn.disabled = n === 0;
   };
 
-  folderRows.forEach((row) => {
-    row.addEventListener('click', () => {
-      row.classList.toggle('ncb-folder-row--selected');
-      const chev = row.querySelector<HTMLElement>('.ncb-folder-pick-chev');
-      const check = row.querySelector<HTMLElement>('.ncb-folder-pick-check');
-      const selected = row.classList.contains('ncb-folder-row--selected');
-      if (chev) chev.hidden = selected;
-      if (check) check.hidden = !selected;
-      sync();
-    });
-  });
+  const renderEmpty = (msg: string): void => {
+    listEl.innerHTML = `<p class="ncb-folder-empty">${escapeHtml(msg)}</p>`;
+  };
 
+  const renderList = (): void => {
+    if (!activeCourse) {
+      renderEmpty('Open a course on Minallo first to import its files here.');
+      if (crumb) crumb.hidden = true;
+      return;
+    }
+
+    const q = searchTerm.toLowerCase();
+    const courseId = activeCourse.id;
+
+    if (activeFolder) {
+      const files = (activeFolder.files || []).filter(
+        (f) => !q || (f.name || '').toLowerCase().includes(q)
+      );
+      if (crumb) crumb.hidden = false;
+      if (crumbPath) crumbPath.textContent = activeFolder.name;
+      if (!files.length) {
+        renderEmpty('No files in this folder.');
+        return;
+      }
+      listEl.innerHTML = files.map((f) => fileRow(f, courseId, activeFolder!.id)).join('');
+    } else {
+      if (crumb) crumb.hidden = true;
+      const folders = (activeCourse.userFolders || []).filter(
+        (fd) => !q || (fd.name || '').toLowerCase().includes(q)
+      );
+      const rootFiles = (activeCourse.files || []).filter(
+        (f) => !q || (f.name || '').toLowerCase().includes(q)
+      );
+      if (!folders.length && !rootFiles.length) {
+        renderEmpty(searchTerm ? 'No matches.' : 'No files in this course.');
+        return;
+      }
+      const folderHtml = folders.map((fd) => folderRow(fd, courseId)).join('');
+      const fileHtml = rootFiles.map((f) => fileRow(f, courseId, '')).join('');
+      listEl.innerHTML = folderHtml + fileHtml;
+    }
+
+    bindRows();
+  };
+
+  const fileRow = (f: SemFile, courseId: string, folderId: string): string => {
+    const itemId = courseId + ':' + folderId + ':' + f.name;
+    const sel = picked.has(itemId);
+    return `
+      <div class="ncb-folder-row ncb-folder-row--file ${sel ? 'ncb-folder-row--selected' : ''}"
+           data-kind="file" data-item-id="${escapeAttr(itemId)}"
+           data-name="${escapeAttr(f.name)}" data-meta="File" role="button" tabindex="0">
+        <span class="ncb-folder-icon ncb-folder-icon--file">
+          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+        </span>
+        <div class="ncb-folder-text">
+          <p class="ncb-folder-name">${escapeHtml(f.name)}</p>
+          <p class="ncb-folder-sub">File</p>
+        </div>
+        <span class="ncb-folder-pick">
+          <svg class="ncb-icon ncb-icon--sm ncb-folder-pick-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${sel ? 'hidden' : ''}><path d="M20 6 9 17l-5-5"/></svg>
+          <svg class="ncb-icon ncb-icon--sm ncb-folder-pick-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${sel ? '' : 'hidden'}><path d="M20 6 9 17l-5-5"/></svg>
+        </span>
+      </div>`;
+  };
+
+  const folderRow = (fd: SemFolder, courseId: string): string => {
+    const itemId = courseId + ':folder:' + fd.id;
+    const sel = picked.has(itemId);
+    const count = (fd.files || []).length;
+    const meta = count + ' file' + (count === 1 ? '' : 's');
+    return `
+      <div class="ncb-folder-row ${sel ? 'ncb-folder-row--selected' : ''}"
+           data-kind="folder" data-folder-id="${escapeAttr(fd.id)}"
+           data-item-id="${escapeAttr(itemId)}"
+           data-name="${escapeAttr(fd.name)}" data-meta="${escapeAttr(meta)}"
+           role="button" tabindex="0">
+        <span class="ncb-folder-icon">
+          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>
+        </span>
+        <div class="ncb-folder-text">
+          <p class="ncb-folder-name">${escapeHtml(fd.name)}</p>
+          <p class="ncb-folder-sub">Folder</p>
+        </div>
+        <span class="ncb-folder-count">${escapeHtml(meta)}</span>
+        <button type="button" class="ncb-folder-open" aria-label="Open ${escapeAttr(fd.name)}">
+          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+        <span class="ncb-folder-pick">
+          <svg class="ncb-icon ncb-icon--sm ncb-folder-pick-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${sel ? 'hidden' : ''}><path d="M20 6 9 17l-5-5"/></svg>
+          <svg class="ncb-icon ncb-icon--sm ncb-folder-pick-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${sel ? '' : 'hidden'}><path d="M20 6 9 17l-5-5"/></svg>
+        </span>
+      </div>`;
+  };
+
+  const togglePick = (rowEl: HTMLElement): void => {
+    const id = rowEl.dataset.itemId;
+    const kind = rowEl.dataset.kind as PickedKind | undefined;
+    if (!id || !kind || !activeCourse) return;
+    if (picked.has(id)) {
+      picked.delete(id);
+      rowEl.classList.remove('ncb-folder-row--selected');
+    } else {
+      picked.set(id, {
+        id,
+        kind,
+        name: rowEl.dataset.name || '',
+        meta: rowEl.dataset.meta || '',
+        courseId: activeCourse.id,
+      });
+      rowEl.classList.add('ncb-folder-row--selected');
+    }
+    const chev = rowEl.querySelector<HTMLElement>('.ncb-folder-pick-chev');
+    const check = rowEl.querySelector<HTMLElement>('.ncb-folder-pick-check');
+    if (chev) chev.hidden = picked.has(id);
+    if (check) check.hidden = !picked.has(id);
+    syncCount();
+  };
+
+  const drillInto = (folderId: string): void => {
+    if (!activeCourse) return;
+    const fd = (activeCourse.userFolders || []).find((x) => x.id === folderId);
+    if (!fd) return;
+    activeFolder = fd;
+    searchTerm = '';
+    if (searchInput) searchInput.value = '';
+    renderList();
+  };
+
+  const bindRows = (): void => {
+    listEl.querySelectorAll<HTMLElement>('.ncb-folder-row').forEach((row) => {
+      // Open arrow on folders drills in without toggling selection.
+      const openBtn = row.querySelector<HTMLButtonElement>('.ncb-folder-open');
+      openBtn?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const fid = row.dataset.folderId;
+        if (fid) drillInto(fid);
+      });
+      row.addEventListener('click', () => togglePick(row));
+    });
+  };
+
+  // Open/close lifecycle
   const open = (): void => {
+    picked.clear();
+    activeFolder = null;
+    searchTerm = '';
+    if (searchInput) searchInput.value = '';
+
+    // Build the course list each open so newly-added courses appear.
+    const courses = listCourses();
+    select.innerHTML = courses.length
+      ? courses.map((c) => `<option value="${escapeAttr(c.id)}">${escapeHtml(courseLabel(c))}</option>`).join('')
+      : '<option value="">No courses loaded</option>';
+    activeCourse = courses[0] || null;
+
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
-    sync();
+    renderList();
+    syncCount();
   };
   const close = (): void => {
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');
   };
+
+  select.addEventListener('change', () => {
+    const courses = listCourses();
+    activeCourse = courses.find((c) => c.id === select.value) || null;
+    activeFolder = null;
+    picked.clear();
+    syncCount();
+    renderList();
+  });
+
+  searchInput?.addEventListener('input', () => {
+    searchTerm = searchInput.value.trim();
+    renderList();
+  });
+
+  crumbBack?.addEventListener('click', () => {
+    activeFolder = null;
+    searchTerm = '';
+    if (searchInput) searchInput.value = '';
+    renderList();
+  });
 
   trigger.addEventListener('click', open);
   closeBtn?.addEventListener('click', close);
@@ -765,19 +998,15 @@ function initImportModal(root: HTMLElement): void {
   });
 
   importBtn?.addEventListener('click', () => {
-    const picked: ImportedFolder[] = folderRows
-      .filter((r) => r.classList.contains('ncb-folder-row--selected'))
-      .map((r) => ({
-        id: r.dataset.folderId || '',
-        name: r.dataset.folderName || 'Folder',
-        count: r.querySelector<HTMLElement>('.ncb-folder-count')?.textContent || '',
-      }));
-    if (!picked.length) return;
-    attachImportedFolders(root, picked);
+    if (!picked.size) return;
+    const items: ImportedFolder[] = Array.from(picked.values()).map((p) => ({
+      id: p.courseId + ':' + p.id, // stable, scoped to course so two courses can each have "lecture"
+      name: p.name,
+      count: p.meta,
+    }));
+    attachImportedFolders(root, items);
     close();
   });
-
-  sync();
 }
 
 function attachImportedFolders(root: HTMLElement, folders: ImportedFolder[]): void {
@@ -1518,6 +1747,87 @@ function initFullbleed(): void {
   } catch {
     // older browsers without MutationObserver — fullbleed just won't toggle
   }
+}
+
+// ============ PR-08: AI tools (Quiz me / Flashcards / Summary / Export) ============
+
+const NCB_TOOL_PROMPTS: Record<string, string> = {
+  quiz:
+    'Generate a 5-question quiz based on the material we have discussed in this conversation and any attached files. Mix difficulty levels. Show questions first, then the answers in a separate section at the bottom.',
+  flashcards:
+    'Create 10 concise flashcards from our conversation and attached materials. Format each as **Q:** ... / **A:** ...',
+  summary:
+    'Summarize our conversation so far in clear bullet points: the key concepts covered, important formulas or definitions, and any open questions.',
+};
+
+function initAiTools(root: HTMLElement): void {
+  const buttons = root.querySelectorAll<HTMLButtonElement>('.ncb-tool-btn');
+  if (!buttons.length || buttons[0]?.dataset.ncbBound === '1') return;
+  buttons.forEach((btn) => {
+    btn.dataset.ncbBound = '1';
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool || '';
+      if (tool === 'export') exportActiveChat(btn);
+      else runToolPrompt(root, tool, btn);
+    });
+  });
+}
+
+function runToolPrompt(root: HTMLElement, tool: string, btn: HTMLElement): void {
+  const prompt = NCB_TOOL_PROMPTS[tool];
+  if (!prompt) return;
+
+  const stage = root.querySelector<HTMLElement>('.ncb-empty');
+  const sendBtn = root.querySelector<HTMLButtonElement>('.ncb-send-btn');
+  const msgs = root.querySelector<HTMLElement>('.ncb-msgs');
+  const state = liveState;
+  if (!stage || !sendBtn || !msgs || !state || state.isSending) {
+    if (state?.isSending) flashAck(btn, 'Busy');
+    return;
+  }
+
+  if (stage.dataset.state !== 'active') stage.dataset.state = 'active';
+
+  state.messages.push({ role: 'user', text: prompt, images: [], files: [] });
+  appendUserBubble(msgs, prompt, [], []);
+  touchActiveChat();
+  saveChatStore();
+
+  void streamAiReply(state, sendBtn, msgs);
+}
+
+function exportActiveChat(btn: HTMLElement): void {
+  const chat = chatStore.getActive();
+  if (!chat.messages.length) {
+    flashAck(btn, 'Nothing to export');
+    return;
+  }
+  const lines: string[] = [`# ${chat.title}`, ''];
+  chat.messages.forEach((m) => {
+    if (m.role === 'user') {
+      lines.push('## You');
+      if (m.text) lines.push(m.text);
+      const fileNames = (m.files || []).map((f) => '- ' + f.name);
+      if (fileNames.length) lines.push('', '**Attached files:**', ...fileNames);
+      if ((m.images || []).length) lines.push('', `_(${m.images!.length} pasted image(s))_`);
+    } else {
+      lines.push('## Minallo AI');
+      if (m.text) lines.push(m.text);
+    }
+    lines.push('');
+  });
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeTitle = (chat.title || 'chat').replace(/[^a-z0-9-_ ]/gi, '_').slice(0, 64);
+  a.href = url;
+  a.download = safeTitle + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  flashAck(btn, 'Exported');
 }
 
 (window as unknown as { initNewChatbotShell?: () => void }).initNewChatbotShell = initNewChatbotShell;
