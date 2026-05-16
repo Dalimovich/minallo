@@ -743,19 +743,20 @@ body.ncb-fullbleed .ncb-main {
 
 .ncb-input-actions {
   display: flex;
+  align-items: center;
   gap: 10px;
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .ncb-input-action-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 13px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(30, 41, 59, 0.68);
