@@ -694,11 +694,11 @@ body.ncb-fullbleed .ncb-main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 96px;
-  max-height: 220px;
-  /* Extra bottom padding pushes the button row visually up inside the
-     composer — buttons read as anchored higher with room below them. */
-  padding: 16px 16px 28px 16px;
+  min-height: 110px;
+  max-height: 240px;
+  /* Heavy padding-bottom so the button row is ALWAYS clearly inside
+     the rounded frame, no matter the button heights or shadow halos. */
+  padding: 16px 16px 40px 16px;
   background: rgba(8, 15, 34, 0.82);
   border-color: rgba(148, 163, 184, 0.28);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
@@ -778,9 +778,9 @@ body.ncb-fullbleed .ncb-main {
 .ncb-send-btn {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   flex-shrink: 0;
   border-radius: 999px;
   border: 1px solid rgba(147, 197, 253, 0.36);
