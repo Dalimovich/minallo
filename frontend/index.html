@@ -7,6 +7,10 @@
   <title>Minallo - AI Study Assistant for Students</title>
   <meta name="description" content="Minallo is an AI study assistant for students with AI notes, summaries, PDF tools, Pomodoro, flashcards, and course-based learning.">
   <link rel="canonical" href="https://minallo.de/">
+  <!-- Tell Google we want the full description used as the snippet and a
+       large image preview. Without max-snippet:-1 Google often truncates
+       or omits the meta description in favor of an auto-generated one. -->
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 
   <!-- Open Graph (Facebook, LinkedIn, Slack, Discord previews) -->
   <meta property="og:type" content="website">
@@ -57,10 +61,16 @@
   }
   </script>
 
+  <!-- Favicons. Google's SERP favicon picker wants at least 48x48; our
+       /assets/favicon.png is 128x128 which qualifies. Declaring sizes="any"
+       lets Google pick the file without us pre-committing to a single size. -->
+  <link rel="icon" type="image/png" sizes="any" href="/assets/favicon.png" />
+  <link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon.png" />
   <link rel="shortcut icon" type="image/png" href="/assets/favicon.png" />
-  <link rel="apple-touch-icon" href="/assets/favicon.png" />
+  <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
+  <meta name="theme-color" content="#0b1220" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
