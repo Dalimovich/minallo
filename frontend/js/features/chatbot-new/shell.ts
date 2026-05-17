@@ -1031,6 +1031,13 @@ function initImportModal(root: HTMLElement): void {
     activeCourse = courses.find((c) => c.id === select.value) || null;
     activeFolder = null;
     picked.clear();
+    searchTerm = '';
+    if (searchInput) searchInput.value = '';
+    // Belt-and-braces: explicitly hide the breadcrumb + clear the list so
+    // the previous course's rendering can't leak into this one while the
+    // new hydration is in flight.
+    if (crumb) crumb.hidden = true;
+    listEl.innerHTML = '';
     syncCount();
     // Always force a fresh re-list for the selected course. Reason:
     // a course may have populated its userFolders during an earlier

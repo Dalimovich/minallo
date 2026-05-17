@@ -880,6 +880,10 @@ function initImportModal(root) {
         activeCourse = courses.find((c) => c.id === select.value) || null;
         activeFolder = null;
         picked.clear();
+        searchTerm = '';
+        if (searchInput) searchInput.value = '';
+        if (crumb) crumb.hidden = true;
+        listEl.innerHTML = '';
         syncCount();
         forceHydrateActive();
     });
