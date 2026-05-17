@@ -657,8 +657,9 @@ function getSbToken(): string | null {
   return (window as unknown as { _sbToken?: string })._sbToken || null;
 }
 
-function escapeHtml(s: string): string {
-  return s
+function escapeHtml(s: string | undefined | null): string {
+  if (s == null) return '';
+  return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -666,7 +667,7 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function escapeAttr(s: string): string {
+function escapeAttr(s: string | undefined | null): string {
   return escapeHtml(s);
 }
 
@@ -919,13 +920,16 @@ function initImportModal(root: HTMLElement): void {
   };
 
   const folderRow = (fd: SemFolder, courseId: string): string => {
-    const itemId = courseId + ':folder:' + fd.id;
+    // Folders coming from _ufMerge only have { name, files } — no id. Use
+    // the name as the stable key so escapeAttr never sees undefined.
+    const folderKey = fd.id || fd.name || '';
+    const itemId = courseId + ':folder:' + folderKey;
     const sel = picked.has(itemId);
     const count = (fd.files || []).length;
     const meta = count + ' file' + (count === 1 ? '' : 's');
     return `
       <div class="ncb-folder-row ${sel ? 'ncb-folder-row--selected' : ''}"
-           data-kind="folder" data-folder-id="${escapeAttr(fd.id)}"
+           data-kind="folder" data-folder-id="${escapeAttr(folderKey)}"
            data-item-id="${escapeAttr(itemId)}"
            data-name="${escapeAttr(fd.name)}" data-meta="${escapeAttr(meta)}"
            role="button" tabindex="0">
@@ -973,7 +977,11 @@ function initImportModal(root: HTMLElement): void {
 
   const drillInto = (folderId: string): void => {
     if (!activeCourse) return;
-    const fd = (activeCourse.userFolders || []).find((x) => x.id === folderId);
+    // folderRow uses fd.id when present, falls back to fd.name. Match by
+    // either to support _ufMerge-discovered folders which have no id.
+    const fd = (activeCourse.userFolders || []).find(
+      (x) => (x.id || x.name) === folderId
+    );
     if (!fd) return;
     activeFolder = fd;
     searchTerm = '';
