@@ -1611,6 +1611,12 @@ body.ncb-fullbleed .ncb-main {
 .ncb-modal {
   width: 100%;
   max-width: 448px;
+  /* Cap modal height so courses with many files don't push the header
+     and the course dropdown out of the viewport. The body becomes the
+     scroll container. */
+  max-height: min(85vh, 720px);
+  display: flex;
+  flex-direction: column;
   border-radius: 1.5rem;
   border: 1px solid rgba(147, 197, 253, 0.20);
   background: rgba(2, 6, 23, 0.72);
@@ -1634,6 +1640,7 @@ body.ncb-fullbleed .ncb-main {
   gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  flex-shrink: 0;
 }
 
 .ncb-modal-title {
@@ -1665,6 +1672,25 @@ body.ncb-fullbleed .ncb-main {
   flex-direction: column;
   gap: 12px;
   padding: 20px;
+  /* Make the body the modal's scroll container so the course select +
+     search stay visible while only the file list scrolls. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Inside the body, the course select + search + breadcrumb are
+   fixed-size sub-headers; only the folder list should expand and
+   scroll. */
+.ncb-modal-body > .ncb-modal-row,
+.ncb-modal-body > .ncb-modal-search,
+.ncb-modal-body > .ncb-folder-breadcrumb {
+  flex-shrink: 0;
+}
+.ncb-modal-body > .ncb-folder-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .ncb-modal-row {
@@ -1845,6 +1871,7 @@ body.ncb-fullbleed .ncb-main {
   gap: 12px;
   padding: 16px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.10);
+  flex-shrink: 0;
 }
 
 .ncb-modal-count {
