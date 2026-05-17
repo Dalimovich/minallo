@@ -575,12 +575,14 @@ function buildApiMessages(
 ): Array<{ role: 'user' | 'assistant'; content: unknown }> {
   // Mirror chatbot.js: keep last ~20 messages, and inline images as Claude-shaped image blocks.
   const trimmed = messages.slice(-20);
-  // Attached-folder documents (from Import from Course) are injected into
-  // the LATEST user message only — so the AI sees them every reply without
+  // Selected sources (from the global library) are injected into the
+  // LATEST user message only — so the AI sees them every reply without
   // ballooning every historical turn with copies.
-  const folders = chatStore.getActive().attachedFolders;
+  const active = chatStore.getActive();
   const folderDocs: Array<{ name: string; text: string }> = [];
-  folders.forEach((f) => (f.documents || []).forEach((d) => folderDocs.push(d)));
+  sourceLibrary.items
+    .filter((s) => active.selectedSourceIds.includes(s.id))
+    .forEach((s) => (s.documents || []).forEach((d) => folderDocs.push(d)));
   let lastUserIdx = -1;
   for (let i = trimmed.length - 1; i >= 0; i--) {
     if (trimmed[i]!.role === 'user') { lastUserIdx = i; break; }
@@ -1105,21 +1107,21 @@ function initImportModal(root: HTMLElement): void {
     importBtn.disabled = true;
     const originalLabel = importBtn.textContent;
     importBtn.textContent = 'Importing…';
+    const courseName = courseLabel(activeCourse);
     try {
       const items = await loadPickedDocuments(picked, activeCourse);
-      attachImportedFolders(root, items);
+      addToSourceLibraryAndSelect(root, items, activeCourse.id, courseName);
       close();
     } catch (e) {
-      // Fall back to UI-only attach so the user isn't left with a frozen modal.
       // eslint-disable-next-line no-console
       console.warn('[ncb] import-from-course: extraction failed', e);
-      const items: ImportedFolder[] = Array.from(picked.values()).map((p) => ({
+      const fallback: ImportedFolder[] = Array.from(picked.values()).map((p) => ({
         id: p.courseId + ':' + p.id,
         name: p.name,
         count: p.meta,
         documents: [],
       }));
-      attachImportedFolders(root, items);
+      addToSourceLibraryAndSelect(root, fallback, activeCourse.id, courseName);
       close();
     } finally {
       importBtn.disabled = false;
@@ -1224,45 +1226,65 @@ async function loadPickedDocuments(
   return out;
 }
 
-function attachImportedFolders(root: HTMLElement, folders: ImportedFolder[]): void {
-  const row = root.querySelector<HTMLElement>('.ncb-attach-row');
-  if (!row) return;
-
-  // PR-05: persist into active chat's attachedFolders, then render from there.
+// Add imported items to the GLOBAL source library and auto-select them
+// for the current chat. Duplicate IDs in the library are merged (newest
+// documents win, so re-importing refreshes content).
+function addToSourceLibraryAndSelect(
+  root: HTMLElement,
+  items: ImportedFolder[],
+  courseId: string,
+  courseName: string
+): void {
   const active = chatStore.getActive();
-  const existingIds = new Set(active.attachedFolders.map((f) => f.id));
-  folders.forEach((f) => {
-    if (!existingIds.has(f.id)) active.attachedFolders.push(f);
+  const now = Date.now();
+  items.forEach((it) => {
+    const existing = sourceLibrary.items.find((s) => s.id === it.id);
+    if (existing) {
+      // Refresh document content + metadata if the re-import has new docs.
+      if (it.documents && it.documents.length) existing.documents = it.documents;
+      existing.count = it.count;
+      existing.courseId = courseId;
+      existing.courseName = courseName;
+    } else {
+      sourceLibrary.items.push({
+        id: it.id,
+        name: it.name,
+        count: it.count,
+        courseId,
+        courseName,
+        documents: it.documents || [],
+        importedAt: now,
+      });
+    }
+    if (!active.selectedSourceIds.includes(it.id)) active.selectedSourceIds.push(it.id);
   });
+  saveSourceLibrary();
   saveChatStore();
-  renderAttachChips(root);
   renderSourcesCard(root);
   updateContextPill(root);
 }
 
-// Reflect the active chat's attached folders in the header context pill.
-// No attachments → hide (no fake "Course context active" text).
+// Reflect the active chat's selected sources in the header context pill.
 function updateContextPill(root: HTMLElement): void {
   const pill = root.querySelector<HTMLElement>('.ncb-chat-context-pill');
   if (!pill) return;
   const active = chatStore.getActive();
-  const folders = active.attachedFolders;
-  if (!folders.length) {
+  const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
+  if (!selected.length) {
     pill.hidden = true;
     pill.textContent = '';
     return;
   }
-  const first = folders[0]!.name;
-  pill.textContent = folders.length === 1
+  const first = selected[0]!.name;
+  pill.textContent = selected.length === 1
     ? first
-    : first + ' +' + (folders.length - 1) + ' more';
+    : first + ' +' + (selected.length - 1) + ' more';
   pill.hidden = false;
 }
 
-// Render the right-rail "Sources used" card from the active chat's
-// attachedFolders. Until /api/ai returns real per-message citations,
-// this is the most honest version of the panel: it lists exactly the
-// course materials the AI has access to for this chat.
+// Right-rail "Sources used" card — renders the GLOBAL library with
+// checkbox-style toggles per chat. Each row:
+//   [checkbox] [name + course]  [X to remove from library]
 function renderSourcesCard(root: HTMLElement): void {
   const card = root.querySelector<HTMLElement>('.ncb-sources-card');
   if (!card) return;
@@ -1270,83 +1292,86 @@ function renderSourcesCard(root: HTMLElement): void {
   const pill = card.querySelector<HTMLElement>('.ncb-sources-count');
   if (!list || !pill) return;
   const active = chatStore.getActive();
-  const folders = active.attachedFolders;
-  const n = folders.length;
-  pill.textContent = n === 1 ? '1 file' : n + ' files';
+  const selectedCount = active.selectedSourceIds.length;
+  pill.textContent = selectedCount === 1 ? '1 selected' : selectedCount + ' selected';
 
-  if (!n) {
+  if (!sourceLibrary.items.length) {
     list.innerHTML =
-      '<p class="ncb-notes-empty">No sources attached yet. Use ' +
-      '<strong>Import from Course</strong> below to attach lectures, ' +
-      'exercises, or formula sheets — the AI will use them as context.</p>';
+      '<p class="ncb-notes-empty">No sources imported yet. Use ' +
+      '<strong>Import from Course</strong> in the composer to add ' +
+      'lectures, exercises, or formula sheets — they\'ll appear here ' +
+      'across every chat.</p>';
     return;
   }
-  list.innerHTML = folders
-    .map(
-      (f) => `
-      <div class="ncb-source-row" data-id="${escapeAttr(f.id)}">
+  list.innerHTML = sourceLibrary.items
+    .slice()
+    .sort((a, b) => b.importedAt - a.importedAt)
+    .map((s) => {
+      const checked = active.selectedSourceIds.includes(s.id);
+      const meta = s.courseName ? s.courseName + ' · ' + s.count : s.count;
+      return `
+      <div class="ncb-source-row ${checked ? 'ncb-source-row--selected' : ''}" data-id="${escapeAttr(s.id)}">
+        <button type="button" class="ncb-source-toggle" aria-pressed="${checked ? 'true' : 'false'}" aria-label="Toggle ${escapeAttr(s.name)}">
+          <span class="ncb-source-check" aria-hidden="true">
+            ${checked
+              ? '<svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+              : ''}
+          </span>
+        </button>
         <div class="ncb-source-info">
-          <p class="ncb-source-name">${escapeHtml(f.name)}</p>
-          <p class="ncb-source-meta">${escapeHtml(f.count)}</p>
+          <p class="ncb-source-name">${escapeHtml(s.name)}</p>
+          <p class="ncb-source-meta">${escapeHtml(meta)}</p>
         </div>
-        <button type="button" class="ncb-source-open" aria-label="Detach ${escapeAttr(f.name)}">
+        <button type="button" class="ncb-source-open ncb-source-remove" aria-label="Remove ${escapeAttr(s.name)} from library">
           <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
-    `
-    )
+    `;
+    })
     .join('');
-  list.querySelectorAll<HTMLButtonElement>('.ncb-source-open').forEach((btn) => {
+  // Toggle (select/deselect for current chat).
+  list.querySelectorAll<HTMLButtonElement>('.ncb-source-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.closest<HTMLElement>('.ncb-source-row')?.dataset.id;
       if (!id) return;
-      const active2 = chatStore.getActive();
-      active2.attachedFolders = active2.attachedFolders.filter((f) => f.id !== id);
+      const c = chatStore.getActive();
+      if (c.selectedSourceIds.includes(id)) {
+        c.selectedSourceIds = c.selectedSourceIds.filter((sid) => sid !== id);
+      } else {
+        c.selectedSourceIds.push(id);
+      }
       saveChatStore();
-      renderAttachChips(root);
+      renderSourcesCard(root);
+      updateContextPill(root);
+    });
+  });
+  // Remove from library entirely (also deselects from all chats).
+  list.querySelectorAll<HTMLButtonElement>('.ncb-source-remove').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const id = btn.closest<HTMLElement>('.ncb-source-row')?.dataset.id;
+      if (!id) return;
+      sourceLibrary.items = sourceLibrary.items.filter((s) => s.id !== id);
+      chatStore.chats.forEach((c) => {
+        c.selectedSourceIds = c.selectedSourceIds.filter((sid) => sid !== id);
+      });
+      saveSourceLibrary();
+      saveChatStore();
       renderSourcesCard(root);
       updateContextPill(root);
     });
   });
 }
 
+// The composer chip row is no longer the source of truth for what's
+// attached — the Sources card in the right rail owns that now. Keep the
+// helper as a no-op shim so any remaining callers don't blow up, and
+// hide the row in the DOM. Legacy callers will be dropped over time.
 function renderAttachChips(root: HTMLElement): void {
   const row = root.querySelector<HTMLElement>('.ncb-attach-row');
   if (!row) return;
-  const active = chatStore.getActive();
-  if (!active.attachedFolders.length) {
-    row.hidden = true;
-    row.innerHTML = '';
-    return;
-  }
-  row.innerHTML = active.attachedFolders
-    .map(
-      (f) => `
-      <span class="ncb-attach-chip" data-id="${escapeAttr(f.id)}">
-        <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>
-        <span class="ncb-attach-chip-name">${escapeHtml(f.name)}</span>
-        <span class="ncb-attach-chip-meta">${escapeHtml(f.count)}</span>
-        <button type="button" class="ncb-attach-chip-x" aria-label="Remove ${escapeAttr(f.name)}">
-          <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      </span>
-    `
-    )
-    .join('');
-  row.hidden = false;
-  row.querySelectorAll<HTMLButtonElement>('.ncb-attach-chip-x').forEach((x) => {
-    x.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const id = x.closest<HTMLElement>('.ncb-attach-chip')?.dataset.id;
-      if (!id) return;
-      const active2 = chatStore.getActive();
-      active2.attachedFolders = active2.attachedFolders.filter((f) => f.id !== id);
-      saveChatStore();
-      renderAttachChips(root);
-      renderSourcesCard(root);
-      updateContextPill(root);
-    });
-  });
+  row.hidden = true;
+  row.innerHTML = '';
 }
 
 // ---- Context-panel tabs ----
@@ -1536,7 +1561,10 @@ interface SavedChat {
   id: string;
   title: string;
   messages: ChatMessage[];
+  /** @deprecated kept for backward compat with v1 chats — selectedSourceIds is the new model. */
   attachedFolders: ImportedFolder[];
+  /** IDs of sources from the global library that are active for this chat. */
+  selectedSourceIds: string[];
   savedReplies: SavedReply[];
   pinned: boolean;
   createdAt: number;
@@ -1550,8 +1578,22 @@ interface ChatStore {
   newChat(): SavedChat;
 }
 
+/** Global source library entry — one per imported file/folder, shared across all chats. */
+interface SourceLibraryItem {
+  id: string;
+  name: string;
+  count: string;
+  courseId: string;
+  courseName: string;
+  documents: Array<{ name: string; text: string }>;
+  importedAt: number;
+}
+
 const NCB_STORE_KEY = 'ss_ncb_chats_v1';
 const NCB_ACTIVE_KEY = 'ss_ncb_active_v1';
+const NCB_SOURCES_KEY = 'ss_ncb_sources_v1';
+
+const sourceLibrary: { items: SourceLibraryItem[] } = { items: [] };
 
 let liveState: ConversationState | null = null;
 
@@ -1578,6 +1620,7 @@ const chatStore: ChatStore = {
       title: 'New chat',
       messages: [],
       attachedFolders: [],
+      selectedSourceIds: [],
       savedReplies: [],
       pinned: false,
       createdAt: now,
@@ -1614,15 +1657,48 @@ function loadChatStore(): void {
     // private mode / corrupt storage — start fresh
   }
 
+  // Load the global source library first so the migration below can hoist
+  // legacy per-chat attachedFolders into it.
+  try {
+    const rawLib = localStorage.getItem(NCB_SOURCES_KEY);
+    if (rawLib) {
+      const parsedLib = JSON.parse(rawLib) as unknown;
+      if (Array.isArray(parsedLib)) sourceLibrary.items = parsedLib as SourceLibraryItem[];
+    }
+  } catch {
+    /* corrupt storage — start fresh */
+  }
+
   // Migrate any missing fields on legacy entries.
   chatStore.chats.forEach((c) => {
     if (!Array.isArray(c.messages)) c.messages = [];
     if (!Array.isArray(c.attachedFolders)) c.attachedFolders = [];
+    if (!Array.isArray(c.selectedSourceIds)) c.selectedSourceIds = [];
     if (!Array.isArray(c.savedReplies)) c.savedReplies = [];
     if (typeof c.pinned !== 'boolean') c.pinned = false;
     if (typeof c.createdAt !== 'number') c.createdAt = Date.now();
     if (typeof c.updatedAt !== 'number') c.updatedAt = c.createdAt;
     if (typeof c.title !== 'string' || !c.title) c.title = 'New chat';
+
+    // v1 → v2 migration: hoist this chat's attachedFolders into the
+    // global library and convert them into selectedSourceIds. Only
+    // runs if the chat hasn't been migrated yet (no selectedSourceIds).
+    if (c.selectedSourceIds.length === 0 && c.attachedFolders.length > 0) {
+      c.attachedFolders.forEach((f) => {
+        if (!sourceLibrary.items.find((s) => s.id === f.id)) {
+          sourceLibrary.items.push({
+            id: f.id,
+            name: f.name,
+            count: f.count,
+            courseId: f.id.split(':')[0] || '',
+            courseName: '',
+            documents: f.documents || [],
+            importedAt: c.createdAt,
+          });
+        }
+        if (!c.selectedSourceIds.includes(f.id)) c.selectedSourceIds.push(f.id);
+      });
+    }
   });
 
   // Ensure there is always at least one chat and an activeId pointing somewhere.
@@ -1631,6 +1707,14 @@ function loadChatStore(): void {
     chatStore.activeId = fresh.id;
   } else if (!chatStore.chats.find((c) => c.id === chatStore.activeId)) {
     chatStore.activeId = chatStore.chats[0]!.id;
+  }
+}
+
+function saveSourceLibrary(): void {
+  try {
+    localStorage.setItem(NCB_SOURCES_KEY, JSON.stringify(sourceLibrary.items));
+  } catch {
+    // Quota exceeded etc. — the chat-store save path will surface a toast.
   }
 }
 
@@ -1680,10 +1764,10 @@ function relativeTime(ts: number): string {
 }
 
 function chatMeta(c: SavedChat): string {
-  const attached = c.attachedFolders.length;
+  const attached = c.selectedSourceIds.length;
   const fragment =
     attached > 0
-      ? attached + ' folder' + (attached === 1 ? '' : 's')
+      ? attached + ' source' + (attached === 1 ? '' : 's')
       : c.messages.length === 0
         ? 'Empty draft'
         : c.messages.length + ' msg' + (c.messages.length === 1 ? '' : 's');
