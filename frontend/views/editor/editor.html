@@ -106,6 +106,7 @@
       <!-- PDF Editor -->
       <button
         id="edHubPdfEditor"
+        data-testid="pdf-editor-open"
         class="ed-hub-card ed-hub-card-purple"
         style="
           display: flex;
@@ -305,7 +306,7 @@
         </div>
       </div>
       <div style="flex: 1"></div>
-      <input type="file" id="edPdfEditorInput" accept=".pdf" style="display: none" />
+      <input type="file" id="edPdfEditorInput" data-testid="pdf-editor-file-input" accept=".pdf" style="display: none" />
     </div>
 
     <!-- ── PDF Dashboard (shown when no PDF loaded) ── -->
@@ -331,6 +332,7 @@
           <button
             class="ed-home-new-btn"
             id="edPdfChooseBtn"
+            data-testid="pdf-editor-upload"
             style="
               background: rgba(167, 139, 250, 0.15);
               border-color: rgba(167, 139, 250, 0.4);
@@ -428,6 +430,7 @@
     <div id="edPdfEditorMain" style="display: none; flex: 1; overflow: hidden; flex-direction: row">
       <!-- Left: Tool sidebar -->
       <div
+        data-testid="pdf-editor-toolbar"
         style="
           width: 160px;
           flex-shrink: 0;
@@ -476,6 +479,7 @@
           id="edPdfTool_highlight"
           class="epdf-tool epdf-tool-active"
           data-tool="highlight"
+          data-testid="pdf-tool-highlight"
           style="
             display: flex;
             align-items: center;
@@ -511,6 +515,7 @@
           id="edPdfTool_pen"
           class="epdf-tool"
           data-tool="pen"
+          data-testid="pdf-tool-pen"
           style="
             display: flex;
             align-items: center;
@@ -548,6 +553,7 @@
           id="edPdfTool_text"
           class="epdf-tool"
           data-tool="text"
+          data-testid="pdf-tool-text"
           style="
             display: flex;
             align-items: center;
@@ -2845,7 +2851,7 @@
             <option value="'Courier New', monospace">Courier</option>
             <option value="Verdana, sans-serif">Verdana</option>
           </select>
-          <select class="ed-tb-select" id="edFontSize" title="Font size">
+          <select class="ed-tb-select" id="edFontSize" data-testid="pdf-editor-font-size" title="Font size">
             <option value="1">8pt</option>
             <option value="2">10pt</option>
             <option value="3" selected>12pt</option>
@@ -2906,7 +2912,7 @@
         </div>
         <div class="ed-tb-sep"></div>
         <div class="ed-tb-group" style="align-items: center; gap: 5px">
-          <input class="ed-tb-color" id="edAnnColor" type="color" value="#fbbf24" title="Color" />
+          <input class="ed-tb-color" id="edAnnColor" data-testid="pdf-editor-color" type="color" value="#fbbf24" title="Color" />
           <span class="ed-tb-lbl">Opacity</span>
           <input type="range" class="ed-tb-range" id="edAnnOpacity" min="10" max="100" value="40" />
           <span class="ed-tb-lbl" id="edAnnOpacityVal">40%</span>

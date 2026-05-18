@@ -1,27 +1,5 @@
-// Sidebar sprite-icon binder. Mirrors frontend/js/config/icons.ts so the
-// portal shell can bind its own icons without depending on the config
-// module. Kept duplicated for now because portal-ui imports this directly.
-export function initSidebarIcons() {
-    const ICONS = {
-        home: 'assets/icon-home.png',
-        courses: 'assets/icon-courses.png',
-        notes: 'assets/icon-notes.png',
-        lounge: 'assets/icon-lounge.png',
-        editor: 'assets/icon-editor.png',
-        chat: 'assets/icon-chat.png',
-        notifications: 'assets/icon-notifications.png',
-        games: 'assets/icon-games.png',
-        chatbot: 'assets/icon-chatbot.png',
-        profile: 'assets/icon-profile.png',
-        settings: 'assets/icon-settings.png',
-        subscription: 'assets/icon-subscription.png',
-    };
-    Object.keys(ICONS).forEach((name) => {
-        document
-            .querySelectorAll('.sb-sprite[data-sprite="' + name + '"]')
-            .forEach((el) => {
-            el.style.backgroundImage = 'url("' + ICONS[name] + '")';
-        });
-    });
-}
+// Sidebar sprite-icon binder. Re-exports from the central icons config so
+// portal-ui can keep its existing import path without owning a second copy
+// of the SVG markup.
+export { applySidebarIcons as initSidebarIcons } from '../config/icons.js';
 //# sourceMappingURL=app-shell.js.map

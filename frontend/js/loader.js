@@ -178,17 +178,6 @@
         applyLandingTranslation(_landingLang === 'en' ? 'de' : 'en');
     };
     if (!window._ssIsLoggedIn) {
-        // Wipe any stale #portal=… hash or OAuth error query left over from
-        // a prior session so the URL bar doesn't leak app routes / errors
-        // on the landing.
-        const _hasStaleHash = window.location.hash &&
-            window.location.hash.indexOf('access_token') === -1;
-        const _hasStaleQuery = !!window.location.search;
-        if (_hasStaleHash || _hasStaleQuery) {
-            try {
-                history.replaceState(null, '', window.location.pathname);
-            } catch (e) { /* ignore */ }
-        }
         // Load new-landing CSS before rendering the page. The old landing.css
         // remains in the repo (frontend/css/landing.css) but is no longer
         // injected — the new landing replaces it visually.

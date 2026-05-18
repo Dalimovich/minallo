@@ -23,8 +23,7 @@
           'gamesPlayTetris',
           'gamesPlaySolitaire',
           'gamesPlayBird',
-          'gamesPlayChess',
-          'gamesPlayGD'
+          'gamesPlayChess'
         ].forEach(function (id, i) {
           var el = document.getElementById(id);
           if (el) el.style.display = i === 0 ? '' : 'none';
@@ -55,19 +54,6 @@
         document.getElementById('gamesPlayChess').style.display = '';
         _chessInit();
       }
-      function showGD() {
-        document.getElementById('gamesHub').style.display = 'none';
-        document.getElementById('gamesPlayGD').style.display = '';
-        var frame = document.getElementById('gdGameFrame');
-        if (frame && !frame.dataset.loaded) {
-          frame.dataset.loaded = '1';
-          var ref = encodeURIComponent(window.location.origin + window.location.pathname);
-          frame.src =
-            'https://html5.gamedistribution.com/c6eb54e8432a480bab89a517bd1a897e/?gd_sdk_referrer_url=' +
-            ref;
-        }
-      }
-
       function buildLevelGrid() {
         var grid = document.getElementById('tetrisLevelGrid');
         if (!grid || grid.dataset.built) return;
@@ -166,7 +152,6 @@
       wire('gameCardSolitaire', trackAndRun(showSolitaire));
       wire('gameCardBird', trackAndRun(showBird));
       wire('gameCardChess', trackAndRun(showChess));
-      wire('gameCardGD', showGD);
       wire('tetrisLevelBack', showHub);
       wire('tetrisBack', function () {
         if (typeof _tetrisStop === 'function') _tetrisStop();
@@ -188,7 +173,6 @@
         if (typeof _chessStop === 'function') _chessStop();
         showHub();
       });
-      wire('gdBack', showHub);
     })();
   } // end _init
 })();

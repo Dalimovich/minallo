@@ -1,0 +1,2608 @@
+/* ============================================================================
+ * Courses overview redesign (psec-studip).
+ *
+ * Linked AFTER styles.css in index.html so these rules win source-order ties.
+ * Targets the markup emitted by sdRenderCourses() in courses-render.ts and
+ * the hero block in portal.html. Legacy .sd-* rules in styles.css remain for
+ * any other consumers but the rules below are the authoritative styles for
+ * the redesigned page.
+ * ========================================================================== */
+
+/* ── Typography pass: switch the body font to Inter (cleaner, more
+ *    academic feel than Nunito), keep Fredoka One reserved for the few
+ *    hero titles, and dial back the all-caps + extreme bold weights that
+ *    were making the redesigned pages read as a kids' app. ─────────── */
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: 'Inter', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01';
+  letter-spacing: -0.005em;
+}
+
+/* Hero/section titles keep their Fredoka identity but at a lighter,
+ * more grown-up weight. */
+#psec-studip .sd-hero-title,
+.co-inner-v2 .co-hero-title,
+.co-inner-v2 .co-panel-title,
+.co-inner-v2 .co-next-steps-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Tone down stat / chip uppercase labels site-wide on the redesigned
+ * pages — sentence case reads more premium. */
+#psec-studip .sd-hero-eyebrow,
+.co-inner-v2 .sd-stat-label,
+.co-inner-v2 .co-next-steps-eyebrow,
+#psec-studip .sd-next-steps-eyebrow {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+/* Knock the heaviest weights down a notch — 800 → 700 across the
+ * redesigned components so labels stop competing with each other. */
+#psec-studip .sd-course-name,
+#psec-studip .sd-add-btn,
+#psec-studip .sd-empty-title,
+#psec-studip .sd-next-steps-title,
+.co-inner-v2 .co-course-name,
+.co-inner-v2 .co-back-btn,
+.co-inner-v2 .co-study-btn,
+.co-inner-v2 .co-topnav-title,
+.co-inner-v2 .co-tool-btn,
+.co-inner-v2 .co-tool-btn-primary,
+.co-inner-v2 .co-course-tab,
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-name-label,
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-open-btn,
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-toggle-btn,
+.co-inner-v2 .co-file.co-file-v2 .co-file-name,
+.co-inner-v2 .co-file-action,
+.co-inner-v2 .co-file-chip,
+.co-inner-v2 .co-hero-progress-value,
+.co-inner-v2 .co-hero-stat-pill,
+.co-inner-v2 .co-next-step-title,
+#psec-studip .sd-hero-stat,
+#psec-studip .sd-course-chip,
+#psec-studip .sd-course-progress-label,
+#psec-studip .sd-course-progress-value {
+  font-weight: 600;
+}
+
+/* Body copy: not bolder than 500. */
+#psec-studip .sd-hero-sub,
+#psec-studip .sd-empty-sub,
+#psec-studip .sd-next-step-text,
+.co-inner-v2 .co-hero-sub,
+.co-inner-v2 .co-panel-sub,
+.co-inner-v2 .co-file.co-file-v2 .co-file-meta,
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-sub,
+.co-inner-v2 .co-next-step-sub,
+.co-inner-v2 .co-next-steps-sub,
+.co-inner-v2 .co-separate-files-sub {
+  font-weight: 400;
+}
+
+#psec-studip .sd-shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 4px 28px 80px;
+}
+
+/* ── Hero panel ──────────────────────────────────────────────────────────── */
+#psec-studip .sd-hero {
+  position: relative;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.16) 0%, rgba(15, 23, 42, 0.45) 60%, rgba(99, 102, 241, 0.12) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 32px 36px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+#psec-studip .sd-hero-glow {
+  position: absolute;
+  top: -40%;
+  right: -8%;
+  width: 55%;
+  height: 220%;
+  background: radial-gradient(closest-side, rgba(96, 165, 250, 0.28), transparent 70%);
+  pointer-events: none;
+  filter: blur(8px);
+}
+#psec-studip .sd-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 28px;
+  align-items: center;
+}
+#psec-studip .sd-hero-left {
+  min-width: 0;
+}
+#psec-studip .sd-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(226, 232, 240, 0.88);
+  margin-bottom: 18px;
+}
+#psec-studip .sd-hero-eyebrow svg {
+  color: rgba(147, 197, 253, 0.95);
+}
+#psec-studip .sd-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-family: 'Fredoka One', 'Nunito', sans-serif;
+  color: #fff;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+#psec-studip .sd-hero-emoji {
+  font-size: 2.1rem;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+}
+#psec-studip .sd-hero-sub {
+  margin: 0 0 22px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.72);
+  max-width: 580px;
+}
+#psec-studip .sd-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#psec-studip .sd-hero-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.9);
+}
+#psec-studip .sd-hero-stat svg {
+  color: rgba(147, 197, 253, 0.85);
+}
+#psec-studip .sd-hero-stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #06d6a0;
+  box-shadow: 0 0 8px rgba(6, 214, 160, 0.7);
+}
+#psec-studip .sd-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  width: 200px;
+}
+#psec-studip .sd-hero-sem {
+  position: relative;
+}
+#psec-studip .sd-hero-sem .sem-btn,
+#psec-studip .sd-hero-sem .sd-sem-btn {
+  width: 100%;
+  padding: 13px 16px;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+#psec-studip .sd-hero-sem .sem-btn:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(96, 165, 250, 0.35) !important;
+}
+#psec-studip .sd-hero-sem .sem-dd {
+  top: calc(100% + 6px);
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 14px;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+}
+#psec-studip .sd-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 15px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 10px 28px -8px rgba(37, 99, 235, 0.6);
+}
+#psec-studip .sd-add-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px -8px rgba(59, 130, 246, 0.75);
+}
+
+/* ── Controls row (search + Manage layout) ───────────────────────────────── */
+#psec-studip .sd-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 22px;
+}
+#psec-studip .sd-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+#psec-studip .sd-search-icon {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(147, 197, 253, 0.55);
+  pointer-events: none;
+}
+#psec-studip .sd-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 18px 16px 46px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: var(--on-glass, #e2e8f0);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+#psec-studip .sd-search-input::placeholder {
+  color: rgba(226, 232, 240, 0.4);
+}
+#psec-studip .sd-search-input:focus {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+}
+#psec-studip .sd-search-drop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 300;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+}
+#psec-studip .sd-layout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+#psec-studip .sd-layout-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+/* ── Course grid + cards ─────────────────────────────────────────────────── */
+#psec-studip .sd-course-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+@media (max-width: 980px) {
+  #psec-studip .sd-course-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+#psec-studip .sd-course-card {
+  --sd-card-accent: #2563eb;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px 24px 22px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%),
+    rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform 0.22s cubic-bezier(0.34, 1.2, 0.64, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+}
+#psec-studip .sd-course-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.4);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(96, 165, 250, 0.22);
+}
+#psec-studip .sd-course-card:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+}
+#psec-studip .sd-course-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--sd-card-accent), color-mix(in srgb, var(--sd-card-accent) 55%, transparent));
+  border-radius: 22px 22px 0 0;
+}
+#psec-studip .sd-del-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(226, 232, 240, 0.55);
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  z-index: 2;
+}
+#psec-studip .sd-del-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: rgba(252, 165, 165, 0.95);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Header: icon + name + chips */
+#psec-studip .sd-course-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding-right: 44px;  /* leave room for trash icon */
+}
+#psec-studip .sd-course-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sd-card-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sd-card-accent) 28%, transparent);
+  flex-shrink: 0;
+}
+#psec-studip .sd-course-head-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#psec-studip .sd-course-name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+#psec-studip .sd-course-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#psec-studip .sd-course-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+}
+#psec-studip .sd-course-chip-time {
+  color: rgba(226, 232, 240, 0.7);
+}
+#psec-studip .sd-course-chip-time svg {
+  color: rgba(147, 197, 253, 0.7);
+}
+
+/* Study progress (label + big % + gradient bar) */
+#psec-studip .sd-course-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#psec-studip .sd-course-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+#psec-studip .sd-course-progress-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+}
+#psec-studip .sd-course-progress-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+#psec-studip .sd-course-progress-track {
+  height: 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+#psec-studip .sd-course-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--sd-card-accent), color-mix(in srgb, var(--sd-card-accent) 50%, white));
+  transition: width 0.4s ease;
+}
+
+/* Stat row (Read / Notes / Practice / AI) */
+#psec-studip .sd-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+#psec-studip .sd-stat-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+  white-space: nowrap;
+}
+#psec-studip .sd-stat-pill .sd-stat-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: inherit;
+  margin-right: 4px;
+}
+#psec-studip .sd-stat-pill .sd-stat-value {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: inherit;
+}
+
+/* Empty card state */
+#psec-studip .sd-course-empty-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 18px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+}
+#psec-studip .sd-course-empty-icon {
+  color: rgba(147, 197, 253, 0.7);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+#psec-studip .sd-course-empty-msg-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+#psec-studip .sd-course-empty-msg-sub {
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.6);
+  line-height: 1.45;
+}
+
+/* Big Open course button */
+#psec-studip .sd-course-open-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 18px;
+  margin-top: 4px;
+  border-radius: 14px;
+  border: none;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 6px 20px -6px rgba(255, 255, 255, 0.25);
+}
+#psec-studip .sd-course-open-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px -6px rgba(255, 255, 255, 0.35);
+}
+
+/* Empty list state (no subjects yet) */
+#psec-studip .sd-empty-state {
+  grid-column: 1 / -1;
+  padding: 56px 24px;
+  text-align: center;
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+#psec-studip .sd-empty-icon {
+  font-size: 2.4rem;
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+#psec-studip .sd-empty-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 4px;
+}
+#psec-studip .sd-empty-sub {
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.62);
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+/* Next steps panel */
+#psec-studip .sd-next-steps {
+  margin-top: 32px;
+  padding: 26px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(15, 23, 42, 0.4));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+#psec-studip .sd-next-steps-head {
+  margin-bottom: 16px;
+}
+#psec-studip .sd-next-steps-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(147, 197, 253, 0.85);
+  margin-bottom: 5px;
+}
+#psec-studip .sd-next-steps-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #fff;
+}
+#psec-studip .sd-next-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+#psec-studip .sd-next-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+#psec-studip .sd-next-step:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+#psec-studip .sd-next-step-icon {
+  font-size: 1.3rem;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  flex-shrink: 0;
+}
+#psec-studip .sd-next-step-body {
+  flex: 1;
+  min-width: 0;
+}
+#psec-studip .sd-next-step-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#psec-studip .sd-next-step-text {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.62);
+  line-height: 1.45;
+}
+#psec-studip .sd-next-step-arrow {
+  font-size: 1.1rem;
+  color: rgba(147, 197, 253, 0.7);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+#psec-studip .sd-next-step:hover .sd-next-step-arrow {
+  transform: translateX(3px);
+  color: rgba(191, 219, 254, 1);
+}
+
+/* Responsive */
+@media (max-width: 880px) {
+  #psec-studip .sd-shell {
+    padding: 4px 16px 80px;
+  }
+  #psec-studip .sd-hero {
+    padding: 24px 22px;
+  }
+  #psec-studip .sd-hero-grid {
+    grid-template-columns: 1fr;
+  }
+  #psec-studip .sd-hero-actions {
+    width: 100%;
+    flex-direction: row;
+  }
+  #psec-studip .sd-hero-sem {
+    flex: 1;
+  }
+  #psec-studip .sd-hero-title {
+    font-size: 1.85rem;
+  }
+}
+
+/* ============================================================================
+ * Course workspace redesign (inside-a-course view rendered into #courseOverview).
+ * Targets the .co-inner-v2 / .co-hero / .co-card-v2 markup emitted by
+ * course-view.ts → showCourseSection().
+ * ========================================================================== */
+
+.co-inner.co-inner-v2 {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 28px 80px;
+  align-items: stretch;
+  display: block;
+  --co-hero-accent: #2563eb;
+}
+
+/* Top nav strip: Back · title chip · Study */
+.co-inner-v2 .co-topnav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.co-inner-v2 .co-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.co-inner-v2 .co-back-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(96, 165, 250, 0.35);
+  transform: translateX(-2px);
+}
+.co-inner-v2 .co-topnav-title {
+  flex: 0 1 auto;
+  padding: 10px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50vw;
+}
+.co-inner-v2 .co-study-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 8px 22px -8px rgba(37, 99, 235, 0.6);
+}
+.co-inner-v2 .co-study-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.75);
+}
+
+/* Hero card */
+.co-inner-v2 .co-hero {
+  position: relative;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Match the courses-dashboard hero gradient (lighter blue/violet glass). */
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.16) 0%, rgba(15, 23, 42, 0.45) 60%, rgba(99, 102, 241, 0.12) 100%) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 32px 36px;
+  margin-bottom: 22px;
+  overflow: hidden;
+  /* Defeat legacy .co-hero { display: grid; grid-template-columns: auto 1fr auto } */
+  display: block !important;
+  grid-template-columns: none !important;
+  align-self: auto !important;
+}
+/* The legacy stylesheet adds a 4px accent strip via ::before. We rely on
+ * our own hero glow + border for the visual, so hide it here. */
+.co-inner-v2 .co-hero::before {
+  content: none !important;
+  display: none !important;
+  background: transparent !important;
+  width: 0 !important;
+}
+.co-inner-v2 .co-hero-glow {
+  position: absolute;
+  top: -40%;
+  right: -10%;
+  width: 55%;
+  height: 220%;
+  background: radial-gradient(closest-side, rgba(96, 165, 250, 0.22), transparent 70%);
+  pointer-events: none;
+  filter: blur(8px);
+}
+.co-inner-v2 .co-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 28px;
+  align-items: center;
+}
+.co-inner-v2 .co-hero-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  min-width: 0;
+}
+.co-inner-v2 .co-hero-icon-wrap {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--co-hero-accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--co-hero-accent) 32%, transparent);
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-hero-body {
+  /* Reset the legacy `display: flex; gap: 14px` so h1 and p stack vertically. */
+  display: block !important;
+  min-width: 0;
+  gap: 0 !important;
+  align-items: stretch !important;
+}
+.co-inner-v2 .co-hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.88);
+  margin-bottom: 12px;
+}
+.co-inner-v2 .co-hero-pill svg {
+  color: rgba(147, 197, 253, 0.95);
+}
+.co-inner-v2 .co-hero-title {
+  margin: 0 0 10px;
+  font-size: 2.3rem;
+  font-weight: 800;
+  font-family: 'Fredoka One', 'Nunito', sans-serif;
+  color: #fff;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  /* Defeat legacy { white-space: nowrap; overflow: hidden; text-overflow: ellipsis } */
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+.co-inner-v2 .co-hero-sub {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.72);
+  max-width: 580px;
+}
+
+/* Hero right column: progress block */
+.co-inner-v2 .co-hero-progress {
+  position: relative;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.co-inner-v2 .co-hero-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.co-inner-v2 .co-hero-progress-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+}
+.co-inner-v2 .co-hero-progress-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.co-inner-v2 .co-hero-progress-track {
+  height: 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.co-inner-v2 .co-hero-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--co-hero-accent), color-mix(in srgb, var(--co-hero-accent) 55%, white));
+  transition: width 0.4s ease;
+}
+.co-inner-v2 .co-hero-progress-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.co-inner-v2 .co-hero-stat-pill {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.88);
+  text-align: center;
+}
+
+/* Files/Quiz/Flashcards tab bar */
+/* Tabs as an inner pill inside the workspace card. */
+.co-inner-v2 .co-course-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 22px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+.co-inner-v2 .co-course-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+.co-inner-v2 .co-course-tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.co-inner-v2 .co-course-tab.active {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.4), rgba(99, 102, 241, 0.35));
+  border-color: rgba(147, 100, 255, 0.5);
+  color: #fff;
+  box-shadow: 0 6px 18px -8px rgba(124, 92, 255, 0.6);
+}
+
+/* Outer card containing tabs + active panel */
+/* Outer GREY/glass workspace card — wraps tabs (top) + active panel
+ * below. Lighter glass so the dark inner Files card reads as nested. */
+.co-inner-v2 .co-card.co-card-v2 {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+/* Panels themselves are bare. */
+.co-inner-v2 .co-card.co-card-v2 .co-course-panel {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+/* Inner DARKER Files card — sits inside the grey workspace card. */
+.co-inner-v2 .co-files-inner-card {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 42, 0.55);
+  padding: 22px;
+}
+/* Kill the legacy `.co-card::before` white-tint overlay that was bleeding
+ * through and making this card brighter than the courses-overview card. */
+.co-inner-v2 .co-card.co-card-v2::before {
+  content: none !important;
+  background: transparent !important;
+}
+
+/* Files panel header */
+.co-inner-v2 .co-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.co-inner-v2 .co-panel-header-text {
+  min-width: 0;
+}
+.co-inner-v2 .co-panel-title {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #fff;
+  font-family: 'Fredoka One', 'Nunito', sans-serif;
+  line-height: 1.15;
+}
+.co-inner-v2 .co-panel-sub {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.62);
+}
+
+/* Files toolbar buttons — 2 rows × 2 columns, buttons sized to content,
+ * anchored to the top-right of the panel. */
+.co-inner-v2 .co-files-toolbar {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 10px;
+  align-items: center;
+  justify-items: end;
+  justify-content: end;
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-files-toolbar .co-files-refreshing {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.co-inner-v2 .co-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.co-inner-v2 .co-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(96, 165, 250, 0.32);
+  color: #fff;
+}
+.co-inner-v2 .co-tool-btn-primary {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(99, 102, 241, 0.3));
+  border-color: rgba(147, 100, 255, 0.45);
+  color: #fff;
+}
+.co-inner-v2 .co-tool-btn-primary:hover {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.45), rgba(99, 102, 241, 0.4));
+}
+
+@media (max-width: 980px) {
+  .co-inner-v2 .co-hero-grid {
+    grid-template-columns: 1fr;
+  }
+  .co-inner-v2 .co-hero-progress-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .co-inner-v2 .co-hero-title {
+    font-size: 1.7rem;
+  }
+}
+@media (max-width: 640px) {
+  .co-inner-v2 .co-topnav-title {
+    display: none;
+  }
+  .co-inner-v2 .co-hero {
+    padding: 22px;
+  }
+  .co-inner-v2 .co-hero-left {
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+
+/* ── Hide the legacy topbar while in a course view ──────────────────────── */
+body.minallo-in-course .topbar {
+  display: none !important;
+}
+
+/* Study button wrapper — position-relative host so the Focus Session popup,
+ * re-parented inside on open, anchors directly under the button and
+ * scrolls with it (real dropdown, not a fixed modal). */
+.co-inner-v2 .co-study-wrap {
+  position: relative;
+  margin-left: auto;
+  display: inline-flex;
+}
+
+/* ── Focus Session popup v2 — premium blue-glass dropdown ─────────────── */
+.st-popup.st-popup-v2 {
+  border: 1px solid rgba(96, 165, 250, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.95) !important;
+  color: #e2e8f0 !important;
+  padding: 18px !important;
+  /* Hide the scrollbar while keeping scroll. */
+  scrollbar-width: none;
+}
+.st-popup.st-popup-v2::-webkit-scrollbar {
+  display: none;
+}
+.st-popup.st-popup-v2 .st-popup-head-v2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.st-popup.st-popup-v2 .st-popup-head-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-popup.st-popup-v2 .st-popup-pill {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  color: rgba(191, 219, 254, 1);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+.st-popup.st-popup-v2 .st-popup-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+.st-popup.st-popup-v2 .st-popup-sub {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.6);
+  line-height: 1.4;
+}
+.st-popup.st-popup-v2 .st-popup-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(226, 232, 240, 0.7);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.st-popup.st-popup-v2 .st-popup-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.st-popup.st-popup-v2 .st-techniques {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 14px 0;
+}
+.st-popup.st-popup-v2 .st-tech-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.85);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.st-popup.st-popup-v2 .st-tech-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(96, 165, 250, 0.28);
+}
+.st-popup.st-popup-v2 .st-tech-card.active {
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #fff;
+}
+.st-popup.st-popup-v2 .st-tech-icon {
+  font-size: 1rem;
+}
+.st-popup.st-popup-v2 .st-tech-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.st-popup.st-popup-v2 .st-tech-desc {
+  font-size: 0.7rem;
+  color: rgba(226, 232, 240, 0.55);
+  line-height: 1.35;
+}
+.st-popup.st-popup-v2 .st-settings {
+  padding: 10px 0 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.st-popup.st-popup-v2 .st-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.st-popup.st-popup-v2 .st-setting-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(226, 232, 240, 0.78);
+}
+.st-popup.st-popup-v2 .st-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.st-popup.st-popup-v2 .st-step-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.92rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.st-popup.st-popup-v2 .st-step-btn:hover {
+  background: rgba(96, 165, 250, 0.18);
+  color: #fff;
+}
+.st-popup.st-popup-v2 .st-step-val {
+  min-width: 28px;
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.st-popup.st-popup-v2 .st-music-section {
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.st-popup.st-popup-v2 .st-music-label {
+  font-size: 0.7rem !important;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.55);
+  padding: 0 0 8px !important;
+  display: block;
+}
+.st-popup.st-popup-v2 .st-music-sources {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.st-popup.st-popup-v2 .st-music-src {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.st-popup.st-popup-v2 .st-music-src:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(96, 165, 250, 0.28);
+}
+.st-popup.st-popup-v2 .st-music-src.active {
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #fff;
+}
+.st-popup.st-popup-v2 .st-music-src-hint {
+  font-size: 0.7rem;
+  color: rgba(226, 232, 240, 0.5);
+  padding: 8px 0 0;
+}
+.st-popup.st-popup-v2 .st-playlist-selector {
+  padding: 8px 0 0;
+}
+.st-popup.st-popup-v2 .st-playlist-select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.82rem;
+}
+.st-popup.st-popup-v2 .st-footer-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  align-items: center;
+}
+.st-popup.st-popup-v2 .st-start-btn-v2 {
+  flex: 1;
+  padding: 7px 12px;
+  min-height: 32px;
+  border-radius: 9px;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 6px 16px -8px rgba(37, 99, 235, 0.55);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.st-popup.st-popup-v2 .st-start-btn-v2:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+.st-popup.st-popup-v2 .st-save-default-btn {
+  padding: 7px 10px;
+  min-height: 32px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+.st-popup.st-popup-v2 .st-save-default-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* Drop-down open animation: scale + slide-in from the top-right where
+ * the button anchors. transform-origin matches the button corner so it
+ * feels like the panel "unfolds" from the trigger. */
+@keyframes st-popup-open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.st-popup.st-popup-v2 {
+  transform-origin: top right;
+  animation: st-popup-open 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Light/Day mode toggles disabled site-wide (looks broken; re-enable
+ *    once the light-theme tokens are revisited). Sidebar pill toggle and
+ *    the settings page checkbox row both hidden. ──────────────────────── */
+#nightBtn,
+.sb-night-btn,
+.settings-row-new:has(#settingsDarkMode) {
+  display: none !important;
+}
+
+/* The course view stacks four containers that ALL paint near-black
+ * (var(--dp-solid) = #020617 in night mode). Even with #app transparent
+ * the inner .app-body covered the #portal gradient + blobs. Force every
+ * layer in the chain transparent so the same shared backdrop the courses
+ * overview shows survives all the way down to the cards. */
+body.minallo-in-course #portal #app,
+body.minallo-in-course #app,
+body.minallo-in-course #app .app-body,
+body.minallo-in-course #courseOverview,
+body.minallo-in-course .pdf-viewer-wrap,
+body.minallo-in-course .welcome-state {
+  background: transparent !important;
+}
+
+/* Tabs centered as a compact pill inside the workspace card. */
+.co-inner-v2 .co-course-tabs {
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  justify-content: center;
+}
+.co-inner-v2 .co-course-tab {
+  flex: 0 1 auto;
+}
+
+/* ── Tool buttons: each gets a different accent border per the design ──── */
+.co-inner-v2 .co-files-toolbar .co-select-toggle {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.co-inner-v2 .co-files-toolbar .co-new-folder-btn {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: rgba(252, 211, 77, 0.95);
+}
+.co-inner-v2 .co-files-toolbar .co-new-folder-btn:hover {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.08);
+}
+.co-inner-v2 .co-files-toolbar .co-upload-btn {
+  border-color: rgba(20, 184, 166, 0.45);
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.18), rgba(13, 148, 136, 0.12));
+  color: rgba(153, 246, 228, 1);
+}
+.co-inner-v2 .co-files-toolbar .co-upload-btn:hover {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.28), rgba(13, 148, 136, 0.2));
+  border-color: rgba(20, 184, 166, 0.6);
+}
+.co-inner-v2 .co-files-toolbar #coReindexAllBtn {
+  border-color: rgba(147, 100, 255, 0.35);
+  color: rgba(196, 181, 253, 0.95);
+}
+.co-inner-v2 .co-files-toolbar #coReindexAllBtn:hover {
+  background: rgba(147, 100, 255, 0.1);
+  border-color: rgba(147, 100, 255, 0.55);
+}
+
+/* ── Separate files sub-card ────────────────────────────────────────────── */
+.co-inner-v2 .co-separate-files {
+  /* Nested inside .co-files-main-card — uses a subtle inner panel look
+   * instead of a second full glass layer (which would dim the contents). */
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 20px;
+  margin-top: 4px;
+}
+.co-inner-v2 .co-separate-files-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.co-inner-v2 .co-separate-files-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #fff;
+}
+.co-inner-v2 .co-separate-files-sub {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.55);
+  margin-top: 2px;
+}
+.co-inner-v2 .co-separate-files .co-folder-count-label {
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+  white-space: nowrap;
+}
+
+/* ── File row v2 ────────────────────────────────────────────────────────── */
+.co-inner-v2 .co-file.co-file-v2 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  margin-bottom: 8px;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.co-inner-v2 .co-file.co-file-v2:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(96, 165, 250, 0.28);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+.co-inner-v2 .co-file.co-file-v2 .co-file-icon-wrap {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  color: rgba(147, 197, 253, 0.95);
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-file.co-file-v2 .co-file-text {
+  flex: 1;
+  min-width: 0;
+}
+.co-inner-v2 .co-file.co-file-v2 .co-file-name {
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.co-inner-v2 .co-file.co-file-v2 .co-file-meta {
+  font-size: 0.74rem;
+  color: rgba(226, 232, 240, 0.5);
+  margin-top: 2px;
+}
+.co-inner-v2 .co-file.co-file-v2 .co-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-file-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.85);
+  white-space: nowrap;
+}
+.co-inner-v2 .co-file-chip-studied {
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(20, 184, 166, 0.32);
+  color: rgba(153, 246, 228, 1);
+}
+.co-inner-v2 .co-file-chip-muted {
+  color: rgba(226, 232, 240, 0.55);
+}
+.co-inner-v2 .co-rag-status.co-file-chip {
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.3);
+  color: rgba(147, 197, 253, 1);
+}
+.co-inner-v2 .co-file-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.co-inner-v2 .co-file-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+.co-inner-v2 .co-file-action.co-file-action-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.co-inner-v2 .co-file-action.co-del-btn {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: rgba(252, 165, 165, 0.95);
+}
+.co-inner-v2 .co-file-action.co-del-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+/* ── Folder section v2 ──────────────────────────────────────────────────── */
+.co-inner-v2 .co-folder-section.co-folder-v2 {
+  --co-folder-accent: #60a5fa;
+  /* Same recipe as .co-next-step row. */
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  transition: border-color 0.18s ease, background 0.18s ease;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:hover {
+  border-color: color-mix(in srgb, var(--co-folder-accent) 28%, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.04);
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) {
+  border-color: color-mix(in srgb, var(--co-folder-accent) 24%, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.04);
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  cursor: pointer;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-toggle-icon {
+  color: rgba(226, 232, 240, 0.55);
+  display: flex;
+  align-items: center;
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) .co-folder-toggle-icon {
+  transform: rotate(90deg);
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-icon-wrap {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--co-folder-accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--co-folder-accent) 32%, transparent);
+  color: var(--co-folder-accent);
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-text {
+  flex: 1;
+  min-width: 0;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-name-label {
+  font-weight: 800;
+  font-size: 1.02rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-sub {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.55);
+  line-height: 1.4;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-count-label {
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.85);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-open-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-open-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(96, 165, 250, 0.3);
+  color: #fff;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-toggle-btn {
+  display: none;  /* shown when folder is expanded */
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) .co-folder-toggle-btn {
+  display: inline-flex;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) .co-folder-open-btn {
+  display: none;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(96, 165, 250, 0.3);
+  color: #fff;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-del-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  color: rgba(252, 165, 165, 0.9);
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-del-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-files {
+  display: none;
+  padding: 8px 14px 18px;
+  margin: 0 14px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) .co-folder-files {
+  display: block;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.55);
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── In-course Next steps section ───────────────────────────────────────── */
+.co-inner-v2 .co-next-steps {
+  margin-top: 22px;
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%),
+    rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.co-inner-v2 .co-next-steps-head {
+  margin-bottom: 16px;
+}
+.co-inner-v2 .co-next-steps-title {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-family: 'Fredoka One', 'Nunito', sans-serif;
+  color: #fff;
+}
+.co-inner-v2 .co-next-steps-sub {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.55);
+}
+.co-inner-v2 .co-next-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.co-inner-v2 .co-next-step {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  width: 100%;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+.co-inner-v2 .co-next-step:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(96, 165, 250, 0.32);
+}
+.co-inner-v2 .co-next-step-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  color: rgba(147, 197, 253, 0.95);
+  flex-shrink: 0;
+}
+.co-inner-v2 .co-next-step-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.co-inner-v2 .co-next-step-title {
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: #fff;
+}
+.co-inner-v2 .co-next-step-sub {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.55);
+  line-height: 1.4;
+}
+
+/* Files panel header: stack title/sub left, buttons wrap right */
+.co-inner-v2 .co-panel-header {
+  align-items: center;
+}
+.co-inner-v2 .co-panel-header-text {
+  flex: 0 0 auto;
+}
+.co-inner-v2 .co-files-toolbar {
+  flex: 1 0 auto;
+}
+
+/* ── Files panel v2: title+stats row, then search+secondary row ──────── */
+.co-inner-v2 .co-panel-header-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+.co-inner-v2 .co-panel-header-v2 .co-panel-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: rgba(226, 232, 240, 0.62);
+  font-size: 0.84rem;
+  margin: 4px 0 0;
+}
+.co-inner-v2 .co-panel-header-v2 .co-panel-sub b {
+  color: #fff;
+  font-weight: 700;
+}
+.co-inner-v2 .co-panel-header-v2 .co-dot-sep {
+  opacity: 0.45;
+}
+.co-inner-v2 .co-files-toolbar-primary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.co-inner-v2 .co-files-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.co-inner-v2 .co-files-search-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.co-inner-v2 .co-files-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(147, 197, 253, 0.55);
+  pointer-events: none;
+}
+.co-inner-v2 .co-files-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 14px 11px 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-glass, #e2e8f0);
+  font-family: inherit;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.co-inner-v2 .co-files-search-input::placeholder {
+  color: rgba(226, 232, 240, 0.42);
+}
+.co-inner-v2 .co-files-search-input:focus {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+}
+.co-inner-v2 .co-files-toolbar-secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* ── Folder row ⋯ menu (Delete moved off the row) ─────────────────────── */
+.co-inner-v2 .co-folder-more {
+  position: relative;
+}
+.co-inner-v2 .co-folder-more-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(226, 232, 240, 0.75);
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+.co-inner-v2 .co-folder-more-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(96, 165, 250, 0.32);
+  color: #fff;
+}
+.co-inner-v2 .co-folder-more-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 170px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(20, 28, 45, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+.co-inner-v2 .co-folder-more-menu.open {
+  display: block;
+}
+.co-inner-v2 .co-folder-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: rgba(252, 165, 165, 0.92);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.co-inner-v2 .co-folder-more-item:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fff;
+}
+
+/* Hide the inline folder-level Upload here / Reindex folder chips and the
+ * old standalone delete button on the collapsed row to keep the header
+ * compact. They show up inside the expanded folder (Click to open). */
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-toggle-btn,
+.co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-select-all-btn {
+  display: none !important;
+}
+.co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) .co-folder-toggle-btn {
+  display: inline-flex !important;
+}
+
+/* ============================================================================
+ * Quiz & Flashcards tab redesign.
+ *
+ * Both views share the same structural skeleton (.qz-* and .fc-* mirror each
+ * other), so the rules below target both prefixes. We override the existing
+ * styles loaded from quiz.js / flashcards.js feature CSS to match the new
+ * dark-glass aesthetic used throughout the redesigned courses workspace.
+ * ========================================================================== */
+
+/* Stack deck pane and study pane vertically inside the panel */
+.co-inner-v2 .qz-root,
+.co-inner-v2 .fc-root {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: transparent;
+  padding: 0;
+}
+.co-inner-v2 .qz-layout,
+.co-inner-v2 .fc-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.co-inner-v2 .qz-deck-pane,
+.co-inner-v2 .fc-deck-pane,
+.co-inner-v2 .qz-study-pane,
+.co-inner-v2 .fc-study-pane {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%),
+    rgba(15, 23, 42, 0.4);
+  padding: 22px;
+}
+
+/* Toolbar at top of deck pane — Generate + search + sort + view */
+.co-inner-v2 .qz-toolbar,
+.co-inner-v2 .fc-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  background: transparent;
+  padding: 0;
+  margin-bottom: 14px;
+  border: none;
+}
+/* Title block injected before the toolbar's first row via pseudo-element */
+.co-inner-v2 .qz-toolbar::before,
+.co-inner-v2 .fc-toolbar::before {
+  content: 'Quizzes\AGenerated from this course\27 s indexed material.';
+  grid-column: 1;
+  grid-row: 1;
+  white-space: pre-line;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.6);
+  line-height: 1.4;
+}
+.co-inner-v2 .fc-toolbar::before {
+  content: 'Flashcards\AGenerated decks from this course.';
+}
+.co-inner-v2 .qz-toolbar::before::first-line,
+.co-inner-v2 .fc-toolbar::before::first-line {
+  /* pseudo on pseudo isn't real CSS — using a different mechanism below */
+}
+/* Reset and rebuild: the simpler reliable approach is to drop the ::before
+ * trick and just style what's there. Tag the Generate button + search +
+ * sort across a single flexible row. */
+.co-inner-v2 .qz-toolbar::before,
+.co-inner-v2 .fc-toolbar::before {
+  content: none;
+}
+.co-inner-v2 .qz-toolbar,
+.co-inner-v2 .fc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.co-inner-v2 .qz-btn,
+.co-inner-v2 .fc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.co-inner-v2 .qz-btn:hover,
+.co-inner-v2 .fc-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(96, 165, 250, 0.32);
+  color: #fff;
+}
+.co-inner-v2 .qz-btn.qz-btn-primary,
+.co-inner-v2 .fc-btn.fc-btn-primary {
+  background: linear-gradient(135deg, #f97316, #fb923c);
+  border-color: rgba(251, 146, 60, 0.6);
+  color: #fff;
+  box-shadow: 0 8px 22px -8px rgba(249, 115, 22, 0.55);
+  margin-left: auto;  /* push to the right per the screenshot */
+}
+.co-inner-v2 .qz-btn.qz-btn-primary:hover,
+.co-inner-v2 .fc-btn.fc-btn-primary:hover {
+  background: linear-gradient(135deg, #ea580c, #f97316);
+  transform: translateY(-1px);
+}
+
+.co-inner-v2 .qz-search,
+.co-inner-v2 .fc-search {
+  flex: 1;
+  position: relative;
+  min-width: 200px;
+  max-width: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.co-inner-v2 .qz-search input,
+.co-inner-v2 .fc-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px 12px 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--on-glass);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.co-inner-v2 .qz-search input::placeholder,
+.co-inner-v2 .fc-search input::placeholder {
+  color: rgba(226, 232, 240, 0.4);
+}
+.co-inner-v2 .qz-search input:focus,
+.co-inner-v2 .fc-search input:focus {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(255, 255, 255, 0.05);
+}
+.co-inner-v2 .qz-search-icon,
+.co-inner-v2 .fc-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(147, 197, 253, 0.55);
+  pointer-events: none;
+  font-size: 0.9rem;
+}
+.co-inner-v2 .qz-sort,
+.co-inner-v2 .fc-sort {
+  padding: 11px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.84rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.co-inner-v2 .qz-view-toggle,
+.co-inner-v2 .fc-view-toggle {
+  display: none;  /* simplify — match the mockup which has no grid/list toggle */
+}
+
+/* Deck cards as horizontal rows */
+.co-inner-v2 .qz-deck-grid,
+.co-inner-v2 .fc-deck-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: transparent;
+  padding: 0;
+}
+.co-inner-v2 .qz-deck-card,
+.co-inner-v2 .fc-deck-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  position: relative;
+}
+.co-inner-v2 .qz-deck-card:hover,
+.co-inner-v2 .fc-deck-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(96, 165, 250, 0.25);
+  transform: translateY(-1px);
+}
+.co-inner-v2 .qz-deck-card.active,
+.co-inner-v2 .fc-deck-card.active {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.4);
+}
+.co-inner-v2 .qz-deck-icon,
+.co-inner-v2 .fc-deck-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  border-radius: 12px;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  color: rgba(147, 197, 253, 0.95);
+  flex-shrink: 0;
+}
+.co-inner-v2 .qz-deck-name,
+.co-inner-v2 .fc-deck-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 800;
+  font-size: 0.98rem;
+  color: #fff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: left;
+}
+.co-inner-v2 .qz-deck-count,
+.co-inner-v2 .fc-deck-count {
+  position: absolute;
+  left: 70px;
+  bottom: 12px;
+  font-size: 0.72rem;
+  color: rgba(226, 232, 240, 0.55);
+}
+/* Hack: the .qz-deck-name should sit above its count line. Lift it up so
+   count sits below name naturally. */
+.co-inner-v2 .qz-deck-card,
+.co-inner-v2 .fc-deck-card {
+  padding-bottom: 30px;
+  align-items: flex-start;
+  padding-top: 18px;
+}
+.co-inner-v2 .qz-deck-name,
+.co-inner-v2 .fc-deck-name {
+  padding-top: 4px;
+}
+
+/* Score / status pill on right */
+.co-inner-v2 .qz-deck-status,
+.co-inner-v2 .fc-deck-status {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.88);
+  white-space: nowrap;
+}
+.co-inner-v2 .qz-deck-status-dot,
+.co-inner-v2 .fc-deck-status-dot {
+  display: none;  /* simpler look — pill text alone */
+}
+.co-inner-v2 .qz-deck-actions,
+.co-inner-v2 .fc-deck-actions {
+  display: none;  /* row-level inline actions removed; whole card is clickable */
+}
+.co-inner-v2 .qz-deck-delete-btn,
+.co-inner-v2 .fc-deck-delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: none;  /* hover-reveal only */
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: rgba(252, 165, 165, 0.9);
+  cursor: pointer;
+  font-size: 0.68rem;
+  padding: 0;
+}
+.co-inner-v2 .qz-deck-card:hover .qz-deck-delete-btn,
+.co-inner-v2 .fc-deck-card:hover .fc-deck-delete-btn {
+  display: flex;
+}
+.co-inner-v2 .qz-view-all,
+.co-inner-v2 .fc-view-all {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: rgba(226, 232, 240, 0.65);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+}
+.co-inner-v2 .qz-empty,
+.co-inner-v2 .fc-empty {
+  padding: 30px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.5);
+  background: transparent;
+  border: none;
+}
+
+/* Study pane (the preview / question area) */
+.co-inner-v2 .qz-study-header,
+.co-inner-v2 .fc-study-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.co-inner-v2 .qz-study-icon,
+.co-inner-v2 .fc-study-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  border-radius: 14px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: rgba(196, 181, 253, 1);
+  flex-shrink: 0;
+}
+.co-inner-v2 .qz-study-meta,
+.co-inner-v2 .fc-study-meta {
+  flex: 1;
+  min-width: 0;
+}
+.co-inner-v2 .qz-study-name,
+.co-inner-v2 .fc-study-deck-name {
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: #fff;
+  font-family: 'Fredoka One', 'Nunito', sans-serif;
+}
+.co-inner-v2 .qz-study-count,
+.co-inner-v2 .fc-study-deck-count {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.55);
+  margin-top: 2px;
+}
+.co-inner-v2 .qz-study-settings,
+.co-inner-v2 .fc-study-settings {
+  margin-left: auto;
+}
+
+/* Question / card stage */
+.co-inner-v2 .qz-card-stage,
+.co-inner-v2 .fc-card-stage {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 24px;
+  min-height: 200px;
+}
+.co-inner-v2 .qz-card-pill {
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  color: rgba(191, 219, 254, 1);
+  font-size: 0.74rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.co-inner-v2 .qz-card-source {
+  font-size: 0.74rem;
+  color: rgba(226, 232, 240, 0.45);
+  margin-bottom: 8px;
+  display: none;  /* hide source label per the mockup */
+}
+.co-inner-v2 .qz-card-question {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.co-inner-v2 .qz-card-empty,
+.co-inner-v2 .fc-card-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+/* Answer options */
+.co-inner-v2 .qz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+.co-inner-v2 .qz-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.co-inner-v2 .qz-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(96, 165, 250, 0.28);
+}
+.co-inner-v2 .qz-option.selected {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(13, 148, 136, 0.1));
+  border-color: rgba(20, 184, 166, 0.45);
+  color: rgba(153, 246, 228, 1);
+}
+.co-inner-v2 .qz-option.correct {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(22, 163, 74, 0.1));
+  border-color: rgba(34, 197, 94, 0.5);
+  color: rgba(187, 247, 208, 1);
+}
+.co-inner-v2 .qz-option.incorrect {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(220, 38, 38, 0.1));
+  border-color: rgba(239, 68, 68, 0.5);
+  color: rgba(254, 202, 202, 1);
+}
+.co-inner-v2 .qz-option-letter {
+  display: none;  /* mockup shows no letter chip */
+}
+
+/* Progress bar */
+.co-inner-v2 .qz-study-progress,
+.co-inner-v2 .fc-study-progress {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.co-inner-v2 .qz-study-progress-track,
+.co-inner-v2 .fc-study-progress-track {
+  height: 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.co-inner-v2 .qz-study-progress-bar,
+.co-inner-v2 .fc-study-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3b82f6, #06b6d4);
+  transition: width 0.4s ease;
+}
+.co-inner-v2 .qz-study-progress-label,
+.co-inner-v2 .fc-study-progress-label {
+  font-size: 0.74rem;
+  color: rgba(226, 232, 240, 0.55);
+  text-align: right;
+}
+
+/* Controls row */
+.co-inner-v2 .qz-study-controls,
+.co-inner-v2 .fc-study-controls {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 12px;
+  margin-top: 18px;
+}
+.co-inner-v2 .qz-btn.qz-btn-ghost,
+.co-inner-v2 .fc-btn.fc-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  justify-content: center;
+}
+.co-inner-v2 .qz-btn.qz-btn-submit,
+.co-inner-v2 .fc-btn.fc-btn-flip {
+  justify-content: center;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 8px 22px -8px rgba(37, 99, 235, 0.55);
+}
+.co-inner-v2 .qz-btn.qz-btn-submit:hover,
+.co-inner-v2 .fc-btn.fc-btn-flip:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+.co-inner-v2 .qz-btn.qz-btn-submit:disabled,
+.co-inner-v2 .fc-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Flashcard front/back card body */
+.co-inner-v2 .fc-card-stage .fc-card {
+  text-align: center;
+  font-size: 1.15rem;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1.5;
+  padding: 30px 20px;
+}

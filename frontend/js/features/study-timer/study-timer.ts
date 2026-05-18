@@ -676,7 +676,67 @@ function _stRestore(): void {
   _stStartTimer();
 }
 
+/** Open the Study Techniques popup as a true dropdown anchored to the
+ * Study button. The popup is re-parented INTO the .co-study-wrap (which
+ * is `position: relative`) so it scrolls with the button automatically,
+ * no JS reposition needed. */
+export function openStudyPopup(): void {
+  const overlay = document.getElementById('stOverlay');
+  const popup = document.getElementById('stPopup');
+  if (!popup) return;
+  if (overlay) overlay.style.display = 'none';
+
+  // Prefer the course-workspace wrapper; fall back to the legacy topbar
+  // trigger if we're not in a course view.
+  const wrap =
+    (document.getElementById('coStudyWrap') as HTMLElement | null) ||
+    (document.getElementById('studyTechBtn')?.parentElement as HTMLElement | null);
+  if (wrap && popup.parentElement !== wrap) {
+    wrap.appendChild(popup);
+  }
+
+  popup.classList.remove('shrinking');
+  // Position is relative to .co-study-wrap (or fallback parent). Top:100%
+  // means just below the button; right:0 aligns to the button's right
+  // edge. Scrolling the page scrolls the wrapper → popup follows.
+  popup.style.cssText =
+    'position:absolute;top:calc(100% + 8px);right:0;left:auto;' +
+    'width:340px;max-height:80vh;' +
+    'background:#1a1828;border:1px solid rgba(96,165,250,.32);border-radius:20px;' +
+    'box-shadow:0 24px 60px rgba(0,0,0,.55);overflow-y:auto;overflow-x:hidden;' +
+    'pointer-events:all;color:#e2e8f0;display:block;z-index:2000;';
+  // Restart the CSS open animation by clearing and forcing reflow.
+  popup.style.animation = 'none';
+  void popup.offsetWidth;
+  popup.style.animation = '';
+
+  const startBtn = document.getElementById('stStart');
+  if (startBtn) startBtn.textContent = _stRunning ? '▶ Apply & Restart' : '▶ Start';
+  if (window._ytRenderSelect) window._ytRenderSelect();
+  const sel = document.getElementById('stPlaylistSelector');
+  if (sel) sel.style.display = _stMusicSrc === 'youtube' ? 'block' : 'none';
+}
+
+export function closeStudyPopup(): void {
+  const popup = document.getElementById('stPopup');
+  const overlay = document.getElementById('stOverlay');
+  if (popup) popup.style.display = 'none';
+  if (overlay) overlay.style.display = 'none';
+}
+
+// Publish at module-load time too, not only inside initStudyTimer, so the
+// course-view Study button can find it even on very early clicks.
+(window as unknown as {
+  openStudyPopup?: () => void;
+  closeStudyPopup?: () => void;
+}).openStudyPopup = openStudyPopup;
+(window as unknown as {
+  openStudyPopup?: () => void;
+  closeStudyPopup?: () => void;
+}).closeStudyPopup = closeStudyPopup;
+
 export function initStudyTimer(): void {
+  (window as unknown as { openStudyPopup?: () => void }).openStudyPopup = openStudyPopup;
   document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -686,15 +746,7 @@ export function initStudyTimer(): void {
     if (!btn || !overlay || !popup) return;
 
     if (target.closest('#studyTechBtn')) {
-      overlay.style.display = 'block';
-      popup.classList.remove('shrinking');
-      popup.style.transform = '';
-      popup.style.opacity = '';
-      const startBtn = document.getElementById('stStart');
-      if (startBtn) startBtn.textContent = _stRunning ? '▶ Apply & Restart' : '▶ Start';
-      if (window._ytRenderSelect) window._ytRenderSelect();
-      const sel = document.getElementById('stPlaylistSelector');
-      if (sel) sel.style.display = _stMusicSrc === 'youtube' ? 'block' : 'none';
+      openStudyPopup();
       return;
     }
 
@@ -728,11 +780,23 @@ export function initStudyTimer(): void {
       return;
     }
 
+    const popupOpen = popup.style.display === 'block';
     if (
       target.closest('#stClose') ||
-      (!target.closest('#stPopup') && overlay.style.display === 'block')
+      // Outside-click-to-close. Excludes the trigger button itself so the
+      // toggle handler can decide what to do.
+      (!target.closest('#stPopup') && !target.closest('#coStudyBtn') && !target.closest('#studyTechBtn') && popupOpen)
     ) {
-      overlay.style.display = 'none';
+      closeStudyPopup();
+      return;
+    }
+
+    if (target.closest('#stSaveDefault')) {
+      // Persist current settings as the user's default (existing _stPersist
+      // already writes everything to localStorage). Show a small toast.
+      _stPersist();
+      const t = window.showToast;
+      if (typeof t === 'function') t('Default focus session saved', '');
       return;
     }
 
@@ -803,7 +867,7 @@ export function initStudyTimer(): void {
       _stMusicEnabled = _stMusicSrc !== 'none';
       popup.classList.add('shrinking');
       setTimeout(() => {
-        overlay.style.display = 'none';
+        closeStudyPopup();
         popup.classList.remove('shrinking');
         const mini = document.getElementById('stMiniTimer');
         if (mini) mini.style.display = 'flex';

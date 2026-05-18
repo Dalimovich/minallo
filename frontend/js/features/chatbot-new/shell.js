@@ -297,8 +297,9 @@ async function doSend(state, stage, textarea, sendBtn, pasteRow, msgs) {
     appendUserBubble(msgs, text, images, files);
     touchActiveChat();
     saveChatStore();
-    // Reset input. Belt-and-braces: clear value, force textarea back to
-    // its min height explicitly, clear overflow.
+    // Reset input. Belt-and-braces: clear value, force the textarea
+    // back to its min height explicitly, clear overflow, then fire
+    // input so any other listeners see an empty textarea.
     textarea.value = '';
     textarea.style.height = '36px';
     textarea.style.overflowY = 'hidden';
@@ -633,6 +634,10 @@ function typeIntoBubble(bubble, raw, isAborted) {
     });
 }
 function setSendBtnMode(btn, mode) {
+    // Keep the arrow-up glyph in both modes so the button always reads as
+    // "send". The mode flip only swaps the class (color + ring) and the
+    // aria-label / click handler — preserves stop-generation without
+    // making the button look broken mid-stream.
     btn.innerHTML =
         '<svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
     if (mode === 'pause') {
@@ -652,25 +657,33 @@ function scrollMsgsToBottom(msgs) {
 function buildApiMessages(messages) {
     // Mirror chatbot.js: keep last ~20 messages, and inline images as Claude-shaped image blocks.
     const trimmed = messages.slice(-20);
-    // Attached-folder documents (from Import from Course) get injected into
-    // the LATEST user message only — so the AI sees them every reply without
-    // copying them into every historical turn.
-    const folders = chatStore.getActive().attachedFolders;
+    // Selected sources (from the global library) are injected into the
+    // LATEST user message only — so the AI sees them every reply without
+    // ballooning every historical turn with copies.
+    const active = chatStore.getActive();
     const folderDocs = [];
-    folders.forEach((f) => (f.documents || []).forEach((d) => folderDocs.push(d)));
+    sourceLibrary.items
+        .filter((s) => active.selectedSourceIds.includes(s.id))
+        .forEach((s) => (s.documents || []).forEach((d) => folderDocs.push(d)));
     let lastUserIdx = -1;
     for (let i = trimmed.length - 1; i >= 0; i--) {
-        if (trimmed[i].role === 'user') { lastUserIdx = i; break; }
+        if (trimmed[i].role === 'user') {
+            lastUserIdx = i;
+            break;
+        }
     }
     return trimmed.map((m, idx) => {
         if (m.role === 'assistant')
             return { role: 'assistant', content: m.text };
         const blocks = [];
+        // Prepend attached course-file docs into the most recent user message.
         if (idx === lastUserIdx && folderDocs.length) {
             folderDocs.forEach((d) => {
                 blocks.push({
                     type: 'text',
-                    text: '<document filename="' + d.name + '" source="course-import">\n' + d.text + '\n</document>',
+                    text: '<document filename="' + d.name + '" source="course-import">\n' +
+                        d.text +
+                        '\n</document>',
                 });
             });
         }
@@ -728,7 +741,9 @@ function getSbToken() {
     return window._sbToken || null;
 }
 function escapeHtml(s) {
-    return s
+    if (s == null)
+        return '';
+    return String(s)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -941,13 +956,16 @@ function initImportModal(root) {
       </div>`;
     };
     const folderRow = (fd, courseId) => {
-        const itemId = courseId + ':folder:' + fd.id;
+        // Folders coming from _ufMerge only have { name, files } — no id. Use
+        // the name as the stable key so escapeAttr never sees undefined.
+        const folderKey = fd.id || fd.name || '';
+        const itemId = courseId + ':folder:' + folderKey;
         const sel = picked.has(itemId);
         const count = (fd.files || []).length;
         const meta = count + ' file' + (count === 1 ? '' : 's');
         return `
       <div class="ncb-folder-row ${sel ? 'ncb-folder-row--selected' : ''}"
-           data-kind="folder" data-folder-id="${escapeAttr(fd.id)}"
+           data-kind="folder" data-folder-id="${escapeAttr(folderKey)}"
            data-item-id="${escapeAttr(itemId)}"
            data-name="${escapeAttr(fd.name)}" data-meta="${escapeAttr(meta)}"
            role="button" tabindex="0">
@@ -998,7 +1016,9 @@ function initImportModal(root) {
     const drillInto = (folderId) => {
         if (!activeCourse)
             return;
-        const fd = (activeCourse.userFolders || []).find((x) => x.id === folderId);
+        // folderRow uses fd.id when present, falls back to fd.name. Match by
+        // either to support _ufMerge-discovered folders which have no id.
+        const fd = (activeCourse.userFolders || []).find((x) => (x.id || x.name) === folderId);
         if (!fd)
             return;
         activeFolder = fd;
@@ -1027,6 +1047,12 @@ function initImportModal(root) {
         searchTerm = '';
         if (searchInput)
             searchInput.value = '';
+        // Defensive reset — the modal's state persists across open/close,
+        // and a stale crumb visibility was leaving the Back button visible
+        // on courses with no files showing.
+        if (crumb)
+            crumb.hidden = true;
+        listEl.innerHTML = '';
         // Build the course list each open so newly-added courses appear.
         const courses = listCourses();
         select.innerHTML = courses.length
@@ -1036,12 +1062,15 @@ function initImportModal(root) {
         overlay.hidden = false;
         overlay.setAttribute('aria-hidden', 'false');
         syncCount();
-        // Force fresh re-list for the active course so courses never opened
-        // directly on Minallo still populate their files.
+        // Force a fresh re-list for the active course. This handles courses
+        // the user has never opened directly on Minallo (which would otherwise
+        // show "No files in this course" because their userFolders is empty).
         forceHydrateActive();
-        // Eager-hydrate the rest in the background.
+        // Eager-hydrate the rest in the background so switching the dropdown
+        // is instant once their data lands.
         void eagerlyHydrateCourses(() => {
-            if (overlay.hidden) return;
+            if (overlay.hidden)
+                return;
             renderList();
         });
     };
@@ -1055,33 +1084,62 @@ function initImportModal(root) {
         activeFolder = null;
         picked.clear();
         searchTerm = '';
-        if (searchInput) searchInput.value = '';
-        if (crumb) crumb.hidden = true;
+        if (searchInput)
+            searchInput.value = '';
+        // Belt-and-braces: explicitly hide the breadcrumb + clear the list so
+        // the previous course's rendering can't leak into this one while the
+        // new hydration is in flight.
+        if (crumb)
+            crumb.hidden = true;
         listEl.innerHTML = '';
         syncCount();
+        // Always force a fresh re-list for the selected course. Reason:
+        // a course may have populated its userFolders during an earlier
+        // session but be stale, OR be empty because hydration hasn't run.
+        // We can't tell the difference from the data, so re-fetch.
         forceHydrateActive();
     });
+    // Show a temporary "Loading…" hint inside the file list while we wait
+    // for _ufMerge to come back for the active course.
     const showLoading = () => {
-        if (!activeCourse) return;
+        if (!activeCourse)
+            return;
         listEl.innerHTML =
             '<p class="ncb-folder-empty">Loading ' +
-            escapeHtml(courseLabel(activeCourse)) + '…</p>';
-        if (crumb) crumb.hidden = true;
+                escapeHtml(courseLabel(activeCourse)) +
+                '…</p>';
+        if (crumb)
+            crumb.hidden = true;
     };
+    // Hydrate the active course and re-render when it lands. Forces a
+    // fetch every time (no "skip if non-empty" check) so stale or
+    // partially-populated courses get a fresh listing.
     const forceHydrateActive = () => {
-        if (!activeCourse) { renderList(); return; }
+        if (!activeCourse) {
+            renderList();
+            return;
+        }
         const w = window;
-        if (!w._ufMerge) { renderList(); return; }
-        const hadDataBefore =
-            (activeCourse.userFolders && activeCourse.userFolders.length > 0) ||
+        if (!w._ufMerge) {
+            renderList();
+            return;
+        }
+        const hadDataBefore = (activeCourse.userFolders && activeCourse.userFolders.length > 0) ||
             (activeCourse.files && activeCourse.files.length > 0);
-        if (!hadDataBefore) showLoading(); else renderList();
+        if (!hadDataBefore)
+            showLoading();
+        else
+            renderList();
         try {
             Promise.resolve(w._ufMerge(activeCourse))
-                .then(() => { if (!overlay.hidden) renderList(); })
-                .catch(() => { if (!overlay.hidden) renderList(); });
+                .then(() => { if (!overlay.hidden)
+                renderList(); })
+                .catch(() => { if (!overlay.hidden)
+                renderList(); });
         }
-        catch { renderList(); }
+        catch {
+            renderList();
+        }
     };
     searchInput?.addEventListener('input', () => {
         searchTerm = searchInput.value.trim();
@@ -1106,25 +1164,29 @@ function initImportModal(root) {
             close();
     });
     importBtn?.addEventListener('click', async () => {
-        if (!picked.size || !activeCourse) return;
-        if (importBtn.disabled) return;
+        if (!picked.size || !activeCourse)
+            return;
+        if (importBtn.disabled)
+            return;
         importBtn.disabled = true;
         const originalLabel = importBtn.textContent;
         importBtn.textContent = 'Importing…';
+        const courseName = courseLabel(activeCourse);
         try {
             const items = await loadPickedDocuments(picked, activeCourse);
-            attachImportedFolders(root, items);
+            addToSourceLibraryAndSelect(root, items, activeCourse.id, courseName);
             close();
         }
         catch (e) {
+            // eslint-disable-next-line no-console
             console.warn('[ncb] import-from-course: extraction failed', e);
-            const items = Array.from(picked.values()).map((p) => ({
+            const fallback = Array.from(picked.values()).map((p) => ({
                 id: p.courseId + ':' + p.id,
                 name: p.name,
                 count: p.meta,
                 documents: [],
             }));
-            attachImportedFolders(root, items);
+            addToSourceLibraryAndSelect(root, fallback, activeCourse.id, courseName);
             close();
         }
         finally {
@@ -1133,28 +1195,41 @@ function initImportModal(root) {
         }
     });
 }
-
 // ---- Course-file extraction for "Import from Course" ----
+// Pulls actual file bytes from Supabase storage via the global _ufFetchBytes,
+// extracts text from PDFs / .txt / .md, and packs the result into
+// ImportedFolder.documents so buildApiMessages can hand it to the AI.
 async function fetchCourseFileText(uid, course, fileName, folderName) {
     const w = window;
-    if (!w._ufFetchBytes) return null;
+    if (!w._ufFetchBytes)
+        return null;
     try {
         const bytes = await w._ufFetchBytes(uid, course, fileName, folderName);
-        if (!bytes) return null;
+        if (!bytes)
+            return null;
+        // `bytes` is typed Uint8Array<ArrayBufferLike> from the global API.
+        // Cast through unknown so Blob/TextDecoder (which want ArrayBuffer
+        // specifically in tsc 5.x) accept it — at runtime both work fine.
+        const part = bytes;
         if (/\.pdf$/i.test(fileName)) {
-            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const blob = new Blob([part], { type: 'application/pdf' });
             const file = new File([blob], fileName, { type: 'application/pdf' });
             return await extractPdfText(file);
         }
         if (/\.(txt|md)$/i.test(fileName)) {
-            try { return new TextDecoder('utf-8').decode(bytes); }
-            catch { return null; }
+            try {
+                return new TextDecoder('utf-8').decode(bytes);
+            }
+            catch {
+                return null;
+            }
         }
         return null;
     }
-    catch { return null; }
+    catch {
+        return null;
+    }
 }
-
 async function loadPickedDocuments(picked, course) {
     const w = window;
     const uid = w._currentUser?.id || w._currentUser?.sub;
@@ -1165,7 +1240,8 @@ async function loadPickedDocuments(picked, course) {
             const targets = [];
             if (p.kind === 'folder') {
                 const fd = (course.userFolders || []).find((x) => x.name === p.name);
-                if (fd) (fd.files || []).forEach((f) => targets.push({ name: f.name, folder: fd.name }));
+                if (fd)
+                    (fd.files || []).forEach((f) => targets.push({ name: f.name, folder: fd.name }));
             }
             else {
                 const inRoot = (course.files || []).find((f) => f.name === p.name);
@@ -1181,9 +1257,11 @@ async function loadPickedDocuments(picked, course) {
                     }
                 }
             }
+            // Extract in parallel, but cap concurrency to keep storage happy.
             const results = await Promise.all(targets.map((t) => fetchCourseFileText(uid, course, t.name, t.folder)));
             results.forEach((text, i) => {
-                if (text) docs.push({ name: targets[i].name, text });
+                if (text)
+                    docs.push({ name: targets[i].name, text });
             });
         }
         out.push({
@@ -1195,122 +1273,153 @@ async function loadPickedDocuments(picked, course) {
     }
     return out;
 }
-function attachImportedFolders(root, folders) {
-    const row = root.querySelector('.ncb-attach-row');
-    if (!row)
-        return;
-    // PR-05: persist into active chat's attachedFolders, then render from there.
+// Add imported items to the GLOBAL source library and auto-select them
+// for the current chat. Duplicate IDs in the library are merged (newest
+// documents win, so re-importing refreshes content).
+function addToSourceLibraryAndSelect(root, items, courseId, courseName) {
     const active = chatStore.getActive();
-    const existingIds = new Set(active.attachedFolders.map((f) => f.id));
-    folders.forEach((f) => {
-        if (!existingIds.has(f.id))
-            active.attachedFolders.push(f);
+    const now = Date.now();
+    items.forEach((it) => {
+        const existing = sourceLibrary.items.find((s) => s.id === it.id);
+        if (existing) {
+            // Refresh document content + metadata if the re-import has new docs.
+            if (it.documents && it.documents.length)
+                existing.documents = it.documents;
+            existing.count = it.count;
+            existing.courseId = courseId;
+            existing.courseName = courseName;
+        }
+        else {
+            sourceLibrary.items.push({
+                id: it.id,
+                name: it.name,
+                count: it.count,
+                courseId,
+                courseName,
+                documents: it.documents || [],
+                importedAt: now,
+            });
+        }
+        if (!active.selectedSourceIds.includes(it.id))
+            active.selectedSourceIds.push(it.id);
     });
+    saveSourceLibrary();
     saveChatStore();
-    renderAttachChips(root);
+    renderSourcesCard(root);
     updateContextPill(root);
 }
+// Reflect the active chat's selected sources in the header context pill.
 function updateContextPill(root) {
     const pill = root.querySelector('.ncb-chat-context-pill');
     if (!pill)
         return;
     const active = chatStore.getActive();
-    const folders = active.attachedFolders;
-    if (!folders.length) {
+    const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
+    if (!selected.length) {
         pill.hidden = true;
         pill.textContent = '';
         return;
     }
-    const first = folders[0].name;
-    pill.textContent = folders.length === 1
+    const first = selected[0].name;
+    pill.textContent = selected.length === 1
         ? first
-        : first + ' +' + (folders.length - 1) + ' more';
+        : first + ' +' + (selected.length - 1) + ' more';
     pill.hidden = false;
 }
-// Render the right-rail "Sources used" card from the active chat's
-// attachedFolders. Real per-message citations aren't available from
-// /api/ai yet — this is the honest version: lists what the AI has
-// access to in this chat.
+// Right-rail "Sources used" card — renders the GLOBAL library with
+// checkbox-style toggles per chat. Each row:
+//   [checkbox] [name + course]  [X to remove from library]
 function renderSourcesCard(root) {
     const card = root.querySelector('.ncb-sources-card');
-    if (!card) return;
+    if (!card)
+        return;
     const list = card.querySelector('.ncb-source-list');
     const pill = card.querySelector('.ncb-sources-count');
-    if (!list || !pill) return;
+    if (!list || !pill)
+        return;
     const active = chatStore.getActive();
-    const folders = active.attachedFolders;
-    const n = folders.length;
-    pill.textContent = n === 1 ? '1 file' : n + ' files';
-    if (!n) {
+    const selectedCount = active.selectedSourceIds.length;
+    pill.textContent = selectedCount === 1 ? '1 selected' : selectedCount + ' selected';
+    if (!sourceLibrary.items.length) {
         list.innerHTML =
-            '<p class="ncb-notes-empty">No sources attached yet. Use ' +
-            '<strong>Import from Course</strong> below to attach lectures, ' +
-            'exercises, or formula sheets — the AI will use them as context.</p>';
+            '<p class="ncb-notes-empty">No sources imported yet. Use ' +
+                '<strong>Import from Course</strong> in the composer to add ' +
+                'lectures, exercises, or formula sheets — they\'ll appear here ' +
+                'across every chat.</p>';
         return;
     }
-    list.innerHTML = folders
-        .map((f) => `
-      <div class="ncb-source-row" data-id="${escapeAttr(f.id)}">
+    list.innerHTML = sourceLibrary.items
+        .slice()
+        .sort((a, b) => b.importedAt - a.importedAt)
+        .map((s) => {
+        const checked = active.selectedSourceIds.includes(s.id);
+        const meta = s.courseName ? s.courseName + ' · ' + s.count : s.count;
+        return `
+      <div class="ncb-source-row ${checked ? 'ncb-source-row--selected' : ''}" data-id="${escapeAttr(s.id)}">
+        <button type="button" class="ncb-source-toggle" aria-pressed="${checked ? 'true' : 'false'}" aria-label="Toggle ${escapeAttr(s.name)}">
+          <span class="ncb-source-check" aria-hidden="true">
+            ${checked
+            ? '<svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+            : ''}
+          </span>
+        </button>
         <div class="ncb-source-info">
-          <p class="ncb-source-name">${escapeHtml(f.name)}</p>
-          <p class="ncb-source-meta">${escapeHtml(f.count)}</p>
+          <p class="ncb-source-name">${escapeHtml(s.name)}</p>
+          <p class="ncb-source-meta">${escapeHtml(meta)}</p>
         </div>
-        <button type="button" class="ncb-source-open" aria-label="Detach ${escapeAttr(f.name)}">
+        <button type="button" class="ncb-source-open ncb-source-remove" aria-label="Remove ${escapeAttr(s.name)} from library">
           <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
-    `)
+    `;
+    })
         .join('');
-    list.querySelectorAll('.ncb-source-open').forEach((btn) => {
+    // Toggle (select/deselect for current chat).
+    list.querySelectorAll('.ncb-source-toggle').forEach((btn) => {
         btn.addEventListener('click', () => {
             const id = btn.closest('.ncb-source-row')?.dataset.id;
-            if (!id) return;
-            const active2 = chatStore.getActive();
-            active2.attachedFolders = active2.attachedFolders.filter((f) => f.id !== id);
+            if (!id)
+                return;
+            const c = chatStore.getActive();
+            if (c.selectedSourceIds.includes(id)) {
+                c.selectedSourceIds = c.selectedSourceIds.filter((sid) => sid !== id);
+            }
+            else {
+                c.selectedSourceIds.push(id);
+            }
             saveChatStore();
-            renderAttachChips(root);
+            renderSourcesCard(root);
+            updateContextPill(root);
+        });
+    });
+    // Remove from library entirely (also deselects from all chats).
+    list.querySelectorAll('.ncb-source-remove').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const id = btn.closest('.ncb-source-row')?.dataset.id;
+            if (!id)
+                return;
+            sourceLibrary.items = sourceLibrary.items.filter((s) => s.id !== id);
+            chatStore.chats.forEach((c) => {
+                c.selectedSourceIds = c.selectedSourceIds.filter((sid) => sid !== id);
+            });
+            saveSourceLibrary();
+            saveChatStore();
             renderSourcesCard(root);
             updateContextPill(root);
         });
     });
 }
-
+// The composer chip row is no longer the source of truth for what's
+// attached — the Sources card in the right rail owns that now. Keep the
+// helper as a no-op shim so any remaining callers don't blow up, and
+// hide the row in the DOM. Legacy callers will be dropped over time.
 function renderAttachChips(root) {
     const row = root.querySelector('.ncb-attach-row');
     if (!row)
         return;
-    const active = chatStore.getActive();
-    if (!active.attachedFolders.length) {
-        row.hidden = true;
-        row.innerHTML = '';
-        return;
-    }
-    row.innerHTML = active.attachedFolders
-        .map((f) => `
-      <span class="ncb-attach-chip" data-id="${escapeAttr(f.id)}">
-        <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>
-        <span class="ncb-attach-chip-name">${escapeHtml(f.name)}</span>
-        <span class="ncb-attach-chip-meta">${escapeHtml(f.count)}</span>
-        <button type="button" class="ncb-attach-chip-x" aria-label="Remove ${escapeAttr(f.name)}">
-          <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      </span>
-    `)
-        .join('');
-    row.hidden = false;
-    row.querySelectorAll('.ncb-attach-chip-x').forEach((x) => {
-        x.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            const id = x.closest('.ncb-attach-chip')?.dataset.id;
-            if (!id)
-                return;
-            const active2 = chatStore.getActive();
-            active2.attachedFolders = active2.attachedFolders.filter((f) => f.id !== id);
-            saveChatStore();
-            renderAttachChips(root);
-            updateContextPill(root);
-        });
-    });
+    row.hidden = true;
+    row.innerHTML = '';
 }
 // ---- Context-panel tabs ----
 function initContextTabs(root) {
@@ -1477,6 +1586,8 @@ function updateChatTitle(title) {
 }
 const NCB_STORE_KEY = 'ss_ncb_chats_v1';
 const NCB_ACTIVE_KEY = 'ss_ncb_active_v1';
+const NCB_SOURCES_KEY = 'ss_ncb_sources_v1';
+const sourceLibrary = { items: [] };
 let liveState = null;
 const chatStore = {
     chats: [],
@@ -1502,6 +1613,7 @@ const chatStore = {
             title: 'New chat',
             messages: [],
             attachedFolders: [],
+            selectedSourceIds: [],
             savedReplies: [],
             pinned: false,
             createdAt: now,
@@ -1539,12 +1651,27 @@ function loadChatStore() {
     catch {
         // private mode / corrupt storage — start fresh
     }
+    // Load the global source library first so the migration below can hoist
+    // legacy per-chat attachedFolders into it.
+    try {
+        const rawLib = localStorage.getItem(NCB_SOURCES_KEY);
+        if (rawLib) {
+            const parsedLib = JSON.parse(rawLib);
+            if (Array.isArray(parsedLib))
+                sourceLibrary.items = parsedLib;
+        }
+    }
+    catch {
+        /* corrupt storage — start fresh */
+    }
     // Migrate any missing fields on legacy entries.
     chatStore.chats.forEach((c) => {
         if (!Array.isArray(c.messages))
             c.messages = [];
         if (!Array.isArray(c.attachedFolders))
             c.attachedFolders = [];
+        if (!Array.isArray(c.selectedSourceIds))
+            c.selectedSourceIds = [];
         if (!Array.isArray(c.savedReplies))
             c.savedReplies = [];
         if (typeof c.pinned !== 'boolean')
@@ -1555,6 +1682,26 @@ function loadChatStore() {
             c.updatedAt = c.createdAt;
         if (typeof c.title !== 'string' || !c.title)
             c.title = 'New chat';
+        // v1 → v2 migration: hoist this chat's attachedFolders into the
+        // global library and convert them into selectedSourceIds. Only
+        // runs if the chat hasn't been migrated yet (no selectedSourceIds).
+        if (c.selectedSourceIds.length === 0 && c.attachedFolders.length > 0) {
+            c.attachedFolders.forEach((f) => {
+                if (!sourceLibrary.items.find((s) => s.id === f.id)) {
+                    sourceLibrary.items.push({
+                        id: f.id,
+                        name: f.name,
+                        count: f.count,
+                        courseId: f.id.split(':')[0] || '',
+                        courseName: '',
+                        documents: f.documents || [],
+                        importedAt: c.createdAt,
+                    });
+                }
+                if (!c.selectedSourceIds.includes(f.id))
+                    c.selectedSourceIds.push(f.id);
+            });
+        }
     });
     // Ensure there is always at least one chat and an activeId pointing somewhere.
     if (chatStore.chats.length === 0) {
@@ -1563,6 +1710,14 @@ function loadChatStore() {
     }
     else if (!chatStore.chats.find((c) => c.id === chatStore.activeId)) {
         chatStore.activeId = chatStore.chats[0].id;
+    }
+}
+function saveSourceLibrary() {
+    try {
+        localStorage.setItem(NCB_SOURCES_KEY, JSON.stringify(sourceLibrary.items));
+    }
+    catch {
+        // Quota exceeded etc. — the chat-store save path will surface a toast.
     }
 }
 let _saveTimer = null;
@@ -1576,16 +1731,18 @@ function saveChatStore() {
             localStorage.setItem(NCB_ACTIVE_KEY, chatStore.activeId);
         }
         catch (err) {
-            if (_quotaToastShown) return;
+            // Quota exceeded or private-mode write block. Tell the user once per
+            // page load so they know their chats may not persist — but don't spam
+            // toasts on every keystroke.
+            if (_quotaToastShown)
+                return;
             _quotaToastShown = true;
-            const isQuota = err && err.name === 'QuotaExceededError';
-            if (typeof window.showToast === 'function') {
-                window.showToast(
-                    isQuota ? 'Chat storage full' : 'Chats not saved',
-                    isQuota
-                        ? 'Browser storage is full. Delete some chats to keep new ones from being lost on reload.'
-                        : 'Your browser blocked storage (private mode?). Chats will not persist across reloads.'
-                );
+            const w = window;
+            const isQuota = err?.name === 'QuotaExceededError';
+            if (typeof w.showToast === 'function') {
+                w.showToast(isQuota ? 'Chat storage full' : 'Chats not saved', isQuota
+                    ? 'Browser storage is full. Delete some chats to keep new ones from being lost on reload.'
+                    : 'Your browser blocked storage (private mode?). Chats will not persist across reloads.');
             }
         }
     }, 200);
@@ -1610,9 +1767,9 @@ function relativeTime(ts) {
     return new Date(ts).toLocaleDateString();
 }
 function chatMeta(c) {
-    const attached = c.attachedFolders.length;
+    const attached = c.selectedSourceIds.length;
     const fragment = attached > 0
-        ? attached + ' folder' + (attached === 1 ? '' : 's')
+        ? attached + ' source' + (attached === 1 ? '' : 's')
         : c.messages.length === 0
             ? 'Empty draft'
             : c.messages.length + ' msg' + (c.messages.length === 1 ? '' : 's');
@@ -1714,8 +1871,10 @@ function loadActiveChatIntoCenter(root) {
             appendBubbleActions(row, m.text);
         }
     });
-    // Re-render attached folders + saved-replies count for this chat.
+    // Re-render attached folders + sources panel + saved-replies count.
     renderAttachChips(root);
+    renderSourcesCard(root);
+    updateContextPill(root);
     const count = root.querySelector('.ncb-notes-count');
     if (count)
         count.textContent = String(chat.savedReplies.length);
@@ -2231,6 +2390,11 @@ function initTextareaAutoSize(root) {
     if (!ta || ta.dataset.ncbAutoSize === '1')
         return;
     ta.dataset.ncbAutoSize = '1';
+    // MIN must be slightly above what scrollHeight reports for a single
+    // line (one baseline + textarea padding) — otherwise the first
+    // keystroke pushes scrollHeight from N → N+1 (subpixel rounding) and
+    // the composer visibly grows by 1–2px. Clamping at 36 keeps the
+    // composer stable for one-line input.
     const MIN = 36;
     const MAX = 160;
     const resize = () => {
@@ -2289,8 +2453,11 @@ function eagerlyHydrateCourses(onProgress) {
                 try {
                     const r = trigger(c);
                     const p = Promise.resolve(r)
-                        .then(() => { try { onProgress && onProgress(c); } catch { /* ignore */ } })
-                        .catch(() => { /* tolerate per-course failure */ });
+                        .then(() => { try {
+                        onProgress?.(c);
+                    }
+                    catch { /* ignore */ } })
+                        .catch(() => { });
                     promises.push(p);
                 }
                 catch { /* tolerate per-course failure */ }
@@ -2300,6 +2467,9 @@ function eagerlyHydrateCourses(onProgress) {
     return Promise.all(promises).then(() => undefined);
 }
 // ---- Empty-state action cards ----
+// Each card carries a data-prefill starter prompt. Clicking drops the prompt
+// into the textarea, focuses it, and (if the prompt ends with ": ") parks the
+// caret at the end so the user can keep typing.
 function initActionCards(root) {
     if (root.dataset.ncbActionsBound === '1')
         return;
@@ -2315,8 +2485,10 @@ function initActionCards(root) {
             if (!ta)
                 return;
             ta.value = prefill;
-            // Resize manually so the textarea is the right size before
-            // scroll / focus — dispatchEvent alone can fire before layout.
+            // Resize manually right here so the textarea is the right size
+            // before scroll / focus. Dispatching 'input' alone sometimes fires
+            // the listener before the browser has re-laid out for the new
+            // value, leaving the textarea capped at its previous height.
             ta.style.height = 'auto';
             const next = Math.max(36, Math.min(160, ta.scrollHeight));
             ta.style.height = next + 'px';
@@ -2325,12 +2497,14 @@ function initActionCards(root) {
             window.requestAnimationFrame(() => {
                 ta.focus();
                 const end = ta.value.length;
-                try { ta.setSelectionRange(end, end); } catch { /* old browsers */ }
+                try {
+                    ta.setSelectionRange(end, end);
+                }
+                catch { /* old browsers */ }
             });
         });
     });
 }
-
 // ---- Keyboard shortcuts ----
 function initKeyboardShortcuts(root) {
     if (root.dataset.ncbKbBound === '1')

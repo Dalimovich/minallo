@@ -100,14 +100,39 @@ function _fetchPdfBytes(path, cb, onError) {
 }
 function openFile(f, course) {
     _clearResumeFile();
+    _recordCourseFileOpen(course, f);
     _openFile(f, course);
+}
+// Per-course set of file names the user has opened at least once. Stored in
+// localStorage as a JSON array (Set isn't JSON-serializable). Caller is the
+// only writer; readers (e.g. the courses grid) compute opened/total from this.
+const _OPENED_MAX = 500;
+function _recordCourseFileOpen(course, file) {
+    if (!course || !course.id || !file || !file.name)
+        return;
+    try {
+        localStorage.setItem('ss_lastopen_' + course.id, String(Date.now()));
+    }
+    catch { /* quota */ }
+    const key = 'ss_opened_' + course.id;
+    try {
+        const raw = localStorage.getItem(key);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (arr.includes(file.name))
+            return;
+        arr.push(file.name);
+        if (arr.length > _OPENED_MAX)
+            arr.splice(0, arr.length - _OPENED_MAX);
+        localStorage.setItem(key, JSON.stringify(arr));
+    }
+    catch { /* corrupted entry or quota — skip silently */ }
 }
 function downloadFile(fname) { return _downloadFile(fname); }
 window._fetchPdfBytes = _fetchPdfBytes;
 window.openFile = openFile;
 window.downloadFile = downloadFile;
 // ── STATE ──────────────────────────────────────────────────────────────────
-let activeSemId = 'ws2526';
+let activeSemId = 'ss2526';
 let activeCourseId = null;
 let activeFileName = null;
 let currentCourseShort = '';
@@ -195,7 +220,7 @@ publishLegacyGlobals({
     BACKEND_URL, _MATH_PROMPT,
 });
 // ── COURSES DASHBOARD ─────────────────────────────────────────────────────
-let sdActiveSemId = 'ws2526';
+let sdActiveSemId = 'ss2526';
 window.sdActiveSemId = sdActiveSemId;
 exposeLegacyVar('sdActiveSemId', () => sdActiveSemId, (v) => {
     sdActiveSemId = v;

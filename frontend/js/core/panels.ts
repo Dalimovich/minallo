@@ -75,6 +75,7 @@ export function selectTopLevelView(which: TopLevelView, opts?: { stRunning?: boo
     // responsible for revealing the specific .portal-section they want.
     if (mainScroll) mainScroll.style.display = '';
     if (app) app.style.display = 'none';
+    document.body.classList.remove('minallo-in-course');
     _applyPortalChrome();
   }
 }

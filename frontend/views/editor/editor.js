@@ -275,6 +275,9 @@
             if (typeof PDFLib === 'undefined') {
               var s = document.createElement('script');
               s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+              s.integrity =
+                'sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI';
+              s.crossOrigin = 'anonymous';
               s.onload = doMerge;
               s.onerror = function () {
                 showToast('Error', 'Could not load merge library.');
@@ -2557,6 +2560,9 @@
             if (typeof window.jspdf === 'undefined' && typeof window.jsPDF === 'undefined') {
               var s = document.createElement('script');
               s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+              s.integrity =
+                'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk';
+              s.crossOrigin = 'anonymous';
               s.onload = buildPdf;
               s.onerror = function () {
                 showToast('Export failed', 'Could not load PDF library.');

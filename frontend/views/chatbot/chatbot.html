@@ -1,5 +1,5 @@
 <!-- ============ NEW CHATBOT SHELL (PR-01) ============ -->
-<div id="ncbRoot" class="ncb-root" hidden>
+<div id="ncbRoot" class="ncb-root" data-testid="chatbot-root" hidden>
   <div class="ncb-bg" aria-hidden="true"></div>
   <div class="ncb-bg-gradients" aria-hidden="true"></div>
   <div class="ncb-bg-grid" aria-hidden="true"></div>
@@ -119,20 +119,20 @@
                 <div class="ncb-attach-row" hidden></div>
                 <div class="ncb-files-row" hidden></div>
                 <div class="ncb-paste-row" hidden></div>
-                <input type="file" class="ncb-file-input" multiple hidden
+                <input type="file" class="ncb-file-input" data-testid="chatbot-file-input" multiple hidden
                        accept="image/*,application/pdf,text/plain,.txt,.md" />
 
                 <!-- Single inline input row: icon-only action buttons →
                      textarea → send. ChatGPT-style. -->
                 <div class="ncb-input-row">
-                  <button type="button" class="ncb-input-action-btn ncb-upload-btn"
+                  <button type="button" class="ncb-input-action-btn ncb-upload-btn" data-testid="chatbot-upload"
                           title="Upload photos & files" aria-label="Upload photos & files">
                     <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M13.234 20.252 21 12.3"/>
                       <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
                     </svg>
                   </button>
-                  <button type="button" class="ncb-input-action-btn ncb-import-btn"
+                  <button type="button" class="ncb-input-action-btn ncb-import-btn" data-testid="import-course"
                           title="Import from Course" aria-label="Import from Course">
                     <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
@@ -140,10 +140,11 @@
                   </button>
                   <textarea
                     class="ncb-input-textarea"
+                    data-testid="chatbot-input"
                     placeholder="Ask anything about your lectures, exercises, or course files..."
                     aria-label="Type your message"
                   ></textarea>
-                  <button type="button" class="ncb-send-btn" title="Send message" aria-label="Send message">
+                  <button type="button" class="ncb-send-btn" data-testid="chatbot-send" title="Send message" aria-label="Send message">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 19V5"/>
                       <path d="m5 12 7-7 7 7"/>
@@ -153,7 +154,7 @@
               </div>
 
               <div class="ncb-actions">
-                <button type="button" class="ncb-action-card"
+                <button type="button" class="ncb-action-card" data-testid="quick-summarize"
                         data-prefill="Summarize the attached lecture into clean, structured notes with headings, bullet points, and any formulas in LaTeX.">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -166,7 +167,7 @@
                   <span class="ncb-action-desc">Turn PDFs into clean notes</span>
                 </button>
 
-                <button type="button" class="ncb-action-card"
+                <button type="button" class="ncb-action-card" data-testid="quick-solve"
                         data-prefill="Solve this exercise step-by-step. Show every reasoning step, name the rule or theorem used, and write the final answer clearly.&#10;&#10;Exercise: ">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -184,7 +185,7 @@
                   <span class="ncb-action-desc">Step-by-step with formulas</span>
                 </button>
 
-                <button type="button" class="ncb-action-card"
+                <button type="button" class="ncb-action-card" data-testid="quick-exam-answer"
                         data-prefill="Write a short, structured exam-style answer for the following question. Use clear definitions, the key formula, a worked step, and a one-line conclusion.&#10;&#10;Question: ">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -197,7 +198,7 @@
                   <span class="ncb-action-desc">Short, structured, precise</span>
                 </button>
 
-                <button type="button" class="ncb-action-card"
+                <button type="button" class="ncb-action-card" data-testid="quick-flashcards"
                         data-prefill="Create flashcards from the attached material. Output as a markdown table with two columns: Front (term/question) and Back (definition/answer). Aim for 10–20 cards covering the most exam-relevant concepts.">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -308,7 +309,7 @@
 </div>
 <!-- /ncbRoot -->
 
-<div id="ncbImportModal" class="ncb-modal-overlay" hidden aria-hidden="true">
+<div id="ncbImportModal" class="ncb-modal-overlay" data-testid="chatbot-import-modal" hidden aria-hidden="true">
   <div class="ncb-modal" role="dialog" aria-modal="true" aria-labelledby="ncbImportTitle">
     <div class="ncb-modal-head">
       <div>

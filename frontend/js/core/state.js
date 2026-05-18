@@ -4,7 +4,7 @@
 // and the active selection.
 const state = {
     user: null,
-    activeSemesterId: 'ws2526',
+    activeSemesterId: 'ss2526',
     activeCourse: null,
     activeFile: null,
     activeCourseSection: 'files',

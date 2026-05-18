@@ -75,6 +75,7 @@ export function selectTopLevelView(which, opts) {
             mainScroll.style.display = '';
         if (app)
             app.style.display = 'none';
+        document.body.classList.remove('minallo-in-course');
         _applyPortalChrome();
     }
 }

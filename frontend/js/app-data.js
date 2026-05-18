@@ -2,7 +2,8 @@ var COLORS = ['#2563EB', '#FF6FB7', '#4CC9F0', '#06D6A0', '#FF6B35', '#FFD93D'];
 
 // ── DATA ──────────────────────────────────────────────────────────────────
 var SEMS = {
-  ws2526: { color: '#06D6A0', courses: [] },
+  ss2526: { color: '#06D6A0', courses: [] },
+  ws2526: { color: '#FFD93D', courses: [] },
   ss25: { color: '#2563EB', courses: [] },
   ws2425: { color: '#FF6FB7', courses: [] },
   ss24: { color: '#4CC9F0', courses: [] },
@@ -12,6 +13,19 @@ var SEMS = {
 (function () {
   try {
     var saved = JSON.parse(localStorage.getItem('ss_user_courses') || '{}');
+    // One-time migration: SS 2026 is the current semester. Courses previously
+    // saved under `ws2526` were actually summer-semester courses (the slot
+    // misnamed before ss2526 existed). Move them across if ss2526 is empty
+    // and ws2526 has data, then persist so the migration is sticky.
+    if (
+      saved &&
+      Array.isArray(saved.ws2526) && saved.ws2526.length > 0 &&
+      (!Array.isArray(saved.ss2526) || saved.ss2526.length === 0)
+    ) {
+      saved.ss2526 = saved.ws2526;
+      saved.ws2526 = [];
+      try { localStorage.setItem('ss_user_courses', JSON.stringify(saved)); } catch (e) {}
+    }
     Object.keys(saved).forEach(function (sid) {
       if (SEMS[sid]) SEMS[sid].courses = saved[sid];
     });

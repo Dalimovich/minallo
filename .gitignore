@@ -53,3 +53,6 @@ backend/package-lock.json
 
 # Local planning / handoff artifacts (not shared)
 artifacts/
+
+# Supabase CLI config (backend)
+.supabase/
