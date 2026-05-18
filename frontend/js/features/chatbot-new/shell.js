@@ -315,38 +315,25 @@ async function streamAiReply(state, sendBtn, msgs) {
     const aiRow = appendAiBubble(msgs);
     const bubble = aiRow.querySelector('.ncb-bubble-body');
     showTyping(bubble);
-    const apiMessages = buildApiMessages(state.messages);
     const controller = new AbortController();
     state.controller = controller;
     try {
-        const resp = await fetch('/api/ai', {
-            method: 'POST',
-            signal: controller.signal,
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: 'Bearer ' + (getSbToken() || ''),
-            },
-            body: JSON.stringify({
-                model: 'gpt-4o',
-                max_tokens: 6000,
-                system: buildSystemPrompt(),
-                messages: apiMessages,
-            }),
-        });
-        if (!resp.ok) {
-            const errText = await resp.text();
-            throw new Error('Server ' + resp.status + ': ' + errText.slice(0, 200));
+        // Phase 12 wiring: when the active chat has ≥1 course-imported source
+        // selected AND the latest user message is text-only (no images, no
+        // file uploads), route to the Python /ask-stream so plan-v2's RAG +
+        // ranking + math template + verification all kick in. Otherwise fall
+        // back to /api/ai for free-form chat + image/file handling.
+        const rag = ragEligibility(state.messages);
+        let raw;
+        if (rag) {
+            raw = await streamFromAskStream(rag.question, rag.courseId, bubble, controller);
         }
-        const data = (await resp.json());
-        const raw = data.error
-            ? '❌ Error: ' + (data.error.message || JSON.stringify(data.error))
-            : data.content
-                ? data.content.map((b) => b.text || '').join('')
-                : 'No response.';
+        else {
+            raw = await callGenericAi(state.messages, bubble, controller);
+        }
         state.messages.push({ role: 'assistant', text: raw });
         touchActiveChat();
         saveChatStore();
-        await typeIntoBubble(bubble, raw, () => controller.signal.aborted);
         appendBubbleActions(aiRow, raw);
         // After the first AI reply, ask the model for a 4-6 word title.
         if (state.messages.filter((m) => m.role === 'assistant').length === 1) {
@@ -372,6 +359,180 @@ async function streamAiReply(state, sendBtn, msgs) {
         setSendBtnMode(sendBtn, 'send');
         scrollMsgsToBottom(msgs);
     }
+}
+// ── Phase 12 wiring helpers ─────────────────────────────────────────────────
+/** Decide whether the latest user turn should go through RAG (`/ask-stream`)
+ * or the generic chat endpoint. Returns the resolved RAG payload when
+ * eligible, else null. */
+function ragEligibility(messages) {
+    if (!messages.length)
+        return null;
+    const last = messages[messages.length - 1];
+    if (last.role !== 'user')
+        return null;
+    if (!last.text || !last.text.trim())
+        return null;
+    // Images and file uploads aren't supported by /ask-stream — fall through.
+    if ((last.images || []).length || (last.files || []).length)
+        return null;
+    const active = chatStore.getActive();
+    if (!active.selectedSourceIds.length)
+        return null;
+    const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
+    if (!selected.length)
+        return null;
+    // All selected sources are expected to come from the same course (the
+    // import UI scopes by course). Pick the first one's courseId as the
+    // request scope. If they ever mix courses we still pick the first —
+    // worst case is RAG searches a smaller-than-expected universe.
+    const courseId = selected[0].courseId;
+    if (!courseId)
+        return null;
+    return { question: last.text.trim(), courseId };
+}
+/** Call the Python `/ask-stream` SSE endpoint. Streams tokens into
+ * ``bubble`` as they arrive and resolves with the full answer text once
+ * the stream completes. */
+async function streamFromAskStream(question, courseId, bubble, controller) {
+    const aiHost = (window.AI_SERVICE_URL || '').replace(/\/$/, '');
+    if (!aiHost) {
+        // Misconfigured: graceful fallback to the generic path.
+        return callGenericAi([{ role: 'user', text: question }], bubble, controller);
+    }
+    const token = getSbToken() || '';
+    const resp = await fetch(aiHost + '/ask-stream', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ courseId, question }),
+    });
+    if (!resp.ok || !resp.body || !resp.body.getReader) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error('Ask-stream ' + resp.status + ': ' + errText.slice(0, 200));
+    }
+    // Clear the typing dots once we know the stream is open. Subsequent
+    // tokens are appended as plain text — full markdown rendering happens
+    // after the stream completes so we don't re-parse on every chunk.
+    if (bubble)
+        bubble.innerHTML = '';
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+    let answerBuf = '';
+    let doneMeta = null;
+    while (true) {
+        const result = await reader.read();
+        if (result.done)
+            break;
+        sseBuffer += decoder.decode(result.value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
+        for (const line of lines) {
+            if (!line.startsWith('data: '))
+                continue;
+            try {
+                const evt = JSON.parse(line.slice(6));
+                if (typeof evt.t === 'string') {
+                    answerBuf += evt.t;
+                    if (bubble) {
+                        bubble.textContent = answerBuf;
+                        bubble.parentElement?.scrollIntoView({ block: 'end', behavior: 'auto' });
+                    }
+                }
+                if (evt.done)
+                    doneMeta = evt;
+                if (evt.error)
+                    throw new Error(String(evt.error));
+            }
+            catch {
+                /* ignore malformed line */
+            }
+        }
+    }
+    // Re-render with full markdown now that we have the complete text.
+    if (bubble)
+        bubble.innerHTML = renderInlineMarkdown(answerBuf || 'No response.');
+    // Append sources + verification chip if the server included them.
+    if (doneMeta && bubble)
+        appendAskStreamMeta(bubble, doneMeta);
+    return answerBuf || 'No response.';
+}
+/** Render the `done` event meta into the answer bubble: source list +
+ * verification status chip. Best-effort — missing fields are skipped. */
+function appendAskStreamMeta(bubble, meta) {
+    const sources = Array.isArray(meta.sources) ? meta.sources : [];
+    const verification = meta.verification || undefined;
+    let footerHtml = '';
+    if (sources.length) {
+        const items = sources
+            .map((s) => {
+            const src = s;
+            let line = '<li>' + escapeHtml(src.file_name || 'Unknown');
+            if (src.pages)
+                line += ', p.' + escapeHtml(String(src.pages));
+            if (src.section)
+                line += ' · <em>' + escapeHtml(src.section) + '</em>';
+            line += '</li>';
+            return line;
+        })
+            .join('');
+        footerHtml += '<details class="ncb-ask-sources"><summary>Sources</summary><ul>' + items + '</ul></details>';
+    }
+    if (verification && verification.status) {
+        const label = verification.status === 'verified'
+            ? '✓ Verified'
+            : verification.status === 'partially_verified'
+                ? '⚠ Partially verified'
+                : '⚠ Missing context';
+        const reason = (verification.reasons || []).join('; ');
+        footerHtml +=
+            '<div class="ncb-ask-verify" data-status="' +
+                escapeAttr(verification.status) +
+                '" title="' +
+                escapeAttr(reason) +
+                '">' +
+                escapeHtml(label) +
+                '</div>';
+    }
+    if (footerHtml) {
+        const footer = document.createElement('div');
+        footer.className = 'ncb-ask-footer';
+        footer.innerHTML = footerHtml;
+        bubble.appendChild(footer);
+    }
+}
+/** Generic /api/ai chat path (free-form, image/file aware). Kept as a
+ * helper so streamAiReply can route to either RAG or chat without a
+ * giant branch body. */
+async function callGenericAi(messages, bubble, controller) {
+    const apiMessages = buildApiMessages(messages);
+    const resp = await fetch('/api/ai', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + (getSbToken() || ''),
+        },
+        body: JSON.stringify({
+            model: 'gpt-4o',
+            max_tokens: 6000,
+            system: buildSystemPrompt(),
+            messages: apiMessages,
+        }),
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error('Server ' + resp.status + ': ' + errText.slice(0, 200));
+    }
+    const data = (await resp.json());
+    const raw = data.error
+        ? '❌ Error: ' + (data.error.message || JSON.stringify(data.error))
+        : data.content
+            ? data.content.map((b) => b.text || '').join('')
+            : 'No response.';
+    // Type into the bubble for the same UX as before.
+    await typeIntoBubble(bubble, raw, () => controller.signal.aborted);
+    return raw;
 }
 function abortSend(state) {
     if (state.controller)
