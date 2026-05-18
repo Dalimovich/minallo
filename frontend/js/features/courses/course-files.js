@@ -426,40 +426,27 @@ export function bindFileEvents(co, course) {
                 }
                 return;
             }
-            const toolbar = co.querySelector('.co-files-toolbar');
-            const progWrap = document.createElement('div');
-            progWrap.className = 'co-upload-progress';
-            progWrap.innerHTML =
-                '<div class="co-upload-progress-label"><span id="coProgLabel">Uploading 0 / ' + files.length +
-                    '…</span><span id="coProgPct">0%</span></div>' +
-                    '<div class="co-upload-progress-track"><div class="co-upload-progress-bar" id="coProgBar" style="width:0%"></div></div>';
-            if (toolbar)
-                toolbar.appendChild(progWrap);
+            const modal = openUploadModal();
+            let cancelled = false;
+            modal.onClose = () => { cancelled = true; };
             let completed = 0;
             const totalPct = new Array(files.length).fill(0);
-            function updateProgress(idx, pct) {
+            function updateUploadProgress(idx, pct) {
                 totalPct[idx] = pct;
                 const avg = Math.round(totalPct.reduce((a, b) => a + b, 0) / files.length);
-                const bar = co.querySelector('#coProgBar');
-                const label = co.querySelector('#coProgLabel');
-                const pctEl = co.querySelector('#coProgPct');
-                if (bar)
-                    bar.style.width = avg + '%';
-                if (pctEl)
-                    pctEl.textContent = avg + '%';
-                if (label)
-                    label.textContent = 'Uploading ' + completed + ' / ' + files.length + '…';
+                modal.setUploadPct(avg);
             }
             const targetFolder = this._targetFolder || null;
             Promise.all(files.map((file, idx) => window
-                ._ufUpload?.(uid, course, file, (pct) => updateProgress(idx, pct), targetFolder)
+                ._ufUpload?.(uid, course, file, (pct) => updateUploadProgress(idx, pct), targetFolder)
                 .then(() => {
                 completed++;
-                updateProgress(idx, 100);
+                updateUploadProgress(idx, 100);
             })))
                 .then(() => {
-                if (progWrap.parentNode)
-                    progWrap.parentNode.removeChild(progWrap);
+                modal.setUploadPct(100);
+                modal.setStage('upload', 'complete');
+                modal.setStage('processing', 'active');
                 course.files = (course.files || [])
                     .filter((f) => !f._uploaded);
                 return window._ufMerge?.(course);
@@ -485,21 +472,34 @@ export function bindFileEvents(co, course) {
                 if (typeof window.showToast === 'function') {
                     window.showToast('Files uploaded', '' + files.length + ' file' + (files.length > 1 ? 's' : '') + ' added to ' + (course.short || course.name));
                 }
-                // Auto-index any newly uploaded PDFs for RAG
                 const pdfFiles = files.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
-                if (pdfFiles.length && course.id) {
-                    const allFiles = (course.files || []);
-                    pdfFiles.forEach((pf) => {
-                        const merged = allFiles.find((x) => x.name === pf.name && x._uploaded && x._storageName);
-                        if (merged && merged._storageName) {
-                            indexExistingDocument(course.id, merged._storageName, merged.name, _guessSourceType(merged.name), merged._folder || null, _guessDocMeta(merged.name)).catch(() => { });
-                        }
-                    });
+                if (!pdfFiles.length || !course.id) {
+                    modal.setProcessingPct(100);
+                    modal.setStage('processing', 'complete');
+                    modal.setStage('ready', 'complete');
+                    modal.markDone();
+                    return;
                 }
+                const allFiles = (course.files || []);
+                const tracked = [];
+                pdfFiles.forEach((pf) => {
+                    const merged = allFiles.find((x) => x.name === pf.name && x._uploaded && x._storageName);
+                    if (merged && merged._storageName) {
+                        tracked.push({ fileName: merged.name });
+                        indexExistingDocument(course.id, merged._storageName, merged.name, _guessSourceType(merged.name), merged._folder || null, _guessDocMeta(merged.name)).catch(() => { });
+                    }
+                });
+                if (!tracked.length) {
+                    modal.setProcessingPct(100);
+                    modal.setStage('processing', 'complete');
+                    modal.setStage('ready', 'complete');
+                    modal.markDone();
+                    return;
+                }
+                pollProcessingProgress(course.id, tracked, modal, () => cancelled);
             })
                 .catch((e) => {
-                if (progWrap.parentNode)
-                    progWrap.parentNode.removeChild(progWrap);
+                modal.close();
                 const msg = e instanceof Error ? e.message : 'Please try again.';
                 if (typeof window.showToast === 'function')
                     window.showToast('Upload failed', msg);
@@ -507,6 +507,166 @@ export function bindFileEvents(co, course) {
             this.value = '';
         });
     }
+}
+// ── Upload modal ────────────────────────────────────────────────────────────
+const STAGE_LABELS = {
+    pending: 'Pending…',
+    active: 'In Progress',
+    complete: 'Complete',
+};
+function openUploadModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'co-upmodal-overlay';
+    overlay.innerHTML =
+        '<div class="co-upmodal" role="dialog" aria-modal="true" aria-labelledby="coUpModalTitle">' +
+            '<div class="co-upmodal-head">' +
+                '<div class="co-upmodal-head-icon" aria-hidden="true">' +
+                    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                        '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+                        '<polyline points="17 8 12 3 7 8"/>' +
+                        '<line x1="12" y1="3" x2="12" y2="15"/>' +
+                    '</svg>' +
+                '</div>' +
+                '<div class="co-upmodal-head-text">' +
+                    '<h3 class="co-upmodal-head-title" id="coUpModalTitle">Upload Files</h3>' +
+                    '<p class="co-upmodal-head-sub">Add PDFs, documents, images, and more</p>' +
+                '</div>' +
+                '<button class="co-upmodal-close" type="button" aria-label="Close">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                        '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>' +
+                    '</svg>' +
+                '</button>' +
+            '</div>' +
+            '<div class="co-upmodal-body">' +
+                '<div class="co-upmodal-hero">' +
+                    '<img class="co-upmodal-mascot" src="assets/cat-mascot.jpg" alt="">' +
+                    '<h2>Preparing Your Materials</h2>' +
+                    '<p>We’re analyzing your content and creating smart study materials.</p>' +
+                '</div>' +
+                '<div class="co-upmodal-stages">' +
+                    _stageHtml('upload', 'Upload', 'active',
+                        '<path d="M16 16l-4-4-4 4"/><path d="M12 12v9"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/><path d="M16 16l-4-4-4 4"/>') +
+                    _stageHtml('processing', 'Processing', 'pending',
+                        '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>') +
+                    _stageHtml('ready', 'Study Plan', 'pending',
+                        '<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>') +
+                '</div>' +
+                '<div class="co-upmodal-bars">' +
+                    '<div class="co-upmodal-bar-row" data-bar="upload">' +
+                        '<div class="co-upmodal-bar-label"><strong>Uploading</strong><span class="co-upmodal-bar-pct">0%</span></div>' +
+                        '<div class="co-upmodal-bar-track"><div class="co-upmodal-bar-fill"></div></div>' +
+                    '</div>' +
+                    '<div class="co-upmodal-bar-row" data-bar="processing">' +
+                        '<div class="co-upmodal-bar-label"><strong>Processing Progress</strong><span class="co-upmodal-bar-pct">0%</span></div>' +
+                        '<div class="co-upmodal-bar-track"><div class="co-upmodal-bar-fill"></div></div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="co-upmodal-foot">' +
+                '<p>We’re processing your materials with AI to create the best study experience</p>' +
+            '</div>' +
+        '</div>';
+    document.body.appendChild(overlay);
+    const handle = {
+        setUploadPct(pct) { _setBar(overlay, 'upload', pct); },
+        setProcessingPct(pct) { _setBar(overlay, 'processing', pct); },
+        setStage(stage, state) {
+            const el = overlay.querySelector('.co-upmodal-stage[data-stage="' + stage + '"]');
+            if (!el)
+                return;
+            el.dataset.state = state;
+            const st = el.querySelector('.co-upmodal-stage-status');
+            if (st) {
+                if (stage === 'ready' && state === 'complete')
+                    st.textContent = 'Ready';
+                else
+                    st.textContent = STAGE_LABELS[state];
+            }
+        },
+        markDone() {
+            setTimeout(() => handle.close(), 1400);
+        },
+        close() {
+            if (!overlay.parentNode)
+                return;
+            overlay.parentNode.removeChild(overlay);
+            handle.onClose?.();
+        },
+    };
+    overlay.querySelector('.co-upmodal-close')?.addEventListener('click', () => handle.close());
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay)
+            handle.close();
+    });
+    return handle;
+}
+function _stageHtml(stage, title, initialState, iconPaths) {
+    return ('<div class="co-upmodal-stage" data-stage="' + stage + '" data-state="' + initialState + '">' +
+        '<div class="co-upmodal-stage-icon" aria-hidden="true">' +
+            '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                iconPaths +
+            '</svg>' +
+        '</div>' +
+        '<p class="co-upmodal-stage-title">' + title + '</p>' +
+        '<p class="co-upmodal-stage-status">' + STAGE_LABELS[initialState] + '</p>' +
+    '</div>');
+}
+function _setBar(overlay, which, pct) {
+    const row = overlay.querySelector('.co-upmodal-bar-row[data-bar="' + which + '"]');
+    if (!row)
+        return;
+    const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+    const fill = row.querySelector('.co-upmodal-bar-fill');
+    const lbl = row.querySelector('.co-upmodal-bar-pct');
+    if (fill)
+        fill.style.width = clamped + '%';
+    if (lbl)
+        lbl.textContent = clamped + '%';
+}
+const _STATUS_PCT = {
+    queued: 5,
+    pending: 5,
+    extracting_text: 25,
+    chunking: 50,
+    embedding: 75,
+    ready: 100,
+    failed: 100,
+};
+async function pollProcessingProgress(courseId, tracked, modal, isCancelled) {
+    const MAX_ATTEMPTS = 120;
+    let attempts = 0;
+    while (!isCancelled() && attempts++ < MAX_ATTEMPTS) {
+        let docs = [];
+        try {
+            docs = await listCourseDocuments(courseId);
+        }
+        catch {
+            await _sleep(5000);
+            continue;
+        }
+        let sum = 0;
+        let resolved = 0;
+        tracked.forEach((t) => {
+            const d = docs.find((x) => x.file_name.toLowerCase() === t.fileName.toLowerCase());
+            const status = (d?.processing_status || 'queued').toLowerCase();
+            sum += _STATUS_PCT[status] ?? 10;
+            if (status === 'ready' || status === 'failed')
+                resolved++;
+        });
+        const avg = Math.round(sum / tracked.length);
+        modal.setProcessingPct(avg);
+        if (resolved === tracked.length) {
+            modal.setProcessingPct(100);
+            modal.setStage('processing', 'complete');
+            modal.setStage('ready', 'complete');
+            modal.markDone();
+            return;
+        }
+        await _sleep(5000);
+    }
+}
+function _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function initCourseStudyTools(co, course) {
     window._generateStudyTool = generateStudyTool;
