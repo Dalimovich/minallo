@@ -51,6 +51,52 @@ Rules:
 
 Open with a line like "Based on your uploaded files..." so the student knows the answer is grounded."""
 
+# Phase 9 — strict step-by-step template for math/exercise questions. Only
+# used when retrieval is STRONG and the question looks mathematical (see
+# pick_system_prompt). The template mirrors plan-v2 lines 187-200.
+_SYSTEM_PROMPT_MATH = """You are Minallo's exam-prep tutor for a university student.
+The question is mathematical or asks you to solve an exercise. Answer it STRICTLY using the COURSE CONTEXT below.
+
+Rules:
+1. Use ONLY the context. Do not invent formulas, numbers, or symbols. Do not silently fall back to general knowledge.
+2. Cite the source like "(filename, p.3)" using the [Source N] header for every formula and every step that comes from the context.
+3. Write math using KaTeX: $...$ inline, $$...$$ display.
+4. Match the language of the question — German for German, English for English.
+
+Use the following structure, in this order, with these exact section headings (translate the headings to German when the question is in German):
+
+### Sources used
+A short bulleted list of the [Source N] entries you will rely on.
+
+### Given
+Each given quantity from the question with its symbol, value, and unit.
+
+### Required
+The quantity to find, with its symbol and unit.
+
+### Formula
+The relevant formula(s) in $$...$$ display form, cited from the context. If multiple formulas are needed, list them in the order you will use them.
+
+### Substitution
+Substitute the given values into the formula, keeping units in the expression.
+
+### Calculation
+Step-by-step arithmetic, one transformation per line. Keep units throughout.
+
+### Unit check
+A single line confirming that the units on both sides agree.
+
+### Final answer
+The boxed result on its own line, e.g. $$\\boxed{M = 100\\ \\mathrm{N\\,m}}$$.
+
+### Confidence
+One of:
+- "Verified" — every formula and number used was found in the context.
+- "Partially verified — <what was missing>" — some derivation step or value isn't in the context.
+- "Missing context — <what was missing>" — the exercise statement, the required formula, or the given values are not in the context. In this case STOP after this section and do not invent the rest.
+
+Do not skip sections. If a section genuinely has nothing to put in it (e.g. a pure derivation has no Given values), say so explicitly with "— none —"."""
+
 _SYSTEM_PROMPT_WEAK = """You are Minallo's exam-prep tutor.
 The student asked a question, but their uploaded files do NOT contain enough relevant material to ground a confident answer.
 
@@ -64,6 +110,21 @@ Behaviour:
 
 
 _SOURCE_REF_RE = re.compile(r"\bSources?\s+([0-9 ,andund&]+)\b", re.IGNORECASE)
+
+
+def pick_system_prompt(question: str, strength: str) -> tuple[str, str]:
+    """Pick (system_prompt, mode_label) for the answer pipeline.
+
+    mode_label is one of: 'math' | 'strong' | 'weak'. Returned so the
+    debug logger and frontend can show which template was used.
+    """
+    if strength != "strong":
+        return _SYSTEM_PROMPT_WEAK, "weak"
+    # Local import: query_expansion may transitively import retrieval.
+    from .query_expansion import is_math_question  # noqa: WPS433
+    if is_math_question(question):
+        return _SYSTEM_PROMPT_MATH, "math"
+    return _SYSTEM_PROMPT_STRONG, "strong"
 
 
 def _cited_indices(answer_text: str, total: int) -> set[int]:
@@ -130,7 +191,7 @@ def generate_answer(
 
     strength = _context_strength(chunks)
     used_chunks = chunks if strength == "strong" else []
-    system_prompt = _SYSTEM_PROMPT_STRONG if strength == "strong" else _SYSTEM_PROMPT_WEAK
+    system_prompt, answer_mode = pick_system_prompt(question, strength)
     context_block = _build_context_block(used_chunks, doc_names) if used_chunks else ""
 
     user_message = "QUESTION:\n" + question.strip()
@@ -162,9 +223,25 @@ def generate_answer(
         for i, c in enumerate(used_chunks, start=1) if i in cited
     ]
 
+    # Phase 10: deterministic verification independent of the model's
+    # self-report. Failure here must never block the response.
+    verification: dict[str, Any] = {"status": "missing_context", "reasons": [], "details": {}}
+    try:
+        from .verification import verify_answer  # noqa: WPS433
+        verification = verify_answer(
+            answer_text=answer_text,
+            chunk_texts=[c.text for c in used_chunks],
+            question=question,
+            answer_mode=answer_mode,
+        ).to_api()
+    except Exception:  # noqa: BLE001
+        log.exception("verify_answer failed — emitting default missing_context")
+
     return {
         "answer":          answer_text,
         "retrievalMode":   strength,                # strong | weak | none
+        "answerMode":      answer_mode,             # math | strong | weak
+        "verification":    verification,            # Phase 10 status + reasons + details
         "groundedSources": sources,
         "model":           target_model,
         "promptTokens":    completion.usage.prompt_tokens if completion.usage else None,

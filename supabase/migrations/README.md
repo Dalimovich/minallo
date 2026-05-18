@@ -17,6 +17,15 @@ Run these migrations in order:
 9. `20260506_000001_processing_error.sql`
 10. `20260511_000001_ai_cache_schema_alignment.sql`
 11. `20260511_000002_hybrid_search_document_filters.sql`
+12. `20260512_000001_python_indexer_additions.sql`
+13. `20260512_000002_hybrid_search_candidate_limit.sql`
+14. `20260512_000003_backfill_legacy_chunk_count.sql`
+15. `20260513_000001_storage_bucket_alignment.sql`
+16. `20260518_000001_markdown_indexing.sql` — Phase 1 (Markdown-based indexing)
+17. `20260518_000002_exercise_formula_blocks.sql` — Phase 5 (exact-match exercise/formula handles)
+18. `20260518_000003_retrieval_debug.sql` — Phase 2 (retrieval observability)
+19. `20260518_000004_document_classification.sql` — Phase 4 (document_type + extraction_quality on documents)
+20. `20260518_000005_ocr_assessment.sql` — Phase 11 (ocr_assessment JSON on documents)
 
 ## How to run
 

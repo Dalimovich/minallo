@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["notes"], dependencies=[Depends(require_internal_token)])
 
 _MAX_CONTEXT_CHARS = 28_000
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _METADATA_NOISE = (
     "institut für", "technische universität", "prof.", "dr.-ing.", "wintersemester",
     "sommersemester", "lehrstuhl", "fachgebiet", "vorlesung", "folien", "slides",
@@ -157,6 +158,27 @@ def _is_metadata_chunk(text: str | None) -> bool:
     lower = text.lower()
     hits = sum(1 for t in _METADATA_NOISE if t in lower)
     return hits >= 2
+
+
+def _verify_document_owner(user_id: str, course_id: str, document_id: str | None) -> None:
+    if not document_id:
+        return
+    if not _UUID_RE.match(document_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="documentId must be a UUID")
+    if not _UUID_RE.match(user_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="userId must be a UUID")
+    sb = get_supabase()
+    result = (
+        sb.table("documents")
+        .select("id, user_id, course_id")
+        .eq("id", document_id)
+        .eq("user_id", user_id)
+        .eq("course_id", course_id)
+        .limit(1)
+        .execute()
+    )
+    if not (result.data or []):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
 
 
 def _fetch_chunks(
@@ -299,6 +321,11 @@ class NotesGenerateRequest(BaseModel):
 async def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
     if payload.tool not in ("notes", "summary"):
         raise HTTPException(status_code=400, detail="tool must be notes or summary")
+    if payload.mode not in ("generate", "section", "merge", "analyze"):
+        raise HTTPException(status_code=400, detail="mode is invalid")
+    if payload.scope not in ("document", "page", "section", "range"):
+        raise HTTPException(status_code=400, detail="scope is invalid")
+    _verify_document_owner(payload.userId, payload.courseId, payload.documentId)
 
     # ── ANALYZE: short-circuit so the frontend uses its fixed-page splits ───
     if payload.mode == "analyze":

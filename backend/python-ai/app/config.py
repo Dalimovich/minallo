@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # `X-Internal-Token: <this value>`.
     ai_service_internal_token: str = Field(..., alias="INTERNAL_SECRET")
 
+    # --- Phase 12: vision OCR fallback. Off by default — costs an API
+    # call per bad page on every indexing run, so we only enable it on
+    # documents the OCR-need detector (Phase 11) flagged.
+    vision_ocr_enabled: bool = Field(False, alias="MINALLO_VISION_OCR_ENABLED")
+    vision_ocr_model: str = Field("gpt-4o-mini", alias="MINALLO_VISION_OCR_MODEL")
+    vision_ocr_max_pages: int = Field(20, alias="MINALLO_VISION_OCR_MAX_PAGES")
+    vision_ocr_render_dpi: int = Field(150, alias="MINALLO_VISION_OCR_DPI")
+
     # --- Misc
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     environment: str = Field("development", alias="ENVIRONMENT")

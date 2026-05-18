@@ -6,11 +6,38 @@ import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit } from '../lib/rate-limit';
 import { logSecurityEvent } from '../lib/logger';
+import { supaRequest } from '../lib/supabase-admin';
+import { isSafeCourseId, isUuid } from '../lib/validation';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const NOTES_RATE_LIMIT_MAX = parseInt(optionalEnv('NOTES_RATE_LIMIT_MAX', '30'), 10);
 const NOTES_RATE_LIMIT_WINDOW = parseInt(optionalEnv('NOTES_RATE_LIMIT_WINDOW_MS', String(60 * 60 * 1000)), 10);
 const MAX_PDF_TEXT_LENGTH = 250000;
+const MAX_SECTIONS = 80;
+
+interface DocumentOwnerRow {
+  id: string;
+  user_id: string;
+  course_id: string;
+}
+
+async function verifyDocumentOwner(
+  serviceKey: string,
+  userId: string,
+  courseId: string,
+  documentId: string
+): Promise<boolean> {
+  const result = await supaRequest<DocumentOwnerRow[]>(
+    'GET',
+    'documents?id=eq.' + encodeURIComponent(documentId) +
+      '&user_id=eq.' + encodeURIComponent(userId) +
+      '&course_id=eq.' + encodeURIComponent(courseId) +
+      '&select=id,user_id,course_id&limit=1',
+    null,
+    serviceKey
+  );
+  return Array.isArray(result.body) && result.body[0]?.id === documentId;
+}
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();
@@ -36,12 +63,46 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   try { body = JSON.parse(event.body || '{}') as Record<string, unknown>; }
   catch { return fail(400, 'Invalid JSON'); }
 
-  if (!body.courseId) return fail(400, 'courseId is required');
+  if (typeof body.courseId !== 'string' || !isSafeCourseId(body.courseId)) {
+    return fail(400, 'courseId is invalid');
+  }
   if (typeof body.tool !== 'string' || !['notes', 'summary'].includes(body.tool)) {
     return fail(400, 'tool must be notes or summary');
   }
+  if (typeof body.mode === 'string' &&
+      !['generate', 'section', 'merge', 'analyze'].includes(body.mode)) {
+    return fail(400, 'mode is invalid');
+  }
+  if (typeof body.scope === 'string' &&
+      !['document', 'page', 'section', 'range'].includes(body.scope)) {
+    return fail(400, 'scope is invalid');
+  }
+  if (body.documentId != null && (typeof body.documentId !== 'string' || !isUuid(body.documentId))) {
+    return fail(400, 'documentId is invalid');
+  }
+  if (body.documentId) {
+    const ownsDocument = await verifyDocumentOwner(
+      serviceKey,
+      user.id,
+      body.courseId,
+      body.documentId
+    );
+    if (!ownsDocument) {
+      await logSecurityEvent(serviceKey, user.id, 'notes_generate_denied', {
+        course_id: body.courseId,
+        document_id: body.documentId
+      });
+      return fail(404, 'Document not found or access denied');
+    }
+  }
   if (typeof body.pdfText === 'string' && body.pdfText.length > MAX_PDF_TEXT_LENGTH) {
     return fail(413, 'pdfText is too large');
+  }
+  if (body.sections != null && !Array.isArray(body.sections)) {
+    return fail(400, 'sections must be an array');
+  }
+  if (Array.isArray(body.sections) && body.sections.length > MAX_SECTIONS) {
+    return fail(400, 'Too many sections');
   }
   await logSecurityEvent(serviceKey, user.id, 'notes_generate', {
     course_id: body.courseId,

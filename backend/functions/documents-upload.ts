@@ -9,6 +9,7 @@ import { supaRequest } from '../lib/supabase-admin';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit } from '../lib/rate-limit';
 import { logSecurityEvent } from '../lib/logger';
+import { isSafeCourseId } from '../lib/validation';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
@@ -97,7 +98,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!mimeType || !ALLOWED_TYPES[mimeType]) return fail(400, 'Only PDF files are supported');
   if (!fileBase64 || typeof fileBase64 !== 'string') return fail(400, 'fileBase64 is required');
   if (!/^[A-Za-z0-9+/=\r\n]+$/.test(fileBase64)) return fail(400, 'fileBase64 is invalid');
-  if (!courseId || typeof courseId !== 'string') return fail(400, 'courseId is required');
+  if (!courseId || typeof courseId !== 'string' || !isSafeCourseId(courseId)) {
+    return fail(400, 'courseId is invalid');
+  }
 
   const fileBuffer = Buffer.from(fileBase64, 'base64');
   if (fileBuffer.length > MAX_BODY_BYTES) return fail(413, 'File too large (max 20 MB)');
