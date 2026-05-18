@@ -373,6 +373,9 @@ export function initAskAI(state) {
                     const CFG = window.AI_TYPING || {};
                     const TOKEN_INTERVAL = CFG.streamTokenInterval || 38;
                     let _renderedBlockCount = 0;
+                    // Both `evt.done` and the reader's `result.done` can race to call
+                    // finalize() — guard so history/feedback bar aren't doubled.
+                    let _finalized = false;
                     function splitBlocks(text) {
                         const blocks = [];
                         const lines = text.split('\n');
@@ -653,6 +656,9 @@ export function initAskAI(state) {
                         });
                     }
                     function finalize(meta) {
+                        if (_finalized)
+                            return;
+                        _finalized = true;
                         window._activeStreamRender = null;
                         const sources = (meta && meta.sources) || [];
                         const confidence = (meta && meta.confidence) || 'medium';
@@ -785,6 +791,12 @@ export function initAskAI(state) {
                 : d.content
                     ? d.content.map((b) => b.text || '').join('')
                     : 'No response';
+            // Persist non-RAG answers too. The RAG/stream path saves history inside
+            // finalize(); without this the non-RAG branch silently dropped chat
+            // history on reload for users with no indexed course docs.
+            if (!d.error && rawTextLocal && rawTextLocal !== 'No response') {
+                _appendCourseHistory(window.activeCourseId || window.currentCourseId || '', question, rawTextLocal);
+            }
             const ansWrap = document.createElement('div');
             ansWrap.className = 'ai-msg-wrap';
             const tNow = _getTime();

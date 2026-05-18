@@ -31,12 +31,11 @@ function _sbStoreSession(accessToken, refreshToken) {
     // Persistent across tab close — user "stays signed in until they log out"
     // (per product requirement). Previously this wrote to sessionStorage which
     // is volatile per-tab; the result was every new tab forced a re-login.
-    localStorage.setItem('sb_sess_token', accessToken || '');
+    sessionStorage.setItem('sb_sess_token', accessToken || '');
     if (refreshToken) localStorage.setItem('sb_sess_refresh', refreshToken);
-    // Wipe any sessionStorage copy from before this commit so the fallback
-    // reader below doesn't return stale tokens.
-    sessionStorage.removeItem('sb_sess_token');
-    sessionStorage.removeItem('sb_sess_refresh');
+    // Keep the long-lived refresh token for "stay signed in", but avoid
+    // persisting short-lived bearer access tokens across browser restarts.
+    localStorage.removeItem('sb_sess_token');
     // Legacy keys from an even earlier scheme — leave the removes for safety.
     localStorage.removeItem('sb_token');
     localStorage.removeItem('sb_refresh');
@@ -45,11 +44,11 @@ function _sbStoreSession(accessToken, refreshToken) {
 
 function _sbStoredToken() {
   try {
-    // Prefer localStorage; fall back to sessionStorage so users mid-session
-    // when this code deploys don't get logged out.
+    // Access tokens are tab/session-scoped. Persistent login is restored with
+    // the refresh token instead of keeping bearer tokens on disk.
     return (
-      localStorage.getItem('sb_sess_token') ||
       sessionStorage.getItem('sb_sess_token') ||
+      localStorage.getItem('sb_sess_token') ||
       null
     );
   } catch (e) {
@@ -162,28 +161,45 @@ var _sb = {
       return d;
     },
     signOut: function () {
+      // Clear local state BEFORE the network call so a failed/offline logout
+      // can't leave stale tokens on disk that look "still signed in" on reload.
+      // Capture the auth header up front so the best-effort revocation still
+      // carries the user's bearer token.
+      var logoutHeaders = _sbHeaders();
+      _sbToken = null;
+      _currentUser = null;
+      _ssAuth('signed-out', { source: 'signOut' });
+      _sbClearStoredSession();
+      localStorage.removeItem('ss_state');
+      sessionStorage.removeItem('ss_last_active');
+      // Per-course chat history can contain private RAG questions/answers.
+      // Wipe so a different user signing into the same browser doesn't see it.
+      try {
+        var _qaKeys = [];
+        for (var _i = 0; _i < localStorage.length; _i++) {
+          var _k = localStorage.key(_i);
+          if (_k && (
+            _k.indexOf('ss_course_qa_') === 0 ||
+            _k.indexOf('ss_opened_') === 0 ||
+            _k.indexOf('ss_lastopen_') === 0
+          )) _qaKeys.push(_k);
+        }
+        _qaKeys.forEach(function (k) { localStorage.removeItem(k); });
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem('ss_logged_in');
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem('ss_portal_tab');
+      } catch (e) {}
+      clearTimeout(_activityTimer);
+      _sbAuthCallbacks.forEach(function (cb) {
+        cb('SIGNED_OUT', null);
+      });
       return fetch(SUPA_URL + '/auth/v1/logout', {
         method: 'POST',
-        headers: _sbHeaders()
-      }).then(function () {
-        _sbToken = null;
-        _currentUser = null;
-        _ssAuth('signed-out', { source: 'signOut' });
-        _sbClearStoredSession();
-        localStorage.removeItem('ss_state');
-        sessionStorage.removeItem('ss_last_active');
-        // ── Session routing: clear the login flag so next page load shows landing ─
-        try {
-          sessionStorage.removeItem('ss_logged_in');
-        } catch (e) {}
-        try {
-          sessionStorage.removeItem('ss_portal_tab');
-        } catch (e) {}
-        clearTimeout(_activityTimer);
-        _sbAuthCallbacks.forEach(function (cb) {
-          cb('SIGNED_OUT', null);
-        });
-      });
+        headers: logoutHeaders
+      }).catch(function () {});
     },
     getUser: function () {
       if (!_sbToken) return Promise.resolve(null);
@@ -232,6 +248,14 @@ var _sb = {
       _ssAuth('checking', { source: 'restoreSession' });
       var token = _sbStoredToken();
       if (!token) {
+        if (_sbStoredRefresh()) {
+          window._sbSessionReady = _sb.auth.refreshSession().then(function (user) {
+            if (user && user.id) return _settle(user, 'refreshSession');
+            _ssAuth('signed-out', { source: 'restoreSession' });
+            return null;
+          });
+          return window._sbSessionReady;
+        }
         _ssAuth('signed-out', { source: 'restoreSession' });
         window._sbSessionReady = Promise.resolve(null);
         return window._sbSessionReady;
@@ -821,6 +845,15 @@ window.addEventListener('ss-ready', function () {
     _ssAuth('checking', { source: 'persistentToken' });
     console.log('[Auth] → path: persistent sb_token restore');
     _verifyAndEnter(savedTok);
+    return;
+  }
+  if (_sbStoredRefresh()) {
+    _ssAuth('checking', { source: 'persistentRefresh' });
+    console.log('[Auth] persistent refresh restore');
+    _sbRefreshAccessToken().then(function (newTok) {
+      if (newTok) _verifyAndEnter(newTok);
+      else _showModalClean();
+    });
     return;
   }
 
