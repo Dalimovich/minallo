@@ -577,6 +577,10 @@ export function showCourseSection(course, section) {
             }
         });
     }
+    // If a focus session is already running when this view (re)renders, swap
+    // the Study button for the in-session controls cluster.
+    const _syncStudy = window._syncCourseStudyBtn;
+    if (typeof _syncStudy === 'function') _syncStudy();
     const studyBtn = co.querySelector('#coStudyBtn');
     if (studyBtn) {
         studyBtn.addEventListener('click', (ev) => {

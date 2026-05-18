@@ -1,5 +1,12 @@
 let _stRunning = false;
 let _stPaused = false;
+let _stVolume = (() => {
+    try {
+        const v = parseInt(localStorage.getItem('ss_st_volume') || '70', 10);
+        return isNaN(v) ? 70 : Math.max(0, Math.min(100, v));
+    } catch { return 70; }
+})();
+let _stMutedByUser = false;
 let _stTimer = null;
 let _stSecondsLeft = 0;
 /* Wall-clock end time (ms since epoch). Source of truth while ticking; nulled
@@ -98,6 +105,16 @@ function _stCreatePlayer(customList) {
             '<button class="smc-ctrl smc-play" id="stMiniPlayPause" title="Play/Pause">&#x25B6;</button>' +
             '<button class="smc-ctrl" id="stMiniNext" title="Next">&#x23ED;</button>' +
             '</div>' +
+            '<div class="smc-volume-row">' +
+            '<button class="smc-vol-btn" id="smcVolBtn" title="Mute / unmute">' +
+              '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>' +
+                '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+                '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' +
+              '</svg>' +
+            '</button>' +
+            '<input type="range" id="smcVolume" class="smc-vol-range" min="0" max="100" value="70" step="1" aria-label="Volume">' +
+            '</div>' +
             '</div>' +
             '<button class="st-music-pill" id="stMusicPill" title="Show music player" style="display:none">&#x266B;</button>';
     document.body.appendChild(holder);
@@ -128,6 +145,33 @@ function _stCreatePlayer(customList) {
         if (card)
             card.style.display = 'flex';
     });
+    const volRange = document.getElementById('smcVolume');
+    const volBtn = document.getElementById('smcVolBtn');
+    if (volRange) {
+        volRange.value = String(_stVolume);
+        _smcSetVolumeFill(_stVolume);
+        volRange.addEventListener('input', () => {
+            const v = Math.max(0, Math.min(100, parseInt(volRange.value, 10) || 0));
+            _stVolume = v;
+            _stMutedByUser = v === 0;
+            try { localStorage.setItem('ss_st_volume', String(v)); } catch { /* quota */ }
+            _smcSetVolumeFill(v);
+            _smcSyncVolBtn();
+            try { if (_ytPlayer) _ytPlayer.setVolume(v); } catch { /* ignore */ }
+        });
+    }
+    if (volBtn) {
+        volBtn.addEventListener('click', () => {
+            _stMutedByUser = !_stMutedByUser;
+            const target = _stMutedByUser ? 0 : (_stVolume || 70);
+            if (!_stMutedByUser && _stVolume === 0) _stVolume = 70;
+            try { if (_ytPlayer) _ytPlayer.setVolume(target); } catch { /* ignore */ }
+            if (volRange) volRange.value = String(target);
+            _smcSetVolumeFill(target);
+            _smcSyncVolBtn();
+        });
+    }
+    _smcSyncVolBtn();
     let _smcSeeking = false;
     const progressEl = document.getElementById('smcProgress');
     if (progressEl) {
@@ -192,7 +236,7 @@ function _stCreatePlayer(customList) {
             setTimeout(() => {
                 try {
                     e.target.unMute();
-                    e.target.setVolume(70);
+                    e.target.setVolume(_stMutedByUser ? 0 : _stVolume);
                 }
                 catch {
                     /* ignore */
@@ -299,7 +343,7 @@ function _stPlayMusic() {
         try {
             _ytPlayer.playVideo();
             _ytPlayer.unMute();
-            _ytPlayer.setVolume(70);
+            _ytPlayer.setVolume(_stMutedByUser ? 0 : _stVolume);
             _stShowMusicControls(true);
             return;
         }
@@ -337,6 +381,15 @@ function _stStopMusic() {
     const holder = document.getElementById('stYTHolder');
     if (holder)
         holder.remove();
+}
+function _smcSetVolumeFill(pct) {
+    const r = document.getElementById('smcVolume');
+    if (r) r.style.setProperty('--vol', Math.max(0, Math.min(100, pct)) + '%');
+}
+function _smcSyncVolBtn() {
+    const btn = document.getElementById('smcVolBtn');
+    if (!btn) return;
+    btn.classList.toggle('smc-vol-muted', _stMutedByUser || _stVolume === 0);
 }
 function _stShowMusicControls(show) {
     const holder = document.getElementById('stYTHolder');
@@ -384,12 +437,19 @@ function _syncStudyBtnFor(wrapId, btnId, controlsId) {
     if (!_stRunning) {
         if (controls)
             controls.remove();
-        if (btn)
+        if (btn) {
             btn.style.display = '';
+            btn.classList.remove('co-study-btn-compact', 'pdf-study-button-compact');
+        }
         return;
     }
-    if (btn)
-        btn.style.display = 'none';
+    /* Keep the Study button visible alongside the controls so the user can
+     * re-open the Focus Session popup mid-session (e.g. to switch playlist).
+     * Compact form: icon-only to save room for the controls cluster. */
+    if (btn) {
+        btn.style.display = '';
+        btn.classList.add(btnId === 'pdfStudyBtn' ? 'pdf-study-button-compact' : 'co-study-btn-compact');
+    }
     const timerText = _stFmt(_stSecondsLeft);
     const pauseGlyph = _stPaused ? '&#x25B6;' : '&#x23F8;';
     const pauseTitle = _stPaused ? 'Resume' : 'Pause';

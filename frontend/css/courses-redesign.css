@@ -817,6 +817,117 @@ textarea {
   transform: translateY(-1px);
   box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.75);
 }
+/* Compact icon-only form, shown while a session is running so the in-session
+ * controls cluster fits beside the button (which stays clickable so the user
+ * can re-open the Focus Session popup and switch playlist). */
+.co-inner-v2 .co-study-btn.co-study-btn-compact {
+  padding: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  gap: 0;
+  justify-content: center;
+}
+.co-inner-v2 .co-study-btn.co-study-btn-compact > span { display: none; }
+
+/* In-session control cluster — shown in place of the Study button while a
+ * focus session is running. Pause/Resume · timer · Stop. */
+.co-study-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2563eb, #1e40af);
+  box-shadow: 0 10px 24px -10px rgba(37, 99, 235, 0.6);
+  border: 1px solid rgba(147, 197, 253, 0.30);
+}
+.co-study-ctrl {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.co-study-ctrl:hover {
+  background: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+.co-study-ctrl-stop {
+  background: rgba(239, 68, 68, 0.30);
+}
+.co-study-ctrl-stop:hover {
+  background: rgba(239, 68, 68, 0.50);
+}
+.co-study-timer {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  padding: 0 8px;
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Music card volume row — mute toggle + slider */
+.smc-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 0;
+}
+.smc-vol-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background: rgba(59, 130, 246, 0.10);
+  color: #bfdbfe;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.smc-vol-btn:hover { background: rgba(59, 130, 246, 0.22); border-color: rgba(147, 197, 253, 0.55); color: #fff; }
+.smc-vol-btn.smc-vol-muted { color: #f87171; border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.10); }
+.smc-vol-range {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    #60a5fa 0%, #60a5fa var(--vol, 70%),
+    rgba(255, 255, 255, 0.12) var(--vol, 70%), rgba(255, 255, 255, 0.12) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.smc-vol-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.6);
+  cursor: pointer;
+}
+.smc-vol-range::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid rgba(96, 165, 250, 0.6);
+  cursor: pointer;
+}
 
 /* Hero card */
 .co-inner-v2 .co-hero {
@@ -1156,6 +1267,8 @@ body.minallo-in-course .topbar {
   position: relative;
   margin-left: auto;
   display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ── Focus Session popup v2 — premium blue-glass dropdown ─────────────── */
@@ -1383,48 +1496,45 @@ body.minallo-in-course .topbar {
 }
 .st-popup.st-popup-v2 .st-footer-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  align-items: center;
+  align-items: stretch;
 }
-.st-popup.st-popup-v2 .st-start-btn-v2 {
-  flex: 1;
-  padding: 7px 12px;
-  min-height: 32px;
-  border-radius: 9px;
-  border: 1px solid rgba(96, 165, 250, 0.4);
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
+.st-popup.st-popup-v2 .st-start-btn-v2,
+.st-popup.st-popup-v2 .st-save-default-btn {
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
   font-family: inherit;
-  box-shadow: 0 6px 16px -8px rgba(37, 99, 235, 0.55);
+  cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  line-height: 1;
+}
+.st-popup.st-popup-v2 .st-start-btn-v2 {
+  flex: 1;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 6px 16px -8px rgba(37, 99, 235, 0.55);
+  gap: 6px;
 }
 .st-popup.st-popup-v2 .st-start-btn-v2:hover {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
 }
 .st-popup.st-popup-v2 .st-save-default-btn {
-  padding: 7px 10px;
-  min-height: 32px;
-  border-radius: 9px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(226, 232, 240, 0.85);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
 }
 .st-popup.st-popup-v2 .st-save-default-btn:hover {
   background: rgba(255, 255, 255, 0.08);

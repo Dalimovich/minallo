@@ -508,11 +508,22 @@ function _syncStudyBtnFor(wrapId: string, btnId: string, controlsId: string): vo
 
   if (!_stRunning) {
     if (controls) controls.remove();
-    if (btn) btn.style.display = '';
+    if (btn) {
+      btn.style.display = '';
+      btn.classList.remove('co-study-btn-compact', 'pdf-study-button-compact');
+    }
     return;
   }
 
-  if (btn) btn.style.display = 'none';
+  /* Keep the Study button visible alongside the controls so the user can
+   * re-open the Focus Session popup mid-session (e.g. to switch playlist).
+   * Compact form: icon-only to save room for the controls cluster. */
+  if (btn) {
+    btn.style.display = '';
+    btn.classList.add(
+      btnId === 'pdfStudyBtn' ? 'pdf-study-button-compact' : 'co-study-btn-compact'
+    );
+  }
 
   const timerText = _stFmt(_stSecondsLeft);
   const pauseGlyph = _stPaused ? '&#x25B6;' : '&#x23F8;';

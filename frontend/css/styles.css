@@ -1527,6 +1527,7 @@ body.night .sb-acc-chev-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
 }
 .pdf-toolbar-v2 .pdf-study-button {
   display: inline-flex;
@@ -1548,6 +1549,18 @@ body.night .sb-acc-chev-btn {
 .pdf-toolbar-v2 .pdf-study-button:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.75);
+}
+/* Compact icon-only form, shown while a session is running so the in-session
+ * controls cluster fits beside the button (which stays clickable so the user
+ * can re-open the Focus Session popup and switch playlist). */
+.pdf-toolbar-v2 .pdf-study-button.pdf-study-button-compact {
+  padding: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  gap: 0;
+  justify-content: center;
+  font-size: 0;
 }
 
 /* ─── ANNOTATION POPOVER — compact floating blue-glass toolbar ───────── */

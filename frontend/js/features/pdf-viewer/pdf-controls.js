@@ -118,6 +118,15 @@ export function initPdfControls(options) {
         if (fileName)
             options.downloadFile(fileName);
     });
+    document.getElementById('pdfBack')?.addEventListener('click', () => {
+        const w = window;
+        if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+            w.showCourseSection(w.activeCourseRef, 'files');
+            return;
+        }
+        if (typeof w.showPortalSection === 'function')
+            w.showPortalSection('courses');
+    });
     document.getElementById('pdfAll')?.addEventListener('click', () => {
         options.setPdfShowAll(!options.getPdfShowAll());
         const btn = document.getElementById('pdfAll');
