@@ -1193,6 +1193,35 @@ body.night .sb-acc-chev-btn {
 .pdf-tb-btn:hover {
   background: #ede0ff;
 }
+.pdf-tb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 10px;
+}
+.pdf-tb-back svg { display: block; }
+.pdf-tb-divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.10);
+  margin: 0 4px;
+}
+.pdf-tb-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+  padding: 0 4px;
+}
+.pdf-tb-title .pdf-tb-title-sub {
+  color: #94a3b8;
+  font-weight: 500;
+  margin-left: 6px;
+  font-size: 0.74rem;
+}
 .pdf-page-info {
   font-size: 0.75rem;
   font-weight: 800;
@@ -1237,6 +1266,484 @@ body.night .sb-acc-chev-btn {
   scrollbar-width: thin;
   scrollbar-color: #555 #666;
   min-width: 0;
+}
+
+/* ─── PDF VIEWER v2 — Minallo blue-glass redesign ─────────────────────── */
+.pdf-toolbar.pdf-toolbar-v2 {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: block;
+  padding: 0;
+  gap: 0;
+  flex-wrap: nowrap;
+  background: rgba(17, 24, 39, 0.88);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.pdf-toolbar-v2 .pdf-toolbar-inner {
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: 12px 20px;
+}
+.pdf-toolbar-v2 .pdf-toolbar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pdf-toolbar-v2 .pdf-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.pdf-toolbar-v2 .pdf-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pdf-toolbar-v2 .pdf-file-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.pdf-toolbar-v2 .pdf-file-info strong {
+  color: #f8fafc;
+  font-size: 0.92rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 520px;
+}
+.pdf-toolbar-v2 .pdf-file-info .pdf-tb-title {
+  display: block;
+  max-width: 520px;
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 0.74rem;
+  font-weight: 500;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pdf-toolbar-v2 .pdf-file-info .pdf-tb-title-sub {
+  margin-left: 0;
+  color: inherit;
+}
+
+.pdf-toolbar-v2 .pdf-toolbar-controls {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(15, 23, 42, 0.30);
+  padding: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.pdf-toolbar-v2 .pdf-controls-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-toolbar-v2 .pdf-toolbar-button {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.07);
+  padding: 0 14px;
+  color: rgba(226, 232, 240, 0.95);
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.05s;
+  white-space: nowrap;
+}
+.pdf-toolbar-v2 .pdf-toolbar-button:hover {
+  border-color: rgba(147, 197, 253, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.pdf-toolbar-v2 .pdf-toolbar-button:active {
+  transform: translateY(1px);
+}
+.pdf-toolbar-v2 .pdf-icon-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.pdf-toolbar-v2 .pdf-more-button {
+  width: 40px;
+  padding: 0;
+}
+
+.pdf-toolbar-v2 .pdf-primary-button {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(59, 130, 246, 0.55);
+  border-radius: 16px;
+  background: #3b82f6;
+  color: #fff;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0 18px;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.32);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+.pdf-toolbar-v2 .pdf-primary-button:hover {
+  background: #2563eb;
+  box-shadow: 0 0 32px rgba(59, 130, 246, 0.45);
+}
+.pdf-toolbar-v2 .pdf-primary-button:active {
+  transform: translateY(1px);
+}
+
+.pdf-toolbar-v2 .pdf-control-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.045);
+  padding: 2px 4px;
+}
+.pdf-toolbar-v2 .pdf-control-group .pdf-icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+.pdf-toolbar-v2 .pdf-control-group .pdf-zoom-pct {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: rgba(59, 130, 246, 0.18);
+}
+.pdf-toolbar-v2 .pdf-control-group .pdf-toolbar-button {
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.pdf-toolbar-v2 .pdf-control-group .pdf-toolbar-button:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
+.pdf-toolbar-v2 .pdf-page-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0 6px;
+}
+.pdf-toolbar-v2 .pdf-page-input {
+  width: 36px;
+  background: transparent;
+  border: none;
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 2px 0;
+  border-radius: 6px;
+  font-family: inherit;
+}
+.pdf-toolbar-v2 .pdf-page-input:focus {
+  outline: 1.5px solid rgba(147, 197, 253, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pdf-toolbar-v2 .pdf-zoom-pct {
+  min-width: 56px;
+  height: 32px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  color: #bfdbfe;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0 10px;
+}
+
+/* PDF document area — keep original page rendering, just retint background */
+#pdfView {
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(59, 130, 246, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(14, 165, 233, 0.10), transparent 55%),
+    var(--dp-solid, #0b1220);
+}
+#pdfView .pdf-body {
+  background: transparent;
+  /* preserve original flex-start alignment + padding so renderPages() math works */
+}
+#pdfView .pdf-body .pdf-page-wrap {
+  border-radius: 6px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
+}
+
+@media (max-width: 720px) {
+  .pdf-toolbar-v2 .pdf-toolbar-inner {
+    padding: 10px 12px;
+  }
+  .pdf-toolbar-v2 .pdf-file-info strong { max-width: 220px; }
+  .pdf-toolbar-v2 .pdf-file-info .pdf-tb-title { max-width: 220px; }
+  .pdf-toolbar-v2 .pdf-toolbar-button { padding: 0 10px; font-size: 0.8rem; }
+}
+
+/* Hide legacy injected Notes button — replaced by AI side panel + actions */
+#pdfNotesToggle { display: none !important; }
+
+/* Study button inside the PDF header */
+.pdf-toolbar-v2 .pdf-study-button {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(147, 197, 253, 0.30);
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.pdf-toolbar-v2 .pdf-study-button:hover {
+  background: rgba(59, 130, 246, 0.24);
+  border-color: rgba(147, 197, 253, 0.55);
+  color: #fff;
+}
+
+/* ─── ANNOTATION POPOVER — compact floating blue-glass toolbar ───────── */
+#pdfView { position: relative; }
+.annotate-popover {
+  position: absolute;
+  top: 132px;
+  right: 32px;
+  z-index: 25;
+  width: fit-content;
+  max-width: calc(100vw - 160px);
+  padding: 10px;
+  border-radius: 24px;
+  border: 1px solid rgba(147, 197, 253, 0.30);
+  background: rgba(18, 26, 49, 0.94);
+  box-shadow: 0 20px 70px rgba(37, 99, 235, 0.22);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  animation: annotPopIn 160ms ease-out;
+}
+.annotate-popover::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  right: 60px;
+  width: 14px;
+  height: 14px;
+  transform: rotate(45deg);
+  border-top: 1px solid rgba(147, 197, 253, 0.30);
+  border-left: 1px solid rgba(147, 197, 253, 0.30);
+  background: rgba(18, 26, 49, 0.94);
+}
+@keyframes annotPopIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.annotate-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.annotate-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.045);
+}
+.annotate-separator {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.annotate-tool-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(148, 163, 184, 1);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  padding: 0;
+}
+.annotate-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.annotate-tool-btn.is-active,
+.annotate-tool-btn.active {
+  border-color: rgba(147, 197, 253, 0.45);
+  background: rgba(59, 130, 246, 0.30);
+  color: #fff;
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.25);
+}
+
+.annotate-color-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.15s, border-color 0.15s;
+}
+.annotate-color-swatch:hover { transform: scale(1.08); }
+.annotate-color-swatch.is-active,
+.annotate-color-swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.7);
+}
+.annotate-color-picker {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  outline: 2px solid rgba(255, 255, 255, 0.20);
+}
+
+.annotate-stroke-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 90px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, #60a5fa 0%, #60a5fa 50%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.12) 100%);
+  outline: none;
+  cursor: pointer;
+}
+.annotate-stroke-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.6);
+  cursor: pointer;
+}
+.annotate-stroke-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  border: none;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.6);
+  cursor: pointer;
+}
+
+.annotate-action-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(203, 213, 225, 0.95);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.annotate-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.annotate-action-btn.is-danger { color: #fca5a5; }
+.annotate-action-btn.is-danger:hover {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.annotate-action-btn.is-primary { color: #93c5fd; }
+.annotate-action-btn.is-primary:hover {
+  background: rgba(59, 130, 246, 0.18);
+  color: #dbeafe;
+  border-color: rgba(96, 165, 250, 0.45);
+}
+.annotate-action-btn.is-success { color: #6ee7b7; }
+.annotate-action-btn.is-success:hover {
+  background: rgba(16, 185, 129, 0.16);
+  color: #d1fae5;
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+.annotate-fontsize {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+}
+.annotate-fmt-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+.annotate-fmt-btn.active {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(147, 197, 253, 0.45);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .annotate-popover { right: 12px; top: 168px; padding: 8px; }
+  .annotate-popover::before { right: 30px; }
+  .annotate-stroke-range { width: 70px; }
 }
 .pdf-body::-webkit-scrollbar {
   width: 6px;

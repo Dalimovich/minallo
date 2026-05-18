@@ -505,11 +505,29 @@ document.getElementById('pdfFit')?.addEventListener('click', () => {
 document.getElementById('pdfDownload')?.addEventListener('click', () => {
   if (activeFileName) downloadFile(activeFileName);
 });
+document.getElementById('pdfBack')?.addEventListener('click', () => {
+  const w = window as unknown as {
+    activeCourseRef?: { id?: string } & Record<string, unknown>;
+    showCourseSection?: (course: unknown, section: string) => void;
+    showPortalSection?: (section: string) => void;
+  };
+  if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+    w.showCourseSection(w.activeCourseRef, 'files');
+    return;
+  }
+  if (typeof w.showPortalSection === 'function') w.showPortalSection('courses');
+});
 document.getElementById('pdfAll')?.addEventListener('click', () => {
   pdfShowAll = !pdfShowAll;
   const btn = document.getElementById('pdfAll');
   if (btn) btn.textContent = pdfShowAll ? 'Single page' : 'All pages';
   renderPages();
+});
+// In-toolbar Study button — delegates to the existing topbar trigger so the
+// Focus Session popup, click-outside guard, and timer state all stay in sync.
+document.getElementById('pdfStudyBtn')?.addEventListener('click', () => {
+  const stBtn = document.getElementById('studyTechBtn') as HTMLButtonElement | null;
+  if (stBtn) stBtn.click();
 });
 
 // ── AI PANEL ──────────────────────────────────────────────────────────────

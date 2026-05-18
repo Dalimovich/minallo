@@ -46,6 +46,14 @@ export function openFile(f, course) {
     const pdfFileName = document.getElementById('pdfFileName');
     if (pdfFileName)
         pdfFileName.textContent = f.name;
+    // Subtitle under the bold filename: "PDF viewer · <course name>"
+    const pdfHeaderTitle = document.getElementById('pdfHeaderTitle');
+    if (pdfHeaderTitle) {
+        const courseLabel = course.name || course.short || '';
+        pdfHeaderTitle.textContent = courseLabel
+            ? 'PDF viewer · ' + courseLabel
+            : 'PDF viewer';
+    }
     const crumb = document.getElementById('breadcrumb');
     if (crumb) {
         crumb.textContent = (course.short || '') + ' › ';

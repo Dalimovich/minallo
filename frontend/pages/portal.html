@@ -1,4 +1,4 @@
-<!-- PORTAL -->
+﻿<!-- PORTAL -->
 <div id="portal">
   <div class="blobs">
     <div class="blob blob-1"></div>
@@ -28,7 +28,7 @@
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="courses"></span></div>
           <span>Courses</span>
         </div>
-        <!-- German learner nav � hidden for enrolled students -->
+        <!-- German learner nav ï¿½ hidden for enrolled students -->
         <div class="sb-item psb" id="psbGerman" style="display: none">
           <div class="sb-item-icon">&#x1F1E9;&#x1F1EA;</div>
           <span>Practice</span>
@@ -252,7 +252,7 @@
               </button>
             </div>
             <div class="st-music-src-hint" id="stMusicHint">Quiet Focus playlist &middot; always available</div>
-            <!-- Playlist selector — shown when YouTube is active -->
+            <!-- Playlist selector â€” shown when YouTube is active -->
             <div class="st-playlist-selector" id="stPlaylistSelector" style="display: none">
               <select class="st-playlist-select" id="stPlaylistSelect"></select>
             </div>
@@ -266,7 +266,7 @@
       </div>
 
       <div class="main-scroll">
-        <!-- DASHBOARD � content injected by features/js/dashboard.js -->
+        <!-- DASHBOARD ï¿½ content injected by features/js/dashboard.js -->
         <div id="psec-dashboard" class="portal-section"></div>
 
         <!-- PROFILE -->
@@ -412,7 +412,7 @@
                 opacity: 0.6;
               "
             >
-              Pay with Card � Klarna � PayPal
+              Pay with Card ï¿½ Klarna ï¿½ PayPal
             </p>
             <button
               id="paywallLogoutBtn"
@@ -446,7 +446,7 @@
                     <span>AI-ready course workspace</span>
                   </div>
                   <h1 class="sd-hero-title">
-                    <span class="sd-hero-emoji" aria-hidden="true">📚</span>
+                    <span class="sd-hero-emoji" aria-hidden="true">ðŸ“š</span>
                     <span>My Courses</span>
                   </h1>
                   <p class="sd-hero-sub">
@@ -532,19 +532,19 @@
           style="display: none"
         ></div>
 
-        <!-- LECTURE NOTES � content injected by features/js/lecturenotes.js -->
+        <!-- LECTURE NOTES ï¿½ content injected by features/js/lecturenotes.js -->
         <div id="psec-notes" class="portal-section" data-testid="notes-page" style="display: none"></div>
 
         <!-- CHAT -->
         <!-- CHATBOT PAGE -->
-        <!-- CHATBOT PAGE � content injected by features/chatbot/chatbot.js -->
+        <!-- CHATBOT PAGE ï¿½ content injected by features/chatbot/chatbot.js -->
         <div
           id="psec-aipage"
           class="portal-section"
           style="display: none; padding: 0; height: 100%"
         ></div>
 
-        <!-- CHAT � content injected by features/js/chat.js -->
+        <!-- CHAT ï¿½ content injected by features/js/chat.js -->
         <div
           id="psec-chat"
           class="portal-section"
@@ -578,7 +578,7 @@
           </div>
         </div>
 
-        <!-- GAMES � content injected by features/js/games.js -->
+        <!-- GAMES ï¿½ content injected by features/js/games.js -->
         <div id="psec-games" class="portal-section" style="display: none; padding: 0"></div>
 
         <!-- STUDY LOUNGE -->
@@ -641,7 +641,7 @@
           <!-- Courses list -->
           <div class="lounge-section-hdr">&#x1F4DA; Courses Studied</div>
           <div class="lounge-course-chips" id="loungeCourseChips">
-            <div class="lounge-empty-msg">No courses yet � open a subject to get started</div>
+            <div class="lounge-empty-msg">No courses yet ï¿½ open a subject to get started</div>
           </div>
 
           <!-- Recent files -->
@@ -662,7 +662,7 @@
           </div>
         </div>
 
-        <!-- PRACTICE � content injected by features/js/practice.js -->
+        <!-- PRACTICE ï¿½ content injected by features/js/practice.js -->
         <div id="psec-german" class="portal-section" style="display: none"></div>
       </div>
       <!-- /main-scroll -->
@@ -690,7 +690,7 @@
                 <span class="ws-icon">&#x1F4C2;</span>
                 <div class="ws-title" data-i18n="welcome_title">Select a file to read</div>
                 <div class="ws-sub" data-i18n="welcome_sub">
-                  Open a subject in the sidebar and click any file � it loads here as a real
+                  Open a subject in the sidebar and click any file ï¿½ it loads here as a real
                   document.
                 </div>
                 <div class="ws-hint" data-i18n="welcome_hint">
@@ -702,308 +702,308 @@
                 id="pdfView"
                 style="display: none; flex-direction: column; flex: 1; overflow: hidden"
               >
-                <div class="pdf-toolbar" id="pdfToolbar">
-                  <button class="pdf-tb-btn" id="pdfPrev" style="display: none">&#x25C0;</button>
-                  <span class="pdf-page-info" id="pdfPageInfo" style="display: none"
-                    >Page
-                    <input
-                      id="pdfPageInput"
-                      class="pdf-page-input"
-                      type="number"
-                      min="1"
-                      value="1"
-                    />
-                    / <span id="pdfPageTotal">1</span></span
-                  >
-                  <button class="pdf-tb-btn" id="pdfNext" style="display: none">&#x25B6;</button>
-                  <button class="pdf-tb-btn" id="pdfZoomOut">&#x2212;</button>
-                  <span class="pdf-zoom-pct" id="pdfZoomPct">90%</span>
-                  <button class="pdf-tb-btn" id="pdfZoomIn">+</button>
-                  <button class="pdf-tb-btn" id="pdfFit" data-i18n="pdf_fit">Fit</button>
-                  <button class="pdf-tb-btn" id="pdfAll" data-i18n="pdf_single">Single page</button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="pdfDownload"
-                    title="Download PDF"
-                    data-i18n="pdf_download"
-                  >
-                    &#x2B07; Download
-                  </button>
-                  <span style="flex: 1"></span>
-                  <!-- Annotate toggle -->
-                  <button
-                    class="pdf-tb-btn"
-                    id="pdfAnnotateToggle"
-                    title="Annotate"
-                    style="font-size: 0.8rem; gap: 4px; display: flex; align-items: center"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-                    </svg>
-                    Annotate
-                  </button>
-                  <span
-                    id="pdfFileName"
-                    style="
-                      font-size: 0.73rem;
-                      font-weight: 700;
-                      color: var(--muted);
-                      white-space: nowrap;
-                      overflow: hidden;
-                      text-overflow: ellipsis;
-                      max-width: 220px;
-                    "
-                  ></span>
+                <div class="pdf-toolbar pdf-toolbar-v2" id="pdfToolbar">
+                  <div class="pdf-toolbar-inner">
+                    <div class="pdf-toolbar-top">
+                      <div class="pdf-left">
+                        <button
+                          class="pdf-toolbar-button pdf-tb-back"
+                          id="pdfBack"
+                          title="Back to course"
+                          aria-label="Back to course"
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <line x1="19" y1="12" x2="5" y2="12" />
+                            <polyline points="12 19 5 12 12 5" />
+                          </svg>
+                          Back
+                        </button>
+                        <div class="pdf-file-info">
+                          <strong id="pdfFileName"></strong>
+                          <span class="pdf-tb-title" id="pdfHeaderTitle"></span>
+                        </div>
+                      </div>
+                      <div class="pdf-right">
+                        <button
+                          type="button"
+                          class="pdf-study-button"
+                          id="pdfStudyBtn"
+                          title="Study Techniques"
+                          aria-label="Open Study Techniques"
+                        >
+                          <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                          </svg>
+                          Study
+                        </button>
+                        <button
+                          class="pdf-toolbar-button pdf-more-button"
+                          id="pdfMoreBtn"
+                          title="More"
+                          aria-label="More actions"
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <circle cx="5" cy="12" r="1.6" />
+                            <circle cx="12" cy="12" r="1.6" />
+                            <circle cx="19" cy="12" r="1.6" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="pdf-toolbar-controls">
+                      <div class="pdf-control-group" id="pdfPageGroup">
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfPrev"
+                          title="Previous page"
+                          aria-label="Previous page"
+                        >
+                          &#x2212;
+                        </button>
+                        <span class="pdf-page-info" id="pdfPageInfo"
+                          >Page
+                          <input
+                            id="pdfPageInput"
+                            class="pdf-page-input"
+                            type="number"
+                            min="1"
+                            value="1"
+                          />
+                          / <span id="pdfPageTotal">1</span></span
+                        >
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfNext"
+                          title="Next page"
+                          aria-label="Next page"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div class="pdf-control-group">
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfZoomOut"
+                          title="Zoom out"
+                          aria-label="Zoom out"
+                        >
+                          &#x2212;
+                        </button>
+                        <button
+                          class="pdf-toolbar-button pdf-zoom-pct"
+                          id="pdfZoomPct"
+                          title="Current zoom"
+                        >
+                          90%
+                        </button>
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfZoomIn"
+                          title="Zoom in"
+                          aria-label="Zoom in"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        class="pdf-toolbar-button"
+                        id="pdfFit"
+                        data-i18n="pdf_fit"
+                      >
+                        Fit
+                      </button>
+                      <button
+                        class="pdf-toolbar-button"
+                        id="pdfAll"
+                        data-i18n="pdf_single"
+                      >
+                        Single page
+                      </button>
+                      <div class="pdf-controls-right">
+                        <button
+                          class="pdf-primary-button"
+                          id="pdfAnnotateToggle"
+                          title="Annotate"
+                          aria-haspopup="true"
+                          aria-expanded="false"
+                          aria-controls="annotToolbar"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                          </svg>
+                          Annotate
+                        </button>
+                        <button
+                          class="pdf-toolbar-button"
+                          id="pdfDownload"
+                          title="Download PDF"
+                          data-i18n="pdf_download"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <!-- ANNOTATION TOOLBAR -->
+                <!-- ANNOTATION TOOLBAR â€” compact floating popover under the Annotate button -->
                 <div
                   id="annotToolbar"
-                  style="
-                    display: none;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 6px 14px;
-                    background: var(--glass-bg);
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-                    flex-wrap: wrap;
-                  "
+                  class="annotate-popover"
+                  role="toolbar"
+                  aria-label="Annotation tools"
+                  style="display: none"
                 >
-                  <!-- Tool buttons -->
-                  <div
-                    style="
-                      display: flex;
-                      gap: 4px;
-                      background: rgba(255, 255, 255, 0.06);
-                      border-radius: 10px;
-                      padding: 3px;
-                    "
-                  >
-                    <button
-                      class="annot-tool-btn active"
-                      id="annotToolPen"
-                      title="Pen"
-                      style="background: rgba(37, 99, 235, 0.35)"
-                    >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M12 20h9" />
-                        <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-                      </svg>
-                    </button>
-                    <button class="annot-tool-btn" id="annotToolHighlight" title="Highlight">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M15.5 2.1L21.9 8.5 8.9 21.5 2.5 21.9 2.1 15.5z" opacity=".3" />
-                        <path
-                          d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
-                    </button>
-                    <button class="annot-tool-btn" id="annotToolText" title="Text">
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <polyline points="4 7 4 4 20 4 20 7" />
-                        <line x1="9" y1="20" x2="15" y2="20" />
-                        <line x1="12" y1="4" x2="12" y2="20" />
-                      </svg>
-                    </button>
-                    <button class="annot-tool-btn" id="annotToolEraser" title="Eraser">
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M20 20H7L3 16l10-10 7 7-3.5 3.5" />
-                        <path d="M6.5 17.5l5-5" />
-                      </svg>
-                    </button>
-                  </div>
+                  <div class="annotate-toolbar-row">
+                    <!-- Group 1 â€” Tools -->
+                    <div class="annotate-group">
+                      <button class="annotate-tool-btn annot-tool-btn is-active active" id="annotToolPen" title="Pen" aria-label="Pen">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        </svg>
+                      </button>
+                      <button class="annotate-tool-btn annot-tool-btn" id="annotToolHighlight" title="Highlight" aria-label="Highlight">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M15.5 2.1L21.9 8.5 8.9 21.5 2.5 21.9 2.1 15.5z" opacity=".35" />
+                          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
+                      <button class="annotate-tool-btn annot-tool-btn" id="annotToolText" title="Text" aria-label="Text">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="4 7 4 4 20 4 20 7" />
+                          <line x1="9" y1="20" x2="15" y2="20" />
+                          <line x1="12" y1="4" x2="12" y2="20" />
+                        </svg>
+                      </button>
+                      <button class="annotate-tool-btn annot-tool-btn" id="annotToolEraser" title="Eraser" aria-label="Eraser">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 20H7L3 16l10-10 7 7-3.5 3.5" />
+                          <path d="M6.5 17.5l5-5" />
+                        </svg>
+                      </button>
+                    </div>
 
-                  <!-- Color swatches -->
-                  <div style="display: flex; gap: 5px; align-items: center">
-                    <div
-                      class="annot-color-swatch active"
-                      data-color="#000000"
-                      style="background: #000000"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#2563EB"
-                      style="background: #2563eb"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FF6FB7"
-                      style="background: #38bdf8"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FF3B30"
-                      style="background: #ff3b30"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FF9500"
-                      style="background: #ff9500"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FFD60A"
-                      style="background: #ffd60a"
-                    ></div>
-                    <input
-                      type="color"
-                      id="annotColorPicker"
-                      value="#000000"
-                      title="Custom color"
-                      style="
-                        width: 24px;
-                        height: 24px;
-                        border: none;
-                        border-radius: 50%;
-                        cursor: pointer;
-                        padding: 0;
-                        background: none;
-                        outline: 2px solid rgba(255, 255, 255, 0.2);
-                      "
-                    />
-                  </div>
+                    <div class="annotate-separator" aria-hidden="true"></div>
 
-                  <!-- Thickness -->
-                  <div style="display: flex; align-items: center; gap: 6px">
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      style="opacity: 0.5"
-                    >
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    <input
-                      type="range"
-                      id="annotThickness"
-                      min="1"
-                      max="20"
-                      value="3"
-                      style="width: 72px; accent-color: #2563eb"
-                    />
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      style="opacity: 0.5"
-                    >
-                      <circle cx="12" cy="12" r="6" />
-                    </svg>
-                  </div>
+                    <!-- Group 2 â€” Colors -->
+                    <div class="annotate-group annotate-colors">
+                      <button class="annotate-color-swatch annot-color-swatch is-active active" data-color="#0F172A" style="background:#0F172A" title="Slate" aria-label="Slate"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#2563EB" style="background:#2563EB" title="Blue" aria-label="Blue"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#38BDF8" style="background:#38BDF8" title="Sky" aria-label="Sky"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#EF4444" style="background:#EF4444" title="Red" aria-label="Red"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#F59E0B" style="background:#F59E0B" title="Orange" aria-label="Orange"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#FACC15" style="background:#FACC15" title="Yellow" aria-label="Yellow"></button>
+                      <input type="color" id="annotColorPicker" value="#0F172A" title="Custom color" class="annotate-color-picker" />
+                    </div>
 
-                  <!-- Text controls (shown only in text mode) -->
-                  <div id="annotTextControls" style="display: none; gap: 6px; align-items: center">
-                    <select
-                      id="annotFontSize"
-                      style="
-                        background: rgba(255, 255, 255, 0.08);
-                        border: 1px solid rgba(255, 255, 255, 0.15);
-                        color: var(--on-glass);
-                        border-radius: 7px;
-                        padding: 3px 6px;
-                        font-size: 0.78rem;
-                      "
-                    >
-                      <option value="12">12</option>
-                      <option value="14">14</option>
-                      <option value="16" selected>16</option>
-                      <option value="18">18</option>
-                      <option value="20">20</option>
-                      <option value="24">24</option>
-                      <option value="28">28</option>
-                      <option value="32">32</option>
-                    </select>
-                    <button class="annot-fmt-btn" id="annotBold" title="Bold"><b>B</b></button>
-                    <button class="annot-fmt-btn" id="annotItalic" title="Italic"><i>I</i></button>
-                  </div>
+                    <div class="annotate-separator" aria-hidden="true"></div>
 
-                  <span style="flex: 1"></span>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotUndo"
-                    title="Undo"
-                    style="font-size: 0.75rem; padding: 4px 8px"
-                  >
-                    ? Undo
-                  </button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotClear"
-                    title="Clear page annotations"
-                    style="font-size: 0.75rem; padding: 4px 8px; color: #ff6b6b"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotDownload"
-                    title="Download annotated PDF"
-                    style="
-                      font-size: 0.75rem;
-                      padding: 4px 8px;
-                      background: rgba(37, 99, 235, 0.15);
-                      color: #2563eb;
-                    "
-                  >
-                    ? Save PDF
-                  </button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotTransfer"
-                    title="Transfer to course"
-                    style="
-                      font-size: 0.75rem;
-                      padding: 4px 8px;
-                      background: rgba(6, 214, 160, 0.1);
-                      color: #06d6a0;
-                    "
-                  >
-                    ? To course
-                  </button>
+                    <!-- Group 3 â€” Stroke / thickness -->
+                    <div class="annotate-group annotate-stroke">
+                      <button class="annotate-action-btn" id="annotStrokeMinus" title="Thinner" aria-label="Thinner">&#x2212;</button>
+                      <input type="range" id="annotThickness" min="1" max="20" value="3" class="annotate-stroke-range" />
+                      <button class="annotate-action-btn" id="annotStrokePlus" title="Thicker" aria-label="Thicker">+</button>
+                    </div>
+
+                    <!-- Text controls (shown only in text mode) -->
+                    <div id="annotTextControls" class="annotate-group annotate-text-ctrls" style="display:none">
+                      <select id="annotFontSize" class="annotate-fontsize">
+                        <option value="12">12</option>
+                        <option value="14">14</option>
+                        <option value="16" selected>16</option>
+                        <option value="18">18</option>
+                        <option value="20">20</option>
+                        <option value="24">24</option>
+                        <option value="28">28</option>
+                        <option value="32">32</option>
+                      </select>
+                      <button class="annotate-fmt-btn" id="annotBold" title="Bold"><b>B</b></button>
+                      <button class="annotate-fmt-btn" id="annotItalic" title="Italic"><i>I</i></button>
+                    </div>
+
+                    <div class="annotate-separator" aria-hidden="true"></div>
+
+                    <!-- Group 4 â€” Quick actions -->
+                    <div class="annotate-group annotate-actions">
+                      <button class="annotate-action-btn" id="annotUndo" title="Undo" aria-label="Undo">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M3 7v6h6" />
+                          <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+                        </svg>
+                      </button>
+                      <button class="annotate-action-btn is-danger" id="annotClear" title="Clear page" aria-label="Clear page">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
+                      </button>
+                      <button class="annotate-action-btn is-primary" id="annotDownload" title="Save PDF" aria-label="Save PDF">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                          <polyline points="17 21 17 13 7 13 7 21" />
+                          <polyline points="7 3 7 8 15 8" />
+                        </svg>
+                      </button>
+                      <button class="annotate-action-btn is-success" id="annotTransfer" title="Save to course" aria-label="Save to course">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="pdf-body" id="pdfBody"></div>
@@ -1139,7 +1139,7 @@
                     class="ai-textarea"
                     id="aiInput"
                     data-i18n-ph="ai_placeholder"
-                    placeholder="Ask anything about this document�"
+                    placeholder="Ask anything about this documentï¿½"
                     rows="2"
                   ></textarea>
                   <div class="ai-bottom-row">
@@ -1233,7 +1233,7 @@
   </div>
   <!-- /shell -->
 
-  <!-- ─── DOCUMENT RAIL + DRAWER (Task-01 shell) ────────────────────────────
+  <!-- â”€â”€â”€ DOCUMENT RAIL + DRAWER (Task-01 shell) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
        Visibility is controlled by JS (document-rail.ts) toggling the
        .is-pdf / .is-courses classes on this root. Hidden everywhere else. -->
   <div id="drRoot" class="dr-root">
@@ -1256,20 +1256,6 @@
           <path d="M9 18h6"/>
         </svg>
         <span>AI</span>
-      </button>
-      <button type="button" class="dr-rail-btn" data-dr-mode="notes" title="Notes" aria-pressed="false">
-        <!-- NotebookText -->
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M2 6h4"/>
-          <path d="M2 10h4"/>
-          <path d="M2 14h4"/>
-          <path d="M2 18h4"/>
-          <rect x="6" y="3" width="14" height="18" rx="2"/>
-          <path d="M10 7h6"/>
-          <path d="M10 11h6"/>
-          <path d="M10 15h4"/>
-        </svg>
-        <span>Notes</span>
       </button>
       <button type="button" class="dr-rail-btn" data-dr-mode="summary" title="Summary" aria-pressed="false">
         <!-- ListChecks -->
@@ -1408,7 +1394,7 @@
   </div>
 </div>
 
-<!-- AI response export modal (chatbot page � any course) -->
+<!-- AI response export modal (chatbot page ï¿½ any course) -->
 <div
   id="aiExportModal"
   style="
@@ -1480,4 +1466,5 @@
   </div>
 </div>
 
-<!-- Widget panel, FAB and drag ghost � injected by features/js/dashboard.js -->
+<!-- Widget panel, FAB and drag ghost ï¿½ injected by features/js/dashboard.js -->
+
