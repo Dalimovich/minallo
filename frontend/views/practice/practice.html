@@ -2,227 +2,205 @@
 <div id="psec-german" class="portal-section" style="display: none">
   <!-- ── HOME VIEW ── -->
   <div id="glHome">
-    <!-- Hero banner -->
-    <div class="gl-hero">
-      <div class="gl-hero-flag">&#x1F1E9;&#x1F1EA;</div>
-      <div class="gl-hero-text">
-        <div class="gl-hero-title">Deutsch lernen</div>
-        <div class="gl-hero-sub" id="glTestBadge">Your test · Your level</div>
-      </div>
-      <div class="gl-hero-chip" id="glLevelChip">–</div>
-    </div>
+    <div class="sd-shell gl-shell">
+      <!-- Hero panel — practice-hub variant of the courses-overview hero.
+           Two-column grid: content on the left, level chip + Start practice
+           button stacked on the right (mirrors SS-2026 dropdown + Add Subject
+           in the courses hero). -->
+      <section class="gl-hero-v2">
+        <div class="gl-hero-glow" aria-hidden="true"></div>
+        <div class="gl-hero-grid">
+          <div class="gl-hero-left">
+            <div class="gl-hero-eyebrow">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3l1.6 4.2L18 9l-4.4 1.8L12 15l-1.6-4.2L6 9l4.4-1.8z"/>
+                <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/>
+              </svg>
+              <span>Language practice hub</span>
+            </div>
 
-    <!-- Skill cards -->
-    <div class="gl-skill-grid">
-      <button class="gl-skill-card" data-skill="reading">
-        <span class="gl-skill-icon">&#x1F4D6;</span>
-        <span class="gl-skill-name">Leseverstehen</span>
-        <span class="gl-skill-sub">Reading comprehension</span>
-      </button>
-      <button class="gl-skill-card" data-skill="listening">
-        <span class="gl-skill-icon">&#x1F3A7;</span>
-        <span class="gl-skill-name">Hörverstehen</span>
-        <span class="gl-skill-sub">Listening comprehension</span>
-      </button>
-      <button class="gl-skill-card" data-skill="writing">
-        <span class="gl-skill-icon">&#x270F;&#xFE0F;</span>
-        <span class="gl-skill-name">Schreiben</span>
-        <span class="gl-skill-sub">Writing tasks</span>
-      </button>
-      <button class="gl-skill-card" data-skill="speaking">
-        <span class="gl-skill-icon">&#x1F5E3;&#xFE0F;</span>
-        <span class="gl-skill-name">Sprechen</span>
-        <span class="gl-skill-sub">Speaking exercises</span>
-      </button>
-      <button class="gl-skill-card" data-skill="vocab">
-        <span class="gl-skill-icon">&#x1F4CA;</span>
-        <span class="gl-skill-name">Wortschatz</span>
-        <span class="gl-skill-sub">Vocabulary builder</span>
-      </button>
-      <button class="gl-skill-card" data-skill="grammar">
-        <span class="gl-skill-icon">&#x1F9E9;</span>
-        <span class="gl-skill-name">Grammatik</span>
-        <span class="gl-skill-sub">Grammar practice</span>
-      </button>
+            <div class="gl-hero-headline">
+              <div class="gl-hero-avatar" aria-hidden="true">DE</div>
+              <div class="gl-hero-headline-text">
+                <h1 class="gl-hero-title">Deutsch lernen</h1>
+                <p class="gl-hero-sub" id="glHeroSub">
+                  Practice reading, listening, writing, speaking, vocabulary, and grammar in one focused preparation workspace.
+                </p>
+              </div>
+            </div>
+
+            <div class="gl-hero-stats">
+              <span class="gl-hero-stat-pill" data-stat="level">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5a6 6 0 0 0 12 0v-5"/></svg>
+                <span id="glLevelChip">&ndash;</span>
+              </span>
+              <span class="gl-hero-stat-pill" data-stat="progress">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="9 12 11 14 15 10"/></svg>
+                <span><span id="glAvgProgress">0</span>% avg progress</span>
+              </span>
+              <span class="gl-hero-stat-pill" data-stat="time">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                <span id="glTimeWeek">0h this week</span>
+              </span>
+              <span class="gl-hero-stat-pill" data-stat="ai">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3a4 4 0 0 0-4 4v2a4 4 0 0 0-2 3.5A4 4 0 0 0 5 16v1a4 4 0 0 0 4 4h6a4 4 0 0 0 4-4v-1a4 4 0 0 0 2-3.5A4 4 0 0 0 19 9V7a4 4 0 0 0-4-4z"/></svg>
+                <span>AI writing coach</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="gl-hero-actions">
+            <div class="gl-level-chip-readonly" title="Imported from your profile">
+              <span class="gl-level-chip-dot"></span>
+              <span id="glLevelChipChip">&ndash;</span>
+              <span class="gl-level-chip-lock" aria-hidden="true">&#x1F512;</span>
+            </div>
+            <button type="button" class="gl-start-btn" id="glStartPractice">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6,4 20,12 6,20"/></svg>
+              <span>Start practice</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Skill cards. Each card uses .gl-skill-card-v2 with a per-skill
+           accent gradient on the top bar. Layout matches the practice-hub
+           mockup: icon + title + sub on the left, descriptor chip on the
+           right, practice-progress bar below, and a solid "Open practice"
+           button at the bottom. -->
+      <div class="gl-skill-grid-v2">
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="reading" role="button" tabindex="0" aria-label="Open Leseverstehen practice" style="--gl-card-grad:linear-gradient(90deg,#60a5fa,#a78bfa)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x1F4D6;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Leseverstehen</h3>
+              <div class="gl-skill-sub">Reading comprehension</div>
+            </div>
+          </header>
+          <div class="gl-skill-progress">
+            <div class="gl-skill-progress-head">
+              <span class="gl-skill-progress-label">Practice progress</span>
+              <span class="gl-skill-progress-value"><span data-skill-progress="reading">0</span>%</span>
+            </div>
+            <div class="gl-skill-progress-track">
+              <div class="gl-skill-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <button type="button" class="gl-skill-open-btn">Open practice</button>
+        </article>
+
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="listening" role="button" tabindex="0" aria-label="Open Hörverstehen practice" style="--gl-card-grad:linear-gradient(90deg,#a78bfa,#ec4899)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x1F3A7;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Hörverstehen</h3>
+              <div class="gl-skill-sub">Listening comprehension</div>
+            </div>
+          </header>
+          <div class="gl-skill-progress">
+            <div class="gl-skill-progress-head">
+              <span class="gl-skill-progress-label">Practice progress</span>
+              <span class="gl-skill-progress-value"><span data-skill-progress="listening">0</span>%</span>
+            </div>
+            <div class="gl-skill-progress-track">
+              <div class="gl-skill-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <button type="button" class="gl-skill-open-btn">Open practice</button>
+        </article>
+
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="writing" role="button" tabindex="0" aria-label="Open Schreiben practice" style="--gl-card-grad:linear-gradient(90deg,#f59e0b,#ef4444)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x270F;&#xFE0F;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Schreiben</h3>
+              <div class="gl-skill-sub">Writing tasks</div>
+            </div>
+            <span class="gl-skill-chip gl-skill-chip-ai">AI feedback</span>
+          </header>
+          <div class="gl-skill-progress">
+            <div class="gl-skill-progress-head">
+              <span class="gl-skill-progress-label">Practice progress</span>
+              <span class="gl-skill-progress-value"><span data-skill-progress="writing">0</span>%</span>
+            </div>
+            <div class="gl-skill-progress-track">
+              <div class="gl-skill-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <button type="button" class="gl-skill-open-btn">Open practice</button>
+        </article>
+
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="speaking" role="button" tabindex="0" aria-label="Open Sprechen practice" style="--gl-card-grad:linear-gradient(90deg,#a855f7,#6366f1)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x1F5E3;&#xFE0F;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Sprechen</h3>
+              <div class="gl-skill-sub">Speaking exercises</div>
+            </div>
+            <span class="gl-skill-chip">Practice mode</span>
+          </header>
+          <div class="gl-skill-progress">
+            <div class="gl-skill-progress-head">
+              <span class="gl-skill-progress-label">Practice progress</span>
+              <span class="gl-skill-progress-value"><span data-skill-progress="speaking">0</span>%</span>
+            </div>
+            <div class="gl-skill-progress-track">
+              <div class="gl-skill-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <button type="button" class="gl-skill-open-btn">Open practice</button>
+        </article>
+
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="vocab" role="button" tabindex="0" aria-label="Open Wortschatz practice" style="--gl-card-grad:linear-gradient(90deg,#10b981,#14b8a6)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x1F4CA;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Wortschatz</h3>
+              <div class="gl-skill-sub">Vocabulary builder</div>
+            </div>
+          </header>
+          <div class="gl-skill-progress">
+            <div class="gl-skill-progress-head">
+              <span class="gl-skill-progress-label">Practice progress</span>
+              <span class="gl-skill-progress-value"><span data-skill-progress="vocab">0</span>%</span>
+            </div>
+            <div class="gl-skill-progress-track">
+              <div class="gl-skill-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <button type="button" class="gl-skill-open-btn">Open practice</button>
+        </article>
+
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="grammar" role="button" tabindex="0" aria-label="Open Grammatik practice" style="--gl-card-grad:linear-gradient(90deg,#facc15,#f97316)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x1F9E9;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Grammatik</h3>
+              <div class="gl-skill-sub">Grammar practice</div>
+            </div>
+          </header>
+          <div class="gl-skill-progress">
+            <div class="gl-skill-progress-head">
+              <span class="gl-skill-progress-label">Practice progress</span>
+              <span class="gl-skill-progress-value"><span data-skill-progress="grammar">0</span>%</span>
+            </div>
+            <div class="gl-skill-progress-track">
+              <div class="gl-skill-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <button type="button" class="gl-skill-open-btn">Open practice</button>
+        </article>
+      </div>
+      <!-- Writing Coach feature card is appended below this grid by
+           features/writing-coach/writing-coach.ts. -->
     </div>
   </div>
 
-  <!-- ── SKILL DETAIL VIEW ── -->
-  <div id="glSkillView" style="display: none">
-    <!-- Back + title -->
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px">
-      <button
-        id="glBackBtn"
-        style="
-          background: rgba(255, 255, 255, 0.07);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 20px;
-          padding: 7px 16px;
-          font-family: 'Nunito', sans-serif;
-          font-weight: 800;
-          font-size: 0.82rem;
-          color: rgba(255, 255, 255, 0.7);
-          cursor: pointer;
-        "
-      >
-        &#x2190; Back
-      </button>
-      <div>
-        <div
-          id="glSkillTitle"
-          style="
-            font-family: 'Fredoka One', cursive;
-            font-size: 1.3rem;
-            background: linear-gradient(135deg, #3b82f6, #0ea5e9);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-          "
-        ></div>
-        <div
-          id="glSkillSub"
-          style="
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: rgba(255, 255, 255, 0.35);
-            margin-top: 2px;
-          "
-        ></div>
-      </div>
-    </div>
-
-    <!-- Files for this skill -->
-    <div class="widget-card">
-      <div
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 10px;
-        "
-      >
-        <div class="widget-title" style="margin: 0">&#x1F4CE; Study Materials</div>
-        <button class="gl-upload-btn" id="glUploadLabel" style="margin: 0; cursor: pointer">
-          &#x2B06; Upload
-        </button>
-        <input type="file" id="glFileInput" accept=".pdf,.txt" multiple style="display: none" />
-      </div>
-      <div id="glUploadProgress" style="display: none; margin-bottom: 8px">
-        <div
-          style="
-            height: 4px;
-            border-radius: 4px;
-            background: rgba(255, 255, 255, 0.08);
-            overflow: hidden;
-          "
-        >
-          <div
-            id="glUploadBar"
-            style="
-              height: 100%;
-              border-radius: 4px;
-              background: linear-gradient(90deg, #3b82f6, #0ea5e9);
-              width: 0%;
-              transition: width 0.2s;
-            "
-          ></div>
-        </div>
-        <div
-          id="glUploadStatus"
-          style="
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: rgba(255, 255, 255, 0.4);
-            margin-top: 4px;
-            text-align: center;
-          "
-        >
-          Uploading…
-        </div>
-      </div>
-      <div
-        id="glFileList"
-        style="display: flex; flex-direction: column; gap: 6px; min-height: 32px"
-      >
-        <div class="gl-file-empty" id="glFileEmpty">
-          No files yet — upload PDFs or text files for this skill
-        </div>
-      </div>
-    </div>
-
-    <!-- Interactive study tools -->
-    <div class="gl-study-tools" id="glStudyTools">
-      <div class="gl-study-header">
-        <div>
-          <div class="widget-title" id="glStudyTitle">Study tools</div>
-          <div class="gl-study-sub" id="glStudySub">Quiz yourself or flip through flashcards</div>
-        </div>
-        <div class="gl-study-tabs" role="tablist" aria-label="Study tool mode">
-          <button
-            class="gl-study-tab active"
-            id="glQuizTab"
-            type="button"
-            role="tab"
-            aria-selected="true"
-          >
-            Quiz
-          </button>
-          <button
-            class="gl-study-tab"
-            id="glCardsTab"
-            type="button"
-            role="tab"
-            aria-selected="false"
-          >
-            Flashcards
-          </button>
-        </div>
-      </div>
-      <div class="gl-study-actions">
-        <button class="gl-tool-btn gl-tool-btn-primary" id="glGenerateQuiz" type="button">
-          Generate quiz
-        </button>
-        <button class="gl-tool-btn" id="glGenerateCards" type="button">Generate cards</button>
-      </div>
-      <div id="glStudyToolBody" class="gl-study-body"></div>
-    </div>
-
-    <!-- File AI results -->
-    <div class="widget-card" id="glAIPanel" style="display: none; margin-top: 8px">
-      <div
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 12px;
-        "
-      >
-        <div class="widget-title" id="glAIPanelTitle" style="margin: 0">Result</div>
-        <button
-          id="glAIPanelClose"
-          style="
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 1.1rem;
-            cursor: pointer;
-          "
-        >
-          &#x2715;
-        </button>
-      </div>
-      <div
-        id="glAIMessages"
-        style="
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          max-height: 340px;
-          overflow-y: auto;
-          padding-right: 4px;
-        "
-      ></div>
-    </div>
-  </div>
 </div>
 <!-- /psec-german -->

@@ -1,0 +1,113 @@
+"""Phase 9 — math answer format. Tests for ``pick_system_prompt``.
+
+Stubs ``openai`` before importing answer.py so the test doesn't need
+the openai SDK installed locally.
+"""
+
+from __future__ import annotations
+
+import sys
+import types
+
+import pytest
+
+# Stub openai so answer.py imports cleanly.
+_fake_openai = types.ModuleType("openai")
+_fake_openai.OpenAI = lambda **kwargs: None  # noqa: ARG005
+sys.modules.setdefault("openai", _fake_openai)
+
+# Stub supabase + embeddings so retrieval.py (transitively imported by
+# query_expansion -> pick_system_prompt) loads without native deps.
+_fake_sb = types.ModuleType("app.supabase_client")
+_fake_sb.get_supabase = lambda: None
+sys.modules.setdefault("app.supabase_client", _fake_sb)
+_fake_emb = types.ModuleType("app.services.embeddings")
+_fake_emb.embed_texts = lambda texts: [[0.0] * 1536 for _ in texts]
+sys.modules.setdefault("app.services.embeddings", _fake_emb)
+
+# Stub the app config so answer.py's `from ..config import get_settings`
+# doesn't drag in pydantic (not installed in this venv).
+class _FakeSettings:
+    openai_api_key = "test"
+    openai_generate_model = "gpt-test"
+_fake_config = types.ModuleType("app.config")
+_fake_config.get_settings = lambda: _FakeSettings()
+sys.modules.setdefault("app.config", _fake_config)
+
+from app.services.answer import (  # noqa: E402
+    _SYSTEM_PROMPT_MATH,
+    _SYSTEM_PROMPT_STRONG,
+    _SYSTEM_PROMPT_WEAK,
+    pick_system_prompt,
+)
+
+
+# ── weak retrieval always wins, even for math questions ────────────────────
+
+
+def test_weak_retrieval_uses_weak_prompt_even_for_math() -> None:
+    prompt, mode = pick_system_prompt("Solve Aufgabe 1.2", "weak")
+    assert prompt is _SYSTEM_PROMPT_WEAK
+    assert mode == "weak"
+
+
+def test_none_retrieval_uses_weak_prompt() -> None:
+    prompt, mode = pick_system_prompt("Aufgabe 1.2", "none")
+    assert prompt is _SYSTEM_PROMPT_WEAK
+    assert mode == "weak"
+
+
+# ── strong retrieval routes by question type ───────────────────────────────
+
+
+@pytest.mark.parametrize("q", [
+    "Solve Problem 2",
+    "Calculate the bending moment when F = 200 N and l = 0.5 m",
+    "Derive the formula for cantilever deflection",
+    "Prove that sin² + cos² = 1",
+    "Aufgabe 1.2",
+    "Übung 3 (a)",
+    "Give me the formula for shear force",
+    "Berechne das Moment",
+])
+def test_math_question_with_strong_context_uses_math_prompt(q: str) -> None:
+    prompt, mode = pick_system_prompt(q, "strong")
+    assert prompt is _SYSTEM_PROMPT_MATH
+    assert mode == "math"
+
+
+@pytest.mark.parametrize("q", [
+    "Summarize chapter 2",
+    "Who wrote this lecture?",
+    "Explain in plain English",
+    "What is the main idea?",
+])
+def test_non_math_question_with_strong_context_uses_strong_prompt(q: str) -> None:
+    prompt, mode = pick_system_prompt(q, "strong")
+    assert prompt is _SYSTEM_PROMPT_STRONG
+    assert mode == "strong"
+
+
+# ── math prompt contract — must mention every section the template requires ─
+
+
+def test_math_prompt_contains_required_sections() -> None:
+    body = _SYSTEM_PROMPT_MATH
+    for heading in (
+        "Sources used", "Given", "Required", "Formula",
+        "Substitution", "Calculation", "Unit check", "Final answer",
+        "Confidence",
+    ):
+        assert heading in body, f"math prompt missing required section: {heading}"
+
+
+def test_math_prompt_mentions_verification_states() -> None:
+    body = _SYSTEM_PROMPT_MATH
+    for label in ("Verified", "Partially verified", "Missing context"):
+        assert label in body, f"math prompt missing verification label: {label}"
+
+
+def test_math_prompt_forbids_invention() -> None:
+    body = _SYSTEM_PROMPT_MATH.lower()
+    # The anti-hallucination clause must survive future edits.
+    assert "do not invent" in body

@@ -372,7 +372,7 @@
           '<div class="qzsp-settings-body">' +
             '<label class="qzsp-label">Number of cards</label>' +
             '<div class="qzsp-count-row">' +
-              '<input type="range" id="fcCountSlider" min="3" max="24" value="' + Math.min(count, 24) + '" class="qzsp-slider">' +
+              '<input type="range" id="fcCountSlider" min="3" max="10" value="' + Math.min(count, 10) + '" class="qzsp-slider">' +
               '<span id="fcCountVal" class="qzsp-count-val">' + count + '</span>' +
             '</div>' +
             '<label class="qzsp-label">Difficulty</label>' +
@@ -589,7 +589,7 @@
       els.generate.innerHTML = '<span class="fc-btn-icon">&#x23F3;</span> Generating…';
       _showGeneratingOverlay();
       var genOpts = {
-        count: settings.count || 12,
+        count: Math.min(settings.count || 10, 10),
         difficulty: settings.difficulty || 'medium',
         topic: null,
         seenItems: _seenCards()

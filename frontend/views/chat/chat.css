@@ -2050,17 +2050,24 @@ body.night .yt-pl-name {
   color: #ff4040;
 }
 .st-done-popup {
-  background: var(--card);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(96, 165, 250, 0.28);
   border-radius: 24px;
   padding: 36px 32px 28px;
   max-width: 360px;
   width: 90%;
   text-align: center;
-  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.25);
+  color: #e2e8f0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
   animation: stDoneIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 body.night .st-done-popup {
-  background: #1a1828;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.96);
 }
 @keyframes stDoneIn {
   from {
@@ -2079,15 +2086,15 @@ body.night .st-done-popup {
 .st-done-title {
   font-size: 1.15rem;
   font-weight: 800;
-  color: var(--text);
+  color: #f8fafc;
   margin-bottom: 10px;
 }
 body.night .st-done-title {
-  color: #e2d9f3;
+  color: #f8fafc;
 }
 .st-done-sub {
   font-size: 0.82rem;
-  color: var(--muted);
+  color: rgba(226, 232, 240, 0.65);
   line-height: 1.6;
   margin-bottom: 24px;
 }
@@ -2113,16 +2120,25 @@ body.night .st-done-title {
   transform: translateY(-1px);
 }
 .st-done-primary {
-  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  box-shadow: 0 8px 22px -8px rgba(37, 99, 235, 0.6);
+}
+.st-done-primary:hover {
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.75);
 }
 .st-done-secondary {
-  background: rgba(37, 99, 235, 0.1);
-  color: var(--purple);
-  border: 1.5px solid rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.12);
+  color: #bfdbfe;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+}
+.st-done-secondary:hover {
+  background: rgba(37, 99, 235, 0.22);
+  color: #fff;
 }
 body.night .st-done-secondary {
-  background: rgba(37, 99, 235, 0.15);
+  background: rgba(37, 99, 235, 0.12);
 }
 .st-music-row {
   display: flex;
@@ -2199,12 +2215,15 @@ body.night .st-done-secondary {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 200px;
-  padding: 14px 16px 16px;
-  background: rgba(12, 8, 28, 0.92);
-  border: 1px solid rgba(59, 130, 246, 0.22);
-  border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  width: 240px;
+  padding: 14px 18px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 20px;
+  color: #e2e8f0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(18px);
   animation: smcIn 0.3s ease;
 }
@@ -2213,13 +2232,13 @@ body.night .st-done-secondary {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .smc-btn {
   background: none;
   border: none;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(226, 232, 240, 0.55);
   font-size: 0.85rem;
   width: 24px;
   height: 24px;
@@ -2233,58 +2252,62 @@ body.night .st-done-secondary {
   padding: 0;
 }
 .smc-btn:hover {
-  background: rgba(59, 130, 246, 0.15);
-  color: #e2c5ff;
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
 }
 .smc-art {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb, #db2777);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: #fff;
   flex-shrink: 0;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
 }
 .smc-track {
   width: 100%;
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .smc-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #f0e6ff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #f8fafc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 168px;
+  max-width: 100%;
+  letter-spacing: 0.01em;
 }
 .smc-artist {
-  font-size: 0.68rem;
-  color: rgba(59, 130, 246, 0.7);
-  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(147, 197, 253, 0.85);
+  margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 168px;
+  max-width: 100%;
 }
 .smc-progress-wrap {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .smc-progress-range {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 3px;
+  height: 4px;
   border-radius: 99px;
   background: linear-gradient(
     to right,
-    #2563eb var(--pct, 0%),
-    rgba(255, 255, 255, 0.12) var(--pct, 0%)
+    #3b82f6 var(--pct, 0%),
+    rgba(96, 165, 250, 0.18) var(--pct, 0%)
   );
   outline: none;
   cursor: pointer;
@@ -2295,8 +2318,8 @@ body.night .st-done-secondary {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.7);
+  background: #60a5fa;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.75);
   cursor: pointer;
   transition: transform 0.12s;
 }
@@ -2305,33 +2328,35 @@ body.night .st-done-secondary {
   height: 12px;
   border: none;
   border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.7);
+  background: #60a5fa;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.75);
   cursor: pointer;
 }
 .smc-progress-range:hover::-webkit-slider-thumb {
-  transform: scale(1.4);
+  transform: scale(1.35);
 }
 .smc-time-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.6rem;
-  color: rgba(59, 130, 246, 0.55);
-  margin-top: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba(147, 197, 253, 0.7);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
 .smc-controls {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 16px;
   width: 100%;
 }
 .smc-ctrl {
-  background: none;
-  border: none;
+  background: rgba(59, 130, 246, 0.10);
+  border: 1px solid rgba(96, 165, 250, 0.22);
   cursor: pointer;
-  color: rgba(59, 130, 246, 0.8);
-  font-size: 1.1rem;
+  color: #bfdbfe;
+  font-size: 0.95rem;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -2341,47 +2366,51 @@ body.night .st-done-secondary {
   transition:
     background 0.15s,
     color 0.15s,
-    transform 0.12s;
+    transform 0.12s,
+    border-color 0.15s;
   padding: 0;
   line-height: 1;
 }
 .smc-ctrl:hover {
-  color: #e2c5ff;
-  transform: scale(1.15);
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(147, 197, 253, 0.55);
+  color: #fff;
+  transform: translateY(-1px);
 }
 .smc-ctrl.smc-play {
-  background: linear-gradient(135deg, #2563eb, #a21caf);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(96, 165, 250, 0.55);
   color: #fff;
   font-size: 1rem;
-  width: 42px;
-  height: 42px;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.45);
+  width: 46px;
+  height: 46px;
+  box-shadow: 0 8px 22px -6px rgba(37, 99, 235, 0.7);
 }
 .smc-ctrl.smc-play:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.6);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.85);
 }
 .st-music-pill {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb, #a21caf);
-  border: none;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(96, 165, 250, 0.55);
   cursor: pointer;
   font-size: 1.15rem;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.5);
+  box-shadow: 0 8px 22px -6px rgba(37, 99, 235, 0.7);
   transition:
     transform 0.15s,
     box-shadow 0.15s;
   animation: smcIn 0.25s ease;
 }
 .st-music-pill:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 22px rgba(124, 58, 237, 0.65);
+  transform: translateY(-1px) scale(1.06);
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.85);
 }
 /* Games locked during focus */
 #psbGames.st-locked {

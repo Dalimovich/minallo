@@ -20,6 +20,7 @@ async function saveProfile() {
     showToast(_t('toast_sign_in'), '');
     return;
   }
+  var glSel = document.getElementById('profileGermanLevel');
   var data = {
     id: _currentUser.id,
     full_name: (document.getElementById('profileName') || {}).value || '',
@@ -29,6 +30,10 @@ async function saveProfile() {
     programme: (document.getElementById('profileProgramme') || {}).value || '',
     vertiefung: (document.getElementById('profileVertiefung') || {}).value || '',
     matrikel: (document.getElementById('profileMatrikel') || {}).value || '',
+    // Persist the German level so learners can update it as they advance.
+    // This is the single editable source of truth — the Schreibtrainer and
+    // sidebar both read window._germanLevel which we refresh below.
+    german_level: glSel ? glSel.value || '' : '',
     updated_at: new Date().toISOString()
   };
   try {
@@ -56,6 +61,22 @@ async function saveProfile() {
     try {
       localStorage.setItem('profile_cache_' + _currentUser.id, JSON.stringify(data));
     } catch (e) {}
+    // Refresh the in-memory German level + its localStorage cache so the
+    // Schreibtrainer (and anything else reading window._germanLevel) picks
+    // up the change without a reload. Also re-render the practice hero
+    // chip and any open Schreibtrainer badge.
+    if (data.german_level !== undefined) {
+      window._germanLevel = data.german_level || '';
+      try {
+        localStorage.setItem('ss_german_level_' + _currentUser.id, window._germanLevel);
+      } catch (e) {}
+      var glChip = document.getElementById('glLevelChip');
+      var glChipChip = document.getElementById('glLevelChipChip');
+      var wcVal = document.getElementById('wcLevelValue');
+      if (glChip) glChip.textContent = window._germanLevel || '–';
+      if (glChipChip) glChipChip.textContent = window._germanLevel || '–';
+      if (wcVal) wcVal.textContent = window._germanLevel || '–';
+    }
     var init = document.getElementById('profileInitial');
     if (init && data.full_name) init.textContent = data.full_name.charAt(0).toUpperCase();
     updateAuthIndicator(_currentUser);

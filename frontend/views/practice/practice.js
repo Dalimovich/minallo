@@ -71,19 +71,40 @@
     var _glCardIndex = 0;
     var _glCardFlipped = false;
 
-    // Refresh hero badge/chip from globals set by app.js profile load
+    // Refresh hero badges/chips from globals set by app.js profile load.
+    // Old layout had #glTestBadge; new v2 hero drops it but keeps the lookup
+    // here as a no-op for safety. Level appears in two spots in v2:
+    // the level stat-pill (#glLevelChip) and the read-only action chip
+    // (#glLevelChipChip).
     function _glRefreshHero() {
       var glSub = document.getElementById('glTestBadge');
       var glChip = document.getElementById('glLevelChip');
+      var glChipDup = document.getElementById('glLevelChipChip');
+      var lvl = window._germanLevel || '–';
       if (glSub && window._germanTest) glSub.textContent = window._germanTest + ' preparation';
-      if (glChip && window._germanLevel) glChip.textContent = window._germanLevel || '–';
+      if (glChip) glChip.textContent = lvl;
+      if (glChipDup) glChipDup.textContent = lvl;
     }
     _glRefreshHero();
 
-    // Wire skill cards via event delegation
+    // Wire skill cards via event delegation. Anchor on the home wrapper so
+    // a card click anywhere inside (including the "Open practice" button)
+    // resolves to the right skill.
     document.getElementById('glHome').addEventListener('click', function (e) {
+      var startBtn = e.target.closest('#glStartPractice');
+      if (startBtn) {
+        // Open last-used skill, or fall back to reading.
+        var last = '';
+        try { last = localStorage.getItem('ss_gl_last_skill') || ''; } catch (_) {}
+        window._glOpenSkill(last || 'reading');
+        return;
+      }
       var card = e.target.closest('.gl-skill-card');
-      if (card) window._glOpenSkill(card.getAttribute('data-skill'));
+      if (card) {
+        var sk = card.getAttribute('data-skill');
+        try { localStorage.setItem('ss_gl_last_skill', sk); } catch (_) {}
+        window._glOpenSkill(sk);
+      }
     });
 
     // Back button
@@ -95,17 +116,17 @@
           _glActiveSkill = '';
           var home = document.getElementById('glHome');
           var detail = document.getElementById('glSkillView');
+          var wcView = document.getElementById('wcView');
           if (home) home.style.display = '';
           if (detail) detail.style.display = 'none';
+          // Also collapse the Schreibtrainer detail view — otherwise it
+          // stays visible underneath the cards when the user navigates
+          // away mid-session and clicks Practice again.
+          if (wcView) wcView.style.display = 'none';
           var aiChipsEl = document.querySelector('.ai-chips');
           if (aiChipsEl && aiChipsEl._originalHTML) {
             aiChipsEl.innerHTML = aiChipsEl._originalHTML;
             aiChipsEl._originalHTML = null;
-          }
-          // Navigate back to the course files overview
-          if (typeof window._showFilesView === 'function') window._showFilesView();
-          if (window.activeCourseRef && typeof window.showCourseSection === 'function') {
-            window.showCourseSection(window.activeCourseRef, 'files');
           }
         })
       );
@@ -178,18 +199,6 @@
 
     window._glOpenSkill = function (skill) {
       _glActiveSkill = skill;
-
-      // Show skill detail, hide home
-      var home = document.getElementById('glHome');
-      var detail = document.getElementById('glSkillView');
-      if (home) home.style.display = 'none';
-      if (detail) detail.style.display = '';
-
-      // Update title and subtitle
-      var titleEl = document.getElementById('glSkillTitle');
-      var subEl = document.getElementById('glSkillSub');
-      if (titleEl) titleEl.textContent = _glSkillNames[skill] || skill;
-      if (subEl) subEl.textContent = _glSkillSubs[skill] || '';
       // Seed activeCourseId/activeCourseRef if not yet set, then load DB tools.
       var _glCourseForSkill = _glEnsurePracticeCourse();
       console.log('[practice course]', {
@@ -235,16 +244,17 @@
       _glActiveSkill = '';
       var home = document.getElementById('glHome');
       var detail = document.getElementById('glSkillView');
+      var wcView = document.getElementById('wcView');
       if (home) home.style.display = '';
       if (detail) detail.style.display = 'none';
+      // Also collapse the Schreibtrainer detail view — otherwise it
+      // stays visible underneath the cards when the user navigates
+      // away mid-session and clicks Practice again.
+      if (wcView) wcView.style.display = 'none';
       var aiChipsEl = document.querySelector('.ai-chips');
       if (aiChipsEl && aiChipsEl._originalHTML) {
         aiChipsEl.innerHTML = aiChipsEl._originalHTML;
         aiChipsEl._originalHTML = null;
-      }
-      if (typeof window._showFilesView === 'function') window._showFilesView();
-      if (window.activeCourseRef && typeof window.showCourseSection === 'function') {
-        window.showCourseSection(window.activeCourseRef, 'files');
       }
     };
 

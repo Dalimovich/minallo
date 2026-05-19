@@ -52,11 +52,17 @@ async function saveSettings(patch) {
 }
 
 (function bindSettingsControls() {
+  function _markDirty() {
+    var el = document.getElementById('settingsSaveState');
+    if (el) { el.textContent = 'Unsaved changes'; el.className = 'settings-save-state dirty'; }
+  }
+
   var settingsLanguage = document.getElementById('settingsLanguage');
   if (settingsLanguage) {
     settingsLanguage.value = window._lang || localStorage.getItem('ss_lang') || 'en';
     settingsLanguage.addEventListener('change', function () {
       if (typeof window.applyLanguage === 'function') window.applyLanguage(this.value);
+      _markDirty();
     });
   }
 
@@ -74,6 +80,7 @@ async function saveSettings(patch) {
     dmToggle.addEventListener('change', function () {
       if (typeof window._applyTheme === 'function') window._applyTheme(this.checked, this);
       else if (typeof _applyTheme === 'function') _applyTheme(this.checked, this);
+      _markDirty();
     });
     var nightBtn = document.getElementById('nightBtn');
     if (nightBtn) {
@@ -97,6 +104,7 @@ async function saveSettings(patch) {
     settingsAutoOpen.addEventListener('change', function () {
       _autoOpenEnabled = this.checked;
       window._autoOpenEnabled = _autoOpenEnabled;
+      _markDirty();
     });
   }
 
@@ -123,6 +131,7 @@ async function saveSettings(patch) {
     settingsSaveChat.addEventListener('change', function () {
       _saveChatEnabled = this.checked;
       window._saveChatEnabled = _saveChatEnabled;
+      _markDirty();
     });
   }
 
@@ -138,9 +147,10 @@ async function saveSettings(patch) {
   window.addEventListener('beforeunload', _ssUnloadSave);
   window.addEventListener('pagehide', _ssUnloadSave);
 
-  var dangerBtn = document.querySelector('.settings-danger-btn');
+  var dangerBtn = document.getElementById('clearChatHistoryBtn');
   if (dangerBtn) {
     dangerBtn.addEventListener('click', function () {
+      if (!confirm('Clear all AI chat history? This cannot be undone.')) return;
       Object.keys(localStorage)
         .filter(function (k) {
           return k.startsWith('ss_chat_');
@@ -156,6 +166,10 @@ async function saveSettings(patch) {
   var saveSettingsBtn = document.getElementById('saveSettingsBtn');
   if (saveSettingsBtn) {
     saveSettingsBtn.addEventListener('click', async function () {
+      var btn = this;
+      var stateEl = document.getElementById('settingsSaveState');
+      btn.disabled = true;
+      if (stateEl) { stateEl.textContent = 'Saving…'; stateEl.className = 'settings-save-state dirty'; }
       var lang =
         (document.getElementById('settingsLanguage') || {}).value ||
         window._lang ||
@@ -173,13 +187,25 @@ async function saveSettings(patch) {
             localStorage.removeItem(k);
           });
       }
-      await saveSettings({
-        language: lang,
-        auto_open_ai: autoOpen,
-        save_chat_history: saveChat,
-        dark_mode: darkMode
-      });
-      showToast(_t('toast_settings_saved'), _t('toast_settings_saved_sub'));
+      try {
+        await saveSettings({
+          language: lang,
+          auto_open_ai: autoOpen,
+          save_chat_history: saveChat,
+          dark_mode: darkMode
+        });
+        showToast(_t('toast_settings_saved'), _t('toast_settings_saved_sub'));
+        if (stateEl) { stateEl.textContent = 'Saved ✓'; stateEl.className = 'settings-save-state saved'; }
+        setTimeout(function () {
+          btn.disabled = false;
+          var el = document.getElementById('settingsSaveState');
+          if (el) { el.textContent = ''; el.className = 'settings-save-state'; }
+        }, 1500);
+      } catch (err) {
+        console.error('saveSettings click error:', err);
+        btn.disabled = false;
+        if (stateEl) { stateEl.textContent = 'Save failed'; stateEl.className = 'settings-save-state error'; }
+      }
     });
   }
 

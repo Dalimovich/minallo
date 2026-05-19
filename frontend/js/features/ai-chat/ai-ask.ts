@@ -328,12 +328,21 @@ export function initAskAI(
 
         const _courseId = window.activeCourseId || window.currentCourseId || '';
         let _hasRag = false;
-        const _activeDocId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
+        let _activeDocId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
         if (_courseId) {
           try {
             const _docs: CourseDocument[] = await listCourseDocuments(_courseId);
             const _readyDocs = _docs.filter((d) => d.processing_status === 'ready');
             _hasRag = _readyDocs.length > 0;
+            // If the user is reading a specific file, resolve its UUID so we
+            // can target it directly via documentIds — otherwise /ask-stream
+            // searches the whole course and may miss the open doc.
+            if (!_activeDocId && activeFileName) {
+              const _open = _readyDocs.find(
+                (d) => (d.file_name || '').toLowerCase() === activeFileName.toLowerCase()
+              );
+              if (_open?.id) _activeDocId = _open.id;
+            }
           } catch { _hasRag = false; }
         }
 
@@ -427,6 +436,9 @@ export function initAskAI(
             const TOKEN_INTERVAL = CFG.streamTokenInterval || 38;
 
             let _renderedBlockCount = 0;
+            // Both `evt.done` and the reader's `result.done` can race to call
+            // finalize() — guard so history/feedback bar aren't doubled.
+            let _finalized = false;
 
             function splitBlocks(text: string): string[] {
               const blocks: string[] = [];
@@ -583,6 +595,7 @@ export function initAskAI(
                 courseId: _courseId,
                 question: question,
                 documentIds: _activeDocId ? [_activeDocId] : undefined,
+                activeDocumentId: _activeDocId || undefined,
                 bypassCache: opts && opts.forceRefresh ? true : undefined,
               }),
             })
@@ -672,6 +685,8 @@ export function initAskAI(
             }
 
             function finalize(meta: SseDoneEvent | null | undefined): void {
+              if (_finalized) return;
+              _finalized = true;
               window._activeStreamRender = null;
               const sources = (meta && meta.sources) || [];
               const confidence = (meta && meta.confidence) || 'medium';
@@ -806,6 +821,13 @@ export function initAskAI(
           : d.content
             ? d.content.map((b) => b.text || '').join('')
             : 'No response';
+
+        // Persist non-RAG answers too. The RAG/stream path saves history inside
+        // finalize(); without this the non-RAG branch silently dropped chat
+        // history on reload for users with no indexed course docs.
+        if (!d.error && rawTextLocal && rawTextLocal !== 'No response') {
+          _appendCourseHistory(window.activeCourseId || window.currentCourseId || '', question, rawTextLocal);
+        }
 
         const ansWrap = document.createElement('div');
         ansWrap.className = 'ai-msg-wrap';

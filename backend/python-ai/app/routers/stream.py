@@ -21,7 +21,8 @@ from pydantic import BaseModel
 from ..jwt_auth import verify_supabase_jwt
 from ..services.answer_stream import stream_answer
 from ..services.cache import fetch_document_version_hash, lookup_answer, save_answer
-from ..services.retrieval import retrieve_chunks
+from ..services.retrieval import retrieve_chunks, retrieve_exercise_block
+from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ def _verify_user_owns_documents(user_id: str, course_id: str, document_ids: list
 class AskStreamRequest(BaseModel):
     courseId: str
     documentIds: list[str] | None = None
+    activeDocumentId: str | None = None
     question: str
     bypassCache: bool = False
 
@@ -67,7 +69,13 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     if payload.documentIds:
         for did in payload.documentIds:
             _require_uuid(did, "documentId")
+    if payload.activeDocumentId:
+        _require_uuid(payload.activeDocumentId, "activeDocumentId")
     doc_name_map = _verify_user_owns_documents(user_id, payload.courseId, payload.documentIds)
+    if payload.activeDocumentId:
+        doc_name_map.update(_verify_user_owns_documents(
+            user_id, payload.courseId, [payload.activeDocumentId]
+        ))
 
     question = (payload.question or "").strip()
     if not question:
@@ -121,13 +129,34 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         }))
 
     if cached:
+        record_retrieval_debug(DebugPayload(
+            user_id=user_id, course_id=payload.courseId,
+            endpoint="ask-stream", question=question,
+            active_document_id=payload.activeDocumentId,
+            selected_document_ids=payload.documentIds,
+            retrieval_strategy="cache",
+            retrieval_mode=cached.get("retrievalMode", "strong"),
+            candidate_doc_count=None, exercise_hit=None, chunks=[],
+            model=cached.get("model"), cache_hit=True,
+            prompt_tokens=cached.get("promptTokens"),
+            completion_tokens=cached.get("completionTokens"),
+        ))
         return StreamingResponse(cached_stream(), media_type="text/event-stream")
 
     # ── Retrieve ─────────────────────────────────────────────────────────────
+    exercise_hit = retrieve_exercise_block(
+        user_id=user_id, course_id=payload.courseId, query=question,
+        document_ids=payload.documentIds,
+        active_document_id=payload.activeDocumentId,
+    )
     chunks = retrieve_chunks(
         user_id=user_id, course_id=payload.courseId,
-        query=question, document_ids=payload.documentIds, top_k=12,
+        query=question, document_ids=payload.documentIds,
+        active_document_id=payload.activeDocumentId, top_k=12,
     )
+    if exercise_hit:
+        from .ask import _prepend_exercise_chunks  # reuse the same helper
+        chunks = _prepend_exercise_chunks(exercise_hit, chunks)
 
     missing_ids = [c.document_id for c in chunks if c.document_id not in doc_name_map]
     if missing_ids:
@@ -207,5 +236,28 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 )
             except Exception:
                 log.exception("cache save after stream failed (non-fatal)")
+
+        record_retrieval_debug(DebugPayload(
+            user_id=user_id, course_id=payload.courseId,
+            endpoint="ask-stream", question=question,
+            active_document_id=payload.activeDocumentId,
+            selected_document_ids=payload.documentIds,
+            retrieval_strategy=("exercise-exact+vector" if exercise_hit else "vector+bm25"),
+            retrieval_mode=captured_meta.get("retrievalMode"),
+            candidate_doc_count=len({c.document_id for c in chunks}) if chunks else 0,
+            exercise_hit=(
+                {
+                    "documentId": exercise_hit.document_id,
+                    "exerciseNumber": exercise_hit.exercise_number,
+                    "subpart": exercise_hit.subpart,
+                    "pageStart": exercise_hit.page_start,
+                    "pageEnd": exercise_hit.page_end,
+                } if exercise_hit else None
+            ),
+            chunks=chunks,
+            model=captured_meta.get("model"), cache_hit=False,
+            prompt_tokens=captured_meta.get("promptTokens"),
+            completion_tokens=captured_meta.get("completionTokens"),
+        ))
 
     return StreamingResponse(gen(), media_type="text/event-stream")

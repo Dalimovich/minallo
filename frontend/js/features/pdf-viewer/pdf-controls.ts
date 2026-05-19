@@ -140,6 +140,19 @@ export function initPdfControls(options: PdfControlsOptions): {
     if (fileName) options.downloadFile(fileName);
   });
 
+  document.getElementById('pdfBack')?.addEventListener('click', () => {
+    const w = window as unknown as {
+      activeCourseRef?: { id?: string } & Record<string, unknown>;
+      showCourseSection?: (course: unknown, section: string) => void;
+      showPortalSection?: (section: string) => void;
+    };
+    if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+      w.showCourseSection(w.activeCourseRef, 'files');
+      return;
+    }
+    if (typeof w.showPortalSection === 'function') w.showPortalSection('courses');
+  });
+
   document.getElementById('pdfAll')?.addEventListener('click', () => {
     options.setPdfShowAll(!options.getPdfShowAll());
     const btn = document.getElementById('pdfAll');

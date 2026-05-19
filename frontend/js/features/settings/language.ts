@@ -68,10 +68,6 @@ export const translations: Record<string, TranslationMap> = {
     sb_mails: '✉️ Mails',
     sb_back: '← All subjects',
     back_btn: '← Back',
-    welcome_title: 'Select a file to read',
-    welcome_sub:
-      'Open a subject in the sidebar and click any file — it loads here as a real document.',
-    welcome_hint: '💡 Select any text or formula → AI automatically asks if you need help',
     pdf_fit: 'Fit',
     pdf_single: 'Single page',
     pdf_download: '⬇ Download',
@@ -222,10 +218,6 @@ export const translations: Record<string, TranslationMap> = {
     sb_mails: '✉️ E-Mails',
     sb_back: '← Alle Fächer',
     back_btn: '← Zurück',
-    welcome_title: 'Datei auswählen',
-    welcome_sub:
-      'Öffne ein Fach in der Seitenleiste und klicke auf eine Datei — sie wird hier als Dokument angezeigt.',
-    welcome_hint: '💡 Markiere Text oder eine Formel → KI fragt automatisch, ob du Hilfe brauchst',
     pdf_fit: 'Anpassen',
     pdf_single: 'Einzelseite',
     pdf_download: '⬇ Herunterladen',

@@ -5,20 +5,20 @@
 <div class="settings-block">
   <div class="settings-block-title">&#x2728; Appearance</div>
   <div class="settings-row-new">
-    <div class="settings-row-lbl">
+    <label class="settings-row-lbl" for="settingsDarkMode">
       <div class="settings-row-ico">&#x1F319;</div>
       Dark mode
-    </div>
+    </label>
     <label class="toggle"
       ><input type="checkbox" id="settingsDarkMode" />
       <div class="toggle-track"></div
     ></label>
   </div>
   <div class="settings-row-new">
-    <div class="settings-row-lbl">
+    <label class="settings-row-lbl" for="settingsLanguage">
       <div class="settings-row-ico">&#x1F310;</div>
       Language
-    </div>
+    </label>
     <select class="settings-select-new" id="settingsLanguage">
       <option value="en">&#x1F1EC;&#x1F1E7; English</option>
       <option value="de">&#x1F1E9;&#x1F1EA; Deutsch</option>
@@ -28,27 +28,24 @@
 <div class="settings-block">
   <div class="settings-block-title">&#x1F916; AI Assistant</div>
   <div class="settings-row-new">
-    <div class="settings-row-lbl">
+    <label class="settings-row-lbl" for="settingsAutoOpen">
       <div class="settings-row-ico">&#x2728;</div>
       Auto-open on text select
-    </div>
+    </label>
     <label class="toggle"
       ><input type="checkbox" id="settingsAutoOpen" checked />
       <div class="toggle-track"></div
     ></label>
   </div>
   <div class="settings-row-new">
-    <div class="settings-row-lbl">
+    <label class="settings-row-lbl" for="settingsSaveChat">
       <div class="settings-row-ico">&#x1F4AC;</div>
       Save chat history per PDF
-    </div>
+    </label>
     <label class="toggle"
       ><input type="checkbox" id="settingsSaveChat" checked />
       <div class="toggle-track"></div
     ></label>
-  </div>
-  <div style="padding-top: 14px">
-    <button class="pf-save" id="saveSettingsBtn">Save Changes</button>
   </div>
 </div>
 <div class="settings-block" id="musicServicesBlock">
@@ -130,7 +127,7 @@
       <div class="settings-row-ico">&#x1F5D1;&#xFE0F;</div>
       Clear all AI chat history
     </div>
-    <button class="settings-danger-btn">Clear history</button>
+    <button class="settings-danger-btn" id="clearChatHistoryBtn">Clear history</button>
   </div>
 </div>
 <div class="settings-block">
@@ -173,4 +170,8 @@
       Delete account
     </button>
   </div>
+</div>
+<div class="settings-save-bar">
+  <span class="settings-save-state" id="settingsSaveState"></span>
+  <button class="pf-save" id="saveSettingsBtn">Save Changes</button>
 </div>

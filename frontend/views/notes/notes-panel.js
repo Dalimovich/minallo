@@ -116,9 +116,9 @@
     return [
       '<div class="np-header">',
         '<div class="np-tabs">',
-          '<button class="np-tab active" data-tab="notes">Notes</button>',
-          '<button class="np-tab" data-tab="summary">Summary</button>',
-          '<button class="np-tab" data-tab="saved">Saved</button>',
+          '<button class="np-tab active" data-tab="notes" data-testid="notes-panel-tab">Notes</button>',
+          '<button class="np-tab" data-tab="summary" data-testid="summary-panel">Summary</button>',
+          '<button class="np-tab" data-tab="saved" data-testid="notes-saved-tab">Saved</button>',
         '</div>',
         '<div class="np-header-actions">',
           '<button class="np-icon-btn" id="npExport" title="Export as PDF">&#x1F4E4;</button>',
@@ -204,6 +204,7 @@
     var panel = document.createElement('div');
     panel.id = 'pdfNotesPanel';
     panel.className = 'pdf-notes-panel';
+    panel.setAttribute('data-testid', 'notes-panel');
     panel.style.display = 'none';
     panel.innerHTML = _panelHTML();
     var wrap = $id('pdfViewerWrap');

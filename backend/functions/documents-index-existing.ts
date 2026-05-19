@@ -7,6 +7,7 @@ import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { supaRequest } from '../lib/supabase-admin';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import { isSafeCourseId, isSafePdfStorageName } from '../lib/validation';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const SOURCE_BUCKET = 'course-uploads';
@@ -71,9 +72,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const isOfficialProfMaterial = body.isOfficialProfMaterial;
   const forceReindex = body.forceReindex;
 
-  if (!courseId || typeof courseId !== 'string') return fail(400, 'courseId is required');
-  if (!storageName || typeof storageName !== 'string') return fail(400, 'storageName is required');
-  if (!fileName || typeof fileName !== 'string') return fail(400, 'fileName is required');
+  if (!courseId || typeof courseId !== 'string' || !isSafeCourseId(courseId)) {
+    return fail(400, 'courseId is invalid');
+  }
+  if (!storageName || typeof storageName !== 'string' || !isSafePdfStorageName(storageName)) {
+    return fail(400, 'storageName is invalid');
+  }
+  if (!fileName || typeof fileName !== 'string' || !isSafePdfStorageName(fileName)) {
+    return fail(400, 'fileName is invalid');
+  }
 
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
   const courseKey = _ufKey(courseId);

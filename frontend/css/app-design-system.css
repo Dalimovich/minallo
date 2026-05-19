@@ -1,0 +1,1352 @@
+/* ============================================================================
+ * Minallo Shared Design System
+ *
+ * Defines reusable utility classes plus scoped overrides that map legacy
+ * page markup onto the new blue-glass system used by the Courses page,
+ * opened course Files view, and Chatbot. Loaded AFTER styles.css but
+ * carefully excluded from the three protected pages:
+ *   - #psec-studip (Courses overview)
+ *   - #psec-aipage (Chatbot)
+ *   - #app inside body.minallo-in-course (opened course Files)
+ *
+ * Strategy: rather than rewriting every page's markup, we restyle the
+ * legacy class names that appear across pages so the visual treatment
+ * propagates with zero markup churn.
+ * ========================================================================== */
+
+/* ── Reusable utility classes ───────────────────────────────────────────── */
+
+.glass-card {
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 24px;
+}
+
+.inner-card {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.4);
+  padding: 18px;
+}
+
+.app-popover {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 26, 49, 0.95);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.32);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 0 36px rgba(59, 130, 246, 0.45);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(226, 232, 240, 0.95);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(252, 165, 165, 0.25);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecaca;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(252, 165, 165, 0.45);
+}
+
+.input-glass {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.95);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.input-glass::placeholder {
+  color: rgba(226, 232, 240, 0.42);
+}
+.input-glass:focus {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+}
+
+.empty-state {
+  padding: 56px 24px;
+  text-align: center;
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(226, 232, 240, 0.6);
+}
+
+/* ============================================================================
+ * Page-by-page legacy class overrides
+ *
+ * Each block is scoped to a `body.night #portal` ancestor + a portal section
+ * ID so it never bleeds onto the protected pages.
+ * ========================================================================== */
+
+/* ── PROFILE (#psec-profile) ────────────────────────────────────────────── */
+
+body.night #psec-profile .dash-greeting {
+  padding: 0 0 18px;
+}
+body.night #psec-profile .dash-greeting h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  font-family: 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0 0 4px;
+}
+body.night #psec-profile .dash-greeting p {
+  font-size: 0.92rem;
+  font-weight: 400;
+  color: rgba(226, 232, 240, 0.6);
+  margin: 0;
+}
+body.night #psec-profile .profile-hero {
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 28px 32px !important;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+body.night #psec-profile .ph-avatar {
+  width: 72px !important;
+  height: 72px !important;
+  border-radius: 22px !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: #fff !important;
+  font-size: 1.8rem !important;
+  font-weight: 700 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+body.night #psec-profile .ph-info h2 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+}
+body.night #psec-profile .ph-info p {
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.6);
+  margin: 0;
+}
+body.night #psec-profile .widget-card {
+  border-radius: 28px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 26px !important;
+  margin-bottom: 18px;
+}
+body.night #psec-profile .widget-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.005em;
+  margin-bottom: 16px;
+  text-transform: none !important;
+}
+body.night #psec-profile .pf-group {
+  margin-bottom: 14px;
+}
+body.night #psec-profile .pf-label {
+  display: block;
+  font-size: 0.78rem !important;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.72) !important;
+  margin-bottom: 6px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+body.night #psec-profile .pf-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 14px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+body.night #psec-profile .pf-input:focus {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+}
+body.night #psec-profile .pf-save-btn,
+body.night #psec-profile button[id*='profileSave'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: #fff !important;
+  font-family: inherit;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.32);
+}
+
+/* ── SETTINGS (#psec-settings) ──────────────────────────────────────────── */
+
+body.night #psec-settings .dash-greeting {
+  padding: 0 0 18px;
+}
+body.night #psec-settings .dash-greeting h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  font-family: 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0 0 4px;
+}
+body.night #psec-settings .dash-greeting p {
+  font-size: 0.92rem;
+  font-weight: 400;
+  color: rgba(226, 232, 240, 0.6);
+  margin: 0;
+}
+body.night #psec-settings .settings-block {
+  border-radius: 28px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 24px !important;
+  margin-bottom: 18px;
+}
+body.night #psec-settings .settings-block-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.005em;
+  text-transform: none !important;
+  margin-bottom: 14px;
+}
+body.night #psec-settings .settings-row-new {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: transparent !important;
+}
+body.night #psec-settings .settings-row-new:last-child {
+  border-bottom: none;
+}
+body.night #psec-settings .settings-row-lbl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(226, 232, 240, 0.92) !important;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+body.night #psec-settings .settings-row-ico {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+body.night #psec-settings .settings-select-new {
+  padding: 9px 14px !important;
+  border-radius: 11px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-family: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  outline: none;
+}
+body.night #psec-settings .toggle {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  cursor: pointer;
+}
+body.night #psec-settings .toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+body.night #psec-settings .toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.18s ease;
+}
+body.night #psec-settings .toggle-track::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.85);
+  transition: transform 0.22s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+body.night #psec-settings .toggle input:checked ~ .toggle-track {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+body.night #psec-settings .toggle input:checked ~ .toggle-track::before {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+/* ── DASHBOARD (#psec-dashboard) ────────────────────────────────────────── */
+
+body.night #psec-dashboard .dash-empty {
+  border-radius: 28px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 64px 32px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.6);
+  margin: 24px auto;
+  max-width: 520px;
+}
+body.night #psec-dashboard .dash-empty-glyph {
+  font-size: 2.6rem;
+  margin-bottom: 12px;
+  opacity: 0.55;
+}
+body.night #psec-dashboard .dash-empty-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+  letter-spacing: -0.005em;
+}
+body.night #psec-dashboard .dash-empty-sub {
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.55);
+}
+body.night #psec-dashboard .dash-empty-sub kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(96, 165, 250, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  color: rgba(191, 219, 254, 1);
+  font-family: inherit;
+  font-size: 0.78rem;
+  margin: 0 2px;
+}
+body.night #psec-dashboard .widget-card,
+body.night #psec-dashboard .dash-widget {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+body.night #psec-dashboard .widget-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  text-transform: none !important;
+  letter-spacing: -0.005em;
+}
+body.night .add-widget-fab {
+  border-radius: 16px !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.5) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.32) !important;
+}
+body.night #widgetPanel {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(18, 26, 49, 0.95) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+body.night #widgetPanel .wp-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.005em;
+}
+body.night #widgetPanel .wp-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.85);
+  cursor: pointer;
+}
+body.night #widgetPanel .wp-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ── SUBSCRIPTION (#psec-subscription) ──────────────────────────────────── */
+
+body.night #psec-subscription .dash-greeting h1 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.85rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0 0 4px;
+}
+body.night #psec-subscription .dash-greeting p {
+  font-size: 0.92rem;
+  color: rgba(226, 232, 240, 0.6);
+}
+body.night #psec-subscription .sub-card {
+  border-radius: 28px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 28px !important;
+}
+body.night #psec-subscription .sub-card.featured {
+  border-color: rgba(96, 165, 250, 0.32) !important;
+  box-shadow:
+    0 30px 100px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(96, 165, 250, 0.18) !important;
+}
+body.night #psec-subscription .sub-badge {
+  background: rgba(96, 165, 250, 0.16) !important;
+  border: 1px solid rgba(96, 165, 250, 0.32) !important;
+  color: rgba(191, 219, 254, 1) !important;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none !important;
+}
+body.night #psec-subscription .sub-name {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.4rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+}
+body.night #psec-subscription .sub-price {
+  color: #fff !important;
+  font-weight: 700;
+}
+body.night #psec-subscription .sub-feat {
+  color: rgba(226, 232, 240, 0.85) !important;
+}
+body.night #psec-subscription .sub-btn {
+  border-radius: 14px !important;
+  font-family: inherit;
+  font-weight: 700 !important;
+}
+body.night #psec-subscription .sub-btn-upgrade {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fff !important;
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.32) !important;
+}
+body.night #psec-subscription .sub-btn-current {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+}
+
+/* ── NOTIFICATIONS (#psec-notifications) ────────────────────────────────── */
+
+body.night #psec-notifications .notif-wrap {
+  max-width: 720px;
+  margin: 0 auto;
+}
+body.night #psec-notifications .notif-header {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  padding: 22px 24px !important;
+  margin-bottom: 16px;
+}
+body.night #psec-notifications .notif-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.01em;
+}
+body.night #psec-notifications .notif-subtitle {
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.6) !important;
+}
+body.night #psec-notifications .notif-title-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+body.night #psec-notifications .notif-mark-all {
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-weight: 600 !important;
+}
+body.night #psec-notifications .notif-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+body.night #psec-notifications .notif-tab {
+  padding: 9px 16px !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: rgba(226, 232, 240, 0.65) !important;
+  font-weight: 600 !important;
+  border: none !important;
+  cursor: pointer;
+}
+body.night #psec-notifications .notif-tab.active {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(99, 102, 241, 0.28)) !important;
+  color: #fff !important;
+}
+body.night #psec-notifications .notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+body.night #psec-notifications .notif-list > * {
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  padding: 14px 18px !important;
+}
+body.night #psec-notifications .notif-empty {
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 56px 24px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.6);
+}
+body.night #psec-notifications .notif-empty-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+/* ── EDITOR (#psec-editor) ──────────────────────────────────────────────── */
+
+/* .ed-home / .ed-home-bar / .ed-home-title / .ed-home-grid / .ed-home-empty
+ * are deliberately NOT overridden here — the legacy styles.css owns the
+ * writer document-home and PDF dashboard layout (centering, grid columns,
+ * card sizing, title sizing). Overriding them centered + oversized the
+ * "My Documents" bar and forced backgrounds on document thumb cards. */
+/* Editor course-picker modal */
+body.night .ed-course-modal-overlay {
+  background: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(6px);
+}
+body.night .ed-course-modal {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(18, 26, 49, 0.95) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+body.night .ed-course-modal-hdr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+body.night .ed-course-modal-confirm {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fff !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+}
+body.night .ed-course-modal-cancel {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  border-radius: 12px !important;
+}
+
+/* ── CHAT (#psec-chat) ──────────────────────────────────────────────────── */
+
+body.night #psec-chat .chat-friend-search {
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  padding: 11px 14px !important;
+}
+body.night #psec-chat .chat-friend-search:focus {
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+body.night #psec-chat .chat-friend-box {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(18, 26, 49, 0.95) !important;
+  backdrop-filter: blur(22px);
+}
+body.night #psec-chat .chat-empty {
+  border-radius: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 48px 24px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+/* ── GAMES (#psec-games) ────────────────────────────────────────────────── */
+
+body.night #psec-games .chess-mode-btn {
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: rgba(226, 232, 240, 0.92) !important;
+  padding: 18px 20px !important;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+body.night #psec-games .chess-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(96, 165, 250, 0.32) !important;
+  transform: translateY(-2px);
+}
+body.night #psec-games .chess-mode-name {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+}
+body.night #psec-games .chess-mode-sub {
+  font-size: 0.82rem !important;
+  color: rgba(226, 232, 240, 0.55) !important;
+}
+body.night #psec-games .chess-big-btn {
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+body.night #psec-games .chess-panel {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(22px);
+}
+
+/* ── STUDY LOUNGE (#psec-lounge) ────────────────────────────────────────── */
+
+body.night #psec-lounge .dash-greeting h1 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1.85rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  color: #fff !important;
+}
+body.night #psec-lounge .widget-card,
+body.night #psec-lounge .lounge-card {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+/* ── NOTES / LECTURE NOTES / SUMMARIES — np-* panel classes ─────────────── */
+
+body.night .np-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+body.night .np-saved-item {
+  border-radius: 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  padding: 12px 14px !important;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+body.night .np-saved-item:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(96, 165, 250, 0.28) !important;
+}
+body.night .np-empty {
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 32px 18px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.6);
+}
+body.night .np-btn-generate,
+body.night .np-btn-save {
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.28);
+}
+body.night .np-btn-regen,
+body.night .np-icon-btn {
+  border-radius: 11px !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-weight: 600 !important;
+}
+body.night .np-editor-ta {
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-family: inherit;
+}
+body.night .np-editor-ta:focus {
+  border-color: rgba(96, 165, 250, 0.45) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ── PAYWALL & generic modals (overlays in portal.html) ─────────────────── */
+
+body.night #paywallModal > div {
+  border-radius: 28px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(18, 26, 49, 0.95) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* ── Global typography mature-up — apply on portal pages EXCEPT the
+ *    protected ones (Courses / Chatbot) and EXCEPT the opened course view. */
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) h1,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) h2,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) h3 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* ============================================================================
+ * Phase 3 — Editor, Study Lounge, Games/Flashcards/Quiz, Chat, modals
+ * ========================================================================== */
+
+/* ── EDITOR HUB cards (override inline styles with !important) ──────────── */
+
+body.night #psec-editor .ed-hub-card,
+body.night #psec-editor .ed-hub-card-blue,
+body.night #psec-editor .ed-hub-card-purple,
+body.night #psec-editor .ed-hub-card-green {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease !important;
+}
+body.night #psec-editor .ed-hub-card:hover,
+body.night #psec-editor .ed-hub-card-blue:hover,
+body.night #psec-editor .ed-hub-card-purple:hover,
+body.night #psec-editor .ed-hub-card-green:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(96, 165, 250, 0.32) !important;
+  transform: translateY(-2px);
+}
+/* Restyle Fredoka labels inside hub cards */
+body.night #psec-editor .ed-hub-card > div > div:first-child,
+body.night #psec-editor .ed-hub-card-blue > div > div:first-child,
+body.night #psec-editor .ed-hub-card-purple > div > div:first-child,
+body.night #psec-editor .ed-hub-card-green > div > div:first-child {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.005em !important;
+}
+body.night #psec-editor #editorHub > div:first-child > div:first-child {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  -webkit-text-fill-color: #fff !important;
+  background: none !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.015em;
+}
+
+/* NOTE: Writer (.editor-*) and PDF Editor (.epdf-*) inner surfaces are
+ * left to the legacy styles.css — overriding their backgrounds/padding here
+ * broke the writer's pages sidebar + canvas layout. Only the hub card neon
+ * fix above is intentional for Editor in Phase 3. */
+
+/* ── STUDY LOUNGE — full restyle ────────────────────────────────────────── */
+
+body.night #psec-lounge .dash-greeting p {
+  color: rgba(226, 232, 240, 0.6) !important;
+  font-weight: 400 !important;
+}
+body.night #psec-lounge .lounge-streak-banner {
+  border-radius: 24px !important;
+  border: 1px solid rgba(96, 165, 250, 0.28) !important;
+  background:
+    linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(37, 99, 235, 0.08)) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  padding: 22px 26px !important;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+body.night #psec-lounge .lounge-streak-flame {
+  font-size: 2.2rem;
+  filter: drop-shadow(0 0 14px rgba(251, 146, 60, 0.55));
+}
+body.night #psec-lounge .lounge-streak-val {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 2rem !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+body.night #psec-lounge .lounge-streak-lbl {
+  font-size: 0.78rem !important;
+  color: rgba(226, 232, 240, 0.65) !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+body.night #psec-lounge .lounge-streak-msg {
+  margin-left: auto;
+  font-size: 0.92rem !important;
+  color: rgba(226, 232, 240, 0.85) !important;
+  font-weight: 500 !important;
+}
+body.night #psec-lounge .lounge-stats-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+  gap: 14px !important;
+  margin-bottom: 26px;
+}
+body.night #psec-lounge .lounge-stat-card {
+  border-radius: 20px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 18px !important;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease !important;
+}
+body.night #psec-lounge .lounge-stat-card:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(96, 165, 250, 0.28) !important;
+  transform: translateY(-2px);
+}
+body.night #psec-lounge .lounge-stat-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(96, 165, 250, 0.12) !important;
+  border: 1px solid rgba(96, 165, 250, 0.22) !important;
+  font-size: 1.05rem !important;
+  margin-bottom: 10px;
+}
+body.night #psec-lounge .lounge-stat-val {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 1.7rem !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+body.night #psec-lounge .lounge-stat-lbl {
+  font-size: 0.84rem !important;
+  font-weight: 600 !important;
+  color: rgba(226, 232, 240, 0.9) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  margin-bottom: 2px;
+}
+body.night #psec-lounge .lounge-stat-sub {
+  font-size: 0.74rem !important;
+  color: rgba(226, 232, 240, 0.5) !important;
+  font-weight: 400 !important;
+}
+body.night #psec-lounge .lounge-section-hdr {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.005em !important;
+  text-transform: none !important;
+  margin: 20px 0 12px !important;
+}
+body.night #psec-lounge .lounge-course-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body.night #psec-lounge .lounge-course-chips > * {
+  border-radius: 999px !important;
+  background: rgba(96, 165, 250, 0.1) !important;
+  border: 1px solid rgba(96, 165, 250, 0.25) !important;
+  color: rgba(191, 219, 254, 0.95) !important;
+  padding: 7px 14px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+}
+body.night #psec-lounge .lounge-recent-list > * {
+  border-radius: 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  padding: 12px 16px !important;
+  margin-bottom: 8px;
+}
+body.night #psec-lounge .lounge-empty-msg {
+  border-radius: 18px !important;
+  border: 1px dashed rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  padding: 24px 18px !important;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.55) !important;
+  font-size: 0.88rem;
+}
+body.night #psec-lounge .settings-danger-btn {
+  border-radius: 12px !important;
+  border: 1px solid rgba(252, 165, 165, 0.25) !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #fecaca !important;
+  font-weight: 600 !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* ── GAMES HUB — gh-card grid ───────────────────────────────────────────── */
+
+body.night #psec-games .games-hub-hero-title {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 1.6rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.02em !important;
+}
+body.night #psec-games .games-hub-hero-sub {
+  color: rgba(226, 232, 240, 0.6) !important;
+  font-weight: 400 !important;
+}
+body.night #psec-games .gh-card {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease !important;
+  overflow: hidden;
+}
+body.night #psec-games .gh-card:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(96, 165, 250, 0.32) !important;
+  transform: translateY(-3px);
+}
+body.night #psec-games .gh-card-name {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.005em !important;
+}
+body.night #psec-games .gh-card-desc {
+  color: rgba(226, 232, 240, 0.6) !important;
+  font-weight: 400 !important;
+  font-size: 0.85rem !important;
+}
+body.night #psec-games .gh-badge {
+  border-radius: 999px !important;
+  padding: 3px 10px !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  background: rgba(96, 165, 250, 0.12) !important;
+  border: 1px solid rgba(96, 165, 250, 0.25) !important;
+  color: rgba(191, 219, 254, 0.95) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+body.night #psec-games .gh-card-play {
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 22px rgba(59, 130, 246, 0.28);
+}
+body.night #psec-games .lvl-hero {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(22px);
+}
+body.night #psec-games .lvl-hero-title {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.015em !important;
+}
+body.night #psec-games .lvl-hero-sub {
+  color: rgba(226, 232, 240, 0.6) !important;
+}
+body.night #psec-games .lvl-hero-stat {
+  border-radius: 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+body.night #psec-games .game-back-btn {
+  border-radius: 11px !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-weight: 600 !important;
+}
+
+/* ── FLASHCARDS (#psec-studip is opened-course — these run in opened-course
+ *    section too, but only when the course-deck UI is shown. Flashcards
+ *    studied OUTSIDE a course also reuse same classes. We scope to the
+ *    legacy class names rather than a parent ID so the same restyle applies
+ *    everywhere they render — EXCEPT we exclude the protected sections. */
+
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-toolbar,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-toolbar {
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-btn,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-btn {
+  border-radius: 11px !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-weight: 600 !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-btn:hover,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-btn:hover {
+  background: rgba(255, 255, 255, 0.11) !important;
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-search,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-search {
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-empty,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-empty {
+  border-radius: 22px !important;
+  border: 1px dashed rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  color: rgba(226, 232, 240, 0.6) !important;
+  padding: 48px 24px !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-deck-pane,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-deck-pane,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-study-pane,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study-pane {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-study-deck-name,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study-name {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.01em !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-study-deck-count,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study-count {
+  color: rgba(226, 232, 240, 0.6) !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-study-progress-track,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study-progress-track {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-radius: 999px !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-study-progress-bar,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study-progress-bar {
+  background: linear-gradient(90deg, #3b82f6, #2563eb) !important;
+  border-radius: 999px !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-view-btn,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-view-btn {
+  border-radius: 10px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: rgba(226, 232, 240, 0.65) !important;
+  font-weight: 600 !important;
+}
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-view-btn.active,
+body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-view-btn.active {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: #fff !important;
+}
+
+/* ── CHAT (#psec-chat) — Discord-like layout, blue-glass repaint ────────── */
+
+body.night #psec-chat .dc-sidebar {
+  background: rgba(15, 23, 42, 0.6) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+body.night #psec-chat .dc-sidebar-title {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.01em !important;
+}
+body.night #psec-chat .dc-top-btn,
+body.night #psec-chat .dc-cog-btn,
+body.night #psec-chat .dc-hdr-icon-btn,
+body.night #psec-chat .dc-input-btn,
+body.night #psec-chat .dc-mic-btn {
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(226, 232, 240, 0.92) !important;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+body.night #psec-chat .dc-top-btn:hover,
+body.night #psec-chat .dc-cog-btn:hover,
+body.night #psec-chat .dc-hdr-icon-btn:hover,
+body.night #psec-chat .dc-input-btn:hover,
+body.night #psec-chat .dc-mic-btn:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+body.night #psec-chat .dc-user-chip {
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+body.night #psec-chat .dc-user-name {
+  color: #fff !important;
+  font-weight: 600 !important;
+}
+body.night #psec-chat .dc-user-status {
+  color: rgba(226, 232, 240, 0.55) !important;
+}
+body.night #psec-chat .dc-main {
+  background: transparent !important;
+}
+body.night #psec-chat .dc-main-hdr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+  backdrop-filter: blur(16px);
+}
+body.night #psec-chat .dc-main-room-name {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: -0.01em !important;
+}
+body.night #psec-chat .dc-main-room-desc {
+  color: rgba(226, 232, 240, 0.55) !important;
+}
+body.night #psec-chat .dc-input-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+}
+body.night #psec-chat .dc-input-wrap {
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+body.night #psec-chat .dc-input-wrap:focus-within {
+  border-color: rgba(96, 165, 250, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14);
+}
+body.night #psec-chat .dc-text-input {
+  background: transparent !important;
+  border: none !important;
+  color: rgba(226, 232, 240, 0.95) !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+body.night #psec-chat .dc-send-btn {
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fff !important;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.32);
+}
+body.night #psec-chat .dc-members-panel {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(16px);
+}
+body.night #psec-chat .dc-members-label {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 0.74rem !important;
+  font-weight: 700 !important;
+  color: rgba(226, 232, 240, 0.55) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+body.night #psec-chat .chat-friend-box-hdr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+body.night #psec-chat .chat-friend-box-close {
+  border-radius: 9px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(226, 232, 240, 0.85) !important;
+}
+body.night #psec-chat .chat-vis-btn {
+  border-radius: 11px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(226, 232, 240, 0.92) !important;
+  font-weight: 600 !important;
+}
+body.night #psec-chat .chat-vis-btn.active {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  border-color: rgba(96, 165, 250, 0.5) !important;
+  color: #fff !important;
+}
+
+/* ── Leftover global modals/dropdowns (paywall already covered above) ───── */
+
+body.night .modal-overlay,
+body.night .overlay-modal {
+  background: rgba(2, 6, 23, 0.55) !important;
+  backdrop-filter: blur(6px);
+}
+body.night .modal-content,
+body.night .modal-card {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(18, 26, 49, 0.95) !important;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}

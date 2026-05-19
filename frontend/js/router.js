@@ -248,11 +248,6 @@ window.showPortalSection = function (sec) {
   // 'courses' is the URL-facing alias for the internal 'studip' section
   if (target === 'courses') target = 'studip';
 
-  if (target === 'dashboard' && window._userType === 'learner' && !_pendingPortalRestore) {
-    target = 'german';
-    setNavActive('psbGerman');
-    setTimeout(_glLoadFiles, 300);
-  }
   if (target === 'dashboard' && _pendingPortalRestore) {
     target = _pendingPortalRestore;
     _pendingPortalRestore = null;
@@ -297,7 +292,16 @@ window.showPortalSection = function (sec) {
   _ssPushHistory({ view: 'portal', section: target }, '#portal=' + encodeURIComponent(urlSection));
 };
 
-if (!window.location.hash || window.location.hash.indexOf('access_token') === -1) {
+// Skip the initial portal-state replace when we're about to show the auth
+// modal — otherwise the URL flashes #portal=dashboard between landing and
+// the auth screen before _showModal wipes it.
+var _ssSkipBootRoute = false;
+try {
+  _ssSkipBootRoute = sessionStorage.getItem('ss_show_auth') === 'true';
+} catch (e) {}
+
+if (!_ssSkipBootRoute &&
+    (!window.location.hash || window.location.hash.indexOf('access_token') === -1)) {
   var _rst = {};
   try {
     _rst = JSON.parse(localStorage.getItem('ss_state') || '{}');
@@ -329,6 +333,15 @@ if (!window.location.hash || window.location.hash.indexOf('access_token') === -1
 }
 
 window.addEventListener('popstate', function (e) {
+  // Guard: never restore portal/file views without an authenticated user.
+  // Otherwise Back from the landing (or after logout) pops to a stale entry
+  // from a prior session and silently re-mounts the app.
+  if (!_currentUser) {
+    try {
+      history.replaceState(null, '', window.location.pathname);
+    } catch (err) {}
+    return;
+  }
   _ssHandlingPop = true;
   try {
     _ssApplyHistoryState(e.state);
@@ -343,17 +356,10 @@ _bindIf('studipBack', 'click', function () {
 });
 
 _bindIf('psbDashboard', 'click', function () {
-  if (window._userType === 'learner') {
-    showPortal();
-    setNavActive('psbGerman');
-    showPortalSection('german');
-    _finalizeNav('german');
-  } else {
-    showPortal();
-    setNavActive('psbDashboard');
-    showPortalSection('dashboard');
-    _finalizeNav('dashboard');
-  }
+  showPortal();
+  setNavActive('psbDashboard');
+  showPortalSection('dashboard');
+  _finalizeNav('dashboard');
 });
 
 _bindIf('psbGerman', 'click', function () {

@@ -697,8 +697,30 @@ function _annotEditText(committed, stroke, strokeIdx, pn) {
     });
   });
 
+  function _updateThicknessFill() {
+    var r = $id('annotThickness');
+    if (!r) return;
+    var pct = ((parseInt(r.value) - parseInt(r.min)) / (parseInt(r.max) - parseInt(r.min))) * 100;
+    r.style.background =
+      'linear-gradient(to right, #60a5fa 0%, #60a5fa ' + pct + '%, rgba(255,255,255,0.12) ' +
+      pct + '%, rgba(255,255,255,0.12) 100%)';
+  }
   $id('annotThickness').addEventListener('input', function () {
     _annotThickness = parseInt(this.value);
+    _updateThicknessFill();
+  });
+  _updateThicknessFill();
+  var _strokeMinus = $id('annotStrokeMinus');
+  var _strokePlus = $id('annotStrokePlus');
+  if (_strokeMinus) _strokeMinus.addEventListener('click', function () {
+    var r = $id('annotThickness');
+    r.value = Math.max(parseInt(r.min), parseInt(r.value) - 1);
+    r.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  if (_strokePlus) _strokePlus.addEventListener('click', function () {
+    var r = $id('annotThickness');
+    r.value = Math.min(parseInt(r.max), parseInt(r.value) + 1);
+    r.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
   $id('annotFontSize').addEventListener('change', function () {

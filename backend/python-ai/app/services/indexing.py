@@ -21,9 +21,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..supabase_client import get_supabase
+from .block_detection import (
+    ExerciseBlock,
+    FormulaBlock,
+    detect_exercises,
+    detect_formulas,
+)
 from .chunking import Chunk, chunk_pages
+from .document_intelligence import classify_document, measure_ocr_need, rollup_extraction_quality
 from .embeddings import embed_texts
 from .extraction import extract_pages_text
+from .markdown_indexing import PageMarkdown, page_to_markdown
 from .storage import download_document_bytes
 
 log = logging.getLogger(__name__)
@@ -71,16 +79,33 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             return _status_payload(doc)
 
         pages = extract_pages_text(pdf_bytes)
+
+        # Phase 12: vision OCR fallback for image-only / heavily-scanned
+        # pages. Gated by env flag + Phase 11 detector; no-op otherwise.
+        try:
+            from .vision_ocr import pages_via_vision, select_pages_needing_ocr  # noqa: WPS433
+            bad_idx = select_pages_needing_ocr(pages)
+            if bad_idx:
+                ocr_results = pages_via_vision(pdf_bytes, bad_idx)
+                for idx, text in ocr_results.items():
+                    if 0 <= idx < len(pages):
+                        pages[idx] = text
+                if ocr_results:
+                    log.info("vision OCR recovered %d/%d bad pages", len(ocr_results), len(bad_idx))
+        except Exception:  # noqa: BLE001
+            log.exception("vision OCR pass failed — continuing with pdfminer text only")
+
         if not pages or not any(p.strip() for p in pages):
             _mark_failed(
                 sb,
                 document_id,
-                "no extractable text — likely a scanned/image PDF; OCR not enabled in v1",
+                "no extractable text — likely a scanned/image PDF; enable MINALLO_VISION_OCR_ENABLED to retry with vision",
             )
             raise IndexingError("no extractable text")
 
         _set_status(sb, document_id, "chunking")
-        _replace_pages(sb, document_id, user_id, course_id, pages)
+        page_md = [page_to_markdown(text, idx + 1) for idx, text in enumerate(pages)]
+        _replace_pages(sb, document_id, user_id, course_id, pages, page_md)
 
         chunks = chunk_pages(pages)
         if not chunks:
@@ -107,8 +132,35 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             vectors=vectors,
         )
 
+        # Phase 5: exact-match exercise / formula blocks. Failures here must
+        # never break indexing — they are an additive surface for retrieval.
+        try:
+            pages_md = [(p.page_number, p.markdown) for p in page_md if p.markdown]
+            exercises = detect_exercises(pages_md)
+            formulas = detect_formulas(pages_md)
+            _replace_exercises(sb, document_id, user_id, course_id, exercises)
+            _replace_formulas(sb, document_id, user_id, course_id, formulas)
+        except Exception:  # noqa: BLE001
+            log.exception("block detection failed — continuing without exercise/formula rows")
+
+        # Phase 4: classify the document and roll up per-page extraction
+        # quality. Best-effort — failure here must not block indexing.
+        doc_type: str | None = None
+        rollup_quality: str | None = None
+        ocr_assessment_json: dict[str, Any] | None = None
+        try:
+            file_name = doc.get("file_name") or ""
+            sample_text = "\n\n".join((p or "")[:1500] for p in pages[:6])
+            doc_type = classify_document(file_name, sample_text)
+            rollup = rollup_extraction_quality(p.quality for p in page_md)
+            rollup_quality = rollup.quality
+            # Phase 11: OCR-need measurement based on the raw page text.
+            ocr_assessment_json = measure_ocr_need(pages).to_json()
+        except Exception:  # noqa: BLE001
+            log.exception("document classification failed — continuing without it")
+
         now = datetime.now(timezone.utc).isoformat()
-        sb.table("documents").update({
+        update_payload: dict[str, Any] = {
             "processing_status": "ready",
             "processing_error": None,
             "document_hash": content_hash,
@@ -116,7 +168,14 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             "chunk_count": len(chunks),
             "indexed_at": now,
             "updated_at": now,
-        }).eq("id", document_id).execute()
+        }
+        if doc_type:
+            update_payload["document_type"] = doc_type
+        if rollup_quality:
+            update_payload["extraction_quality"] = rollup_quality
+        if ocr_assessment_json:
+            update_payload["ocr_assessment"] = ocr_assessment_json
+        sb.table("documents").update(update_payload).eq("id", document_id).execute()
 
         return {
             "documentId": document_id,
@@ -150,7 +209,7 @@ def _load_document(sb, document_id: str) -> dict[str, Any] | None:
     result = (
         sb.table("documents")
         .select(
-            "id, user_id, course_id, storage_path, source_type, processing_status, "
+            "id, user_id, course_id, file_name, storage_path, source_type, processing_status, "
             "processing_error, document_hash, page_count, chunk_count, indexed_at"
         )
         .eq("id", document_id)
@@ -183,20 +242,28 @@ def _replace_pages(
     user_id: str,
     course_id: str,
     pages: list[str],
+    page_md: list[PageMarkdown] | None = None,
 ) -> None:
     sb.table("document_pages").delete().eq("document_id", document_id).execute()
-    rows = [
-        {
+    md_by_page = {p.page_number: p for p in (page_md or [])}
+    rows: list[dict[str, Any]] = []
+    for idx, text in enumerate(pages):
+        if not text or not text.strip():
+            continue
+        page_number = idx + 1
+        row: dict[str, Any] = {
             "document_id": document_id,
             "user_id": user_id,
             "course_id": course_id,
-            "page_number": idx + 1,
+            "page_number": page_number,
             "raw_text": text,
             "cleaned_text": text,
         }
-        for idx, text in enumerate(pages)
-        if text and text.strip()
-    ]
+        md = md_by_page.get(page_number)
+        if md is not None:
+            row["cleaned_markdown"] = md.markdown
+            row["extraction_quality"] = md.quality
+        rows.append(row)
     if rows:
         # Insert in batches to keep payload size sane on long PDFs.
         for start in range(0, len(rows), 100):
@@ -232,6 +299,60 @@ def _replace_chunks(
         })
     for start in range(0, len(rows), 100):
         sb.table("document_chunks").insert(rows[start:start + 100]).execute()
+
+
+def _replace_exercises(
+    sb,
+    document_id: str,
+    user_id: str,
+    course_id: str,
+    exercises: list[ExerciseBlock],
+) -> None:
+    sb.table("document_exercises").delete().eq("document_id", document_id).execute()
+    if not exercises:
+        return
+    rows = [
+        {
+            "document_id": document_id,
+            "user_id": user_id,
+            "course_id": course_id,
+            "exercise_number": ex.exercise_number,
+            "subpart": ex.subpart,
+            "page_start": ex.page_start,
+            "page_end": ex.page_end,
+            "statement_markdown": ex.statement_markdown,
+            "solution_markdown": ex.solution_markdown,
+        }
+        for ex in exercises
+    ]
+    for start in range(0, len(rows), 50):
+        sb.table("document_exercises").insert(rows[start:start + 50]).execute()
+
+
+def _replace_formulas(
+    sb,
+    document_id: str,
+    user_id: str,
+    course_id: str,
+    formulas: list[FormulaBlock],
+) -> None:
+    sb.table("document_formulas").delete().eq("document_id", document_id).execute()
+    if not formulas:
+        return
+    rows = [
+        {
+            "document_id": document_id,
+            "user_id": user_id,
+            "course_id": course_id,
+            "formula_name": f.formula_name,
+            "formula_markdown": f.formula_markdown,
+            "symbols": f.symbols,
+            "page_number": f.page_number,
+        }
+        for f in formulas
+    ]
+    for start in range(0, len(rows), 50):
+        sb.table("document_formulas").insert(rows[start:start + 50]).execute()
 
 
 def _status_payload(doc: dict[str, Any]) -> dict[str, Any]:

@@ -22,11 +22,10 @@ from openai import OpenAI
 
 from ..config import get_settings
 from .answer import (
-    _SYSTEM_PROMPT_STRONG,
-    _SYSTEM_PROMPT_WEAK,
     _build_context_block,
     _cited_indices,
     _context_strength,
+    pick_system_prompt,
 )
 from .retrieval import RetrievedChunk
 
@@ -51,7 +50,7 @@ def stream_answer(
     target_model = model or settings.openai_generate_model
     strength = _context_strength(chunks)
     used_chunks = chunks if strength == "strong" else []
-    system_prompt = _SYSTEM_PROMPT_STRONG if strength == "strong" else _SYSTEM_PROMPT_WEAK
+    system_prompt, answer_mode = pick_system_prompt(question, strength)
     context_block = _build_context_block(used_chunks, doc_names) if used_chunks else ""
 
     user_message = "QUESTION:\n" + question.strip()
@@ -79,6 +78,7 @@ def stream_answer(
     yield _sse({
         "meta": True,
         "retrievalMode": strength,
+        "answerMode": answer_mode,
         "confidence": "high" if strength == "strong" else "low",
         "unsupported": strength != "strong",
     })
@@ -117,12 +117,28 @@ def stream_answer(
         yield _sse({"error": f"{type(e).__name__}: {e}"})
         return
 
-    cited = _cited_indices("".join(answer_buf), len(used_chunks))
+    full_answer = "".join(answer_buf)
+    cited = _cited_indices(full_answer, len(used_chunks))
     filtered_sources = [_source_payload(c) for i, c in enumerate(used_chunks, start=1) if i in cited]
+
+    # Phase 10 — deterministic verification on the streamed answer.
+    verification: dict[str, Any] = {"status": "missing_context", "reasons": [], "details": {}}
+    try:
+        from .verification import verify_answer  # noqa: WPS433
+        verification = verify_answer(
+            answer_text=full_answer,
+            chunk_texts=[c.text for c in used_chunks],
+            question=question,
+            answer_mode=answer_mode,
+        ).to_api()
+    except Exception:  # noqa: BLE001
+        log.exception("verify_answer (stream) failed — emitting default missing_context")
 
     yield _sse({
         "done": True,
         "retrievalMode": strength,
+        "answerMode": answer_mode,
+        "verification": verification,
         "confidence": "high" if strength == "strong" else "low",
         "unsupported": strength != "strong",
         "sources": filtered_sources,
