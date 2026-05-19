@@ -623,8 +623,26 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
   const backBtn = co.querySelector<HTMLButtonElement>('#coBackBtn');
   if (backBtn) {
     backBtn.addEventListener('click', () => {
+      // Route back to the section the user entered the course view from
+      // (e.g. the German practice dashboard) instead of always falling
+      // through to the regular courses overview.
+      //
+      // Hash isn't usable as the signal — the router replaces it with
+      // `#course=...&section=files` when a course/skill is opened. The
+      // router does keep `ss_portal_tab` (session) / `ss_last_section`
+      // (local) up to date with the portal section though, so prefer
+      // those. 'courses' is the URL alias for the internal 'studip'.
+      let backSection = 'studip';
+      try {
+        const stored =
+          sessionStorage.getItem('ss_portal_tab') ||
+          localStorage.getItem('ss_last_section') ||
+          '';
+        if (stored && stored !== 'dashboard') backSection = stored;
+      } catch { /* storage unavailable */ }
+      if (backSection === 'courses') backSection = 'studip';
       if (typeof window.showPortalSection === 'function') {
-        window.showPortalSection('studip');
+        window.showPortalSection(backSection);
       } else {
         window.history.back();
       }

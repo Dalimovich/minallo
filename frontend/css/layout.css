@@ -85,6 +85,11 @@
   justify-content: center;
   font-weight: 800;
   font-size: 1.05rem;
+  /* Font's cap-height sits slightly below the geometric centre, so short
+   * all-caps placeholders ("M", "DE") look low even with flex centring.
+   * Nudge the glyph up by a hair. */
+  line-height: 1;
+  padding-bottom: 2px;
   color: #fff;
   flex-shrink: 0;
   box-shadow:
