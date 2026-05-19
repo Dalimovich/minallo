@@ -45,7 +45,7 @@ body:not(.night) .sub-card .sub-badge {
   color: #fff;
 }
 .sub-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.2rem;
   color: var(--on-glass);
 }
@@ -53,7 +53,7 @@ body:not(.night) .sub-card .sub-badge {
   display: inline-block;
   background: linear-gradient(135deg, #22c55e, #16a34a);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   font-size: 0.78rem;
   padding: 4px 14px;
@@ -62,14 +62,14 @@ body:not(.night) .sub-card .sub-badge {
   align-self: flex-start;
 }
 .sub-price {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2rem;
   color: var(--on-glass);
   line-height: 1;
 }
 .sub-price span {
   font-size: 0.8rem;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   color: var(--on-glass-muted);
 }
@@ -104,7 +104,7 @@ body:not(.night) .sub-feat::before {
   border: none;
   border-radius: 14px;
   padding: 12px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   font-size: 0.83rem;
   cursor: pointer;

@@ -15,7 +15,7 @@
     linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(14, 165, 233, 0.10) 60%, rgba(168, 85, 247, 0.10)),
     rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   color: var(--on-glass, #e2d9f3);
   transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -42,7 +42,7 @@
   min-width: 0;
 }
 .wc-feature-card-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.15rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -71,7 +71,7 @@
 
 /* ── Detail view ──────────────────────────────────────────────────────────── */
 #wcView {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   color: var(--on-glass, #e2d9f3);
   display: flex;
   flex-direction: column;
@@ -87,7 +87,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px;
   padding: 7px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.82rem;
   color: rgba(255, 255, 255, 0.7);
@@ -103,7 +103,7 @@
   gap: 2px;
 }
 .wc-view-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.4rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -140,7 +140,7 @@
   color: #fff;
   border-radius: 10px;
   padding: 7px 12px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   font-size: 0.85rem;
   cursor: pointer;
@@ -162,7 +162,7 @@
   color: #fff;
   border-radius: 10px;
   padding: 7px 12px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   font-size: 0.85rem;
   cursor: pointer;
@@ -182,7 +182,7 @@
   border-radius: 999px;
   border: 1px solid rgba(96, 165, 250, 0.30);
   background: rgba(15, 23, 42, 0.55);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   cursor: default;
 }
 .wc-level-badge-value {
@@ -204,13 +204,13 @@
   padding: 28px 24px;
 }
 .wc-no-level-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.15rem;
   color: #f8fafc;
   margin-bottom: 8px;
 }
 .wc-no-level-sub {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   color: rgba(226, 232, 240, 0.65);
   line-height: 1.55;
@@ -225,7 +225,7 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.25);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.95rem;
   line-height: 1.55;
   padding: 14px 16px;
@@ -249,7 +249,7 @@
   border: none;
   border-radius: 999px;
   padding: 10px 22px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.9rem;
   cursor: pointer;
@@ -269,7 +269,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 999px;
   padding: 9px 18px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.85rem;
   cursor: pointer;
@@ -316,7 +316,7 @@
 }
 .wc-result-title {
   margin: 0 0 10px;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.95rem;
   color: rgba(255, 255, 255, 0.85);
 }
@@ -344,7 +344,7 @@
   border-radius: 999px;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   color: #fff;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.9rem;
 }
 .wc-tips {

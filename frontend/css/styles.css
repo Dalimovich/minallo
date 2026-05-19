@@ -1,3 +1,92 @@
+/* ── Global typography ──────────────────────────────────────────────────────
+ * Inter for body / UI, JetBrains Mono for code & math snippets. Loaded from
+ * Bunny Fonts in the entry HTML (GDPR-friendly, EU-hosted; not Google Fonts).
+ * Older brand fonts ('Nunito', 'Fredoka One') are aliased to var(--font-main)
+ * elsewhere in this file via the wholesale replacements below, so existing
+ * page-specific declarations resolve to Inter without 300 individual edits.
+ */
+:root {
+  --font-main: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  font-family: var(--font-main);
+  font-size: 16px;
+  line-height: 1.5;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-main);
+  letter-spacing: -0.03em;
+}
+h1 { font-weight: 700; letter-spacing: -0.055em; }
+h2 { font-weight: 700; letter-spacing: -0.045em; }
+h3 { font-weight: 600; letter-spacing: -0.035em; }
+
+/* AI / assistant response readability — wider line-height + slightly larger
+ * body so generated explanations are comfortable to read. */
+.ai-message,
+.assistant-message,
+.chat-message,
+.study-content,
+.feedback-text {
+  font-family: var(--font-main);
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+.ai-message p,
+.assistant-message p,
+.study-content p {
+  margin-bottom: 0.85em;
+}
+
+/* Small helper / muted text used in cards, file lists, course meta. */
+.helper-text,
+.muted-text,
+.file-meta,
+.course-meta,
+.card-description {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Buttons + nav + card titles get the same tight tracking as headings. */
+button,
+.btn,
+.nav-link,
+.card-title,
+.course-title,
+.file-title,
+.modal-title {
+  letter-spacing: -0.01em;
+}
+
+/* Code / math / inline mono spans use JetBrains Mono. */
+code,
+pre,
+kbd,
+samp,
+.mono,
+.math-code,
+.formula-code {
+  font-family: var(--font-mono);
+}
+
 /* ── FILES LOADING STATE ── */
 .co-files-loading {
   display: flex;
@@ -181,7 +270,7 @@ body:not(.night) .blob {
 
 /* Header */
 .p-logo {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 3.2rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9, #fb923c);
   -webkit-background-clip: text;
@@ -586,7 +675,7 @@ body:not(.night) .pc-icon {
   background: #e6d9ff;
 }
 .tb-logo {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.25rem;
   background: linear-gradient(135deg, var(--purple), var(--pink));
   -webkit-background-clip: text;
@@ -613,7 +702,7 @@ body:not(.night) .pc-icon {
   background: #f3eeff;
   border: none;
   border-radius: 9px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: var(--purple);
@@ -703,7 +792,7 @@ body:not(.night) .pc-icon {
   margin-bottom: 10px;
 }
 .sb-section-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.78rem;
   color: var(--muted);
   padding: 4px 8px;
@@ -721,7 +810,7 @@ body:not(.night) .pc-icon {
   background: #f8f5ff;
   border: 1.5px solid #ddd6f5;
   border-radius: 10px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.8rem;
   color: var(--text);
@@ -907,7 +996,7 @@ body:not(.night) .pc-icon {
   background: #f3eeff;
 }
 .sb-course-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.9rem;
   color: var(--text);
   padding: 8px 12px 14px;
@@ -1094,7 +1183,7 @@ body.night .sb-acc-chev-btn {
   border-left-color: rgba(37, 99, 235, 0.25);
 }
 .tt-day-sb {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.73rem;
   color: var(--purple);
   margin: 6px 0 3px;
@@ -1182,7 +1271,7 @@ body.night .sb-acc-chev-btn {
   border: 1.5px solid #ddd6f5;
   border-radius: 7px;
   padding: 5px 10px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.73rem;
   color: var(--purple);
@@ -1368,7 +1457,7 @@ body.night .sb-acc-chev-btn {
   background: rgba(255, 255, 255, 0.07);
   padding: 0 14px;
   color: rgba(226, 232, 240, 0.95);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -1405,7 +1494,7 @@ body.night .sb-acc-chev-btn {
   border-radius: 16px;
   background: #3b82f6;
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   font-size: 0.88rem;
   padding: 0 18px;
@@ -1538,7 +1627,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(96, 165, 250, 0.45);
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.9rem;
   font-weight: 800;
   cursor: pointer;
@@ -1895,7 +1984,7 @@ body.night .sb-acc-chev-btn {
   resize: none;
   min-width: 80px;
   min-height: 28px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   color: inherit;
   padding: 2px 4px;
   border-radius: 3px;
@@ -1920,7 +2009,7 @@ body.night .sb-acc-chev-btn {
   color: #fff;
 }
 .pdf-loading p {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
 }
 .loading-dots {
@@ -1973,7 +2062,7 @@ body.night .sb-acc-chev-btn {
   border-radius: 14px;
   background: transparent;
   color: var(--on-glass-muted);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   font-weight: 800;
   cursor: pointer;
@@ -2015,7 +2104,7 @@ body.night .sb-acc-chev-btn {
   margin-bottom: 12px;
 }
 .co-study-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1rem;
   color: var(--on-glass);
 }
@@ -2040,7 +2129,7 @@ body.night .sb-acc-chev-btn {
   border-radius: 10px;
   background: transparent;
   color: rgba(255, 255, 255, 0.58);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   cursor: pointer;
 }
@@ -2062,7 +2151,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.78);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   cursor: pointer;
 }
@@ -2105,7 +2194,7 @@ body.night .sb-acc-chev-btn {
 }
 .co-quiz-question {
   margin: 8px 0 14px;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.18rem, 2vw, 1.55rem);
   line-height: 1.25;
   color: #26112b;
@@ -2125,7 +2214,7 @@ body.night .sb-acc-chev-btn {
   border: 2px solid #f4d7fa;
   background: #fff3fb;
   color: #37213b;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   text-align: left;
   cursor: pointer;
@@ -2184,7 +2273,7 @@ body.night .sb-acc-chev-btn {
   border-radius: 16px;
   background: linear-gradient(135deg, #fb7185, #fb923c);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.96rem;
   font-weight: 1000;
   cursor: pointer;
@@ -2275,13 +2364,13 @@ body.night .sb-acc-chev-btn {
   transform: rotateY(180deg);
 }
 .co-flash-text {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.35rem, 3vw, 2rem);
   line-height: 1.35;
   color: #f8fafc;
 }
 .co-flash-side.back .co-flash-text {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: clamp(1.02rem, 2vw, 1.32rem);
   font-weight: 900;
   color: #e2e8f0;
@@ -2299,7 +2388,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(255, 255, 255, 0.055);
   color: #e2e8f0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 1000;
   cursor: pointer;
 }
@@ -2797,7 +2886,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(239, 68, 68, 0.4);
   border-radius: 20px;
   padding: 9px 18px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: #fff;
@@ -2816,7 +2905,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(37, 99, 235, 0.4);
   border-radius: 20px;
   padding: 9px 18px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: #fff;
@@ -2835,7 +2924,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(59, 130, 246, 0.4);
   border-radius: 20px;
   padding: 9px 18px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: #fff;
@@ -2859,7 +2948,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 20px;
   padding: 9px 18px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: #fff;
@@ -2955,7 +3044,7 @@ body.night .sb-acc-chev-btn {
   line-height: 1.8;
 }
 .msm-body h3 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1rem;
   color: #3b82f6;
   margin: 18px 0 8px;
@@ -3054,7 +3143,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid rgba(59, 130, 246, 0.35);
   border-radius: 12px;
   padding: 9px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: #3b82f6;
@@ -3506,7 +3595,7 @@ body.night .sb-acc-chev-btn {
   border: 1px solid transparent;
   border-radius: 30px;
   padding: 7px 15px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   font-size: 0.79rem;
   color: rgba(255, 255, 255, 0.5);
@@ -3586,7 +3675,7 @@ body.night .sb-acc-chev-btn {
 }
 
 .co-logo {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9, #fb923c);
   -webkit-background-clip: text;
@@ -3628,7 +3717,7 @@ body.night .sb-acc-chev-btn {
   pointer-events: none;
 }
 .co-card h2 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1rem;
   color: var(--purple);
   margin-bottom: 12px;
@@ -3712,7 +3801,7 @@ body.night .sb-acc-chev-btn {
   margin-bottom: 6px;
 }
 .ws-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.5rem;
   color: var(--text);
 }
@@ -3743,7 +3832,7 @@ body.night .sb-acc-chev-btn {
   border-radius: 12px 0 0 12px;
   padding: 14px 5px;
   writing-mode: vertical-rl;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.72rem;
   cursor: pointer;
   letter-spacing: 0.08em;
@@ -3838,7 +3927,7 @@ body.night .sb-acc-chev-btn {
   overflow: hidden;
 }
 .ai-hdr h3 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1rem;
   color: var(--purple);
   line-height: 1;
@@ -4009,7 +4098,7 @@ body.night .ai-bubble.user {
   border: 1px solid rgba(37, 99, 235, 0.15);
   padding: 2px 8px;
   border-radius: 6px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   transition: all 0.14s;
 }
@@ -4155,7 +4244,7 @@ body.night .ai-bubble.user {
   color: var(--purple);
   font-size: 0.73rem;
   font-weight: 700;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   cursor: pointer;
   transition:
     background 0.13s,
@@ -4240,7 +4329,7 @@ body.night .ai-sel-banner {
   border-radius: 8px;
   padding: 5px 11px;
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   cursor: pointer;
@@ -4255,7 +4344,7 @@ body.night .ai-sel-banner {
   border-radius: 8px;
   padding: 5px 11px;
   color: var(--purple);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   cursor: pointer;
@@ -4319,7 +4408,7 @@ body.night .ai-input-box {
   border: none;
   background: transparent;
   padding: 11px 14px 4px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.83rem;
   resize: none;
   min-height: 48px;
@@ -4543,7 +4632,7 @@ body.night .ai-attach-btn {
   color: #fff;
   padding: 11px 20px;
   border-radius: 12px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.85rem;
   font-weight: 700;
   pointer-events: none;
@@ -4742,7 +4831,7 @@ body.night .think-bubble {
   border-radius: 7px;
   min-width: 42px;
   text-align: center;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 body.night .pdf-zoom-pct {
   background: #334155;
@@ -5189,7 +5278,7 @@ body.night .chip-sub-h {
 }
 /* STUDIP DASHBOARD */
 .sd-section-label {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.72rem;
   color: var(--section-label);
   letter-spacing: 0.08em;
@@ -5758,7 +5847,7 @@ body.night .chip-sub-h {
   }
 }
 .sd-tt-day {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.72rem;
   color: rgba(59, 130, 246, 0.8);
   margin: 10px 0 6px;
@@ -5914,7 +6003,7 @@ body.night .chip-sub-h {
   gap: 7px;
   border-radius: 20px;
   padding: 8px 18px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.76rem;
   cursor: pointer;
@@ -6030,7 +6119,7 @@ body.night .chip-sub-h {
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   border: none;
   border-radius: 30px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.82rem;
   color: #fff;
@@ -6155,7 +6244,7 @@ body.night .chip-sub-h {
     0 0 32px rgba(59, 130, 246, 0.25);
 }
 .profile-initials {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2.2rem;
   color: #fff;
 }
@@ -6198,7 +6287,7 @@ body.night .chip-sub-h {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   padding: 10px 14px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.85rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.9);
@@ -6215,7 +6304,7 @@ body.night .chip-sub-h {
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   border: none;
   border-radius: 30px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.85rem;
   color: #fff;
@@ -6239,7 +6328,7 @@ body.night .chip-sub-h {
   gap: 0;
 }
 .settings-section-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.95rem;
   color: rgba(59, 130, 246, 0.85);
   margin-bottom: 8px;
@@ -6308,7 +6397,7 @@ body.night .chip-sub-h {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 9px;
   padding: 6px 12px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.8rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.8);
@@ -6320,7 +6409,7 @@ body.night .chip-sub-h {
   border: 1px solid rgba(255, 107, 55, 0.3);
   border-radius: 9px;
   padding: 7px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.78rem;
   font-weight: 800;
   color: rgba(255, 107, 55, 0.85);
@@ -6337,7 +6426,7 @@ body.night .chip-sub-h {
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   border: none;
   border-radius: 12px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.9rem;
   font-weight: 800;
   color: #fff;
@@ -6458,19 +6547,19 @@ body:not(.night) .settings-danger-btn:hover {
   white-space: nowrap;
 }
 .sub-plan-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: rgba(255, 255, 255, 0.9);
 }
 .sub-plan-price {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2rem;
   color: #fff;
 }
 .sub-plan-price span {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.4);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .sub-features {
   list-style: none;
@@ -6490,7 +6579,7 @@ body:not(.night) .settings-danger-btn:hover {
 .sub-btn {
   padding: 11px 0;
   border-radius: 30px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.85rem;
   cursor: pointer;
@@ -6594,7 +6683,7 @@ body:not(.night) #portal {
 }
 #portal .ai-hdr h3 {
   color: #93c5fd;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
 }
 #portal .ai-hdr p {

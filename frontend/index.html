@@ -72,11 +72,15 @@
   <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
   <meta name="theme-color" content="#0b1220" />
 
-  <!-- Fonts are no longer loaded from Google's CDN. LG Muenchen I (3 O 17493/20)
-       held that fetching Google Fonts without consent is a GDPR violation, so we
-       fall back to the platform's system font stack defined in css/styles.css.
-       Self-host any custom WOFF2 under /assets/fonts/ if a stronger brand font
-       is required later. -->
+  <!-- Inter (body / UI) + JetBrains Mono (code) served from Bunny Fonts.
+       Bunny is an EU-hosted (Slovenia), GDPR-friendly drop-in replacement for
+       Google Fonts that does not log IPs — the privacy-conscious workaround
+       for LG Muenchen I (3 O 17493/20). One narrow domain in the CSP. -->
+  <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400,500,600&display=swap"
+  />
 
   <!-- Google Sign-In client is required for authentication and is documented
        as such in the privacy policy (Drittlandsuebermittlung). Loaded only on
@@ -84,7 +88,11 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- Keep the logged-out first paint lean. Dashboard CSS is injected only
-       after auth in loader.js; the public landing needs just these two files. -->
+       after auth in loader.js; the public landing needs just these three.
+       typography.css must load HERE (not lazily) so --font-main is defined
+       from first paint, otherwise the topbar's "Dashboard" briefly renders
+       cursive (browser fallback) while the rest of the stylesheets load. -->
+  <link rel="stylesheet" href="/css/typography.css?v=1" />
   <link rel="stylesheet" href="/css/new-landing.css?v=1" />
   <link rel="stylesheet" href="/css/auth.css?v=4" />
   <style>

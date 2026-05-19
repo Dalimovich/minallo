@@ -292,7 +292,7 @@ function setupProgAutocomplete(): void {
       const opt = document.createElement('div');
       opt.textContent = v;
       opt.style.cssText =
-        "padding:9px 14px;cursor:pointer;font-size:.85rem;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(59,130,246,.1);font-family:'Nunito',sans-serif;font-weight:700";
+        "padding:9px 14px;cursor:pointer;font-size:.85rem;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(59,130,246,.1);font-family: var(--font-main);font-weight:700";
       opt.addEventListener('mouseenter', () => {
         opt.style.background = 'rgba(59,130,246,.15)';
       });
@@ -377,7 +377,7 @@ function setupVertOnboardingAutocomplete(): void {
       const opt = document.createElement('div');
       opt.textContent = v;
       opt.style.cssText =
-        "padding:9px 14px;cursor:pointer;font-size:.85rem;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(59,130,246,.1);font-family:'Nunito',sans-serif;font-weight:700";
+        "padding:9px 14px;cursor:pointer;font-size:.85rem;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(59,130,246,.1);font-family: var(--font-main);font-weight:700";
       opt.addEventListener('mouseenter', () => {
         opt.style.background = 'rgba(59,130,246,.15)';
       });
@@ -427,7 +427,7 @@ function setupVertProfileAutocomplete(): void {
       const opt = document.createElement('div');
       opt.textContent = v;
       opt.style.cssText =
-        "padding:9px 14px;cursor:pointer;font-size:.85rem;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(59,130,246,.1);font-family:'Nunito',sans-serif;font-weight:700";
+        "padding:9px 14px;cursor:pointer;font-size:.85rem;color:rgba(255,255,255,.85);border-bottom:1px solid rgba(59,130,246,.1);font-family: var(--font-main);font-weight:700";
       opt.addEventListener('mouseenter', () => {
         opt.style.background = 'rgba(59,130,246,.15)';
       });

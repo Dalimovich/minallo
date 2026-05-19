@@ -42,7 +42,7 @@
   overflow-x: hidden;
   overflow-y: auto;
   color: var(--na-ink);
-  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-main);
   background: var(--na-bg);
   -webkit-font-smoothing: antialiased;
 }

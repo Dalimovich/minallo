@@ -87,7 +87,7 @@
     0 12px 32px -8px rgba(37, 99, 235, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   font-size: 1.6rem;
   letter-spacing: 0.04em;
@@ -97,7 +97,7 @@
 }
 .gl-hero-headline-text { flex: 1; min-width: 0; }
 .gl-hero-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2.1rem;
   line-height: 1.05;
   color: #ffffff;
@@ -107,7 +107,7 @@
 }
 .gl-hero-sub {
   margin: 8px 0 0 0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.92rem;
   font-weight: 600;
   line-height: 1.55;
@@ -131,7 +131,7 @@
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(15, 23, 42, 0.55);
   color: #e2e8f0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.01em;
@@ -154,7 +154,7 @@
   border: 1px solid rgba(96, 165, 250, 0.30);
   background: rgba(15, 23, 42, 0.65);
   color: #e2e8f0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.9rem;
   font-weight: 800;
   cursor: default;
@@ -181,7 +181,7 @@
   border: 1px solid rgba(96, 165, 250, 0.55);
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.92rem;
   font-weight: 800;
   cursor: pointer;
@@ -246,7 +246,7 @@
 .gl-skill-head-text { flex: 1; min-width: 0; }
 .gl-skill-name {
   margin: 0;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.18rem;
   font-weight: 400;
   color: #f8fafc;
@@ -254,7 +254,7 @@
 }
 .gl-skill-sub {
   margin-top: 4px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.78rem;
   font-weight: 700;
   color: rgba(226, 232, 240, 0.55);
@@ -266,7 +266,7 @@
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(15, 23, 42, 0.65);
   color: rgba(226, 232, 240, 0.78);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.7rem;
   font-weight: 800;
   white-space: nowrap;
@@ -289,13 +289,13 @@
   margin-bottom: 6px;
 }
 .gl-skill-progress-label {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.78rem;
   font-weight: 700;
   color: rgba(226, 232, 240, 0.55);
 }
 .gl-skill-progress-value {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.82rem;
   font-weight: 800;
   color: #f8fafc;
@@ -323,7 +323,7 @@
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.92);
   color: #0f172a;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   font-weight: 800;
   cursor: pointer;
@@ -349,7 +349,7 @@
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.25);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.76rem;
   color: rgba(255, 255, 255, 0.7);
@@ -390,7 +390,7 @@
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.82rem;
   color: rgba(59, 130, 246, 0.9);
@@ -434,7 +434,7 @@
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.7);
@@ -446,7 +446,7 @@
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   border: none;
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: #fff;
@@ -458,7 +458,7 @@
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: #3b82f6;
@@ -470,7 +470,7 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.25);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(239, 68, 68, 0.8);
@@ -526,7 +526,7 @@
   border-radius: 10px;
   background: transparent;
   color: rgba(255, 255, 255, 0.58);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   cursor: pointer;
 }
@@ -548,7 +548,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.78);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   cursor: pointer;
   transition:
@@ -600,7 +600,7 @@
 }
 .gl-quiz-question {
   margin: 8px 0 14px;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.18rem, 2vw, 1.55rem);
   line-height: 1.25;
   color: #26112b;
@@ -620,7 +620,7 @@
   border: 2px solid #f4d7fa;
   background: #fff3fb;
   color: #37213b;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   text-align: left;
   cursor: pointer;
@@ -694,7 +694,7 @@
   border-radius: 16px;
   background: linear-gradient(135deg, #fb7185, #fb923c);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.96rem;
   font-weight: 1000;
   cursor: pointer;
@@ -793,13 +793,13 @@
   transform: rotateY(180deg);
 }
 .gl-flash-text {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.35rem, 3vw, 2rem);
   line-height: 1.35;
   color: #f8fafc;
 }
 .gl-flash-side.back .gl-flash-text {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: clamp(1.02rem, 2vw, 1.32rem);
   font-weight: 900;
   color: #e2e8f0;
@@ -817,7 +817,7 @@
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(255, 255, 255, 0.055);
   color: #e2e8f0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 1000;
   cursor: pointer;
 }

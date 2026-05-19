@@ -64,8 +64,8 @@
   --nl-shadow-sky-soft: 0 0 55px rgba(56, 189, 248, 0.18);
   --nl-shadow-card: 0 25px 50px -12px rgba(2, 6, 23, 0.45);
 
-  --nl-font-body: 'Nunito', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  --nl-font-display: 'Fredoka One', 'Nunito', system-ui, sans-serif;
+  --nl-font-body: var(--font-main);
+  --nl-font-display: var(--font-main);
 
   --nl-tracking-eyebrow: 0.3em;
 }

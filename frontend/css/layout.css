@@ -529,7 +529,7 @@ body.night .sb-night-thumb {
   max-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 600;
   font-size: 0.94rem;
   letter-spacing: -0.01em;
@@ -564,7 +564,7 @@ body.night .sb-night-thumb {
   flex-shrink: 0;
 }
 .tb-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: var(--on-glass);
 }
@@ -592,7 +592,7 @@ body.night .sb-night-thumb {
   font-size: 0.78rem;
   cursor: pointer;
   border: none;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   box-shadow: 0 4px 20px rgba(37, 99, 235, 0.35);
   transition: all 0.2s;
 }
@@ -639,7 +639,7 @@ body.night .sb-night-thumb {
   background: var(--row-bg);
   border: 1px solid var(--glass-border);
   color: var(--on-glass);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   cursor: pointer;

@@ -72,7 +72,7 @@
   margin-bottom: 6px;
 }
 .ob-title {
-  font-family: 'Fredoka One', 'Inter', sans-serif;
+  font-family: var(--font-main);
   font-size: 1.45rem;
   font-weight: 700;
   letter-spacing: -0.02em;

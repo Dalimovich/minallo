@@ -479,7 +479,7 @@
         var isAdded = existingMemberIds && existingMemberIds.indexOf(f.otherId) !== -1;
         var row = document.createElement('label');
         row.style.cssText =
-          "display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:700;color:var(--on-glass)";
+          "display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;cursor:pointer;font-family: var(--font-main);font-size:.82rem;font-weight:700;color:var(--on-glass)";
         row.innerHTML =
           '<input type="checkbox" data-friend-id="' +
           f.otherId +
@@ -1720,7 +1720,7 @@
               '</div>' +
               '<button style="flex-shrink:0;padding:5px 14px;background:' +
               (alreadyIn ? 'rgba(34,197,94,.15)' : 'linear-gradient(135deg,#3b82f6,#0ea5e9)') +
-              ";border:none;border-radius:20px;font-family:'Nunito',sans-serif;font-weight:800;font-size:.75rem;color:" +
+              ";border:none;border-radius:20px;font-family: var(--font-main);font-weight:800;font-size:.75rem;color:" +
               (alreadyIn ? '#22c55e' : '#fff') +
               ';cursor:pointer">' +
               (alreadyIn ? '✅ Joined' : 'Join') +

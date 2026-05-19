@@ -532,7 +532,7 @@ body:not(.night) .pdf-loading {
   background: #ede0ff;
 }
 body {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   background: var(--bg);
   color: var(--text);
   overflow: hidden;

@@ -1,0 +1,85 @@
+/* Loaded eagerly from index.html <head> so --font-main is defined from first
+ * paint. Without this, the dashboard topbar / greeting renders cursive (the
+ * browser's serif/cursive fallback for an undefined var) before the rest of
+ * the stylesheets land via loader.ts.
+ *
+ * Inter (body / UI) + JetBrains Mono (code) are fetched from Bunny Fonts —
+ * EU-hosted GDPR-friendly drop-in replacement for Google Fonts.
+ */
+
+:root {
+  --font-main: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  font-family: var(--font-main);
+  font-size: 16px;
+  line-height: 1.5;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-main);
+  letter-spacing: -0.03em;
+}
+h1 { font-weight: 700; letter-spacing: -0.055em; }
+h2 { font-weight: 700; letter-spacing: -0.045em; }
+h3 { font-weight: 600; letter-spacing: -0.035em; }
+
+.ai-message,
+.assistant-message,
+.chat-message,
+.study-content,
+.feedback-text {
+  font-family: var(--font-main);
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+.ai-message p,
+.assistant-message p,
+.study-content p {
+  margin-bottom: 0.85em;
+}
+
+.helper-text,
+.muted-text,
+.file-meta,
+.course-meta,
+.card-description {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+button,
+.btn,
+.nav-link,
+.card-title,
+.course-title,
+.file-title,
+.modal-title {
+  letter-spacing: -0.01em;
+}
+
+code,
+pre,
+kbd,
+samp,
+.mono,
+.math-code,
+.formula-code {
+  font-family: var(--font-mono);
+}

@@ -23,7 +23,7 @@
 }
 .chat-rooms-hdr {
   padding: 16px 16px 10px;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -236,7 +236,7 @@
   padding: 2px 8px;
   font-size: 0.78rem;
   cursor: pointer;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   transition: all 0.12s;
 }
@@ -294,7 +294,7 @@
   color: var(--on-glass-muted);
   transition: all 0.15s;
   flex-shrink: 0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .chat-tool-btn:hover {
   background: rgba(59, 130, 246, 0.18);
@@ -317,7 +317,7 @@
   border: 1px solid var(--divider);
   border-radius: 22px;
   padding: 10px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--on-glass);
@@ -390,7 +390,7 @@
   color: rgba(59, 130, 246, 0.9);
   cursor: pointer;
   transition: all 0.15s;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   flex-shrink: 0;
 }
 .chat-add-friend-btn:hover {
@@ -464,7 +464,7 @@
   color: rgba(6, 214, 160, 0.9);
   cursor: pointer;
   white-space: nowrap;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .chat-friend-accept-btn:hover {
   background: rgba(6, 214, 160, 0.28);
@@ -496,7 +496,7 @@
   justify-content: space-between;
   padding: 20px 20px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.92);
@@ -529,7 +529,7 @@
   border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 13px 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.88);
@@ -552,7 +552,7 @@
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 22px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.5);
@@ -629,7 +629,7 @@
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 9px;
   padding: 6px 13px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.74rem;
   color: rgba(59, 130, 246, 0.9);
@@ -676,7 +676,7 @@
   line-height: 1;
 }
 .notif-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.4rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -694,7 +694,7 @@
   border: 1px solid rgba(59, 130, 246, 0.25);
   border-radius: 20px;
   padding: 7px 14px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.74rem;
   color: rgba(59, 130, 246, 0.85);
@@ -715,7 +715,7 @@
   border: none;
   border-bottom: 2px solid transparent;
   padding: 10px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: var(--on-glass-faint);
@@ -746,7 +746,7 @@
   opacity: 0.3;
 }
 .notif-empty-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: var(--on-glass-muted);
 }
@@ -1545,7 +1545,7 @@
   margin-bottom: 10px;
 }
 .sol-vc-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: var(--on-glass);
   margin-bottom: 4px;
@@ -1629,7 +1629,7 @@
   color: #c0392b;
 }
 .sol-spc-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.05rem;
   color: var(--on-glass);
   margin-bottom: 3px;
@@ -2643,13 +2643,13 @@ body.night .music-yt-input {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Fredoka One', sans-serif;
+  font-family: var(--font-main);
   font-size: 2.5rem;
   color: #fff;
   box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35);
 }
 .ss-splash-name {
-  font-family: 'Fredoka One', sans-serif;
+  font-family: var(--font-main);
   font-size: 1.75rem;
   background: linear-gradient(90deg, #60a5fa, #0ea5e9);
   -webkit-background-clip: text;
@@ -2778,7 +2778,7 @@ body.night .music-yt-input {
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 .dc-sidebar-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.2rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -2794,7 +2794,7 @@ body.night .music-yt-input {
 .dc-top-btn {
   flex: 1;
   padding: 7px 4px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.6);
@@ -3000,7 +3000,7 @@ body.night .music-yt-input {
   min-width: 0;
 }
 .dc-main-room-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.05rem;
   color: rgba(255, 255, 255, 0.9);
   overflow: hidden;
@@ -3300,7 +3300,7 @@ body.night .music-yt-input {
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .dc-input-btn:hover:not(:disabled) {
   background: rgba(59, 130, 246, 0.22);
@@ -3333,7 +3333,7 @@ body.night .music-yt-input {
   background: none;
   border: none;
   outline: none;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.85);

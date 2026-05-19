@@ -97,7 +97,7 @@ body:not(.night) .toggle-track {
   border: 1px solid var(--glass-border);
   border-radius: 10px;
   padding: 6px 10px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   font-size: 0.8rem;
   color: var(--on-glass);
@@ -272,7 +272,7 @@ body:not(.night) .toggle-track {
   border-radius: 8px;
   background: var(--row-bg);
   color: var(--on-glass);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.78rem;
   outline: none;
   min-width: 0;
