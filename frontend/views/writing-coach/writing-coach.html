@@ -20,17 +20,26 @@
     </div>
   </div>
 
-  <div class="wc-card-glass">
+  <!-- Empty state shown when the user's profile has no German level yet.
+       The Schreibtrainer can't grade without a target level, so we block
+       analysis and route them to Profile, which is the single editable
+       surface for this field. -->
+  <div id="wcNoLevel" class="wc-card-glass wc-no-level" style="display: none">
+    <div class="wc-no-level-title">Set your German level in Profile first</div>
+    <div class="wc-no-level-sub">
+      The Schreibtrainer grades your text against the level on your profile.
+      Open Profile, set your level (e.g. B2 or C1 Hochschule), then come back here.
+    </div>
+    <button id="wcGoProfile" class="wc-btn-primary" type="button">Go to Profile</button>
+  </div>
+
+  <div id="wcWriter" class="wc-card-glass">
     <div class="wc-level-row-input">
-      <label for="wcLevel" class="wc-label">Your level</label>
-      <select id="wcLevel" class="wc-select">
-        <option value="A1">A1</option>
-        <option value="A2">A2</option>
-        <option value="B1" selected>B1</option>
-        <option value="B2">B2</option>
-        <option value="C1">C1</option>
-        <option value="C2">C2</option>
-      </select>
+      <span class="wc-label">Feedback level</span>
+      <span class="wc-level-badge" id="wcLevelBadge" title="Edit your level in Profile">
+        <span class="wc-level-badge-value" id="wcLevelValue">&ndash;</span>
+        <span class="wc-level-badge-source">Imported from Profile</span>
+      </span>
     </div>
     <textarea
       id="wcInput"

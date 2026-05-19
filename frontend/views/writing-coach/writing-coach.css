@@ -154,6 +154,52 @@
   outline: none;
   border-color: rgba(59, 130, 246, 0.6);
 }
+/* Read-only profile level badge — replaces the manual <select>. The level
+ * comes from the user profile (window._germanLevel); edits happen there,
+ * not here. */
+.wc-level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.30);
+  background: rgba(15, 23, 42, 0.55);
+  font-family: 'Nunito', sans-serif;
+  cursor: default;
+}
+.wc-level-badge-value {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+.wc-level-badge-source {
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: rgba(147, 197, 253, 0.78);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* Empty state when profile has no German level yet. */
+.wc-no-level {
+  text-align: center;
+  padding: 28px 24px;
+}
+.wc-no-level-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.15rem;
+  color: #f8fafc;
+  margin-bottom: 8px;
+}
+.wc-no-level-sub {
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.88rem;
+  color: rgba(226, 232, 240, 0.65);
+  line-height: 1.55;
+  max-width: 52ch;
+  margin: 0 auto 18px;
+}
 .wc-textarea {
   width: 100%;
   min-height: 200px;

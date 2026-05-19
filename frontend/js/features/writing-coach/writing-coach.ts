@@ -6,10 +6,16 @@
 
 import { analyzeParagraph, WritingAnalysis, WritingIssue } from './writing-coach-ai.js';
 
-const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
 const DRAFT_KEY = 'ss_writing_coach_draft';
-const LEVEL_KEY = 'ss_writing_coach_level';
 const MIN_CHARS = 10;
+
+/** Read the user's German level from the profile (loaded into window by
+ * user-data.ts). The trainer is read-only on this value — editing happens
+ * on the Profile page. */
+function _profileLevel(): string {
+  const w = window as unknown as { _germanLevel?: string };
+  return (w._germanLevel || '').trim();
+}
 
 let _injected = false;
 let _activeAbort: AbortController | null = null;
@@ -48,12 +54,15 @@ async function _inject(psecGerman: HTMLElement): Promise<void> {
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
 
-    // Card → append at the end of glHome (below the skill grid as a full-width
-    // feature card). View → append at the end of psec-german.
+    // Card → append at the end of the practice home shell (below the skill
+    // grid as a full-width feature card). Prefer .sd-shell so margins line
+    // up with the grid; fall back to #glHome for older markup.
     const card = tmp.querySelector('#wcCard');
     const view = tmp.querySelector('#wcView');
-    const glHome = psecGerman.querySelector('#glHome');
-    if (card && glHome) glHome.appendChild(card);
+    const target =
+      psecGerman.querySelector('#glHome .sd-shell') ||
+      psecGerman.querySelector('#glHome');
+    if (card && target) target.appendChild(card);
     if (view) psecGerman.appendChild(view);
 
     _wire();
@@ -69,14 +78,13 @@ function _wire(): void {
   const back = document.getElementById('wcBack');
   back?.addEventListener('click', _closeView);
 
-  const select = document.getElementById('wcLevel') as HTMLSelectElement | null;
-  if (select) {
-    const saved = localStorage.getItem(LEVEL_KEY);
-    if (saved && (LEVELS as readonly string[]).includes(saved)) select.value = saved;
-    select.addEventListener('change', () => {
-      localStorage.setItem(LEVEL_KEY, select.value);
-    });
-  }
+  // Level is no longer user-selected here; it comes from the profile.
+  // Wire the "Go to Profile" button in the empty state.
+  const goProfile = document.getElementById('wcGoProfile');
+  goProfile?.addEventListener('click', () => {
+    const w = window as unknown as { showPortalSection?: (s: string) => void };
+    if (typeof w.showPortalSection === 'function') w.showPortalSection('profile');
+  });
 
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
   if (ta) {
@@ -110,8 +118,28 @@ function _openView(): void {
   const view = document.getElementById('wcView');
   if (home) home.style.display = 'none';
   if (view) view.style.display = '';
+  _renderProfileLevel();
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
   ta?.focus();
+  _updateAnalyzeEnabled();
+}
+
+/** Toggle between the writer card and the empty state based on whether
+ * the user has a German level on their profile, and stamp the imported
+ * level into the read-only badge. */
+function _renderProfileLevel(): void {
+  const level = _profileLevel();
+  const writer = document.getElementById('wcWriter');
+  const noLevel = document.getElementById('wcNoLevel');
+  const valueEl = document.getElementById('wcLevelValue');
+  if (level) {
+    if (valueEl) valueEl.textContent = level;
+    if (writer) writer.style.display = '';
+    if (noLevel) noLevel.style.display = 'none';
+  } else {
+    if (writer) writer.style.display = 'none';
+    if (noLevel) noLevel.style.display = '';
+  }
 }
 
 function _closeView(): void {
@@ -129,20 +157,20 @@ function _updateAnalyzeEnabled(): void {
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
   const btn = document.getElementById('wcAnalyze') as HTMLButtonElement | null;
   if (!ta || !btn) return;
-  btn.disabled = ta.value.trim().length < MIN_CHARS;
+  // Also requires a profile level to grade against.
+  btn.disabled = ta.value.trim().length < MIN_CHARS || !_profileLevel();
 }
 
 async function _analyze(): Promise<void> {
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
-  const select = document.getElementById('wcLevel') as HTMLSelectElement | null;
   const btn = document.getElementById('wcAnalyze') as HTMLButtonElement | null;
   const loading = document.getElementById('wcLoading');
   const results = document.getElementById('wcResults');
-  if (!ta || !select || !btn) return;
+  if (!ta || !btn) return;
 
   const text = ta.value.trim();
-  const level = select.value;
-  if (text.length < MIN_CHARS) return;
+  const level = _profileLevel();
+  if (text.length < MIN_CHARS || !level) return;
 
   if (_activeAbort) _activeAbort.abort();
   _activeAbort = new AbortController();

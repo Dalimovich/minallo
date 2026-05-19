@@ -71,13 +71,37 @@
     </div>
     <div class="pf-group pf-learner-field" style="display: none">
       <label class="pf-label">Target Level</label>
-      <input
-        class="pf-input"
-        id="profileGermanLevel"
-        type="text"
-        placeholder="e.g. TDN 4"
-        readonly
-      />
+      <!-- Editable: students advance (B1 → B2 → C1 …) and need to update
+           their level. This is the single source of truth read by the
+           Schreibtrainer (window._germanLevel). Onboarding seeds it; this
+           field updates it after. Common values across telc / Goethe /
+           TestDaF / DSH / DSD / OESD listed together. -->
+      <select class="pf-input" id="profileGermanLevel">
+        <option value="">Select your level…</option>
+        <optgroup label="CEFR">
+          <option value="A1">A1</option>
+          <option value="A2">A2</option>
+          <option value="B1">B1</option>
+          <option value="B2">B2</option>
+          <option value="C1">C1</option>
+          <option value="C1 Hochschule">C1 Hochschule</option>
+          <option value="C2">C2</option>
+        </optgroup>
+        <optgroup label="TestDaF">
+          <option value="TDN 3">TDN 3</option>
+          <option value="TDN 4">TDN 4</option>
+          <option value="TDN 5">TDN 5</option>
+        </optgroup>
+        <optgroup label="DSH">
+          <option value="DSH-1">DSH-1</option>
+          <option value="DSH-2">DSH-2</option>
+          <option value="DSH-3">DSH-3</option>
+        </optgroup>
+        <optgroup label="DSD">
+          <option value="DSD I (B1/B2)">DSD I (B1/B2)</option>
+          <option value="DSD II (C1)">DSD II (C1)</option>
+        </optgroup>
+      </select>
     </div>
     <div></div>
     <button class="pf-save profile-save-btn">&#x1F4BE; Save changes</button>
