@@ -41,6 +41,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     params.append('payment_method_types[]', 'klarna');
     params.append('payment_method_types[]', 'paypal');
     if (!noTrial) params.append('subscription_data[trial_period_days]', '7');
+    params.append('metadata[no_trial]', noTrial ? 'true' : 'false');
     params.append('success_url', allowedOrigin + '?payment=success&session_id={CHECKOUT_SESSION_ID}');
     params.append('cancel_url', allowedOrigin + '?payment=cancelled');
     params.append('metadata[user_id]', user.id);

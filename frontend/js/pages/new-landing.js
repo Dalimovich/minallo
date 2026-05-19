@@ -38,7 +38,7 @@
         workflow: 'Workflow',
         pricing: 'Pricing',
         signIn: 'Sign in',
-        startFree: 'Start free'
+        startFree: 'Start free trial'
       },
       hero: {
         badge: 'A course-aware AI study platform',
@@ -158,19 +158,13 @@
       },
       pricing: {
         eyebrow: 'Pricing',
-        title: 'Simple student-friendly plans.',
-        lead: 'Keep the pricing section clean. Students and German learners should understand immediately what they get: documents, AI help, PDF tools, language practice, playlists, games, and focus features.',
-        free: {
-          name: 'Free',
-          sub: 'For trying the workspace.',
-          items: ['Limited AI questions', 'Basic Pomodoro', 'Upload sample documents'],
-          cta: 'Start free'
-        },
+        title: 'One student-friendly plan.',
+        lead: 'Try everything free for 7 days, then continue with one paid subscription for documents, AI help, PDF tools, language practice, playlists, games, and focus features.',
         pro: {
-          popular: 'Popular',
+          popular: '7-day free trial',
           name: 'Student Pro',
-          sub: 'For serious study sessions.',
-          per: '/month',
+          sub: 'Try first, then study seriously.',
+          per: '/month after trial',
           items: [
             'More AI tutor usage',
             'Course-aware citations',
@@ -189,7 +183,11 @@
       footer: {
         copyPre: '© ',
         copyPost: ' Minallo. Built for focused students and German learners.',
-        tutor: 'AI Tutor'
+        tutor: 'AI Tutor',
+        imprint: 'Impressum',
+        privacy: 'Privacy',
+        terms: 'Terms',
+        withdrawal: 'Withdrawal'
       }
     },
     de: {
@@ -201,7 +199,7 @@
         workflow: 'Ablauf',
         pricing: 'Preise',
         signIn: 'Anmelden',
-        startFree: 'Kostenlos starten'
+        startFree: 'Kostenlos testen'
       },
       hero: {
         badge: 'Eine kursbasierte KI-Lernplattform',
@@ -321,19 +319,13 @@
       },
       pricing: {
         eyebrow: 'Preise',
-        title: 'Einfache, studierendenfreundliche Pläne.',
-        lead: 'Der Preisbereich bleibt schlank. Studierende und Deutschlernende verstehen sofort, was sie bekommen: Dokumente, KI-Hilfe, PDF-Werkzeuge, Sprachpraxis, Playlists, Spiele und Fokus-Funktionen.',
-        free: {
-          name: 'Kostenlos',
-          sub: 'Zum Ausprobieren des Arbeitsbereichs.',
-          items: ['Begrenzte KI-Fragen', 'Einfacher Pomodoro', 'Beispieldokumente hochladen'],
-          cta: 'Kostenlos starten'
-        },
+        title: 'Ein studierendenfreundlicher Plan.',
+        lead: 'Teste alles 7 Tage kostenlos und nutze danach ein bezahltes Abo fuer Dokumente, KI-Hilfe, PDF-Werkzeuge, Sprachpraxis, Playlists, Spiele und Fokus-Funktionen.',
         pro: {
-          popular: 'Beliebt',
+          popular: '7 Tage kostenlos testen',
           name: 'Student Pro',
-          sub: 'Für ernsthafte Lernsitzungen.',
-          per: '/Monat',
+          sub: 'Erst testen, dann ernsthaft weiterlernen.',
+          per: '/Monat nach der Testphase',
           items: [
             'Mehr KI-Tutor-Nutzung',
             'Kursbasierte Quellenangaben',
@@ -352,7 +344,11 @@
       footer: {
         copyPre: '© ',
         copyPost: ' Minallo. Gebaut für fokussierte Studierende und Deutschlernende.',
-        tutor: 'KI-Tutor'
+        tutor: 'KI-Tutor',
+        imprint: 'Impressum',
+        privacy: 'Datenschutz',
+        terms: 'AGB',
+        withdrawal: 'Widerruf'
       }
     }
   };
@@ -748,7 +744,7 @@
         if (typeof window._googleAuth === 'function') window._googleAuth();
       } catch (_err) { /* swallow */ }
     };
-    var ids = ['nlNavSignIn', 'nlNavStartFree', 'nlHeroBuild', 'nlPricingFreeCta', 'nlPricingProCta', 'nlCtaLaunch'];
+    var ids = ['nlNavSignIn', 'nlNavStartFree', 'nlHeroBuild', 'nlPricingProCta', 'nlCtaLaunch'];
     for (var i = 0; i < ids.length; i++) {
       var el = document.getElementById(ids[i]);
       if (el) el.addEventListener('click', auth);

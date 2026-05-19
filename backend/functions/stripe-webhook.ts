@@ -9,7 +9,7 @@ interface StripeEvent<T = unknown> {
 }
 
 interface CheckoutSession {
-  metadata?: { user_id?: string };
+  metadata?: { user_id?: string; no_trial?: string };
   subscription?: string | null;
   customer?: string | null;
 }
@@ -66,12 +66,17 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     const session = evt.data.object as CheckoutSession;
     const userId = session.metadata?.user_id;
     if (userId) {
+      const noTrial = session.metadata?.no_trial === 'true';
+      const expiresAt = new Date(
+        Date.now() + (noTrial ? 31 : 8) * 24 * 60 * 60 * 1000
+      ).toISOString();
       await supaRequest('POST', 'subscriptions?on_conflict=user_id',
         {
-          user_id: userId, plan: 'pro', status: 'active',
+          user_id: userId, plan: 'pro', status: noTrial ? 'active' : 'trialing',
           stripe_subscription_id: session.subscription || null,
           stripe_customer_id: session.customer || null,
-          expires_at: new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString(),
+          expires_at: expiresAt,
+          had_trial: !noTrial,
           updated_at: new Date().toISOString()
         },
         serviceKey, prefer);

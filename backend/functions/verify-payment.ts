@@ -10,7 +10,7 @@ interface StripeSession {
   payment_status?: string;
   subscription?: string | null;
   customer?: string | null;
-  metadata?: { user_id?: string };
+  metadata?: { user_id?: string; no_trial?: string };
   error?: { message?: string };
 }
 
@@ -68,13 +68,17 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       return jsonResponse(200, { ok: true, alreadyProcessed: true, expires_at: currentSub.expires_at || null });
     }
 
-    const expires = new Date(Date.now() + 37 * 24 * 60 * 60 * 1000).toISOString();
+    const isTrialCheckout =
+      session.payment_status === 'no_payment_required' && session.metadata?.no_trial !== 'true';
+    const expires = new Date(
+      Date.now() + (isTrialCheckout ? 8 : 31) * 24 * 60 * 60 * 1000
+    ).toISOString();
     await supaRequest('POST', 'subscriptions?on_conflict=user_id',
       {
-        id: userId, user_id: userId, plan: 'pro', status: 'active',
+        id: userId, user_id: userId, plan: 'pro', status: isTrialCheckout ? 'trialing' : 'active',
         stripe_subscription_id: session.subscription || null,
         stripe_customer_id: session.customer || null,
-        expires_at: expires, had_trial: true,
+        expires_at: expires, had_trial: isTrialCheckout,
         updated_at: new Date().toISOString()
       },
       serviceKey, { Prefer: 'resolution=merge-duplicates,return=minimal' });

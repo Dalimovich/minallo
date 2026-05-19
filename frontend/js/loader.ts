@@ -53,8 +53,8 @@ interface LandingTranslation {
       h1: 'Study smarter,<br>not harder.',
       subtitle:
         'One workspace for courses, PDFs, your AI tutor and lecture notes. Stop switching tabs — start understanding.',
-      cta: 'Start for free →',
-      note: 'Free forever · No credit card needed',
+      cta: 'Start free trial →',
+      note: '7-day free trial · Cancel anytime',
       features_label: 'What you get',
       features_title: 'Everything you need to ace your degree',
       f1_title: 'Smart PDF Viewer',
@@ -78,7 +78,7 @@ interface LandingTranslation {
       cta2_title: 'Ready to study smarter?',
       cta2_desc:
         'Join thousands of students already using Minallo to save time, understand more and stress less.',
-      cta2_btn: 'Create your free account →',
+      cta2_btn: 'Start your free trial →',
       stats_rating: 'Average rating',
       stats_students: 'Students',
       stats_pdfs: 'PDFs analysed',
@@ -93,7 +93,7 @@ interface LandingTranslation {
       subtitle:
         'Ein Arbeitsbereich für Kurse, PDFs, deinen KI-Tutor und Vorlesungsnotizen. Höre auf, Tabs zu wechseln — fange an zu verstehen.',
       cta: 'Kostenlos starten →',
-      note: 'Für immer kostenlos · Keine Kreditkarte nötig',
+      note: '7 Tage kostenlos testen · Jederzeit kündbar',
       features_label: 'Was du bekommst',
       features_title: 'Alles, was du für deinen Abschluss brauchst',
       f1_title: 'Intelligenter PDF-Viewer',
