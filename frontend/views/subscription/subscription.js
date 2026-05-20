@@ -1,5 +1,10 @@
 function _subT(key, fallback) {
-  return (window._t && window._t(key)) || fallback;
+  // `_t` returns the key itself when a translation is missing, which would
+  // otherwise short-circuit `||` and leak the raw key into the UI. Detect
+  // that case and use the English fallback instead.
+  var v = window._t && window._t(key);
+  if (!v || v === key) return fallback;
+  return v;
 }
 
 /** One-time retention modal — shown once per user after they confirm
@@ -504,10 +509,11 @@ function _bindSubscriptionControls() {
         var _retentionKey = 'ms_retention_offer_seen_' + (_currentUser.id || 'anon');
         var _alreadyOffered = false;
         try { _alreadyOffered = localStorage.getItem(_retentionKey) === '1'; } catch (_e) {}
-        var _result = _alreadyOffered ? 'cancel' : await _showRetentionOffer();
-        // Result: 'dismiss' = back out at confirmation, 'accept' = take discount,
-        // 'cancel' = proceed to portal where they can fully cancel.
-        if (_result === 'dismiss') return;
+        // If the popup has been shown before, skip it and go straight to
+        // the portal. Otherwise show the 2-step flow: any close other than
+        // explicit 'accept' should just dismiss, NOT auto-open the portal.
+        var _result = _alreadyOffered ? null : await _showRetentionOffer();
+        if (_result === 'dismiss' || _result === 'cancel') return;
         if (_result === 'accept') {
           try {
             await window._subService.applyRetentionDiscount();
@@ -700,7 +706,8 @@ function _bindSubscriptionControls() {
       var _alreadyOffered = false;
       try { _alreadyOffered = localStorage.getItem(_retentionKey) === '1'; } catch (_e) {}
       var _result = await _showRetentionOffer();
-      if (_result === 'dismiss') return;
+      // Any close other than explicit 'accept' just dismisses — no auto cancel.
+      if (_result === 'dismiss' || _result === 'cancel') return;
       if (_result === 'accept' && !_alreadyOffered) {
         try {
           await window._subService.applyRetentionDiscount();
