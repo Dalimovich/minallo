@@ -59,7 +59,7 @@ function _showRetentionOffer() {
             '</span>' +
           '</div>' +
           '<p class="sub-retention-note">' +
-            _subT('sub_retention_note', '€8.99 for your next 3 months, then back to €11.99. This offer is only shown once.') +
+            _subT('sub_retention_note', '€8.99 for your next billing cycle, then back to €11.99. This offer is only shown once.') +
           '</p>' +
           '<div class="sub-retention-actions">' +
             '<button type="button" class="sub-retention-decline" data-action="decline">' +
@@ -528,7 +528,7 @@ function _bindSubscriptionControls() {
             });
             showToast(
               _subT('sub_discount_applied_title', 'Discount applied!'),
-              _subT('sub_discount_applied_body', '€8.99/month for your next 3 months, then €11.99.')
+              _subT('sub_discount_applied_body', '€8.99 for your next billing cycle, then back to €11.99.')
             );
           } catch (e) {
             showToast(
@@ -722,7 +722,7 @@ function _bindSubscriptionControls() {
           });
           showToast(
             _subT('sub_discount_applied_title', 'Discount applied!'),
-            _subT('sub_discount_applied_body', '€8.99/month for your next 3 months, then €11.99.')
+            _subT('sub_discount_applied_body', '€8.99 for your next billing cycle, then back to €11.99.')
           );
         } catch (e) {
           showToast(
