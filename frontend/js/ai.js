@@ -51,7 +51,11 @@ function _buildSystemPrompt() {
 }
 
 // ── askAI — core Q&A ──────────────────────────────────────────────────────
-askAI = function (question, skipUserBubble) {
+// `var` scope is intentional — without it, this becomes an implicit global
+// assignment (non-strict mode) that clobbers the RAG-first window.askAI the
+// TS bridge installed. Keep the name `askAI` so the local reference at the
+// bottom of this file (chipPrompt → askAI(prompt)) still works.
+var askAI = function (question, skipUserBubble) {
   if (!question) return;
   generationStopped = false;
   currentGenId++;
