@@ -53,8 +53,13 @@ _TOC_RE = re.compile(r"^\s*\d+\s*\.{3,}", re.MULTILINE)
 # another doc held the actual answer. Drop to a tie-breaker level — enough
 # to win when similarity is comparable, but not enough to override a
 # materially more relevant chunk from a different document.
-_ACTIVE_DOC_BOOST = 0.10      # chunks from the doc the user is reading
-_PREFERRED_DOC_BOOST = 0.08   # chunks from the user-selected document set (when used as a hint, not a filter)
+# Was 0.10 — far too small to pull the open PDF into the top-K when other
+# docs win on raw vector similarity. A real session showed AG_9.1 (the open
+# file) completely absent from the top 12 while two old Klausur PDFs took
+# every slot. The active doc is where the user's question is rooted; it
+# should dominate ranking unless there is a strong reason not to.
+_ACTIVE_DOC_BOOST = 1.00      # chunks from the doc the user is reading
+_PREFERRED_DOC_BOOST = 0.20   # chunks from the user-selected document set (when used as a hint, not a filter)
 _QUALITY_PENALTY_WEAK = 0.15
 _QUALITY_PENALTY_FAILED = 0.30
 
@@ -100,12 +105,15 @@ _INTENT_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
      "summary"),
 )
 
-# Exercise-ref regex: "Aufgabe 1.2", "Exercise 3 (a)", "Problem 4.1.2", "Übung 2 b"
+# Exercise-ref regex: "Aufgabe 1.2", "Exercise 3 (a)", "Problem 4.1.2",
+# "Übung 2 b", "Übungsaufgabe 9.1". Compound forms (Übungsaufgabe /
+# Uebungsaufgabe) listed first so the alternation grabs them whole rather
+# than stopping after the prefix and failing the digit lookahead.
 # Subpart is captured ONLY when it's delimited: parens around it, or a single
 # letter followed by whitespace / end-of-string / punctuation. This stops
 # "Aufgabe 1.2 please" from being read as "1.2 (p)".
 _EXERCISE_QUERY_RE = re.compile(
-    r"\b(?:aufgabe|übung|uebung|exercise|problem|task|beispiel)\s+"
+    r"\b(?:übungsaufgabe|uebungsaufgabe|aufgabe|übung|uebung|exercise|problem|task|beispiel)\s+"
     r"(\d+(?:\.\d+){0,3})"
     r"(?:\s*\(([a-zA-Z])\)|\s+([a-zA-Z])(?=\s|[\.\,\?\!\:]|$))?",
     re.IGNORECASE,

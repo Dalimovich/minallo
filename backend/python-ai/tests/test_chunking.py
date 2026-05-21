@@ -406,6 +406,13 @@ def test_is_exercise_heading_pattern_matches() -> None:
     assert _is_exercise_heading("Exercise 4")
     assert _is_exercise_heading("Problem 12.3.1")
     assert _is_exercise_heading("Beispiel 2")
+    # Compound German forms — used by TU lecture-template PDFs. Without
+    # them, AG_9.1's "Übungsaufgabe 9.1" headings silently failed the
+    # no-split test and document_exercises rows weren't being written,
+    # which killed the exercise-exact retrieval safety net entirely.
+    assert _is_exercise_heading("Übungsaufgabe 9.1")
+    assert _is_exercise_heading("Übungsaufgabe 9.1 a)")
+    assert _is_exercise_heading("Uebungsaufgabe 9.1")
     # Should NOT match plain prose or other section headings.
     assert not _is_exercise_heading("Theoriekapitel")
     assert not _is_exercise_heading("Schubspannungsnachweis")

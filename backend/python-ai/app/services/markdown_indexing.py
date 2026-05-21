@@ -272,13 +272,61 @@ def _grade_extraction(text: str) -> str:
 
 _BLANK_LINE = re.compile(r"\n\s*\n")
 
+# Phase 3 follow-up — recognise an exercise heading line so we can force a
+# paragraph break before it, even when the upstream PDF extractor ran the
+# document banner, lecturer names, and the exercise heading into one
+# unbroken block. Without this, ``Übungsaufgabe 9.1`` ends up buried mid-
+# paragraph and `detect_exercises` (which only matches at line start) never
+# fires — leaving the exercise-exact retrieval path completely dead.
+_EXERCISE_HEADING_LINE = re.compile(
+    r"^\s*"
+    r"(?:Aufgabe|Übungsaufgabe|Übung|Uebungsaufgabe|Uebung|Exercise|Problem|Task|Beispiel)"
+    r"\s+\d+(?:\.\d+){0,3}"
+    r"(?:\s*[\(\[]?[a-zA-Z][\)\]]?\.?)?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
 
 def _split_blocks(text: str) -> Iterable[str]:
-    """Split a page into paragraph-like blocks on double-newlines."""
-    for block in _BLANK_LINE.split(text):
-        block = block.strip()
-        if block:
-            yield block
+    """Split a page into paragraph-like blocks.
+
+    Two passes:
+      1. Split on blank lines (the normal paragraph boundary).
+      2. Within each resulting block, force an additional break BEFORE any
+         line matching ``_EXERCISE_HEADING_LINE`` so the exercise heading
+         lands on its own block and the downstream heading-promoter can
+         render it as ``## Übungsaufgabe X``. Required because academic
+         PDF templates (lecture banner + names + exercise heading + body)
+         frequently arrive from pdfminer without the blank line that would
+         have separated the heading.
+    """
+    for blank_block in _BLANK_LINE.split(text):
+        for sub in _force_split_on_exercise_headings(blank_block):
+            sub = sub.strip()
+            if sub:
+                yield sub
+
+
+def _force_split_on_exercise_headings(block: str) -> list[str]:
+    """Break ``block`` into sub-blocks whenever an exercise heading line
+    appears, even mid-paragraph. The heading line itself becomes the first
+    line of the new sub-block so the multi-line promoter (``_render_block``)
+    sees it at index 0 and lifts it to ``## …``."""
+    lines = block.splitlines()
+    if not lines:
+        return []
+    out: list[list[str]] = []
+    buf: list[str] = []
+    for line in lines:
+        if _EXERCISE_HEADING_LINE.match(line.strip()) and buf:
+            out.append(buf)
+            buf = [line]
+        else:
+            buf.append(line)
+    if buf:
+        out.append(buf)
+    return ["\n".join(b) for b in out]
 
 
 def _render_block(block: str) -> str:
@@ -332,6 +380,12 @@ def _looks_like_heading(line: str) -> bool:
     Basic shape filter (length 3-80, ≤10 words, no trailing `,`/`;`) AND
     at least one of:
 
+    * exercise heading (``Übungsaufgabe 9.1``, ``Exercise 3 (a)``,
+      ``Beispiel 2 b``) — short-circuits the whole detector so the rest
+      of the shape filters can't accidentally reject them. Critical for
+      retrieval: ``detect_exercises`` only matches lines that start with
+      ``# ``, so an exercise label that the heading promoter ignores is
+      invisible to the exercise-exact retrieval path.
     * numbered prefix (``1.2 Force``)
     * ALL-CAPS short line
     * title-case ≥60% capitalised, ≤8 words (period allowed when ≤6 words —
@@ -341,6 +395,8 @@ def _looks_like_heading(line: str) -> bool:
       (``Die Schweißnaht-Berechnung``)
     """
     line = line.strip()
+    if _EXERCISE_HEADING_LINE.match(line):
+        return True
     if len(line) < 3 or len(line) > 80:
         return False
     if line.endswith((",", ";")):

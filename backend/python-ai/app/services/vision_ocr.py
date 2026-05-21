@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import re
 from typing import Iterable
 
 from ..config import get_settings
@@ -109,10 +110,33 @@ def _vision_extract(client, model: str, image_bytes: bytes) -> str:
             ],
         )
         msg = response.choices[0].message if response.choices else None
-        return (msg.content if msg else "") or ""
+        raw = (msg.content if msg else "") or ""
+        return _strip_outer_code_fence(raw)
     except Exception:  # noqa: BLE001
         log.exception("vision OCR call failed")
         return ""
+
+
+# Vision models reliably wrap their answer in a markdown code fence even
+# though the prompt explicitly asks for Markdown content (the fence is
+# how the chat model "shows" markdown). Without stripping, downstream
+# parsing sees ```markdown ## b) $$ F_A=... ``` as one flat code-block
+# line and never recognises the heading or the $$ math inside.
+_CODE_FENCE_RE = re.compile(
+    r"^\s*```(?:markdown|md)?\s*\n(.*?)\n\s*```\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _strip_outer_code_fence(text: str) -> str:
+    """If the vision response is wrapped in an outer ```markdown ... ```
+    code fence, return the inner content. No-op for already-bare Markdown."""
+    if not text:
+        return text
+    m = _CODE_FENCE_RE.match(text)
+    if m:
+        return m.group(1).strip()
+    return text
 
 
 def pages_via_vision(pdf_bytes: bytes, page_indices: Iterable[int]) -> dict[int, str]:

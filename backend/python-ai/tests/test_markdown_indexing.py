@@ -315,3 +315,52 @@ def test_normal_german_paragraph_still_grades_good() -> None:
         "denen das Material homogen und der Querschnitt konstant ist."
     )
     assert _grade_extraction(text) == "good"
+
+
+# ── Heading recovery for inline exercise labels ────────────────────────────
+
+
+def test_exercise_label_buried_mid_block_is_promoted_to_heading() -> None:
+    """The TU lecture template emits each page as: doc-banner + lecturer
+    names + exercise label + body — all without blank lines between them.
+    Without splitting at the exercise label, the heading gets buried and
+    detect_exercises never fires. After the split, the exercise label
+    must land as its own ``## `` heading regardless of surrounding lines.
+    """
+    from app.services.markdown_indexing import page_to_markdown
+
+    page_text = "\n".join([
+        "Grundlagen",
+        "des Konstruierens",
+        "SoSe 2023",
+        "Prof. Dr.-Ing. T. Vietor",
+        "Dipl.-Ing. D. Philipp",
+        "Übungsaufgabe 9.1",
+        "Der in Bild 1.1 dargestellte Deckel ist über 30 Schrauben befestigt.",
+    ])
+    pm = page_to_markdown(page_text, 1)
+    md = pm.markdown
+    assert "## Übungsaufgabe 9.1" in md, (
+        f"exercise label must be promoted to a heading; got:\n{md!r}"
+    )
+    # The body must follow the heading — not be absorbed into the banner.
+    assert "Der in Bild 1.1" in md
+    # And the heading must precede the body (heading promotion not order
+    # reversal).
+    assert md.index("## Übungsaufgabe 9.1") < md.index("Der in Bild 1.1")
+
+
+def test_compound_uebungsaufgabe_recognised_as_heading_directly() -> None:
+    """``_looks_like_heading`` must short-circuit to True for an exercise
+    label, even though it doesn't pass any of the generic shape filters
+    (not all-caps, not numbered-prefix-style, not in the German keyword
+    whitelist). Previously failed for ``Übungsaufgabe 9.1`` because the
+    keyword list had only ``übung`` and the title-case rule rejects
+    8-character strings."""
+    from app.services.markdown_indexing import _looks_like_heading
+
+    assert _looks_like_heading("Übungsaufgabe 9.1")
+    assert _looks_like_heading("Übungsaufgabe 9.1 a)")
+    assert _looks_like_heading("Uebungsaufgabe 9.2")
+    assert _looks_like_heading("Exercise 3")
+    assert _looks_like_heading("Beispiel 2 b")

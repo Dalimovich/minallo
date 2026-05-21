@@ -111,3 +111,44 @@ def test_pages_via_vision_respects_max_pages_cap() -> None:
          patch("app.services.vision_ocr._render_page_to_png", lambda *a, **kw: None):
         result = pages_via_vision(b"%PDF-fake", list(range(50)))
         assert result == {}
+
+
+# ── Outer markdown code-fence stripping ────────────────────────────────────
+
+
+def test_strip_outer_code_fence_removes_markdown_wrapper() -> None:
+    """Vision models reliably wrap their answer in a ```markdown ...```
+    fence even though the system prompt asks for raw Markdown. Without
+    stripping, downstream parsing sees the whole page as one code-block
+    line and never recognises the ``## `` heading or the ``$$`` math
+    inside (exactly what happened to AG_9.1 page 16)."""
+    from app.services.vision_ocr import _strip_outer_code_fence
+
+    fenced = "```markdown\n## b)\n$$ F_A = 2756.75 \\, N $$\n```"
+    stripped = _strip_outer_code_fence(fenced)
+    assert stripped.startswith("## b)")
+    assert "$$ F_A" in stripped
+    assert "```" not in stripped
+
+
+def test_strip_outer_code_fence_handles_bare_md_fence() -> None:
+    """The ```md alias is also common — strip it the same way."""
+    from app.services.vision_ocr import _strip_outer_code_fence
+
+    fenced = "```md\nplain content\n```"
+    assert _strip_outer_code_fence(fenced) == "plain content"
+
+
+def test_strip_outer_code_fence_is_noop_for_bare_markdown() -> None:
+    """Real markdown without an outer fence must pass through unchanged so
+    we don't lose inline ``` code-blocks the user actually wants."""
+    from app.services.vision_ocr import _strip_outer_code_fence
+
+    bare = "## Heading\n\nSome prose.\n\n```python\nprint('hi')\n```\n"
+    assert _strip_outer_code_fence(bare) == bare
+
+
+def test_strip_outer_code_fence_handles_empty() -> None:
+    from app.services.vision_ocr import _strip_outer_code_fence
+
+    assert _strip_outer_code_fence("") == ""

@@ -77,7 +77,10 @@ def _is_math_block(block: str) -> bool:
 # since Phase-2 markdown promotes ``Aufgabe X`` to ``## Aufgabe X``.
 _EXERCISE_HEADER_LINE = re.compile(
     r"^(?:#{1,6}\s*)?"
-    r"(Aufgabe|Übung|Uebung|Exercise|Problem|Task|Beispiel)"
+    # Order matters — list the compound forms BEFORE their prefixes so the
+    # alternation matches "Übungsaufgabe" as a whole instead of stopping
+    # after "Übung" (which would then fail the digit lookahead).
+    r"(Übungsaufgabe|Uebungsaufgabe|Aufgabe|Übung|Uebung|Exercise|Problem|Task|Beispiel)"
     r"\s+(\d+(?:\.\d+){0,3})"
     r"(?:\s*[\(\[]?([a-zA-Z])[\)\]]?\.?)?"
     r"[:\.\s]*$",

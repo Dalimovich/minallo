@@ -16,11 +16,15 @@ from dataclasses import dataclass, field
 
 # ── Patterns ─────────────────────────────────────────────────────────────────
 
-# Matches "Aufgabe 1.2", "Übung 1.2 a)", "Exercise 1.2", "Problem 3", "Task 4.1.2"
+# Matches "Aufgabe 1.2", "Übung 1.2 a)", "Exercise 1.2", "Problem 3", "Task 4.1.2",
+# "Übungsaufgabe 9.1 a)".
 # Group 1: keyword       Group 2: number ("1.2")       Group 3: optional subpart ("a")
+# Compound forms (Übungsaufgabe / Uebungsaufgabe) listed first so the
+# alternation matches them whole rather than greedily eating just the
+# "Übung" prefix and failing the digit lookahead.
 _EXERCISE_HEADER = re.compile(
     r"^(?:#{1,6}\s*)?"
-    r"(Aufgabe|Übung|Uebung|Exercise|Problem|Task|Beispiel)"
+    r"(Übungsaufgabe|Uebungsaufgabe|Aufgabe|Übung|Uebung|Exercise|Problem|Task|Beispiel)"
     r"\s+(\d+(?:\.\d+){0,3})"
     r"(?:\s*[\(\[]?([a-zA-Z])[\)\]]?\.?)?"
     r"[:\.\s]*",
