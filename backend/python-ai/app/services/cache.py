@@ -37,6 +37,7 @@ def question_hash(
     tutor_mode: str | None = None,
     active_document_id: str | None = None,
     visible_context: str | None = None,
+    previous_turns: list[dict[str, str]] | None = None,
 ) -> str:
     """Composite cache key for an answer.
 
@@ -49,6 +50,10 @@ def question_hash(
       * a short fingerprint of the visible-page text (Source 0 input)
         so opening to page 4 vs page 9 of the same doc doesn't share a
         cached answer
+      * a fingerprint of the recent chat history. Two students asking
+        "explain that in simpler terms" in different chat sessions are
+        referring to two completely different "thats" — without folding
+        the history into the cache, one would get the other's answer.
 
     All extras default to None — legacy callers without context still
     produce a stable, smaller key.
@@ -65,6 +70,16 @@ def question_hash(
             visible_context.encode("utf-8")
         ).hexdigest()[:16]
         parts.append(f"vc={vc_short}")
+    if previous_turns:
+        # Stable serialise — join role+text per turn, hash the lot.
+        # 16 hex chars is enough to disambiguate distinct conversations.
+        serial = "\n".join(
+            f"{(t.get('role') or '').lower()}:{(t.get('text') or '').strip()}"
+            for t in previous_turns
+        )
+        if serial:
+            pt_short = hashlib.sha256(serial.encode("utf-8")).hexdigest()[:16]
+            parts.append(f"pt={pt_short}")
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -117,14 +132,16 @@ def lookup_answer(
     tutor_mode: str | None = None,
     active_document_id: str | None = None,
     visible_context: str | None = None,
+    previous_turns: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     """Return the cached answer JSON, or None on miss. Bumps usage stats on hit.
 
     The extra kw-only params (``tutor_mode``, ``active_document_id``,
-    ``visible_context``) are folded into the composite ``question_hash`` so
-    cache keys are sensitive to inputs that change the answer text but
-    aren't part of the question string itself. Defaults are safe for
-    legacy callers — they produce the bare-question key the v3 cache used.
+    ``visible_context``, ``previous_turns``) are folded into the composite
+    ``question_hash`` so cache keys are sensitive to inputs that change
+    the answer text but aren't part of the question string itself.
+    Defaults are safe for legacy callers — they produce the bare-question
+    key the v3 cache used.
     """
     if not version_hash:
         return None
@@ -133,6 +150,7 @@ def lookup_answer(
         tutor_mode=tutor_mode,
         active_document_id=active_document_id,
         visible_context=visible_context,
+        previous_turns=previous_turns,
     )
     sb = get_supabase()
     try:
@@ -173,6 +191,7 @@ def save_answer(
     tutor_mode: str | None = None,
     active_document_id: str | None = None,
     visible_context: str | None = None,
+    previous_turns: list[dict[str, str]] | None = None,
 ) -> None:
     """Upsert the answer for next time. Safe to no-op on errors.
 
@@ -190,6 +209,7 @@ def save_answer(
             tutor_mode=tutor_mode,
             active_document_id=active_document_id,
             visible_context=visible_context,
+            previous_turns=previous_turns,
         ),
         "normalized_question":   _normalize_question(question),
         "document_version_hash": version_hash,

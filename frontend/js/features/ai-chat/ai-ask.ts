@@ -158,7 +158,17 @@ function _saveCourseHistory(courseId: string | null | undefined, pairs: HistoryP
 }
 function _appendCourseHistory(courseId: string | null | undefined, question: string, answer: string): void {
   const pairs = _loadCourseHistory(courseId);
-  pairs.push({ q: question, a: answer, ts: Date.now() });
+  // If the most recent pair has the same question, this is a regenerate —
+  // replace its answer instead of appending a duplicate pair. Without this,
+  // restoring history after a regenerate renders both the old and the new
+  // answer back-to-back.
+  const last = pairs.length ? pairs[pairs.length - 1] : null;
+  if (last && (last.q || '').trim() === (question || '').trim()) {
+    last.a = answer;
+    last.ts = Date.now();
+  } else {
+    pairs.push({ q: question, a: answer, ts: Date.now() });
+  }
   _saveCourseHistory(courseId, pairs);
 }
 
@@ -513,6 +523,14 @@ export function initAskAI(
 
             function updateBlockRender(): void {
               if (!bubble) return;
+              // Keep data-raw current with the accumulated stream so serializers
+              // (per-file save in chat.js, per-course in ai-message-actions.ts)
+              // can persist the in-progress text properly. Without this, if a
+              // save fires mid-stream (panel close, course switch, page unload),
+              // serializeChatDOM falls back to textContent which flattens the
+              // rendered KaTeX/markdown HTML and produces a cropped/corrupted
+              // answer on reload.
+              bubble.setAttribute('data-raw', rawText);
               const display = rawText.replace(metaPattern, '').trimEnd();
               const blocks = splitBlocks(display);
 
@@ -591,19 +609,39 @@ export function initAskAI(
               aiMsgs.appendChild(ansWrap);
               _autoScroll(aiMsgs);
               bubble = ansWrap.querySelector<HTMLElement>('.ai-bubble.bot');
+              // Mark the bubble as actively streaming so serializers know to
+              // either skip it or persist its data-raw value rather than the
+              // partially-rendered DOM contents.
+              if (bubble) bubble.setAttribute('data-streaming', 'true');
             }
 
             const _streamController = new AbortController();
             window._abortCurrentStream = (): void => _streamController.abort();
 
-            // (prevQuestion lookup retained from JS for parity — currently unused in payload)
+            // Collect the last 4 messages (≈ 2 Q&A pairs) so the backend can
+            // resolve follow-up references like "explain the formula above"
+            // without having to re-derive them from retrieval alone. Backend
+            // hard-caps this further (max 6 messages, 2k chars total), so
+            // it's safe to send a few more here than strictly needed.
+            let _previousTurns: Array<{ role: string; text: string }> = [];
             try {
-              const _chatMsgs = typeof window.serializeChatDOM === 'function' ? window.serializeChatDOM() : [];
-              for (let _ci = _chatMsgs.length - 1; _ci >= 0; _ci--) {
-                const m = _chatMsgs[_ci]!;
-                if (m.role === 'user' && m.text !== question) break;
+              const _allMsgs = typeof window.serializeChatDOM === 'function'
+                ? window.serializeChatDOM()
+                : [];
+              // Drop the current user message if it's already in the DOM
+              // (addUserMsg ran above). We want prior turns, not the one
+              // being asked right now.
+              const _prior: Array<{ role: string; text: string }> = [];
+              for (let _ci = _allMsgs.length - 1; _ci >= 0; _ci--) {
+                const m = _allMsgs[_ci]!;
+                const _txt = (m.text || '').trim();
+                if (!_txt) continue;
+                if (m.role === 'user' && _txt === question.trim()) continue; // skip current
+                _prior.unshift({ role: m.role, text: _txt });
+                if (_prior.length >= 4) break;
               }
-            } catch { /* ignore */ }
+              _previousTurns = _prior;
+            } catch { /* ignore — sending [] is safe */ }
 
             const _aiHost = (window.AI_SERVICE_URL || '').replace(/\/$/, '');
             if (!_aiHost) { fallbackToRag(); return; }
@@ -628,6 +666,9 @@ export function initAskAI(
                 // user is pointing at when they say "this question".
                 activeFileName: activeFileName || undefined,
                 openFileContext: _openFileCtx || undefined,
+                // Recent chat history so the model can resolve anaphoric
+                // references ("the formula above", "explain that again").
+                previousTurns: _previousTurns.length ? _previousTurns : undefined,
                 bypassCache: opts && opts.forceRefresh ? true : undefined,
               }),
             })
@@ -665,6 +706,15 @@ export function initAskAI(
               .catch((err: unknown) => {
                 if (err && (err as { name?: string }).name === 'AbortError') {
                   if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
+                  // Drop a partial streaming bubble entirely instead of letting
+                  // its cropped contents get persisted by saveChatForFile on
+                  // the next unload/showPortal trigger. The user explicitly
+                  // aborted — don't overwrite the prior complete answer (which
+                  // still lives in localStorage / Supabase) with a half-stream.
+                  if (ansWrap && ansWrap.querySelector('.ai-bubble.bot[data-streaming="true"]')) {
+                    ansWrap.remove();
+                    ansWrap = null;
+                  }
                   const _sb = document.getElementById('aiSend') as HTMLButtonElement | null;
                   if (_sb) _sb.disabled = false;
                   const _st = document.getElementById('stopBtn');
@@ -761,7 +811,10 @@ export function initAskAI(
 
               _appendCourseHistory(_courseId, question, fullAnswer);
 
-              if (bubble) bubble.setAttribute('data-raw', fullAnswer);
+              if (bubble) {
+                bubble.setAttribute('data-raw', fullAnswer);
+                bubble.removeAttribute('data-streaming');
+              }
 
               fullRender(fullAnswer);
 

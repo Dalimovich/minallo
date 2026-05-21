@@ -34,6 +34,7 @@ sys.modules.setdefault("app.services.embeddings", _fake_emb)
 
 from app.services.answer import (  # noqa: E402
     _SYSTEM_PROMPT_MATH,
+    _SYSTEM_PROMPT_PARTIAL,
     _SYSTEM_PROMPT_STRONG,
     _SYSTEM_PROMPT_WEAK,
     pick_system_prompt,
@@ -50,13 +51,19 @@ from app.services.answer import (  # noqa: E402
 # follow.
 
 
-def test_weak_retrieval_uses_weak_prompt_even_for_math() -> None:
+def test_weak_retrieval_uses_partial_prompt_even_for_math() -> None:
+    """Review fix #3: weak-strength retrieval no longer throws chunks
+    away. We feed the top 2-3 to the model with the PARTIAL prompt that
+    forbids confident solving but encourages "here's what your files
+    DO cover" — much more useful than the old "I found nothing" reply."""
     prompt, mode = pick_system_prompt("Solve Aufgabe 1.2", "weak")
-    assert prompt.startswith(_SYSTEM_PROMPT_WEAK)
-    assert mode == "weak"
+    assert prompt.startswith(_SYSTEM_PROMPT_PARTIAL)
+    assert mode == "partial"
 
 
 def test_none_retrieval_uses_weak_prompt() -> None:
+    """``none`` strength means no chunks at all — nothing to surface.
+    Fall back to the original "I couldn't find this in your files" reply."""
     prompt, mode = pick_system_prompt("Aufgabe 1.2", "none")
     assert prompt.startswith(_SYSTEM_PROMPT_WEAK)
     assert mode == "weak"

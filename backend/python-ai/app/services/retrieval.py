@@ -240,6 +240,10 @@ def _study_score(
     query_units: set[str] | None = None,
     exercise_number: str | None = None,
     doc_meta: dict[str, dict[str, str | None]] | None = None,
+    # Review fix #5: gate the formula-sheet filename boost so it only
+    # applies for math/computational questions. Defaults to True for
+    # backward compatibility with any caller that didn't update.
+    query_is_math: bool = True,
 ) -> float:
     similarity = chunk.get("similarity") or 0.0
     source = chunk.get("source_type") or "other"
@@ -280,7 +284,13 @@ def _study_score(
     # active doc. Without this, the active-doc boost crowded every top-K
     # slot with the exercise PDF and the precise formula never reached the
     # model — falling back to a generic textbook approximation.
-    if doc_meta_row:
+    #
+    # Review fix #5: gated on ``query_is_math``. A conceptual question
+    # ("what is the difference between Sechskant- and Innensechskant-
+    # schrauben") should NOT have formula sheets crowd out the lecture
+    # summary that actually answers it. We only boost when the question
+    # is math/computational.
+    if query_is_math and doc_meta_row:
         fn_raw = doc_meta_row.get("file_name") or ""
         if _FORMULA_SHEET_FILENAME_RE.search(fn_raw):
             score += _FORMULA_SHEET_BOOST
@@ -437,6 +447,10 @@ def retrieve_chunks(
     query_units = _query_units(query)
     ex_ref = find_exercise_reference(query)
     exercise_number = ex_ref[0] if ex_ref else None
+    # Local import to avoid a circular dependency at module-init time
+    # (query_expansion imports retrieval helpers).
+    from .query_expansion import is_math_question  # noqa: WPS433
+    query_is_math = is_math_question(query)
 
     # Rerank by study value
     ranked: list[tuple[float, dict[str, Any]]] = []
@@ -452,6 +466,7 @@ def retrieve_chunks(
                 query_units=query_units,
                 exercise_number=exercise_number,
                 doc_meta=doc_meta,
+                query_is_math=query_is_math,
             ),
             row,
         ))
@@ -653,13 +668,25 @@ def retrieve_exercise_block(
     exercise_number, subpart = ref
     sb = get_supabase()
 
-    def _select(doc_filter: list[str] | None) -> ExerciseHit | None:
+    # Review fix #6: many courses repeat exercise numbers across documents
+    # (Blatt 1 Aufgabe 1, Blatt 2 Aufgabe 1, Klausur Aufgabe 1). The old
+    # ``.limit(1)`` returned whichever row Postgres happened to surface
+    # first — fine when the user has a doc open (active_document_id wins)
+    # but a coin flip otherwise. Now we fetch up to 5 candidates and pick
+    # the best by:
+    #   1. active_document_id   (highest signal)
+    #   2. preferred document_ids set
+    #   3. filename token overlap with the query
+    #   4. most recently uploaded
+    # When no signal disambiguates, the FIRST row is still returned but
+    # the caller is told there were multiple matches via the log.
+    def _select(doc_filter: list[str] | None) -> list[dict[str, Any]]:
         try:
             q = (
                 sb.table("document_exercises")
                 .select(
                     "document_id, exercise_number, subpart, page_start, page_end, "
-                    "statement_markdown, solution_markdown"
+                    "statement_markdown, solution_markdown, created_at"
                 )
                 .eq("user_id", user_id)
                 .eq("course_id", course_id)
@@ -669,14 +696,13 @@ def retrieve_exercise_block(
                 q = q.in_("document_id", doc_filter)
             if subpart:
                 q = q.eq("subpart", subpart)
-            resp = q.limit(1).execute()
+            resp = q.limit(5).execute()
         except Exception:
             log.exception("document_exercises lookup failed")
-            return None
-        rows = resp.data or []
-        if not rows:
-            return None
-        r = rows[0]
+            return []
+        return resp.data or []
+
+    def _row_to_hit(r: dict[str, Any]) -> ExerciseHit:
         return ExerciseHit(
             document_id=r["document_id"],
             exercise_number=r["exercise_number"],
@@ -687,15 +713,64 @@ def retrieve_exercise_block(
             solution_markdown=r.get("solution_markdown"),
         )
 
+    # Tier 1 — active document. If the user has a PDF open and it
+    # contains the referenced exercise, we're done. No ambiguity possible.
     if active_document_id:
-        hit = _select([active_document_id])
-        if hit:
-            return hit
+        rows = _select([active_document_id])
+        if rows:
+            return _row_to_hit(rows[0])
+
+    # Tier 2 — user-selected documents (when sent as a hint, not a
+    # hard filter — that's `document_ids` from the request).
     if document_ids:
-        hit = _select(document_ids)
-        if hit:
-            return hit
-    return _select(None)
+        rows = _select(document_ids)
+        if rows:
+            if len(rows) > 1:
+                log.info(
+                    "exercise_lookup multiple_matches_in_selected document_ids=%s exercise=%s subpart=%s n=%d",
+                    document_ids, exercise_number, subpart, len(rows),
+                )
+            return _row_to_hit(rows[0])
+
+    # Tier 3 — anywhere in the course. Multiple matches are most likely
+    # here — disambiguate by filename-token overlap with the query, then
+    # by recency. Log loudly so we can see the pattern in real traffic.
+    rows = _select(None)
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return _row_to_hit(rows[0])
+
+    # Rank candidates. Fetch filenames once so we can score by token overlap.
+    doc_ids = list({r["document_id"] for r in rows})
+    file_names: dict[str, str] = {}
+    try:
+        meta = (
+            sb.table("documents")
+            .select("id, file_name")
+            .in_("id", doc_ids)
+            .execute()
+        )
+        for row in meta.data or []:
+            file_names[row["id"]] = (row.get("file_name") or "").lower()
+    except Exception:
+        log.exception("filename lookup for exercise disambiguation failed")
+
+    q_tokens = _meaningful_tokens(query)
+
+    def _candidate_score(r: dict[str, Any]) -> tuple[int, str]:
+        """Higher is better. Tuple = (filename-token-overlap, created_at)
+        so equal-overlap candidates fall back to newest-first."""
+        fn = file_names.get(r["document_id"], "")
+        overlap = sum(1 for t in q_tokens if t in fn)
+        return (overlap, r.get("created_at") or "")
+
+    rows.sort(key=_candidate_score, reverse=True)
+    log.info(
+        "exercise_lookup ambiguous_course_wide exercise=%s subpart=%s n=%d chosen=%s",
+        exercise_number, subpart, len(rows), rows[0]["document_id"],
+    )
+    return _row_to_hit(rows[0])
 
 
 # ── Exact-match formula lookup ──────────────────────────────────────────────

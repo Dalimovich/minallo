@@ -69,6 +69,15 @@ def _verify_user_owns_documents(user_id: str, course_id: str, document_ids: list
     return {row["id"]: row["file_name"] for row in rows}
 
 
+class PreviousTurn(BaseModel):
+    """One prior question/answer pair from the same chat session.
+    The streaming endpoint accepts a short list of these so the model can
+    resolve follow-up references like "the formula above" or "explain
+    the same thing in simpler terms" without re-running retrieval."""
+    role: str   # "user" | "assistant"
+    text: str
+
+
 class AskStreamRequest(BaseModel):
     courseId: str
     documentIds: list[str] | None = None
@@ -82,6 +91,11 @@ class AskStreamRequest(BaseModel):
     openFileContext: str | None = None
     # Tutor-mode overlay: explain | solve | quiz. Defaults to 'solve'.
     tutorMode: str | None = None
+    # Short transcript of the most recent turns in this chat session,
+    # newest last. Capped on the server (we trim to ~3 turns / ~2000 chars
+    # total) so the prompt size stays predictable even if the client
+    # sends a long history.
+    previousTurns: list[PreviousTurn] | None = None
     # bypassCache is intentionally NOT exposed on the public API. The cache
     # is keyed by document_version_hash so it invalidates automatically when
     # documents change; letting the client opt out defeats the single biggest
@@ -148,6 +162,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     )
     if payload.documentIds and not has_open_ctx and cacheable:
         version_hash = fetch_document_version_hash(user_id, payload.courseId, payload.documentIds)
+        # Previous turns fingerprint into cache key — two students asking
+        # "explain that again" in different sessions must not collide.
+        _prev_for_cache = [
+            {"role": t.role, "text": t.text}
+            for t in (payload.previousTurns or [])
+        ]
         cached = lookup_answer(
             user_id=user_id, course_id=payload.courseId,
             question=question, version_hash=version_hash,
@@ -158,6 +178,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             # but pass it through for symmetry — if a future codepath
             # caches with open context, the key reflects it.
             visible_context=payload.openFileContext,
+            previous_turns=_prev_for_cache,
         )
 
     def cached_stream():
@@ -270,6 +291,14 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     from ..services.mastery import fetch_weak_topics  # noqa: WPS433
     weak_topics = fetch_weak_topics(user_id, payload.courseId)
 
+    # Normalise previousTurns from pydantic models → plain dicts before
+    # passing into the service layer, so the trim helper can work over a
+    # simple list[dict] interface.
+    previous_turns_payload: list[dict[str, str]] = []
+    if payload.previousTurns:
+        for t in payload.previousTurns:
+            previous_turns_payload.append({"role": t.role, "text": t.text})
+
     def gen():
         import json
         gen_iter = stream_answer(
@@ -278,6 +307,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             active_file_name=payload.activeFileName,
             open_file_context=payload.openFileContext,
             weak_topics=weak_topics,
+            previous_turns=previous_turns_payload,
         )
         for chunk_bytes in gen_iter:
             # Decode the SSE event so we can intercept the closing 'done' frame.
@@ -322,6 +352,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     tutor_mode=tutor_mode,
                     active_document_id=payload.activeDocumentId,
                     visible_context=payload.openFileContext,
+                    previous_turns=previous_turns_payload,
                     answer_json={
                         "answer": "".join(full_text_buf),
                         "retrievalMode": captured_meta.get("retrievalMode", "strong"),

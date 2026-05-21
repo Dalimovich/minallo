@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 # ── public types ────────────────────────────────────────────────────────────
@@ -144,15 +144,77 @@ def _content_class(sample_text: str) -> str:
     return "unknown"
 
 
-def classify_document(file_name: str | None, sample_text: str | None) -> str:
-    """Best-effort class for a single document.
-
-    Filename signals win when present (the upstream uploader names files
-    deliberately). Content signals only run when the filename is ambiguous.
+@dataclass
+class ClassificationResult:
+    """Document classification with a confidence score + the signals that
+    fired. Lets downstream code (retrieval scoring) weight the result by
+    confidence instead of treating every classification as equally trustworthy.
     """
-    if (cls := _filename_class(file_name or "")) is not None:
-        return cls
-    return _content_class(sample_text or "")
+    document_type: str
+    confidence: float                # 0.0 (no signal) to 1.0 (both signals agree)
+    signals: list[str] = field(default_factory=list)
+
+
+def classify_document_with_confidence(
+    file_name: str | None,
+    sample_text: str | None,
+) -> ClassificationResult:
+    """Cross-check filename and content classifiers.
+
+    Review fix #12 — the old logic trusted the filename unconditionally
+    when it matched any hint. That misclassified misleading names
+    (``Lösung.pdf`` that actually contains only exercises) as
+    ``solution_sheet``, and gave the same confidence as an unambiguous
+    case where filename + content agreed.
+
+    Returns a structured result with confidence so the caller can decide
+    whether to apply doc-type-based boosts at all (low-confidence
+    classifications should NOT influence retrieval ranking).
+    """
+    file_name = file_name or ""
+    sample_text = sample_text or ""
+
+    filename_class = _filename_class(file_name)
+    content_class: str | None = None
+    if sample_text.strip():
+        cc = _content_class(sample_text)
+        content_class = cc if cc != "unknown" else None
+
+    signals: list[str] = []
+    if filename_class:
+        signals.append(f"filename:{filename_class}")
+    if content_class:
+        signals.append(f"content:{content_class}")
+
+    # Case A: both agree → highest confidence.
+    if filename_class and content_class and filename_class == content_class:
+        return ClassificationResult(filename_class, 0.95, signals)
+    # Case B: only the content classifier fires (filename is silent /
+    # generic like "scan.pdf"). Trust the content read.
+    if not filename_class and content_class:
+        return ClassificationResult(content_class, 0.75, signals)
+    # Case C: only the filename matches (content empty or below the
+    # classifier's threshold). Filename gets benefit of doubt but at
+    # noticeably lower confidence so a misleading filename can be
+    # filtered out downstream.
+    if filename_class and not content_class:
+        return ClassificationResult(filename_class, 0.55, signals)
+    # Case D: they disagree. The PDF body is the ground truth — the
+    # filename was probably mis-labeled by the student.
+    if filename_class and content_class and filename_class != content_class:
+        return ClassificationResult(
+            content_class, 0.50, [*signals, "disagreement"]
+        )
+    # Case E: neither classifier produced a hit.
+    return ClassificationResult("unknown", 0.0, [])
+
+
+def classify_document(file_name: str | None, sample_text: str | None) -> str:
+    """Backward-compatible single-string classifier. Delegates to the
+    confidence-aware variant. Callers that need to know how trustworthy
+    the result is should use ``classify_document_with_confidence`` instead.
+    """
+    return classify_document_with_confidence(file_name, sample_text).document_type
 
 
 # ── extraction-quality rollup ───────────────────────────────────────────────

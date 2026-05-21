@@ -34,12 +34,17 @@ def test_filename_classification(file_name: str, expected: str) -> None:
     assert classify_document(file_name, "ignored body") == expected
 
 
-def test_filename_takes_precedence_over_content() -> None:
-    # Filename screams exercise sheet; content is mostly formula-shaped.
+def test_content_overrides_misleading_filename() -> None:
+    """Review fix #12: when the filename hint and the content classifier
+    disagree, the body wins. ``Aufgaben_blatt.pdf`` whose content is
+    pure formula-density (no actual Aufgabe markers) was previously
+    mis-classified as exercise_sheet — burying it under a Phase-8
+    doc-type-mismatch penalty for any real exercise question. Now
+    content-says-formula_sheet wins."""
     assert classify_document(
         "Aufgaben_blatt.pdf",
         "$$ a = b $$\n$$ c = d $$\n$$ x = y $$\n" * 20,
-    ) == "exercise_sheet"
+    ) == "formula_sheet"
 
 
 # ── classify_document — content signals (when filename is ambiguous) ────────
@@ -155,3 +160,110 @@ def test_rollup_ignores_unknown_tags() -> None:
     assert r.total_pages == 3
     assert r.good_pages == 2
     assert r.quality == "good"
+
+
+# ── Classification confidence (Review fix #12) ──────────────────────────────
+
+
+def test_classify_filename_and_content_agree_gives_high_confidence() -> None:
+    """When filename hint and content hits agree on the same type, that's
+    the unambiguous case — confidence should be near 1.0."""
+    from app.services.document_intelligence import classify_document_with_confidence
+
+    r = classify_document_with_confidence(
+        file_name="Aufgabenblatt_3_Mechanik.pdf",
+        sample_text=(
+            "Aufgabe 1. Bestimmen Sie die Federrate. "
+            "Aufgabe 2. Berechnen Sie die Spannung. "
+            "Aufgabe 3. Untersuchen Sie das Trägheitsmoment. "
+            "Aufgabe 4. Diskutieren Sie das Ergebnis."
+        ),
+    )
+    assert r.document_type == "exercise_sheet"
+    assert r.confidence >= 0.9
+    assert any(s.startswith("filename:") for s in r.signals)
+    assert any(s.startswith("content:") for s in r.signals)
+
+
+def test_classify_misleading_filename_loses_to_content() -> None:
+    """``Lösung.pdf`` with no solution markers in the body is the classic
+    misleading-filename case. Content classifier sees exercises only;
+    final verdict should be exercise_sheet, NOT solution_sheet, with
+    reduced confidence + a 'disagreement' signal."""
+    from app.services.document_intelligence import classify_document_with_confidence
+
+    r = classify_document_with_confidence(
+        file_name="Lösung.pdf",
+        sample_text=(
+            "Aufgabe 1. Bestimmen Sie die Schubspannung. "
+            "Aufgabe 2. Berechnen Sie die Querschnittsfläche. "
+            "Aufgabe 3. Diskutieren Sie das Versagensverhalten."
+        ),
+    )
+    # Content sees only exercises; filename insists "solution_sheet" but
+    # without any solution markers in the body it gets overridden.
+    assert r.document_type == "exercise_sheet"
+    assert r.confidence < 0.8
+    assert "disagreement" in r.signals
+
+
+def test_classify_generic_filename_uses_content() -> None:
+    """Filename like ``scan.pdf`` carries no hint. Content classifier
+    runs and gets benefit of the doubt at medium-high confidence."""
+    from app.services.document_intelligence import classify_document_with_confidence
+
+    r = classify_document_with_confidence(
+        file_name="scan_2023.pdf",
+        sample_text=(
+            "Klausur: Grundlagen der Konstruktion. "
+            "Prüfung: SS 2023. Klausur dauert 90 Minuten. "
+            "Exam date: 15.07.2023."
+        ),
+    )
+    assert r.document_type == "exam"
+    assert 0.7 <= r.confidence <= 0.9
+    assert all(not s.startswith("filename:") for s in r.signals)
+
+
+def test_classify_filename_only_no_content_lower_confidence() -> None:
+    """Filename hint with no content (empty / pre-OCR document) gets a
+    medium confidence — we shouldn't fully trust the name without seeing
+    the body, but it's better than 'unknown'."""
+    from app.services.document_intelligence import classify_document_with_confidence
+
+    r = classify_document_with_confidence(
+        file_name="Formelsammlung_Mechanik.pdf",
+        sample_text="",
+    )
+    assert r.document_type == "formula_sheet"
+    # Filename-only case sits below the both-agree threshold.
+    assert r.confidence < 0.8
+
+
+def test_classify_no_signal_returns_unknown_zero_confidence() -> None:
+    """Garbage filename + empty body → 'unknown' with confidence 0.
+    Retrieval boosts that depend on document_type should treat this as
+    'no class' rather than applying a default boost."""
+    from app.services.document_intelligence import classify_document_with_confidence
+
+    r = classify_document_with_confidence(
+        file_name="document.pdf",
+        sample_text="",
+    )
+    assert r.document_type == "unknown"
+    assert r.confidence == 0.0
+    assert r.signals == []
+
+
+def test_legacy_classify_document_returns_just_the_type() -> None:
+    """``classify_document(...)`` is the old single-string API kept for
+    backward compatibility with the indexing pipeline. Must still return
+    a plain document_type str — never the dataclass."""
+    from app.services.document_intelligence import classify_document
+
+    result = classify_document(
+        "Formelsammlung_Mechanik.pdf",
+        "π · d² / 4 = A    F = m · a    σ = M·y / I",
+    )
+    assert isinstance(result, str)
+    assert result == "formula_sheet"

@@ -62,6 +62,55 @@ def _is_deictic_question(q: str) -> bool:
     return bool(_DEICTIC_QUESTION_RE.search(q or ""))
 
 
+# Conversation-continuity tuning. A chat session can grow arbitrarily, but
+# we only need a few recent turns for the model to resolve follow-up
+# references — the rest is irrelevant and just inflates prompt cost.
+_MAX_HISTORY_MESSAGES = 6        # 3 Q/A pairs
+_MAX_HISTORY_CHARS    = 2000     # safety cap on total prior text
+_MAX_TURN_CHARS       = 800      # any one turn is truncated to this
+
+
+def _trim_previous_turns(
+    turns: list[dict[str, str]] | None,
+) -> list[dict[str, str]]:
+    """Server-side trim of the chat history before it goes into the
+    OpenAI messages array.
+
+    Rules:
+      * keep only role == "user" or "assistant"; drop anything else
+      * keep at most the last _MAX_HISTORY_MESSAGES entries
+      * truncate each turn's text to _MAX_TURN_CHARS chars
+      * if the running total exceeds _MAX_HISTORY_CHARS, drop oldest
+        turns until it fits
+    The current question is appended SEPARATELY by the caller, so this
+    function only deals with PAST turns.
+    """
+    if not turns:
+        return []
+    cleaned: list[dict[str, str]] = []
+    for t in turns:
+        role = (t.get("role") or "").strip().lower()
+        if role not in ("user", "assistant"):
+            continue
+        text = (t.get("text") or "").strip()
+        if not text:
+            continue
+        if len(text) > _MAX_TURN_CHARS:
+            text = text[:_MAX_TURN_CHARS] + " …"
+        cleaned.append({"role": role, "content": text})
+    # Trim to the most recent N messages.
+    if len(cleaned) > _MAX_HISTORY_MESSAGES:
+        cleaned = cleaned[-_MAX_HISTORY_MESSAGES:]
+    # Drop oldest while total chars exceed the budget. Keeps the most
+    # recent turns intact — those are the ones the follow-up question
+    # most likely references.
+    total = sum(len(m["content"]) for m in cleaned)
+    while cleaned and total > _MAX_HISTORY_CHARS:
+        dropped = cleaned.pop(0)
+        total -= len(dropped["content"])
+    return cleaned
+
+
 def _sse(event: dict[str, Any]) -> bytes:
     return ("data: " + json.dumps(event, ensure_ascii=False) + "\n\n").encode("utf-8")
 
@@ -77,6 +126,7 @@ def stream_answer(
     open_file_context: str | None = None,
     tutor_mode: str = DEFAULT_TUTOR_MODE,
     weak_topics: list[str] | None = None,
+    previous_turns: list[dict[str, str]] | None = None,
 ) -> Generator[bytes, None, None]:
     """Generator that yields SSE byte chunks. Pluggable into FastAPI's
     StreamingResponse with media_type='text/event-stream'.
@@ -86,11 +136,24 @@ def stream_answer(
     prompt so deictic questions like "what does this say?" or "explain this
     exercise" stay grounded in the section the user is actually looking at,
     even when retrieval doesn't pull the right chunk.
+
+    ``previous_turns`` is a list of ``{"role": "user"|"assistant", "text":
+    "..."}`` dicts representing the most recent Q&A in this chat session.
+    Trimmed server-side (last 3 turns, ~2000 chars total) before being
+    woven into the LLM messages array so the model can resolve follow-up
+    references ("the formula above", "explain that in simpler terms")
+    without paying for a 50-message-long context.
     """
     settings = get_settings()
-    target_model = model or settings.openai_generate_model
     strength = _context_strength(chunks)
-    used_chunks = chunks if strength == "strong" else []
+    # Review fix #3 — partial retrieval mode. Mirrors answer.py's logic:
+    #   strong → all chunks    weak → top 3 (with PARTIAL prompt)    none → []
+    if strength == "strong":
+        used_chunks = chunks
+    elif strength == "weak":
+        used_chunks = chunks[:3]
+    else:
+        used_chunks = []
 
     open_ctx = (open_file_context or "").strip()[:3500]
     has_open = bool(open_ctx)
@@ -111,6 +174,20 @@ def stream_answer(
         question, effective_strength, used_chunks, tutor_mode=tutor_mode_norm,
         weak_topics=weak_topics,
     )
+    # Route by answer mode: math/exercise questions hit the strong model,
+    # everything else stays on the cheaper mini model. Must compute AFTER
+    # pick_system_prompt because we need its returned label. Math reasoning
+    # is where mini gets variable distinctions wrong (d vs d_3) and
+    # silently drops sum terms it can't compute — gpt-4o handles both.
+    # The math gate is tight (strong retrieval + is_math_question +
+    # exercise anchor + formula chunk presence ALL agree), so cost stays
+    # predictable.
+    if model:
+        target_model = model
+    elif answer_mode == "math":
+        target_model = settings.openai_generate_model_strong
+    else:
+        target_model = settings.openai_generate_model
 
     # Compose the context block. Open-file text goes first as [Source 0] so
     # the model cites it preferentially for deictic ("this question /
@@ -170,6 +247,13 @@ def stream_answer(
         "unsupported": effective_strength != "strong",
     })
 
+    # Weave in recent Q&A turns so the model can resolve follow-up
+    # references ("the formula above", "explain that"). Server-side cap:
+    # at most 6 messages (3 turns) and ~2000 chars total — enough to give
+    # the model anaphora context without blowing prompt size on a long
+    # session.
+    history_messages = _trim_previous_turns(previous_turns)
+
     client = OpenAI(api_key=settings.openai_api_key)
     prompt_tokens = None
     completion_tokens = None
@@ -181,6 +265,7 @@ def stream_answer(
             stream_options={"include_usage": True},
             messages=[
                 {"role": "system", "content": system_prompt},
+                *history_messages,
                 {"role": "user",   "content": user_message},
             ],
         )

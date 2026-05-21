@@ -119,6 +119,27 @@ One of:
 
 Do not skip sections. If a section genuinely has nothing to put in it (e.g. a pure derivation has no Given values), say so explicitly with "— none —"."""
 
+# Review fix #3 — partial retrieval mode.
+# When at least one chunk loosely relates to the question (similarity in
+# the 0.20-0.32 range — the "weak" tier) we DO have something useful to
+# show the student, even if we can't solve confidently. Sending those
+# chunks with a strict "explain only what's there, don't pretend to
+# solve" prompt is much more helpful than the previous "I found nothing"
+# response, while still avoiding hallucinated solutions.
+_SYSTEM_PROMPT_PARTIAL = """You are Minallo's exam-prep tutor.
+The student's uploaded course files contain SOME material loosely related to the question, but not enough to solve it confidently. You can see the most relevant chunks in COURSE CONTEXT below.
+
+Behaviour (keep the response short — under ~180 words):
+1. Open with: "I found a partial match in your course files."
+2. Quote or summarise what the cited chunk(s) DO cover, with `[Source N]` citations. Stay strictly inside what the chunk actually says — no extrapolation, no inferred formulas, no invented numbers.
+3. Be explicit about what is MISSING for a full solution: the formula, the specific values, the exercise statement, etc.
+4. End with: "Upload the {missing material} and I can give a full solution." (Adapt to what's missing.)
+5. Do NOT attempt to solve. Do NOT inject general-knowledge formulas. Do NOT fabricate citations.
+6. Match the language of the question (German for German). Math via KaTeX: $...$ inline, $$...$$ display.
+
+This is the PARTIAL mode. It is structurally different from a full solution: the goal is to surface what's available and explain what's missing, not to produce the worksheet."""
+
+
 _SYSTEM_PROMPT_WEAK = """You are Minallo's exam-prep tutor.
 The student asked a question, but their uploaded course files do NOT contain enough relevant material to ground a confident answer.
 
@@ -308,8 +329,8 @@ def pick_system_prompt(
 ) -> tuple[str, str]:
     """Pick (system_prompt, mode_label) for the answer pipeline.
 
-    mode_label is one of: 'math' | 'strong' | 'weak'. Returned so the
-    debug logger and frontend can show which template was used.
+    mode_label is one of: 'math' | 'strong' | 'partial' | 'weak'. Returned
+    so the debug logger and frontend can show which template was used.
 
     ``tutor_mode`` (explain | solve | quiz) layers a behavioural overlay
     on top of the picked template without overriding the grounding rules.
@@ -318,10 +339,21 @@ def pick_system_prompt(
     answer / Confidence). It applies only when retrieval surfaced an
     exercise or solution chunk AND the tutor mode isn't quiz — a quiz
     output should never use the math worksheet template.
+
+    Strength tiers:
+      * strong  → full math/strong template
+      * weak    → PARTIAL template (chunks exist but borderline; explain
+                  what's there, refuse to solve, ask for missing material)
+      * none    → WEAK template (no chunks at all; can't help here)
     """
     tutor_mode = normalise_tutor_mode(tutor_mode)
 
-    if strength != "strong":
+    if strength == "weak":
+        # Review fix #3 — partial retrieval mode. We DO have chunks, just
+        # not enough confidence to solve. PARTIAL prompt surfaces them
+        # with strict "don't solve" guard rails.
+        base, label = _SYSTEM_PROMPT_PARTIAL, "partial"
+    elif strength != "strong":
         base, label = _SYSTEM_PROMPT_WEAK, "weak"
     else:
         # Local import: query_expansion may transitively import retrieval.
@@ -450,14 +482,36 @@ def generate_answer(
 ) -> dict[str, Any]:
     """Return the structured answer dict the API surface exposes."""
     settings = get_settings()
-    target_model = model or settings.openai_generate_model
 
     strength = _context_strength(chunks)
-    used_chunks = chunks if strength == "strong" else []
+    # Review fix #3 — partial retrieval mode. Three tiers:
+    #   strong → all chunks (full solution)
+    #   weak   → top 3 chunks (partial mode prompt explains what's there
+    #            and refuses to solve confidently)
+    #   none   → no chunks (WEAK prompt says "I can't help with this")
+    if strength == "strong":
+        used_chunks = chunks
+    elif strength == "weak":
+        used_chunks = chunks[:3]
+    else:
+        used_chunks = []
     system_prompt, answer_mode = pick_system_prompt(
         question, strength, used_chunks, tutor_mode=tutor_mode,
         weak_topics=weak_topics,
     )
+    # Route by answer mode: math/exercise questions hit the strong model,
+    # everything else stays on the cheaper mini model. Math reasoning is
+    # where mini gets variable distinctions wrong (d vs d_3) and silently
+    # drops sum terms it can't compute — the strong model handles both.
+    # ``answer_mode`` is "math" only when retrieval + is_math_question +
+    # exercise anchor + formula chunk presence ALL agree, so this gate
+    # is tight enough to keep cost predictable.
+    if model:
+        target_model = model
+    elif answer_mode == "math":
+        target_model = settings.openai_generate_model_strong
+    else:
+        target_model = settings.openai_generate_model
     context_block = _build_context_block(used_chunks, doc_names) if used_chunks else ""
 
     user_message = "QUESTION:\n" + question.strip()
