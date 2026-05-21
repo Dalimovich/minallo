@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .llm_json import LlmResult, chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -323,6 +323,9 @@ def generate_quiz(
         document_ids=document_ids,
         top_k=max(20, requested * 3),
     )
+    # Review-2 finding #5 — backfill source filenames so course-wide
+    # quizzes still attribute each question to its real source PDF.
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {
             "requestedCount": requested,

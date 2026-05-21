@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .llm_json import LlmResult, chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -142,6 +142,10 @@ def generate_flashcards(
         document_ids=document_ids,
         top_k=max(20, requested * 2),
     )
+    # Review-2 finding #5: course-wide flashcards (no documentIds) had
+    # empty doc_names → every source labelled "Unknown". Backfill from
+    # the chunk set so source-of-truth filenames make it through.
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {
             "requestedCount": requested,

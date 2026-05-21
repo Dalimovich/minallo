@@ -125,3 +125,121 @@ def test_math_prompt_forbids_invention() -> None:
     body = _SYSTEM_PROMPT_MATH.lower()
     # The anti-hallucination clause must survive future edits.
     assert "do not invent" in body
+
+
+# ── Review fix #7 — RetrievalCompleteness ─────────────────────────────────
+
+
+def _mk_chunk(text: str, chunk_type: str = "general", similarity: float = 0.6) -> object:
+    """Minimal chunk shim — assess_retrieval_completeness reads `.text`
+    via getattr, so a simple namespace object is enough."""
+    from types import SimpleNamespace
+    return SimpleNamespace(text=text, chunk_type=chunk_type, similarity=similarity)
+
+
+def test_completeness_empty_or_none_is_all_false() -> None:
+    from app.services.answer import assess_retrieval_completeness
+    r = assess_retrieval_completeness(None)
+    assert r.has_exercise_statement is False
+    assert r.has_formula is False
+    assert r.has_given_values is False
+    assert r.has_solution_or_method is False
+    assert r.is_complete_for_math is False
+
+
+def test_completeness_full_exercise_chunk_is_complete_for_math() -> None:
+    """A typical exercise statement chunk has the words, the formula,
+    and several `symbol = number` patterns — all three signals fire."""
+    from app.services.answer import assess_retrieval_completeness
+    text = (
+        "Aufgabe 9.1: Bestimmen Sie die Nachgiebigkeit. "
+        "Gegeben: F = 200 N, l = 0,5 m, E = 210000 N/mm², "
+        "A = 100 mm². "
+        "Die Formel lautet δ = l / (A · E)."
+    )
+    r = assess_retrieval_completeness([_mk_chunk(text)])
+    assert r.has_exercise_statement
+    assert r.has_formula
+    assert r.has_given_values
+    assert r.is_complete_for_math
+
+
+def test_completeness_formula_only_chunk_misses_statement_and_givens() -> None:
+    """A Formelzettel page has formulas but no exercise statement and
+    no instance-level givens — should NOT be marked complete enough for
+    the rigid math template alone."""
+    from app.services.answer import assess_retrieval_completeness
+    text = "δ_K = l_K / (E_S · A_N)  δ_G = 0.5 · d / (E_S · A_3)"
+    r = assess_retrieval_completeness([_mk_chunk(text)])
+    assert r.has_formula
+    assert not r.has_exercise_statement
+    assert not r.has_given_values
+    assert not r.is_complete_for_math
+
+
+def test_completeness_statement_only_chunk_misses_formula() -> None:
+    """An exercise sheet that defines the task but doesn't print the
+    formula is also incomplete — needs a separate formula chunk."""
+    from app.services.answer import assess_retrieval_completeness
+    text = (
+        "Übungsaufgabe 9.1: Berechnen Sie die Nachgiebigkeit "
+        "der Schraubenverbindung."
+    )
+    r = assess_retrieval_completeness([_mk_chunk(text)])
+    assert r.has_exercise_statement
+    assert not r.has_formula
+    assert not r.is_complete_for_math
+
+
+def test_completeness_combines_across_chunks() -> None:
+    """The three signals can come from DIFFERENT chunks — that's the
+    normal RAG case: one chunk has the exercise, another has the
+    formula, a third has the given values."""
+    from app.services.answer import assess_retrieval_completeness
+    chunks = [
+        _mk_chunk("Aufgabe 9.1: Bestimmen Sie die Nachgiebigkeit."),
+        _mk_chunk("δ_K = l_K / (E_S · A_N)"),
+        _mk_chunk("Gegeben: F = 12500 N, E_S = 210000 N/mm², d = 24 mm."),
+    ]
+    r = assess_retrieval_completeness(chunks)
+    assert r.is_complete_for_math
+
+
+def test_completeness_to_api_shape() -> None:
+    """The API shape must match what answer_stream / ask responses
+    expose — locked in so a future refactor doesn't silently drop a
+    field the frontend / debug UI relies on."""
+    from app.services.answer import RetrievalCompleteness
+    r = RetrievalCompleteness(True, True, True, False)
+    api = r.to_api()
+    assert api == {
+        "hasExerciseStatement":  True,
+        "hasFormula":            True,
+        "hasGivenValues":        True,
+        "hasSolutionOrMethod":   False,
+        "isCompleteForMath":     True,
+    }
+
+
+def test_math_template_now_requires_completeness() -> None:
+    """``pick_system_prompt`` should fall back to the STRONG (explanatory)
+    prompt — not the rigid MATH worksheet — when retrieval is strong but
+    the chunks lack one of the math-readiness components. Previously,
+    has_exercise_anchor + has_formula was enough; now givens are required
+    too so the model doesn't fill the Substitution section with
+    placeholders."""
+    from app.services.answer import pick_system_prompt
+    chunks = [
+        _mk_chunk(
+            "Übung 1.2: δ = l / (A·E)",
+            chunk_type="exercise",
+            similarity=0.5,  # strong-similarity anchor
+        ),
+    ]
+    # Strong retrieval but no given values in any chunk → no MATH template.
+    prompt, mode = pick_system_prompt("Berechne δ", "strong", chunks)
+    assert mode == "strong"
+    # Now add a chunk with explicit givens — same query, same other inputs.
+    chunks.append(_mk_chunk("Gegeben: l = 0,5 m, A = 100 mm², E = 210000 N/mm²"))
+    prompt, mode = pick_system_prompt("Berechne δ", "strong", chunks)
+    assert mode == "math"

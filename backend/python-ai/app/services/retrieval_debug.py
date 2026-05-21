@@ -15,6 +15,7 @@ Design rules:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -23,6 +24,20 @@ from ..supabase_client import get_supabase
 log = logging.getLogger(__name__)
 
 _EXCERPT_MAX = 200
+
+
+# Review fix #10 — env-var kill switch. Question text is stored verbatim
+# in `retrieval_debug_log.question`. For privacy-sensitive deployments
+# (or when product is mature enough that ops debugging isn't worth the
+# storage / GDPR footprint), the operator can set
+# MINALLO_DEBUG_LOG_ENABLED=false on Fly to turn off the table writes
+# entirely. Reads (debug UI, ops queries) still work — only the WRITE
+# path is suppressed.
+def _logging_enabled() -> bool:
+    raw = os.environ.get("MINALLO_DEBUG_LOG_ENABLED")
+    if raw is None:
+        return True  # default on — Phase-2 contract
+    return raw.strip().lower() not in ("0", "false", "no", "off")
 
 
 def _excerpt(text: str | None) -> str:
@@ -75,7 +90,15 @@ class DebugPayload:
 
 
 def record_retrieval_debug(p: DebugPayload) -> None:
-    """Insert one row. Swallows all errors — logging must never break /ask."""
+    """Insert one row. Swallows all errors — logging must never break /ask.
+
+    Review fix #10: gated on ``MINALLO_DEBUG_LOG_ENABLED`` so the operator
+    can suppress writes without code changes (e.g. once the product is
+    stable and the storage / GDPR footprint of keeping question text
+    outweighs the ops value).
+    """
+    if not _logging_enabled():
+        return
     try:
         row = {
             "user_id":               p.user_id,

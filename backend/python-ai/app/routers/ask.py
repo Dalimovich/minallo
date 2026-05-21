@@ -62,6 +62,7 @@ def _prepend_exercise_chunks(hit: ExerciseHit, chunks: list) -> list:
             score=99.0,           # synthetic high score so downstream sorts keep it on top
             similarity=1.0,
             chunk_type="exercise",
+            is_synthetic=True,
             section_title=f"Aufgabe {hit.exercise_number}"
                 + (f" ({hit.subpart})" if hit.subpart else ""),
         )
@@ -78,6 +79,7 @@ def _prepend_exercise_chunks(hit: ExerciseHit, chunks: list) -> list:
             chunk_type="solution",
             section_title=f"Lösung {hit.exercise_number}"
                 + (f" ({hit.subpart})" if hit.subpart else ""),
+            is_synthetic=True,
         ))
     # Drop any chunks already returned for this document/page so we don't
     # duplicate context, then concat.
@@ -116,6 +118,7 @@ def _prepend_formula_chunks(hits: list[FormulaHit], chunks: list) -> list:
             similarity=1.0,
             chunk_type="formula",
             section_title=title,
+            is_synthetic=True,
         ))
     # Drop any vector chunks already pointing at the same (doc, page) so we
     # don't duplicate context.

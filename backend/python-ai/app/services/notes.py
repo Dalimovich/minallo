@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .llm_json import chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -134,6 +134,9 @@ def generate_notes(
         document_ids=document_ids,
         top_k=40,
     )
+    # Review-2 finding #5 — backfill source filenames for course-wide
+    # generation (documentIds=None means doc_names starts empty).
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {"text": "", "warning": "No relevant material found in the selected documents."}
 
@@ -157,8 +160,14 @@ def generate_notes(
         "text": text,
         "pageCount": total_pages,
         "lengthCue": length_cue,
+        # Review-2 finding #6: `save_note` writes `note_sources` rows
+        # with a ``document_id`` column, but the response dict omitted it.
+        # Result: every saved note had NULL document_id and lost the
+        # chunk→source linkage. Include documentId in the payload so the
+        # save path can populate the FK.
         "groundedSources": [
             {
+                "documentId": c.document_id,
                 "fileName": doc_names.get(c.document_id, "Unknown"),
                 "pageStart": c.page_start,
                 "pageEnd": c.page_end,

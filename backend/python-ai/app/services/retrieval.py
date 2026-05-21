@@ -346,6 +346,15 @@ class RetrievedChunk:
     similarity: float
     chunk_type: str
     section_title: str | None
+    # Review-2 finding #3 — synthetic chunks (those prepended by
+    # _prepend_exercise_chunks / _prepend_formula_chunks from
+    # document_exercises / document_formulas exact-match lookups) carry
+    # similarity=1.0 and score=99 to keep them at the top of context.
+    # That value is artificial — those rows came from a deterministic
+    # SQL match, not from cosine-similarity reranking. Marking them so
+    # ``_context_strength`` can exclude them when judging whether REAL
+    # retrieval was strong enough to drive the rigid math worksheet.
+    is_synthetic: bool = False
 
     def to_api(self) -> dict[str, Any]:
         return {
@@ -363,6 +372,37 @@ class RetrievedChunk:
 
 _DEFAULT_CANDIDATES = 60
 _MIN_SIMILARITY = 0.10
+
+
+# Review-2 finding #5: course-wide generation (quiz / flashcards / notes
+# without explicit ``documentIds``) had no source filenames because the
+# router only fetched names for documents the user explicitly selected.
+# ``retrieve_chunks`` then returned chunks pointing at random docs in the
+# course, and every source label downstream became "Unknown".
+# Centralised here so all four generate paths (ask, quiz, flashcards,
+# notes) share the same logic.
+def backfill_doc_names(
+    chunks: list["RetrievedChunk"] | None,
+    doc_names: dict[str, str],
+) -> dict[str, str]:
+    """Ensure every chunk's ``document_id`` has a filename in ``doc_names``.
+
+    Mutates the passed dict in-place AND returns it for chained-call
+    convenience. Failures are non-fatal — UI just sees "Unknown" for
+    docs we couldn't look up, same as before.
+    """
+    if not chunks:
+        return doc_names
+    missing = {c.document_id for c in chunks if c.document_id and c.document_id not in doc_names}
+    if not missing:
+        return doc_names
+    try:
+        resp = get_supabase().table("documents").select("id, file_name").in_("id", list(missing)).execute()
+        for row in resp.data or []:
+            doc_names[row["id"]] = row.get("file_name") or "Unknown"
+    except Exception:
+        log.exception("doc_name backfill failed (non-fatal)")
+    return doc_names
 
 
 def retrieve_chunks(

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
@@ -43,7 +44,7 @@ Answer the question STRICTLY using the COURSE CONTEXT below, which comes from th
 
 Rules:
 1. Use ONLY the context. Do not invent facts. If a claim isn't supported by the context, do not make it.
-2. Quote / paraphrase the relevant chunk and cite the source like "(filename, p.3)" using the [Source N] header.
+2. Cite EVERY fact, formula, or paraphrase with an inline `[Source N]` tag (e.g. `[Source 2]`). This is the ONLY citation format that counts toward grounding — verification accepts nothing else. You MAY also add `(filename, p.3)` for the reader's convenience next to the `[Source N]`, but the `[Source N]` itself is what makes the citation valid.
 3. If the context contradicts itself, acknowledge it and present both views.
 4. Write math using KaTeX: $...$ for inline, $$...$$ for display.
 5. Match the language of the question. If the question is in German, answer in German.
@@ -176,6 +177,116 @@ def _any_chunk_has_formula(chunks: list[RetrievedChunk] | None) -> bool:
         if _CHUNK_FORMULA_RE.search(text):
             return True
     return False
+
+
+# Review fix #7 — RetrievalCompleteness. Strong semantic retrieval doesn't
+# guarantee the math template will produce a complete answer: the model
+# also needs the exercise statement (Given values), at least one formula
+# to apply, and ideally a worked solution or method to follow. Each
+# component is a CHEAP detector; together they form a "ready to solve"
+# signal that gates the rigid math worksheet more conservatively than
+# pre-#7 (which only checked has_exercise_anchor + has_formula).
+
+# Markers that suggest a chunk contains the EXERCISE STATEMENT itself
+# (givens, "Bestimmen Sie", "Berechnen Sie", numeric task description).
+# Distinct from has_formula — a formula sheet has formulas but no
+# statement; an exercise sheet has the statement but maybe no formula.
+_EXERCISE_STATEMENT_RE = re.compile(
+    r"\b("
+    r"aufgabe|übungsaufgabe|übung|uebungsaufgabe|uebung|"
+    r"exercise|problem|task|"
+    r"berechne(?:n sie)?|bestimme(?:n sie)?|ermittle(?:n sie)?|"
+    r"calculate|compute|determine|find"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Markers for a SOLUTION or worked METHOD in the corpus — Lösung header,
+# step-by-step derivation, a final boxed result, etc.
+_SOLUTION_METHOD_RE = re.compile(
+    r"\b("
+    r"lösung|loesung|musterlösung|musterloesung|"
+    r"solution|answer|antwort|"
+    r"daraus folgt|somit ergibt sich|therefore|hence|"
+    r"\\boxed|=\s*[-+]?\d+(?:[\.,]\d+)?\s*[A-Za-zµμ]"  # "= 12 N", "= 0,5 mm"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Markers for GIVEN numerical values — anything that looks like
+# "symbol = number unit" repeated several times implies the chunk has
+# concrete inputs the student can substitute. The pattern matches at
+# least once; the caller counts hits.
+_GIVEN_VALUE_RE = re.compile(
+    r"[A-Za-zα-ωΑ-Ω]\w{0,15}\s*=\s*[-+]?\d+(?:[\.,]\d+)?",
+)
+
+
+@dataclass
+class RetrievalCompleteness:
+    """A snapshot of what the retrieved context contains, used to gate
+    the rigid math worksheet template.
+
+    Each flag fires on at least one chunk. ``is_complete_for_math``
+    requires the three components a solveable worksheet actually needs:
+    the exercise statement, at least one formula, and given values.
+    Without all three the rigid Given/Required/Formula/Substitution/
+    Calculation template produces a half-finished answer that ends in
+    "Missing context" anyway — better to use PARTIAL or STRONG prompt
+    instead of forcing the worksheet structure.
+    """
+    has_exercise_statement: bool
+    has_formula: bool
+    has_given_values: bool
+    has_solution_or_method: bool
+
+    @property
+    def is_complete_for_math(self) -> bool:
+        return (
+            self.has_exercise_statement
+            and self.has_formula
+            and self.has_given_values
+        )
+
+    def to_api(self) -> dict[str, bool]:
+        return {
+            "hasExerciseStatement":  self.has_exercise_statement,
+            "hasFormula":            self.has_formula,
+            "hasGivenValues":        self.has_given_values,
+            "hasSolutionOrMethod":   self.has_solution_or_method,
+            "isCompleteForMath":     self.is_complete_for_math,
+        }
+
+
+def assess_retrieval_completeness(
+    chunks: list[RetrievedChunk] | None,
+) -> RetrievalCompleteness:
+    """Compute the four readiness flags by scanning chunk text. Cheap —
+    one regex pass per chunk, no LLM."""
+    if not chunks:
+        return RetrievalCompleteness(False, False, False, False)
+    has_stmt = False
+    has_form = False
+    has_givens = False
+    has_solution = False
+    for c in chunks:
+        text = (getattr(c, "text", "") or "")
+        if not text:
+            continue
+        if not has_stmt and _EXERCISE_STATEMENT_RE.search(text):
+            has_stmt = True
+        if not has_form and _CHUNK_FORMULA_RE.search(text):
+            has_form = True
+        if not has_givens:
+            # Require ≥ 2 distinct "symbol = number" patterns. A single
+            # match could be a counter or an isolated formula identifier.
+            if len(_GIVEN_VALUE_RE.findall(text)) >= 2:
+                has_givens = True
+        if not has_solution and _SOLUTION_METHOD_RE.search(text):
+            has_solution = True
+        if has_stmt and has_form and has_givens and has_solution:
+            break  # all flags set; no need to scan further
+    return RetrievalCompleteness(has_stmt, has_form, has_givens, has_solution)
 
 
 # ── Tutor-mode overlays (phase 1) ────────────────────────────────────────────
@@ -360,17 +471,18 @@ def pick_system_prompt(
         from .query_expansion import is_math_question  # noqa: WPS433
         use_math = False
         if tutor_mode != "quiz" and is_math_question(question):
-            # Only commit to the rigid math template when:
-            #   (a) at least one retrieved chunk is classified exercise/solution
-            #       AND has similarity above the strong threshold (proves the
-            #       question matches a real exercise in the corpus), AND
-            #   (b) at least one retrieved chunk actually contains a formula
-            #       (proves the model has the formula text to copy from — without
-            #       this it fills the "Formula" section by hallucinating standard
-            #       textbook equations and slapping fake (filename, p.N) refs
-            #       on them).
-            # Legacy callers / unit tests that don't pass chunks keep the
-            # historical behaviour.
+            # Review fix #7 — gate the rigid math template on a fuller
+            # readiness check. Old criteria:
+            #   (a) at least one exercise/solution chunk above _STRONG_SIMILARITY
+            #   (b) at least one chunk with formula content
+            # That let MATH fire on a chunk that mentioned the formula
+            # but didn't have given values, producing a "Substitution"
+            # section the model filled with placeholders.
+            # New criteria require RetrievalCompleteness.is_complete_for_math
+            # — statement + formula + givens — so the worksheet only
+            # commits to the rigid template when every block has source
+            # material. Legacy callers without chunks keep the old
+            # math-always-fires behaviour.
             if chunks is None:
                 use_math = True
             else:
@@ -379,7 +491,8 @@ def pick_system_prompt(
                     and getattr(c, "similarity", 0.0) >= _STRONG_SIMILARITY
                     for c in chunks
                 )
-                if has_exercise_anchor and _any_chunk_has_formula(chunks):
+                completeness = assess_retrieval_completeness(chunks)
+                if has_exercise_anchor and completeness.is_complete_for_math:
                     use_math = True
         if use_math:
             base, label = _SYSTEM_PROMPT_MATH, "math"
@@ -441,11 +554,25 @@ def _context_strength(chunks: list[RetrievedChunk]) -> str:
     the top chunk must clear `_STRONG_SIMILARITY`, OR at least two chunks
     must clear a slightly lower bar (which proves the topic is genuinely
     present in the corpus, not just one lucky chunk).
+
+    Review-2 finding #3: synthetic chunks (prepended by exercise/formula
+    exact-match helpers) carry similarity=1.0 — that's a placeholder, not
+    a real cosine match. They were inflating strength to "strong" for any
+    query that triggered an exact-match lookup, even when real vector
+    retrieval was empty. Exclude them from the similarity ranking; let
+    REAL retrieval decide if context is strong.
     """
     if not chunks:
         return "none"
-    sims = sorted((c.similarity for c in chunks), reverse=True)
-    total_chars = sum(len(c.text) for c in chunks)
+    real_chunks = [c for c in chunks if not getattr(c, "is_synthetic", False)]
+    # If exact-match prepended chunks are ALL we have, that's not enough
+    # for a confident solve — the model still needs lecture / formula
+    # sheet context around it. Treat as "weak" so the PARTIAL prompt
+    # surfaces what we DO have without committing to the rigid worksheet.
+    if not real_chunks:
+        return "weak"
+    sims = sorted((c.similarity for c in real_chunks), reverse=True)
+    total_chars = sum(len(c.text) for c in real_chunks)
     if total_chars < _MIN_CONTEXT_CHARS:
         return "weak"
     if sims[0] >= _STRONG_SIMILARITY:

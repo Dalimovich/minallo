@@ -95,7 +95,19 @@ _DERIVED_NUMBER_PREFIX_RE = re.compile(r"[=≈]|\\approx|\\to|\\Rightarrow|\\Lon
 # Used for "rearrangement" detection — a formula that isn't a verbatim match
 # but shares its variable set with a cited formula in some chunk is treated
 # as an algebraic restatement, not a hallucination.
-_FORMULA_VAR_RE = re.compile(r"\\[A-Za-z]+|[A-Za-z][A-Za-z0-9]*(?:_\{[^}]+\}|_[A-Za-z0-9])?")
+# Variable tokens inside a formula. Matches:
+#   * TeX commands: ``\\frac``, ``\\tau``, ``\\sigma``
+#   * ASCII identifiers with optional subscript: ``A_S``, ``\\sigma_z``
+#   * Raw Greek letters: ``τ``, ``σ``, ``δ`` (engineering PDFs use these
+#     directly instead of the TeX form)
+# Greek-letter support was added because pdfminer + NFKC normalisation
+# converts the math-italic Unicode Greek (U+1D6E2-1D71B) to plain Greek
+# (U+0370-03FF), which the previous ASCII-only regex skipped entirely —
+# making ``τ = F/A`` look like a formula with no variables.
+_FORMULA_VAR_RE = re.compile(
+    r"\\[A-Za-z]+"
+    r"|[A-Za-zα-ωΑ-Ω][A-Za-zα-ωΑ-Ω0-9]*(?:_\{[^}]+\}|_[A-Za-z0-9])?"
+)
 # Trivial / wildcard symbols we don't count as meaningful variables.
 _TRIVIAL_VARS = frozenset({
     "x", "y", "z", "a", "b", "c", "n", "i", "j", "k", "mm", "cm", "kn",
@@ -159,29 +171,135 @@ def _number_is_derived(text: str, number_pos: int) -> bool:
 
 def _formula_variables(expr: str) -> set[str]:
     """Extract meaningful identifiers from a (Tex-ish) formula expression.
-    Lowercased; trivial single-letter algebra variables (x, y, n, …) are
-    dropped so we don't claim equivalence on bare ``x = y``."""
+
+    Accept as math variables:
+      * TeX commands (``\\frac``, ``\\sigma``, ``\\cdot``) — always.
+      * Single Greek letters (τ, σ, μ, δ, …) — engineering PDFs use the
+        raw Unicode forms after NFKC normalisation, not ``\\sigma``.
+      * Single UPPERCASE Latin letters (F, A, M) — math convention.
+      * Multi-char ASCII identifiers like ``Aers``, ``lK`` — formula
+        variables after NFKC collapsed subscripts onto the line.
+      * Subscripted identifiers (``A_S``, ``\\sigma_z``).
+
+    Reject:
+      * Single lowercase ASCII letters (a, b, c, n, …) — too ambiguous,
+        will match prose articles when a formula-shaped line slipped in.
+      * Anything in ``_TRIVIAL_VARS`` (unit abbreviations etc.).
+
+    This was previously a "drop everything < 2 chars" filter, which
+    accidentally rejected raw Greek letters and forced the
+    rearrangement check to fail on the most common pattern in the corpus.
+    """
     tokens: set[str] = set()
     for m in _FORMULA_VAR_RE.finditer(expr):
-        t = m.group(0).lower()
-        if t.startswith("\\"):
-            t = t[1:]  # \sigma → sigma
-        if len(t) < 2 and t not in {"f"}:
+        raw = m.group(0)
+        if raw.startswith("\\"):
+            # TeX command. Keep without normalisation.
+            tokens.add(raw[1:].lower())
             continue
+        # Greek letter (single character in α-ω / Α-Ω)?
+        if len(raw) == 1 and ("α" <= raw <= "ω" or "Α" <= raw <= "Ω"):
+            tokens.add(raw.lower())
+            continue
+        # Single uppercase ASCII (F, A, M) — keep, but compare in lower.
+        if len(raw) == 1 and "A" <= raw <= "Z":
+            tokens.add(raw.lower())
+            continue
+        # Drop single lowercase letters: too ambiguous on prose-laced lines.
+        if len(raw) == 1:
+            continue
+        t = raw.lower()
         if t in _TRIVIAL_VARS:
             continue
         tokens.add(t)
     return tokens
 
 
+# Review fix #9 — distinguish "linear" vs "advanced" operators.
+# Linear arithmetic (·, /, +, -) is the only group that can be freely
+# REARRANGED across the equals sign — ``τ = F/A`` and ``F = τ·A`` are
+# the same formula, just solved for different variables, and the `/`
+# in the first version legitimately becomes a `·` in the second.
+# Advanced operators (exponentiation, summation, integration, sqrt) do
+# NOT interchange like that — ``F = m·a`` and ``E = m·c²`` share the
+# variable {m} but the `^2` in the second formula is structural, not a
+# rearrangement.
+_OPERATOR_TOKEN_RE = re.compile(
+    r"\\frac|\\sum|\\int|\\sqrt|\\pi|\\cdot|\\times|\\div|\\partial|\\nabla|"
+    r"\^|/|·|×|÷|±|≤|≥|≈|∑|∫|√|∂"
+)
+
+# Advanced operators: changing one of these is a structural change, not
+# a rearrangement. Both sides of the check must have the SAME advanced-
+# operator set.
+_ADVANCED_OPS = frozenset({
+    "^",       # exponentiation
+    "\\sum",   "∑",
+    "\\int",   "∫",
+    "\\sqrt",  "√",
+    "\\partial", "∂",
+    "\\nabla",
+})
+
+
+def _formula_operators(expr: str) -> set[str]:
+    """Extract the operator/structural tokens from a formula expression.
+    Trivial single-operand operators (`=`) are excluded because every
+    formula has one. Visually-equivalent forms (``\\cdot`` and ``·``,
+    ``\\frac`` and ``/``) collapse to one token so the rearrangement
+    check doesn't double-count them."""
+    if not expr:
+        return set()
+    out: set[str] = set()
+    for m in _OPERATOR_TOKEN_RE.finditer(expr):
+        tok = m.group(0)
+        if tok in ("\\cdot", "·"):
+            tok = "·"
+        elif tok in ("\\times", "×"):
+            tok = "×"
+        elif tok in ("\\div", "÷"):
+            tok = "÷"
+        elif tok in ("\\frac", "/"):
+            tok = "/"
+        elif tok in ("\\pi",):
+            tok = "π"
+        elif tok in ("\\sum",):
+            tok = "∑"
+        elif tok in ("\\int",):
+            tok = "∫"
+        elif tok in ("\\sqrt",):
+            tok = "√"
+        elif tok in ("\\partial",):
+            tok = "∂"
+        out.add(tok)
+    return out
+
+
+def _advanced_ops(ops: set[str]) -> frozenset[str]:
+    """The advanced-operator subset of a formula's operator set."""
+    return frozenset(ops & _ADVANCED_OPS)
+
+
 def _formula_is_rearrangement_of_cited(needle: str, haystacks: Iterable[str]) -> bool:
     """A formula that isn't a verbatim match still counts as grounded when
-    the SAME variable set appears in a formula-shaped line in some chunk.
-    e.g. source ``τ = F/A``  → answer ``F = τ·A`` is an allowed restatement.
-    Conservative: requires ≥2 non-trivial variables and a near-full overlap."""
+    the SAME variable set AND a similar operator profile appear in a
+    formula-shaped line in some chunk.
+
+    e.g. source ``τ = F/A``  → answer ``F = τ·A`` is an allowed restatement
+    (same vars {τ,F,A}, both use multiplicative ops).
+
+    Review fix #9 — added an operator-overlap requirement on top of the
+    variable check. Variables alone would mark ``F = m·a`` and
+    ``E = m·c²`` as rearrangements of each other on shared {m}, since
+    `c` is in the trivial-vars set. Adding the operator profile prevents
+    this: the citation must share BOTH the variable set AND have
+    overlapping operator structure.
+    """
     needle_vars = _formula_variables(needle)
     if len(needle_vars) < 2:
         return False
+    needle_ops = _formula_operators(needle)
+    needle_adv = _advanced_ops(needle_ops)
     for hay in haystacks:
         # Only consider lines/segments that themselves look like formulas
         # (contain `=`). Otherwise random prose with overlapping letters
@@ -193,7 +311,16 @@ def _formula_is_rearrangement_of_cited(needle: str, haystacks: Iterable[str]) ->
             if not hay_vars:
                 continue
             overlap = needle_vars & hay_vars
-            if len(overlap) >= max(2, len(needle_vars) - 1):
+            if len(overlap) < max(2, len(needle_vars) - 1):
+                continue
+            # Advanced-operator profile MUST match. Linear operators
+            # (·, /, +, -) can freely swap because rearrangement
+            # legitimately turns ``F/A`` into ``F·(1/A)`` etc. But
+            # advanced operators (^, ∑, ∫, √, ∂) are structural — if
+            # the cited formula has none and the candidate has ``^2``,
+            # they aren't the same formula.
+            hay_adv = _advanced_ops(_formula_operators(line))
+            if needle_adv == hay_adv:
                 return True
     return False
 

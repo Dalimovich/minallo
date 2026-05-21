@@ -146,3 +146,46 @@ def test_decimal_comma_form_matches_decimal_dot_form() -> None:
     res = verify_answer(answer_text=answer, chunk_texts=[chunk])
     # The "0.5" in answer should match "0,5" in chunk — no number miss.
     assert "0.5" not in res.details["numberMisses"]
+
+
+# ── Review fix #9 — operator-overlap in rearrangement check ────────────────
+
+
+def test_rearrangement_requires_operator_overlap() -> None:
+    """Same variable set but completely different operator profile
+    must NOT count as a rearrangement. Without the operator check
+    ``F = m·a`` and ``E = m·c²`` would both share {m} (c is in the
+    trivial-vars set) and slip through — but they're obviously
+    different formulas."""
+    from app.services.verification import _formula_is_rearrangement_of_cited
+
+    cited = ["The general force law is F = m \\cdot a where m is mass."]
+    # `E = m \\cdot c^{2}` — same `m` variable, totally different shape
+    # (involves `^` for squaring vs no exponent in the original).
+    assert not _formula_is_rearrangement_of_cited(
+        "E = m \\cdot c^{2}",
+        cited,
+    )
+
+
+def test_rearrangement_accepts_genuine_algebraic_restatement() -> None:
+    """Real rearrangements still pass — same variables AND overlapping
+    operator structure. ``τ = F/A`` restated as ``F = τ·A`` keeps the
+    set {τ, F, A} and both involve multiplicative ops (/ and ·)."""
+    from app.services.verification import _formula_is_rearrangement_of_cited
+
+    cited = ["Shear stress is given by τ = F / A in the simplest case."]
+    assert _formula_is_rearrangement_of_cited("F = τ \\cdot A", cited)
+
+
+def test_rearrangement_rejects_different_structure_same_letters() -> None:
+    """A `\\sum` formula vs a `\\frac` formula with overlapping letters
+    must not be confused for rearrangements."""
+    from app.services.verification import _formula_is_rearrangement_of_cited
+
+    cited = ["The sum is S = \\sum_{i=1}^{n} a_i b_i."]
+    # Same {S, a, b} but fraction-shaped, no summation — different formula.
+    assert not _formula_is_rearrangement_of_cited(
+        "S = a / b",
+        cited,
+    )

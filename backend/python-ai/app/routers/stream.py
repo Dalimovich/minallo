@@ -356,6 +356,13 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     answer_json={
                         "answer": "".join(full_text_buf),
                         "retrievalMode": captured_meta.get("retrievalMode", "strong"),
+                        # Review-2 finding #7: persist verification too so
+                        # cached replays carry the same confidence label the
+                        # original answer earned. Without this the cached-
+                        # stream branch falls back to a retrievalMode-only
+                        # mapping that lies about confidence.
+                        "verification": captured_meta.get("verification"),
+                        "confidence":   captured_meta.get("confidence"),
                         "groundedSources": [
                             {
                                 "fileName": s.get("file_name"),
