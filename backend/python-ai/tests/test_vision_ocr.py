@@ -13,9 +13,12 @@ from unittest.mock import patch
 
 import pytest
 
-# Stub pydantic_settings + pydantic before config import (not installed
-# in the local venv).
-_fake_config = types.ModuleType("app.config")
+# Stand-in Settings shape used by the patch(...) blocks below. Previously
+# this also got pushed into ``sys.modules['app.config']`` so it became the
+# session-wide get_settings — which leaked into every later test that
+# expected the real ``@lru_cache``-wrapped function. Now it's only a plain
+# class scoped to this file; conftest.py sets the env vars the real
+# ``app.config`` needs for tests that import it for real.
 
 
 class _FakeSettings:
@@ -25,9 +28,6 @@ class _FakeSettings:
     vision_ocr_render_dpi = 150
     openai_api_key = "test"
 
-
-_fake_config.get_settings = lambda: _FakeSettings()
-sys.modules.setdefault("app.config", _fake_config)
 
 from app.services.vision_ocr import (  # noqa: E402
     pages_via_vision,

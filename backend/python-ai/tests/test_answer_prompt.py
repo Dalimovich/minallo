@@ -25,14 +25,12 @@ _fake_emb = types.ModuleType("app.services.embeddings")
 _fake_emb.embed_texts = lambda texts: [[0.0] * 1536 for _ in texts]
 sys.modules.setdefault("app.services.embeddings", _fake_emb)
 
-# Stub the app config so answer.py's `from ..config import get_settings`
-# doesn't drag in pydantic (not installed in this venv).
-class _FakeSettings:
-    openai_api_key = "test"
-    openai_generate_model = "gpt-test"
-_fake_config = types.ModuleType("app.config")
-_fake_config.get_settings = lambda: _FakeSettings()
-sys.modules.setdefault("app.config", _fake_config)
+# NOTE: we used to stub `app.config` here so the test would run without
+# pydantic. That stub leaked into the rest of the test session — replacing
+# `get_settings` with a plain `lambda` — and broke every later test that
+# expected `get_settings.cache_clear()` (the real impl is `@lru_cache`).
+# pydantic-settings IS available in CI/dev now, and conftest.py seeds the
+# required env vars at session start, so the real `app.config` loads fine.
 
 from app.services.answer import (  # noqa: E402
     _SYSTEM_PROMPT_MATH,
@@ -45,15 +43,22 @@ from app.services.answer import (  # noqa: E402
 # ── weak retrieval always wins, even for math questions ────────────────────
 
 
+# `pick_system_prompt` returns the chosen base prompt with overlays appended
+# (tutor mode, optional weak-topic coaching, and the always-on DIGNITY_OVERLAY).
+# The old `is`-identity check broke as soon as ANY overlay was added.
+# `startswith` is the right contract: the base template must lead, overlays
+# follow.
+
+
 def test_weak_retrieval_uses_weak_prompt_even_for_math() -> None:
     prompt, mode = pick_system_prompt("Solve Aufgabe 1.2", "weak")
-    assert prompt is _SYSTEM_PROMPT_WEAK
+    assert prompt.startswith(_SYSTEM_PROMPT_WEAK)
     assert mode == "weak"
 
 
 def test_none_retrieval_uses_weak_prompt() -> None:
     prompt, mode = pick_system_prompt("Aufgabe 1.2", "none")
-    assert prompt is _SYSTEM_PROMPT_WEAK
+    assert prompt.startswith(_SYSTEM_PROMPT_WEAK)
     assert mode == "weak"
 
 
@@ -72,7 +77,7 @@ def test_none_retrieval_uses_weak_prompt() -> None:
 ])
 def test_math_question_with_strong_context_uses_math_prompt(q: str) -> None:
     prompt, mode = pick_system_prompt(q, "strong")
-    assert prompt is _SYSTEM_PROMPT_MATH
+    assert prompt.startswith(_SYSTEM_PROMPT_MATH)
     assert mode == "math"
 
 
@@ -84,7 +89,7 @@ def test_math_question_with_strong_context_uses_math_prompt(q: str) -> None:
 ])
 def test_non_math_question_with_strong_context_uses_strong_prompt(q: str) -> None:
     prompt, mode = pick_system_prompt(q, "strong")
-    assert prompt is _SYSTEM_PROMPT_STRONG
+    assert prompt.startswith(_SYSTEM_PROMPT_STRONG)
     assert mode == "strong"
 
 

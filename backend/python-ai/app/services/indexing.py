@@ -108,7 +108,11 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         page_md = [page_to_markdown(text, idx + 1) for idx, text in enumerate(pages)]
         _replace_pages(sb, document_id, user_id, course_id, pages, page_md)
 
-        chunks = chunk_pages(pages)
+        # Pass the already-built PageMarkdown rather than the raw pdfminer
+        # text. Phase 3 Step A — keeps the chunker on the same heading +
+        # math-block detector as Phase 2, and avoids running page_to_markdown
+        # twice per page.
+        chunks = chunk_pages(page_md)
         if not chunks:
             _mark_failed(sb, document_id, "chunking produced 0 chunks")
             raise IndexingError("0 chunks produced")
@@ -144,6 +148,23 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             doc_topics = []
             primary_topics = [None] * len(chunks)
 
+        # Phase 5 + Phase 3 Step D: exact-match exercise/formula blocks are
+        # now written BEFORE chunks so we can resolve the chunk's
+        # (exercise_number, subpart) → exercise.id FK before insert. Failure
+        # here must never break the rest of indexing — exercises remain an
+        # additive surface, and chunks fall back to exercise_id=NULL.
+        exercise_id_by_key: dict[tuple[str, str | None], str] = {}
+        try:
+            pages_md = [(p.page_number, p.markdown) for p in page_md if p.markdown]
+            exercises = detect_exercises(pages_md)
+            formulas = detect_formulas(pages_md)
+            exercise_id_by_key = _replace_exercises(
+                sb, document_id, user_id, course_id, exercises
+            )
+            _replace_formulas(sb, document_id, user_id, course_id, formulas)
+        except Exception:  # noqa: BLE001
+            log.exception("block detection failed — continuing without exercise/formula rows")
+
         _replace_chunks(
             sb,
             document_id=document_id,
@@ -154,18 +175,8 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             vectors=vectors,
             doc_topics=doc_topics,
             primary_topics=primary_topics,
+            exercise_id_by_key=exercise_id_by_key,
         )
-
-        # Phase 5: exact-match exercise / formula blocks. Failures here must
-        # never break indexing — they are an additive surface for retrieval.
-        try:
-            pages_md = [(p.page_number, p.markdown) for p in page_md if p.markdown]
-            exercises = detect_exercises(pages_md)
-            formulas = detect_formulas(pages_md)
-            _replace_exercises(sb, document_id, user_id, course_id, exercises)
-            _replace_formulas(sb, document_id, user_id, course_id, formulas)
-        except Exception:  # noqa: BLE001
-            log.exception("block detection failed — continuing without exercise/formula rows")
 
         # Phase 4: classify the document and roll up per-page extraction
         # quality. Best-effort — failure here must not block indexing.
@@ -305,11 +316,13 @@ def _replace_chunks(
     vectors: list[list[float]],
     doc_topics: list[str] | None = None,
     primary_topics: list[str | None] | None = None,
+    exercise_id_by_key: dict[tuple[str, str | None], str] | None = None,
 ) -> None:
     sb.table("document_chunks").delete().eq("document_id", document_id).execute()
     rows = []
     topics_array = doc_topics or []
     primary = primary_topics or [None] * len(chunks)
+    keymap = exercise_id_by_key or {}
     for idx, (chunk, embedding) in enumerate(zip(chunks, vectors)):
         row: dict[str, Any] = {
             "document_id": document_id,
@@ -332,6 +345,14 @@ def _replace_chunks(
             row["topics"] = topics_array
         if idx < len(primary) and primary[idx]:
             row["primary_topic"] = primary[idx]
+        # Phase 3 Step D — link the chunk to its parent exercise row. Skipped
+        # when the chunker didn't tag this chunk with exercise identifiers
+        # (lecture/summary chunks) or when the exercise insert failed and the
+        # map is empty — the column is nullable so this is safe.
+        if chunk.exercise_number is not None:
+            ex_id = keymap.get((chunk.exercise_number, chunk.exercise_subpart))
+            if ex_id:
+                row["exercise_id"] = ex_id
         rows.append(row)
     for start in range(0, len(rows), 100):
         sb.table("document_chunks").insert(rows[start:start + 100]).execute()
@@ -343,10 +364,15 @@ def _replace_exercises(
     user_id: str,
     course_id: str,
     exercises: list[ExerciseBlock],
-) -> None:
+) -> dict[tuple[str, str | None], str]:
+    """Replace the document's exercise rows and return a ``(exercise_number,
+    subpart) → uuid`` map so the caller can stamp the FK on the matching
+    chunk rows. Empty map when there are no exercises or the insert returned
+    no rows.
+    """
     sb.table("document_exercises").delete().eq("document_id", document_id).execute()
     if not exercises:
-        return
+        return {}
     rows = [
         {
             "document_id": document_id,
@@ -361,8 +387,20 @@ def _replace_exercises(
         }
         for ex in exercises
     ]
+    key_to_id: dict[tuple[str, str | None], str] = {}
     for start in range(0, len(rows), 50):
-        sb.table("document_exercises").insert(rows[start:start + 50]).execute()
+        batch = rows[start:start + 50]
+        # ``returning='representation'`` (the postgrest default for insert)
+        # gives us the generated ``id`` for each row so we can build the map
+        # without a second query.
+        resp = sb.table("document_exercises").insert(batch).execute()
+        for r in (resp.data or []):
+            num = r.get("exercise_number")
+            sub = r.get("subpart")
+            row_id = r.get("id")
+            if num and row_id:
+                key_to_id[(num, sub)] = row_id
+    return key_to_id
 
 
 def _replace_formulas(
