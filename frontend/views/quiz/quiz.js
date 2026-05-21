@@ -878,10 +878,24 @@
             }
           }
           var letters = ['A', 'B', 'C', 'D'];
+          // Drop non-MCQ items (true_false, short_answer) — the UI only renders
+          // 4-option buttons, so without this they appear with blank options.
+          // Also drop MCQs whose options dict/array is missing or all empty.
+          var mcqOnly = result.items.filter(function (item) {
+            if (item && item.type && item.type !== 'mcq') return false;
+            var o = item && item.options;
+            if (!o) return false;
+            if (Array.isArray(o)) return o.some(function (v) { return (v || '').toString().trim(); });
+            return letters.some(function (L) { return (o[L] || '').toString().trim(); });
+          });
+          if (!mcqOnly.length) {
+            _toast('Nothing generated', 'No usable multiple-choice questions came back. Try again.');
+            return;
+          }
           var quiz = {
             id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
             name: defaultName(),
-            items: result.items.map(function (item) {
+            items: mcqOnly.map(function (item) {
               // Normalize options: backend returns {A,B,C,D} object; convert to array
               var opts;
               if (Array.isArray(item.options)) {
@@ -973,11 +987,22 @@
           var answered = r.answers || {};
           var submitted = {};
           Object.keys(answered).forEach(function(k) { submitted[k] = true; });
+          // Defensive: legacy quizzes from before MCQ-only enforcement can
+          // contain items with empty options arrays (tf/sa items that the UI
+          // doesn't know how to render). Drop them so the user doesn't see
+          // questions with blank answers.
+          var safeItems = (r.items || []).filter(function (it) {
+            if (!it) return false;
+            var opts = it.options;
+            if (!opts) return false;
+            if (Array.isArray(opts)) return opts.some(function (v) { return (v || '').toString().trim(); });
+            return ['A','B','C','D'].some(function (L) { return (opts[L] || '').toString().trim(); });
+          });
           return {
             id: r.id,
             _dbId: r.id,
             name: r.name,
-            items: r.items || [],
+            items: safeItems,
             answers: answered,
             submitted: submitted,
             progress: 0,

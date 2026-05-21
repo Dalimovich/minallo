@@ -635,6 +635,14 @@
       };
       if (documentIds && documentIds.length) genOpts.documentIds = documentIds;
       options.generate(course.id, 'flashcards', genOpts).then(function (result) {
+        // Drop cards with missing/blank front or back before counting —
+        // otherwise an item that slipped past backend validation lands in
+        // the deck as a card that renders empty when flipped.
+        if (result && Array.isArray(result.items)) {
+          result.items = result.items.filter(function (c) {
+            return c && (c.front || '').toString().trim() && (c.back || '').toString().trim();
+          });
+        }
         if (!result || !result.items || !result.items.length) {
           var allExisting = [];
           state.decks.forEach(function(d) { allExisting = allExisting.concat(d.cards); });
@@ -744,12 +752,18 @@
       if (els.grid) els.grid.innerHTML = '<div class="fc-empty">Loading decks…</div>';
       _dbLoadDecks(course.id).then(function(rows) {
         state._loaded = true;
+        // Defensive: legacy decks can contain cards with missing/blank
+        // front or back (saved before backend validation rejected them).
+        // Drop them so flipping doesn't reveal an empty card.
+        var _validCard = function (c) {
+          return c && (c.front || '').toString().trim() && (c.back || '').toString().trim();
+        };
         state.decks = rows.map(function(r) {
           return {
             id: r.id,
             _dbId: r.id,
             name: r.name,
-            cards: r.cards || [],
+            cards: (r.cards || []).filter(_validCard),
             createdAt: new Date(r.created_at).getTime(),
             lastStudied: r.last_studied_at || null,
             progress: r.study_progress || 0,

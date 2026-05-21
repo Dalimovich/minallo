@@ -107,7 +107,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     endpoint = 'generate-quiz';
     pyPayload = {
       userId: user.id, courseId, documentIds: docIds,
-      requestedCount, difficulty: (typeof difficulty === 'string' ? difficulty : 'medium'), save: false
+      requestedCount, difficulty: (typeof difficulty === 'string' ? difficulty : 'medium'),
+      // The quiz UI only renders MCQ (4-option buttons). Backend defaults to
+      // mixing mcq + true_false + short_answer, which produced items with
+      // no options field — the frontend then rendered 4 blank buttons. Lock
+      // generation to MCQ until we add UIs for the other types.
+      questionTypes: ['mcq'],
+      save: false
     };
   } else if (tool === 'flashcards') {
     endpoint = 'generate-flashcards';
