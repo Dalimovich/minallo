@@ -98,7 +98,17 @@ _VISION_SYSTEM_PROMPT = (
     "   stamp obscuring text), write `[unclear]` for THAT region — do NOT "
     "   invent content. Better to skip than to hallucinate.\n"
     "8. Return Markdown only — no commentary, no JSON wrapper, no ``` "
-    "   fences around the whole output."
+    "   fences around the whole output.\n"
+    "9. The Greek-letter rule (#2) applies ONLY when the source actually "
+    "   shows a Greek glyph. An italic lowercase Latin letter (a, b, c, "
+    "   d, ...) is NOT a Greek letter — it stays as itself. Do NOT promote "
+    "   `a` → `\\alpha`, `b` → `\\beta`, `u` → `\\mu`, etc. Context check: "
+    "   if the surrounding text uses the symbol as a regular variable name "
+    "   (e.g. `a_A` 'Anziehfaktor'), keep it Latin.\n"
+    "10. Keep a space between a LaTeX command and a following letter that "
+    "    isn't part of the command: write `20 \\mu m`, NOT `20 \\mum`. "
+    "    `\\mu` is the Greek letter μ; the trailing `m` is the unit metre, "
+    "    a separate token. Same rule for `\\Omega \\cdot m`, `\\pi r`, etc."
 )
 
 
@@ -147,7 +157,7 @@ def _vision_extract(client, model: str, image_bytes: bytes) -> str:
         )
         msg = response.choices[0].message if response.choices else None
         raw = (msg.content if msg else "") or ""
-        return _strip_outer_code_fence(raw)
+        return _post_process_latin_alpha(_strip_outer_code_fence(raw))
     except Exception:  # noqa: BLE001
         log.exception("vision OCR call failed")
         return ""
@@ -164,6 +174,30 @@ _CODE_FENCE_RE = re.compile(
 )
 
 
+# Vision models reliably misread italic lowercase Latin "a" as Greek α in
+# engineering fonts (the glyph shapes are nearly identical). Prompt rule
+# #9 catches most cases but the visual perception is too strong for some
+# variables (`a_A` Anziehfaktor / tightening factor reproducibly comes
+# back as `\alpha_A` or `\alpha_a`). This regex narrowly rewrites
+# `\alpha_X = <plain dimensionless number>` → `a_X = ...` where:
+#   * the assignment is to a unitless decimal (no trailing unit letters / "/")
+#   * no other Greek-math signal nearby
+# A real `\alpha` assigned to a dimensionless angle would still be wrong
+# but those don't appear in our corpus. If a false positive surfaces in
+# the eval, narrow the lookahead further.
+_LATIN_ALPHA_RE = re.compile(
+    r"\\alpha(_[A-Za-z])\s*=\s*([0-9]+(?:[,.][0-9]+)?)"
+    r"(?!\s*[A-Za-z/])"  # negative lookahead: no unit / Greek letter after
+)
+
+
+def _post_process_latin_alpha(text: str) -> str:
+    """Rewrite `\\alpha_X = <plain number>` to Latin `a_X` when the value
+    has no unit. Targets the well-known OCR misread of italic lowercase
+    Latin 'a' as Greek alpha (see comment above)."""
+    return _LATIN_ALPHA_RE.sub(r"a\1 = \2", text)
+
+
 def _strip_outer_code_fence(text: str) -> str:
     """If the vision response is wrapped in an outer ```markdown ... ```
     code fence, return the inner content. No-op for already-bare Markdown."""
@@ -175,17 +209,61 @@ def _strip_outer_code_fence(text: str) -> str:
     return text
 
 
-def pages_via_vision(pdf_bytes: bytes, page_indices: Iterable[int]) -> dict[int, str]:
+_MATHPIX_ENDPOINT = "https://api.mathpix.com/v3/text"
+
+
+def _mathpix_extract(app_id: str, app_key: str, image_bytes: bytes) -> str:
+    """One Mathpix /v3/text call. Returns extracted Markdown or "" on failure.
+
+    Mathpix is purpose-built for math OCR and returns LaTeX directly. We
+    request the ``text`` format with ``$$ ... $$`` display fences so the
+    output is shape-compatible with the OpenAI vision path.
+    """
+    try:
+        import httpx
+    except Exception:  # noqa: BLE001
+        log.warning("Mathpix OCR requested but httpx is not installed")
+        return ""
+    try:
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        payload = {
+            "src": f"data:image/png;base64,{b64}",
+            "formats": ["text"],
+            "math_inline_delimiters": ["$", "$"],
+            "math_display_delimiters": ["$$", "$$"],
+            "rm_spaces": True,
+        }
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                _MATHPIX_ENDPOINT,
+                headers={"app_id": app_id, "app_key": app_key},
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+        return (data.get("text") or "").strip()
+    except Exception:  # noqa: BLE001
+        log.exception("Mathpix OCR call failed")
+        return ""
+
+
+def pages_via_vision(
+    pdf_bytes: bytes,
+    page_indices: Iterable[int],
+    provider: str = "openai",
+) -> dict[int, str]:
     """Run vision OCR on the given 0-based page indices.
+
+    ``provider`` selects the backend:
+      * ``"openai"`` — gpt-4o (or whatever ``MINALLO_VISION_OCR_MODEL`` is)
+      * ``"mathpix"`` — Mathpix /v3/text, purpose-built for math/formula pages
 
     Returns ``{page_index: markdown}`` only for pages that succeeded. The
     indexer should ``original_pages[idx] = result[idx]`` for each key in
     the dict and leave the rest alone.
 
-    Silently returns ``{}`` when:
-      * the feature flag is off
-      * pypdfium2 isn't installed
-      * the openai SDK isn't installed
+    Silently returns ``{}`` when the feature flag is off, dependencies
+    are missing, or the chosen provider has no credentials.
     """
     settings = get_settings()
     if not settings.vision_ocr_enabled:
@@ -197,9 +275,24 @@ def pages_via_vision(pdf_bytes: bytes, page_indices: Iterable[int]) -> dict[int,
         log.warning("vision OCR requested but pypdfium2 is not installed")
         return {}
 
-    OpenAI = _try_import_openai()
-    if OpenAI is None:
-        log.warning("vision OCR requested but openai SDK is not installed")
+    if provider == "mathpix":
+        if not (settings.mathpix_app_id and settings.mathpix_app_key):
+            log.warning("Mathpix OCR requested but MATHPIX_APP_ID/KEY not set")
+            return {}
+        extract = lambda png: _mathpix_extract(  # noqa: E731
+            settings.mathpix_app_id, settings.mathpix_app_key, png
+        )
+    elif provider == "openai":
+        OpenAI = _try_import_openai()
+        if OpenAI is None:
+            log.warning("vision OCR requested but openai SDK is not installed")
+            return {}
+        openai_client = OpenAI(api_key=settings.openai_api_key)
+        extract = lambda png: _vision_extract(  # noqa: E731
+            openai_client, settings.vision_ocr_model, png
+        )
+    else:
+        log.warning("unknown OCR provider %r — skipping", provider)
         return {}
 
     indices = list(page_indices)
@@ -212,13 +305,12 @@ def pages_via_vision(pdf_bytes: bytes, page_indices: Iterable[int]) -> dict[int,
         )
         indices = indices[: settings.vision_ocr_max_pages]
 
-    client = OpenAI(api_key=settings.openai_api_key)
     out: dict[int, str] = {}
     for idx in indices:
         png = _render_page_to_png(pdfium, pdf_bytes, idx, settings.vision_ocr_render_dpi)
         if not png:
             continue
-        text = _vision_extract(client, settings.vision_ocr_model, png)
+        text = extract(png)
         if text and text.strip():
             out[idx] = text.strip()
     return out

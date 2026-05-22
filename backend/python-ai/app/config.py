@@ -59,6 +59,18 @@ class Settings(BaseSettings):
     environment: str = Field("development", alias="ENVIRONMENT")
 
 
+    # --- Mathpix vision OCR. Optional second provider routed to from
+    # `vision_ocr.pages_via_vision` for formula-dense pages when both
+    # credentials are present and routing != "off". Stays disabled if
+    # either credential is missing.
+    mathpix_app_id: str | None = Field(None, alias="MATHPIX_APP_ID")
+    mathpix_app_key: str | None = Field(None, alias="MATHPIX_APP_KEY")
+    mathpix_routing: str = Field("off", alias="MINALLO_MATHPIX_ROUTING")
+    # "off"                — never use Mathpix
+    # "formulasheet_only"  — only for filenames matching the Formelzettel pattern
+    # "always"             — every OCR page goes to Mathpix
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
