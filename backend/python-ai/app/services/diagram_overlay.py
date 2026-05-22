@@ -56,6 +56,45 @@ _NEGATIVE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+# Plot-style requests: continuous 2D function plots (stress-strain,
+# characteristic curves, IV curves, temperature curves, frequency
+# response, etc.). These produce ``minallo-plot`` fences with line
+# series + axes, NOT the node-edge graph that wants_diagram routes to.
+_PLOT_RE = re.compile(
+    r"\b("
+    # English
+    r"stress[- ]strain|strain[- ]stress|"
+    r"force[- ]displacement|displacement[- ]force|"
+    r"current[- ]voltage|voltage[- ]current|"
+    r"frequency response|bode plot|"
+    r"plot of|graph of|chart of|"
+    r"x[- ]?y (plot|chart|graph)|"
+    # German
+    r"spannungs[- ]?dehnungs|dehnungs[- ]?spannungs|"
+    r"kraft[- ]?weg|weg[- ]?kraft|"
+    r"strom[- ]?spannungs|spannungs[- ]?strom|"
+    r"kennlinie|kennfeld|"
+    r"abh[aä]ngigkeit von|als funktion (von|der)|"
+    # Generic curve language
+    r"curve|kurve|wendepunkt|s[- ]kurve|"
+    r"function plot|plot der|plotte"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def wants_plot(question: str, problem_solver: dict[str, Any] | None = None) -> bool:
+    """True when the request is for a continuous 2D plot (axes + series),
+    not a node-edge graph. Plot intent is a SUBSET of diagram intent —
+    callers should check ``wants_plot`` BEFORE ``wants_diagram`` to route
+    to the right fence type.
+    """
+    text = question or ""
+    if problem_solver:
+        text += "\n" + str(problem_solver.get("problem") or "")
+    return bool(_PLOT_RE.search(text))
+
+
 def wants_diagram(question: str, problem_solver: dict[str, Any] | None = None) -> bool:
     """True when the student's question (or Problem Solver input) is asking
     for a renderable diagram, AND no negative filter excludes it.
@@ -97,15 +136,23 @@ def diagram_overlay(has_context: bool) -> str:
     )
     return f"""
 
-DIAGRAM RENDERING MODE.
-You CAN render diagrams in this app. The fenced ``minallo-diagram`` block
-below is your drawing tool — the browser parses the JSON and produces an
-SVG diagram for the student. NEVER refuse with phrases like "I can't draw
-diagrams" / "Ich kann keine Diagramme zeichnen" / "Es tut mir leid, ich
-kann keine Diagramme zeichnen" / "I can only describe it" — those answers
-are wrong in this app. Emit the fenced block instead. Always include ONE
-renderable diagram after a short explanation, even when the student asks
-you to "redraw" / "neu zeichnen" an existing figure.
+DIAGRAM / PLOT RENDERING MODE.
+You CAN render diagrams AND continuous 2D plots in this app. Two fence
+formats are available — pick the right one for the request:
+  * ``minallo-diagram`` — node + edge graph. Use for flowcharts, state
+    machines, free-body diagrams, circuit blocks, sequence diagrams.
+  * ``minallo-plot`` — continuous 2D plot with axes + line series + named
+    marker points. Use for stress-strain curves, characteristic curves
+    (Kennlinien), I-V curves, frequency response, anything that is a
+    function y(x) on labelled axes. Provide 8-20 (x, y) sample points
+    per series so the polyline looks smooth, plus marker objects with
+    {{x, y, label}} for named feature points (yield point, peak, etc.).
+NEVER refuse with phrases like "I can't draw" / "Ich kann keine Diagramme
+zeichnen" / "Es tut mir leid, ich kann keine Diagramme zeichnen" / "I can
+only describe it" — those answers are wrong in this app. Emit the fenced
+block instead. Always include ONE renderable diagram OR plot after a
+short explanation, even when the student asks you to "redraw" / "neu
+zeichnen" an existing figure.
 {source_rule}
 
 Use this exact fenced block format so the browser can render it:
@@ -168,4 +215,4 @@ EXAMPLE — INCORRECT response (do NOT do this):
 """
 
 
-__all__ = ("wants_diagram", "diagram_overlay")
+__all__ = ("wants_diagram", "wants_plot", "diagram_overlay")

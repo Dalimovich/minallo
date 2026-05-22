@@ -116,12 +116,54 @@ def _build_openai_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _last_user_text(messages: list[dict[str, Any]]) -> str:
+    """Extract the last user message's text for diagram-intent detection.
+    Generic /chat uses Anthropic-shaped content blocks; we concat all text
+    parts from the last user turn."""
+    for m in reversed(messages):
+        if m.get("role") != "user":
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    txt = block.get("text")
+                    if isinstance(txt, str):
+                        parts.append(txt)
+            return " ".join(parts)
+        return ""
+    return ""
+
+
 def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     """Run the chat completion and return an Anthropic-shaped response."""
     settings = get_settings()
     messages = _build_openai_messages(payload)
     max_tokens = _normalise_max_tokens(payload.get("max_tokens"))
     client = OpenAI(api_key=settings.openai_api_key)
+
+    # Diagram-intent detection on the last user turn. When the student
+    # asks for a diagram on the generic /chat path (no course selected),
+    # append the rendering overlay to the system message so the first
+    # call has a chance to emit the fence. If it refuses anyway, the
+    # structured-output fallback below produces it deterministically.
+    from .diagram_overlay import diagram_overlay, wants_diagram, wants_plot  # noqa: WPS433
+    user_text = _last_user_text(messages)
+    plot_wanted = wants_plot(user_text)
+    diagram_wanted = wants_diagram(user_text) or plot_wanted
+    if diagram_wanted:
+        overlay = diagram_overlay(has_context=False)
+        if messages and messages[0].get("role") == "system":
+            messages[0] = {
+                "role": "system",
+                "content": (messages[0].get("content") or "") + overlay,
+            }
+        else:
+            messages = [{"role": "system", "content": overlay}] + messages
+
     resp = client.chat.completions.create(
         model="gpt-4o",
         max_completion_tokens=max_tokens,
@@ -129,4 +171,28 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     )
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""
+
+    # Same refusal-recovery as answer_stream.py: model often refuses with
+    # "Ich kann keine Bilder zeichnen" — structured outputs can't refuse.
+    print(
+        f"[DIAGRAM_DEBUG /chat] wants_diagram={diagram_wanted} wants_plot={plot_wanted} "
+        f"has_diag_fence={'```minallo-diagram' in text} "
+        f"has_plot_fence={'```minallo-plot' in text} text_len={len(text)}",
+        flush=True,
+    )
+    if (
+        plot_wanted
+        and "```minallo-plot" not in text
+        and "```minallo-diagram" not in text
+    ):
+        from .answer_stream import _force_render_plot  # noqa: WPS433
+        fence = _force_render_plot(client, "gpt-4o", user_text, [], None)
+        if fence:
+            text += fence
+    elif diagram_wanted and "```minallo-diagram" not in text:
+        from .answer_stream import _force_render_diagram  # noqa: WPS433
+        fence = _force_render_diagram(client, "gpt-4o", user_text, [], None)
+        if fence:
+            text += fence
+
     return {"content": [{"type": "text", "text": text}]}

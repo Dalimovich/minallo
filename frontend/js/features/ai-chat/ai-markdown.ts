@@ -216,6 +216,165 @@ export function renderMarkdown(text: string): string {
     }
   }
 
+  // Continuous 2D plot primitive — for things renderDiagram cannot represent
+  // (stress-strain curves, characteristic curves, x/y data with marked
+  // points). Schema accepts one or more polyline series in data coords +
+  // optional named markers. We compute the data range, map to a 760×360
+  // SVG box with margins for axes / labels.
+  function renderPlot(raw: string): string {
+    try {
+      const spec = JSON.parse(raw) as {
+        title?: string;
+        caption?: string;
+        xAxis?: { label?: string; min?: number; max?: number; unit?: string };
+        yAxis?: { label?: string; min?: number; max?: number; unit?: string };
+        series?: Array<{ label?: string; points?: Array<[number, number]>; dashed?: boolean }>;
+        markers?: Array<{ x?: number; y?: number; label?: string }>;
+      };
+      const series = Array.isArray(spec.series)
+        ? spec.series
+            .map((s) => ({
+              label: String(s.label || '').slice(0, 60),
+              points: Array.isArray(s.points)
+                ? s.points
+                    .filter((p): p is [number, number] =>
+                      Array.isArray(p) && p.length === 2 &&
+                      Number.isFinite(p[0]) && Number.isFinite(p[1])
+                    )
+                    .slice(0, 200)
+                : [],
+              dashed: Boolean(s.dashed)
+            }))
+            .filter((s) => s.points.length >= 2)
+            .slice(0, 6)
+        : [];
+      const markers = Array.isArray(spec.markers)
+        ? spec.markers
+            .filter((m) => Number.isFinite(m.x) && Number.isFinite(m.y))
+            .slice(0, 12)
+        : [];
+      if (!series.length) throw new Error('empty plot');
+
+      // Derive data range from series ∪ markers ∪ explicit axis hints. An
+      // explicit min/max wins so callers can pin axes to nice round numbers.
+      const allXs: number[] = [];
+      const allYs: number[] = [];
+      series.forEach((s) => s.points.forEach(([x, y]) => { allXs.push(x); allYs.push(y); }));
+      markers.forEach((m) => { allXs.push(num(m.x, 0)); allYs.push(num(m.y, 0)); });
+      const xMin = num(spec.xAxis?.min, Math.min(...allXs));
+      const xMax = num(spec.xAxis?.max, Math.max(...allXs));
+      const yMin = num(spec.yAxis?.min, Math.min(...allYs, 0));
+      const yMax = num(spec.yAxis?.max, Math.max(...allYs));
+      const xRange = xMax - xMin || 1;
+      const yRange = yMax - yMin || 1;
+
+      // SVG layout. 800×420 viewBox; plot area inset for axis labels.
+      const W = 800, H = 420;
+      const M = { top: 24, right: 24, bottom: 56, left: 72 };
+      const plotW = W - M.left - M.right;
+      const plotH = H - M.top - M.bottom;
+      const sx = (x: number): number => M.left + ((x - xMin) / xRange) * plotW;
+      const sy = (y: number): number => M.top + plotH - ((y - yMin) / yRange) * plotH;
+
+      const xUnit = spec.xAxis?.unit ? ' [' + String(spec.xAxis.unit) + ']' : '';
+      const yUnit = spec.yAxis?.unit ? ' [' + String(spec.yAxis.unit) + ']' : '';
+      const xAxisLabel = String(spec.xAxis?.label || '') + xUnit;
+      const yAxisLabel = String(spec.yAxis?.label || '') + yUnit;
+
+      // 5-tick axis labelling. round to a sensible precision based on range.
+      const fmt = (v: number, range: number): string => {
+        if (range >= 100) return Math.round(v).toString();
+        if (range >= 10) return v.toFixed(1);
+        if (range >= 1) return v.toFixed(2);
+        return v.toFixed(3);
+      };
+      const ticks = (lo: number, hi: number): number[] =>
+        Array.from({ length: 5 }, (_, k) => lo + ((hi - lo) * k) / 4);
+      const xTicks = ticks(xMin, xMax);
+      const yTicks = ticks(yMin, yMax);
+
+      const svg: string[] = [
+        '<svg class="md-plot-svg" viewBox="0 0 ' + W + ' ' + H +
+          '" role="img" aria-label="' + esc(spec.title || 'Plot') + '">',
+        // Plot frame
+        '<rect class="md-plot-frame" x="' + M.left + '" y="' + M.top +
+          '" width="' + plotW + '" height="' + plotH + '"/>',
+        // Grid + axis ticks
+      ];
+      xTicks.forEach((t) => {
+        const x = sx(t);
+        svg.push('<line class="md-plot-grid" x1="' + x + '" y1="' + M.top +
+          '" x2="' + x + '" y2="' + (M.top + plotH) + '"/>');
+        svg.push('<text class="md-plot-tick" x="' + x + '" y="' + (M.top + plotH + 18) +
+          '" text-anchor="middle">' + esc(fmt(t, xRange)) + '</text>');
+      });
+      yTicks.forEach((t) => {
+        const y = sy(t);
+        svg.push('<line class="md-plot-grid" x1="' + M.left + '" y1="' + y +
+          '" x2="' + (M.left + plotW) + '" y2="' + y + '"/>');
+        svg.push('<text class="md-plot-tick" x="' + (M.left - 8) + '" y="' + (y + 4) +
+          '" text-anchor="end">' + esc(fmt(t, yRange)) + '</text>');
+      });
+      // Axis labels
+      svg.push('<text class="md-plot-axis-label" x="' + (M.left + plotW / 2) +
+        '" y="' + (H - 14) + '" text-anchor="middle">' + esc(xAxisLabel) + '</text>');
+      svg.push('<text class="md-plot-axis-label" x="' + (M.left / 2 - 8) +
+        '" y="' + (M.top + plotH / 2) + '" text-anchor="middle" transform="rotate(-90 ' +
+        (M.left / 2 - 8) + ',' + (M.top + plotH / 2) + ')">' + esc(yAxisLabel) + '</text>');
+
+      // Series polylines. Distinct stroke colours per series via inline CSS variable.
+      const colours = ['var(--plot-c1, #2563eb)', 'var(--plot-c2, #dc2626)', 'var(--plot-c3, #16a34a)',
+                       'var(--plot-c4, #ea580c)', 'var(--plot-c5, #7c3aed)', 'var(--plot-c6, #0891b2)'];
+      series.forEach((s, idx) => {
+        const pts = s.points.map((p) => sx(p[0]) + ',' + sy(p[1])).join(' ');
+        const dash = s.dashed ? ' stroke-dasharray="6 4"' : '';
+        svg.push('<polyline class="md-plot-series" fill="none" stroke="' + colours[idx % colours.length] +
+          '" stroke-width="2.4"' + dash + ' points="' + pts + '"/>');
+      });
+
+      // Markers — small dot + label offset above/right of the point.
+      markers.forEach((m) => {
+        const mx = sx(num(m.x, 0));
+        const my = sy(num(m.y, 0));
+        svg.push('<circle class="md-plot-marker" cx="' + mx + '" cy="' + my + '" r="4"/>');
+        if (m.label) {
+          svg.push('<text class="md-plot-marker-label" x="' + (mx + 8) + '" y="' + (my - 8) +
+            '">' + esc(String(m.label).slice(0, 40)) + '</text>');
+        }
+      });
+
+      // Series legend, when more than one series.
+      if (series.length > 1) {
+        let lx = M.left + 10;
+        const ly = M.top + 14;
+        series.forEach((s, idx) => {
+          svg.push('<rect x="' + lx + '" y="' + (ly - 8) + '" width="14" height="3" fill="' +
+            colours[idx % colours.length] + '"/>');
+          svg.push('<text class="md-plot-legend" x="' + (lx + 18) + '" y="' + (ly + 2) + '">' +
+            esc(s.label) + '</text>');
+          lx += 18 + s.label.length * 6 + 14;
+        });
+      }
+
+      svg.push('</svg>');
+
+      return (
+        '<figure class="md-diagram-card">' +
+          (spec.title ? '<figcaption class="md-diagram-title">' + esc(spec.title) + '</figcaption>' : '') +
+          '<div class="md-diagram-stage">' + svg.join('') + '</div>' +
+          (spec.caption ? '<figcaption class="md-diagram-caption">' + esc(spec.caption) + '</figcaption>' : '') +
+        '</figure>'
+      );
+    } catch {
+      return (
+        '<div class="md-diagram-placeholder">' +
+          '<div class="md-diagram-placeholder-title">Plot could not be rendered</div>' +
+          '<div class="md-diagram-placeholder-sub">The AI response included an invalid plot block.</div>' +
+        '</div>'
+      );
+    }
+  }
+
   function inline(s: string): string {
     // Stash already-rendered math (and code spans) under sentinel placeholders
     // BEFORE escaping, so their trusted HTML survives the esc() pass that
@@ -288,6 +447,11 @@ export function renderMarkdown(text: string): string {
       }
       if (/^(minallo-diagram|diagram-json|diagram)$/i.test(lang)) {
         out.push(renderDiagram(code.join('\n')));
+        i++;
+        continue;
+      }
+      if (/^(minallo-plot|plot-json|plot)$/i.test(lang)) {
+        out.push(renderPlot(code.join('\n')));
         i++;
         continue;
       }

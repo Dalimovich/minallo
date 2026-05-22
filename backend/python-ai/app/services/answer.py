@@ -668,11 +668,22 @@ def generate_answer(
     msg = completion.choices[0].message if completion.choices else None
     answer_text = (msg.content if msg else "") or ""
 
-    # Diagram refusal-recovery — see answer_stream.py:_force_render_diagram
-    # for the rationale. If the student asked for a diagram and the model
-    # refused with prose only, a structured-output fallback fills in the
-    # fenced minallo-diagram block.
-    if wants_diagram and "```minallo-diagram" not in answer_text:
+    # Diagram / plot refusal-recovery — see answer_stream.py for the
+    # rationale. A continuous-curve question (stress-strain, characteristic,
+    # etc.) goes through the plot fallback; the node-edge case routes to
+    # the diagram fallback. Only one fence is appended per response.
+    from .diagram_overlay import wants_plot as _wants_plot_helper  # noqa: WPS433
+    _plot_wanted = _wants_plot_helper(question)
+    if (
+        _plot_wanted
+        and "```minallo-plot" not in answer_text
+        and "```minallo-diagram" not in answer_text
+    ):
+        from .answer_stream import _force_render_plot  # noqa: WPS433
+        fence = _force_render_plot(client, target_model, question, used_chunks, None)
+        if fence:
+            answer_text += fence
+    elif wants_diagram and "```minallo-diagram" not in answer_text:
         from .answer_stream import _force_render_diagram  # noqa: WPS433
         fence = _force_render_diagram(
             client, target_model, question, used_chunks, None,

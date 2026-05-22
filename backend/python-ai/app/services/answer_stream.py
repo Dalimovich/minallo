@@ -117,6 +117,7 @@ def _sse(event: dict[str, Any]) -> bytes:
 
 from .diagram_overlay import diagram_overlay as _diagram_overlay
 from .diagram_overlay import wants_diagram as _wants_diagram
+from .diagram_overlay import wants_plot as _wants_plot
 
 
 # JSON schema for the structured-output fallback call that recovers from a
@@ -194,6 +195,7 @@ def _force_render_diagram(
     Returns the fenced markdown to append (with leading newlines), or
     None if the fallback itself errored.
     """
+    print(f"[DIAGRAM_DEBUG] _force_render_diagram entered model={model}", flush=True)
     try:
         ctx_lines: list[str] = []
         if open_ctx:
@@ -225,20 +227,153 @@ def _force_render_diagram(
             ],
         )
         raw = (completion.choices[0].message.content or "").strip()
+        print(f"[DIAGRAM_DEBUG] structured call returned raw_len={len(raw)}", flush=True)
         if not raw:
+            print("[DIAGRAM_DEBUG] empty content -> None", flush=True)
             return None
-        # Validate JSON parseability + non-trivial node count before emitting,
-        # so a degenerate {"nodes": []} doesn't render as an empty diagram.
         parsed = json.loads(raw)
+        node_count = len(parsed.get("nodes", [])) if isinstance(parsed, dict) else 0
+        print(f"[DIAGRAM_DEBUG] parsed nodes={node_count}", flush=True)
         if not isinstance(parsed, dict) or not parsed.get("nodes"):
             return None
         return "\n\n```minallo-diagram\n" + raw + "\n```\n"
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        print(f"[DIAGRAM_DEBUG] exception {type(e).__name__}: {e}", flush=True)
         log.exception("force_render_diagram fallback failed")
         return None
 
 
 _PROBLEM_SOLVER_MODES = {"hint", "setup", "check", "solve", "practice"}
+
+
+# JSON schema for the structured-output fallback that produces continuous
+# 2D plots (stress-strain curves, characteristic curves, etc.). Mirrors
+# the shape consumed by ai-markdown.ts:renderPlot. Distinct from the
+# graph schema in _DIAGRAM_JSON_SCHEMA — the model picks per request.
+_PLOT_JSON_SCHEMA = {
+    "name": "minallo_plot",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["title", "caption", "xAxis", "yAxis", "series", "markers"],
+        "properties": {
+            "title": {"type": "string"},
+            "caption": {"type": "string"},
+            "xAxis": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["label", "unit"],
+                "properties": {
+                    "label": {"type": "string"},
+                    "unit": {"type": "string"},
+                },
+            },
+            "yAxis": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["label", "unit"],
+                "properties": {
+                    "label": {"type": "string"},
+                    "unit": {"type": "string"},
+                },
+            },
+            "series": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["label", "points"],
+                    "properties": {
+                        "label": {"type": "string"},
+                        "points": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                            },
+                        },
+                    },
+                },
+            },
+            "markers": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["x", "y", "label"],
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "label": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+}
+
+
+def _force_render_plot(
+    client: Any,
+    model: str,
+    question: str,
+    used_chunks: list[Any],
+    open_ctx: str | None,
+) -> str | None:
+    """Refusal-recovery for plot-style requests. Same idea as
+    ``_force_render_diagram`` but targeting continuous curves. The
+    structured-output schema forces the model to produce series of
+    (x, y) points it can sample from the canonical curve shape."""
+    print(f"[PLOT_DEBUG] _force_render_plot entered model={model}", flush=True)
+    try:
+        ctx_lines: list[str] = []
+        if open_ctx:
+            ctx_lines.append("CURRENTLY VISIBLE PDF TEXT:\n" + open_ctx[:1500])
+        for i, c in enumerate(used_chunks[:4], start=1):
+            text = getattr(c, "text", "") or ""
+            ctx_lines.append(f"[Source {i}]\n{text[:600]}")
+        context_blob = "\n\n".join(ctx_lines) if ctx_lines else "(no course context available)"
+
+        sys = (
+            "You are a plot data generator. The student asked for a 2D function "
+            "plot (a curve, not a flow diagram). Produce a single plot object "
+            "matching the schema. Sample 8-20 points per series along the "
+            "canonical curve shape so the polyline looks smooth. Include "
+            "markers for any named feature points (yield point, peak, "
+            "inflection, etc.). Match the language of the question. If course "
+            "context is provided, ground numeric ranges in it; otherwise use "
+            "standard textbook values and label the caption 'Conceptual plot "
+            "(general knowledge).'"
+        )
+        user = (
+            f"Question: {question}\n\n"
+            f"Context:\n{context_blob}\n\n"
+            "Return the plot object only."
+        )
+        completion = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_schema", "json_schema": _PLOT_JSON_SCHEMA},
+            messages=[
+                {"role": "system", "content": sys},
+                {"role": "user", "content": user},
+            ],
+        )
+        raw = (completion.choices[0].message.content or "").strip()
+        print(f"[PLOT_DEBUG] structured call returned raw_len={len(raw)}", flush=True)
+        if not raw:
+            return None
+        parsed = json.loads(raw)
+        series = parsed.get("series", []) if isinstance(parsed, dict) else []
+        valid_series = sum(1 for s in series if isinstance(s, dict) and len(s.get("points", [])) >= 2)
+        print(f"[PLOT_DEBUG] series_count={len(series)} valid={valid_series}", flush=True)
+        if valid_series == 0:
+            return None
+        return "\n\n```minallo-plot\n" + raw + "\n```\n"
+    except Exception as e:  # noqa: BLE001
+        print(f"[PLOT_DEBUG] exception {type(e).__name__}: {e}", flush=True)
+        log.exception("force_render_plot fallback failed")
+        return None
 
 
 def _normalise_problem_solver_mode(value: Any) -> str | None:
@@ -552,7 +687,27 @@ def stream_answer(
     # has no fence, we make a SECOND, narrowly-scoped call with
     # response_format=json_schema. Structured outputs can't refuse — the
     # response shape is constrained — so this is the reliable backstop.
-    if wants_diagram and "```minallo-diagram" not in full_answer:
+    plot_wanted = _wants_plot(question, problem_solver)
+    print(
+        f"[DIAGRAM_DEBUG] check wants_diagram={wants_diagram} wants_plot={plot_wanted} "
+        f"has_diag_fence={'```minallo-diagram' in full_answer} "
+        f"has_plot_fence={'```minallo-plot' in full_answer} "
+        f"answer_len={len(full_answer)}",
+        flush=True,
+    )
+    if (
+        plot_wanted
+        and "```minallo-plot" not in full_answer
+        and "```minallo-diagram" not in full_answer
+    ):
+        plot_fence = _force_render_plot(
+            client, target_model, question, used_chunks,
+            open_ctx if include_open_source else None,
+        )
+        if plot_fence:
+            yield _sse({"t": plot_fence})
+            full_answer += plot_fence
+    elif wants_diagram and "```minallo-diagram" not in full_answer:
         diagram_fence = _force_render_diagram(
             client, target_model, question, used_chunks,
             open_ctx if include_open_source else None,
