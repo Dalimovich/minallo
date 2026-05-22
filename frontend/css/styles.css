@@ -193,6 +193,57 @@ body:not(.night) .co-files-loading {
   color: rgba(203, 213, 225, 0.72);
 }
 
+/* ── PLOT (continuous 2D function plot — minallo-plot fence) ── */
+.md-plot-svg {
+  width: 100%;
+  min-width: 460px;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.28);
+}
+.md-plot-frame {
+  fill: rgba(15, 23, 42, 0.18);
+  stroke: rgba(148, 163, 184, 0.55);
+  stroke-width: 1.2;
+}
+.md-plot-grid {
+  stroke: rgba(148, 163, 184, 0.20);
+  stroke-width: 1;
+}
+.md-plot-tick {
+  font-family: var(--font-main);
+  fill: rgba(203, 213, 225, 0.78);
+  font-size: 11px;
+}
+.md-plot-axis-label {
+  font-family: var(--font-main);
+  fill: rgba(226, 232, 240, 0.92);
+  font-size: 13px;
+  font-weight: 700;
+}
+.md-plot-series {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.md-plot-marker {
+  fill: rgba(248, 250, 252, 0.95);
+  stroke: rgba(37, 99, 235, 0.95);
+  stroke-width: 1.6;
+}
+.md-plot-marker-label {
+  font-family: var(--font-main);
+  fill: rgba(248, 250, 252, 0.96);
+  font-size: 12px;
+  font-weight: 700;
+}
+.md-plot-legend {
+  font-family: var(--font-main);
+  fill: rgba(226, 232, 240, 0.88);
+  font-size: 12px;
+}
+
 /* ── RAG STATUS INDICATOR (inline on file rows) ── */
 .co-rag-status {
   display: inline-flex;
