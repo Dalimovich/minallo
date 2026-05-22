@@ -695,11 +695,10 @@ def stream_answer(
         f"answer_len={len(full_answer)}",
         flush=True,
     )
-    if (
-        plot_wanted
-        and "```minallo-plot" not in full_answer
-        and "```minallo-diagram" not in full_answer
-    ):
+    # Plot-shape requests: a ``minallo-diagram`` fence is the WRONG fence
+    # (a curve encoded as node-chain). Fire the plot fallback whenever no
+    # plot fence is present — even if a diagram fence slipped through.
+    if plot_wanted and "```minallo-plot" not in full_answer:
         plot_fence = _force_render_plot(
             client, target_model, question, used_chunks,
             open_ctx if include_open_source else None,

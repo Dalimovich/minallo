@@ -155,7 +155,17 @@ short explanation, even when the student asks you to "redraw" / "neu
 zeichnen" an existing figure.
 {source_rule}
 
-Use this exact fenced block format so the browser can render it:
+CHOOSING THE FENCE — this is the single most-violated rule, read carefully:
+- If the answer is a CURVE on labelled axes (y as a function of x — stress-strain,
+  Spannungs-Dehnungs-Diagramm, Kennlinie, I-V, Bode, force-displacement,
+  Kraft-Weg, anything with "ε on x, σ on y" or similar) → use ``minallo-plot``.
+  NEVER encode a curve as nodes-and-edges. A chain of circles labelled
+  "Streckgrenze → Zugfestigkeit → Bruch" is WRONG — those are points ON
+  the curve, not graph nodes.
+- If the answer is a topology / connectivity / parts-with-arrows picture
+  (FBD, flowchart, state machine, circuit blocks) → use ``minallo-diagram``.
+
+``minallo-diagram`` format (node-edge graph):
 ```minallo-diagram
 {{
   "title": "Short diagram title",
@@ -173,43 +183,83 @@ Use this exact fenced block format so the browser can render it:
 }}
 ```
 
-Rules for diagram JSON:
+``minallo-plot`` format (continuous 2D curve):
+```minallo-plot
+{{
+  "title": "Short plot title",
+  "caption": "One sentence. Say 'Conceptual plot (general knowledge)' if no source matched.",
+  "xAxis": {{"label": "x quantity", "unit": "unit"}},
+  "yAxis": {{"label": "y quantity", "unit": "unit"}},
+  "series": [
+    {{"label": "curve name", "points": [[x1,y1],[x2,y2], ...]}}
+  ],
+  "markers": [
+    {{"x": x, "y": y, "label": "named feature point"}}
+  ]
+}}
+```
+
+Rules:
 - Return valid JSON only inside the fenced block. No comments, no trailing commas.
-- ``shape`` values: ``rect`` (block / component / step), ``circle`` (joint / wheel / state), ``triangle`` (fixed support / pin), ``ground`` (immovable surface / earth / wall), ``arrow`` (force vector — use as a node when the force is the focus; otherwise put forces on edges).
-- ``x``/``y`` coordinates are OPTIONAL — omit them and the renderer auto-lays-out the diagram. Provide them only when the geometry actually matters (e.g. positions on a beam). If you do provide them, keep within x=30..770 and y=36..420.
-- ``edges`` may include ``"type": "arc"`` for self-loops or curved flow; default is a straight line.
-- Use simple labels (≤40 chars). Wrap long descriptions in ``labels`` (free-floating) instead of stuffing them into node labels.
+- For ``minallo-diagram``: ``shape`` values are ``rect`` (block / component / step), ``circle`` (joint / wheel / state), ``triangle`` (fixed support / pin), ``ground`` (immovable surface / earth / wall), ``arrow`` (force vector). ``x``/``y`` coordinates are OPTIONAL — omit them and the renderer auto-lays-out the diagram. If you do provide them, keep within x=30..770 and y=36..420. ``edges`` may include ``"type": "arc"`` for self-loops or curved flow.
+- For ``minallo-plot``: provide 8-20 sample points per series so the polyline looks smooth. Markers are named feature points the curve passes through (yield point, peak, breakdown, cutoff frequency, etc.).
 - For free-body diagrams: a node for the body, ``ground``/``triangle`` for supports, ``arrow`` for force vectors, edges to attach them.
 - For flowcharts / state machines: ``rect`` for steps, ``circle`` for states, directed edges with labels for transitions.
 - For circuits / block diagrams: ``rect`` for components, edges for wiring with a label on at least one edge ("signal", "Vcc", etc.).
 
-EXAMPLE — correct response to "draw the stress-strain diagram":
+EXAMPLE — correct response to "zeichne das Spannungs-Dehnungs-Diagramm für Stahl":
 
 Hier ist das Spannungs-Dehnungs-Diagramm für duktilen Stahl:
 
+```minallo-plot
+{{
+  "title": "Spannungs-Dehnungs-Diagramm (duktiler Stahl)",
+  "caption": "Conceptual plot (general knowledge).",
+  "xAxis": {{"label": "Dehnung ε", "unit": "%"}},
+  "yAxis": {{"label": "Spannung σ", "unit": "N/mm²"}},
+  "series": [
+    {{"label": "σ(ε)", "points": [
+      [0, 0], [0.1, 210], [0.2, 420], [0.25, 500],
+      [0.3, 520], [0.5, 525], [1.0, 540], [2.0, 580],
+      [5.0, 620], [10.0, 640], [15.0, 630], [18.0, 600], [20.0, 540]
+    ]}}
+  ],
+  "markers": [
+    {{"x": 0.25, "y": 500, "label": "Streckgrenze R_e"}},
+    {{"x": 10.0, "y": 640, "label": "Zugfestigkeit R_m"}},
+    {{"x": 20.0, "y": 540, "label": "Bruch"}}
+  ]
+}}
+```
+
+EXAMPLE — correct response to "zeichne ein Freikörperbild für einen Balken auf zwei Stützen":
+
+Hier ist das Freikörperbild:
+
 ```minallo-diagram
 {{
-  "title": "Spannungs-Dehnungs-Diagramm",
+  "title": "Freikörperbild — Balken auf zwei Stützen",
   "caption": "Conceptual diagram (general knowledge).",
   "nodes": [
-    {{"id": "o", "label": "0", "shape": "circle"}},
-    {{"id": "y", "label": "Streckgrenze R_e", "shape": "circle"}},
-    {{"id": "u", "label": "Zugfestigkeit R_m", "shape": "circle"}},
-    {{"id": "f", "label": "Bruch", "shape": "circle"}}
+    {{"id": "b", "label": "Balken", "shape": "rect"}},
+    {{"id": "a", "label": "A", "shape": "triangle"}},
+    {{"id": "c", "label": "B", "shape": "circle"}},
+    {{"id": "f", "label": "F", "shape": "arrow"}}
   ],
   "edges": [
-    {{"from": "o", "to": "y", "label": "elastisch (Hooke)"}},
-    {{"from": "y", "to": "u", "label": "plastisch"}},
-    {{"from": "u", "to": "f", "label": "Einschnürung", "type": "arc"}}
+    {{"from": "a", "to": "b", "label": "A_v"}},
+    {{"from": "c", "to": "b", "label": "B_v"}},
+    {{"from": "f", "to": "b", "label": "Last"}}
   ],
   "labels": [
-    {{"text": "x-Achse: Dehnung ε [%]"}},
-    {{"text": "y-Achse: Spannung σ [N/mm²]"}}
+    {{"text": "F = 10 kN, L = 2 m"}}
   ]
 }}
 ```
 
 EXAMPLE — INCORRECT response (do NOT do this):
+
+Encoding the stress-strain curve as a chain of circles ("0 → R_e → R_m → Bruch") inside a ``minallo-diagram`` fence. The yield point, tensile strength, and fracture point are MARKERS ON A CURVE, not graph nodes — they must appear inside a ``minallo-plot`` fence as entries in ``markers``.
 
 "Ich kann hier keine Grafiken oder Zeichnungen generieren. Ich kann dir aber beschreiben, wie du es zeichnest..."  ← FORBIDDEN. You CAN draw — emit the fenced block above instead.
 """

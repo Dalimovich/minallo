@@ -180,11 +180,11 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
         f"has_plot_fence={'```minallo-plot' in text} text_len={len(text)}",
         flush=True,
     )
-    if (
-        plot_wanted
-        and "```minallo-plot" not in text
-        and "```minallo-diagram" not in text
-    ):
+    # Plot-shape requests: fire the plot fallback whenever no plot fence is
+    # present — even if a diagram fence slipped through (wrong shape for a
+    # curve). The diagram fence in that case is the model copying the wrong
+    # template; the plot fence is the canonically correct render.
+    if plot_wanted and "```minallo-plot" not in text:
         from .answer_stream import _force_render_plot  # noqa: WPS433
         fence = _force_render_plot(client, "gpt-4o", user_text, [], None)
         if fence:
