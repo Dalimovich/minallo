@@ -72,29 +72,39 @@
   <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
   <meta name="theme-color" content="#0b1220" />
 
-  <!-- Inter (body / UI) + JetBrains Mono (code) served from Bunny Fonts.
-       Bunny is an EU-hosted (Slovenia), GDPR-friendly drop-in replacement for
-       Google Fonts that does not log IPs — the privacy-conscious workaround
-       for LG Muenchen I (3 O 17493/20). One narrow domain in the CSP. -->
+  <!-- Inter served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
+       GDPR-friendly drop-in replacement for Google Fonts that does not log
+       IPs — the privacy-conscious workaround for LG Muenchen I
+       (3 O 17493/20). One narrow domain in the CSP.
+       Landing uses weights 400/600/700/800; 500 and jetbrains-mono dropped
+       (jetbrains is only needed inside the dashboard chat for code blocks
+       and is injected after auth). -->
   <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
   <link
     rel="stylesheet"
-    href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400,500,600&display=swap"
+    href="https://fonts.bunny.net/css?family=inter:400,600,700,800&display=swap"
   />
+  <!-- Preload the two woff2 weights the hero/LCP element actually uses.
+       Starts the font fetch in parallel with the Bunny CSS parse instead
+       of waiting for it. Bunny .woff2 URLs are content-addressed and
+       stable; if Bunny ever rotates them the preload becomes a no-op
+       (browser falls back to fetching from the CSS rule). -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="https://fonts.bunny.net/inter/files/inter-latin-400-normal.woff2" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="https://fonts.bunny.net/inter/files/inter-latin-800-normal.woff2" />
 
-  <!-- Google Sign-In client is required for authentication and is documented
-       as such in the privacy policy (Drittlandsuebermittlung). Loaded only on
-       the logged-out landing; after sign-in users never re-fetch this page. -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Google Sign-In client moved out of index.html — loader.js injects it
+       after the landing partial renders so it no longer blocks first paint.
+       auth-bootstrap.js polls for `google.accounts` so the deferred load
+       is transparent to OneTap init. -->
 
-  <!-- Keep the logged-out first paint lean. Dashboard CSS is injected only
-       after auth in loader.js; the public landing needs just these three.
-       typography.css must load HERE (not lazily) so --font-main is defined
-       from first paint, otherwise the topbar's "Dashboard" briefly renders
-       cursive (browser fallback) while the rest of the stylesheets load. -->
+  <!-- Keep the logged-out first paint lean. typography.css + new-landing.css
+       are the only render-blocking stylesheets here. auth.css is dynamically
+       injected by loader.js (it's only needed once the landing renders),
+       and dashboard CSS is injected post-auth. -->
   <link rel="stylesheet" href="/css/typography.css?v=1" />
   <link rel="stylesheet" href="/css/new-landing.css?v=1" />
-  <link rel="stylesheet" href="/css/auth.css?v=4" />
   <style>
     /* Visually hide the static SEO hero (still in the DOM for crawlers
        that don't execute JS) so logged-in / human users see the splash
@@ -165,7 +175,11 @@
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
     <script src="js/config.js?v=6" defer></script>
-    <script type="module" src="js/features/ai-chat/ai-typing-config.js?v=1"></script>
+    <!-- AI chat typing config — only read inside the dashboard chat
+         features, never on the public landing. `async` removes it from
+         the critical-request chain so it loads in parallel without
+         sequencing against loader.js. -->
+    <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=1"></script>
     <script src="js/auth-bootstrap.js?v=4" defer></script>
     <script src="js/supabase.js?v=6" defer></script>
     <script type="module" src="js/loader.js?v=6"></script>

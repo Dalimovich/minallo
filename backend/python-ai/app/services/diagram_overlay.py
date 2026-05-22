@@ -25,14 +25,16 @@ from typing import Any
 # (cross-section), Querschnitt (cross-section), Skizze, Zeichnung, etc.
 _POSITIVE_RE = re.compile(
     r"\b("
-    # Generic visual requests
-    r"diagram|sketch|draw|drawing|visuali[sz]e|visual|picture|illustration|"
+    # Generic visual requests. German "Diagramm" (double m) and English
+    # "redraw"/"re-draw" must match too — the boundaries are looser than
+    # \bword\b for that reason.
+    r"diagramm?|re[- ]?draw|sketch|draw|drawing|visuali[sz]e|visual|picture|illustration|"
     r"flowchart|flow[- ]chart|block[- ]diagram|state[- ]machine|"
     r"sequence[- ]diagram|class[- ]diagram|er[- ]diagram|entity[- ]relationship|"
     # Engineering specifics
     r"free[- ]body|fbd|circuit|schematic|graph[- ]of|"
-    # German
-    r"kraftbild|skizze|skizzier|zeichnen|zeichnung|schaubild|"
+    # German — "zeichne"/"zeichnen"/"zeichnest"/"zeichnet"/"neu zeichnen"
+    r"kraftbild|skizze|skizzier|zeichne(n|st|t)?|neu[- ]?zeichnen|zeichnung|schaubild|"
     r"freik[oö]rper(bild)?|freischnitt|lageplan|schnittbild|querschnitt|"
     r"flussdiagramm|blockdiagramm|schaltplan|zustandsdiagramm"
     r")\b",
@@ -96,9 +98,14 @@ def diagram_overlay(has_context: bool) -> str:
     return f"""
 
 DIAGRAM RENDERING MODE.
-When the student asks for a diagram, sketch, free-body diagram, flowchart,
-state machine, circuit, or any visual explanation, include ONE renderable
-diagram after the short explanation.
+You CAN render diagrams in this app. The fenced ``minallo-diagram`` block
+below is your drawing tool — the browser parses the JSON and produces an
+SVG diagram for the student. NEVER refuse with phrases like "I can't draw
+diagrams" / "Ich kann keine Diagramme zeichnen" / "Es tut mir leid, ich
+kann keine Diagramme zeichnen" / "I can only describe it" — those answers
+are wrong in this app. Emit the fenced block instead. Always include ONE
+renderable diagram after a short explanation, even when the student asks
+you to "redraw" / "neu zeichnen" an existing figure.
 {source_rule}
 
 Use this exact fenced block format so the browser can render it:

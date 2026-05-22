@@ -255,6 +255,21 @@ interface LandingTranslation {
           script.defer = true;
           document.body.appendChild(script);
         })();
+        // Inject the Google Sign-In client (gsi/client) AFTER the landing
+        // partial is in the DOM. Previously this lived as a render-blocking
+        // <script async defer> in index.html — Lighthouse flagged it as 95KiB
+        // of which ~72KiB is unused on the landing, and it competed for
+        // bandwidth with the LCP fonts. auth-bootstrap.js polls for
+        // `google.accounts` every 100ms, so delaying the script load by a
+        // few hundred ms is transparent to OneTap init.
+        (function injectGsiClient(): void {
+          if (document.querySelector('script[src*="accounts.google.com/gsi/client"]')) return;
+          const gsi = document.createElement('script');
+          gsi.src = 'https://accounts.google.com/gsi/client';
+          gsi.async = true;
+          gsi.defer = true;
+          document.head.appendChild(gsi);
+        })();
         if (SS) SS.markReady('landing', { file: 'pages/new_landing.html' });
         console.log('✓ New landing page loaded');
 

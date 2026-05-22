@@ -1388,13 +1388,13 @@ body.ncb-fullbleed .ncb-main {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--on-glass, #ffffff);
 }
 
 .ncb-bubble-subtitle {
   margin: 0;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--on-glass-muted, #94a3b8);
 }
 
 .ncb-bubble-body p {
@@ -1413,7 +1413,8 @@ body.ncb-fullbleed .ncb-main {
 }
 
 .ncb-bubble-body strong {
-  color: #ffffff;
+  color: var(--on-glass, #ffffff);
+  font-weight: 700;
 }
 
 .ncb-bubble-aborted {

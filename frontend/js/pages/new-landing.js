@@ -706,12 +706,21 @@
 
     var ticking = false;
     var MAX_TRANSLATE = -130;
+    // Cache scrollHeight/innerHeight so the scroll-rAF path never reads
+    // layout-invalidating properties. Recomputed only on resize and on
+    // a coarse mutation timer — the LCP-time forced reflow Lighthouse
+    // flagged came from calling update() right after the landing partial
+    // was injected, when layout was still dirty.
+    var cachedMax = 1;
+    function recalcMax() {
+      var doc = document.documentElement;
+      cachedMax = Math.max(1, (doc.scrollHeight || 0) - (window.innerHeight || 0));
+    }
 
     function update() {
       ticking = false;
-      var doc = document.documentElement;
-      var max = Math.max(1, (doc.scrollHeight || 0) - (window.innerHeight || 0));
-      var ratio = Math.min(1, Math.max(0, (window.scrollY || window.pageYOffset || 0) / max));
+      var scrollY = window.scrollY || window.pageYOffset || 0;
+      var ratio = Math.min(1, Math.max(0, scrollY / cachedMax));
       var y = MAX_TRANSLATE * ratio;
       halo.style.transform = 'translate3d(-50%, ' + y + 'px, 0)';
     }
@@ -722,9 +731,20 @@
       window.requestAnimationFrame(update);
     }
 
+    function onResize() {
+      recalcMax();
+      onScroll();
+    }
+
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
-    update();
+    window.addEventListener('resize', onResize, { passive: true });
+    // Defer the initial layout read + paint to the next frame so it runs
+    // after the just-injected landing partial has had a chance to settle.
+    // Synchronous reads here cost ~21ms of forced-reflow on cold loads.
+    window.requestAnimationFrame(function () {
+      recalcMax();
+      update();
+    });
   }
 
   // ---- F. Footer year ---------------------------------------------------
