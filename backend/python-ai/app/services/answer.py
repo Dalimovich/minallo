@@ -31,52 +31,8 @@ from .retrieval import RetrievedChunk
 
 log = logging.getLogger(__name__)
 
-_DIAGRAM_REQUEST_RE = re.compile(
-    r"\b(diagram|sketch|draw|drawing|visuali[sz]e|visual|picture|graph|free[- ]body|fbd|"
-    r"kraftbild|skizze|zeichnen|schaubild|freik[oö]rper|freischnitt)\b",
-    re.IGNORECASE,
-)
-
-
-def _wants_diagram(question: str) -> bool:
-    return bool(_DIAGRAM_REQUEST_RE.search(question or ""))
-
-
-def _diagram_overlay(has_context: bool) -> str:
-    source_rule = (
-        "First inspect COURSE CONTEXT for matching figures, geometry, labels, setup, notation, "
-        "or values. Cite source-derived details with [Source N]."
-        if has_context
-        else
-        "If COURSE CONTEXT has no match, create a conceptual diagram from standard engineering "
-        "knowledge and label the caption 'Conceptual diagram (general knowledge)'."
-    )
-    return f"""
-
-DIAGRAM RENDERING MODE.
-When a diagram/sketch/visual is requested, include a renderable diagram after
-the explanation. {source_rule}
-
-Use this exact fenced block format:
-```minallo-diagram
-{{
-  "title": "Short diagram title",
-  "caption": "One sentence",
-  "nodes": [
-    {{"id": "a", "label": "Object / component", "x": 160, "y": 160, "shape": "rect"}},
-    {{"id": "b", "label": "Second item", "x": 430, "y": 160, "shape": "circle"}}
-  ],
-  "edges": [
-    {{"from": "a", "to": "b", "label": "relation / force / flow"}}
-  ],
-  "labels": [
-    {{"text": "Given values or assumptions", "x": 80, "y": 380}}
-  ]
-}}
-```
-Return valid JSON only inside the fenced block. Keep coordinates within
-x=30..770 and y=36..420. Do not claim exact scale unless a source gives it.
-"""
+from .diagram_overlay import diagram_overlay as _diagram_overlay
+from .diagram_overlay import wants_diagram as _wants_diagram
 
 
 # Tunables. Mirrored from the existing JS pipeline so behaviour stays consistent

@@ -115,12 +115,10 @@ def _sse(event: dict[str, Any]) -> bytes:
     return ("data: " + json.dumps(event, ensure_ascii=False) + "\n\n").encode("utf-8")
 
 
+from .diagram_overlay import diagram_overlay as _diagram_overlay
+from .diagram_overlay import wants_diagram as _wants_diagram
+
 _PROBLEM_SOLVER_MODES = {"hint", "setup", "check", "solve", "practice"}
-_DIAGRAM_REQUEST_RE = re.compile(
-    r"\b(diagram|sketch|draw|drawing|visuali[sz]e|visual|picture|graph|free[- ]body|fbd|"
-    r"kraftbild|skizze|zeichnen|schaubild|freik[oö]rper|freischnitt)\b",
-    re.IGNORECASE,
-)
 
 
 def _normalise_problem_solver_mode(value: Any) -> str | None:
@@ -238,57 +236,6 @@ should attempt them).
     if mode == "check" and not has_work:
         return common + mode_rules[mode] + "\nThe request has no student work attached."
     return common + mode_rules.get(mode, "")
-
-
-def _wants_diagram(question: str, problem_solver: dict[str, Any] | None = None) -> bool:
-    text = question or ""
-    if problem_solver:
-        text += "\n" + str(problem_solver.get("problem") or "")
-    return bool(_DIAGRAM_REQUEST_RE.search(text))
-
-
-def _diagram_overlay(has_context: bool) -> str:
-    source_rule = (
-        "First inspect COURSE CONTEXT for any matching figure, diagram, labels, geometry, setup, "
-        "or notation. If you use source-derived geometry, labels, formulas, or values, cite the "
-        "sentence that introduces them with [Source N]."
-        if has_context
-        else
-        "No matching COURSE CONTEXT may be available. In that case create a conceptual diagram "
-        "from standard engineering knowledge and explicitly label it as general knowledge."
-    )
-    return f"""
-
-DIAGRAM RENDERING MODE.
-When the student's question asks for a diagram, sketch, free-body diagram, graph,
-or visual explanation, include one renderable diagram after the short explanation.
-{source_rule}
-
-Use this exact fenced block format so the browser can render it:
-```minallo-diagram
-{{
-  "title": "Short diagram title",
-  "caption": "One sentence. Say 'Conceptual diagram (general knowledge)' if no source matched.",
-  "nodes": [
-    {{"id": "a", "label": "Object / step / component", "x": 160, "y": 160, "shape": "rect"}},
-    {{"id": "b", "label": "Second item", "x": 430, "y": 160, "shape": "circle"}}
-  ],
-  "edges": [
-    {{"from": "a", "to": "b", "label": "relation / force / flow"}}
-  ],
-  "labels": [
-    {{"text": "Given values or assumptions", "x": 80, "y": 380}}
-  ]
-}}
-```
-
-Rules for diagram JSON:
-- Return valid JSON only inside the fenced block. No comments, no trailing commas.
-- Keep coordinates within x=30..770 and y=36..420.
-- Use simple labels. Do not rely on exact drawing scale unless a source gives dimensions.
-- For free-body diagrams, create nodes for the body and supports/loads, and edges for forces.
-- For processes/circuits/block diagrams, create nodes for components/steps and directed edges.
-"""
 
 
 def stream_answer(
