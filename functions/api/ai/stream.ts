@@ -29,5 +29,5 @@ export const onRequest = async (
   // (The handler doesn't reference Deno at top level, but defensive ordering
   // costs nothing here.)
   const mod = await import('../../../backend/edge-functions/ai-stream.js');
-  return (mod.default as (req: Request, ctx: unknown) => Promise<Response>)(ctx.request, {});
+  return mod.default(ctx.request, {});
 };
