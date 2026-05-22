@@ -135,6 +135,36 @@ Rules for diagram JSON:
 - For free-body diagrams: a node for the body, ``ground``/``triangle`` for supports, ``arrow`` for force vectors, edges to attach them.
 - For flowcharts / state machines: ``rect`` for steps, ``circle`` for states, directed edges with labels for transitions.
 - For circuits / block diagrams: ``rect`` for components, edges for wiring with a label on at least one edge ("signal", "Vcc", etc.).
+
+EXAMPLE — correct response to "draw the stress-strain diagram":
+
+Hier ist das Spannungs-Dehnungs-Diagramm für duktilen Stahl:
+
+```minallo-diagram
+{{
+  "title": "Spannungs-Dehnungs-Diagramm",
+  "caption": "Conceptual diagram (general knowledge).",
+  "nodes": [
+    {{"id": "o", "label": "0", "shape": "circle"}},
+    {{"id": "y", "label": "Streckgrenze R_e", "shape": "circle"}},
+    {{"id": "u", "label": "Zugfestigkeit R_m", "shape": "circle"}},
+    {{"id": "f", "label": "Bruch", "shape": "circle"}}
+  ],
+  "edges": [
+    {{"from": "o", "to": "y", "label": "elastisch (Hooke)"}},
+    {{"from": "y", "to": "u", "label": "plastisch"}},
+    {{"from": "u", "to": "f", "label": "Einschnürung", "type": "arc"}}
+  ],
+  "labels": [
+    {{"text": "x-Achse: Dehnung ε [%]"}},
+    {{"text": "y-Achse: Spannung σ [N/mm²]"}}
+  ]
+}}
+```
+
+EXAMPLE — INCORRECT response (do NOT do this):
+
+"Ich kann hier keine Grafiken oder Zeichnungen generieren. Ich kann dir aber beschreiben, wie du es zeichnest..."  ← FORBIDDEN. You CAN draw — emit the fenced block above instead.
 """
 
 
