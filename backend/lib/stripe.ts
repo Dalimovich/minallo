@@ -1,67 +1,44 @@
 // Stripe API helpers. Uses STRIPE_SECRET_KEY from env.
+//
+// Uses Web `fetch` so this runs on Workers (Cloudflare Pages Functions) —
+// unenv's https.request shim throws "not implemented".
 
-import https from 'https';
 import { requireEnv } from './env';
 import type { SupaResult } from './types';
 
-export function stripePost<T = unknown>(path: string, params: URLSearchParams): Promise<SupaResult<T>> {
-  return new Promise<SupaResult<T>>(function (resolve, reject) {
-    const secretKey = requireEnv('STRIPE_SECRET_KEY');
-    const bodyStr = params.toString();
-    const req = https.request(
-      {
-        hostname: 'api.stripe.com',
-        path,
-        method: 'POST',
-        headers: {
-          Authorization: 'Basic ' + Buffer.from(secretKey + ':').toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': String(Buffer.byteLength(bodyStr))
-        }
-      },
-      function (res) {
-        let data = '';
-        res.on('data', function (c) { data += c; });
-        res.on('end', function () {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: JSON.parse(data) as T });
-          } catch {
-            resolve({ status: res.statusCode ?? 0, body: data as unknown as T });
-          }
-        });
-      }
-    );
-    req.on('error', reject);
-    req.write(bodyStr);
-    req.end();
-  });
+async function _parseJsonOrText<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text) return null as unknown as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return text as unknown as T;
+  }
 }
 
-export function stripeGet<T = unknown>(path: string): Promise<SupaResult<T>> {
-  return new Promise<SupaResult<T>>(function (resolve, reject) {
-    const secretKey = requireEnv('STRIPE_SECRET_KEY');
-    const req = https.request(
-      {
-        hostname: 'api.stripe.com',
-        path,
-        method: 'GET',
-        headers: {
-          Authorization: 'Basic ' + Buffer.from(secretKey + ':').toString('base64')
-        }
-      },
-      function (res) {
-        let data = '';
-        res.on('data', function (c) { data += c; });
-        res.on('end', function () {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: JSON.parse(data) as T });
-          } catch {
-            resolve({ status: res.statusCode ?? 0, body: data as unknown as T });
-          }
-        });
-      }
-    );
-    req.on('error', reject);
-    req.end();
+export async function stripePost<T = unknown>(
+  path: string,
+  params: URLSearchParams
+): Promise<SupaResult<T>> {
+  const secretKey = requireEnv('STRIPE_SECRET_KEY');
+  const res = await fetch('https://api.stripe.com' + path, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + btoa(secretKey + ':'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params.toString()
   });
+  return { status: res.status, body: await _parseJsonOrText<T>(res) };
+}
+
+export async function stripeGet<T = unknown>(path: string): Promise<SupaResult<T>> {
+  const secretKey = requireEnv('STRIPE_SECRET_KEY');
+  const res = await fetch('https://api.stripe.com' + path, {
+    method: 'GET',
+    headers: {
+      Authorization: 'Basic ' + btoa(secretKey + ':')
+    }
+  });
+  return { status: res.status, body: await _parseJsonOrText<T>(res) };
 }

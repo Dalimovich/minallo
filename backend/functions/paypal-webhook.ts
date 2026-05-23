@@ -20,7 +20,6 @@
 //   - PAYMENT.SALE.COMPLETED          → status=active,    extend expires_at
 // Any other event type is acknowledged but not acted on.
 
-import https from 'https';
 import { requireEnv, optionalEnv } from '../lib/env';
 import { supaRequest } from '../lib/supabase-admin';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
@@ -46,37 +45,21 @@ interface OauthTokenResponse {
   access_token?: string;
 }
 
-function paypalRequest<T>(
+async function _parseJsonOrText<T>(res: Response): Promise<T | null> {
+  const text = await res.text();
+  if (!text) return null;
+  try { return JSON.parse(text) as T; } catch { return text as unknown as T; }
+}
+
+async function paypalRequest<T>(
   method: string,
   urlString: string,
-  headers: Record<string, string | number>,
+  headers: Record<string, string>,
   body?: string | object
 ): Promise<{ status: number; body: T | null }> {
-  return new Promise((resolve, reject) => {
-    const url = new URL(urlString);
-    const bodyStr = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : '';
-    const finalHeaders: Record<string, string | number> = {
-      ...headers,
-      ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
-    };
-    const req = https.request(
-      { hostname: url.hostname, path: url.pathname + url.search, method, headers: finalHeaders },
-      (res) => {
-        let data = '';
-        res.on('data', (c) => { data += c; });
-        res.on('end', () => {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: data ? (JSON.parse(data) as T) : null });
-          } catch {
-            resolve({ status: res.statusCode ?? 0, body: data as unknown as T });
-          }
-        });
-      }
-    );
-    req.on('error', reject);
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  });
+  const bodyStr = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined;
+  const res = await fetch(urlString, { method, headers, body: bodyStr });
+  return { status: res.status, body: await _parseJsonOrText<T>(res) };
 }
 
 async function paypalOauthToken(): Promise<string> {
@@ -86,7 +69,7 @@ async function paypalOauthToken(): Promise<string> {
     'POST',
     PAYPAL_API_BASE + '/v1/oauth2/token',
     {
-      Authorization: 'Basic ' + Buffer.from(clientId + ':' + secret).toString('base64'),
+      Authorization: 'Basic ' + btoa(clientId + ':' + secret),
       'Content-Type': 'application/x-www-form-urlencoded'
     },
     'grant_type=client_credentials'

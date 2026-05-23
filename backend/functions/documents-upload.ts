@@ -1,7 +1,6 @@
 // POST /api/documents/upload — accepts base64 PDF, stores in Storage, kicks off indexing.
 
 import crypto from 'crypto';
-import https from 'https';
 import { requireEnv, optionalEnv } from '../lib/env';
 import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
@@ -28,36 +27,25 @@ interface DocumentRow {
   storage_path: string;
 }
 
-function uploadToStorage(
+async function uploadToStorage(
   serviceKey: string, storagePath: string, fileBuffer: Buffer, mimeType: string
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const supaUrl = requireEnv('SUPABASE_URL');
-    const hostname = new URL(supaUrl).hostname;
-    const path = '/storage/v1/object/' + STORAGE_BUCKET + '/' + storagePath;
-    const req = https.request(
-      {
-        hostname, path, method: 'POST',
-        headers: {
-          apikey: serviceKey,
-          Authorization: 'Bearer ' + serviceKey,
-          'Content-Type': mimeType,
-          'Content-Length': fileBuffer.length
-        }
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (c) => { data += c; });
-        res.on('end', () => {
-          if (res.statusCode === 200 || res.statusCode === 201) resolve(storagePath);
-          else reject(new Error('Storage upload failed: ' + res.statusCode + ' ' + data));
-        });
-      }
-    );
-    req.on('error', reject);
-    req.write(fileBuffer);
-    req.end();
+  const supaUrl = requireEnv('SUPABASE_URL');
+  const url = supaUrl.replace(/\/$/, '') + '/storage/v1/object/' + STORAGE_BUCKET + '/' + storagePath;
+  // Buffer is a Uint8Array, which fetch accepts directly. Content-Length is
+  // set automatically by the runtime.
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: serviceKey,
+      Authorization: 'Bearer ' + serviceKey,
+      'Content-Type': mimeType
+    },
+    body: fileBuffer
   });
+  if (res.status === 200 || res.status === 201) return storagePath;
+  const data = await res.text().catch(() => '');
+  throw new Error('Storage upload failed: ' + res.status + ' ' + data);
 }
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
