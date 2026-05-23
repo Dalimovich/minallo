@@ -4314,14 +4314,69 @@ body.night .ai-bubble.user {
   margin: 10px 0;
   overflow: hidden;
 }
-.ai-bubble .md-code-lang {
+/* Header bar above the code: language tag (icon + name) left, copy button right.
+ * Replaces the old .md-code-lang block. The header is always rendered so the
+ * copy button is always available — fenced blocks without a language get
+ * "Code" as the tag name. */
+.ai-bubble .md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 6px 12px;
   background: rgba(37, 99, 235, 0.12);
-  padding: 3px 10px;
-  font-size: 0.7rem;
-  font-family: 'Courier New', monospace;
-  color: var(--purple);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.18);
+}
+.ai-bubble .md-code-lang-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.ai-bubble .md-code-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.ai-bubble .md-code-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgba(226, 232, 240, 0.75);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ai-bubble .md-code-copy:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(248, 250, 252, 0.95);
+}
+.ai-bubble .md-code-copy:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.ai-bubble .md-code-copy.is-copied {
+  color: #4ade80;
+}
+.ai-bubble .md-code-copy-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .ai-bubble .md-code-block pre {
   margin: 0;
@@ -6903,7 +6958,10 @@ body:not(.night) #portal {
   background: rgba(15, 23, 42, 0.8);
   border-color: rgba(59, 130, 246, 0.2);
 }
-#portal .ai-bubble .md-code-lang { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
+#portal .ai-bubble .md-code-header { background: rgba(59, 130, 246, 0.15); border-bottom-color: rgba(59, 130, 246, 0.22); }
+#portal .ai-bubble .md-code-lang-tag { color: #93c5fd; }
+#portal .ai-bubble .md-code-copy { color: rgba(226, 232, 240, 0.75); }
+#portal .ai-bubble .md-code-copy:hover { background: rgba(255, 255, 255, 0.08); color: #f8fafc; }
 #portal .ai-bubble .md-code-block pre { color: #e2e8f0; }
 
 /* Action buttons (copy, regen, etc.) */

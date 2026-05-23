@@ -855,9 +855,15 @@ body.night .sb-night-thumb {
   border-left-color: #2563eb;
   background: rgba(37, 99, 235, 0.06);
 }
-#portal #app .ai-bubble .md-code-lang {
-  color: #2563eb;
+#portal #app .ai-bubble .md-code-header {
   background: rgba(37, 99, 235, 0.08);
+  border-bottom-color: rgba(37, 99, 235, 0.18);
+}
+#portal #app .ai-bubble .md-code-lang-tag { color: #2563eb; }
+#portal #app .ai-bubble .md-code-copy { color: rgba(30, 41, 59, 0.6); }
+#portal #app .ai-bubble .md-code-copy:hover {
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
 }
 #portal #app .typing-bubble span {
   background: #2563eb;

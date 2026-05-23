@@ -1,6 +1,75 @@
 // Lightweight markdown → HTML renderer for AI message bubbles. Handles
 // headings, code blocks, math (KaTeX), lists, blockquotes, inline emphasis.
 
+// Map of common fence-language aliases to display names. Anything not in
+// here is shown capitalised. "Code" is the fallback when no lang is given.
+const LANG_DISPLAY: Record<string, string> = {
+  ts: 'TypeScript', typescript: 'TypeScript', tsx: 'TSX',
+  js: 'JavaScript', javascript: 'JavaScript', jsx: 'JSX',
+  py: 'Python', python: 'Python',
+  rb: 'Ruby', ruby: 'Ruby',
+  go: 'Go', golang: 'Go',
+  rs: 'Rust', rust: 'Rust',
+  java: 'Java', kt: 'Kotlin', kotlin: 'Kotlin', swift: 'Swift',
+  c: 'C', cpp: 'C++', 'c++': 'C++', h: 'C', hpp: 'C++', cs: 'C#', csharp: 'C#',
+  php: 'PHP', sh: 'Shell', bash: 'Bash', zsh: 'Zsh', fish: 'Fish',
+  ps1: 'PowerShell', powershell: 'PowerShell',
+  sql: 'SQL', mysql: 'MySQL', psql: 'PostgreSQL', postgresql: 'PostgreSQL',
+  html: 'HTML', xml: 'XML', css: 'CSS', scss: 'SCSS', less: 'Less',
+  json: 'JSON', yaml: 'YAML', yml: 'YAML', toml: 'TOML', ini: 'INI',
+  md: 'Markdown', markdown: 'Markdown', tex: 'LaTeX', latex: 'LaTeX',
+  dockerfile: 'Dockerfile', makefile: 'Makefile',
+  r: 'R', matlab: 'MATLAB', m: 'MATLAB', lua: 'Lua', dart: 'Dart',
+  scala: 'Scala', haskell: 'Haskell', hs: 'Haskell', clj: 'Clojure',
+  elixir: 'Elixir', ex: 'Elixir', erlang: 'Erlang', erl: 'Erlang',
+  graphql: 'GraphQL', gql: 'GraphQL', proto: 'Protobuf',
+  diff: 'Diff', patch: 'Diff', text: 'Text', plain: 'Text'
+};
+function prettyLang(raw: string): string {
+  const key = (raw || '').trim().toLowerCase();
+  if (!key) return 'Code';
+  if (LANG_DISPLAY[key]) return LANG_DISPLAY[key];
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// One-time delegated click handler for the copy buttons we emit on every
+// code block. Idempotent — re-importing the module won't double-bind. We
+// guard for browser environment so the tsx test runner doesn't blow up.
+declare global {
+  interface Window { _ssCodeCopyBound?: boolean }
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window._ssCodeCopyBound) {
+  window._ssCodeCopyBound = true;
+  document.addEventListener('click', (ev) => {
+    const target = ev.target as Element | null;
+    if (!target) return;
+    const btn = target.closest('.md-code-copy') as HTMLButtonElement | null;
+    if (!btn) return;
+    const block = btn.closest('.md-code-block');
+    const code = block?.querySelector('pre code');
+    const text = code?.textContent || '';
+    if (!text) return;
+    const done = (): void => {
+      btn.classList.add('is-copied');
+      const t = window.setTimeout(() => btn.classList.remove('is-copied'), 1400);
+      btn.dataset.copyTimer = String(t);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {});
+    } else {
+      // Fallback for non-secure contexts / older browsers. textarea + exec.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch { /* swallow */ }
+      ta.remove();
+    }
+  });
+}
+
 export function renderMarkdown(text: string): string {
   const lines = text.split('\n');
   const out: string[] = [];
@@ -458,10 +527,29 @@ export function renderMarkdown(text: string): string {
       // Emit `class="language-X"` on <code> so highlight.js picks up the
       // language hint when present. Without a class, hljs auto-detects.
       const langClass = lang ? ' class="language-' + esc(lang) + '"' : '';
+      const langName = prettyLang(lang);
+      const codeIcon =
+        '<svg class="md-code-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<polyline points="8 6 2 12 8 18"></polyline>' +
+        '<polyline points="16 6 22 12 16 18"></polyline>' +
+        '</svg>';
+      const copyIcon =
+        '<svg class="md-code-copy-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<rect x="9" y="9" width="11" height="11" rx="2"></rect>' +
+        '<path d="M5 15V5a2 2 0 0 1 2-2h10"></path>' +
+        '</svg>';
       out.push(
         '<div class="md-code-block">' +
-          (lang ? '<div class="md-code-lang">' + esc(lang) + '</div>' : '') +
-          '<pre><code' + langClass + '>' + code.map(esc).join('\n') + '</code></pre></div>'
+          '<div class="md-code-header">' +
+            '<span class="md-code-lang-tag">' + codeIcon +
+              '<span class="md-code-lang-name">' + esc(langName) + '</span>' +
+            '</span>' +
+            '<button type="button" class="md-code-copy" aria-label="Copy code">' +
+              copyIcon +
+            '</button>' +
+          '</div>' +
+          '<pre><code' + langClass + '>' + code.map(esc).join('\n') + '</code></pre>' +
+        '</div>'
       );
       i++;
       continue;
