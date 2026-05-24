@@ -1,0 +1,33 @@
+# Cloudflare Pages _headers — ported from netlify.toml [[headers]] blocks.
+# Pages serves this file alongside the static assets; rules are applied in
+# the order listed, with later rules layering on top.
+
+# JS / CSS / assets / favicon are cache-busted with ?v=N in loader.ts and
+# the entry HTML, so bumping MinalloConfig.assetVersion invalidates them.
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/favicon.ico
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML files are NOT versioned in their URL (loader fetches /pages/portal.html
+# directly), so a short TTL keeps deploys visible quickly.
+/*.html
+  Cache-Control: public, max-age=300, must-revalidate
+
+# Global security + CSP — applied to every response. The CORS-style
+# Access-Control-* headers in the Netlify config sat under /api/* but
+# Pages Functions can set those per-request, so we only need the static
+# security headers here. CORS on /api/* is enforced inside the Functions.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self)
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://www.youtube.com https://www.paypal.com https://www.paypalobjects.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net https://fonts.bunny.net; img-src 'self' data: blob: https:; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.bunny.net https://fonts.gstatic.com; connect-src 'self' https://minallo.de https://accounts.google.com https://www.googleapis.com https://wprfkjeiawxlcnitsfdr.supabase.co https://python-ai.fly.dev https://api-m.paypal.com https://api.paypal.com https://www.paypal.com https://www.paypalobjects.com https://accounts.spotify.com https://api.spotify.com wss://wprfkjeiawxlcnitsfdr.supabase.co https://unpkg.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; frame-src 'self' blob: https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://www.paypal.com; form-action 'self'; upgrade-insecure-requests

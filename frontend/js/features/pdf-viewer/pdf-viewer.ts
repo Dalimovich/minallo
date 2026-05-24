@@ -1,6 +1,7 @@
 import { fetchPdfBytes } from '../../services/pdf-service.js';
 import { panelShow, panelHide, selectTopLevelView } from '../../core/panels.js';
 import { escapeHtml } from '../../utils/escape-html.js';
+import { notePdfTabOpen } from './pdf-tabs.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 interface FileLite {
@@ -50,6 +51,7 @@ function _restorePageBookmark(
 
 export function openFile(f: FileLite, course: LegacyCourse): void {
   _savePageBookmark();
+  notePdfTabOpen(f, course);
 
   const mySeq = ++(window._pdfOpenSeq as number);
   window.activeFileName = f.name;

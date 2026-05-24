@@ -55,6 +55,7 @@ import {
   downloadFile as _downloadFile,
 } from './services/pdf-service.js';
 import { openFile as _openFile } from './features/pdf-viewer/pdf-viewer.js';
+import { initPdfTabs } from './features/pdf-viewer/pdf-tabs.js';
 import { runMultiSummary as _runMultiSummary } from './features/ai-chat/multi-summary.js';
 import {
   createCheckoutSession as _createCheckoutSession,
@@ -413,6 +414,8 @@ exposeLegacyVar('msmCurrentText', () => msmCurrentText, (v: string) => { msmCurr
 exposeLegacyVar('msmCurrentTitle', () => msmCurrentTitle, (v: string) => { msmCurrentTitle = v; });
 
 // ── PDF ───────────────────────────────────────────────────────────────────
+initPdfTabs();
+
 function updateZoomPct(): void {
   const el = document.getElementById('pdfZoomPct');
   if (el) el.textContent = Math.round(pdfScale * 100) + '%';

@@ -420,14 +420,13 @@
         }
         els.options.innerHTML = optsArr.map(function (opt, i) {
           var cls = 'qz-option';
+          if (i === answered) cls += ' selected';
           if (isSubmitted) {
             if (i === ansIdx) cls += ' correct';
             else if (i === answered) cls += ' incorrect';
-          } else if (i === answered) {
-            cls += ' selected';
           }
           return (
-            '<button class="' + cls + '" data-opt-idx="' + i + '"' + (isSubmitted ? ' disabled' : '') + '>' +
+            '<button class="' + cls + '" data-opt-idx="' + i + '" aria-pressed="' + (i === answered ? 'true' : 'false') + '"' + (isSubmitted ? ' disabled' : '') + '>' +
               '<span class="qz-option-letter">' + _esc(letters[i] || String(i + 1)) + '</span>' +
               '<span>' + _esc(opt) + '</span>' +
             '</button>'

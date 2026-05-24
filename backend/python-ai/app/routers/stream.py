@@ -256,6 +256,14 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         ))
         return StreamingResponse(cached_stream(), media_type="text/event-stream")
 
+    # Normalise previousTurns from pydantic models → plain dicts before
+    # retrieval (so the follow-up rewriter below can use it) and before
+    # passing into the service layer.
+    previous_turns_payload: list[dict[str, str]] = []
+    if payload.previousTurns:
+        for t in payload.previousTurns:
+            previous_turns_payload.append({"role": t.role, "text": t.text})
+
     # ── Retrieve ─────────────────────────────────────────────────────────────
     # When the Problem Solver is active, the visible `question` is just a
     # short label ("Problem Solver — Hint mode"). Use the structured problem
@@ -266,6 +274,39 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         (payload.problemSolver.problem or question).strip()
         if payload.problemSolver else question
     )
+
+    # Follow-up rewriting. A short reply like "I don't know", "yes",
+    # "explain that again", "warum?" matches nothing in retrieval and
+    # used to land the conversation in PARTIAL mode ("I found a partial
+    # match in your course files") — completely breaking the turn-by-turn
+    # dialogue. When the new question is short / anaphoric AND we have
+    # prior turns, fold the LAST user message into the retrieval query
+    # so embeddings target the topic the student is actually following
+    # up on. Skip when Problem Solver is active (problemSolver.problem
+    # already anchors retrieval to the exercise).
+    if not payload.problemSolver and previous_turns_payload:
+        q_norm = (question or "").strip()
+        # Heuristic: short text OR matches a known stock follow-up phrase.
+        _is_short = len(q_norm) <= 25 or len(q_norm.split()) <= 4
+        _STOCK_FOLLOWUPS = re.compile(
+            r"^(i ?don'?t know|idk|no idea|yes|no|maybe|why\??|warum\??|"
+            r"weiter|continue|next|explain (that|this) (again|further|more)|"
+            r"hm+|ok(ay)?|sure|fine|"
+            r"go on|tell me more|more|details?|nochmal|noch einmal|"
+            r"i'?m stuck|stuck|help|hilfe|verstehe nicht|don'?t (get|understand)( (it|that))?)\s*[\.!\?]*$",
+            re.IGNORECASE,
+        )
+        _is_anaphoric = bool(_STOCK_FOLLOWUPS.match(q_norm))
+        if _is_short or _is_anaphoric:
+            last_user = next(
+                (t["text"] for t in reversed(previous_turns_payload) if t.get("role") == "user"),
+                "",
+            )
+            if last_user:
+                # Prepend the prior user message so retrieval has real
+                # signal. Keep the new question on the end so any
+                # keywords in it still influence ranking.
+                retrieval_query = (last_user + "\n" + q_norm).strip()
     exercise_hit = retrieve_exercise_block(
         user_id=user_id, course_id=payload.courseId, query=retrieval_query,
         document_ids=payload.documentIds,
@@ -307,14 +348,6 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     # here must never block answering.
     from ..services.mastery import fetch_weak_topics  # noqa: WPS433
     weak_topics = fetch_weak_topics(user_id, payload.courseId)
-
-    # Normalise previousTurns from pydantic models → plain dicts before
-    # passing into the service layer, so the trim helper can work over a
-    # simple list[dict] interface.
-    previous_turns_payload: list[dict[str, str]] = []
-    if payload.previousTurns:
-        for t in payload.previousTurns:
-            previous_turns_payload.append({"role": t.role, "text": t.text})
 
     def gen():
         import json

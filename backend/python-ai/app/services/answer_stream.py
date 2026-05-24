@@ -62,12 +62,14 @@ def _is_deictic_question(q: str) -> bool:
     return bool(_DEICTIC_QUESTION_RE.search(q or ""))
 
 
-# Conversation-continuity tuning. A chat session can grow arbitrarily, but
-# we only need a few recent turns for the model to resolve follow-up
-# references — the rest is irrelevant and just inflates prompt cost.
-_MAX_HISTORY_MESSAGES = 6        # 3 Q/A pairs
-_MAX_HISTORY_CHARS    = 2000     # safety cap on total prior text
-_MAX_TURN_CHARS       = 800      # any one turn is truncated to this
+# Conversation-continuity tuning. Earlier values (6 messages / 2k chars)
+# were too tight — students hit cases where the AI forgot the answer it
+# gave 5–10 turns ago and gave "some bullshit" follow-up instead. Raised
+# to 30 messages / 12k chars to cover ~15 Q/A pairs comfortably. Per-turn
+# cap kept at 1200 so a single rambling AI reply can't eat the budget.
+_MAX_HISTORY_MESSAGES = 30       # ~15 Q/A pairs
+_MAX_HISTORY_CHARS    = 12000    # safety cap on total prior text
+_MAX_TURN_CHARS       = 1200     # any one turn is truncated to this
 
 
 def _trim_previous_turns(
@@ -449,6 +451,33 @@ working code. Give a hint ladder with:
 - Hint 2: which principle / algorithm / formula family applies
 - Hint 3: how to start the setup (engineering) or the first 1-2 lines of code (CS)
 End with one focused question for the student. No final numeric result and no complete function body.
+
+CONTINUING THE HINT LADDER ACROSS TURNS.
+When the previous assistant turn already contains "Hint 1 / Hint 2 / Hint 3 /
+Focused Question" and the student's new message is a reply to that focused
+question (typical replies: "I don't know", "idk", "stuck", "yes", "no",
+"weiter", "why?", their attempt, a partial answer, or a clarifying question),
+DO NOT collapse the dialogue into a flat textbook explanation or a full
+worked solution. Continue the Socratic ladder:
+
+  * Briefly acknowledge their reply (one sentence — e.g. "No problem, let's
+    take a smaller step." / "Good — and then?" / "Almost — see below.").
+  * Give the NEXT level of hints, numbered as Hint 4, Hint 5, Hint 6
+    (continuing the count from the previous turn, not resetting). Each new
+    hint should be SMALLER / MORE CONCRETE than the previous ones — narrow
+    the gap a little, don't jump straight to the answer.
+  * If the student said "I don't know" / "stuck": go finer-grained — name
+    the specific substitution or transform they should apply, but still
+    leave the final arithmetic / final line of code for them.
+  * If the student attempted something: point out the FIRST place it goes
+    off track, ask them to fix that one thing, do NOT rewrite the rest.
+  * End with another single focused question that targets the very next
+    micro-step.
+  * Still no final numeric answer and no complete code body — that's the
+    SOLVE mode, not HINT.
+
+The hint ladder ends ONLY when the student has demonstrably solved it
+themselves OR they explicitly ask for the full solution.
 """,
         "setup": """
 

@@ -244,6 +244,12 @@ export function restoreCourseHistory(courseId: string | null | undefined): void 
 
 export function clearCourseHistory(courseId: string): void {
   try { localStorage.removeItem(_historyKey(courseId)); } catch { /* ignore */ }
+  // Also drop the active Problem Solver context — a wiped chat shouldn't
+  // inherit the previous session's PS overlay on its first new turn.
+  try {
+    const _w = window as unknown as { _activePsContext?: unknown };
+    if (_w._activePsContext) _w._activePsContext = undefined;
+  } catch { /* ignore */ }
 }
 
 export function initAskAI(
@@ -259,6 +265,18 @@ export function initAskAI(
     opts?: { forceRefresh?: boolean; problemSolver?: ProblemSolverOptions }
   ): unknown {
     if (!question) return;
+    // Persist Problem Solver context across follow-up turns. The first
+    // submission from document-rail.ts arrives with opts.problemSolver
+    // set; the student's reply ("I don't know") goes through the plain
+    // chat input which calls askAI(q) with no opts. Without this, the
+    // backend would see no problem_mode on turn 2 and fall back to
+    // STRONG mode (full worked solution), breaking the Hint Ladder.
+    const _w = window as unknown as { _activePsContext?: ProblemSolverOptions };
+    if (opts?.problemSolver) {
+      _w._activePsContext = opts.problemSolver;
+    } else if (_w._activePsContext) {
+      opts = { ...(opts || {}), problemSolver: _w._activePsContext };
+    }
     if (window._abortCurrentStream) window._abortCurrentStream();
     state.generationStopped = false;
     state.currentGenId++;
