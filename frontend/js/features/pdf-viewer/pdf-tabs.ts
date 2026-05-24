@@ -1,4 +1,5 @@
 import type { LegacyCourse } from '../../../globals.js';
+import { loadCompareDoc, clearCompareDoc, getCompareFileName, isCompareLoading, onCompareChange } from './pdf-compare.js';
 
 interface PdfTabFile {
   name: string;
@@ -38,6 +39,7 @@ let barEl: HTMLElement | null = null;
 let stripEl: HTMLElement | null = null;
 let addBtnEl: HTMLButtonElement | null = null;
 let menuEl: HTMLElement | null = null;
+let compareChipEl: HTMLElement | null = null;
 const tabNodes = new Map<string, HTMLButtonElement>();
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -278,6 +280,16 @@ function makeTabNode(tab: PdfTab): HTMLButtonElement {
   name.textContent = tab.file.name;
   btn.appendChild(name);
 
+  const compare = document.createElement('span');
+  compare.className = 'pdf-tab-compare';
+  compare.setAttribute('role', 'button');
+  compare.setAttribute('tabindex', '0');
+  compare.setAttribute('aria-label', `Compare ${tab.file.name} with AI`);
+  compare.setAttribute('title', 'Have the AI also read this PDF');
+  compare.dataset.pdfCompareKey = tab.key;
+  compare.textContent = '⇄';
+  btn.appendChild(compare);
+
   const close = document.createElement('span');
   close.className = 'pdf-tab-close';
   close.setAttribute('role', 'button');
@@ -290,8 +302,40 @@ function makeTabNode(tab: PdfTab): HTMLButtonElement {
   return btn;
 }
 
+function renderCompareChip(): void {
+  if (!compareChipEl) return;
+  const name = getCompareFileName();
+  if (!name) {
+    compareChipEl.hidden = true;
+    compareChipEl.replaceChildren();
+    return;
+  }
+  compareChipEl.hidden = false;
+  compareChipEl.replaceChildren();
+  const label = document.createElement('span');
+  label.className = 'pdf-compare-chip-label';
+  label.textContent = isCompareLoading() ? 'Loading ' + name + '…' : 'Comparing with ' + name;
+  compareChipEl.appendChild(label);
+  if (!isCompareLoading()) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'pdf-compare-chip-x';
+    x.textContent = '×';
+    x.setAttribute('aria-label', 'Stop comparing');
+    x.dataset.pdfCompareClear = '1';
+    compareChipEl.appendChild(x);
+  }
+}
+
+function tabIsBeingCompared(tab: PdfTab): boolean {
+  const compareName = getCompareFileName();
+  if (!compareName) return false;
+  return (tab.file.name === compareName) || (tab.file._storageName === compareName);
+}
+
 function renderTabsStrip(): void {
   if (!stripEl) return;
+  renderCompareChip();
   const seen = new Set<string>();
 
   for (let i = 0; i < tabs.length; i++) {
@@ -307,6 +351,7 @@ function renderTabsStrip(): void {
     }
     const isActive = tab.key === activeKey;
     node.classList.toggle('is-active', isActive);
+    node.classList.toggle('is-comparing', tabIsBeingCompared(tab));
     node.setAttribute('aria-selected', isActive ? 'true' : 'false');
 
     const existing = stripEl.children[i];
@@ -385,6 +430,18 @@ function closeTab(key: string): void {
 function openFromMenu(file: PdfTabFile, course: LegacyCourse): void {
   closeMenu();
   if (typeof window.openFile === 'function') window.openFile(file, course);
+}
+
+function handleCompareClick(key: string): void {
+  const tab = tabs.find((t) => t.key === key);
+  if (!tab) return;
+  const course = tabCourse(tab);
+  if (!course) return;
+  if (tabIsBeingCompared(tab)) {
+    clearCompareDoc();
+    return;
+  }
+  void loadCompareDoc(tab.file, course);
 }
 
 // ── public API ────────────────────────────────────────────────────────────
@@ -467,8 +524,27 @@ function mountPdfTabs(host: HTMLElement): void {
 
   barEl.appendChild(addWrap);
 
+  compareChipEl = document.createElement('div');
+  compareChipEl.className = 'pdf-compare-chip';
+  compareChipEl.hidden = true;
+  barEl.appendChild(compareChipEl);
+
+  onCompareChange(() => renderTabsStrip());
+
   barEl.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
+    const clearChip = target?.closest<HTMLElement>('[data-pdf-compare-clear]');
+    if (clearChip) {
+      event.stopPropagation();
+      clearCompareDoc();
+      return;
+    }
+    const compareBtn = target?.closest<HTMLElement>('[data-pdf-compare-key]');
+    if (compareBtn) {
+      event.stopPropagation();
+      handleCompareClick(compareBtn.dataset.pdfCompareKey || '');
+      return;
+    }
     const close = target?.closest<HTMLElement>('[data-pdf-close-key]');
     if (close) {
       event.stopPropagation();

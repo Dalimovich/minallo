@@ -1767,6 +1767,32 @@ body:not(.night) .pdf-tabs-menu-group + .pdf-tabs-menu-group,
 body:not(.night) .pdf-tabs-menu-item + .pdf-tabs-menu-group {
   border-top-color: rgba(37, 99, 235, 0.12);
 }
+body:not(.night) .pdf-tab-compare {
+  color: rgba(30, 64, 175, 0.55);
+}
+body:not(.night) .pdf-tab-compare:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+body:not(.night) .pdf-tab.is-comparing {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+body:not(.night) .pdf-tab.is-comparing .pdf-tab-compare {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.16);
+}
+body:not(.night) .pdf-compare-chip {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: #1e3a8a;
+}
+body:not(.night) .pdf-compare-chip-x {
+  color: #1e3a8a;
+}
+body:not(.night) .pdf-compare-chip-x:hover {
+  background: rgba(37, 99, 235, 0.18);
+}
 body:not(.night) .pdf-toolbar-v2 .pdf-page-info,
 body:not(.night) .pdf-toolbar-v2 .pdf-page-input {
   color: var(--lm-text) !important;

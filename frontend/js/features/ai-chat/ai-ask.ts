@@ -7,6 +7,8 @@ import {
   type RagAskResponse,
 } from '../../services/ai-service.js';
 import { extractPdfText } from '../pdf-viewer/pdf-text-extraction.js';
+import { getPane } from '../pdf-viewer/pdf-panes.js';
+import { getCompareFileName } from '../pdf-viewer/pdf-compare.js';
 import { bindMessageActionButtons } from './ai-message-actions.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 
@@ -316,21 +318,26 @@ export function initAskAI(
 
     const pdfDoc = _isProblemSolver ? null : (window.pdfDoc as PdfDocLike | null | undefined);
     let pdfFullText = _isProblemSolver ? '' : window.pdfFullText || '';
+    const _compareName = _isProblemSolver ? null : getCompareFileName();
+    const _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
     const _lang = window._lang || localStorage.getItem('ss_lang') || 'en';
     const activeFileName = window.activeFileName || '';
     const currentCourseShort = window.currentCourseShort || '';
     const _MATH_PROMPT = (window as unknown as { _MATH_PROMPT?: string })._MATH_PROMPT || '';
+    const _docList = _compareName
+      ? '"' + activeFileName + '" AND "' + _compareName + '" (a second document the student is comparing against)'
+      : '"' + activeFileName + '"';
     let sysPrompt =
       (window._userType === 'learner'
         ? 'You are Minallo, a German language tutor helping a student prepare for ' +
           (window._germanTest || 'a German exam') +
           (window._germanLevel ? ' at level ' + window._germanLevel : '') +
           '. Always reply in ' + (_lang === 'de' ? 'German' : 'English') +
-          '. The student is reading "' + activeFileName +
-          '". ALWAYS base your answers on the actual document content below. Be thorough but concise.'
+          '. The student is reading ' + _docList +
+          '. ALWAYS base your answers on the actual document content below. Be thorough but concise.'
         : 'You are Minallo, a friendly tutor for TU Braunschweig engineering students. Always reply in ' +
           (_lang === 'de' ? 'German' : 'English') +
-          '. The student is reading "' + activeFileName + '" from ' + currentCourseShort +
+          '. The student is reading ' + _docList + ' from ' + currentCourseShort +
           '. ALWAYS base your answers on the actual document content provided below. Do not use general knowledge when the document covers the topic. Be thorough but concise.') +
       _MATH_PROMPT;
 
@@ -360,8 +367,14 @@ export function initAskAI(
             }))
           );
         } else {
-          sysPrompt +=
-            '\n\nDOCUMENT CONTENT:\n' + (pdfFullText || '(document text not yet extracted)');
+          if (_compareText) {
+            sysPrompt +=
+              '\n\nDOCUMENT 1 — "' + activeFileName + '":\n' + (pdfFullText || '(document text not yet extracted)') +
+              '\n\nDOCUMENT 2 — "' + _compareName + '":\n' + _compareText;
+          } else {
+            sysPrompt +=
+              '\n\nDOCUMENT CONTENT:\n' + (pdfFullText || '(document text not yet extracted)');
+          }
           userContent = question;
         }
 

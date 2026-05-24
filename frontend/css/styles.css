@@ -1733,6 +1733,68 @@ body.night .sb-acc-chev-btn {
   text-transform: uppercase;
   color: rgba(147, 197, 253, 0.7);
 }
+.pdf-tab-compare {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  border-radius: 6px;
+  color: rgba(203, 213, 225, 0.6);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, color 0.12s;
+}
+.pdf-tab-compare:hover,
+.pdf-tab-compare:focus {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  outline: none;
+}
+.pdf-tab.is-comparing {
+  background: rgba(14, 165, 233, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
+}
+.pdf-tab.is-comparing .pdf-tab-compare {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.22);
+}
+.pdf-compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  color: #bae6fd;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+}
+.pdf-compare-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pdf-compare-chip-x {
+  background: none;
+  border: none;
+  color: #bae6fd;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 6px;
+}
+.pdf-compare-chip-x:hover {
+  background: rgba(56, 189, 248, 0.22);
+  color: #fff;
+}
 .pdf-tabs-menu-group + .pdf-tabs-menu-group,
 .pdf-tabs-menu-item + .pdf-tabs-menu-group {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
