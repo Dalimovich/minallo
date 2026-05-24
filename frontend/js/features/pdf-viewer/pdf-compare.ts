@@ -1,5 +1,6 @@
 import type { LegacyCourse } from '../../../globals.js';
 import { getPane, clearPane } from './pdf-panes.js';
+import { loadIntoRight, clearRight } from './pdf-right-renderer.js';
 
 export interface CompareFile {
   name: string;
@@ -87,14 +88,6 @@ async function extractText(bytes: Uint8Array): Promise<string> {
 }
 
 let activeLoad: Promise<void> | null = null;
-let rightBlobUrl: string | null = null;
-
-function revokeRightBlob(): void {
-  if (rightBlobUrl) {
-    try { URL.revokeObjectURL(rightBlobUrl); } catch { /* ignore */ }
-    rightBlobUrl = null;
-  }
-}
 
 function setSplitMode(on: boolean): void {
   const bodies = document.getElementById('pdfBodies');
@@ -102,28 +95,13 @@ function setSplitMode(on: boolean): void {
   bodies.classList.toggle('is-split', on);
 }
 
-function renderRightIframe(bytes: Uint8Array, fileName: string): void {
-  const host = document.getElementById('pdfBodyRight');
-  if (!host) return;
-  revokeRightBlob();
-  const mime = /\.html?$/i.test(fileName) ? 'text/html' : 'application/pdf';
-  const blob = new Blob([bytes as BlobPart], { type: mime });
-  rightBlobUrl = URL.createObjectURL(blob);
-  host.replaceChildren();
-  const iframe = document.createElement('iframe');
-  iframe.src = rightBlobUrl;
-  iframe.title = fileName;
-  host.appendChild(iframe);
-}
-
 function showRightLoading(fileName: string): void {
   const host = document.getElementById('pdfBodyRight');
   if (!host) return;
-  revokeRightBlob();
   host.replaceChildren();
   const wrap = document.createElement('div');
   wrap.style.cssText =
-    'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#475569;font-family:inherit;font-size:13px';
+    'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(226,232,240,.7);font-family:inherit;font-size:13px';
   wrap.textContent = 'Loading ' + fileName + '…';
   host.appendChild(wrap);
 }
@@ -147,7 +125,8 @@ export async function loadCompareDoc(file: CompareFile, course: LegacyCourse): P
         return;
       }
       if (getPane('right').activeFileName !== file.name) return;
-      renderRightIframe(bytes, file.name);
+      await loadIntoRight(bytes);
+      if (getPane('right').activeFileName !== file.name) return;
       const text = await extractText(bytes);
       if (getPane('right').activeFileName !== file.name) return;
       right.pdfFullText = text;
@@ -166,9 +145,7 @@ export async function loadCompareDoc(file: CompareFile, course: LegacyCourse): P
 export function clearCompareDoc(): void {
   clearPane('right');
   setSplitMode(false);
-  revokeRightBlob();
-  const host = document.getElementById('pdfBodyRight');
-  if (host) host.replaceChildren();
+  clearRight();
   persist(null, null);
   emit();
 }

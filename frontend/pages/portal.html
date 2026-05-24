@@ -1055,7 +1055,20 @@
                 <div class="pdf-bodies" id="pdfBodies">
                   <div class="pdf-body" id="pdfBody"></div>
                   <div class="pdf-pane-divider" id="pdfPaneDivider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
-                  <div class="pdf-body pdf-body-right" id="pdfBodyRight"></div>
+                  <div class="pdf-right-pane">
+                    <div class="pdf-right-toolbar" id="pdfRightToolbar" hidden>
+                      <button type="button" class="pdf-right-btn" id="pdfRightPrev" title="Previous page" aria-label="Previous page">‹</button>
+                      <span class="pdf-right-page-info" id="pdfRightPageInfo">1 / 1</span>
+                      <button type="button" class="pdf-right-btn" id="pdfRightNext" title="Next page" aria-label="Next page">›</button>
+                      <span class="pdf-right-sep"></span>
+                      <button type="button" class="pdf-right-btn" id="pdfRightZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+                      <span class="pdf-right-zoom" id="pdfRightZoomPct">90%</span>
+                      <button type="button" class="pdf-right-btn" id="pdfRightZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+                      <span class="pdf-right-sep"></span>
+                      <button type="button" class="pdf-right-btn pdf-right-mode" id="pdfRightAll" title="Toggle all/single page">All pages</button>
+                    </div>
+                    <div class="pdf-body pdf-body-right" id="pdfBodyRight"></div>
+                  </div>
                 </div>
               </div>
             </div>

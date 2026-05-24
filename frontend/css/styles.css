@@ -1503,18 +1503,73 @@ body.night .sb-acc-chev-btn {
 .pdf-bodies.is-split > .pdf-pane-divider.is-dragging {
   background: rgba(56, 189, 248, 0.45);
 }
-.pdf-bodies.is-split > .pdf-body-right {
+.pdf-bodies > .pdf-right-pane {
+  display: none;
+}
+.pdf-bodies.is-split > .pdf-right-pane {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 200px;
-  padding: 0;
-  background: #fff;
+  min-height: 0;
 }
-.pdf-bodies.is-split > .pdf-body-right iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-  background: #fff;
+.pdf-right-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+  flex-shrink: 0;
+}
+.pdf-right-toolbar[hidden] { display: none; }
+.pdf-right-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(226, 232, 240, 0.85);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+.pdf-right-btn:hover {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+.pdf-right-page-info,
+.pdf-right-zoom {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  padding: 0 6px;
+  font-weight: 700;
+}
+.pdf-right-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 4px;
+}
+.pdf-right-mode {
+  margin-left: auto;
+  font-size: 11px;
+}
+.pdf-body-right {
+  background: #888;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #555 #666;
+  min-height: 0;
 }
 .pdf-body {
   flex: 1;
