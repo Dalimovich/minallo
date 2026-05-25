@@ -21,6 +21,7 @@ from ..services.cache import fetch_document_version_hash, lookup_answer, save_an
 from ..services.retrieval import (
     ExerciseHit,
     FormulaHit,
+    RetrievedChunk,
     find_exercise_reference,
     retrieve_chunks,
     retrieve_exercise_block,
@@ -225,6 +226,8 @@ class AskRequest(BaseModel):
     documentIds: list[str] | None = Field(default=None, description="Optional filter; required for grounded answers in practice.")
     activeDocumentId: str | None = Field(default=None, description="Document the user is currently reading; +0.25 retrieval boost.")
     question: str
+    activeFileName: str | None = None
+    openFileContext: str | None = None
     bypassCache: bool = False
     tutorMode: str | None = Field(
         default=None,
@@ -277,6 +280,9 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
     question = (payload.question or "").strip()
     if not question:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
+    open_file_context = (payload.openFileContext or "").strip()
+    if len(open_file_context) > 20000:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
 
     tutor_mode = normalise_tutor_mode(payload.tutorMode or DEFAULT_TUTOR_MODE)
 
@@ -293,6 +299,7 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
     cacheable = (
         tutor_mode == "explain"
         and not _is_deictic_question(question)
+        and not open_file_context
     )
     if payload.documentIds and not payload.bypassCache and cacheable:
         version_hash = fetch_document_version_hash(
@@ -341,10 +348,18 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
     # exact-match lookup first. The hit (when found) is appended to the chunk
     # list as a synthetic top-priority entry so the answerer sees the exact
     # statement (and solution if available) before any similarity-based chunks.
+    from .stream import _augment_retrieval_query_with_open_context  # noqa: WPS433
+    retrieval_query = _augment_retrieval_query_with_open_context(
+        question=question,
+        retrieval_query=question,
+        open_file_context=open_file_context,
+        has_problem_solver=False,
+    )
+
     exercise_hit = retrieve_exercise_block(
         user_id=payload.userId,
         course_id=payload.courseId,
-        query=question,
+        query=retrieval_query,
         document_ids=payload.documentIds,
         active_document_id=payload.activeDocumentId,
     )
@@ -352,7 +367,7 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
     chunks = retrieve_chunks(
         user_id=payload.userId,
         course_id=payload.courseId,
-        query=question,
+        query=retrieval_query,
         document_ids=payload.documentIds,
         active_document_id=payload.activeDocumentId,
         top_k=12,
@@ -367,12 +382,28 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
     formula_hits = retrieve_formula_block(
         user_id=payload.userId,
         course_id=payload.courseId,
-        query=question,
+        query=retrieval_query,
         document_ids=payload.documentIds,
         active_document_id=payload.activeDocumentId,
     )
     if formula_hits:
         chunks = _prepend_formula_chunks(formula_hits, chunks)
+
+    if open_file_context:
+        open_doc_id = "__open_file_context__"
+        doc_name_map[open_doc_id] = payload.activeFileName or "Open PDF"
+        chunks.insert(0, RetrievedChunk(
+            chunk_id="open-file-context",
+            document_id=open_doc_id,
+            page_start=None,
+            page_end=None,
+            text=open_file_context[:12000],
+            score=99.0,
+            similarity=0.99,
+            chunk_type="open_context",
+            section_title="Open PDF (visible page)",
+            is_synthetic=False,
+        ))
 
     # Backfill doc_name_map for any chunk pointing at a doc we didn't ask
     # about explicitly (e.g. when documentIds is None and we let retrieval

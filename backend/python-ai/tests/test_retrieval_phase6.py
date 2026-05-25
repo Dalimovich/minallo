@@ -77,6 +77,18 @@ def test_empty_query_returns_none():
     assert r.find_exercise_reference("") is None
 
 
+def test_formula_intent_recognises_mechanical_engineering_terms():
+    r = _import_retrieval()
+    tokens = r.find_formula_intent("Berechnen Sie die Nachgiebigkeit der Schraube")
+    assert "nachgiebigkeit" in tokens
+    assert "schraube" in tokens
+
+
+def test_formula_intent_still_ignores_plain_chat():
+    r = _import_retrieval()
+    assert r.find_formula_intent("Kannst du das bitte einfacher erklären?") == set()
+
+
 def test_subpart_normalised_to_lowercase():
     r = _import_retrieval()
     assert r.find_exercise_reference("Aufgabe 7.1 B") == ("7.1", "b")

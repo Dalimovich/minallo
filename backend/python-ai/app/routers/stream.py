@@ -38,6 +38,9 @@ _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
 _MAX_STREAM_OPEN_FILE_CTX_CHARS = 20000
+_MAX_OPEN_FILE_IMAGES = 1
+_MAX_OPEN_FILE_IMAGE_BASE64_CHARS = 2_500_000
+_ALLOWED_OPEN_FILE_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
 # Mirror backend/lib/rate-limit.ts INTERACTIVE_MONTHLY_CAP. /ask-stream is an
 # interactive RAG call (cheap per request on gpt-4o-mini) so it lives in the
 # interactive bucket alongside /api/ai/ask and the writing coach.
@@ -84,6 +87,12 @@ class ProblemSolverPayload(BaseModel):
     studentWork: str | None = None
 
 
+class OpenFileImagePayload(BaseModel):
+    mediaType: str = "image/jpeg"
+    data: str
+    page: int | None = None
+
+
 class AskStreamRequest(BaseModel):
     courseId: str
     documentIds: list[str] | None = None
@@ -95,6 +104,7 @@ class AskStreamRequest(BaseModel):
     # retrieval doesn't surface the exact chunk. Both optional.
     activeFileName: str | None = None
     openFileContext: str | None = None
+    openFileImages: list[OpenFileImagePayload] | None = None
     # Tutor-mode overlay: explain | solve | quiz. Defaults to 'solve'.
     tutorMode: str | None = None
     # Short transcript of the most recent turns in this chat session,
@@ -111,6 +121,79 @@ class AskStreamRequest(BaseModel):
 
 def _sse_bytes(payload: str) -> bytes:
     return ("data: " + payload + "\n\n").encode("utf-8")
+
+
+def _validate_open_file_images(images: list[OpenFileImagePayload] | None) -> list[dict[str, Any]]:
+    if not images:
+        return []
+    if len(images) > _MAX_OPEN_FILE_IMAGES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="too many openFileImages")
+
+    normalised: list[dict[str, Any]] = []
+    for img in images:
+        media_type = (img.mediaType or "image/jpeg").strip().lower()
+        data = (img.data or "").strip()
+        if media_type not in _ALLOWED_OPEN_FILE_IMAGE_TYPES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unsupported openFileImages mediaType")
+        if not data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileImages data is required")
+        if len(data) > _MAX_OPEN_FILE_IMAGE_BASE64_CHARS:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileImages data is too long")
+        if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", data):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileImages data must be base64")
+        normalised.append({"mediaType": media_type, "data": data, "page": img.page})
+    return normalised
+
+
+def _augment_retrieval_query_with_open_context(
+    *,
+    question: str,
+    retrieval_query: str,
+    open_file_context: str | None,
+    has_problem_solver: bool,
+) -> str:
+    """Let retrieval see the exercise text when the user asks about "this".
+
+    The answer prompt already receives Source 0, but retrieval also needs the
+    visible problem wording so it can pull the matching lecture/formula chunks.
+    Keep the excerpt short to avoid turning BM25 into a full-document search.
+    """
+    open_ctx = (open_file_context or "").strip()
+    if not open_ctx:
+        return retrieval_query
+
+    from ..services.answer_stream import _is_deictic_question  # noqa: WPS433
+
+    q_norm = (question or "").strip()
+    should_augment = (
+        has_problem_solver
+        or _is_deictic_question(q_norm)
+        or len(q_norm) <= 60
+        or len(q_norm.split()) <= 8
+    )
+    if not should_augment:
+        return retrieval_query
+
+    return (retrieval_query.strip() + "\n\nVisible PDF context:\n" + open_ctx[:2000]).strip()
+
+
+def _cached_grounded_sources_to_js(grounded_sources: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Translate cached Python-shape sources without dropping page labels."""
+    sources_js: list[dict[str, Any]] = []
+    for s in grounded_sources or []:
+        page_start = s.get("pageStart")
+        page_end = s.get("pageEnd")
+        pages = s.get("pages")
+        if not pages and page_start and page_end:
+            pages = str(page_start) if page_start == page_end else f"{page_start}-{page_end}"
+        elif not pages and page_start:
+            pages = str(page_start)
+        sources_js.append({
+            "file_name": s.get("fileName") or s.get("file_name") or "Unknown",
+            "pages": pages,
+            "section": s.get("sectionTitle") or s.get("section"),
+        })
+    return sources_js
 
 
 @router.post("/ask-stream")
@@ -147,6 +230,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     tutor_mode = normalise_tutor_mode(payload.tutorMode or DEFAULT_TUTOR_MODE)
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
+    open_file_images = _validate_open_file_images(payload.openFileImages)
 
     # ── Cache check (same logic as /ask) ─────────────────────────────────────
     # When the request carries openFileContext (the user is reading a PDF
@@ -155,7 +239,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     # avoid returning a previous answer composed against a different page.
     version_hash = ""
     cached = None
-    has_open_ctx = bool(payload.openFileContext and payload.openFileContext.strip())
+    has_open_ctx = bool(payload.openFileContext and payload.openFileContext.strip()) or bool(open_file_images)
     # Cache only makes sense for the legacy 'explain' mode. 'solve' is
     # conversational and 'quiz' is generative, so we never want to serve
     # a stale answer for either. Also bypass cache for deictic questions
@@ -216,20 +300,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         # Send the answer as one token so the existing client loop renders it.
         yield _sse_bytes(json.dumps({"t": cached.get("answer", "")}))
         # Translate Python-shape groundedSources to the JS-frontend shape.
-        sources_js = []
-        for s in (cached.get("groundedSources") or []):
-            page_start = s.get("pageStart")
-            page_end = s.get("pageEnd")
-            pages = None
-            if page_start and page_end:
-                pages = str(page_start) if page_start == page_end else f"{page_start}-{page_end}"
-            elif page_start:
-                pages = str(page_start)
-            sources_js.append({
-                "file_name": s.get("fileName") or "Unknown",
-                "pages": pages,
-                "section": s.get("sectionTitle"),
-            })
+        sources_js = _cached_grounded_sources_to_js(cached.get("groundedSources") or [])
         yield _sse_bytes(json.dumps({
             "done": True,
             "retrievalMode": cached.get("retrievalMode", "strong"),
@@ -307,6 +378,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 # signal. Keep the new question on the end so any
                 # keywords in it still influence ranking.
                 retrieval_query = (last_user + "\n" + q_norm).strip()
+    retrieval_query = _augment_retrieval_query_with_open_context(
+        question=question,
+        retrieval_query=retrieval_query,
+        open_file_context=payload.openFileContext,
+        has_problem_solver=payload.problemSolver is not None,
+    )
     exercise_hit = retrieve_exercise_block(
         user_id=user_id, course_id=payload.courseId, query=retrieval_query,
         document_ids=payload.documentIds,
@@ -356,6 +433,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             tutor_mode=tutor_mode,
             active_file_name=payload.activeFileName,
             open_file_context=payload.openFileContext,
+            open_file_images=open_file_images,
             weak_topics=weak_topics,
             previous_turns=previous_turns_payload,
             problem_solver=payload.problemSolver.model_dump() if payload.problemSolver else None,
@@ -421,9 +499,10 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                         "groundedSources": [
                             {
                                 "fileName": s.get("file_name"),
-                                "pageStart": None,  # JS-shape source — page_start fused into 'pages' string
-                                "pageEnd": None,
+                                "pageStart": s.get("pageStart"),
+                                "pageEnd": s.get("pageEnd"),
                                 "sectionTitle": s.get("section"),
+                                "pages": s.get("pages"),
                             }
                             for s in (captured_meta.get("sources") or [])
                         ],

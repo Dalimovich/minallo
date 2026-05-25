@@ -142,6 +142,14 @@ export interface CourseDocument {
   processing_status?: string;
   processing_error?: string | null;
   page_count?: number;
+  extraction_quality?: 'good' | 'weak' | 'failed' | string | null;
+  ocr_assessment?: {
+    ocrRecommended?: boolean;
+    pagesLikelyScanned?: number;
+    pagesImageHeavy?: number;
+    pagesAlmostNoText?: number;
+    [key: string]: unknown;
+  } | null;
   created_at?: string;
   updated_at?: string;
 }

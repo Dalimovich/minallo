@@ -37,8 +37,10 @@ from app.services.answer import (  # noqa: E402
     _SYSTEM_PROMPT_PARTIAL,
     _SYSTEM_PROMPT_STRONG,
     _SYSTEM_PROMPT_WEAK,
+    _sources_for_answer,
     pick_system_prompt,
 )
+from app.services.answer_stream import _problem_solver_overlay  # noqa: E402
 
 
 # ── weak retrieval always wins, even for math questions ────────────────────
@@ -88,6 +90,32 @@ def test_math_question_with_strong_context_uses_math_prompt(q: str) -> None:
     assert mode == "math"
 
 
+def test_sources_fallback_keeps_context_visible_when_citations_missing() -> None:
+    from types import SimpleNamespace
+
+    chunks = [
+        SimpleNamespace(
+            document_id="doc1",
+            page_start=8,
+            page_end=8,
+            section_title="Schraubenberechnung",
+            chunk_type="formula",
+            similarity=0.61,
+        )
+    ]
+
+    sources = _sources_for_answer("Die Formel lautet delta = l / EA.", chunks, {"doc1": "Lecture.pdf"})
+
+    assert sources == [{
+        "fileName": "Lecture.pdf",
+        "pageStart": 8,
+        "pageEnd": 8,
+        "sectionTitle": "Schraubenberechnung",
+        "chunkType": "formula",
+        "similarity": 0.61,
+    }]
+
+
 @pytest.mark.parametrize("q", [
     "Summarize chapter 2",
     "Who wrote this lecture?",
@@ -125,6 +153,30 @@ def test_math_prompt_forbids_invention() -> None:
     body = _SYSTEM_PROMPT_MATH.lower()
     # The anti-hallucination clause must survive future edits.
     assert "do not invent" in body
+
+
+def test_problem_solver_full_solution_requires_final_arithmetic() -> None:
+    """The full-solution overlay must not let the model stop at method steps.
+
+    This locks the behavior behind the user's complaint: when they ask for a
+    rechnerische/finale Loesung, the model must compute if possible, or name
+    the exact missing inputs instead of giving generic formulas again.
+    """
+    body = _problem_solver_overlay("solve", {}).lower()
+    assert "finish the computation" in body
+    assert "carry out the arithmetic" in body
+    assert "boxed final answer" in body
+    assert "exact missing quantities" in body
+    assert "mach weiter" in body
+    assert "rechnerisch" in body
+
+
+def test_prompt_contains_minallo_navigation_context() -> None:
+    prompt, _ = pick_system_prompt("Where do I manage my subscription?", "none")
+    assert "MINALLO APP CONTEXT" in prompt
+    assert "minallo.de" in prompt
+    assert 'sidebar "Subscription"' in prompt
+    assert 'sidebar "Courses"' in prompt
 
 
 # ── Review fix #7 — RetrievalCompleteness ─────────────────────────────────

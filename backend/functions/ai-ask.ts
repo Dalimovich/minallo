@@ -125,6 +125,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       : typeof body.documentId === 'string' && body.documentId
         ? body.documentId
         : null;
+  const activeFileName = typeof body.activeFileName === 'string' ? body.activeFileName : null;
+  const openFileContext = typeof body.openFileContext === 'string' ? body.openFileContext.slice(0, 20000) : null;
   await logSecurityEvent(serviceKey, user.id, 'ai_ask', {
     course_id: courseId,
     document_count: documentIds ? documentIds.length : 0,
@@ -138,6 +140,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     activeDocumentId,
     question,
     tutorMode,
+    activeFileName,
+    openFileContext,
     // bypassCache is intentionally NOT forwarded from the client — the answer
     // cache is our biggest cost mitigation, so the public API is not allowed
     // to defeat it. Cache invalidation happens automatically via

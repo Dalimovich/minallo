@@ -176,6 +176,35 @@ Behaviour (keep the response short — under ~120 words):
 
 _SOURCE_REF_RE = re.compile(r"\bSources?\s+([0-9 ,andund&]+)\b", re.IGNORECASE)
 
+MINALLO_APP_CONTEXT = """
+
+MINALLO APP CONTEXT.
+You are running inside Minallo at minallo.de. App/navigation questions are
+product-support questions, not academic claims, and do not need [Source N]
+citations. When the student asks how to find something inside the website,
+answer with concrete navigation steps using this app map:
+- Home/Dashboard: sidebar "Home".
+- Courses: sidebar "Courses"; create semesters/courses, upload course PDFs/files,
+  open course files, then use PDF reader AI, notes, summaries, quiz, and flashcards.
+- Lecture Notes: sidebar "Lecture Notes"; view generated notes and summaries.
+- Editor: sidebar "Editor"; combine/edit notes and documents.
+- Chatbot: sidebar "Chatbot"; general Minallo AI chat with files/images.
+- Chat: sidebar "Chat"; student/friend chat rooms.
+- Games: sidebar "Games"; break games.
+- Study Lounge: sidebar "Study Lounge"; study time, streaks, opened files,
+  course stats, and reset study stats.
+- Profile: sidebar "Profile"; account profile information.
+- Settings: sidebar "Settings"; language, account preferences, and app settings.
+- Subscription: sidebar "Subscription"; plan, billing portal, PayPal/Stripe
+  subscription actions, pause/resume/cancel/reactivate where available.
+- Study timer/focus session: top bar "Study" button when visible.
+- Night mode: sidebar bottom "Night" toggle.
+- Legal pages: public footer/links "Impressum" and "Privacy Policy".
+If the student asks you to navigate/click for them, explain that you can guide
+them but cannot operate their browser directly from this chat unless a specific
+in-app control is provided. Keep navigation help short and actionable.
+"""
+
 # Cheap "this chunk contains an actual formula" detector. Matches assignment
 # patterns (`x = ...`, `A_S = ...`), TeX-ish markup (`\frac`, `\sqrt`, `^`,
 # `_{`), or math operators. Used to gate the rigid math worksheet template:
@@ -534,6 +563,7 @@ def pick_system_prompt(
         prompt += overlay
     if coach:
         prompt += coach
+    prompt += MINALLO_APP_CONTEXT
     # Student-Dignity rules apply to every reply, every tutor mode, every
     # retrieval strength. Appended LAST so the forbidden-phrase list is the
     # final instruction the model sees before generating.
@@ -561,6 +591,43 @@ def _cited_indices(answer_text: str, total: int) -> set[int]:
                 if 1 <= n <= total:
                     cited.add(n)
     return cited
+
+
+def _sources_for_answer(
+    answer_text: str,
+    used_chunks: list[RetrievedChunk],
+    doc_names: dict[str, str],
+) -> list[dict[str, Any]]:
+    cited = _cited_indices(answer_text, len(used_chunks))
+    sources = [
+        {
+            "fileName":  doc_names.get(c.document_id, "Unknown"),
+            "pageStart": c.page_start,
+            "pageEnd":   c.page_end,
+            "sectionTitle": c.section_title,
+            "chunkType": c.chunk_type,
+            "similarity": round(c.similarity, 4),
+        }
+        for i, c in enumerate(used_chunks, start=1) if i in cited
+    ]
+    if sources:
+        return sources
+
+    # Keep the UI honest about what context was sent even when the model
+    # forgot inline [Source N] tags. Verification still downgrades the answer
+    # for missing citations; this only prevents an empty Sources footer from
+    # making retrieval look unused.
+    return [
+        {
+            "fileName":  doc_names.get(c.document_id, "Unknown"),
+            "pageStart": c.page_start,
+            "pageEnd":   c.page_end,
+            "sectionTitle": c.section_title,
+            "chunkType": c.chunk_type,
+            "similarity": round(c.similarity, 4),
+        }
+        for c in used_chunks[:4]
+    ]
 
 
 def _context_strength(chunks: list[RetrievedChunk]) -> str:
@@ -703,18 +770,7 @@ def generate_answer(
         if fence:
             answer_text += fence
 
-    cited = _cited_indices(answer_text, len(used_chunks))
-    sources = [
-        {
-            "fileName":  doc_names.get(c.document_id, "Unknown"),
-            "pageStart": c.page_start,
-            "pageEnd":   c.page_end,
-            "sectionTitle": c.section_title,
-            "chunkType": c.chunk_type,
-            "similarity": round(c.similarity, 4),
-        }
-        for i, c in enumerate(used_chunks, start=1) if i in cited
-    ]
+    sources = _sources_for_answer(answer_text, used_chunks, doc_names)
 
     # Phase 10: deterministic verification independent of the model's
     # self-report. Failure here must never block the response.

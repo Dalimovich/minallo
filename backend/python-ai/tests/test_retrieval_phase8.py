@@ -81,9 +81,32 @@ def test_doc_type_match_boost():
 def test_doc_type_mismatch_no_boost():
     r = _import_retrieval()
     meta = {"DOC1": {"document_type": "lecture", "file_name": "anon.pdf"}}
-    no_boost = r._study_score(_chunk(), question_intent="exercise_sheet", doc_meta=meta)
+    no_boost = r._study_score(
+        _chunk(),
+        question_intent="exercise_sheet",
+        query_is_math=False,
+        doc_meta=meta,
+    )
     base = r._study_score(_chunk(), question_intent=None)
     assert abs(no_boost - base) < 1e-9
+
+
+def test_exercise_math_boosts_lecture_reference_chunks():
+    r = _import_retrieval()
+    meta = {"DOC1": {"document_type": "lecture", "file_name": "Vorlesung Schrauben.pdf"}}
+    base = r._study_score(
+        _chunk(source_type="lecture"),
+        question_intent="exercise_sheet",
+        query_is_math=False,
+        doc_meta=meta,
+    )
+    boosted = r._study_score(
+        _chunk(source_type="lecture"),
+        question_intent="exercise_sheet",
+        query_is_math=True,
+        doc_meta=meta,
+    )
+    assert boosted > base
 
 
 def test_unit_match_boost():

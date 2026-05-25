@@ -905,13 +905,13 @@ async function _bindRagStatus(co: HTMLElement, course: LegacyCourse): Promise<vo
     const doc = ragMap[fname.toLowerCase()];
     const f = _findUploadedFile(course, fname);
 
-    if (_ragConfirmed[cacheKey] === 'ready') {
+    if (_ragConfirmed[cacheKey] === 'ready' && !doc) {
       _setRagStatus(el, 'ready');
       return;
     }
 
     if (doc) {
-      _setRagStatus(el, doc.processing_status || '');
+      _setRagStatus(el, _displayStatusForDoc(doc));
       if (doc.processing_status === 'ready') {
         _ragConfirmed[cacheKey] = 'ready';
         return;
@@ -1010,7 +1010,7 @@ async function _triggerRagIndex(
     const updatedDocs = await listCourseDocuments(courseId);
     const updated = updatedDocs.find((d) => d.file_name.toLowerCase() === fname.toLowerCase());
     if (updated) {
-      _setRagStatus(el, updated.processing_status || '');
+      _setRagStatus(el, _displayStatusForDoc(updated));
       if (updated.processing_status === 'ready' && cacheKey) _ragConfirmed[cacheKey] = 'ready';
       if (
         updated.processing_status !== 'ready' &&
@@ -1027,6 +1027,7 @@ async function _triggerRagIndex(
 
 const RAG_TITLES: Record<string, string> = {
   ready: 'Ready for AI ✓',
+  ocr_weak: 'AI index ready, but OCR/text quality is weak — click to re-index',
   failed: 'Indexing failed — click to retry',
   uploading: 'Sending to AI…',
   uploaded: 'Processing…',
@@ -1036,6 +1037,7 @@ const RAG_TITLES: Record<string, string> = {
 };
 const RAG_ICONS: Record<string, string> = {
   ready: '🟢',
+  ocr_weak: '🟡',
   failed: '🔴',
   uploading: '⏳',
   uploaded: '🔵',
@@ -1043,6 +1045,20 @@ const RAG_ICONS: Record<string, string> = {
   chunking: '🔵',
   embedding: '🔵',
 };
+
+function _displayStatusForDoc(doc: CourseDocument): string {
+  const status = (doc.processing_status || '').toLowerCase();
+  if (status === 'ready' && _docNeedsOcrReview(doc)) return 'ocr_weak';
+  return status;
+}
+
+function _docNeedsOcrReview(doc: CourseDocument): boolean {
+  const quality = (doc.extraction_quality || '').toLowerCase();
+  if (quality === 'weak' || quality === 'failed') return true;
+  const assessment = doc.ocr_assessment;
+  if (!assessment || typeof assessment !== 'object') return false;
+  return assessment.ocrRecommended === true;
+}
 
 function _setRagStatus(el: HTMLElement, status: string): void {
   el.dataset.ragStatus = status;
@@ -1066,7 +1082,7 @@ async function _pollRagStatus(
     const docs = await listCourseDocuments(courseId);
     const doc = docs.find((d) => d.id === docId);
     if (!doc) return;
-    _setRagStatus(el, doc.processing_status || '');
+    _setRagStatus(el, _displayStatusForDoc(doc));
     if (doc.processing_status === 'ready') {
       if (cacheKey) _ragConfirmed[cacheKey] = 'ready';
       return;

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # --- Supabase Storage bucket holding the uploaded PDFs.
     # Same env var the existing Netlify uploader reads (defaults match).
-    rag_storage_bucket: str = Field("course-documents", alias="RAG_STORAGE_BUCKET")
+    rag_storage_bucket: str = Field("course-uploads", alias="RAG_STORAGE_BUCKET")
 
     # --- Shared secret between Netlify and this service.
     # Same env var the existing Netlify trigger-processing flow already uses

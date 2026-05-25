@@ -98,6 +98,7 @@ _NEIGHBOUR_BOOST = 0.10           # chunk is on ±1 page from a top-scoring chun
 _FILENAME_MATCH_BOOST = 0.10      # file_name contains a meaningful query token
 _GENERIC_CHUNK_PENALTY = 0.20     # short, low-info chunk
 _NO_QUERY_TERM_PENALTY = 0.30     # chunk doesn't contain any meaningful query token
+_LECTURE_REFERENCE_BOOST = 0.18   # exercise/math questions should include professor lecture context
 
 # Phase 8 helpers — token filtering for "meaningful query term" checks.
 _STOPWORDS = frozenset({
@@ -303,6 +304,14 @@ def _study_score(
     if question_intent and doc_meta_row:
         if doc_meta_row.get("document_type") == question_intent:
             score += _DOC_TYPE_MATCH_BOOST
+
+    # Exercise questions need the professor's lecture/formula context, not only
+    # the exercise sheet. Give lecture chunks a modest lift for math/exercise
+    # requests so they make the prompt as references alongside the task.
+    if query_is_math and question_intent in {"exercise_sheet", "solution_sheet"}:
+        doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
+        if source == "lecture" or doc_type == "lecture":
+            score += _LECTURE_REFERENCE_BOOST
 
     # +0.15: a unit from the query appears in the chunk (strong signal for
     # numerical/engineering questions).
@@ -847,6 +856,8 @@ _FORMULA_INTENT_KEYWORDS = (
     "formel", "formula", "gleichung", "equation", "satz", "theorem",
     "moment", "spannung", "kraft", "energie", "leistung", "ableitung",
     "integral", "taylor", "fourier", "matrix", "vektor", "betrag",
+    "nachgiebigkeit", "steifigkeit", "schraube", "schrauben", "flansch",
+    "vorspann", "vorspannkraft", "federkonstante",
 )
 
 

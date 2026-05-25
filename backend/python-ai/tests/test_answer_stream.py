@@ -126,7 +126,7 @@ def test_problem_solver_overlay_check_mode_requires_student_work() -> None:
     overlay = _problem_solver_overlay("check", {"mode": "check", "problem": "Find F"})
     assert "Selected mode: CHECK MY WORK" in overlay
     assert "no student work attached" in overlay
-    assert "identify the first incorrect or risky step" in overlay
+    assert "identify the first incorrect or risky step" in overlay.lower()
 
 
 def test_problem_solver_user_block_keeps_problem_and_student_work_separate() -> None:
@@ -145,7 +145,31 @@ def test_problem_solver_user_block_keeps_problem_and_student_work_separate() -> 
     assert "I = U * R = 50 A" in block
 
 
+def test_visible_pdf_context_promotes_retrieval_strength() -> None:
+    """If the frontend sends visible PDF text, the stream prompt can answer
+    from it even when vector retrieval missed the page."""
+    from app.services.answer_stream import _effective_strength_with_open_context
+
+    assert _effective_strength_with_open_context("weak", True) == "strong"
+    assert _effective_strength_with_open_context("none", True) == "strong"
+    assert _effective_strength_with_open_context("weak", False) == "weak"
+
+
 # ── Cache key fold-in for previousTurns ─────────────────────────────────────
+
+
+def test_open_file_image_parts_builds_visible_page_image_block() -> None:
+    """Scanned/weak OCR pages can be attached as Source 0 image context."""
+    from app.services.answer_stream import _open_file_image_parts
+
+    parts = _open_file_image_parts([
+        {"mediaType": "image/jpeg", "data": "abc123==", "page": 4},
+    ])
+
+    assert parts == [{
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,abc123=="},
+    }]
 
 
 def test_question_hash_changes_with_previous_turns() -> None:

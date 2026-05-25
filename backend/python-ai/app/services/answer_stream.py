@@ -62,6 +62,31 @@ def _is_deictic_question(q: str) -> bool:
     return bool(_DEICTIC_QUESTION_RE.search(q or ""))
 
 
+def _effective_strength_with_open_context(strength: str, has_open_context: bool) -> str:
+    """Promote a request with visible PDF text to answerable context.
+
+    RAG can miss an exercise even when the user has it open in the PDF. If the
+    frontend sends a focused visible-page excerpt, treat that excerpt as
+    grounding and use retrieved chunks as supporting material.
+    """
+    return "strong" if has_open_context else strength
+
+
+def _open_file_image_parts(open_file_images: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Convert validated visible-PDF images into OpenAI chat content blocks."""
+    parts: list[dict[str, Any]] = []
+    for img in (open_file_images or [])[:1]:
+        media_type = str(img.get("mediaType") or "image/jpeg").strip() or "image/jpeg"
+        data = str(img.get("data") or "").strip()
+        if not data:
+            continue
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{media_type};base64,{data}"},
+        })
+    return parts
+
+
 # Conversation-continuity tuning. Earlier values (6 messages / 2k chars)
 # were too tight — students hit cases where the AI forgot the answer it
 # gave 5–10 turns ago and gave "some bullshit" follow-up instead. Raised
@@ -505,6 +530,23 @@ Give a complete worked solution. For math: symbolic formula → numeric
 substitution → intermediate result → final answer with units → short
 plausibility check. For code: complete working implementation in a fenced
 block, a Trace through one example, and a Complexity line.
+FULL SOLUTION means finish the computation, not merely describe the method.
+For engineering/math tasks:
+- If all required numeric inputs are present in the PROBLEM SOLVER INPUT or
+  COURSE CONTEXT, you MUST carry out the arithmetic and end with a visibly
+  boxed final answer, e.g. `$$\\boxed{...}$$`.
+- Do not end with "insert the values", "use the formulas", "if the values are
+  known", "please provide the lengths", or similar placeholders when the
+  required values are available in the visible problem/context.
+- If a final numeric answer is impossible, write a short "Cannot finish
+  numerically" section and list the exact missing quantities by symbol/name
+  (for example `l_i`, `A_i`, `A_ers`, `d_h`) and where they should come from.
+  Do not present this as a full solution and do not label confidence high.
+- When the student explicitly says "mach weiter", "finale Loesung",
+  "rechnerisch", "calculate it", or "give the final answer", treat that as a
+  demand for the completed arithmetic. Continue from the previous turn's setup
+  and produce the final result if the missing values are already available in
+  the conversation or sources.
 """,
         "practice": """
 
@@ -531,6 +573,7 @@ def stream_answer(
     max_tokens: int = 2500,
     active_file_name: str | None = None,
     open_file_context: str | None = None,
+    open_file_images: list[dict[str, Any]] | None = None,
     tutor_mode: str = DEFAULT_TUTOR_MODE,
     weak_topics: list[str] | None = None,
     previous_turns: list[dict[str, str]] | None = None,
@@ -563,8 +606,10 @@ def stream_answer(
     else:
         used_chunks = []
 
-    open_ctx = (open_file_context or "").strip()[:3500]
+    open_ctx = (open_file_context or "").strip()[:12000]
+    open_image_parts = _open_file_image_parts(open_file_images)
     has_open = bool(open_ctx)
+    has_open_image = bool(open_image_parts)
     # Promote to "strong" when the user has a file open with visible text AND
     # the question is deictic ("explain this", "what does this section mean?").
     # For broad questions ("Solve Aufgabe 4", "Find the formula for X") a
@@ -572,11 +617,7 @@ def stream_answer(
     # actual retrieval, otherwise the model would treat whatever happens to
     # be on the visible page as the answer.
     deictic = _is_deictic_question(question)
-    effective_strength = (
-        "strong"
-        if (strength == "strong" or (has_open and deictic))
-        else strength
-    )
+    effective_strength = _effective_strength_with_open_context(strength, has_open or has_open_image)
     tutor_mode_norm = normalise_tutor_mode(tutor_mode)
     problem_mode = _normalise_problem_solver_mode(
         problem_solver.get("mode") if problem_solver else None
@@ -600,7 +641,7 @@ def stream_answer(
     # predictable.
     if model:
         target_model = model
-    elif answer_mode == "math" or problem_mode in {"setup", "check", "solve"} or wants_diagram:
+    elif answer_mode == "math" or problem_mode in {"setup", "check", "solve"} or wants_diagram or has_open_image:
         target_model = settings.openai_generate_model_strong
     else:
         target_model = settings.openai_generate_model
@@ -612,7 +653,7 @@ def stream_answer(
     # Source 0 is only included when the question is deictic OR retrieval
     # was already strong on its own. Otherwise a 3.5k slice of whatever the
     # student happens to have on screen would over-anchor a broad question.
-    include_open_source = has_open and (deictic or strength == "strong")
+    include_open_source = has_open
     parts: list[str] = []
     if include_open_source:
         open_name = active_file_name or "open file"
@@ -626,10 +667,17 @@ def stream_answer(
     if active_file_name:
         system_prompt += (
             f"\n\nThe student is currently reading the file \"{active_file_name}\""
-            " in the PDF viewer. When their question contains deictic references"
-            " (\"this\", \"this question\", \"this section\", \"the exercise above\","
-            " \"explain this\"), anchor your answer in [Source 0] (CURRENTLY VISIBLE)"
-            " before consulting other sources."
+            " in the PDF viewer. Treat [Source 0] (CURRENTLY VISIBLE) as the"
+            " primary source for what the student is looking at, then consult"
+            " retrieved course sources for supporting formulas, definitions,"
+            " and worked methods."
+        )
+    if has_open_image:
+        system_prompt += (
+            "\n\nVisible PDF page image(s) are attached to the current user"
+            " message. Read printed text, handwritten text, formulas, diagrams,"
+            " tables, labels, and numeric values from the image when extracted"
+            " text is incomplete. Treat the image as part of [Source 0]."
         )
 
     user_message = "QUESTION:\n" + question.strip()
@@ -637,6 +685,11 @@ def stream_answer(
         user_message += _problem_solver_user_block(problem_solver)
     if context_block:
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
+    user_content: str | list[dict[str, Any]]
+    if open_image_parts:
+        user_content = [{"type": "text", "text": user_message}, *open_image_parts]
+    else:
+        user_content = user_message
 
     def _source_payload(c):
         return {
@@ -684,7 +737,7 @@ def stream_answer(
             messages=[
                 {"role": "system", "content": system_prompt},
                 *history_messages,
-                {"role": "user",   "content": user_message},
+                {"role": "user",   "content": user_content},
             ],
         )
         for chunk in stream:
@@ -753,12 +806,24 @@ def stream_answer(
     # Without this, the answer would show "grounded in [Source 0]" inline
     # but the final Sources block would be missing that source entirely —
     # a misleading UX gap the user can't tell from a fabricated citation.
-    if include_open_source and active_file_name and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
+    if (include_open_source or has_open_image) and active_file_name and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
         filtered_sources.insert(0, {
             "file_name": active_file_name,
             "pages": "currently visible",
             "section": "Open PDF (visible page)",
         })
+    if not filtered_sources:
+        # The UI should still show the material the answer was grounded on.
+        # Verification may mark the answer down when inline citations are
+        # missing, but hiding sources entirely makes students think retrieval
+        # did not use their lectures/exercises at all.
+        if (include_open_source or has_open_image) and active_file_name:
+            filtered_sources.append({
+                "file_name": active_file_name,
+                "pages": "currently visible",
+                "section": "Open PDF (visible page)",
+            })
+        filtered_sources.extend(_source_payload(c) for c in used_chunks[:4])
 
     # Phase 10 — deterministic verification on the streamed answer.
     # Include the open-file text in the haystack so formulas / numbers the
