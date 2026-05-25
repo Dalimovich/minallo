@@ -85,13 +85,21 @@ function isoOrNull(unixSeconds: number | undefined): string | null {
 /** Record an event row in `stripe_webhook_events` BEFORE processing. Returns
  *  true if the row was newly inserted (we should process), false if it already
  *  existed (duplicate — short-circuit). */
+type ClaimOutcome =
+  | { kind: 'claimed' }
+  | { kind: 'duplicate' }
+  | { kind: 'error'; status: number };
+
 async function claimEvent(
   eventId: string,
   eventType: string,
   serviceKey: string
-): Promise<{ claimed: boolean; status?: number }> {
-  // Postgrest will return 409 if the row already exists, thanks to the primary
-  // key on event_id. We treat 409 as "already processed".
+): Promise<ClaimOutcome> {
+  // Postgrest returns 409 if the row already exists (real duplicate, thanks to
+  // the PK on event_id). Anything else (5xx, network failure surfaced as 0,
+  // RLS misconfig) is a transient/operational failure: do NOT swallow it as a
+  // duplicate, otherwise Stripe stops retrying and we permanently lose the
+  // event.
   const res = await supaRequest(
     'POST',
     'stripe_webhook_events',
@@ -99,9 +107,9 @@ async function claimEvent(
     serviceKey,
     { Prefer: 'return=minimal' }
   );
-  if (res.status === 201) return { claimed: true };
-  if (res.status === 409) return { claimed: false };
-  return { claimed: false, status: res.status };
+  if (res.status === 201) return { kind: 'claimed' };
+  if (res.status === 409) return { kind: 'duplicate' };
+  return { kind: 'error', status: res.status };
 }
 
 async function markEvent(
@@ -159,13 +167,14 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return { statusCode: 400, body: 'Missing event id' };
   }
 
-  // Idempotency: insert the event id, short-circuit if it's a duplicate.
+  // Idempotency: insert the event id. Only treat a real 409 conflict as a
+  // duplicate; any other non-success is a transient failure and MUST return
+  // 5xx so Stripe keeps retrying — otherwise the payment/subscription event
+  // is lost forever.
   const claim = await claimEvent(evt.id, evt.type, serviceKey);
-  if (!claim.claimed) {
-    // Either Stripe is replaying or the ledger insert errored on something
-    // other than the unique-key collision. In either case there is nothing
-    // more to do here; returning 200 stops the retry loop.
-    return { statusCode: 200, body: 'duplicate' };
+  if (claim.kind === 'duplicate') return { statusCode: 200, body: 'duplicate' };
+  if (claim.kind === 'error') {
+    return { statusCode: 503, body: 'ledger unavailable: ' + claim.status };
   }
 
   const prefer = { Prefer: 'resolution=merge-duplicates,return=minimal' };

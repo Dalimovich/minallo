@@ -101,7 +101,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         Date.now() + (isTrialCheckout ? 8 : 31) * 24 * 60 * 60 * 1000
       ).toISOString();
     }
-    await supaRequest('POST', 'subscriptions?on_conflict=user_id',
+    const writeRes = await supaRequest('POST', 'subscriptions?on_conflict=user_id',
       {
         id: userId, user_id: userId, plan: 'pro', status: isTrialCheckout ? 'trialing' : 'active',
         stripe_subscription_id: session.subscription || null,
@@ -110,6 +110,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         updated_at: new Date().toISOString()
       },
       serviceKey, { Prefer: 'resolution=merge-duplicates,return=minimal' });
+    if (writeRes.status < 200 || writeRes.status >= 300) {
+      // The DB write is the source of truth for Pro entitlement. If it fails
+      // we MUST NOT return ok:true — the frontend would locally flip to Pro
+      // while every backend-gated AI call still saw the user as free. The
+      // webhook is the safety net here: it will retry the same row on the
+      // next customer.subscription.* event.
+      console.error('[verify-payment] subscriptions upsert failed:', writeRes.status, writeRes.body);
+      return fail(502, 'Could not record subscription — please refresh in a moment.');
+    }
 
     if (isTrialCheckout && session.metadata?.trial_device_hash) {
       await recordDeviceTrial(

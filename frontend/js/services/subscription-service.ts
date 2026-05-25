@@ -131,12 +131,18 @@ export async function verifyPayment(sessionId: string): Promise<unknown> {
 
 export async function activatePayPalSubscription(
   subscriptionID: string,
-  trialDeviceId?: string
+  trialDeviceId?: string,
+  consent?: { consentWiderrufVerzicht: boolean; consentTimestamp: string }
 ): Promise<unknown> {
   const res = await fetch('/api/activate-paypal-subscription', {
     method: 'POST',
     headers: _authHeaders(),
-    body: JSON.stringify({ subscriptionID, trialDeviceId: trialDeviceId || '' }),
+    body: JSON.stringify({
+      subscriptionID,
+      trialDeviceId: trialDeviceId || '',
+      consentWiderrufVerzicht: !!(consent && consent.consentWiderrufVerzicht),
+      consentTimestamp: (consent && consent.consentTimestamp) || ''
+    }),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
   if (!res.ok) {

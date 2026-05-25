@@ -82,6 +82,17 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const subscriptionId = (body.subscriptionID || body.subscriptionId) as unknown;
   if (!subscriptionId || typeof subscriptionId !== 'string') return fail(400, 'Missing PayPal subscription ID');
 
+  // Widerruf-Verzicht consent must be captured server-side, same as the Stripe
+  // path. § 312j Abs. 3 / § 356 Abs. 5 BGB require explicit consent before
+  // performance begins; without it we have no evidence for chargebacks.
+  if (body.consentWiderrufVerzicht !== true) {
+    return fail(400, 'Bitte bestaetige die Widerrufs-Information, bevor du fortfaehrst.');
+  }
+  const consentTimestamp =
+    typeof body.consentTimestamp === 'string' && body.consentTimestamp.trim()
+      ? body.consentTimestamp.trim().slice(0, 64)
+      : new Date().toISOString();
+
   const trialDeviceId = normalizeTrialDeviceId(body.trialDeviceId);
   const trialDeviceHash = trialDeviceId ? hashTrialDeviceId(trialDeviceId) : '';
 
@@ -100,14 +111,26 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       return fail(403, 'Subscription plan mismatch');
     }
 
-    if (subscription.custom_id && subscription.custom_id !== user.id) {
+    // Ownership check: the frontend stamps custom_id = user.id on createSubscription.
+    // Require it server-side — without this anyone with a valid subscription ID on
+    // the accepted plan could attach it to their account.
+    if (!subscription.custom_id || subscription.custom_id !== user.id) {
       await logSecurityEvent(serviceKey, user.id, 'paypal_subscription_user_mismatch', {
-        subscription_id: subscriptionId, custom_id: subscription.custom_id
+        subscription_id: subscriptionId,
+        custom_id: subscription.custom_id || null
       });
       return fail(403, 'Subscription does not belong to this user');
     }
 
-    if (!['ACTIVE', 'APPROVAL_PENDING'].includes(status)) return fail(400, 'Subscription is not active');
+    // Only grant Pro for a truly ACTIVE subscription. APPROVAL_PENDING means the
+    // user has not yet completed the PayPal flow and no payment has settled —
+    // granting access there is a free-Pro vulnerability.
+    if (status !== 'ACTIVE') {
+      await logSecurityEvent(serviceKey, user.id, 'paypal_subscription_not_active', {
+        subscription_id: subscriptionId, paypal_status: status
+      });
+      return fail(400, 'Subscription is not active');
+    }
 
     const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
     const writeRes = await supaRequest('POST', 'subscriptions?on_conflict=user_id',
@@ -125,8 +148,17 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       await recordDeviceTrial(serviceKey, trialDeviceHash, user.id, subscriptionId, 'paypal');
     }
 
+    const sourceIp =
+      (event.headers && (event.headers['x-nf-client-connection-ip']
+        || event.headers['x-forwarded-for']
+        || event.headers['client-ip']))
+      || '';
     await logSecurityEvent(serviceKey, user.id, 'paypal_subscription_activated', {
-      subscription_id: subscriptionId, paypal_status: status
+      subscription_id: subscriptionId,
+      paypal_status: status,
+      consent_widerruf_verzicht: true,
+      consent_widerruf_verzicht_at: consentTimestamp,
+      consent_widerruf_verzicht_ip: String(sourceIp).slice(0, 64) || null
     });
 
     return jsonResponse(200, { ok: true, plan: 'pro', status: 'active' });

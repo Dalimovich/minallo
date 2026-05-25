@@ -126,6 +126,7 @@ var _paywallPaypalRendered = false;
 var _paypalRenderPending = false;
 var _paywallPaypalRenderPending = false;
 var _paypalPlanId = '';
+var _ppConsentTs = '';
 var _billingConfigPromise = null;
 
 function _loadBillingConfig() {
@@ -191,9 +192,13 @@ function _ensurePayPalPlanId() {
   });
 }
 
-async function _activatePayPalSubscription(data, closePaywall) {
+async function _activatePayPalSubscription(data, closePaywall, consent) {
   if (!_currentUser) return;
-  await window._subService.activatePayPalSubscription(data && data.subscriptionID, _trialDeviceId());
+  await window._subService.activatePayPalSubscription(
+    data && data.subscriptionID,
+    _trialDeviceId(),
+    consent || { consentWiderrufVerzicht: false, consentTimestamp: '' }
+  );
   applySubscription({ plan: 'pro', status: 'active' });
   if (closePaywall) {
     var modal = document.getElementById('paywallModal');
@@ -378,6 +383,19 @@ function _initPayPalButton(attempt) {
             height: 40
           },
           createSubscription: function (data, actions) {
+            // Same § 312j Abs. 3 BGB consent gate as Stripe. Refuse to open
+            // PayPal at all when the Widerruf checkbox is not ticked — this
+            // is the only point where we can stop a PayPal subscription
+            // before money moves.
+            var box = document.getElementById('subConsentWiderruf');
+            if (!box || !box.checked) {
+              showToast(
+                _subT('sub_consent_required', 'Hinweis'),
+                _subT('sub_consent_required_sub', 'Bitte bestaetige die Widerrufs-Information, bevor du fortfaehrst.')
+              );
+              return Promise.reject(new Error('consent_required'));
+            }
+            _ppConsentTs = new Date().toISOString();
             return actions.subscription.create({
               plan_id: planId,
               custom_id: _currentUser && _currentUser.id
@@ -386,7 +404,10 @@ function _initPayPalButton(attempt) {
           onApprove: async function (data) {
             showToast(_subT('sub_payment_received', 'Payment received'), _subT('sub_activating', 'Activating your Pro plan...'));
             try {
-              await _activatePayPalSubscription(data, false);
+              await _activatePayPalSubscription(data, false, {
+                consentWiderrufVerzicht: true,
+                consentTimestamp: _ppConsentTs || new Date().toISOString()
+              });
               return;
             } catch (e) {
               showToast(_subT('sub_activation_error', 'Activation error'), _subT('sub_activation_error_sub', 'Contact support.'));
@@ -468,19 +489,31 @@ function _showPaywall() {
                 height: 38
               },
               createSubscription: function (data, actions) {
-                return actions.subscription.create({
-                  plan_id: planId,
-                  custom_id: _currentUser && _currentUser.id
-                });
+                // The paywall has no inline Widerruf consent box. Refuse to
+                // start PayPal here and route the user to the full
+                // subscription view where the checkbox lives — same rule as
+                // the paywall Stripe button. Without this, PayPal would
+                // bypass the § 312j Abs. 3 BGB consent that Stripe enforces.
+                showToast(
+                  _subT('sub_consent_required', 'Hinweis'),
+                  _subT('sub_consent_required_sub', 'Bitte bestaetige die Widerrufs-Information, bevor du fortfaehrst.')
+                );
+                var modal = document.getElementById('paywallModal');
+                if (modal) modal.style.display = 'none';
+                if (typeof window.showPortalSection === 'function') {
+                  window.showPortalSection('subscription');
+                }
+                return Promise.reject(new Error('consent_required'));
               },
               onApprove: async function (data) {
-                showToast(_subT('sub_payment_received', 'Payment received'), _subT('sub_activating', 'Activating your Pro plan...'));
-                try {
-                  await _activatePayPalSubscription(data, true);
-                  return;
-                } catch (e) {
-                  showToast(_subT('sub_activation_error', 'Activation error'), _subT('sub_activation_error_sub', 'Contact support.'));
-                }
+                // Unreachable in normal flow because createSubscription rejects,
+                // but kept as a defensive no-op so we never activate without
+                // server-side consent verification.
+                showToast(
+                  _subT('sub_consent_required', 'Hinweis'),
+                  _subT('sub_consent_required_sub', 'Bitte bestaetige die Widerrufs-Information, bevor du fortfaehrst.')
+                );
+                return;
               },
               onError: function (err) {
                 console.error('PayPal error:', err);
@@ -528,7 +561,11 @@ function _bindSubscriptionControls() {
         // the portal. Otherwise show the 2-step flow: any close other than
         // explicit 'accept' should just dismiss, NOT auto-open the portal.
         var _result = _alreadyOffered ? null : await _showRetentionOffer();
-        if (_result === 'dismiss' || _result === 'cancel') return;
+        // 'dismiss' (kept subscription / backdrop close) → stop here.
+        // 'cancel' (No thanks, cancel anyway) → fall through to the Stripe
+        // portal so the user can complete the cancellation.
+        // 'accept' → apply the discount and stop.
+        if (_result === 'dismiss') return;
         if (_result === 'accept') {
           try {
             await window._subService.applyRetentionDiscount();
@@ -721,8 +758,10 @@ function _bindSubscriptionControls() {
       var _alreadyOffered = false;
       try { _alreadyOffered = localStorage.getItem(_retentionKey) === '1'; } catch (_e) {}
       var _result = await _showRetentionOffer();
-      // Any close other than explicit 'accept' just dismisses — no auto cancel.
-      if (_result === 'dismiss' || _result === 'cancel') return;
+      // 'dismiss' (kept subscription / backdrop close) → stop here.
+      // 'cancel' (No thanks, cancel anyway) → proceed to actual cancellation.
+      // 'accept' → apply discount (handled in the next branch) and stop.
+      if (_result === 'dismiss') return;
       if (_result === 'accept' && !_alreadyOffered) {
         try {
           await window._subService.applyRetentionDiscount();

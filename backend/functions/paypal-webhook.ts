@@ -119,11 +119,18 @@ function rawBody(event: NetlifyEvent): string {
   return event.body || '';
 }
 
+type ClaimOutcome =
+  | { kind: 'claimed' }
+  | { kind: 'duplicate' }
+  | { kind: 'error'; status: number };
+
 async function claimEvent(
   eventId: string,
   eventType: string,
   serviceKey: string
-): Promise<boolean> {
+): Promise<ClaimOutcome> {
+  // 409 = real duplicate (PK collision). Anything else is transient and must
+  // bubble up as 5xx so PayPal keeps retrying — otherwise the event is lost.
   const res = await supaRequest(
     'POST',
     'paypal_webhook_events',
@@ -131,7 +138,9 @@ async function claimEvent(
     serviceKey,
     { Prefer: 'return=minimal' }
   );
-  return res.status === 201;
+  if (res.status === 201) return { kind: 'claimed' };
+  if (res.status === 409) return { kind: 'duplicate' };
+  return { kind: 'error', status: res.status };
 }
 
 async function markEvent(
@@ -190,9 +199,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const sigOk = await verifyPaypalSignature(event, parsed, token);
   if (!sigOk) return { statusCode: 400, body: 'Invalid signature' };
 
-  // Idempotency
-  const claimed = await claimEvent(parsed.id, parsed.event_type, serviceKey);
-  if (!claimed) return { statusCode: 200, body: 'duplicate' };
+  // Idempotency — only short-circuit on a real PK collision; transient ledger
+  // failures must return 5xx so PayPal retries.
+  const claim = await claimEvent(parsed.id, parsed.event_type, serviceKey);
+  if (claim.kind === 'duplicate') return { statusCode: 200, body: 'duplicate' };
+  if (claim.kind === 'error') {
+    return { statusCode: 503, body: 'ledger unavailable: ' + claim.status };
+  }
 
   const prefer = { Prefer: 'resolution=merge-duplicates,return=minimal' };
   const subId =
