@@ -92,6 +92,16 @@ function _autoScroll(el: HTMLElement | null): void {
   el.scrollTop = el.scrollHeight;
 }
 
+const MINALLO_APP_CONTEXT =
+  '\n\nMINALLO APP CONTEXT. You are running inside Minallo at minallo.de. ' +
+  'For questions about the website/app itself, answer from this app map without course citations. ' +
+  'Sidebar: Home = dashboard; Courses = semesters/courses, uploads, PDFs, course AI, notes, summaries, quiz, flashcards; ' +
+  'Lecture Notes = generated notes and summaries; Editor = edit/combine notes; Chatbot = general Minallo AI chat with files/images; ' +
+  'Chat = student/friend chat rooms; Games = break games; Study Lounge = study time, streaks, opened files, course stats; ' +
+  'Profile = profile info; Settings = language/preferences/account settings; Subscription = plan, billing portal and PayPal/Stripe actions; ' +
+  'Admin = admin-only subscription/user tools when visible. Top bar Study = focus timer/session. Sidebar bottom Night = dark mode. ' +
+  'Legal pages are Impressum and Privacy Policy. If the user asks you to click or navigate, give concise steps; do not claim you do not know which website you are in.';
+
 export function _resetScrollFollow(): void {
   _userScrolledUp = false;
   const el = document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
@@ -316,8 +326,8 @@ export function initAskAI(
     aiMsgs.appendChild(thinkWrap);
     aiMsgs.scrollTop = aiMsgs.scrollHeight;
 
-    const pdfDoc = _isProblemSolver ? null : (window.pdfDoc as PdfDocLike | null | undefined);
-    let pdfFullText = _isProblemSolver ? '' : window.pdfFullText || '';
+    const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
+    let pdfFullText = window.pdfFullText || '';
     const _compareName = _isProblemSolver ? null : getCompareFileName();
     let _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
     const _comparePdfDoc = _compareName
@@ -342,10 +352,11 @@ export function initAskAI(
           (_lang === 'de' ? 'German' : 'English') +
           '. The student is reading ' + _docList + ' from ' + currentCourseShort +
           '. ALWAYS base your answers on the actual document content provided below. Do not use general knowledge when the document covers the topic. Be thorough but concise.') +
+      MINALLO_APP_CONTEXT +
       _MATH_PROMPT;
 
     const _leftTextReady =
-      !_isProblemSolver && pdfDoc && !pdfFullText.trim()
+      pdfDoc && !pdfFullText.trim()
         ? extractPdfText(pdfDoc, 30).then((t) => {
             if (t) {
               window.pdfFullText = t;
@@ -369,7 +380,17 @@ export function initAskAI(
     const _textReady = Promise.all([_leftTextReady, _rightTextReady]);
 
     _textReady
-      .then(() => (_isProblemSolver || !pdfDoc ? [] : pdfToImages(8)))
+      .then(() => {
+        if (!pdfDoc) return [];
+        const _pp = window.pdfPage as number | undefined;
+        const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts;
+        const _currentPageText = _pp && _ppt ? (_ppt[_pp] || '') : '';
+        const _visibleTextWeak =
+          pdfFullText.trim().length < 500 ||
+          !_currentPageText.trim() ||
+          _currentPageText.trim().length < 80;
+        return _visibleTextWeak ? pdfToImages(1) : [];
+      })
       .then(async (pageImages: string[]) => {
         let userContent: unknown;
         const isHandwritten = pdfFullText.trim().length < 100;
@@ -397,6 +418,11 @@ export function initAskAI(
 
         const _courseId = window.activeCourseId || window.currentCourseId || '';
         let _activeDocId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
+        // In split view, resolve the compare-pane doc ID too so we can scope
+        // retrieval to exactly the two open PDFs. Without this, the backend
+        // pulls chunks from any related file in the course and the citation
+        // list ends up referencing PDFs the user doesn't have open.
+        let _compareDocId: string | null = null;
         if (_courseId) {
           try {
             const _docs: CourseDocument[] = await listCourseDocuments(_courseId);
@@ -410,7 +436,13 @@ export function initAskAI(
               );
               if (_open?.id) _activeDocId = _open.id;
             }
-          } catch { /* keep _activeDocId as-is; backend will search the whole course */ }
+            if (_compareName) {
+              const _cmp = _readyDocs.find(
+                (d) => (d.file_name || '').toLowerCase() === _compareName.toLowerCase()
+              );
+              if (_cmp?.id) _compareDocId = _cmp.id;
+            }
+          } catch { /* keep IDs as-is; backend will search the whole course */ }
         }
 
         // Extract a focused excerpt from the open PDF around the mentioned exercise/topic.
@@ -465,7 +497,7 @@ export function initAskAI(
             }
             if (_idx >= 0) {
               (window as unknown as { _lastExerciseIdx?: number })._lastExerciseIdx = _idx;
-              _openFileCtx = _rawText.slice(Math.max(0, _idx - 200), _idx + 3000);
+              _openFileCtx = _rawText.slice(Math.max(0, _idx - 600), _idx + 8000);
             }
           }
           const _lastExerciseIdx = (window as unknown as { _lastExerciseIdx?: number })._lastExerciseIdx;
@@ -477,9 +509,9 @@ export function initAskAI(
               : -1;
             if (_subqRel > 0) {
               const _subqAbs = _lastExerciseIdx + _subqRel;
-              _openFileCtx = _rawText.slice(Math.max(0, _subqAbs - 300), _subqAbs + 2500);
+              _openFileCtx = _rawText.slice(Math.max(0, _subqAbs - 600), _subqAbs + 6000);
             } else {
-              _openFileCtx = _rawText.slice(Math.max(0, _lastExerciseIdx - 200), _lastExerciseIdx + 3000);
+              _openFileCtx = _rawText.slice(Math.max(0, _lastExerciseIdx - 600), _lastExerciseIdx + 8000);
             }
           }
           if (!_openFileCtx) {
@@ -490,14 +522,34 @@ export function initAskAI(
             // the way back to the document start only as a last resort.
             const _pp = window.pdfPage as number | undefined;
             const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts;
-            const _currentPageText = _pp && _ppt ? _ppt[_pp] : '';
+            const _pageParts: string[] = [];
+            if (_pp && _ppt) {
+              [_pp - 1, _pp, _pp + 1].forEach((pageNo) => {
+                const pageText = _ppt[pageNo];
+                if (pageNo > 0 && pageText && pageText.trim().length > 30) {
+                  _pageParts.push('[PDF page ' + pageNo + ']\n' + pageText.trim());
+                }
+              });
+            }
+            const _currentPageText = _pageParts.join('\n\n');
             if (_currentPageText && _currentPageText.trim().length > 60) {
-              _openFileCtx = _currentPageText.slice(0, 3000);
+              _openFileCtx = _currentPageText.slice(0, 12000);
             } else {
-              _openFileCtx = _rawText.slice(0, 3000);
+              _openFileCtx = _rawText.slice(0, 12000);
             }
           }
         }
+        const _currentPageNo = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+        const _visibleTextWeak =
+          !!pdfDoc &&
+          (
+            isHandwritten ||
+            !_openFileCtx ||
+            _openFileCtx.trim().length < 500
+          );
+        const _openFileImages = _visibleTextWeak && pageImages[0]
+          ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
+          : undefined;
 
         // RAG-first routing: any question with a course_id goes through
         // /ask-stream so the Phase-1 verification + math-template gating +
@@ -710,14 +762,20 @@ export function initAskAI(
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
               signal: _streamController.signal,
               body: JSON.stringify({
-                // documentIds is a HARD filter — only send when the user
-                // explicitly scopes the question to a chosen set (not when
-                // they merely have a PDF open). The currently-open file is
-                // passed as activeDocumentId (a ranking hint), so retrieval
-                // can still pull in lecture + exercise + formula sheets.
+                // documentIds is a HARD filter. We send it in two cases:
+                //   1. Split view — user has two PDFs open and is implicitly
+                //      asking the question against that pair, so retrieval
+                //      must stay inside those two files.
+                //   2. (otherwise) leave undefined so the currently-open file
+                //      is treated as a ranking hint via activeDocumentId and
+                //      retrieval can still pull in lecture / exercise /
+                //      formula sheets from the same course.
                 courseId: _courseId,
                 question: question,
-                documentIds: undefined,
+                documentIds:
+                  _activeDocId && _compareDocId
+                    ? [_activeDocId, _compareDocId]
+                    : undefined,
                 activeDocumentId: _activeDocId || undefined,
                 // Tell the backend which file the user is reading and give it
                 // a slice of the actually-visible text. Without this the model
@@ -725,6 +783,7 @@ export function initAskAI(
                 // user is pointing at when they say "this question".
                 activeFileName: activeFileName || undefined,
                 openFileContext: _openFileCtx || undefined,
+                openFileImages: _openFileImages,
                 // Recent chat history so the model can resolve anaphoric
                 // references ("the formula above", "explain that again").
                 previousTurns: _previousTurns.length ? _previousTurns : undefined,
@@ -816,7 +875,10 @@ export function initAskAI(
                     answer += '\n\n**Sources:**\n' +
                       data.sources.map((s) => {
                         let l = '- ' + (s.file_name || '');
-                        if (s.pages) l += ', p.' + s.pages;
+                        if (s.pages) {
+                          const pages = String(s.pages);
+                          l += /^\d/.test(pages) ? ', p.' + pages : ', ' + pages;
+                        }
                         if (s.section) l += ' · *' + s.section + '*';
                         return l;
                       }).join('\n');
@@ -860,7 +922,10 @@ export function initAskAI(
                 fullAnswer += '\n\n**Sources:**\n' +
                   sources.map((s) => {
                     let line = '- ' + (s.file_name || '');
-                    if (s.pages) line += ', p.' + s.pages;
+                    if (s.pages) {
+                      const pages = String(s.pages);
+                      line += /^\d/.test(pages) ? ', p.' + pages : ', ' + pages;
+                    }
                     if (s.section) line += ' · *' + s.section + '*';
                     return line;
                   }).join('\n');
