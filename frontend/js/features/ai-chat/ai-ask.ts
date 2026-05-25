@@ -445,18 +445,16 @@ export function initAskAI(
 
         const _courseId = window.activeCourseId || window.currentCourseId || '';
         let _activeDocId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
-        // In split view, resolve the compare-pane doc ID too so we can scope
-        // retrieval to exactly the two open PDFs. Without this, the backend
-        // pulls chunks from any related file in the course and the citation
-        // list ends up referencing PDFs the user doesn't have open.
+        // In split view, resolve the compare-pane doc ID too. The backend
+        // treats documentIds as preference hints, while still searching the
+        // whole course for professor lecture/formula support.
         let _compareDocId: string | null = null;
         if (_courseId) {
           try {
             const _docs: CourseDocument[] = await listCourseDocuments(_courseId);
             const _readyDocs = _docs.filter((d) => d.processing_status === 'ready');
-            // If the user is reading a specific file, resolve its UUID so we
-            // can target it directly via documentIds — otherwise /ask-stream
-            // searches the whole course and may miss the open doc.
+            // If the user is reading a specific file, resolve its UUID so the
+            // backend can boost that PDF without ignoring other course files.
             if (!_activeDocId && activeFileName) {
               const _open = _readyDocs.find(
                 (d) => (d.file_name || '').toLowerCase() === activeFileName.toLowerCase()
@@ -577,6 +575,22 @@ export function initAskAI(
         const _openFileImages = _visibleTextWeak && pageImages[0]
           ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
           : undefined;
+        let _streamActiveFileName = activeFileName;
+        let _streamOpenFileCtx = _openFileCtx;
+        if (_compareName && _compareText.trim()) {
+          const _leftExcerpt = (_openFileCtx || pdfFullText || '').slice(0, 9000);
+          const _rightExcerpt = _compareText.slice(0, 9000);
+          _streamActiveFileName = activeFileName
+            ? activeFileName + ' + ' + _compareName
+            : _compareName;
+          _streamOpenFileCtx =
+            'SPLIT VIEW: the student has two PDFs open and is asking about both. ' +
+            'Use BOTH documents when the question asks what they contain, to compare them, or to use both as sources.\n\n' +
+            'DOCUMENT 1 — "' + (activeFileName || 'left PDF') + '":\n' +
+            (_leftExcerpt || '(left PDF text not yet extracted)') +
+            '\n\nDOCUMENT 2 — "' + _compareName + '":\n' +
+            (_rightExcerpt || '(right PDF text not yet extracted)');
+        }
 
         // RAG-first routing: any question with a course_id goes through
         // /ask-stream so the Phase-1 verification + math-template gating +
@@ -789,14 +803,9 @@ export function initAskAI(
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
               signal: _streamController.signal,
               body: JSON.stringify({
-                // documentIds is a HARD filter. We send it in two cases:
-                //   1. Split view — user has two PDFs open and is implicitly
-                //      asking the question against that pair, so retrieval
-                //      must stay inside those two files.
-                //   2. (otherwise) leave undefined so the currently-open file
-                //      is treated as a ranking hint via activeDocumentId and
-                //      retrieval can still pull in lecture / exercise /
-                //      formula sheets from the same course.
+                // documentIds is a preference hint for answer quality. Even
+                // in split view, the backend still searches the whole course
+                // so professor lecture/formula PDFs can support the answer.
                 courseId: _courseId,
                 question: question,
                 documentIds:
@@ -808,8 +817,8 @@ export function initAskAI(
                 // a slice of the actually-visible text. Without this the model
                 // sees only retrieved chunks, which can miss the section the
                 // user is pointing at when they say "this question".
-                activeFileName: activeFileName || undefined,
-                openFileContext: _openFileCtx || undefined,
+                activeFileName: _streamActiveFileName || undefined,
+                openFileContext: _streamOpenFileCtx || undefined,
                 openFileImages: _openFileImages,
                 // Recent chat history so the model can resolve anaphoric
                 // references ("the formula above", "explain that again").
@@ -890,8 +899,8 @@ export function initAskAI(
                 question,
                 _ragMode,
                 _activeDocId || undefined,
-                activeFileName || undefined,
-                _openFileCtx || undefined
+                _streamActiveFileName || undefined,
+                _streamOpenFileCtx || undefined
               )
                 .then((data: RagAskResponse) => {
                   if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();

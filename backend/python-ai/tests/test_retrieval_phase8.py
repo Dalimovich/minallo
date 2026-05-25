@@ -192,6 +192,38 @@ def test_neighbour_boost_handles_empty():
     assert r._apply_neighbour_boost([]) == []
 
 
+# ── professor reference mix ─────────────────────────────────────────────────
+
+
+def test_exercise_context_keeps_lecture_and_formula_sources():
+    r = _import_retrieval()
+    ranked = [
+        (3.0, _chunk(id="ex1", document_id="EX", source_type="exercise", similarity=0.9)),
+        (2.9, _chunk(id="ex2", document_id="EX", source_type="exercise", similarity=0.8)),
+        (2.8, _chunk(id="ex3", document_id="EX", source_type="exercise", similarity=0.7)),
+        (2.1, _chunk(id="lec1", document_id="LEC", source_type="lecture", similarity=0.6)),
+        (2.0, _chunk(id="form1", document_id="FORM", source_type="other", similarity=0.5)),
+    ]
+    meta = {
+        "EX": {"document_type": "exercise_sheet", "file_name": "AG_9.pdf"},
+        "LEC": {"document_type": "lecture", "file_name": "Vorlesung Schrauben.pdf"},
+        "FORM": {"document_type": "formula_sheet", "file_name": "Formelzettel.pdf"},
+    }
+
+    chosen = r._ensure_professor_reference_mix(
+        ranked,
+        top_k=3,
+        doc_meta=meta,
+        query_is_math=True,
+        question_intent="exercise_sheet",
+    )
+
+    chosen_docs = {row["document_id"] for _, row in chosen}
+    assert "EX" in chosen_docs
+    assert "LEC" in chosen_docs
+    assert "FORM" in chosen_docs
+
+
 # ── _meaningful_tokens ──────────────────────────────────────────────────────
 
 

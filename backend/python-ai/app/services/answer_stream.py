@@ -738,13 +738,14 @@ def stream_answer(
 
     # Send an opening "meta" event so the client can render the bubble
     # immediately, even before the first content token arrives.
+    display_strength = "strong" if app_question else effective_strength
     yield _sse({
         "meta": True,
-        "retrievalMode": effective_strength,
+        "retrievalMode": display_strength,
         "answerMode": answer_mode,
         "tutorMode": tutor_mode_norm,
-        "confidence": "high" if effective_strength == "strong" else "low",
-        "unsupported": effective_strength != "strong",
+        "confidence": "high" if display_strength == "strong" else "low",
+        "unsupported": display_strength != "strong",
     })
 
     # Weave in recent Q&A turns so the model can resolve follow-up
@@ -798,7 +799,7 @@ def stream_answer(
     # has no fence, we make a SECOND, narrowly-scoped call with
     # response_format=json_schema. Structured outputs can't refuse — the
     # response shape is constrained — so this is the reliable backstop.
-    plot_wanted = _wants_plot(question, problem_solver)
+    plot_wanted = _wants_plot(question, problem_solver) and not app_question
     print(
         f"[DIAGRAM_DEBUG] check wants_diagram={wants_diagram} wants_plot={plot_wanted} "
         f"has_diag_fence={'```minallo-diagram' in full_answer} "
@@ -887,6 +888,14 @@ def stream_answer(
     # NOT from retrieval strength. The old "strong retrieval ⇒ confidence: high"
     # mapping let the UI show a green badge on answers the model had self-tagged
     # as "Missing context" and on answers with fabricated citations.
+    if app_question:
+        verification = {
+            "status": "verified",
+            "reasons": ["Answered from Minallo app context."],
+            "details": {"appSupport": True},
+        }
+        filtered_sources = []
+
     v_status = verification.get("status") if isinstance(verification, dict) else None
     if v_status == "verified":
         confidence_label = "high"
@@ -897,12 +906,12 @@ def stream_answer(
 
     yield _sse({
         "done": True,
-        "retrievalMode": effective_strength,
+        "retrievalMode": display_strength,
         "answerMode": answer_mode,
         "tutorMode": tutor_mode_norm,
         "verification": verification,
         "confidence": confidence_label,
-        "unsupported": effective_strength != "strong",
+        "unsupported": display_strength != "strong",
         "sources": filtered_sources,
         "model": target_model,
         "promptTokens": prompt_tokens,

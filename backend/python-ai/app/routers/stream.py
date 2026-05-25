@@ -252,7 +252,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         and not _is_deictic_question(question)
         and payload.problemSolver is None
     )
-    if payload.documentIds and not has_open_ctx and cacheable:
+    # Academic answers now search the whole course even when the UI has a
+    # selected/open document, because lecture/formula PDFs often contain the
+    # professor's method while the selected PDF only contains the exercise.
+    # Do not cache such broad answers against only the selected-document hash.
+    selected_scope_cache_safe = False
+    if selected_scope_cache_safe and payload.documentIds and not has_open_ctx and cacheable:
         version_hash = fetch_document_version_hash(user_id, payload.courseId, payload.documentIds)
         # Previous turns fingerprint into cache key — two students asking
         # "explain that again" in different sessions must not collide.
@@ -402,8 +407,9 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         )
         chunks = retrieve_chunks(
             user_id=user_id, course_id=payload.courseId,
-            query=retrieval_query, document_ids=payload.documentIds,
-            active_document_id=payload.activeDocumentId, top_k=12,
+            query=retrieval_query, document_ids=None,
+            preferred_document_ids=payload.documentIds,
+            active_document_id=payload.activeDocumentId, top_k=18,
         )
         if exercise_hit:
             from .ask import _prepend_exercise_chunks  # reuse the same helper

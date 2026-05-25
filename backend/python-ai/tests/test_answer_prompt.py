@@ -37,6 +37,7 @@ from app.services.answer import (  # noqa: E402
     _SYSTEM_PROMPT_PARTIAL,
     _SYSTEM_PROMPT_STRONG,
     _SYSTEM_PROMPT_WEAK,
+    is_app_question,
     _sources_for_answer,
     pick_system_prompt,
 )
@@ -175,8 +176,28 @@ def test_prompt_contains_minallo_navigation_context() -> None:
     prompt, _ = pick_system_prompt("Where do I manage my subscription?", "none")
     assert "MINALLO APP CONTEXT" in prompt
     assert "minallo.de" in prompt
-    assert 'sidebar "Subscription"' in prompt
-    assert 'sidebar "Courses"' in prompt
+    assert "Subscription" in prompt
+    assert "Courses" in prompt
+    assert "UPLOAD A DOCUMENT" in prompt
+
+
+@pytest.mark.parametrize("q", [
+    "How can I upload a doc?",
+    "What features does Minallo have?",
+    "Where do I manage my subscription?",
+    "Is there a game room in Minallo?",
+    "Wie kann ich ein PDF hochladen?",
+])
+def test_app_questions_are_detected(q: str) -> None:
+    assert is_app_question(q)
+
+
+@pytest.mark.parametrize("q", [
+    "Is there a formula for shear stress?",
+    "Is there a solution for Aufgabe 9.1 in the PDF?",
+])
+def test_academic_is_there_questions_are_not_app_support(q: str) -> None:
+    assert not is_app_question(q)
 
 
 # ── Review fix #7 — RetrievalCompleteness ─────────────────────────────────

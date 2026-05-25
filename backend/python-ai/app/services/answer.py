@@ -201,8 +201,13 @@ _APP_QUESTION_PATTERNS = [
     # "what features / pages / tabs / sections does it have"
     re.compile(r"\bwhat\s+(features?|pages?|tabs?|sections?|buttons?|options?|tools?)\b", re.IGNORECASE),
     re.compile(r"\bwhat\s+does\s+(it|this|minallo|the\s+(site|app|website|platform))\s+(contain|have|offer|include|do|support)", re.IGNORECASE),
-    # "is there a ___ in / on Minallo / this site"
-    re.compile(r"\bis\s+there\s+a\b", re.IGNORECASE),
+    # "is there a ___ in / on Minallo / this site" (avoid catching academic
+    # prompts like "is there a formula for shear stress?")
+    re.compile(
+        r"\bis\s+there\s+(?:a|an)\s+.+?\b(?:in|on)\s+"
+        r"(?:minallo|this\s+(?:site|app|website|platform|tool)|the\s+(?:site|app|website|platform))\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\bdoes\s+(it|minallo|this|the\s+(site|app|website|platform))\s+(have|include|contain|offer|support)", re.IGNORECASE),
     # "where is / where can I / where do I find ___"
     re.compile(r"\bwhere\s+(is|are|can\s+i|do\s+i|to\s+find|to\s+get|do\s+you|should\s+i)\b", re.IGNORECASE),
@@ -938,6 +943,7 @@ def generate_answer(
 ) -> dict[str, Any]:
     """Return the structured answer dict the API surface exposes."""
     settings = get_settings()
+    app_question = is_app_question(question)
 
     strength = _context_strength(chunks)
     # Review fix #3 — partial retrieval mode. Three tiers:
@@ -945,17 +951,23 @@ def generate_answer(
     #   weak   → top 3 chunks (partial mode prompt explains what's there
     #            and refuses to solve confidently)
     #   none   → no chunks (WEAK prompt says "I can't help with this")
-    if strength == "strong":
+    if app_question:
+        used_chunks = []
+    elif strength == "strong":
         used_chunks = chunks
     elif strength == "weak":
         used_chunks = chunks[:3]
     else:
         used_chunks = []
-    system_prompt, answer_mode = pick_system_prompt(
-        question, strength, used_chunks, tutor_mode=tutor_mode,
-        weak_topics=weak_topics,
-    )
-    wants_diagram = _wants_diagram(question)
+    if app_question:
+        system_prompt = _APP_ONLY_SYSTEM_PROMPT + MINALLO_APP_CONTEXT
+        answer_mode = "app"
+    else:
+        system_prompt, answer_mode = pick_system_prompt(
+            question, strength, used_chunks, tutor_mode=tutor_mode,
+            weak_topics=weak_topics,
+        )
+    wants_diagram = _wants_diagram(question) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks))
     # Route by answer mode: math/exercise questions hit the strong model,
@@ -994,7 +1006,7 @@ def generate_answer(
     # etc.) goes through the plot fallback; the node-edge case routes to
     # the diagram fallback. Only one fence is appended per response.
     from .diagram_overlay import wants_plot as _wants_plot_helper  # noqa: WPS433
-    _plot_wanted = _wants_plot_helper(question)
+    _plot_wanted = _wants_plot_helper(question) and not app_question
     if (
         _plot_wanted
         and "```minallo-plot" not in answer_text
@@ -1012,7 +1024,7 @@ def generate_answer(
         if fence:
             answer_text += fence
 
-    sources = _sources_for_answer(answer_text, used_chunks, doc_names)
+    sources = [] if app_question else _sources_for_answer(answer_text, used_chunks, doc_names)
 
     # Phase 10: deterministic verification independent of the model's
     # self-report. Failure here must never block the response.
@@ -1031,9 +1043,16 @@ def generate_answer(
     except Exception:  # noqa: BLE001
         log.exception("verify_answer failed — emitting default missing_context")
 
+    if app_question:
+        verification = {
+            "status": "verified",
+            "reasons": ["Answered from Minallo app context."],
+            "details": {"appSupport": True},
+        }
+
     return {
         "answer":          answer_text,
-        "retrievalMode":   strength,                # strong | weak | none
+        "retrievalMode":   "strong" if app_question else strength,
         "answerMode":      answer_mode,             # math | strong | weak
         "tutorMode":       normalise_tutor_mode(tutor_mode),  # explain | solve | quiz
         "verification":    verification,            # Phase 10 status + reasons + details

@@ -301,7 +301,11 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
         and not _is_deictic_question(question)
         and not open_file_context
     )
-    if payload.documentIds and not payload.bypassCache and cacheable:
+    # Academic answers search the whole course while treating selected docs as
+    # ranking hints. A cache hash over only selected docs would miss updates to
+    # lecture/formula PDFs that may have grounded the answer.
+    selected_scope_cache_safe = False
+    if selected_scope_cache_safe and payload.documentIds and not payload.bypassCache and cacheable:
         version_hash = fetch_document_version_hash(
             payload.userId, payload.courseId, payload.documentIds
         )
@@ -368,9 +372,10 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
         user_id=payload.userId,
         course_id=payload.courseId,
         query=retrieval_query,
-        document_ids=payload.documentIds,
+        document_ids=None,
+        preferred_document_ids=payload.documentIds,
         active_document_id=payload.activeDocumentId,
-        top_k=12,
+        top_k=18,
     )
 
     if exercise_hit:

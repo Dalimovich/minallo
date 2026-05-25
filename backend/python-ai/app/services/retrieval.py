@@ -420,15 +420,17 @@ def retrieve_chunks(
     course_id: str,
     query: str,
     document_ids: list[str] | None = None,
+    preferred_document_ids: list[str] | None = None,
     active_document_id: str | None = None,
     top_k: int = 12,
     min_similarity: float = _MIN_SIMILARITY,
 ) -> list[RetrievedChunk]:
     """Return up to top_k chunks for the question, reranked by study value.
 
-    `document_ids` is still a hard filter when set. `active_document_id` adds
-    a +0.25 ranking boost without filtering, so the active doc wins ties but
-    course-wide retrieval still surfaces supporting material from other docs.
+    `document_ids` is a hard filter when set. `preferred_document_ids` is only
+    a ranking hint, used by ask/stream so an open/selected exercise PDF can win
+    ties while course-wide retrieval still surfaces lecture/formula PDFs.
+    `active_document_id` adds a ranking boost without filtering.
     """
     if not query.strip():
         return []
@@ -490,7 +492,7 @@ def retrieve_chunks(
     # ranker can apply doc-type-match and filename-match boosts.
     doc_meta = _load_doc_metadata(sb, [r.get("document_id") for r in rows if r.get("document_id")])
 
-    preferred = set(document_ids) if document_ids else None
+    preferred = set(preferred_document_ids or document_ids or []) or None
     question_intent = infer_question_intent(query)
     query_tokens = _meaningful_tokens(query)
     query_units = _query_units(query)
@@ -524,7 +526,13 @@ def retrieve_chunks(
     # Phase 8: one-shot neighbour boost on the post-sort list.
     ranked = _apply_neighbour_boost(ranked)
 
-    chosen = ranked[: max(top_k, 1)]
+    chosen = _ensure_professor_reference_mix(
+        ranked,
+        top_k=max(top_k, 1),
+        doc_meta=doc_meta,
+        query_is_math=query_is_math,
+        question_intent=question_intent,
+    )
 
     # Fetch chunk_type for each in one batch — RPC predates the new column.
     chunk_ids = [r["id"] for _, r in chosen if r.get("id")]
@@ -619,6 +627,70 @@ def _apply_neighbour_boost(
         boosted.append((score, row))
     boosted.sort(key=lambda pair: pair[0], reverse=True)
     return boosted
+
+
+def _ensure_professor_reference_mix(
+    ranked: list[tuple[float, dict[str, Any]]],
+    *,
+    top_k: int,
+    doc_meta: dict[str, dict[str, str | None]],
+    query_is_math: bool,
+    question_intent: str | None,
+) -> list[tuple[float, dict[str, Any]]]:
+    """Keep room for professor/lecture references in exercise answers.
+
+    For exercise/math prompts the top slots can be monopolised by the open
+    worksheet because it repeats the exact exercise terms. Students still need
+    the professor's lecture/formula instructions. If those docs were retrieved
+    as candidates, ensure at least one lecture chunk and one formula-sheet
+    chunk survive into the final context.
+    """
+    if not ranked:
+        return []
+    chosen = ranked[:top_k]
+    if not query_is_math or question_intent not in {"exercise_sheet", "solution_sheet"}:
+        return chosen
+
+    chosen_ids = {row.get("id") for _, row in chosen}
+
+    def _doc_type(row: dict[str, Any]) -> str:
+        meta = doc_meta.get(row.get("document_id")) or {}
+        return str(meta.get("document_type") or row.get("source_type") or "")
+
+    def _file_name(row: dict[str, Any]) -> str:
+        meta = doc_meta.get(row.get("document_id")) or {}
+        return str(meta.get("file_name") or "")
+
+    def _has(predicate) -> bool:
+        return any(predicate(row) for _, row in chosen)
+
+    def _best_missing(predicate):
+        for score, row in ranked[top_k:]:
+            if row.get("id") in chosen_ids:
+                continue
+            if predicate(row):
+                return score, row
+        return None
+
+    is_lecture = lambda row: _doc_type(row) == "lecture" or row.get("source_type") == "lecture"
+    is_formula_sheet = lambda row: (
+        _doc_type(row) == "formula_sheet"
+        or bool(_FORMULA_SHEET_FILENAME_RE.search(_file_name(row)))
+    )
+
+    additions = []
+    if not _has(is_lecture):
+        additions.append(_best_missing(is_lecture))
+    if not _has(is_formula_sheet):
+        additions.append(_best_missing(is_formula_sheet))
+
+    additions = [c for c in additions if c and c[1].get("id") not in chosen_ids]
+    if additions:
+        keep = max(0, top_k - len(additions))
+        chosen = chosen[:keep] + additions
+
+    chosen.sort(key=lambda pair: pair[0], reverse=True)
+    return chosen
 
 
 def _load_page_qualities(sb, rows: list[dict[str, Any]]) -> dict[tuple[str, int], str]:
