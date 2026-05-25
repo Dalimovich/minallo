@@ -68,5 +68,38 @@ runIdle(() => initMusicServices({
 runIdle(() => initStudyTimer());
 runIdle(() => initWritingCoach());
 
+// Notifications shell: the portal section #psec-notifications is scaffolded
+// UI without a backend feed yet. Wire #notifMarkAll so the button gives
+// the user feedback instead of looking broken. Once a real notifications
+// table exists we can swap the body for a Supabase update.
+runIdle(() => {
+  const btn = document.getElementById('notifMarkAll');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const list = document.getElementById('notifList');
+    if (list) {
+      const items = list.querySelectorAll<HTMLElement>('.notif-item');
+      items.forEach((el) => el.classList.remove('is-unread'));
+    }
+    const count = document.getElementById('notifCount');
+    if (count) {
+      // i18n: prefer the "all caught up" translation if it has been
+      // injected; fall back to the literal default that lives in the
+      // HTML data-i18n attribute.
+      count.textContent = count.dataset.allCaughtText || 'All caught up';
+    }
+    const original = btn.textContent;
+    btn.textContent = '✓';
+    (btn as HTMLButtonElement).disabled = true;
+    setTimeout(() => {
+      (btn as HTMLButtonElement).disabled = false;
+      if (original) btn.textContent = original;
+    }, 1200);
+    if (typeof window.showToast === 'function') {
+      window.showToast('Notifications', 'All marked as read.');
+    }
+  });
+});
+
 // @ts-ignore — dynamic import with cache-busting query string
 import('./app.js?v=7');

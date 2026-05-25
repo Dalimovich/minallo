@@ -1603,6 +1603,22 @@
       if (gate) gate.style.display = 'none';
     });
 
+    // ── Members panel toggle ───────────────────────────────────────────────────
+    // The members panel (#chatMembersPanel) is rendered alongside the chat by
+    // default. The header 👥 icon toggles its visibility — useful on narrow
+    // viewports where the right rail crowds the message list, and as a
+    // privacy nudge for shared screens.
+    (
+      document.getElementById('chatMembersToggleBtn') || { addEventListener: function () {} }
+    ).addEventListener('click', function () {
+      var panel = document.getElementById('chatMembersPanel');
+      if (!panel) return;
+      var hidden = panel.style.display === 'none';
+      panel.style.display = hidden ? '' : 'none';
+      var btn = document.getElementById('chatMembersToggleBtn');
+      if (btn) btn.classList.toggle('is-active', hidden);
+    });
+
     // ── Room settings button ───────────────────────────────────────────────────
     (
       document.getElementById('chatRoomSettingsBtn') || { addEventListener: function () {} }
