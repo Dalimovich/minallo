@@ -2,7 +2,8 @@ import { fetchPdfBytes } from '../../services/pdf-service.js';
 import { panelShow, panelHide, selectTopLevelView } from '../../core/panels.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { notePdfTabOpen } from './pdf-tabs.js';
-import { setActivePane, snapshotWindowInto, type PaneId } from './pdf-panes.js';
+import { setActivePane, snapshotWindowInto, type PaneId, isPaneOpen } from './pdf-panes.js';
+import { clearCompareDoc } from './pdf-compare.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 interface FileLite {
@@ -149,6 +150,13 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
             '#file=' + encodeURIComponent(f.name || '')
           );
         } catch { /* ignore */ }
+
+        // Split mode is a PDF-vs-PDF concept. If the user opens a non-PDF
+        // (image, HTML) in the left pane while a split is active, close the
+        // right pane — otherwise the split chrome stays visible, the AI
+        // compare path runs against a left side with no extractable text,
+        // and `bothPanesText()` returns only the right doc.
+        if ((isHtml || isImage) && isPaneOpen('right')) clearCompareDoc();
 
         if (isHtml) {
           const blob = new Blob([bytes as BlobPart], { type: 'text/html' });

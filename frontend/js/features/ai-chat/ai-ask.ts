@@ -319,7 +319,10 @@ export function initAskAI(
     const pdfDoc = _isProblemSolver ? null : (window.pdfDoc as PdfDocLike | null | undefined);
     let pdfFullText = _isProblemSolver ? '' : window.pdfFullText || '';
     const _compareName = _isProblemSolver ? null : getCompareFileName();
-    const _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
+    let _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
+    const _comparePdfDoc = _compareName
+      ? (getPane('right').pdfDoc as PdfDocLike | null)
+      : null;
     const _lang = window._lang || localStorage.getItem('ss_lang') || 'en';
     const activeFileName = window.activeFileName || '';
     const currentCourseShort = window.currentCourseShort || '';
@@ -341,7 +344,7 @@ export function initAskAI(
           '. ALWAYS base your answers on the actual document content provided below. Do not use general knowledge when the document covers the topic. Be thorough but concise.') +
       _MATH_PROMPT;
 
-    const _textReady =
+    const _leftTextReady =
       !_isProblemSolver && pdfDoc && !pdfFullText.trim()
         ? extractPdfText(pdfDoc, 30).then((t) => {
             if (t) {
@@ -350,6 +353,20 @@ export function initAskAI(
             }
           })
         : Promise.resolve();
+    // Same on-demand extraction for the right (compare) pane. Without this,
+    // a question asked right after toggling split runs before pdf-compare's
+    // deferred extractText() completes, so the AI gets DOCUMENT 2 = "" and
+    // silently answers from DOCUMENT 1 only.
+    const _rightTextReady =
+      _compareName && _comparePdfDoc && !_compareText.trim()
+        ? extractPdfText(_comparePdfDoc, 30).then((t) => {
+            if (t) {
+              getPane('right').pdfFullText = t;
+              _compareText = t;
+            }
+          })
+        : Promise.resolve();
+    const _textReady = Promise.all([_leftTextReady, _rightTextReady]);
 
     _textReady
       .then(() => (_isProblemSolver || !pdfDoc ? [] : pdfToImages(8)))

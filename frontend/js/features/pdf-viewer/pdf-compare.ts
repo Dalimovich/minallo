@@ -31,6 +31,13 @@ function emit(): void {
   }
 }
 
+// Mirror pdf-tabs.ts: never rely on raw course.id alone, fall back to short/
+// name so demo courses or seeded data without an id still round-trip through
+// localStorage instead of silently losing the persisted split on reload.
+function courseKey(course: LegacyCourse): string {
+  return String(course.id || course.short || course.name || 'course');
+}
+
 function persist(courseId: string | null, file: CompareFile | null): void {
   try {
     if (!courseId || !file) {
@@ -110,7 +117,7 @@ export async function loadCompareDoc(file: CompareFile, course: LegacyCourse): P
   const right = getPane('right');
   right.activeFileName = file.name;
   right.activeStorageName = file._storageName || null;
-  right.activeCourseId = course.id || null;
+  right.activeCourseId = courseKey(course);
   right.activeCourseRef = course;
   right.pdfFullText = '';
   setSplitMode(true);
@@ -118,10 +125,11 @@ export async function loadCompareDoc(file: CompareFile, course: LegacyCourse): P
   emit();
 
   const task = (async () => {
+    let failed = false;
     try {
       const bytes = await fetchBytes(file, course);
       if (!bytes) {
-        right.pdfFullText = '';
+        failed = true;
         return;
       }
       if (getPane('right').activeFileName !== file.name) return;
@@ -130,11 +138,26 @@ export async function loadCompareDoc(file: CompareFile, course: LegacyCourse): P
       const text = await extractText(bytes);
       if (getPane('right').activeFileName !== file.name) return;
       right.pdfFullText = text;
-      persist(course.id || null, file);
+      persist(courseKey(course), file);
       emit();
     } catch {
-      right.pdfFullText = '';
-      emit();
+      failed = true;
+    } finally {
+      if (failed && getPane('right').activeFileName === file.name) {
+        // Don't leave the chip stuck on "Loading X…" forever. Clear the pane
+        // and surface a toast so the user can recover.
+        clearPane('right');
+        setSplitMode(false);
+        clearRight();
+        persist(null, null);
+        emit();
+        if (typeof window.showToast === 'function') {
+          window.showToast(
+            'Could not load',
+            'Failed to open ' + file.name + ' in the right pane.'
+          );
+        }
+      }
     }
   })();
   activeLoad = task;
