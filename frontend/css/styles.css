@@ -2122,7 +2122,10 @@ body.night .sb-acc-chev-btn {
 .annotate-popover {
   position: absolute;
   top: 172px;
-  right: 32px;
+  /* The Annotate button sits to the left of Download. Shift the popover so
+     its right edge lines up with Annotate's right edge (~Download width +
+     gap = ~138px). Previous value (32px) lined up with Download. */
+  right: 170px;
   z-index: 150;
   width: fit-content;
   max-width: calc(100vw - 160px);

@@ -134,9 +134,15 @@ export async function loadCompareDoc(file: CompareFile, course: LegacyCourse): P
         return;
       }
       if (getPane('right').activeFileName !== file.name) return;
-      await loadIntoRight(bytes);
+      // pdfjs's getDocument transfers the underlying ArrayBuffer to its
+      // worker (detaching it on the main thread). Give each consumer its
+      // own copy so the second call doesn't get a dead buffer
+      // (DataCloneError: ArrayBuffer is already detached).
+      const bytesForRender = new Uint8Array(bytes);
+      const bytesForExtract = new Uint8Array(bytes);
+      await loadIntoRight(bytesForRender);
       if (getPane('right').activeFileName !== file.name) return;
-      const text = await extractText(bytes);
+      const text = await extractText(bytesForExtract);
       if (getPane('right').activeFileName !== file.name) return;
       right.pdfFullText = text;
       persist(courseKey(course), file);
