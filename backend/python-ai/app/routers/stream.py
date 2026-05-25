@@ -384,28 +384,39 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         open_file_context=payload.openFileContext,
         has_problem_solver=payload.problemSolver is not None,
     )
-    exercise_hit = retrieve_exercise_block(
-        user_id=user_id, course_id=payload.courseId, query=retrieval_query,
-        document_ids=payload.documentIds,
-        active_document_id=payload.activeDocumentId,
-    )
-    chunks = retrieve_chunks(
-        user_id=user_id, course_id=payload.courseId,
-        query=retrieval_query, document_ids=payload.documentIds,
-        active_document_id=payload.activeDocumentId, top_k=12,
-    )
-    if exercise_hit:
-        from .ask import _prepend_exercise_chunks  # reuse the same helper
-        chunks = _prepend_exercise_chunks(exercise_hit, chunks)
 
-    formula_hits = retrieve_formula_block(
-        user_id=user_id, course_id=payload.courseId, query=retrieval_query,
-        document_ids=payload.documentIds,
-        active_document_id=payload.activeDocumentId,
-    )
-    if formula_hits:
-        from .ask import _prepend_formula_chunks  # reuse the same helper
-        chunks = _prepend_formula_chunks(formula_hits, chunks)
+    # App/product questions ("how do I upload", "where is settings", "what
+    # features does Minallo have") should not trigger course-document
+    # retrieval. stream_answer's app-question fast path uses
+    # MINALLO_APP_CONTEXT only — sending it empty chunks here saves the
+    # retrieval cost AND prevents an accidental [Source N] leakage if the
+    # model ever ignored its prompt override.
+    from ..services.answer import is_app_question  # noqa: WPS433
+    if is_app_question(question):
+        chunks = []
+    else:
+        exercise_hit = retrieve_exercise_block(
+            user_id=user_id, course_id=payload.courseId, query=retrieval_query,
+            document_ids=payload.documentIds,
+            active_document_id=payload.activeDocumentId,
+        )
+        chunks = retrieve_chunks(
+            user_id=user_id, course_id=payload.courseId,
+            query=retrieval_query, document_ids=payload.documentIds,
+            active_document_id=payload.activeDocumentId, top_k=12,
+        )
+        if exercise_hit:
+            from .ask import _prepend_exercise_chunks  # reuse the same helper
+            chunks = _prepend_exercise_chunks(exercise_hit, chunks)
+
+        formula_hits = retrieve_formula_block(
+            user_id=user_id, course_id=payload.courseId, query=retrieval_query,
+            document_ids=payload.documentIds,
+            active_document_id=payload.activeDocumentId,
+        )
+        if formula_hits:
+            from .ask import _prepend_formula_chunks  # reuse the same helper
+            chunks = _prepend_formula_chunks(formula_hits, chunks)
 
     missing_ids = [c.document_id for c in chunks if c.document_id not in doc_name_map]
     if missing_ids:

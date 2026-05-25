@@ -176,6 +176,74 @@ Behaviour (keep the response short — under ~120 words):
 
 _SOURCE_REF_RE = re.compile(r"\bSources?\s+([0-9 ,andund&]+)\b", re.IGNORECASE)
 
+
+# ── App-question detector ───────────────────────────────────────────────────
+#
+# Routes questions like "what features does Minallo have", "how do I upload",
+# "is there a game room", "where are settings" away from the RAG pipeline.
+# These should NOT trigger course-document retrieval; the answer is the
+# MINALLO_APP_CONTEXT map, not lecture chunks. Without this, retrieval pulls
+# whatever happens to score best (engineering math chunks etc.) and the
+# model either ignores them (best case) or shoehorns them into the reply
+# (worst case — that's what produced "Resource Library" hallucinations).
+#
+# Heuristic — cheap regex tests, no LLM call. We accept some false negatives
+# (the prompt-level override still catches those); aiming for high precision
+# on the obvious cases.
+_APP_QUESTION_PATTERNS = [
+    # Mentions Minallo by name as the subject
+    re.compile(r"\bminallo\b", re.IGNORECASE),
+    # Demonstrative references to "this site / app / platform / website"
+    re.compile(r"\bthis\s+(site|app|website|platform|product|tool|service|page)\b", re.IGNORECASE),
+    re.compile(r"\bthe\s+(site|app|website|platform)\s+(have|has|offer|contain|include|do|does|support)", re.IGNORECASE),
+    # Sidebar / menu / navigation vocab
+    re.compile(r"\b(sidebar|side\s*bar|navigation|menu|navbar|top\s*bar)\b", re.IGNORECASE),
+    # "what features / pages / tabs / sections does it have"
+    re.compile(r"\bwhat\s+(features?|pages?|tabs?|sections?|buttons?|options?|tools?)\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+does\s+(it|this|minallo|the\s+(site|app|website|platform))\s+(contain|have|offer|include|do|support)", re.IGNORECASE),
+    # "is there a ___ in / on Minallo / this site"
+    re.compile(r"\bis\s+there\s+a\b", re.IGNORECASE),
+    re.compile(r"\bdoes\s+(it|minallo|this|the\s+(site|app|website|platform))\s+(have|include|contain|offer|support)", re.IGNORECASE),
+    # "where is / where can I / where do I find ___"
+    re.compile(r"\bwhere\s+(is|are|can\s+i|do\s+i|to\s+find|to\s+get|do\s+you|should\s+i)\b", re.IGNORECASE),
+    # "how do I ___" with app-action verbs
+    re.compile(r"\bhow\s+(do|can|should)\s+i\s+(upload|navigate|find|open|access|reach|get\s+to|use|create|delete|cancel|pause|resume|reactivate|sign\s*out|log\s*out|switch|change|enable|disable|toggle|annotate|merge|generate|reset|share|invite|join|leave)\b", re.IGNORECASE),
+    # German equivalents (Minallo supports DE)
+    re.compile(r"\b(wo\s+(finde|ist|kann|sind|gibt))\b", re.IGNORECASE),
+    re.compile(r"\b(welche|welcher|welches)\s+(funktion|funktionen|seiten?|tabs?|features?|optionen)\b", re.IGNORECASE),
+    re.compile(r"\b(gibt\s+es|hat\s+minallo|enthält|enthaelt)\b", re.IGNORECASE),
+    re.compile(r"\bwie\s+(kann\s+ich|lade\s+ich|finde\s+ich|öffne\s+ich|oeffne\s+ich|navigiere\s+ich)\b", re.IGNORECASE),
+]
+
+
+def is_app_question(question: str) -> bool:
+    """Return True when the question is about Minallo itself (features,
+    navigation, pages, sidebar items) rather than course material."""
+    if not question:
+        return False
+    q = question.strip()
+    if len(q) > 500:
+        # An app question is short. A 500+ char prompt is some kind of
+        # paste / problem statement, not "where is settings".
+        return False
+    for pat in _APP_QUESTION_PATTERNS:
+        if pat.search(q):
+            return True
+    return False
+
+
+# Compact system prompt used when is_app_question() is True. Replaces the
+# usual "base your answer on document content" tutor prompt so the model
+# doesn't get conflicting instructions. MINALLO_APP_CONTEXT itself is still
+# appended after this by pick_system_prompt() — but for the app-only path
+# we build the prompt directly without the tutor base.
+_APP_ONLY_SYSTEM_PROMPT = """You are Minallo AI, the in-app assistant for Minallo at minallo.de — a study platform + AI tutor for university students.
+
+The student is asking about Minallo itself. Answer ONLY from the MINALLO APP CONTEXT below. Do NOT use general knowledge of "study apps". Do NOT add [Source N] citations — this is product support, not a course citation. Do NOT mention course documents, retrieval, or "based on the context provided".
+
+Give numbered steps that name the exact sidebar item, tab, and button. End with a short suggestion for the next logical action.
+"""
+
 MINALLO_APP_CONTEXT = """
 
 ═══════════════════════════════════════════════════════════════════════

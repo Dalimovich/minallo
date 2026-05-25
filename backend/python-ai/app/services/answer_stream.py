@@ -24,9 +24,12 @@ from openai import OpenAI
 from ..config import get_settings
 from .answer import (
     DEFAULT_TUTOR_MODE,
+    MINALLO_APP_CONTEXT,
+    _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
     _cited_indices,
     _context_strength,
+    is_app_question,
     normalise_tutor_mode,
     pick_system_prompt,
 )
@@ -596,10 +599,20 @@ def stream_answer(
     without paying for a 50-message-long context.
     """
     settings = get_settings()
+
+    # App-question fast path: skip retrieved context entirely, swap to an
+    # app-only system prompt + MINALLO_APP_CONTEXT, return without [Source N]
+    # citations. Routes "where is settings", "what features does Minallo
+    # have", "is there a game room" away from the RAG pipeline so the model
+    # can't pattern-match course chunks into a generic-study-app reply.
+    app_question = is_app_question(question)
+
     strength = _context_strength(chunks)
     # Review fix #3 — partial retrieval mode. Mirrors answer.py's logic:
     #   strong → all chunks    weak → top 3 (with PARTIAL prompt)    none → []
-    if strength == "strong":
+    if app_question:
+        used_chunks = []
+    elif strength == "strong":
         used_chunks = chunks
     elif strength == "weak":
         used_chunks = chunks[:3]
@@ -622,13 +635,20 @@ def stream_answer(
     problem_mode = _normalise_problem_solver_mode(
         problem_solver.get("mode") if problem_solver else None
     )
-    system_prompt, answer_mode = pick_system_prompt(
-        question, effective_strength, used_chunks, tutor_mode=tutor_mode_norm,
-        weak_topics=weak_topics,
-    )
-    if problem_mode:
-        system_prompt += _problem_solver_overlay(problem_mode, problem_solver or {})
-    wants_diagram = _wants_diagram(question, problem_solver)
+    if app_question:
+        # App-only path: skip the tutor base prompt entirely so the model
+        # doesn't get conflicting "ALWAYS base on document content"
+        # instructions. The app context map is the only authority.
+        system_prompt = _APP_ONLY_SYSTEM_PROMPT + MINALLO_APP_CONTEXT
+        answer_mode = "app"
+    else:
+        system_prompt, answer_mode = pick_system_prompt(
+            question, effective_strength, used_chunks, tutor_mode=tutor_mode_norm,
+            weak_topics=weak_topics,
+        )
+        if problem_mode:
+            system_prompt += _problem_solver_overlay(problem_mode, problem_solver or {})
+    wants_diagram = _wants_diagram(question, problem_solver) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks or (has_open and deictic)))
     # Route by answer mode: math/exercise questions hit the strong model,
