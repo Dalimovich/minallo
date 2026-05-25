@@ -464,7 +464,7 @@ interface LandingTranslation {
         // Track all loads so ss-ready only fires after every feature script is done.
         const featureSrcs = [
           'views/toast/toast.js',
-          'views/chatbot/chatbot.js?v=3',
+          'views/chatbot/chatbot.js?v=4',
           'views/chatbot/ai-bubble.js?v=4',
           'views/chat/chat.js',
           'views/dashboard/dashboard-widget.js',

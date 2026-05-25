@@ -552,7 +552,7 @@
         '4. Editor — Writer (rich-text + AI), PDF Editor (annotate/sign), PDF Merger (combine PDFs).\n' +
         '5. Chatbot — general Minallo AI chat with files/images.\n' +
         '6. Chat — student/friend chat rooms (Öffentlich / Freunde / Nur mit Einladung) + NSFW + slow-mode toggles.\n' +
-        '7. Games — break games.\n' +
+        '7. Games — "🎮 Game Room" hub. Tetris, Chess, Flappy Bird, and Solitaire with 7 variants (Klondike, Spider, Freecell, Pyramid, Scorpion, TriPeaks, Vegas).\n' +
         '8. Study Lounge — total minutes, current/longest streak, opened files, per-course breakdown, weekly chart, Reset stats.\n' +
         '9. Profile — account profile.\n' +
         '10. Settings — language DE/EN, German level + test type, sign-out, delete account.\n' +

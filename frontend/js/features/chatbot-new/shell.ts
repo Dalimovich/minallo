@@ -1047,7 +1047,7 @@ function buildSystemPrompt(): string {
     '4. Editor — three sub-tools: Writer (rich-text editor + AI rewrite/shorten/expand), PDF Editor (annotate / sign / fill), PDF Merger (combine PDFs).\n' +
     '5. Chatbot — this general Minallo AI chat. Supports file + image uploads.\n' +
     '6. Chat — student/friend chat rooms (Öffentlich = public, Freunde = friends-only, Nur mit Einladung = invite-only). Toggles: NSFW, Slow-mode.\n' +
-    '7. Games — break games.\n' +
+    '7. Games — "🎮 Game Room" hub. Break games: Tetris, Chess, Flappy Bird, and Solitaire with 7 variants (Klondike, Spider, Freecell, Pyramid, Scorpion, TriPeaks, Vegas). Each game has a level/difficulty selector.\n' +
     '8. Study Lounge — total study minutes, current streak, longest streak, recently opened files, per-course time, weekly chart, Reset stats button.\n' +
     '9. Profile — account profile.\n' +
     '10. Settings — language (DE/EN), German level + test type for the Schreibtrainer, sign-out, delete-account.\n' +

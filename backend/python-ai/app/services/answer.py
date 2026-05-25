@@ -297,7 +297,11 @@ SIDEBAR (left rail, top → bottom)
 6. Chat — student/friend chat rooms (öffentlich = public, Freunde =
    friends-only, Nur mit Einladung = invite-only). Has slow-mode and
    NSFW toggles in the create-room modal.
-7. Games — short break games to take a pause between study sessions.
+7. Games — labelled "🎮 Game Room" in the hub. Short break games for
+   pausing between study sessions. Available titles: Tetris, Chess,
+   Flappy Bird, and Solitaire with seven variants (Klondike, Spider,
+   Freecell, Pyramid, Scorpion, TriPeaks, Vegas). Each game has a
+   level/difficulty selector.
 8. Study Lounge — analytics dashboard: total study minutes, current
    streak, longest streak, recently opened files, per-course time
    breakdown, weekly chart, "Reset stats" button.
