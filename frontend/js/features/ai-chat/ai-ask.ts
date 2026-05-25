@@ -577,9 +577,9 @@ export function initAskAI(
           : undefined;
         let _streamActiveFileName = activeFileName;
         let _streamOpenFileCtx = _openFileCtx;
-        if (_compareName && _compareText.trim()) {
-          const _leftExcerpt = (_openFileCtx || pdfFullText || '').slice(0, 9000);
-          const _rightExcerpt = _compareText.slice(0, 9000);
+        if (_compareName) {
+          const _leftExcerpt = (_openFileCtx || pdfFullText || '').slice(0, 9500);
+          const _rightExcerpt = _compareText.slice(0, 9500);
           _streamActiveFileName = activeFileName
             ? activeFileName + ' + ' + _compareName
             : _compareName;

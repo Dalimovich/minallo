@@ -628,7 +628,7 @@ def stream_answer(
         open_ctx = ""
         open_image_parts: list[dict[str, Any]] = []
     else:
-        open_ctx = (open_file_context or "").strip()[:12000]
+        open_ctx = (open_file_context or "").strip()[:20000]
         open_image_parts = _open_file_image_parts(open_file_images)
     has_open = bool(open_ctx)
     has_open_image = bool(open_image_parts)
@@ -700,6 +700,16 @@ def stream_answer(
             " primary source for what the student is looking at, then consult"
             " retrieved course sources for supporting formulas, definitions,"
             " and worked methods."
+        )
+    if "SPLIT VIEW:" in open_ctx and "DOCUMENT 2" in open_ctx:
+        system_prompt += (
+            "\n\nSplit-view rule: [Source 0] contains two currently visible PDFs,"
+            " labelled DOCUMENT 1 and DOCUMENT 2. When the student asks what"
+            " both PDFs contain, compares them, or asks about both, you MUST"
+            " address DOCUMENT 1 and DOCUMENT 2 separately. Do NOT say the"
+            " second PDF is not visible or not specified. If DOCUMENT 2 text"
+            " is marked as not extracted, say the right PDF text is not ready"
+            " yet and ask the student to wait/retry, instead of guessing."
         )
     if has_open_image:
         system_prompt += (
