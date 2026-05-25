@@ -454,6 +454,42 @@ body:not(.night) [class*='bg-white/[0.07'] {
   color: var(--lm-text) !important;
 }
 
+/* Children of those now-light containers shouldn't keep their dark-mode
+   white text. The Tailwind fallback only set `color` on the container —
+   text nested in headings/paragraphs/spans/buttons inherits their own
+   colours from utility classes (`text-white`, `text-slate-200`, etc.)
+   so we explicitly inherit here. */
+body:not(.night) [class*="bg-slate-950"] *,
+body:not(.night) [class*="bg-slate-900"] *,
+body:not(.night) [class*="bg-slate-800"] *,
+body:not(.night) [class*='bg-white/[0.0'] *,
+body:not(.night) [class*='bg-white/[0.10'] * {
+  color: inherit;
+}
+
+/* Generic Tailwind text-utility catches. Without these, a `text-white`
+   span inside any container (not just the dark-glass ones above) stays
+   white. We don't want to clobber semantic colour utilities like
+   text-red-500 or text-blue-600 — only the white / light-grey ones that
+   become unreadable against the light-mode page background. */
+body:not(.night) [class~="text-white"],
+body:not(.night) [class~="text-slate-50"],
+body:not(.night) [class~="text-slate-100"],
+body:not(.night) [class~="text-slate-200"],
+body:not(.night) [class~="text-slate-300"],
+body:not(.night) [class~="text-gray-50"],
+body:not(.night) [class~="text-gray-100"],
+body:not(.night) [class~="text-gray-200"],
+body:not(.night) [class~="text-gray-300"] {
+  color: var(--lm-text) !important;
+}
+body:not(.night) [class~="text-slate-400"],
+body:not(.night) [class~="text-slate-500"],
+body:not(.night) [class~="text-gray-400"],
+body:not(.night) [class~="text-gray-500"] {
+  color: var(--lm-muted) !important;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * 6.  TEXT
  *
@@ -2185,4 +2221,70 @@ body:not(.night) .qz-option.correct.selected {
   box-shadow:
     0 0 0 3px rgba(22, 163, 74, 0.20),
     0 12px 24px rgba(22, 163, 74, 0.12) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 19. EDITOR HUB — PDF Editor / PDF Merger top toolbar buttons
+ *
+ * editor.css forces white-on-dark-glass with !important on a high-specificity
+ * selector. Re-target with the same specificity + body:not(.night) to bump
+ * us over it without raising specificity arms races elsewhere.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) #editorPdfEditorView > div:first-child button,
+body:not(.night) #editorPdfMergerView > div:first-child button {
+  background: var(--lm-btn-bg) !important;
+  border: 1px solid var(--lm-btn-border) !important;
+  color: var(--lm-btn-color) !important;
+  box-shadow: var(--lm-btn-shadow) !important;
+}
+body:not(.night) #editorPdfEditorView > div:first-child button:hover,
+body:not(.night) #editorPdfMergerView > div:first-child button:hover {
+  background: var(--lm-btn-hover-bg) !important;
+  border-color: var(--lm-btn-hover-border) !important;
+  box-shadow: var(--lm-btn-hover-shadow) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 20. AI DIAGRAMS / PLOTS — SVG text rendered with white fills
+ *
+ * The Python AI service emits diagrams/plots as inline <svg> with
+ * `fill="#fff"` or `stroke="#fff"` on axis labels, ticks, legends and
+ * node captions. Those become invisible on the light page background.
+ *
+ * We target <text> elements inside an .ai-msg / .ai-msgs-body and any
+ * .minallo-plot / .minallo-diagram fence-rendered SVG. Stroke is kept
+ * darker for axis lines; fills go to the body text colour. */
+body:not(.night) .ai-msg svg text,
+body:not(.night) .ai-msgs-body svg text,
+body:not(.night) .minallo-plot svg text,
+body:not(.night) .minallo-diagram svg text,
+body:not(.night) figure.minallo-plot text,
+body:not(.night) figure.minallo-diagram text {
+  fill: var(--lm-text) !important;
+}
+body:not(.night) .ai-msg svg .axis line,
+body:not(.night) .ai-msg svg .axis path,
+body:not(.night) .ai-msg svg .tick line,
+body:not(.night) .minallo-plot svg .axis line,
+body:not(.night) .minallo-plot svg .axis path,
+body:not(.night) .minallo-plot svg .tick line,
+body:not(.night) .minallo-diagram svg .axis line,
+body:not(.night) .minallo-diagram svg .axis path,
+body:not(.night) .minallo-diagram svg .tick line {
+  stroke: var(--lm-muted) !important;
+}
+/* Last-resort: any inline `stroke="#fff"` / `fill="#fff"` on plot SVGs.
+   Attribute selectors only catch presentation attrs, not CSS, so this is
+   tightly scoped to plot / diagram containers to avoid touching icons. */
+body:not(.night) .minallo-plot svg [stroke="#fff"],
+body:not(.night) .minallo-plot svg [stroke="white"],
+body:not(.night) .minallo-diagram svg [stroke="#fff"],
+body:not(.night) .minallo-diagram svg [stroke="white"] {
+  stroke: var(--lm-muted) !important;
+}
+body:not(.night) .minallo-plot svg [fill="#fff"],
+body:not(.night) .minallo-plot svg [fill="white"],
+body:not(.night) .minallo-diagram svg [fill="#fff"],
+body:not(.night) .minallo-diagram svg [fill="white"] {
+  fill: var(--lm-text) !important;
 }
