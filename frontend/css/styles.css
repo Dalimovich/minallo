@@ -2128,8 +2128,13 @@ body.night .sb-acc-chev-btn {
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
-  padding-left: 12px;
-  margin-left: 4px;
+  /* margin-left: auto pushes this group toward the right half of the
+     toolbar so it sits roughly above the right PDF pane. Since
+     `.pdf-controls-right` also has margin-left: auto, the two margins
+     split the free space evenly: left controls stay left, this group
+     lands mid-toolbar, Annotate/Download stay flush right. */
+  margin-left: auto;
+  padding-left: 14px;
   border-left: 1px solid rgba(147, 197, 253, 0.22);
 }
 .pdf-right-controls-group[hidden] { display: none; }
