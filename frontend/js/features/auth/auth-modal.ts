@@ -208,10 +208,16 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
         sessionStorage.setItem('pendingConfirm', email);
 
         if (signUpResult.access_token) {
-          localStorage.setItem('sb_token', signUpResult.access_token);
+          // Match _sbStoreSession in supabase.js. The old sb_token/sb_refresh
+          // keys are no longer recognised; writing them means the session is
+          // lost on the post-verifyAndEnter reload.
+          sessionStorage.setItem('sb_sess_token', signUpResult.access_token);
           if (signUpResult.refresh_token) {
-            localStorage.setItem('sb_refresh', signUpResult.refresh_token);
+            localStorage.setItem('sb_sess_refresh', signUpResult.refresh_token);
           }
+          localStorage.removeItem('sb_sess_token');
+          localStorage.removeItem('sb_token');
+          localStorage.removeItem('sb_refresh');
           verifyAndEnter(signUpResult.access_token);
           return;
         }

@@ -196,6 +196,17 @@ var _sb = {
         // Drop the legacy unscoped key in case an older client wrote to it.
         localStorage.removeItem('ss_user_courses');
       } catch (e) {}
+      // Profile + course caches keyed by ss_last_uid are read at app boot
+      // (app.ts) BEFORE auth resolves. If we leave them behind, the NEXT
+      // user signing in on the same browser flashes the previous user's
+      // name / courses for a moment. Clear both.
+      try {
+        for (var _pi = localStorage.length - 1; _pi >= 0; _pi--) {
+          var _pk = localStorage.key(_pi);
+          if (_pk && _pk.indexOf('profile_cache_') === 0) localStorage.removeItem(_pk);
+        }
+        localStorage.removeItem('ss_last_uid');
+      } catch (e) {}
       try {
         sessionStorage.removeItem('ss_logged_in');
       } catch (e) {}

@@ -37,10 +37,17 @@
 
   if (!loggedIn) {
     try {
-      // Tokens persist in localStorage now (so the user stays signed in
-      // across tab close). Fall back to sessionStorage for in-flight
-      // sessions from before this code deployed.
-      if (localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token')) {
+      // Stay-signed-in across browser restart: sessionStorage is volatile per
+      // tab, so after a real restart only the refresh token (in localStorage)
+      // remains. supabase.js's restoreSession() handles the refresh round-trip,
+      // but it only runs when we boot into the app shell — and the app shell
+      // only boots when loggedIn is true here. So treat presence of EITHER an
+      // access token OR a refresh token as "logged in" for boot routing.
+      if (
+        localStorage.getItem('sb_sess_token') ||
+        sessionStorage.getItem('sb_sess_token') ||
+        localStorage.getItem('sb_sess_refresh')
+      ) {
         loggedIn = true;
       }
     } catch (e) {}
@@ -164,11 +171,14 @@ function _handleGoogleCredential(response) {
     })
     .then(function (d) {
       if (d && d.access_token) {
-        // Persistent across tab close (matches _sbStoreSession in supabase.js).
-        localStorage.setItem('sb_sess_token', d.access_token);
+        // Mirror _sbStoreSession in supabase.js exactly: short-lived bearer
+        // access token in sessionStorage (volatile per tab), refresh token
+        // in localStorage so we can refresh after a browser restart. Writing
+        // the access token to localStorage was a security inconsistency vs.
+        // the password-login path.
+        sessionStorage.setItem('sb_sess_token', d.access_token);
         if (d.refresh_token) localStorage.setItem('sb_sess_refresh', d.refresh_token);
-        sessionStorage.removeItem('sb_sess_token');
-        sessionStorage.removeItem('sb_sess_refresh');
+        localStorage.removeItem('sb_sess_token');
         localStorage.removeItem('sb_token');
         localStorage.removeItem('sb_refresh');
         if (window.Minallo)
