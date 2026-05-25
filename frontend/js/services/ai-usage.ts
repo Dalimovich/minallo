@@ -53,7 +53,7 @@ export interface AiCapErrorDetail {
 const WARN_THRESHOLD = 0.8;
 const MODAL_ID = 'aiCapModal';
 const STORAGE_KEY_PREFIX = 'ss_ai_usage_banner_dismissed_';
-const CONTACT_EMAIL = 'mohamedali.mariam@minallo.de';
+const CONTACT_EMAIL = 'support@minallo.de';
 
 const BANNER_LABEL: Record<'interactive' | 'generation', { title: string; subjectAtCap: string; subjectWarn: string }> = {
   interactive: {
