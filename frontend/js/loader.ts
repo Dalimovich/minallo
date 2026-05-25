@@ -394,7 +394,7 @@ interface LandingTranslation {
       'views/notes/notes-panel.css',
       // Light-mode polish loads LAST so it wins source-order ties
       // against feature CSS that still hard-codes greys.
-      'css/light-mode.css?v=44',
+      'css/light-mode.css?v=45',
     ].forEach((href) => {
       const link = document.createElement('link');
       link.rel = 'stylesheet';

@@ -367,6 +367,30 @@ body:not(.night) .np-gen-box {
   color: var(--lm-text) !important;
 }
 
+/* Modal/popup HEADERS — chat.css sets `color: rgba(255,255,255,.92)` on
+   `.chat-friend-box-hdr` (and friends). Same specificity as the parent
+   rule above, so the white text wins on the header element itself even
+   when the surrounding card has been turned white. Force the header
+   text colour to the body text colour so titles like "+ Create Room"
+   read on the now-white modal. */
+body:not(.night) .chat-friend-box-hdr,
+body:not(.night) .chat-friend-box-hdr * {
+  color: var(--lm-text) !important;
+  background: transparent !important;
+}
+/* Same pattern for any sibling modal title elements that follow the
+   chat.css "white-on-dark-glass" convention. */
+body:not(.night) .msm-box-hdr,
+body:not(.night) .msm-box-title,
+body:not(.night) .ai-input-box-hdr,
+body:not(.night) .ai-input-box-title,
+body:not(.night) .gen-overlay-hdr,
+body:not(.night) .gen-overlay-title,
+body:not(.night) .np-gen-hdr,
+body:not(.night) .np-gen-title {
+  color: var(--lm-text) !important;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * 4.  NESTED CARDS / ROWS — same white, slightly softer border
  * ────────────────────────────────────────────────────────────────────────── */
