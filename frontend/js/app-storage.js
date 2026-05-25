@@ -36,6 +36,19 @@ function _ufKey(course) {
   return (course.id || course.short || course.name).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+// Long-lived tabs burn through the 1-hour Supabase JWT; calls that read
+// _sbToken directly (upload/list/fetch-bytes) then 403 with "exp claim
+// timestamp check failed". restoreSession refreshes at boot but not later,
+// so we re-check here right before any authed storage call.
+async function _ufEnsureFreshToken() {
+  if (window._sbSessionReady) {
+    try { await window._sbSessionReady; } catch (e) {}
+  }
+  if (typeof _jwtAliveEnough === 'function' && _sbToken && !_jwtAliveEnough(_sbToken)) {
+    try { await _sb.auth.refreshSession(); } catch (e) {}
+  }
+}
+
 function _ssFileExt(name) {
   var lower = String(name || '').toLowerCase();
   var idx = lower.lastIndexOf('.');
@@ -159,8 +172,9 @@ async function _ufListFolder(uid, course, folder) {
 
 // Upload one file with XHR so we get progress events
 // onProgress(pct 0-100) is called as data uploads
-function _ufUpload(uid, course, file, onProgress, folder) {
+async function _ufUpload(uid, course, file, onProgress, folder) {
   _ssValidateUploadFile(file);
+  await _ufEnsureFreshToken();
   return new Promise(function (resolve, reject) {
     var path = _ufStoragePath(uid, course, file.name, folder || null);
     var url = SUPA_URL + '/storage/v1/object/' + _UF_BUCKET + '/' + path;
@@ -194,7 +208,7 @@ async function _ufList(uid, course) {
   // Wait for session restore so the request uses the real token, not anon.
   // Without this, prewarm-on-boot lists with SUPA_KEY → empty results → cards
   // show 0 files until the user reopens the course.
-  if (window._sbSessionReady) await window._sbSessionReady;
+  await _ufEnsureFreshToken();
 
   var prefix = uid + '/' + _ufKey(course) + '/';
   var r = await fetch(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
@@ -214,8 +228,9 @@ async function _ufList(uid, course) {
 // Fetch an uploaded file's bytes directly using the authenticated endpoint
 async function _ufFetchBytes(uid, course, name, folder) {
   // Wait for session restore to finish (fixes race on page refresh where restoreState
-  // calls openFile before restoreSession has set _sbToken)
-  if (window._sbSessionReady) await window._sbSessionReady;
+  // calls openFile before restoreSession has set _sbToken) and refresh the JWT
+  // if it has expired during a long-lived tab.
+  await _ufEnsureFreshToken();
 
   var courseKey = _ufKey(course);
   var token = _sbToken || SUPA_KEY;
