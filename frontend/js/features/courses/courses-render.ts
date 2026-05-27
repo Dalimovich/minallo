@@ -116,7 +116,24 @@ function _computeProgress(courseId: string, files: number): CourseProgress {
   };
 }
 
-function _hydrateCardCount(courseId: string, badge: HTMLElement): void {
+function _hydrateCardCount(
+  courseId: string,
+  badge: HTMLElement,
+  initialCount: number,
+  onCountChanged?: (newCount: number) => void
+): void {
+  const _applyBadge = (n: number): void => {
+    if (badge.isConnected) badge.textContent = n + ' file' + (n !== 1 ? 's' : '');
+  };
+  // The chip badge and the card body (progress block vs "No files yet") were
+  // computed from the same initialCount at render time. If hydration discovers
+  // a different number, patching only the badge leaves the body stale —
+  // showing "10 files" in the chip but "No files yet" below. Whenever the
+  // resolved count differs from initialCount, the caller re-renders so the
+  // body is rebuilt from the new count.
+  const _maybeRerender = (n: number): void => {
+    if (n !== initialCount && onCountChanged) onCountChanged(n);
+  };
   // The cached-profile IIFE in app.ts renders course cards before _verifyAndEnter
   // sets window._sbToken, so a fetch fired here would 401. Render the cached count
   // (written by a prior successful fetch) and bail — a second render runs once
@@ -126,7 +143,10 @@ function _hydrateCardCount(courseId: string, badge: HTMLElement): void {
       const cached = localStorage.getItem('ss_fc_' + courseId);
       if (cached != null) {
         const n = Number(cached);
-        if (Number.isFinite(n)) badge.textContent = n + ' file' + (n !== 1 ? 's' : '');
+        if (Number.isFinite(n)) {
+          _applyBadge(n);
+          _maybeRerender(n);
+        }
       }
     } catch { /* quota / parse */ }
     return;
@@ -134,7 +154,10 @@ function _hydrateCardCount(courseId: string, badge: HTMLElement): void {
   const inFlight = _countFetchInFlight[courseId];
   if (inFlight) {
     inFlight.then((count) => {
-      if (count != null) badge.textContent = count + ' file' + (count !== 1 ? 's' : '');
+      if (count != null) {
+        _applyBadge(count);
+        _maybeRerender(count);
+      }
     });
     return;
   }
@@ -142,7 +165,8 @@ function _hydrateCardCount(courseId: string, badge: HTMLElement): void {
     .then((docs) => {
       const count = Array.isArray(docs) ? docs.length : 0;
       try { localStorage.setItem('ss_fc_' + courseId, String(count)); } catch { /* quota */ }
-      if (badge.isConnected) badge.textContent = count + ' file' + (count !== 1 ? 's' : '');
+      _applyBadge(count);
+      _maybeRerender(count);
       return count;
     })
     .catch(() => null)
@@ -337,7 +361,14 @@ export function sdRenderCourses(state: CoursesRenderState): void {
       '<button type="button" class="sd-course-open-btn" data-open-course>Open course</button>';
 
     const badgeEl = card.querySelector<HTMLElement>('[data-file-badge]');
-    if (!liveCount && badgeEl) _hydrateCardCount(c.id, badgeEl);
+    if (!liveCount && badgeEl) {
+      _hydrateCardCount(c.id, badgeEl, count, (newCount) => {
+        // Body was rendered for the old count (e.g. "No files yet" when the
+        // cache said 0). Re-render the whole grid so the progress block
+        // matches the freshly-fetched count.
+        if (newCount !== count) sdRenderCourses(state);
+      });
+    }
 
     if (count === 0) card.classList.add('sd-course-card-empty');
 
