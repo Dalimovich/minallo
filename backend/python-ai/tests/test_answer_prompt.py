@@ -169,6 +169,14 @@ def test_math_prompt_requires_kinematics_phase_check() -> None:
     assert "entire shaft/track length as free fall" in body
 
 
+def test_math_prompt_allows_complete_kinematics_general_formula_fallback() -> None:
+    body = _SYSTEM_PROMPT_MATH.lower()
+    assert "complete elementary kinematics" in body
+    assert "standard constant-acceleration equations" in body
+    assert "continue through substitution, calculation, unit check, and final answer" in body
+    assert "do not use \"missing context\" for a complete elementary constant-acceleration problem" in body
+
+
 def test_strong_prompt_warns_against_single_phase_braking_error() -> None:
     body = _SYSTEM_PROMPT_STRONG.lower()
     assert "separate motion phases" in body
