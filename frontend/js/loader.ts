@@ -425,19 +425,34 @@ interface LandingTranslation {
       return src + (src.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(_v);
     }
 
+    // 10s per-script timeout: HTTPS-inspection AV (e.g. Norton WFP) can drop a
+    // request silently — no onload, no onerror, just pending forever. Without
+    // this fallback the entire boot chain hangs and ss-ready never fires.
+    // On timeout we resolve (not reject) so the chain continues — downstream
+    // code may run degraded, but the splash hides and the user can recover.
+    const SCRIPT_TIMEOUT_MS = 10000;
     function loadScript(src: string, readyKey: string, options?: LoadScriptOptions): Promise<void> {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((resolve) => {
         const opts = options || {};
         const script = document.createElement('script');
         if (opts.type) script.type = opts.type;
         script.src = versioned(src);
-        script.onload = () => {
-          if (SS && readyKey) SS.markReady(readyKey, { file: src });
+        let settled = false;
+        const settle = (reason: 'load' | 'error' | 'timeout', err?: Error): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (reason === 'load') {
+            if (SS && readyKey) SS.markReady(readyKey, { file: src });
+          } else {
+            console.error('[loader] ' + reason + ': ' + src, err || '');
+            if (SS) SS.emit('loader:script:' + reason, { file: src });
+          }
           resolve();
         };
-        script.onerror = () => {
-          reject(new Error('Failed to load ' + src));
-        };
+        const timer = setTimeout(() => settle('timeout'), SCRIPT_TIMEOUT_MS);
+        script.onload = () => settle('load');
+        script.onerror = () => settle('error', new Error('Failed to load ' + src));
         document.body.appendChild(script);
       });
     }
@@ -487,11 +502,17 @@ interface LandingTranslation {
           return new Promise<void>((res) => {
             const s = document.createElement('script');
             s.src = versioned(src);
-            s.onload = () => res();
-            s.onerror = () => {
-              console.error('Failed to load feature script:', src);
+            let settled = false;
+            const settle = (reason: 'load' | 'error' | 'timeout'): void => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
+              if (reason !== 'load') console.error('[loader] feature ' + reason + ':', src);
               res();
             };
+            const timer = setTimeout(() => settle('timeout'), SCRIPT_TIMEOUT_MS);
+            s.onload = () => settle('load');
+            s.onerror = () => settle('error');
             document.body.appendChild(s);
           });
         });
@@ -551,19 +572,26 @@ interface LandingTranslation {
         void Promise.all(featurePromises).then(() => {
           const aiScript = document.createElement('script');
           aiScript.src = versioned('js/ai.js');
-          aiScript.onload = () => {
-            console.log('js/ai.js loaded');
-            if (SS) {
-              SS.markReady('ai', { file: 'js/ai.js' });
-              SS.markReady('app', {});
+          let aiSettled = false;
+          const fireReady = (ok: boolean): void => {
+            if (aiSettled) return;
+            aiSettled = true;
+            clearTimeout(aiTimer);
+            if (ok) {
+              console.log('js/ai.js loaded');
+              if (SS) {
+                SS.markReady('ai', { file: 'js/ai.js' });
+                SS.markReady('app', {});
+              }
+            } else {
+              console.error('[loader] js/ai.js failed or timed out — falling back');
+              if (SS) SS.markReady('app', { ai: false });
             }
             window.dispatchEvent(new Event('ss-ready'));
           };
-          aiScript.onerror = () => {
-            console.error('Failed to load js/ai.js — falling back');
-            if (SS) SS.markReady('app', { ai: false });
-            window.dispatchEvent(new Event('ss-ready'));
-          };
+          const aiTimer = setTimeout(() => fireReady(false), SCRIPT_TIMEOUT_MS);
+          aiScript.onload = () => fireReady(true);
+          aiScript.onerror = () => fireReady(false);
           document.body.appendChild(aiScript);
         });
       })
