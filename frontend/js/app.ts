@@ -606,8 +606,19 @@ askAI = _aiAskBridge.askAI as typeof askAI;
 initAiChipsBridge();
 initAiConfettiBridge();
 
-// Apply cached profile & courses instantly before auth completes
-(function (): void {
+// Apply cached profile & courses — DEFERRED until ss-ready.
+//
+// Was: ran sync during main.js execution. _loadUserCourses triggers
+// restoreState which fires _ufMerge (storage list). That single fetch
+// consumed an HTTP/2 connection slot before ai.js loaded; on networks
+// with broken multiplexing (some AV filter drivers, edge cases) ai.js
+// would queue behind it for up to 10s, delaying ss-ready.
+//
+// Now: same code runs after the loader fires ss-ready, so the boot
+// chain (router → features → ai.js) is unblocked. Cached state shows
+// up ~milliseconds later than before — imperceptible — but never
+// blocks the splash from going away.
+function _applyCachedProfileNow(): void {
   try {
     const lastUid = localStorage.getItem('ss_last_uid');
     if (!lastUid) return;
@@ -617,7 +628,14 @@ initAiConfettiBridge();
       if (cp.courses && typeof _loadUserCourses === 'function') _loadUserCourses(cp.courses);
     }
   } catch { /* corrupted cache */ }
-})();
+}
+if (document.body && document.body.getAttribute('data-ss-ready') === '1') {
+  // Already ready (rare race) — apply on next microtask so we don't block
+  // the rest of main.js execution.
+  Promise.resolve().then(_applyCachedProfileNow);
+} else {
+  window.addEventListener('ss-ready', _applyCachedProfileNow, { once: true });
+}
 renderCourses();
 renderTT();
 renderMails();
