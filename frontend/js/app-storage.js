@@ -42,10 +42,33 @@ function _ufKey(course) {
 // so we re-check here right before any authed storage call.
 async function _ufEnsureFreshToken() {
   if (window._sbSessionReady) {
-    try { await window._sbSessionReady; } catch (e) {}
+    // 5s timeout: _sbSessionReady wraps _sb.auth.refreshSession() / getUser()
+    // which have no built-in timeout. If those Supabase SDK calls hang
+    // (slow auth endpoint, degraded network), every storage operation
+    // queues behind them indefinitely — and worse, their in-flight HTTP
+    // requests occupy connection-pool slots so ai.js never gets to load.
+    // Race the await against a timeout so we proceed with whatever token
+    // we have rather than block the entire app forever.
+    try {
+      await Promise.race([
+        window._sbSessionReady,
+        new Promise(function (_resolve, reject) {
+          setTimeout(function () { reject(new Error('sbSessionReady timeout')); }, 5000);
+        })
+      ]);
+    } catch (e) {}
   }
   if (typeof _jwtAliveEnough === 'function' && _sbToken && !_jwtAliveEnough(_sbToken)) {
-    try { await _sb.auth.refreshSession(); } catch (e) {}
+    // Same problem here — refreshSession is the same SDK call with no
+    // built-in timeout. Race it too.
+    try {
+      await Promise.race([
+        _sb.auth.refreshSession(),
+        new Promise(function (_resolve, reject) {
+          setTimeout(function () { reject(new Error('refreshSession timeout')); }, 5000);
+        })
+      ]);
+    } catch (e) {}
   }
 }
 
@@ -120,6 +143,28 @@ function _ufEncodeStoragePath(path) {
     .join('/');
 }
 
+function _ufFetchJsonWithTimeout(url, options, timeoutMs) {
+  var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = ctrl
+    ? setTimeout(function () {
+        ctrl.abort();
+      }, timeoutMs || 10000)
+    : null;
+  return fetch(url, Object.assign({}, options || {}, { signal: ctrl ? ctrl.signal : undefined }))
+    .then(function (r) {
+      if (timer) clearTimeout(timer);
+      if (!r.ok) return null;
+      return r.json().catch(function () {
+        return null;
+      });
+    })
+    .catch(function (err) {
+      if (timer) clearTimeout(timer);
+      console.warn('[storage] list request failed/timed out:', err && (err.name || err.message));
+      return null;
+    });
+}
+
 // ── User folders (persisted in localStorage) ─────────────────────────────
 function _ufFolderKey(uid, course) {
   return 'ss_ufolders_' + uid + '_' + _ufKey(course);
@@ -156,7 +201,7 @@ async function _ufListFolder(uid, course, folder) {
   var fe = encodeURIComponent(folder);
   if (/[^\x00-\x7F]/.test(folder)) fe = fe.replace(/%/g, '%25');
   var prefix = uid + '/' + _ufKey(course) + '/' + fe + '/';
-  var r = await fetch(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
+  var items = await _ufFetchJsonWithTimeout(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
     method: 'POST',
     headers: {
       apikey: SUPA_KEY,
@@ -171,9 +216,7 @@ async function _ufListFolder(uid, course, folder) {
       offset: 0,
       sortBy: { column: 'name', order: 'asc' }
     })
-  });
-  if (!r.ok) return [];
-  var items = await r.json();
+  }, 10000);
   return Array.isArray(items) ? items : [];
 }
 
@@ -218,7 +261,7 @@ async function _ufList(uid, course) {
   await _ufEnsureFreshToken();
 
   var prefix = uid + '/' + _ufKey(course) + '/';
-  var r = await fetch(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
+  var items = await _ufFetchJsonWithTimeout(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
     method: 'POST',
     headers: {
       apikey: SUPA_KEY,
@@ -233,9 +276,7 @@ async function _ufList(uid, course) {
       offset: 0,
       sortBy: { column: 'name', order: 'asc' }
     })
-  });
-  if (!r.ok) return [];
-  var items = await r.json();
+  }, 10000);
   return Array.isArray(items) ? items : [];
 }
 
