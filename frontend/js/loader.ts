@@ -45,6 +45,34 @@ interface LandingTranslation {
   }
   if (SS) SS.emit('loader:start', { loggedIn: !!window._ssIsLoggedIn });
 
+  // Universal fetch-with-timeout helper. Every boot-path fetch goes through
+  // this so a single stalled request can't hang the entire app. On timeout
+  // we resolve the abort which surfaces as a normal fetch error in the
+  // caller's .catch — same handling as a network failure.
+  function _fetchTimeout(input: string, ms: number, init?: RequestInit): Promise<Response> {
+    const hasAC = typeof AbortController !== 'undefined';
+    const ctrl = hasAC ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+    return fetch(input, { ...(init || {}), signal: ctrl ? ctrl.signal : undefined })
+      .then((r) => { if (timer) clearTimeout(timer); return r; })
+      .catch((err) => { if (timer) clearTimeout(timer); throw err; });
+  }
+  // Hard splash-hide fallback. If ss-ready hasn't fired 35 seconds after
+  // boot — beyond every per-fetch and per-script timeout combined — force
+  // the splash off so the user sees SOMETHING they can act on, even if
+  // it's a partially-rendered page or a sign-in fallback. This is the
+  // last line of defense and must never depend on any boot artifact.
+  let _ssReadyFired = false;
+  window.addEventListener('ss-ready', () => { _ssReadyFired = true; }, { once: true });
+  setTimeout(() => {
+    if (_ssReadyFired) return;
+    console.error('[loader] hard splash-hide fallback — 35s elapsed without ss-ready');
+    try { document.body.setAttribute('data-ss-ready', '1'); } catch (e) { /* noop */ }
+    const splash = document.getElementById('ss-splash');
+    if (splash) splash.style.display = 'none';
+    try { window.dispatchEvent(new Event('ss-ready')); } catch (e) { /* noop */ }
+  }, 35000);
+
   // ── Landing translations ─────────────────────────────────────────────────
   const _landingTrans: Record<'en' | 'de', LandingTranslation> = {
     en: {
@@ -239,15 +267,8 @@ interface LandingTranslation {
       ensureStylesheet('css/auth.css?v=4');
     })();
 
-    // 10s timeout: if the landing fragment fetch stalls (broken network,
-    // CDN hiccup) the whole boot hangs because ss-ready only fires inside
-    // this .then chain. Abort fast and surface a minimal fallback so the
-    // user can still sign in.
-    const landingAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    const landingTimer = landingAbort ? setTimeout(() => landingAbort.abort(), 10000) : null;
-    fetch('pages/new_landing.html', { signal: landingAbort ? landingAbort.signal : undefined })
+    _fetchTimeout('pages/new_landing.html', 10000)
       .then((r) => {
-        if (landingTimer) clearTimeout(landingTimer);
         if (!r.ok) throw new Error('HTTP ' + r.status + ' loading new_landing.html');
         return r.text();
       })
@@ -612,7 +633,7 @@ interface LandingTranslation {
   function loadFeatureSections(): Promise<unknown> {
     return Promise.all(
       FEATURE_SECTIONS.map((section) => {
-        return fetch(section.file)
+        return _fetchTimeout(section.file, 10000)
           .then((r) => {
             if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + section.file);
             return r.text();
@@ -636,7 +657,7 @@ interface LandingTranslation {
   // Fetch all sections in parallel, inject in order
   void Promise.all(
     SECTIONS.map((filename) => {
-      return fetch(filename)
+      return _fetchTimeout(filename, 10000)
         .then((r) => {
           if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
           return r.text();
