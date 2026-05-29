@@ -280,8 +280,27 @@ async function _ufList(uid, course) {
   return Array.isArray(items) ? items : [];
 }
 
-// Fetch an uploaded file's bytes directly using the authenticated endpoint
+// Fetch an uploaded file's bytes directly using the authenticated endpoint.
+// Public entry — wraps the multi-fallback impl in a hard 45s overall cap so
+// the cascade of (3 endpoints + signed URL) × (4 name fallbacks) can never
+// keep the PDF viewer's "Loading…" overlay open forever. Each per-request
+// timeout inside is shorter; this is the last-line safety against the worst
+// total elapsed time.
 async function _ufFetchBytes(uid, course, name, folder) {
+  var overallTimeout = new Promise(function (_resolve, reject) {
+    setTimeout(function () { reject(new Error('_ufFetchBytes overall timeout')); }, 45000);
+  });
+  try {
+    return await Promise.race([_ufFetchBytesImpl(uid, course, name, folder), overallTimeout]);
+  } catch (e) {
+    if (e && e.message === '_ufFetchBytes overall timeout') {
+      console.warn('[storage] _ufFetchBytes timed out after 45s for', name);
+    }
+    return null;
+  }
+}
+
+async function _ufFetchBytesImpl(uid, course, name, folder) {
   // Wait for session restore to finish (fixes race on page refresh where restoreState
   // calls openFile before restoreSession has set _sbToken) and refresh the JWT
   // if it has expired during a long-lived tab.
