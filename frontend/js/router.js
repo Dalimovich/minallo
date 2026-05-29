@@ -270,134 +270,23 @@ var _savedPortalTab = (function () {
 })();
 var _pendingPortalRestore =
   _savedPortalTab && _savedPortalTab !== 'dashboard' ? _savedPortalTab : null;
-// Use a getter/setter on window.showPortalSection so we cleanly handle BOTH
-// orderings (main.js before router OR router before main.js):
-//   - If main.js already installed the function, _origShowPortalSection is
-//     captured here at definition time.
-//   - If main.js loads later (lazy-idle execution, deferred script timeout
-//     resolved early), its `window.showPortalSection = …` assignment is
-//     intercepted by our setter and stored into _origShowPortalSection
-//     instead of overwriting our wrapper. Callers always reach our wrapper.
-var _origShowPortalSection =
-  typeof window.showPortalSection === 'function' ? window.showPortalSection : null;
-var _showPortalSectionWrapper = function (sec) {
-  var target = sec || 'dashboard';
-
-  // 'courses' is the URL-facing alias for the internal 'studip' section
-  if (target === 'courses') target = 'studip';
-
-  if (target === 'dashboard' && _pendingPortalRestore) {
-    target = _pendingPortalRestore;
-    _pendingPortalRestore = null;
-    setNavActive(_ssPortalNavId(target));
-    if (target === 'courses' || target === 'studip') setTimeout(sdRenderCourses, 0);
-    if (target === 'chat') _ssAfterFeature('chat', function () {
-      if (typeof window._chatInit === 'function') window._chatInit();
-    });
-    if (target === 'editor')
-      _ssAfterFeature('editor', function () {
-        if (typeof window._writerInit === 'function') window._writerInit();
-        else if (typeof window._editorInit === 'function') window._editorInit();
-      });
-  }
-
-  activePortalSection = target;
-  // TEMP diagnostic — catch any throw from the inner showPortalSection so we
-  // can see what's blowing up while still completing the URL/sessionStorage
-  // update. Without this, a throw here silently kills the ss_portal_tab and
-  // history push, leaving Notes (the last successful update) as the perpetual
-  // restore target.
-  if (typeof _origShowPortalSection === 'function') {
-    try {
-      _origShowPortalSection(target);
-    } catch (e) {
-      try {
-        console.error(
-          '[router] _origShowPortalSection threw for target=', target,
-          'error=', e && (e.stack || e.message || e)
-        );
-      } catch (e2) {}
-    }
-  } else {
-    // main.js didn't finish loading before this call. Queue the target so
-    // we can replay the inner section render the moment main.js installs
-    // showPortalSection (intercepted by our setter below). URL/state work
-    // continues so the nav at least logically completes immediately.
-    _pendingShowSectionTarget = target;
-    console.warn('[router] showPortalSection called before main.js ready, target=', target, '— queued for replay');
-  }
-  if (target === 'subscription') {
-    setTimeout(function () {
-      if (typeof _bindSubscriptionControls === 'function') _bindSubscriptionControls();
-      if (typeof _initPayPalButton === 'function') _initPayPalButton();
-    }, 400);
-  }
-  try {
-    sessionStorage.setItem('ss_portal_tab', target);
-    localStorage.setItem('ss_last_section', target);
-  } catch (e) {}
-  // Show 'courses' in the URL instead of internal name 'studip'
-  var urlSection = target === 'studip' ? 'courses' : target;
-  _ssPushHistory({ view: 'portal', section: target }, '#portal=' + encodeURIComponent(urlSection));
-};
-
-// Track the last target attempted while main.js was missing so we can replay
-// it once the real implementation arrives.
-var _pendingShowSectionTarget = null;
-
-// Install showPortalSection as a ONE-SHOT getter/setter that captures
-// main.js's eventual assignment into _origShowPortalSection, replays any
-// queued nav target, then immediately swaps back to a plain data property
-// holding our wrapper.
-//
-// Why one-shot: other scripts (dashboard-calendar.js) install their own
-// wrappers later by reading window.showPortalSection (getting our wrapper)
-// and assigning a new wrapper that calls the captured one. If our setter
-// kept intercepting those assignments, we'd store the OUTER wrapper into
-// _origShowPortalSection — our wrapper would then call the outer wrapper,
-// which calls (its captured) our wrapper, infinite recursion.
-//
-// After the one-shot fires, dashboard-calendar's normal wrap pattern works:
-//   var orig = window.showPortalSection;  // our wrapper
-//   window.showPortalSection = function (s) { …; orig(s); …; };
-// → outer call goes through dashboard-calendar's wrapper, which calls our
-//   wrapper, which calls main.js's _origShowPortalSection. Clean chain.
-function _swapToPlainDataProperty() {
-  try {
-    delete window.showPortalSection;
-    window.showPortalSection = _showPortalSectionWrapper;
-  } catch (e) { /* descriptor stuck; harmless */ }
-}
-if (typeof _origShowPortalSection === 'function') {
-  // main.js already ran before router. No need for the redirect dance —
-  // install our wrapper as a plain property right away so later wrappers
-  // (dashboard-calendar etc.) chain through us correctly.
-  _swapToPlainDataProperty();
-} else {
-  try {
-    Object.defineProperty(window, 'showPortalSection', {
-      configurable: true,
-      get: function () { return _showPortalSectionWrapper; },
-      set: function (fn) {
-        if (typeof fn !== 'function' || fn === _showPortalSectionWrapper) return;
-        _origShowPortalSection = fn;
-        if (_pendingShowSectionTarget) {
-          var replayTarget = _pendingShowSectionTarget;
-          _pendingShowSectionTarget = null;
-          try { fn(replayTarget); } catch (e) {
-            console.error('[router] replay of', replayTarget, 'threw:', e && (e.message || e));
-          }
-        }
-        // First assignment captured. Uninstall the redirect so future
-        // wrappers (dashboard-calendar.js etc.) can chain normally.
-        _swapToPlainDataProperty();
-      }
-    });
-  } catch (e) {
-    // defineProperty failed (very old browser?) — fall back to plain assignment.
-    window.showPortalSection = _showPortalSectionWrapper;
-  }
-}
+// Note: the previous router-side wrap of window.showPortalSection was
+// removed. Codex's _finalizeNav() (defined above) is now called explicitly
+// from every nav handler to commit URL + sessionStorage + localStorage,
+// which is what the wrap used to do. Leaving the wrap in place caused two
+// problems:
+//   1. Double-push: handlers called _finalizeNav AND the wrap pushed
+//      history a second time. That's what triggered Chrome's
+//      "Throttling navigation to prevent the browser from hanging".
+//   2. Wrapper-chain recursion: feature scripts (dashboard-calendar.js)
+//      install their own wrappers via the read-then-write pattern. Any
+//      attempt to intercept that with a getter/setter while ALSO doing
+//      the read-then-write ourselves produced infinite recursion when
+//      _origShowPortalSection ended up holding a wrapper that called us
+//      back.
+// Other side effects the wrap used to handle (subscription init,
+// _pendingPortalRestore) now happen in the explicit psbXxx click
+// handlers below.
 
 // Skip the initial portal-state replace when we're about to show the auth
 // modal — otherwise the URL flashes #portal=dashboard between landing and
