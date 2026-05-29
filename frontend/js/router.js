@@ -265,23 +265,17 @@ var _savedPortalTab = (function () {
 })();
 var _pendingPortalRestore =
   _savedPortalTab && _savedPortalTab !== 'dashboard' ? _savedPortalTab : null;
-// Capture lazily inside the wrapper instead of at script-load time. If the
-// loader chain's per-script timeout (loader.ts SCRIPT_TIMEOUT_MS) fired for
-// main.js before it could install showPortalSection, capturing here would
-// store `undefined` and every subsequent call throws TypeError. Lazy lookup
-// means we pick up the real function once main.js finally executes (browsers
-// still process the deferred script body even if our promise already settled).
-var _origShowPortalSection = null;
-window.showPortalSection = function (sec) {
-  if (!_origShowPortalSection || _origShowPortalSection === window.showPortalSection) {
-    // Look up the real implementation. If main.js still hasn't run, we'll
-    // skip the inner call below and only do the URL/state work — better
-    // than throwing and abandoning the section transition entirely.
-    var candidate = window.showPortalSection.__orig || null;
-    if (typeof candidate === 'function') {
-      _origShowPortalSection = candidate;
-    }
-  }
+// Use a getter/setter on window.showPortalSection so we cleanly handle BOTH
+// orderings (main.js before router OR router before main.js):
+//   - If main.js already installed the function, _origShowPortalSection is
+//     captured here at definition time.
+//   - If main.js loads later (lazy-idle execution, deferred script timeout
+//     resolved early), its `window.showPortalSection = …` assignment is
+//     intercepted by our setter and stored into _origShowPortalSection
+//     instead of overwriting our wrapper. Callers always reach our wrapper.
+var _origShowPortalSection =
+  typeof window.showPortalSection === 'function' ? window.showPortalSection : null;
+var _showPortalSectionWrapper = function (sec) {
   var target = sec || 'dashboard';
 
   // 'courses' is the URL-facing alias for the internal 'studip' section
@@ -320,9 +314,12 @@ window.showPortalSection = function (sec) {
       } catch (e2) {}
     }
   } else {
-    // main.js didn't finish loading before this call. Don't throw — the
-    // URL/state work below still runs so navigation isn't fully broken.
-    console.warn('[router] showPortalSection called before main.js ready, target=', target);
+    // main.js didn't finish loading before this call. Queue the target so
+    // we can replay the inner section render the moment main.js installs
+    // showPortalSection (intercepted by our setter below). URL/state work
+    // continues so the nav at least logically completes immediately.
+    _pendingShowSectionTarget = target;
+    console.warn('[router] showPortalSection called before main.js ready, target=', target, '— queued for replay');
   }
   if (target === 'subscription') {
     setTimeout(function () {
@@ -338,6 +335,37 @@ window.showPortalSection = function (sec) {
   var urlSection = target === 'studip' ? 'courses' : target;
   _ssPushHistory({ view: 'portal', section: target }, '#portal=' + encodeURIComponent(urlSection));
 };
+
+// Track the last target attempted while main.js was missing so we can replay
+// it once the real implementation arrives.
+var _pendingShowSectionTarget = null;
+
+// Install showPortalSection as a getter/setter so main.js's later assignment
+// (router.js wraps before main.js executes when main is lazy-idle loaded)
+// is captured into _origShowPortalSection instead of overwriting our
+// wrapper. Replay the most recent queued nav target so the user's click
+// finally lands its section render.
+try {
+  Object.defineProperty(window, 'showPortalSection', {
+    configurable: true,
+    get: function () { return _showPortalSectionWrapper; },
+    set: function (fn) {
+      if (typeof fn === 'function' && fn !== _showPortalSectionWrapper) {
+        _origShowPortalSection = fn;
+        if (_pendingShowSectionTarget) {
+          var replayTarget = _pendingShowSectionTarget;
+          _pendingShowSectionTarget = null;
+          try { fn(replayTarget); } catch (e) {
+            console.error('[router] replay of', replayTarget, 'threw:', e && (e.message || e));
+          }
+        }
+      }
+    }
+  });
+} catch (e) {
+  // defineProperty failed (very old browser?) — fall back to plain assignment.
+  window.showPortalSection = _showPortalSectionWrapper;
+}
 
 // Skip the initial portal-state replace when we're about to show the auth
 // modal — otherwise the URL flashes #portal=dashboard between landing and
