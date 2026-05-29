@@ -345,17 +345,41 @@ var _showPortalSectionWrapper = function (sec) {
 // it once the real implementation arrives.
 var _pendingShowSectionTarget = null;
 
-// Install showPortalSection as a getter/setter so main.js's later assignment
-// (router.js wraps before main.js executes when main is lazy-idle loaded)
-// is captured into _origShowPortalSection instead of overwriting our
-// wrapper. Replay the most recent queued nav target so the user's click
-// finally lands its section render.
-try {
-  Object.defineProperty(window, 'showPortalSection', {
-    configurable: true,
-    get: function () { return _showPortalSectionWrapper; },
-    set: function (fn) {
-      if (typeof fn === 'function' && fn !== _showPortalSectionWrapper) {
+// Install showPortalSection as a ONE-SHOT getter/setter that captures
+// main.js's eventual assignment into _origShowPortalSection, replays any
+// queued nav target, then immediately swaps back to a plain data property
+// holding our wrapper.
+//
+// Why one-shot: other scripts (dashboard-calendar.js) install their own
+// wrappers later by reading window.showPortalSection (getting our wrapper)
+// and assigning a new wrapper that calls the captured one. If our setter
+// kept intercepting those assignments, we'd store the OUTER wrapper into
+// _origShowPortalSection — our wrapper would then call the outer wrapper,
+// which calls (its captured) our wrapper, infinite recursion.
+//
+// After the one-shot fires, dashboard-calendar's normal wrap pattern works:
+//   var orig = window.showPortalSection;  // our wrapper
+//   window.showPortalSection = function (s) { …; orig(s); …; };
+// → outer call goes through dashboard-calendar's wrapper, which calls our
+//   wrapper, which calls main.js's _origShowPortalSection. Clean chain.
+function _swapToPlainDataProperty() {
+  try {
+    delete window.showPortalSection;
+    window.showPortalSection = _showPortalSectionWrapper;
+  } catch (e) { /* descriptor stuck; harmless */ }
+}
+if (typeof _origShowPortalSection === 'function') {
+  // main.js already ran before router. No need for the redirect dance —
+  // install our wrapper as a plain property right away so later wrappers
+  // (dashboard-calendar etc.) chain through us correctly.
+  _swapToPlainDataProperty();
+} else {
+  try {
+    Object.defineProperty(window, 'showPortalSection', {
+      configurable: true,
+      get: function () { return _showPortalSectionWrapper; },
+      set: function (fn) {
+        if (typeof fn !== 'function' || fn === _showPortalSectionWrapper) return;
         _origShowPortalSection = fn;
         if (_pendingShowSectionTarget) {
           var replayTarget = _pendingShowSectionTarget;
@@ -364,12 +388,15 @@ try {
             console.error('[router] replay of', replayTarget, 'threw:', e && (e.message || e));
           }
         }
+        // First assignment captured. Uninstall the redirect so future
+        // wrappers (dashboard-calendar.js etc.) can chain normally.
+        _swapToPlainDataProperty();
       }
-    }
-  });
-} catch (e) {
-  // defineProperty failed (very old browser?) — fall back to plain assignment.
-  window.showPortalSection = _showPortalSectionWrapper;
+    });
+  } catch (e) {
+    // defineProperty failed (very old browser?) — fall back to plain assignment.
+    window.showPortalSection = _showPortalSectionWrapper;
+  }
 }
 
 // Skip the initial portal-state replace when we're about to show the auth
