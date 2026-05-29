@@ -241,8 +241,23 @@ var _savedPortalTab = (function () {
 })();
 var _pendingPortalRestore =
   _savedPortalTab && _savedPortalTab !== 'dashboard' ? _savedPortalTab : null;
-var _origShowPortalSection = window.showPortalSection;
+// Capture lazily inside the wrapper instead of at script-load time. If the
+// loader chain's per-script timeout (loader.ts SCRIPT_TIMEOUT_MS) fired for
+// main.js before it could install showPortalSection, capturing here would
+// store `undefined` and every subsequent call throws TypeError. Lazy lookup
+// means we pick up the real function once main.js finally executes (browsers
+// still process the deferred script body even if our promise already settled).
+var _origShowPortalSection = null;
 window.showPortalSection = function (sec) {
+  if (!_origShowPortalSection || _origShowPortalSection === window.showPortalSection) {
+    // Look up the real implementation. If main.js still hasn't run, we'll
+    // skip the inner call below and only do the URL/state work — better
+    // than throwing and abandoning the section transition entirely.
+    var candidate = window.showPortalSection.__orig || null;
+    if (typeof candidate === 'function') {
+      _origShowPortalSection = candidate;
+    }
+  }
   var target = sec || 'dashboard';
 
   // 'courses' is the URL-facing alias for the internal 'studip' section
@@ -267,15 +282,21 @@ window.showPortalSection = function (sec) {
   // update. Without this, a throw here silently kills the ss_portal_tab and
   // history push, leaving Notes (the last successful update) as the perpetual
   // restore target.
-  try {
-    _origShowPortalSection(target);
-  } catch (e) {
+  if (typeof _origShowPortalSection === 'function') {
     try {
-      console.error(
-        '[router] _origShowPortalSection threw for target=', target,
-        'error=', e && (e.stack || e.message || e)
-      );
-    } catch (e2) {}
+      _origShowPortalSection(target);
+    } catch (e) {
+      try {
+        console.error(
+          '[router] _origShowPortalSection threw for target=', target,
+          'error=', e && (e.stack || e.message || e)
+        );
+      } catch (e2) {}
+    }
+  } else {
+    // main.js didn't finish loading before this call. Don't throw — the
+    // URL/state work below still runs so navigation isn't fully broken.
+    console.warn('[router] showPortalSection called before main.js ready, target=', target);
   }
   if (target === 'subscription') {
     setTimeout(function () {
