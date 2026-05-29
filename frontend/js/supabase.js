@@ -566,7 +566,6 @@ function _enterApp(user) {
   if (typeof showPortalSection === 'function') showPortalSection(_targetSec);
   if (typeof updateAuthIndicator === 'function') updateAuthIndicator(user);
   if (user && typeof loadUserData === 'function') loadUserData(user.id);
-  if (typeof window._ssHideSplash === 'function') window._ssHideSplash();
   _ssAuth('entered', { source: 'enterApp', user: user });
   if (_SS && typeof _SS.markReady === 'function')
     _SS.markReady('auth', { userId: user && user.id });
@@ -627,8 +626,6 @@ function _showModal() {
   sessionStorage.removeItem('ss_show_auth');
   sessionStorage.removeItem('ss_portal_tab');
 
-  if (typeof window._ssHideSplash === 'function') window._ssHideSplash();
-
   // Wipe any portal-* history state router.js left behind. Otherwise the URL
   // shows #portal=dashboard while the user is on the auth screen, and Back
   // pops to that entry → _ssApplyHistoryState shows the portal without auth.
@@ -656,12 +653,20 @@ function _sbRefreshAccessToken() {
     ref = _sbStoredRefresh();
   } catch (e) {}
   if (!ref) return Promise.resolve(null);
+  // 5s timeout: this fetch gates the whole boot on refresh. Without a
+  // timeout, any Supabase auth slowness (rate-limit, transient outage,
+  // proxy hiccup) leaves the user stuck on the splash forever because
+  // _verifyAndEnter waits on this promise.
+  var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = controller ? setTimeout(function () { controller.abort(); }, 5000) : null;
   return fetch(SUPA_URL + '/auth/v1/token?grant_type=refresh_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: SUPA_KEY },
-    body: JSON.stringify({ refresh_token: ref })
+    body: JSON.stringify({ refresh_token: ref }),
+    signal: controller ? controller.signal : undefined
   })
     .then(function (r) {
+      if (timer) clearTimeout(timer);
       return r.json();
     })
     .then(function (d) {
@@ -672,7 +677,9 @@ function _sbRefreshAccessToken() {
       }
       return null;
     })
-    .catch(function () {
+    .catch(function (err) {
+      if (timer) clearTimeout(timer);
+      console.warn('[Auth] refresh failed/timed out:', err && err.name);
       return null;
     });
 }

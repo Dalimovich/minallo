@@ -14,6 +14,14 @@
       try { localStorage.removeItem('ss_state'); } catch (e) {}
       try { localStorage.removeItem('ss_last_section'); } catch (e) {}
       try { sessionStorage.removeItem('ss_portal_tab'); } catch (e) {}
+      // Auth tokens too: persistent-refresh restore on boot is itself a
+      // known hang source (Supabase refresh fetch w/ no timeout — see
+      // _sbRefreshAccessToken). Without clearing these, ?reset=1 sends
+      // the user right back into the same hang path.
+      try { localStorage.removeItem('sb_sess_token'); } catch (e) {}
+      try { localStorage.removeItem('sb_sess_refresh'); } catch (e) {}
+      try { sessionStorage.removeItem('sb_sess_token'); } catch (e) {}
+      try { sessionStorage.removeItem('ss_logged_in'); } catch (e) {}
       try { sessionStorage.setItem('ss_reset_done', '1'); } catch (e) {}
       history.replaceState(null, '', window.location.pathname);
     }
@@ -113,11 +121,6 @@
     if (saved === null) localStorage.setItem('ss_dark', '1');
   } catch (e) {}
 
-  if (loggedIn) {
-    var sp = document.getElementById('ss-splash');
-    if (sp) sp.style.display = 'flex';
-  }
-
   // When the user isn't authenticated, the URL must read minallo.de/ only.
   // Wipes any stale #portal=… hash or ?error=… query so the landing + auth
   // modal never display app-route URLs. The app's own router pushes the
@@ -150,16 +153,6 @@ window._onLoginSuccess = function () {
   } catch (e) {}
   if (window.Minallo) window.Minallo.emit('auth:login-success', {});
   window.location.reload();
-};
-
-window._ssHideSplash = function () {
-  var sp = document.getElementById('ss-splash');
-  if (!sp || sp.style.display === 'none') return;
-  sp.classList.add('ss-splash-out');
-  setTimeout(function () {
-    sp.style.display = 'none';
-    sp.classList.remove('ss-splash-out');
-  }, 550);
 };
 
 var _CFG = window.MinalloConfig || {};
