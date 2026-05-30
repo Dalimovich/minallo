@@ -564,6 +564,13 @@ function _enterApp(user) {
       }[_targetSec] || 'psbDashboard'
     );
   if (typeof showPortalSection === 'function') showPortalSection(_targetSec);
+  if (typeof window._ssAfterFeature === 'function') {
+    window._ssAfterFeature(_targetSec, function () {
+      if (_targetSec === 'aipage' && typeof window._aipRefreshSidebar === 'function') window._aipRefreshSidebar();
+      if (_targetSec === 'chat' && typeof window._chatInit === 'function') window._chatInit();
+      if (_targetSec === 'german' && typeof window._glBackToHome === 'function') window._glBackToHome();
+    });
+  }
   if (typeof updateAuthIndicator === 'function') updateAuthIndicator(user);
   if (user && typeof loadUserData === 'function') loadUserData(user.id);
   _ssAuth('entered', { source: 'enterApp', user: user });

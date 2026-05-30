@@ -1,0 +1,55 @@
+/* Performance overrides for the authenticated app shell.
+   Heavy backdrop filters, large blurred blobs, and blanket transitions make
+   page switches and scrolling feel slow on lower-power devices. */
+
+#portal .blobs,
+#portal .blob {
+  display: none !important;
+}
+
+#portal .sidebar,
+#portal .topbar,
+#portal .main,
+#portal .shell,
+#portal .widget-card,
+#portal .dash-widget,
+#portal .profile-hero,
+#portal .settings-card,
+#portal .sub-card,
+#portal .ln-section,
+#portal .editor-card,
+#portal .dr-drawer,
+#portal .dr-rail,
+#portal .co-inner,
+#portal .co-card,
+#portal .sd-course-card,
+#portal .sd-semester-dropdown,
+#portal .st-overlay,
+#portal .st-popup {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+
+#portal .portal-section,
+#portal .psec-entering,
+#portal .psec-leaving,
+#portal .sidebar,
+#portal .sidebar *,
+#portal .main,
+#portal .main-scroll,
+#portal .sd-course-card,
+#portal .sb-item,
+#portal .sb-item-icon,
+#portal .sb-user,
+#portal .topbar {
+  animation: none !important;
+  transition-duration: 0.08s !important;
+}
+
+#portal .main-scroll,
+#portal #app,
+#portal #pdfView {
+  scroll-behavior: auto !important;
+  will-change: auto !important;
+}

@@ -71,6 +71,7 @@ function _ssAfterFeature(section, cb) {
       if (typeof cb === 'function') cb();
     });
 }
+window._ssAfterFeature = _ssAfterFeature;
 
 function _ssFindCourseById(courseId) {
   if (!courseId) return null;
