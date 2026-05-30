@@ -405,6 +405,7 @@ interface LandingTranslation {
       'css/layout.css?v=7',
       'css/document-rail.css?v=15',
       'css/auth.css?v=4',
+      'css/onboarding.css?v=1',
       'views/toast/toast.css',
       'views/chatbot/ai-bubble.css',
       'views/games/games.css',

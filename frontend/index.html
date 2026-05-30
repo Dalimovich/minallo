@@ -120,6 +120,15 @@
       white-space: nowrap !important;
       border: 0 !important;
     }
+    /* Critical safety: these partials are injected before their feature CSS.
+       Keep modal markup hidden even if a stylesheet is delayed or lazy. */
+    #onboardModal {
+      display: none;
+    }
+    #multiSumModal:not(.show),
+    #lnModal:not(.show) {
+      display: none !important;
+    }
   </style>
   </head>
   <body class="night">
@@ -159,7 +168,7 @@
          relies on the in-order execution `defer` guarantees. -->
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
-    <script src="js/config.js?v=16" defer></script>
+    <script src="js/config.js?v=17" defer></script>
     <!-- AI chat typing config — only read inside the dashboard chat
          features, never on the public landing. `async` removes it from
          the critical-request chain so it loads in parallel without
