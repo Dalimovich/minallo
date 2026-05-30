@@ -296,6 +296,8 @@ def test_problem_solver_input_is_primary_source() -> None:
     assert "problem statement" in body
     assert "primary source of truth" in body
     assert "different retrieved exercise" in body
+    assert "uploaded course source" in body
+    assert "[source 1]" in body
 
 
 def test_open_context_only_promotes_when_request_targets_visible_page() -> None:

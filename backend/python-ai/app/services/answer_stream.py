@@ -493,6 +493,11 @@ If [Source 0] contains a Problem Solver problem statement, that statement is
 the primary source of truth. Cite it for the givens/required quantities and do
 not replace it with a different retrieved exercise, even if the retrieved
 exercise looks similar.
+You MUST still use uploaded course sources when they are present in COURSE
+CONTEXT. Cite at least one uploaded course source (`[Source 1]` or higher) for
+the formula, method, or matching course convention. If no uploaded course source
+was retrieved, say that explicitly and mark the answer as only generally
+derived from the problem statement rather than verified by course material.
 
 FIRST decide the problem TYPE from the PROBLEM SOLVER INPUT text:
   * ENGINEERING / MATH (formulas, numeric values, units, derivations, proofs)
@@ -709,7 +714,8 @@ def stream_answer(
     deictic = _is_deictic_question(question)
     effective_strength = _effective_strength_with_open_context(
         strength,
-        has_problem_source or ((has_open or has_open_image) and (deictic or problem_mode is not None)),
+        (has_problem_source and bool(used_chunks))
+        or ((has_open or has_open_image) and (deictic or problem_mode is not None)),
     )
     if app_question:
         # App-only path: skip the tutor base prompt entirely so the model
@@ -980,6 +986,8 @@ def stream_answer(
             "pages": None if has_problem_source else "currently visible",
             "section": "Problem statement" if has_problem_source else "Open PDF (visible page)",
         })
+    if has_problem_source and used_chunks and not any(src.get("file_name") != "Problem Solver input" for src in filtered_sources):
+        filtered_sources.extend(_source_payload(c) for c in used_chunks[:3])
     if not filtered_sources:
         # The UI should still show the material the answer was grounded on.
         # Verification may mark the answer down when inline citations are
