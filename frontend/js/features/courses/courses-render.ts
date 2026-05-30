@@ -1,5 +1,4 @@
 import { panelHide } from '../../core/panels.js';
-import { listCourseDocuments } from '../../services/ai-service.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 interface CoursesRenderState {
@@ -10,10 +9,6 @@ interface CoursesRenderState {
   sdActiveSemId: string;
   _cameFromStudip: boolean;
 }
-
-// Reuse one in-flight fetch per course so opening the dashboard repeatedly
-// doesn't fan out into duplicate /api/documents/list calls.
-const _countFetchInFlight: Record<string, Promise<number | null>> = {};
 
 // Reads the per-course "opened files" set that app.ts writes on each openFile().
 // Returns the count clipped to total so a stale entry (file later deleted from
@@ -134,43 +129,17 @@ function _hydrateCardCount(
   const _maybeRerender = (n: number): void => {
     if (n !== initialCount && onCountChanged) onCountChanged(n);
   };
-  // The cached-profile IIFE in app.ts renders course cards before _verifyAndEnter
-  // sets window._sbToken, so a fetch fired here would 401. Render the cached count
-  // (written by a prior successful fetch) and bail — a second render runs once
-  // auth completes via loadUserData → _loadUserCourses, which will repopulate.
-  if (!(window as unknown as { _sbToken?: string })._sbToken) {
-    try {
-      const cached = localStorage.getItem('ss_fc_' + courseId);
-      if (cached != null) {
-        const n = Number(cached);
-        if (Number.isFinite(n)) {
-          _applyBadge(n);
-          _maybeRerender(n);
-        }
+  // Keep dashboard rendering local-only. Opening a course refreshes real files.
+  try {
+    const cached = localStorage.getItem('ss_fc_' + courseId);
+    if (cached != null) {
+      const n = Number(cached);
+      if (Number.isFinite(n)) {
+        _applyBadge(n);
+        _maybeRerender(n);
       }
-    } catch { /* quota / parse */ }
-    return;
-  }
-  const inFlight = _countFetchInFlight[courseId];
-  if (inFlight) {
-    inFlight.then((count) => {
-      if (count != null) {
-        _applyBadge(count);
-        _maybeRerender(count);
-      }
-    });
-    return;
-  }
-  _countFetchInFlight[courseId] = listCourseDocuments(courseId)
-    .then((docs) => {
-      const count = Array.isArray(docs) ? docs.length : 0;
-      try { localStorage.setItem('ss_fc_' + courseId, String(count)); } catch { /* quota */ }
-      _applyBadge(count);
-      _maybeRerender(count);
-      return count;
-    })
-    .catch(() => null)
-    .finally(() => { delete _countFetchInFlight[courseId]; });
+    }
+  } catch { /* quota / parse */ }
 }
 
 export function renderCourses(state: CoursesRenderState): void {

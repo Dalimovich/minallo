@@ -267,18 +267,9 @@ window._prewarmCourses = _prewarmCourses;
 // (after the profile API call returns). If that call is slow or fails, this
 // poll still fires the warm-up as soon as _currentUser + _ufMerge are both
 // available — typically within ~1s of page load.
-(function _prewarmWhenReady() {
-  var attempts = 0;
-  var iv = setInterval(function () {
-    if (_coursePrewarmRan) { clearInterval(iv); return; }
-    if (window._currentUser && typeof window._ufMerge === 'function') {
-      clearInterval(iv);
-      try { _prewarmCourses(); } catch (e) {}
-    } else if (++attempts > 30) {
-      clearInterval(iv);
-    }
-  }, 500);
-})();
+// Do not prewarm every course on app boot. Real accounts can have many courses
+// and folders; fanning out storage-list calls here makes the whole app sluggish
+// across devices. Course files are loaded when a course is opened.
 
 function _loadUserCourses(data) {
   // The server is the source of truth. If it returns null / empty / not an
@@ -338,14 +329,7 @@ function _loadUserCourses(data) {
   // consume the connection pool and queue ai.js behind them — blocking the
   // entire boot. Running prewarm post-boot lets the user see the dashboard
   // even if the background warm-up hangs.
-  function _kickPrewarm() { try { _prewarmCourses(); } catch (e) {} }
-  if (document.body && document.body.getAttribute('data-ss-ready') === '1') {
-    setTimeout(_kickPrewarm, 5000);
-  } else {
-    window.addEventListener('ss-ready', function () {
-      setTimeout(_kickPrewarm, 5000);
-    }, { once: true });
-  }
+  // Background prewarm intentionally disabled; openCourse is the loading point.
   restoreState();
   // If a course was restored before auth completed, refresh its files from network now.
   // Skip if _currentUser isn't set yet — the post-auth _loadUserCourses call will handle it.
