@@ -47,6 +47,7 @@ from app.services.answer_stream import (  # noqa: E402
     _intent_resolution_runtime_overlay,
     _is_deictic_question,
     _problem_solver_overlay,
+    _problem_solver_source,
 )
 
 
@@ -283,6 +284,18 @@ def test_problem_solver_full_solution_requires_final_arithmetic() -> None:
     assert "exact missing quantities" in body
     assert "mach weiter" in body
     assert "rechnerisch" in body
+
+
+def test_problem_solver_input_is_primary_source() -> None:
+    problem = "A cat follows r(phi)=R phi/pi and a mouse runs at speed a."
+
+    assert _problem_solver_source({"problem": problem, "mode": "solve"}) == problem
+
+    body = _problem_solver_overlay("solve", {"problem": problem}).lower()
+    assert "[source 0]" in body
+    assert "problem statement" in body
+    assert "primary source of truth" in body
+    assert "different retrieved exercise" in body
 
 
 def test_open_context_only_promotes_when_request_targets_visible_page() -> None:

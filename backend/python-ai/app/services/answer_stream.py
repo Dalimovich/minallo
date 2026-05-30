@@ -474,6 +474,13 @@ def _problem_solver_user_block(problem_solver: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _problem_solver_source(problem_solver: dict[str, Any] | None) -> str:
+    """Return the pasted/typed problem statement as primary grounding text."""
+    if not problem_solver:
+        return ""
+    return str(problem_solver.get("problem") or "").strip()[:12000]
+
+
 def _problem_solver_overlay(mode: str, problem_solver: dict[str, Any]) -> str:
     has_work = bool(str(problem_solver.get("studentWork") or "").strip())
     common = """
@@ -482,6 +489,10 @@ PROBLEM SOLVER MODE.
 You are helping a university student work through a problem. Treat the
 PROBLEM SOLVER INPUT as the task to answer. Use COURSE CONTEXT as ground truth
 for formulas, notation, assumptions, code conventions, and source citations.
+If [Source 0] contains a Problem Solver problem statement, that statement is
+the primary source of truth. Cite it for the givens/required quantities and do
+not replace it with a different retrieved exercise, even if the retrieved
+exercise looks similar.
 
 FIRST decide the problem TYPE from the PROBLEM SOLVER INPUT text:
   * ENGINEERING / MATH (formulas, numeric values, units, derivations, proofs)
@@ -682,6 +693,8 @@ def stream_answer(
     problem_mode = _normalise_problem_solver_mode(
         problem_solver.get("mode") if problem_solver else None
     )
+    problem_source_text = _problem_solver_source(problem_solver) if problem_mode else ""
+    has_problem_source = bool(problem_source_text)
     if problem_mode:
         # Problem Solver modes carry their own behavior contract. In
         # particular, FULL SOLUTION must not inherit the base Socratic
@@ -696,7 +709,7 @@ def stream_answer(
     deictic = _is_deictic_question(question)
     effective_strength = _effective_strength_with_open_context(
         strength,
-        (has_open or has_open_image) and (deictic or problem_mode is not None),
+        has_problem_source or ((has_open or has_open_image) and (deictic or problem_mode is not None)),
     )
     if app_question:
         # App-only path: skip the tutor base prompt entirely so the model
@@ -708,9 +721,27 @@ def stream_answer(
         routing_question = question
         open_context_targets_visible_problem = open_ctx and (deictic or problem_mode is not None)
         routing_chunks = used_chunks
+        synthetic_routing_chunks: list[RetrievedChunk] = []
+        routing_context_parts: list[str] = []
+        if has_problem_source:
+            routing_context_parts.append(problem_source_text[:3000])
+            synthetic_routing_chunks.append(
+                RetrievedChunk(
+                    chunk_id="problem-solver-input",
+                    document_id="__problem_solver__",
+                    page_start=None,
+                    page_end=None,
+                    text=problem_source_text,
+                    score=100.0,
+                    similarity=1.0,
+                    chunk_type="exercise",
+                    section_title="Problem Solver input",
+                    is_synthetic=True,
+                )
+            )
         if open_context_targets_visible_problem:
-            routing_question = (question.strip() + "\n\n" + open_ctx[:2000]).strip()
-            routing_chunks = [
+            routing_context_parts.append(open_ctx[:2000])
+            synthetic_routing_chunks.append(
                 RetrievedChunk(
                     chunk_id="open-visible",
                     document_id="__open__",
@@ -722,9 +753,11 @@ def stream_answer(
                     chunk_type="exercise",
                     section_title="Open PDF visible context",
                     is_synthetic=True,
-                ),
-                *used_chunks,
-            ]
+                )
+            )
+        if routing_context_parts:
+            routing_question = (question.strip() + "\n\n" + "\n\n".join(routing_context_parts)).strip()
+            routing_chunks = [*synthetic_routing_chunks, *used_chunks]
         system_prompt, answer_mode = pick_system_prompt(
             routing_question, effective_strength, routing_chunks, tutor_mode=tutor_mode_norm,
             weak_topics=weak_topics,
@@ -757,12 +790,19 @@ def stream_answer(
     # was already strong on its own. Otherwise a 3.5k slice of whatever the
     # student happens to have on screen would over-anchor a broad question.
     include_open_source = has_open and (deictic or problem_mode is not None or strength == "strong")
+    include_source_zero = has_problem_source or include_open_source or has_open_image
     parts: list[str] = []
-    if include_open_source:
-        open_name = active_file_name or "open file"
-        parts.append(
-            f"[Source 0] {open_name} — CURRENTLY VISIBLE IN PDF VIEWER\n{open_ctx}"
-        )
+    if include_source_zero:
+        source_zero_name = "Problem Solver input"
+        source_zero_sections: list[str] = []
+        if has_problem_source:
+            source_zero_sections.append("PROBLEM STATEMENT FROM PROBLEM SOLVER:\n" + problem_source_text)
+        if include_open_source:
+            source_zero_name = active_file_name or source_zero_name
+            source_zero_sections.append("CURRENTLY VISIBLE IN PDF VIEWER:\n" + open_ctx)
+        elif has_open_image and active_file_name:
+            source_zero_name = active_file_name
+        parts.append(f"[Source 0] {source_zero_name}\n" + "\n\n".join(source_zero_sections))
     if used_chunks:
         parts.append(_build_context_block(used_chunks, doc_names))
     context_block = "\n\n---\n\n".join(parts)
@@ -774,6 +814,13 @@ def stream_answer(
             " primary source for what the student is looking at, then consult"
             " retrieved course sources for supporting formulas, definitions,"
             " and worked methods."
+        )
+    if has_problem_source:
+        system_prompt += (
+            "\n\nProblem Solver source rule: [Source 0] contains the exact problem "
+            "statement submitted by the student. Solve that problem as written. "
+            "Retrieved chunks may support formulas or methods, but they must not "
+            "change the requested quantities, variables, geometry, or final condition."
         )
     if "SPLIT VIEW:" in open_ctx and "DOCUMENT 2" in open_ctx:
         system_prompt += (
@@ -795,9 +842,9 @@ def stream_answer(
     if not app_question:
         system_prompt += _intent_resolution_runtime_overlay(
             question,
-            has_visible_context=include_open_source or has_open_image,
+            has_visible_context=include_source_zero,
             has_history=bool(previous_turns),
-            active_file_name=active_file_name,
+            active_file_name=("Problem Solver input" if has_problem_source else active_file_name),
         )
 
     user_message = "QUESTION:\n" + question.strip()
@@ -904,7 +951,7 @@ def stream_answer(
     if plot_wanted and "```minallo-plot" not in full_answer:
         plot_fence = _force_render_plot(
             client, target_model, question, used_chunks,
-            open_ctx if include_open_source else None,
+            problem_source_text or (open_ctx if include_open_source else None),
         )
         if plot_fence:
             yield _sse({"t": plot_fence})
@@ -912,7 +959,7 @@ def stream_answer(
     elif wants_diagram and "```minallo-diagram" not in full_answer:
         diagram_fence = _force_render_diagram(
             client, target_model, question, used_chunks,
-            open_ctx if include_open_source else None,
+            problem_source_text or (open_ctx if include_open_source else None),
         )
         if diagram_fence:
             yield _sse({"t": diagram_fence})
@@ -927,22 +974,22 @@ def stream_answer(
     # Without this, the answer would show "grounded in [Source 0]" inline
     # but the final Sources block would be missing that source entirely —
     # a misleading UX gap the user can't tell from a fabricated citation.
-    if (include_open_source or has_open_image) and active_file_name and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
+    if include_source_zero and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
         filtered_sources.insert(0, {
-            "file_name": active_file_name,
-            "pages": "currently visible",
-            "section": "Open PDF (visible page)",
+            "file_name": "Problem Solver input" if has_problem_source else (active_file_name or "Source 0"),
+            "pages": None if has_problem_source else "currently visible",
+            "section": "Problem statement" if has_problem_source else "Open PDF (visible page)",
         })
     if not filtered_sources:
         # The UI should still show the material the answer was grounded on.
         # Verification may mark the answer down when inline citations are
         # missing, but hiding sources entirely makes students think retrieval
         # did not use their lectures/exercises at all.
-        if (include_open_source or has_open_image) and active_file_name:
+        if include_source_zero:
             filtered_sources.append({
-                "file_name": active_file_name,
-                "pages": "currently visible",
-                "section": "Open PDF (visible page)",
+                "file_name": "Problem Solver input" if has_problem_source else (active_file_name or "Source 0"),
+                "pages": None if has_problem_source else "currently visible",
+                "section": "Problem statement" if has_problem_source else "Open PDF (visible page)",
             })
         filtered_sources.extend(_source_payload(c) for c in used_chunks[:4])
 
@@ -950,6 +997,8 @@ def stream_answer(
     # Include the open-file text in the haystack so formulas / numbers the
     # model lifted from [Source 0] aren't flagged as ungrounded.
     verification_haystack = [c.text for c in used_chunks]
+    if has_problem_source:
+        verification_haystack.append(problem_source_text)
     if include_open_source:
         verification_haystack.append(open_ctx)
     # The whitelist of filenames the model could legitimately cite. Anything
