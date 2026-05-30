@@ -43,6 +43,7 @@ from app.services.answer import (  # noqa: E402
 )
 from app.services.answer_stream import (  # noqa: E402
     _effective_strength_with_open_context,
+    _is_deictic_question,
     _problem_solver_overlay,
 )
 
@@ -198,6 +199,37 @@ def test_deictic_visible_math_problem_can_use_math_prompt() -> None:
     ]
 
     prompt, mode = pick_system_prompt("answer the first problem in this pdf", "strong", chunks)
+
+    assert mode == "math"
+    assert prompt.startswith(_SYSTEM_PROMPT_MATH)
+
+
+@pytest.mark.parametrize("q", [
+    "answer the first problem",
+    "solve it",
+    "calculate it",
+    "answer it",
+])
+def test_visible_problem_followups_count_as_deictic(q: str) -> None:
+    assert _is_deictic_question(q)
+
+
+@pytest.mark.parametrize("q", [
+    "answer the first problem",
+    "solve it",
+])
+def test_visible_problem_context_routes_to_math_prompt(q: str) -> None:
+    chunks = [
+        _mk_chunk(
+            "Problem 1: A ball is thrown vertically. Given: m = 2 kg, "
+            "h = 3 m, v_0 = 4 m/s. Determine the impact velocity v. "
+            "Use energy conservation: 1/2 m v_0^2 + m g h = 1/2 m v^2.",
+            chunk_type="exercise",
+            similarity=1.0,
+        )
+    ]
+
+    prompt, mode = pick_system_prompt(q, "strong", chunks)
 
     assert mode == "math"
     assert prompt.startswith(_SYSTEM_PROMPT_MATH)

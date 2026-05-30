@@ -50,9 +50,13 @@ _DEICTIC_QUESTION_RE = re.compile(
     r"\b("
     r"this|that|these|those|here|above|below|"
     r"the (section|page|formula|equation|paragraph|exercise above|exercise below)|"
+    r"(first|second|third|next|previous|current|last)\s+(problem|exercise|task|question|aufgabe|uebung)|"
+    r"(answer|solve|do|calculate|compute)\s+(it|this|that)|"
     r"explain this|what does this|what is this|summari[sz]e (this|the section|the page)|"
     r"dies(e[rs]?|es)?|jene[rs]?|hier|oben|unten|"
     r"diese (formel|seite|aufgabe|stelle|gleichung|abschnitt)|"
+    r"(erste|zweite|dritte|naechste|vorherige|aktuelle|letzte)\s+(aufgabe|uebung|frage)|"
+    r"(loese|beantworte|mach|berechne)\s+(es|das|dies|diese|sie)|"
     r"was bedeutet (das|dies|diese)|was steht (hier|oben|unten|dort)|"
     r"erklär(e|ung)? (mir )?(dies|das|diese|hier|oben)|"
     r"zusammenfass"
@@ -658,10 +662,27 @@ def stream_answer(
         answer_mode = "app"
     else:
         routing_question = question
-        if open_ctx and (deictic or problem_mode is not None):
+        open_context_targets_visible_problem = open_ctx and (deictic or problem_mode is not None)
+        routing_chunks = used_chunks
+        if open_context_targets_visible_problem:
             routing_question = (question.strip() + "\n\n" + open_ctx[:2000]).strip()
+            routing_chunks = [
+                RetrievedChunk(
+                    chunk_id="open-visible",
+                    document_id="__open__",
+                    page_start=None,
+                    page_end=None,
+                    text=open_ctx,
+                    score=99.0,
+                    similarity=1.0,
+                    chunk_type="exercise",
+                    section_title="Open PDF visible context",
+                    is_synthetic=True,
+                ),
+                *used_chunks,
+            ]
         system_prompt, answer_mode = pick_system_prompt(
-            routing_question, effective_strength, used_chunks, tutor_mode=tutor_mode_norm,
+            routing_question, effective_strength, routing_chunks, tutor_mode=tutor_mode_norm,
             weak_topics=weak_topics,
         )
         if problem_mode:

@@ -368,6 +368,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         _STOCK_FOLLOWUPS = re.compile(
             r"^(i ?don'?t know|idk|no idea|yes|no|maybe|why\??|warum\??|"
             r"weiter|continue|next|explain (that|this) (again|further|more)|"
+            r"solve it|answer it|do it|calculate it|compute it|just answer|"
             r"hm+|ok(ay)?|sure|fine|"
             r"go on|tell me more|more|details?|nochmal|noch einmal|"
             r"i'?m stuck|stuck|help|hilfe|verstehe nicht|don'?t (get|understand)( (it|that))?)\s*[\.!\?]*$",
