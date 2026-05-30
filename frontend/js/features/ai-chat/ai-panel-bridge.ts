@@ -54,7 +54,14 @@ export function initAiPanelBridge(options?: AiPanelBridgeOptions): {
 
   function openAI(): void {
     setAiOpen(true);
-    if (aiPanel) aiPanel.classList.add('visible');
+    // The legacy free-floating panel is retired: #aiPanel is now only presented
+    // docked inside the document-rail drawer, which tags it `dr-host-ai` before
+    // mounting (see document-rail.ts mountAiPanel). Outside the rail we must NOT
+    // reveal the panel, otherwise stray openAI() callers (course file load, PDF
+    // text selection, snip tool) pop the old standalone box back up.
+    if (aiPanel && aiPanel.classList.contains('dr-host-ai')) {
+      aiPanel.classList.add('visible');
+    }
     const cid = window.activeCourseId || window.currentCourseId || '';
     if (cid && typeof window.restoreCourseHistory === 'function') {
       window.restoreCourseHistory(cid);

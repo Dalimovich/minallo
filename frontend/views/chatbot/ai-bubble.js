@@ -138,35 +138,13 @@
   }
 
   function openPanel() {
-    var panel = document.getElementById('aiPanel');
-    if (!panel) return;
-
-    detachPanel();
-    positionPanelNearBubble(panel);
-
-    panel.classList.add('visible');
-    panel.style.opacity   = '1';
-    panel.style.transform = 'scale(1)';
-
-    var bubble = document.getElementById('aiBubble');
-    if (bubble) bubble.classList.add('expanded');
-
-    // Restore chat history via bridge
-    if (typeof window.openAI === 'function') window.openAI();
-
-    // Focus the input so the user can start typing immediately. Wait for the
-    // open transition (~220ms — see panel.style.transition in detachPanel) so
-    // the focus ring doesn't flash mid-scale animation. preventScroll keeps
-    // the surrounding portal from jumping when the input gains focus.
-    setTimeout(function () {
-      var input = document.getElementById('aiInput');
-      if (!input) return;
-      try {
-        input.focus({ preventScroll: true });
-      } catch (e) {
-        input.focus();
-      }
-    }, 240);
+    // Legacy floating presentation retired. This used to detach #aiPanel into
+    // position:fixed and reveal it as a free-floating box; that box is no longer
+    // wanted — #aiPanel is now only shown docked inside the document-rail drawer
+    // (see document-rail.ts mountAiPanel). Opening here is therefore a no-op.
+    // closePanel() is intentionally left intact so the navigation / forceCloseAI
+    // close paths still animate the panel away if it was ever shown.
+    return;
   }
 
   function closePanel() {
