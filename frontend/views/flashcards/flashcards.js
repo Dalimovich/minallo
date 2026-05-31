@@ -562,7 +562,7 @@
       // Auto-expand all folders on open
       overlay.querySelectorAll('.qzsp-folder-header').forEach(function (header) {
         var files = header.nextElementSibling;
-        if (files) { files.style.display = 'block'; header.classList.add('open'); header.querySelector('.qzsp-folder-toggle').innerHTML = '&#x25BE;'; }
+        if (files) { files.style.display = 'flex'; header.classList.add('open'); header.querySelector('.qzsp-folder-toggle').innerHTML = '&#x25BE;'; }
       });
 
       overlay.querySelectorAll('.qzsp-folder-header').forEach(function (header) {
@@ -570,7 +570,7 @@
           if (e.target.classList.contains('qzsp-folder-selall')) return;
           var files = header.nextElementSibling;
           var open = files.style.display !== 'none';
-          files.style.display = open ? 'none' : 'block';
+          files.style.display = open ? 'none' : 'flex';
           header.querySelector('.qzsp-folder-toggle').innerHTML = open ? '&#x25B8;' : '&#x25BE;';
           header.classList.toggle('open', !open);
         });

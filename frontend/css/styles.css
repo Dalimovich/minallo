@@ -4008,9 +4008,10 @@ body:has(#aiPanel.visible) .annotate-popover {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   cursor: pointer;
   transition: background 0.1s;
+  flex-shrink: 0;
 }
 .qzsp-item:hover { background: rgba(37, 99, 235, 0.1); border-color: rgba(37, 99, 235, 0.3); }
 .qzsp-cb { accent-color: #3b82f6; width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
@@ -4062,7 +4063,7 @@ body:has(#aiPanel.visible) .annotate-popover {
 .qzsp-reset-hint { margin: 0; font-size: 0.72rem; color: #7a7a9a; line-height: 1.4; }
 
 /* Folder-grouped source picker */
-.qzsp-folder { border: 1px solid rgba(37,99,235,0.18); border-radius: 10px; overflow: hidden; }
+.qzsp-folder { border: 1px solid rgba(37,99,235,0.18); border-radius: 10px; overflow: hidden; flex-shrink: 0; }
 .qzsp-folder-header {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; cursor: pointer;
@@ -4082,8 +4083,8 @@ body:has(#aiPanel.visible) .annotate-popover {
   transition: background .15s;
 }
 .qzsp-folder-selall:hover { background: rgba(59,130,246,.22); }
-.qzsp-folder-files { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; }
-.qzsp-folder-list { gap: 6px; }
+.qzsp-folder-files { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px; }
+.qzsp-folder-list { gap: 10px; }
 
 /* Fallback for browsers without :has() — JS adds .co-inner-wide */
 .co-inner.co-inner-wide {
