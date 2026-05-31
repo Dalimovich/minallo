@@ -109,6 +109,54 @@ def test_exercise_math_boosts_lecture_reference_chunks():
     assert boosted > base
 
 
+def test_conceptual_explanation_prefers_lecture_over_solution():
+    r = _import_retrieval()
+    q = "Explain in detail for an engineering student why we square and sum the equations"
+    assert r.is_conceptual_explanation_query(q)
+
+    lecture_meta = {"DOC1": {"document_type": "lecture", "file_name": "Vorlesung 04.pdf"}}
+    solution_meta = {"DOC1": {"document_type": "solution_sheet", "file_name": "Seminar_04_Solutions.pdf"}}
+    text = "Eliminate the angle alpha by squaring x and z and summing the equations."
+
+    lecture_score = r._study_score(
+        _chunk(text=text, source_type="lecture"),
+        conceptual_explanation=True,
+        doc_meta=lecture_meta,
+    )
+    solution_score = r._study_score(
+        _chunk(text=text, source_type="solution"),
+        conceptual_explanation=True,
+        doc_meta=solution_meta,
+    )
+
+    assert lecture_score > solution_score
+
+
+def test_conceptual_reference_mix_keeps_lecture_source():
+    r = _import_retrieval()
+    ranked = [
+        (3.0, _chunk(id="sol1", document_id="SOL", source_type="solution", similarity=0.9)),
+        (2.9, _chunk(id="sol2", document_id="SOL", source_type="solution", similarity=0.8)),
+        (2.1, _chunk(id="lec1", document_id="LEC", source_type="lecture", similarity=0.6)),
+    ]
+    meta = {
+        "SOL": {"document_type": "solution_sheet", "file_name": "Seminar_04_Solutions.pdf"},
+        "LEC": {"document_type": "lecture", "file_name": "Vorlesung 04.pdf"},
+    }
+
+    chosen = r._ensure_professor_reference_mix(
+        ranked,
+        top_k=2,
+        doc_meta=meta,
+        query_is_math=False,
+        question_intent=None,
+        conceptual_explanation=True,
+    )
+
+    chosen_docs = {row["document_id"] for _, row in chosen}
+    assert "LEC" in chosen_docs
+
+
 def test_unit_match_boost():
     r = _import_retrieval()
     score_no = r._study_score(_chunk(text="A long prose paragraph about beams."))

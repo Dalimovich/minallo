@@ -99,6 +99,8 @@ _FILENAME_MATCH_BOOST = 0.10      # file_name contains a meaningful query token
 _GENERIC_CHUNK_PENALTY = 0.20     # short, low-info chunk
 _NO_QUERY_TERM_PENALTY = 0.30     # chunk doesn't contain any meaningful query token
 _LECTURE_REFERENCE_BOOST = 0.18   # exercise/math questions should include professor lecture context
+_LECTURE_CONCEPT_BOOST = 0.32     # explanation/method questions should prefer professor lecture notes
+_SOLUTION_CONCEPT_PENALTY = 0.18  # worked solutions are secondary for conceptual explanations
 
 # Phase 8 helpers — token filtering for "meaningful query term" checks.
 _STOPWORDS = frozenset({
@@ -203,6 +205,30 @@ def infer_question_intent(question: str) -> str | None:
     return None
 
 
+_CONCEPT_EXPLANATION_RE = re.compile(
+    r"\b("
+    r"explain|explanation|understand|why|concept|intuition|meaning|method|"
+    r"in detail|for an engineering student|what does .* mean|"
+    r"erkl[aä]r|erklaer|warum|bedeutet|verständnis|verstaendnis|konzept|methode"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_conceptual_explanation_query(question: str) -> bool:
+    """True for requests where lecture notes should outrank worked solutions.
+
+    Students asking "explain why/how this works" usually want the professor's
+    lecture framing. Exercise solutions can still be useful supporting context,
+    but they should not beat a lecture chunk merely because they share symbols.
+    """
+    if not question:
+        return False
+    if infer_question_intent(question) in {"exercise_sheet", "solution_sheet", "exam"}:
+        return False
+    return bool(_CONCEPT_EXPLANATION_RE.search(question))
+
+
 def _is_generic_chunk(text: str) -> bool:
     """Short, low-info chunks (≤ 120 chars, fewer than 2 meaningful
     tokens) are penalised so they don't crowd out specific answers."""
@@ -241,6 +267,7 @@ def _study_score(
     query_units: set[str] | None = None,
     exercise_number: str | None = None,
     doc_meta: dict[str, dict[str, str | None]] | None = None,
+    conceptual_explanation: bool = False,
     # Review fix #5: gate the formula-sheet filename boost so it only
     # applies for math/computational questions. Defaults to True for
     # backward compatibility with any caller that didn't update.
@@ -312,6 +339,17 @@ def _study_score(
         doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
         if source == "lecture" or doc_type == "lecture":
             score += _LECTURE_REFERENCE_BOOST
+
+    # Explanation/method questions should surface the professor's lecture
+    # wording before a worked solution that happens to contain the same
+    # variables. This fixes cases like "explain why we square and sum x,z to
+    # eliminate alpha", where solution PDFs over-ranked the actual lecture.
+    if conceptual_explanation:
+        doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
+        if source == "lecture" or doc_type == "lecture":
+            score += _LECTURE_CONCEPT_BOOST
+        elif source == "solution" or doc_type == "solution_sheet":
+            score -= _SOLUTION_CONCEPT_PENALTY
 
     # +0.15: a unit from the query appears in the chunk (strong signal for
     # numerical/engineering questions).
@@ -494,6 +532,7 @@ def retrieve_chunks(
 
     preferred = set(preferred_document_ids or document_ids or []) or None
     question_intent = infer_question_intent(query)
+    conceptual_explanation = is_conceptual_explanation_query(query)
     query_tokens = _meaningful_tokens(query)
     query_units = _query_units(query)
     ex_ref = find_exercise_reference(query)
@@ -517,6 +556,7 @@ def retrieve_chunks(
                 query_units=query_units,
                 exercise_number=exercise_number,
                 doc_meta=doc_meta,
+                conceptual_explanation=conceptual_explanation,
                 query_is_math=query_is_math,
             ),
             row,
@@ -532,6 +572,7 @@ def retrieve_chunks(
         doc_meta=doc_meta,
         query_is_math=query_is_math,
         question_intent=question_intent,
+        conceptual_explanation=conceptual_explanation,
     )
 
     # Fetch chunk_type for each in one batch — RPC predates the new column.
@@ -636,6 +677,7 @@ def _ensure_professor_reference_mix(
     doc_meta: dict[str, dict[str, str | None]],
     query_is_math: bool,
     question_intent: str | None,
+    conceptual_explanation: bool = False,
 ) -> list[tuple[float, dict[str, Any]]]:
     """Keep room for professor/lecture references in exercise answers.
 
@@ -648,6 +690,27 @@ def _ensure_professor_reference_mix(
     if not ranked:
         return []
     chosen = ranked[:top_k]
+    if conceptual_explanation:
+        chosen_ids = {row.get("id") for _, row in chosen}
+
+        def _doc_type(row: dict[str, Any]) -> str:
+            meta = doc_meta.get(row.get("document_id")) or {}
+            return str(meta.get("document_type") or row.get("source_type") or "")
+
+        has_lecture = any(
+            _doc_type(row) == "lecture" or row.get("source_type") == "lecture"
+            for _, row in chosen
+        )
+        if not has_lecture:
+            for score, row in ranked[top_k:]:
+                if row.get("id") in chosen_ids:
+                    continue
+                if _doc_type(row) == "lecture" or row.get("source_type") == "lecture":
+                    chosen = chosen[: max(0, top_k - 1)] + [(score, row)]
+                    chosen.sort(key=lambda pair: pair[0], reverse=True)
+                    break
+        return chosen
+
     if not query_is_math or question_intent not in {"exercise_sheet", "solution_sheet"}:
         return chosen
 

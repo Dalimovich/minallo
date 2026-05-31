@@ -127,7 +127,7 @@ def _effective_strength_with_open_context(strength: str, should_promote: bool) -
 def _open_file_image_parts(open_file_images: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Convert validated visible-PDF images into OpenAI chat content blocks."""
     parts: list[dict[str, Any]] = []
-    for img in (open_file_images or [])[:1]:
+    for img in (open_file_images or [])[:2]:
         media_type = str(img.get("mediaType") or "image/jpeg").strip() or "image/jpeg"
         data = str(img.get("data") or "").strip()
         if not data:

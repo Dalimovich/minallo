@@ -729,9 +729,6 @@ export const translations: Record<string, TranslationMap> = {
     cb_need_subscription:
       'You need an active subscription to use the AI tutor. Open **Subscription** in the menu to unlock it.',
     cb_view_plans: 'View plans',
-    cb_verified: '✓ Verified',
-    cb_partially_verified: '⚠ Partially verified',
-    cb_missing_context: '⚠ Missing context',
     cb_sources_summary: 'Sources',
     cb_sender_minallo: 'Minallo AI',
     cb_answered_using_context: 'Answered using course context',
@@ -1612,9 +1609,6 @@ export const translations: Record<string, TranslationMap> = {
     cb_need_subscription:
       'Du brauchst ein aktives Abo, um den KI-Tutor zu nutzen. Öffne **Abo** im Menü, um ihn freizuschalten.',
     cb_view_plans: 'Abo ansehen',
-    cb_verified: '✓ Verifiziert',
-    cb_partially_verified: '⚠ Teilweise verifiziert',
-    cb_missing_context: '⚠ Kontext fehlt',
     cb_sources_summary: 'Quellen',
     cb_sender_minallo: 'Minallo KI',
     cb_answered_using_context: 'Mit Kurskontext beantwortet',

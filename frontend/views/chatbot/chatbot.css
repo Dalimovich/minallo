@@ -2568,65 +2568,6 @@ body.ncb-fullbleed .ncb-main {
   font-size: 0.72rem;
 }
 
-.ncb-ask-verify {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  border: 1px solid transparent;
-  cursor: help;
-}
-.ncb-ask-verify[data-status="verified"] {
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.10);
-  border-color: rgba(34, 197, 94, 0.30);
-}
-.ncb-ask-verify[data-status="partially_verified"] {
-  color: #fcd34d;
-  background: rgba(234, 179, 8, 0.10);
-  border-color: rgba(234, 179, 8, 0.32);
-}
-.ncb-ask-verify[data-status="missing_context"] {
-  color: #fca5a5;
-  background: rgba(239, 68, 68, 0.10);
-  border-color: rgba(239, 68, 68, 0.32);
-}
-
-.ncb-ask-verify-inline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-left: 8px;
-  border-radius: 50%;
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1;
-  border: 1px solid transparent;
-  cursor: help;
-  vertical-align: middle;
-}
-.ncb-ask-verify-inline[data-status="verified"] {
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.40);
-}
-.ncb-ask-verify-inline[data-status="partially_verified"] {
-  color: #fcd34d;
-  background: rgba(234, 179, 8, 0.12);
-  border-color: rgba(234, 179, 8, 0.40);
-}
-.ncb-ask-verify-inline[data-status="missing_context"] {
-  color: #fca5a5;
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.40);
-}
-
 /* ── Tutor mode pill row (phase 1 of tutor-mode plan) ────────────────────
    Three small pills above the chat input: Solve with me / Explain / Quiz me.
    Active pill is highlighted with the same blue tint the rest of the shell

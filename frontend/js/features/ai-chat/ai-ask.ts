@@ -187,9 +187,17 @@ export function _resetScrollFollow(): void {
 export async function pdfToImages(maxPages?: number): Promise<string[]> {
   const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
   if (!pdfDoc) return [];
+  const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+  return pdfDocToImages(pdfDoc, currentPage, maxPages);
+}
+
+async function pdfDocToImages(
+  pdfDoc: PdfDocLike,
+  currentPage: number = 1,
+  maxPages?: number
+): Promise<string[]> {
   const limit = maxPages || 6;
   const total = pdfDoc.numPages;
-  const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
   const half = Math.floor(limit / 2);
   let startPage = Math.max(1, currentPage - half);
   const endPage = Math.min(total, startPage + limit - 1);
@@ -621,7 +629,7 @@ export function initAskAI(
             !_openFileCtx ||
             _openFileCtx.trim().length < 500
           );
-        const _openFileImages = _visibleTextWeak && pageImages[0]
+        let _openFileImages = _visibleTextWeak && pageImages[0]
           ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
           : undefined;
         let _streamActiveFileName = activeFileName;
@@ -629,6 +637,17 @@ export function initAskAI(
         if (_compareName) {
           const _leftExcerpt = (_openFileCtx || pdfFullText || '').slice(0, 9500);
           const _rightExcerpt = _compareText.slice(0, 9500);
+          const _rightPane = getPane('right');
+          const _rightPageNo = _rightPane.pdfPage && _rightPane.pdfPage >= 1 ? _rightPane.pdfPage : 1;
+          const _rightTextWeak = !_rightExcerpt || _rightExcerpt.trim().length < 500;
+          let _splitImages = _openFileImages ? [..._openFileImages] : [];
+          if (_rightTextWeak && _comparePdfDoc) {
+            const _rightImages = await pdfDocToImages(_comparePdfDoc, _rightPageNo, 1);
+            if (_rightImages[0]) {
+              _splitImages.push({ mediaType: 'image/jpeg', data: _rightImages[0], page: _rightPageNo });
+            }
+          }
+          if (_splitImages.length) _openFileImages = _splitImages.slice(0, 2);
           _streamActiveFileName = activeFileName
             ? activeFileName + ' + ' + _compareName
             : _compareName;
@@ -953,9 +972,6 @@ export function initAskAI(
                 .then((data: RagAskResponse) => {
                   if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
                   let answer = stripSourceMarkers(data.answer || 'No answer found.');
-                  const confEmoji =
-                    data.confidence === 'high' ? '🟢' : data.confidence === 'medium' ? '🟡' : '🔴';
-                  answer += '\n\n' + confEmoji + ' Confidence: ' + (data.confidence || 'medium');
                   resolve({ content: [{ text: answer }], _ragData: data as unknown as AiResponse['_ragData'] });
                 })
                 .catch((err: unknown) => {
@@ -970,7 +986,6 @@ export function initAskAI(
               _finalized = true;
               window._activeStreamRender = null;
               const sources = (meta && meta.sources) || [];
-              const confidence = (meta && meta.confidence) || 'medium';
               const unsupported = !!(meta && meta.unsupported);
 
               const cleanText = stripSourceMarkers(rawText.replace(metaPattern, '').trim());
@@ -980,17 +995,13 @@ export function initAskAI(
                 return;
               }
 
-              const confEmoji = confidence === 'high' ? '🟢' : confidence === 'medium' ? '🟡' : '🔴';
-              let footer = confEmoji + ' Confidence: ' + confidence;
-              if (_ragMode === 'general') footer += ' · 🌐 general mode';
-
               let fullAnswer = cleanText;
               if (unsupported && !sources.length) {
                 fullAnswer =
                   '⚠️ *No matching course materials found — answering from general knowledge.*\n\n' +
                   fullAnswer;
               }
-              fullAnswer += '\n\n' + footer;
+              if (_ragMode === 'general') fullAnswer += '\n\n🌐 general mode';
 
               const _cacheId = (meta && meta.answerCacheId) || null;
               (window as unknown as { _lastRagMeta?: RagMeta })._lastRagMeta = {

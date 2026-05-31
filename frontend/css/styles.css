@@ -1454,11 +1454,19 @@ body.pdf-maximized #pdfToolbar .pdf-toolbar-controls {
   margin-top: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
+  gap: 7px;
+  padding: 8px 10px;
   background: rgba(17, 24, 39, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
+}
+body.pdf-maximized #pdfMaximize {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  margin-left: 4px;
 }
 .pdf-toolbar {
   display: flex;
@@ -2236,7 +2244,7 @@ body.pdf-maximized #pdfToolbar .pdf-toolbar-controls {
 #pdfView { position: relative; }
 .annotate-popover {
   position: absolute;
-  top: 172px;
+  top: 132px;
   /* The Annotate button sits to the left of Download. Shift the popover so
      its right edge lines up with Annotate's right edge (~Download width +
      gap = ~138px). Previous value (32px) lined up with Download. */
@@ -2244,8 +2252,8 @@ body.pdf-maximized #pdfToolbar .pdf-toolbar-controls {
   z-index: 150;
   width: fit-content;
   max-width: calc(100vw - 160px);
-  padding: 10px;
-  border-radius: 24px;
+  padding: 7px 9px;
+  border-radius: 20px;
   border: 1px solid rgba(147, 197, 253, 0.30);
   background: rgba(18, 26, 49, 0.94);
   box-shadow: 0 20px 70px rgba(37, 99, 235, 0.22);
@@ -2257,6 +2265,9 @@ body.pdf-maximized #pdfToolbar .pdf-toolbar-controls {
    `width: var(--ai-w)`. Without this shift the popover hides behind it. */
 body:has(#aiPanel.visible) .annotate-popover {
   right: calc(var(--ai-w, 340px) + 24px);
+}
+body.pdf-maximized .annotate-popover {
+  top: 96px;
 }
 .annotate-popover::before {
   content: "";
@@ -2279,14 +2290,14 @@ body:has(#aiPanel.visible) .annotate-popover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 .annotate-group {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 18px;
+  gap: 5px;
+  padding: 3px;
+  border-radius: 15px;
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.045);
 }
@@ -2297,12 +2308,12 @@ body:has(#aiPanel.visible) .annotate-popover {
 }
 
 .annotate-tool-btn {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid transparent;
   background: transparent;
   color: rgba(148, 163, 184, 1);
@@ -2323,8 +2334,8 @@ body:has(#aiPanel.visible) .annotate-popover {
 }
 
 .annotate-color-swatch {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.20);
@@ -2338,8 +2349,8 @@ body:has(#aiPanel.visible) .annotate-popover {
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.7);
 }
 .annotate-color-picker {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: 999px;
@@ -2351,7 +2362,7 @@ body:has(#aiPanel.visible) .annotate-popover {
 .annotate-stroke-range {
   -webkit-appearance: none;
   appearance: none;
-  width: 90px;
+  width: 78px;
   height: 4px;
   border-radius: 999px;
   background: linear-gradient(to right, #60a5fa 0%, #60a5fa 50%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.12) 100%);
@@ -2378,12 +2389,12 @@ body:has(#aiPanel.visible) .annotate-popover {
 }
 
 .annotate-action-btn {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid transparent;
   background: transparent;
   color: rgba(203, 213, 225, 0.95);

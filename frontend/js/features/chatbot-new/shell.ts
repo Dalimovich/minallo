@@ -757,18 +757,17 @@ async function streamFromAskStream(
   const displayAnswer = stripSourceMarkers(answerBuf || tStr('cb_no_response', 'No response.'));
   if (bubble) bubble.innerHTML = renderInlineMarkdown(displayAnswer);
 
-  // Append sources + verification chip if the server included them.
+  // Append sources if the server included them. Verification stays internal.
   if (doneMeta && bubble) appendAskStreamMeta(bubble, doneMeta);
 
   return displayAnswer;
 }
 
 
-/** Render the `done` event meta into the answer bubble: source list +
- * verification status chip. Best-effort — missing fields are skipped. */
+/** Render the `done` event meta into the answer bubble: source list only.
+ * Verification/confidence status remains internal and is not shown to users. */
 function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>): void {
   const sources = Array.isArray(meta.sources) ? meta.sources : [];
-  const verification = (meta.verification as { status?: string; reasons?: string[] } | undefined) || undefined;
 
   let footerHtml = '';
   let sourceHtml = '';
@@ -784,39 +783,6 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
       })
       .join('');
     sourceHtml = '<details class="ncb-ask-sources"><summary>' + escapeHtml(tStr('cb_sources_summary', 'Sources')) + '</summary><ul>' + items + '</ul></details>';
-  }
-  if (verification && verification.status) {
-    const label =
-      verification.status === 'verified'
-        ? tStr('cb_verified', '✓ Verified')
-        : verification.status === 'partially_verified'
-          ? tStr('cb_partially_verified', '⚠ Partially verified')
-          : tStr('cb_missing_context', '⚠ Missing context');
-    const reason = (verification.reasons || []).join('; ');
-    footerHtml +=
-      '<div class="ncb-ask-verify" data-status="' +
-      escapeAttr(verification.status) +
-      '" title="' +
-      escapeAttr(reason) +
-      '">' +
-      escapeHtml(label) +
-      '</div>';
-
-    // Phase 10 UX: also drop a compact inline chip into the bubble header so the
-    // status is visible at a glance, not just buried in the footer.
-    const head = bubble.parentElement?.querySelector('.ncb-bubble-head');
-    if (head && !head.querySelector('.ncb-ask-verify-inline')) {
-      const glyph =
-        verification.status === 'verified' ? '✓'
-          : verification.status === 'partially_verified' ? '⚠'
-          : '⚠';
-      const chip = document.createElement('span');
-      chip.className = 'ncb-ask-verify-inline';
-      chip.dataset.status = verification.status;
-      chip.title = reason || label;
-      chip.textContent = glyph;
-      head.appendChild(chip);
-    }
   }
   footerHtml += sourceHtml;
   if (footerHtml) {
