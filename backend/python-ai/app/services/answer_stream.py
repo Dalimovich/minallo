@@ -27,6 +27,7 @@ from .answer import (
     MINALLO_APP_CONTEXT,
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
+    _course_material_found_note,
     _cited_indices,
     _context_strength,
     is_app_question,
@@ -900,6 +901,11 @@ def stream_answer(
         "confidence": "high" if display_strength == "strong" else "low",
         "unsupported": display_strength != "strong",
     })
+
+    if used_chunks and not app_question:
+        source_note = _course_material_found_note(used_chunks, doc_names)
+        answer_buf.append(source_note)
+        yield _sse({"t": source_note})
 
     # Weave in recent Q&A turns so the model can resolve follow-up
     # references ("the formula above", "explain that"). Server-side cap:

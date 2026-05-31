@@ -1009,6 +1009,38 @@ def _build_context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]
     return "\n\n---\n\n".join(parts)
 
 
+def _course_material_found_note(
+    chunks: list[RetrievedChunk],
+    doc_names: dict[str, str],
+    *,
+    limit: int = 4,
+) -> str:
+    """Deterministic source preface for course-grounded answers.
+
+    The model is prompted to cite, but for launch quality we also make the
+    retrieved course context visible before generation. This ensures students
+    see which lecture/formula/exercise chunks Minallo found even if the model
+    forgets to introduce them in prose.
+    """
+    if not chunks:
+        return ""
+    lines = ["### Course material found"]
+    for i, c in enumerate(chunks[:limit], start=1):
+        file_name = doc_names.get(c.document_id, "Unknown")
+        if c.page_start and c.page_end:
+            pages = f"p.{c.page_start}" if c.page_start == c.page_end else f"pp.{c.page_start}-{c.page_end}"
+        elif c.page_start:
+            pages = f"p.{c.page_start}"
+        else:
+            pages = "no-page"
+        section = f" — {c.section_title}" if c.section_title else ""
+        kind = f" ({c.chunk_type})" if c.chunk_type else ""
+        lines.append(f"- [Source {i}] {file_name}, {pages}{section}{kind}")
+    lines.append("")
+    lines.append("I will use these uploaded course sources for the notation, method, and explanation below.")
+    return "\n".join(lines) + "\n\n"
+
+
 def generate_answer(
     *,
     question: str,
@@ -1078,6 +1110,8 @@ def generate_answer(
     )
     msg = completion.choices[0].message if completion.choices else None
     answer_text = (msg.content if msg else "") or ""
+    if used_chunks and not app_question:
+        answer_text = _course_material_found_note(used_chunks, doc_names) + answer_text
 
     # Diagram / plot refusal-recovery — see answer_stream.py for the
     # rationale. A continuous-curve question (stress-strain, characteristic,

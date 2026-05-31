@@ -37,6 +37,7 @@ from app.services.answer import (  # noqa: E402
     _SYSTEM_PROMPT_PARTIAL,
     _SYSTEM_PROMPT_STRONG,
     _SYSTEM_PROMPT_WEAK,
+    _course_material_found_note,
     USER_INTENT_OVERLAY,
     is_app_question,
     _sources_for_answer,
@@ -302,6 +303,26 @@ def test_problem_solver_input_is_primary_source() -> None:
     assert "do not turn" in body
     assert "new variable `p`" in body
     assert "method-only placeholders" in body
+
+
+def test_course_material_found_note_names_retrieved_sources() -> None:
+    from types import SimpleNamespace
+
+    chunk = SimpleNamespace(
+        document_id="doc1",
+        page_start=4,
+        page_end=4,
+        chunk_type="lecture",
+        section_title="Kinematics",
+    )
+
+    note = _course_material_found_note([chunk], {"doc1": "EngMec2 Lecture.pdf"})
+
+    assert note.startswith("### Course material found")
+    assert "[Source 1]" in note
+    assert "EngMec2 Lecture.pdf, p.4" in note
+    assert "Kinematics" in note
+    assert "notation, method, and explanation" in note
 
 
 def test_open_context_only_promotes_when_request_targets_visible_page() -> None:
