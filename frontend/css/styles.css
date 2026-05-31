@@ -1421,6 +1421,45 @@ body.night .sb-acc-chev-btn {
 #pdfMaximize .pdf-min-icon { display: none; }
 body.pdf-maximized #pdfMaximize .pdf-max-icon { display: none; }
 body.pdf-maximized #pdfMaximize .pdf-min-icon { display: inline-flex; }
+
+/* In fullscreen, collapse the toolbar to a compact floating pill centred at the
+   top of the screen — only the page / zoom / fit / fullscreen / annotate /
+   download controls, no Back / filename / tabs. Taking the bar out of flow lets
+   the PDF use the full height behind it. */
+body.pdf-maximized #pdfToolbar {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  max-width: calc(100vw - 2 * (var(--dr-rail-w) + 28px));
+  z-index: 9001; /* above the maximized PDF (9000); rail (9499/9500) is elsewhere */
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+}
+body.pdf-maximized #pdfToolbar .pdf-toolbar-inner {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+body.pdf-maximized #pdfToolbar .pdf-toolbar-top,
+body.pdf-maximized #pdfToolbar .pdf-tabs-bar {
+  display: none;
+}
+body.pdf-maximized #pdfToolbar .pdf-toolbar-controls {
+  margin-top: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  background: rgba(17, 24, 39, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
 .pdf-toolbar {
   display: flex;
   align-items: center;
