@@ -137,9 +137,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (tool === 'summary') {
     mapped = { tool, items: [], text: py.text || '', sources: py.groundedSources || [] };
   } else if (tool === 'quiz') {
-    mapped = { tool, items: _normaliseQuizQuestions(py.questions), sources: [] };
+    mapped = { tool, items: _normaliseQuizQuestions(py.questions), sources: py.groundedSources || [] };
   } else {
-    mapped = { tool, items: py.cards || [], sources: [] };
+    mapped = { tool, items: py.cards || [], sources: py.groundedSources || [] };
   }
   if (py.warning) mapped.error = py.warning;
   return jsonResponse(200, mapped);

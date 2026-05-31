@@ -64,6 +64,7 @@ class GenerateQuizResponse(BaseModel):
     requestedCount: int
     actualCount: int
     questions: list[dict[str, Any]]
+    groundedSources: list[dict[str, Any]] = []
     warning: str | None = None
     studySetId: str | None = None
     model: str | None = None
@@ -104,6 +105,7 @@ async def generate_quiz_endpoint(payload: GenerateQuizRequest) -> GenerateQuizRe
         requestedCount=out["requestedCount"],
         actualCount=out["actualCount"],
         questions=out["questions"],
+        groundedSources=out.get("groundedSources", []),
         warning=out.get("warning"),
         studySetId=set_id,
         model=out.get("model"),
@@ -129,6 +131,7 @@ class GenerateFlashcardsResponse(BaseModel):
     requestedCount: int
     actualCount: int
     cards: list[dict[str, Any]]
+    groundedSources: list[dict[str, Any]] = []
     warning: str | None = None
     studySetId: str | None = None
     model: str | None = None
@@ -166,6 +169,7 @@ async def generate_flashcards_endpoint(payload: GenerateFlashcardsRequest) -> Ge
         requestedCount=out["requestedCount"],
         actualCount=out["actualCount"],
         cards=out["cards"],
+        groundedSources=out.get("groundedSources", []),
         warning=out.get("warning"),
         studySetId=set_id,
         model=out.get("model"),

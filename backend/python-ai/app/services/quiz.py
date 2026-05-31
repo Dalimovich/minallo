@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 # the parallel branches, not sum. Wall time for 20 items ≈ wall time for 6.
 _PARALLEL_SHARDS = 3
 _TARGET_SHARD_SIZE = 6
-# One follow-up backfill round if dedup left us short.
-_BACKFILL_ROUNDS = 1
+# More than one follow-up backfill round: launch quality needs exact counts.
+_BACKFILL_ROUNDS = 3
 _LETTERS = ("A", "B", "C", "D")
 _VALID_TYPES = {"mcq", "true_false", "short_answer"}
 _DEFAULT_TYPES = ["mcq", "true_false", "short_answer"]
@@ -271,6 +271,88 @@ def _context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]) -> s
     return "\n\n---\n\n".join(parts)
 
 
+def _source_payload(c: RetrievedChunk, doc_names: dict[str, str]) -> dict[str, Any]:
+    return {
+        "fileName": doc_names.get(c.document_id, "Unknown"),
+        "pageStart": c.page_start,
+        "pageEnd": c.page_end,
+        "chunkId": c.chunk_id,
+        "sectionTitle": c.section_title,
+    }
+
+
+def _source_label(c: RetrievedChunk, doc_names: dict[str, str]) -> str:
+    file_name = doc_names.get(c.document_id, "Unknown")
+    if c.page_start and c.page_end:
+        pages = f"p.{c.page_start}" if c.page_start == c.page_end else f"pp.{c.page_start}-{c.page_end}"
+    elif c.page_start:
+        pages = f"p.{c.page_start}"
+    else:
+        pages = "no-page"
+    return f"{file_name}, {pages}"
+
+
+def _text_snippet(text: str, max_len: int = 180) -> str:
+    clean = re.sub(r"\s+", " ", text or "").strip()
+    clean = re.sub(r"^\W+", "", clean)
+    if len(clean) <= max_len:
+        return clean
+    cut = clean[:max_len].rsplit(" ", 1)[0].strip()
+    return cut or clean[:max_len].strip()
+
+
+def _deterministic_mcq_backfill(
+    *,
+    chunks: list[RetrievedChunk],
+    doc_names: dict[str, str],
+    needed: int,
+    seen_questions: set[str],
+    known_topics: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Guaranteed final backfill from retrieved course chunks.
+
+    This is intentionally conservative: when the LLM returns too few valid
+    MCQs, create source-grounded recognition questions from distinct chunks so
+    the requested count is still honoured without inventing course facts.
+    """
+    out: list[dict[str, Any]] = []
+    topic = known_topics[0] if known_topics else None
+    for idx, c in enumerate(chunks):
+        if len(out) >= needed:
+            break
+        snippet = _text_snippet(c.text)
+        if len(snippet) < 24:
+            continue
+        source = _source_label(c, doc_names)
+        question = f"Which statement is supported by {source}?"
+        key = re.sub(r"\W+", " ", question.lower()).strip()
+        if key in seen_questions:
+            question = f"According to {source}, which statement best matches the course material?"
+            key = re.sub(r"\W+", " ", question.lower()).strip()
+        if key in seen_questions:
+            continue
+        seen_questions.add(key)
+        distractor_a = "The selected source does not discuss this topic."
+        distractor_b = "The opposite of the cited statement is stated as the rule."
+        distractor_c = "The result is independent of the definitions in the course material."
+        out.append({
+            "type": "mcq",
+            "question": question,
+            "options": {
+                "A": snippet,
+                "B": distractor_a if idx % 3 != 0 else distractor_b,
+                "C": distractor_b if idx % 3 != 1 else distractor_c,
+                "D": distractor_c if idx % 3 != 2 else "Only external general knowledge is needed.",
+            },
+            "answer": "A",
+            "explanation": f"The statement in option A is taken from the cited course source: {source}.",
+            "difficulty": "easy",
+            "topic": topic,
+            "source": source,
+        })
+    return out
+
+
 def _run_one_quiz_shard(
     *, shard_count: int, diff: str, types: list[str], context: str,
     already_taken: list[str], diversity_hint: str | None = None,
@@ -394,12 +476,14 @@ def generate_quiz(
             collected.append(norm)
 
     # ── Round 2: one serial backfill if we're short ──────────────────────────
-    if len(collected) < requested and _BACKFILL_ROUNDS > 0:
+    for round_idx in range(_BACKFILL_ROUNDS):
+        if len(collected) >= requested:
+            break
         backfill = _run_one_quiz_shard(
             shard_count=requested - len(collected) + 2,
             diff=diff, types=types, context=context,
             already_taken=[it.get("question") or "" for it in collected],
-            diversity_hint="any high-value concepts not yet asked about",
+            diversity_hint=f"new high-value concepts not yet asked about; backfill round {round_idx + 1}",
             known_topics=known_topics_list,
         )
         if backfill is not None:
@@ -420,11 +504,21 @@ def generate_quiz(
                     collected.append(norm)
 
     collected = _dedupe(collected)[:requested]
+    if len(collected) < requested and "mcq" in types:
+        collected.extend(_deterministic_mcq_backfill(
+            chunks=chunks,
+            doc_names=doc_names,
+            needed=requested - len(collected),
+            seen_questions=seen_questions,
+            known_topics=known_topics_list,
+        ))
+        collected = _dedupe(collected)[:requested]
 
     result: dict[str, Any] = {
         "requestedCount": requested,
         "actualCount": len(collected),
         "questions": collected,
+        "groundedSources": [_source_payload(c, doc_names) for c in chunks[:8]],
         "model": diagnostics["model"],
         "promptTokens": diagnostics["prompt_tokens"],
         "completionTokens": diagnostics["completion_tokens"],

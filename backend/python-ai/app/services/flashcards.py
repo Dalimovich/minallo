@@ -99,6 +99,16 @@ def _context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]) -> s
     return "\n\n---\n\n".join(parts)
 
 
+def _source_payload(c: RetrievedChunk, doc_names: dict[str, str]) -> dict[str, Any]:
+    return {
+        "fileName": doc_names.get(c.document_id, "Unknown"),
+        "pageStart": c.page_start,
+        "pageEnd": c.page_end,
+        "chunkId": c.chunk_id,
+        "sectionTitle": c.section_title,
+    }
+
+
 def _run_one_flashcard_shard(
     *, shard_count: int, context: str, already_taken: list[str],
     diversity_hint: str | None = None,
@@ -234,6 +244,7 @@ def generate_flashcards(
         "requestedCount": requested,
         "actualCount": len(collected),
         "cards": collected,
+        "groundedSources": [_source_payload(c, doc_names) for c in chunks[:8]],
         "model": diagnostics["model"],
         "promptTokens": diagnostics["prompt_tokens"],
         "completionTokens": diagnostics["completion_tokens"],

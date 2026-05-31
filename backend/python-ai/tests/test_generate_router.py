@@ -38,6 +38,7 @@ def client(monkeypatch) -> TestClient:
             "requestedCount": kw["requested_count"], "actualCount": kw["requested_count"],
             "questions": [{"type": "mcq", "question": "Q1", "options": {"A": "a", "B": "b", "C": "c", "D": "d"},
                            "answer": "A", "explanation": "", "difficulty": "easy", "source": "f.pdf, p.1"}],
+            "groundedSources": [{"fileName": "f.pdf", "pageStart": 1, "pageEnd": 1, "chunkId": "c1"}],
             "model": "gpt-4o-mini", "promptTokens": 100, "completionTokens": 30,
         },
     )
@@ -49,6 +50,7 @@ def client(monkeypatch) -> TestClient:
             "requestedCount": kw["requested_count"], "actualCount": kw["requested_count"],
             "cards": [{"front": "Define velocity", "back": "Rate of change of displacement", "tags": ["definition"],
                        "difficulty": "easy", "source": "f.pdf, p.1"}],
+            "groundedSources": [{"fileName": "f.pdf", "pageStart": 1, "pageEnd": 1, "chunkId": "c1"}],
             "model": "gpt-4o-mini", "promptTokens": 50, "completionTokens": 20,
         },
     )
@@ -85,6 +87,7 @@ def test_generate_quiz_success(client: TestClient) -> None:
     body = r.json()
     assert body["actualCount"] == 1
     assert body["studySetId"] == "set-1"
+    assert body["groundedSources"][0]["fileName"] == "f.pdf"
 
 
 def test_generate_flashcards_success(client: TestClient) -> None:
@@ -97,6 +100,7 @@ def test_generate_flashcards_success(client: TestClient) -> None:
     body = r.json()
     assert body["actualCount"] == 1
     assert body["studySetId"] == "set-2"
+    assert body["groundedSources"][0]["fileName"] == "f.pdf"
 
 
 def test_generate_notes_success(client: TestClient) -> None:
