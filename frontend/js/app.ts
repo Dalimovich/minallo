@@ -519,11 +519,14 @@ document.getElementById('pdfFit')?.addEventListener('click', () => {
   renderPages();
   setTimeout(() => _pdfScrollToPage(pg), 120);
 });
-// Maximize / focus reading mode. Fills the window over the sidebar + header but
-// keeps the document rail on top (CSS: #pdfViewerWrap.is-maximized) so the
-// AI / Problem / Notes / Summary rail stays usable. Re-renders so canvas pages
-// re-rasterise crisply at the new width; Esc exits.
-function setPdfMaximized(on: boolean): void {
+// Fullscreen reading mode. We request native fullscreen on <html> (so the
+// browser tabs + address bar disappear), and apply layout classes so that
+// INSIDE the fullscreen the sidebar + header are covered while the document
+// rail (#drRoot, a separate fixed element) stays visible and usable. Driving
+// the classes off `fullscreenchange` keeps them in sync no matter how the user
+// enters/exits (button, Esc, F11). If the browser blocks fullscreen we fall
+// back to the in-app maximize (classes only).
+function _applyPdfMax(on: boolean): void {
   const wrap = document.getElementById('pdfViewerWrap');
   if (!wrap) return;
   const pg = _pdfVisiblePage();
@@ -532,29 +535,53 @@ function setPdfMaximized(on: boolean): void {
   const mbtn = document.getElementById('pdfMaximize');
   if (mbtn) {
     mbtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    mbtn.setAttribute('title', on ? 'Exit maximize (Esc)' : 'Maximize');
-    mbtn.setAttribute('aria-label', on ? 'Exit maximize' : 'Maximize');
+    mbtn.setAttribute('title', on ? 'Exit fullscreen (Esc)' : 'Fullscreen');
+    mbtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
   }
   renderPages();
   setTimeout(() => _pdfScrollToPage(pg), 120);
 }
+function _pdfIsMax(): boolean {
+  return (
+    !!document.fullscreenElement ||
+    !!document.getElementById('pdfViewerWrap')?.classList.contains('is-maximized')
+  );
+}
 document.getElementById('pdfMaximize')?.addEventListener('click', () => {
-  const wrap = document.getElementById('pdfViewerWrap');
-  setPdfMaximized(!wrap?.classList.contains('is-maximized'));
+  if (_pdfIsMax()) {
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else _applyPdfMax(false);
+    return;
+  }
+  // Fullscreen <html> so the rail (a sibling of the PDF) stays on screen too.
+  const req = document.documentElement.requestFullscreen?.();
+  if (req && typeof req.then === 'function') {
+    req.catch(() => _applyPdfMax(true)); // success → fullscreenchange handles it
+  } else {
+    _applyPdfMax(true);
+  }
 });
+// Native enter/exit (button, Esc, F11) all route through here.
+document.addEventListener('fullscreenchange', () => {
+  _applyPdfMax(!!document.fullscreenElement);
+});
+// Esc also exits the in-app fallback when no native fullscreen is active.
 document.addEventListener('keydown', (e) => {
   if (
     e.key === 'Escape' &&
+    !document.fullscreenElement &&
     document.getElementById('pdfViewerWrap')?.classList.contains('is-maximized')
   ) {
-    setPdfMaximized(false);
+    _applyPdfMax(false);
   }
 });
 document.getElementById('pdfDownload')?.addEventListener('click', () => {
   if (activeFileName) downloadFile(activeFileName);
 });
 document.getElementById('pdfBack')?.addEventListener('click', () => {
-  // Leaving the reader: drop maximize so the next view isn't stuck fixed.
+  // Leaving the reader: exit fullscreen + drop maximize so the next view isn't
+  // stuck fixed.
+  if (document.fullscreenElement) void document.exitFullscreen?.();
   document.body.classList.remove('pdf-maximized');
   document.getElementById('pdfViewerWrap')?.classList.remove('is-maximized');
   const w = window as unknown as {
