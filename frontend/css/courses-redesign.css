@@ -1850,6 +1850,12 @@ body.minallo-in-course .welcome-state {
   margin-bottom: 10px;
   overflow: hidden;
 }
+/* While the ⋯ menu is open, let the card overflow so the dropdown (Rename +
+   Delete) isn't clipped by the card's overflow:hidden — otherwise the 2nd item
+   gets cut off at the card's bottom edge. */
+.co-inner-v2 .co-folder-section.co-folder-v2:has(.co-folder-more-menu.open) {
+  overflow: visible;
+}
 .co-inner-v2 .co-folder-section.co-folder-v2:hover {
   border-color: color-mix(in srgb, var(--co-folder-accent) 28%, rgba(255, 255, 255, 0.1));
   background: rgba(255, 255, 255, 0.04);

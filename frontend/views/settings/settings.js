@@ -51,7 +51,11 @@ async function saveSettings(patch) {
   if (result && result.error) console.error('saveSettings error:', result.error);
 }
 
-(function bindSettingsControls() {
+// Named (not an IIFE) so it can be re-run when the lazy settings HTML mounts —
+// otherwise the controls + Save button never bind (the elements don't exist at
+// script-eval time). All bindings here are idempotent set-operations, so the
+// extra run is harmless. See the calls at the bottom of this block.
+function bindSettingsControls() {
   function _markDirty() {
     var el = document.getElementById('settingsSaveState');
     if (el) { el.textContent = _t('set_unsaved'); el.className = 'settings-save-state dirty'; }
@@ -315,4 +319,10 @@ async function saveSettings(patch) {
       });
     });
   }
-})();
+}
+bindSettingsControls();
+if (window.Minallo && typeof window.Minallo.on === 'function') {
+  window.Minallo.on('feature:html-loaded', function (p) {
+    if (p && p.id === 'psec-settings') bindSettingsControls();
+  });
+}

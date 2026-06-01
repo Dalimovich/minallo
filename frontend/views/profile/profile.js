@@ -80,14 +80,24 @@ async function saveProfile() {
     var init = document.getElementById('profileInitial');
     if (init && data.full_name) init.textContent = data.full_name.charAt(0).toUpperCase();
     updateAuthIndicator(_currentUser);
+    // Refresh the sidebar (incl. the university sub-label #sbUserSub) and the
+    // in-memory _userUniversity / ss_university cache so the new uni shows up
+    // immediately instead of only after a reload.
+    if (typeof window.applyProfile === 'function') window.applyProfile(data);
   } catch (e) {
     showToast(_t('toast_save_failed'), String(e));
   }
 }
 
+// The profile form HTML is lazy-loaded, so the Save button doesn't exist when
+// this script first runs and a direct addEventListener would no-op. Delegate
+// from document so the click always works regardless of when the HTML mounts.
 (function bindProfileControls() {
-  var profileSaveBtn = document.querySelector('.profile-save-btn');
-  if (profileSaveBtn) {
-    profileSaveBtn.addEventListener('click', saveProfile);
-  }
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('.profile-save-btn') : null;
+    if (btn) {
+      e.preventDefault();
+      saveProfile();
+    }
+  });
 })();

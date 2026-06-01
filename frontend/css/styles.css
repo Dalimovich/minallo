@@ -2322,7 +2322,9 @@ body.pdf-maximized #pdfMaximize {
 #pdfView { position: relative; }
 .annotate-popover {
   position: absolute;
-  top: 132px;
+  /* Sits just below the controls row so it lines up under the Annotate button
+     instead of overlapping the Page/zoom/Fit controls. */
+  top: 184px;
   /* The Annotate button sits to the left of Download. Shift the popover so
      its right edge lines up with Annotate's right edge (~Download width +
      gap = ~138px). Previous value (32px) lined up with Download. */
