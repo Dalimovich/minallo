@@ -791,6 +791,35 @@ try {
   }
 } catch { /* corrupted cache — ignore */ }
 
+// The Profile form is lazy-loaded (views/profile/profile.html). The applyProfile
+// above runs at boot — before that HTML exists — so the fields stay empty until a
+// network refresh, which is why Profile appears to "load late". Re-apply the
+// cached profile the instant the section HTML is injected so fields fill
+// immediately. (loadUserData keeps profile_cache_<uid> fresh after its fetch, and
+// still re-applies on the network response if the user is already on the page.)
+try {
+  const _bus = (window as unknown as {
+    Minallo?: { on?: (name: string, handler: (p: { id?: string }) => void) => void };
+  }).Minallo;
+  _bus?.on?.('feature:html-loaded', (p) => {
+    if (!p || p.id !== 'psec-profile') return;
+    try {
+      const u = localStorage.getItem('ss_last_uid');
+      const cp = u
+        ? (JSON.parse(localStorage.getItem('profile_cache_' + u) || 'null') as Record<
+            string,
+            unknown
+          > | null)
+        : null;
+      if (cp && cp.full_name && typeof applyProfile === 'function') applyProfile(cp);
+    } catch {
+      /* corrupted cache — ignore */
+    }
+  });
+} catch {
+  /* bus not ready — ignore */
+}
+
 function _applyCachedCoursesNow(): void {
   if (_cpCached && _cpCached.courses && typeof _loadUserCourses === 'function') {
     _loadUserCourses(_cpCached.courses);
