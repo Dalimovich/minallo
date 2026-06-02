@@ -30,27 +30,27 @@
   // where group is referenced. Mirrors the old landing's voice.
   var I18N = {
     en: {
-      logo: { tag: 'Study smarter' },
+      logo: { tag: 'Study with clarity' },
       nav: {
         features: 'Features',
         paths: 'Paths',
         tutor: 'Tutor',
-        workflow: 'Workflow',
+        workflow: 'Workspace',
         pricing: 'Pricing',
         signIn: 'Sign in',
         startFree: 'Start free trial'
       },
       hero: {
-        badge: 'A course-aware AI study platform',
-        title: 'Turn lecture chaos into clear, cited answers.',
-        subtitle: 'Minallo helps students upload course files, ask questions, solve exercises, edit PDFs, learn German, focus with Pomodoro, play study games, and enjoy their favorite playlists while working.',
-        buildCta: 'Build my study space',
+        badge: 'AI study workspace for real course material',
+        title: 'Study from your own lectures, not generic answers.',
+        subtitle: 'Upload PDFs, lecture notes, exercises, and formula sheets. Minallo helps you understand the material, solve problems step by step, cite the source pages, and keep your study routine organized.',
+        buildCta: 'Start studying with Minallo',
         watchCta: 'Watch preview',
         stats: {
-          pdf: 'Editor, uploads, notes, and course files in one place',
-          ai: 'Grounded tutor that uses student materials as context',
+          pdf: 'Upload, annotate, summarize, and organize course PDFs',
+          ai: 'AI answers grounded in your uploaded study material',
           focusLabel: 'Focus',
-          focus: 'Pomodoro, playlists, games, and streaks for consistency'
+          focus: 'Pomodoro, playlists, games, and streaks to keep momentum'
         }
       },
       tutorPreview: {
@@ -60,49 +60,49 @@
         tabs: { lecture: 'Lecture PDF', exercise: 'Exercise', formula: 'Formula sheet' },
         smartRetrieval: 'Smart retrieval',
         tutorName: 'Minallo AI Tutor',
-        mode: 'Grounded answer mode',
-        userMsg: 'Explain exercise 6 using only my lecture notes and cite the formula.',
-        aiMsg: 'First, we use the lecture definition of equilibrium and then substitute the values from the exercise. The relevant formula is found in your formula sheet.',
+        mode: 'Course-grounded answer',
+        userMsg: 'Solve exercise 6 using my lecture method and cite the formula.',
+        aiMsg: 'The exercise uses the equilibrium method from your lecture. Start with the force balance, then substitute the values from the exercise sheet. The formula is confirmed in your formula sheet.',
         cite1: 'Citation: Lecture 03 · page 12',
         cite2: 'Citation: Formula sheet · page 2',
         miniSources: 'Sources',
         miniVerified: 'Verified',
-        miniGuessing: 'Guessing'
+        miniGuessing: 'Unsupported claims'
       },
       features: {
         eyebrow: 'Features',
-        title: 'Everything a serious student needs, without the clutter.',
-        lead: 'Minallo keeps the study routine clear: what to study next, where each answer comes from, and how to stay focused while working.',
+        title: 'A cleaner way to study with your course files.',
+        lead: 'Minallo turns scattered PDFs, exercises, notes, and revision tools into one focused workspace for understanding, practice, and exam preparation.',
         cards: [
-          { title: 'AI tutor trained around your course', text: 'Minallo answers from your uploaded lectures, exercises, and formula sheets instead of giving generic internet-style explanations.' },
-          { title: 'Cited PDF answers', text: 'Every important claim can point back to the exact document and page, so students can verify the answer instantly.' },
-          { title: 'Focus tools built in', text: 'Pomodoro sessions, study streaks, and progress signals keep the student working instead of just collecting files.' },
-          { title: 'Honest when context is missing', text: 'When the course material does not contain enough information, Minallo explains what is missing and asks for the right file, page, or exercise number.' },
-          { title: 'Multi-source synthesis', text: 'It can combine an exercise, a lecture explanation, and a formula sheet into one clean step-by-step answer.' },
-          { title: 'Quick answers to common questions', text: 'Repeated course questions load faster when Minallo already has a verified answer for the same material.' },
-          { title: 'German learner mode', text: 'A separate path for vocabulary, grammar, examples, and playful German revision.' },
-          { title: 'Playlists while studying', text: 'Students can keep their favorite playlists close, making focus sessions feel more personal and enjoyable.' },
-          { title: 'Games for motivation', text: 'Quick games and challenges give students relaxing breaks while keeping the learning mood alive.' }
+          { title: 'AI tutor for your course', text: 'Ask questions about uploaded lectures, exercises, and formula sheets and get answers shaped around the material your professor gave you.' },
+          { title: 'Sources you can verify', text: 'Important answers include document and page references, so you can check the original PDF instead of trusting a black-box explanation.' },
+          { title: 'Focus tools built in', text: 'Pomodoro sessions, study streaks, and progress signals help you keep working instead of only collecting files.' },
+          { title: 'Honest when context is missing', text: 'If the uploaded material is incomplete, Minallo explains what is missing and asks for the right file, page, or exercise number.' },
+          { title: 'Connect lectures, exercises, and formulas', text: 'Minallo can bring together the task, the professor’s method, and the formula sheet in one structured explanation.' },
+          { title: 'Faster repeated study help', text: 'When the same course question comes back, Minallo can reuse a verified answer instead of starting from zero.' },
+          { title: 'German learner mode', text: 'Practice vocabulary, grammar, examples, and revision games in a dedicated language-learning space.' },
+          { title: 'Playlists while studying', text: 'Keep your favorite playlists close so long study sessions feel more personal and easier to stay with.' },
+          { title: 'Study games for momentum', text: 'Use quick challenges and revision games for short breaks that still keep you connected to learning.' }
         ]
       },
       paths: {
         eyebrow: 'Choose your space',
-        title: 'One platform, two clear journeys.',
-        lead: 'New users choose their main path: manage courses or learn German. The dashboard then shows the tools that match that goal.',
+        title: 'Start with the path that fits your goal.',
+        lead: 'Minallo adapts around the way you study: course work for lectures and exams, or a separate German-learning space for daily practice.',
         studentCard: {
           eyebrow: 'Courses',
           title: "I'm a student",
-          desc: 'For students who upload lectures, solve exercises, edit PDFs, and want AI help based on their own study material.',
+          desc: 'For students who want one place for lecture files, exercises, PDF work, focus sessions, and course-aware AI support.',
           items: [
-            'Course dashboard and file organization',
-            'Lecture-aware AI tutor with citations',
-            'PDF editor, notes, Pomodoro, and streaks'
+            'Organize every course, file, and study note',
+            'Get AI help with citations from your materials',
+            'Edit PDFs, take notes, and stay focused'
           ]
         },
         germanCard: {
           eyebrow: 'Language',
           title: "I'm learning German",
-          desc: 'For learners who want German vocabulary, grammar, useful examples, and playful practice in a separate area.',
+          desc: 'For learners who want vocabulary, grammar explanations, examples, and playful revision without mixing it into course work.',
           items: [
             'Vocabulary and grammar practice',
             'Simple examples and sentence practice',
@@ -112,77 +112,77 @@
       },
       lifestyle: {
         eyebrow: 'Study vibe',
-        title: 'Productive does not have to feel boring.',
-        lead: 'Playlists and games are worth showing because they make Minallo feel like a complete student environment, not just another serious dashboard.',
+        title: 'A study space you actually want to return to.',
+        lead: 'Minallo combines serious study tools with small moments of motivation, so your workspace feels useful, personal, and sustainable.',
         cards: [
-          { title: 'Favorite playlists', text: 'Let users listen while studying, focusing, or practicing German.' },
-          { title: 'Study games', text: 'Use quick games for revision breaks, vocabulary, and motivation.' },
-          { title: 'Streak rewards', text: 'Turn consistency into visible progress and small wins.' }
+          { title: 'Favorite playlists', text: 'Study, revise, or practice German with the music that helps you concentrate.' },
+          { title: 'Study games', text: 'Use quick games for vocabulary, revision breaks, and motivation between focused sessions.' },
+          { title: 'Streak rewards', text: 'Turn consistent work into visible progress, small wins, and a reason to keep going.' }
         ]
       },
       tutor: {
         eyebrow: 'AI Tutor',
-        title: 'Not just chat. A study engine.',
-        lead: 'Generic chatbots answer from general knowledge. Minallo answers from your uploaded lectures, exercises, and formula sheets, then cites the pages it used.',
+        title: 'An AI tutor that studies the same material you do.',
+        lead: 'Minallo starts with the PDF in front of you, searches the wider course when needed, and explains answers using your uploaded lectures, exercises, and formula sheets.',
         items: [
-          'Search across lectures, exercises, and formula sheets',
-          'Answer with page-level citations',
-          'Start with the open PDF, then search the course when needed',
-          'Reuse verified answers for repeated course questions'
+          'Search across lectures, exercises, notes, and formula sheets',
+          'Show page-level citations for important answers',
+          'Use the open PDF first, then expand to the course',
+          'Flag missing context instead of guessing'
         ]
       },
       pipeline: {
-        eyebrow: 'Answer pipeline',
-        title: 'From upload to verified response',
+        eyebrow: 'How it works',
+        title: 'From uploaded PDF to grounded answer',
         steps: [
-          { title: 'Upload', text: 'Lecture PDFs, exercise sheets, notes, and formulas are added to the student workspace.' },
-          { title: 'Index', text: 'The system extracts pages, chunks, formulas, exercises, and metadata for smarter retrieval.' },
-          { title: 'Retrieve', text: 'Minallo selects the best context instead of sending the whole file every time.' },
-          { title: 'Answer', text: 'The AI gives a step-by-step answer with citations and missing-context warnings.' }
+          { title: 'Upload', text: 'Add lecture PDFs, exercise sheets, notes, and formula collections to your workspace.' },
+          { title: 'Understand', text: 'Minallo reads the files into searchable pages, formulas, exercises, and useful metadata.' },
+          { title: 'Retrieve', text: 'For each question, Minallo selects the most relevant course context instead of treating every file the same.' },
+          { title: 'Answer', text: 'You get a clear explanation with source pages and honest warnings when the material is incomplete.' }
         ]
       },
       workflow: {
-        eyebrow: 'Workflow',
-        title: 'One workspace for the whole study routine.',
-        lead: 'Minallo brings courses, PDFs, AI tutoring, German practice, focus sessions, playlists, and study games into one calm student workspace.',
+        eyebrow: 'Workspace',
+        title: 'Everything important stays in one flow.',
+        lead: 'Move from course files to explanations, notes, focused work, German practice, and revision without jumping between disconnected tools.',
         cards: [
-          { title: 'Ask', text: 'Students ask questions in natural language.' },
-          { title: 'Solve', text: 'Exercises become guided step-by-step explanations.' },
-          { title: 'Learn', text: 'German learners practice vocabulary, grammar, examples, and revision games.' },
-          { title: 'Enjoy', text: 'Playlists and study games keep the experience motivating.' }
+          { title: 'Ask', text: 'Ask in natural language, even when you only know the page, topic, or exercise.' },
+          { title: 'Solve', text: 'Turn difficult exercises into structured steps you can follow and review.' },
+          { title: 'Learn', text: 'Practice German vocabulary, grammar, examples, and revision games in a separate space.' },
+          { title: 'Stay with it', text: 'Use focus sessions, playlists, games, and streaks to make studying easier to continue.' }
         ]
       },
       quote: {
-        title: '"Minallo feels like a private tutor who has actually read your lecture files."',
-        text: 'Answers stay grounded in real course material, with clear sources and honest limits when context is missing.'
+        title: '"The answer finally matches the way my course explains it."',
+        text: 'That is the point of Minallo: course-aware explanations, clear sources, and a workspace that helps students keep going.'
       },
       pricing: {
         eyebrow: 'Pricing',
-        title: 'One student-friendly plan.',
-        lead: 'Try everything free for 7 days, then continue with one paid subscription for documents, AI help, PDF tools, language practice, playlists, games, and focus features.',
+        title: 'Try the full workspace before you commit.',
+        lead: 'Start with a 7-day free trial. Continue with one simple subscription for AI tutoring, document tools, German practice, focus features, playlists, and study games.',
         pro: {
           popular: '7-day free trial',
           name: 'Student Pro',
-          sub: 'Try first, then study seriously.',
+          sub: 'Everything you need for a focused study routine.',
           per: '/month after trial',
           items: [
-            'More AI tutor usage',
-            'Course-aware citations',
-            'PDF editor workspace',
-            'German learner mode',
-            'Playlists, games, and focus dashboard'
+            'Course-aware AI tutor with citations',
+            'Uploads, notes, summaries, quizzes, and flashcards',
+            'PDF editor and study workspace',
+            'German learner mode and revision games',
+            'Pomodoro, playlists, streaks, and focus dashboard'
           ],
-          cta: 'Upgrade study flow'
+          cta: 'Start 7-day free trial'
         }
       },
       ctaBanner: {
-        title: 'Ready to make studying feel clear?',
-        text: 'Choose your path. Upload course files or practice German. Ask questions, get explanations, listen to your playlists, play quick study games, and stay focused until the work is done.',
-        cta: 'Launch Minallo'
+        title: 'Build a study space that understands your material.',
+        text: 'Upload your course files, ask better questions, solve exercises with sources, and keep your routine moving with focus tools and revision features.',
+        cta: 'Start studying now'
       },
       footer: {
         copyPre: '© ',
-        copyPost: ' Minallo. Built for focused students and German learners.',
+        copyPost: ' Minallo. Built for clearer studying and better routines.',
         tutor: 'AI Tutor',
         imprint: 'Impressum',
         privacy: 'Privacy',
@@ -191,27 +191,27 @@
       }
     },
     de: {
-      logo: { tag: 'Klüger studieren' },
+      logo: { tag: 'Klarer studieren' },
       nav: {
         features: 'Funktionen',
         paths: 'Bereiche',
         tutor: 'Tutor',
-        workflow: 'Ablauf',
+        workflow: 'Workspace',
         pricing: 'Preise',
         signIn: 'Anmelden',
         startFree: 'Kostenlos testen'
       },
       hero: {
-        badge: 'Eine kursbasierte KI-Lernplattform',
-        title: 'Mach aus Vorlesungschaos klare, belegte Antworten.',
-        subtitle: 'Minallo hilft dir, Kursdateien hochzuladen, Fragen zu stellen, Übungen zu lösen, PDFs zu bearbeiten, Deutsch zu lernen, dich mit Pomodoro zu fokussieren, Lernspiele zu spielen und deine Lieblings-Playlists beim Lernen zu genießen.',
-        buildCta: 'Meinen Lernbereich aufbauen',
+        badge: 'KI-Lernworkspace für echte Kursmaterialien',
+        title: 'Lerne mit deinen eigenen Vorlesungen, nicht mit generischen Antworten.',
+        subtitle: 'Lade PDFs, Vorlesungsnotizen, Übungen und Formelsammlungen hoch. Minallo hilft dir, Inhalte zu verstehen, Aufgaben Schritt für Schritt zu lösen, Quellen zu prüfen und deinen Lernalltag zu organisieren.',
+        buildCta: 'Mit Minallo lernen',
         watchCta: 'Vorschau ansehen',
         stats: {
-          pdf: 'Editor, Uploads, Notizen und Kursdateien an einem Ort',
-          ai: 'Verankerter Tutor, der deine Materialien als Kontext nutzt',
+          pdf: 'Kurs-PDFs hochladen, markieren, zusammenfassen und organisieren',
+          ai: 'KI-Antworten auf Basis deiner hochgeladenen Materialien',
           focusLabel: 'Fokus',
-          focus: 'Pomodoro, Playlists, Spiele und Lernserien für mehr Beständigkeit'
+          focus: 'Pomodoro, Playlists, Spiele und Lernserien für mehr Momentum'
         }
       },
       tutorPreview: {
@@ -221,49 +221,49 @@
         tabs: { lecture: 'Vorlesungs-PDF', exercise: 'Übung', formula: 'Formelsammlung' },
         smartRetrieval: 'Intelligente Suche',
         tutorName: 'Minallo KI-Tutor',
-        mode: 'Belegter Antwortmodus',
-        userMsg: 'Erkläre Übung 6 nur anhand meiner Vorlesungsnotizen und gib die Formel mit Quellenangabe an.',
-        aiMsg: 'Zuerst nutzen wir die Definition des Gleichgewichts aus der Vorlesung und setzen dann die Werte aus der Übung ein. Die relevante Formel findest du in deiner Formelsammlung.',
+        mode: 'Kursbasierte Antwort',
+        userMsg: 'Löse Übung 6 mit der Methode aus meiner Vorlesung und zitiere die Formel.',
+        aiMsg: 'Die Aufgabe nutzt die Gleichgewichtsmethode aus deiner Vorlesung. Beginne mit der Kräftebilanz und setze dann die Werte aus dem Übungsblatt ein. Die Formel ist in deiner Formelsammlung bestätigt.',
         cite1: 'Quellenangabe: Vorlesung 03 · Seite 12',
         cite2: 'Quellenangabe: Formelsammlung · Seite 2',
         miniSources: 'Quellen',
         miniVerified: 'Geprüft',
-        miniGuessing: 'Geraten'
+        miniGuessing: 'Unbelegte Aussagen'
       },
       features: {
         eyebrow: 'Funktionen',
-        title: 'Alles, was ernsthafte Studierende brauchen — ohne Ballast.',
-        lead: 'Minallo macht den Lernalltag klar: was als Nächstes dran ist, woher eine Antwort kommt und wie du beim Arbeiten fokussiert bleibst.',
+        title: 'Kursdateien lernen sich leichter, wenn alles an einem Ort ist.',
+        lead: 'Minallo verwandelt verstreute PDFs, Übungen, Notizen und Wiederholungstools in einen klaren Workspace für Verstehen, Üben und Prüfungsvorbereitung.',
         cards: [
-          { title: 'KI-Tutor, trainiert auf deinen Kurs', text: 'Minallo antwortet auf Basis deiner hochgeladenen Vorlesungen, Übungen und Formelsammlungen — statt mit generischen Internet-Erklärungen.' },
-          { title: 'PDF-Antworten mit Quellenangabe', text: 'Jede wichtige Aussage verweist zurück auf das genaue Dokument und die Seite — so kannst du die Antwort sofort überprüfen.' },
-          { title: 'Fokus-Werkzeuge eingebaut', text: 'Pomodoro-Sitzungen, Lernserien und Fortschrittssignale halten dich am Arbeiten — statt nur Dateien zu sammeln.' },
-          { title: 'Ehrlich, wenn Kontext fehlt', text: 'Wenn das Material nicht ausreicht, sagt Minallo, was fehlt — statt eine selbstsichere Antwort zu halluzinieren.' },
-          { title: 'Synthese aus mehreren Quellen', text: 'Übung, Vorlesungserklärung und Formelsammlung werden zu einer sauberen Schritt-für-Schritt-Antwort kombiniert.' },
-          { title: 'Schnelle Antworten auf häufige Fragen', text: 'Wiederholte Kursfragen laden schneller, wenn Minallo bereits eine geprüfte Antwort zum gleichen Material hat.' },
-          { title: 'Deutsch-Lernmodus', text: 'Ein eigener Bereich für Vokabeln, Grammatik, Beispiele und spielerische Wiederholung.' },
-          { title: 'Playlists beim Lernen', text: 'Behalte deine Lieblings-Playlists in Reichweite — so fühlen sich Fokus-Sessions persönlicher und angenehmer an.' },
-          { title: 'Spiele für Motivation', text: 'Schnelle Spiele und Mini-Challenges geben dir entspannte Pausen — und halten die Lernlaune am Leben.' }
+          { title: 'KI-Tutor für deinen Kurs', text: 'Stelle Fragen zu hochgeladenen Vorlesungen, Übungen und Formelsammlungen und erhalte Antworten, die zu deinem Kursmaterial passen.' },
+          { title: 'Quellen, die du überprüfen kannst', text: 'Wichtige Antworten enthalten Dokument- und Seitenangaben, damit du direkt im Original-PDF nachsehen kannst.' },
+          { title: 'Fokus-Werkzeuge eingebaut', text: 'Pomodoro-Sitzungen, Lernserien und Fortschrittssignale helfen dir, wirklich weiterzuarbeiten statt nur Dateien zu sammeln.' },
+          { title: 'Ehrlich, wenn Kontext fehlt', text: 'Wenn hochgeladenes Material unvollständig ist, erklärt Minallo, welche Datei, Seite oder Aufgabennummer fehlt.' },
+          { title: 'Vorlesungen, Aufgaben und Formeln verbinden', text: 'Minallo kombiniert Aufgabenstellung, Vorlesungsmethode und Formelsammlung zu einer strukturierten Erklärung.' },
+          { title: 'Schnellere Hilfe bei wiederholten Fragen', text: 'Wenn dieselbe Kursfrage erneut auftaucht, kann Minallo eine geprüfte Antwort wiederverwenden.' },
+          { title: 'Deutsch-Lernmodus', text: 'Übe Vokabeln, Grammatik, Beispiele und Wiederholungsspiele in einem eigenen Sprachbereich.' },
+          { title: 'Playlists beim Lernen', text: 'Behalte deine Lieblings-Playlists in Reichweite, damit lange Lernsessions persönlicher und leichter durchzuhalten sind.' },
+          { title: 'Lernspiele für Momentum', text: 'Nutze kurze Challenges und Wiederholungsspiele für Pausen, die dich trotzdem im Lernmodus halten.' }
         ]
       },
       paths: {
         eyebrow: 'Wähle deinen Bereich',
-        title: 'Eine Plattform, zwei klare Wege.',
-        lead: 'Neue Nutzer:innen wählen ihren Hauptweg: Kurse organisieren oder Deutsch lernen. Das Dashboard zeigt danach die passenden Werkzeuge.',
+        title: 'Starte mit dem Bereich, der zu deinem Ziel passt.',
+        lead: 'Minallo passt sich deinem Lernweg an: Kursarbeit für Vorlesungen und Prüfungen oder ein separater Deutschbereich für tägliche Übung.',
         studentCard: {
           eyebrow: 'Kurse',
           title: 'Ich studiere',
-          desc: 'Für Studierende, die Vorlesungen hochladen, Übungen lösen, PDFs bearbeiten und KI-Hilfe basierend auf eigenen Materialien möchten.',
+          desc: 'Für Studierende, die einen Ort für Vorlesungsdateien, Übungen, PDF-Arbeit, Fokus-Sessions und kursbasierte KI-Hilfe möchten.',
           items: [
-            'Kurs-Dashboard und Dateiorganisation',
-            'Vorlesungsbewusster KI-Tutor mit Quellenangaben',
-            'PDF-Editor, Notizen, Pomodoro und Lernserien'
+            'Jeden Kurs, jede Datei und jede Lernnotiz organisieren',
+            'KI-Hilfe mit Quellenangaben aus deinen Materialien erhalten',
+            'PDFs bearbeiten, Notizen schreiben und fokussiert bleiben'
           ]
         },
         germanCard: {
           eyebrow: 'Sprache',
           title: 'Ich lerne Deutsch',
-          desc: 'Für Lernende, die deutsche Vokabeln, Grammatik, nützliche Beispiele und spielerisches Üben in einem eigenen Bereich möchten.',
+          desc: 'Für Lernende, die Vokabeln, Grammatikerklärungen, Beispiele und spielerische Wiederholung getrennt von Kursarbeit nutzen möchten.',
           items: [
             'Vokabel- und Grammatikübungen',
             'Einfache Beispiele und Satzübungen',
@@ -273,77 +273,77 @@
       },
       lifestyle: {
         eyebrow: 'Lernstimmung',
-        title: 'Produktiv muss sich nicht langweilig anfühlen.',
-        lead: 'Playlists und Spiele gehören dazu, weil sie Minallo zu einer kompletten Lernumgebung machen — und nicht nur zu einem weiteren ernsten Dashboard.',
+        title: 'Ein Lernraum, zu dem du gern zurückkommst.',
+        lead: 'Minallo kombiniert ernsthafte Lernwerkzeuge mit kleinen Motivationsmomenten, damit dein Workspace nützlich, persönlich und langfristig angenehm bleibt.',
         cards: [
-          { title: 'Lieblings-Playlists', text: 'Höre Musik beim Lernen, Fokussieren oder Deutschüben.' },
-          { title: 'Lernspiele', text: 'Schnelle Spiele für Pausen, Vokabeln und Motivation.' },
-          { title: 'Lernserien-Belohnungen', text: 'Mache Beständigkeit sichtbar — in Form von Fortschritt und kleinen Erfolgen.' }
+          { title: 'Lieblings-Playlists', text: 'Lerne, wiederhole oder übe Deutsch mit Musik, die dir beim Konzentrieren hilft.' },
+          { title: 'Lernspiele', text: 'Nutze kurze Spiele für Vokabeln, Wiederholungspausen und Motivation zwischen Fokus-Sessions.' },
+          { title: 'Lernserien-Belohnungen', text: 'Mache regelmäßiges Lernen sichtbar: mit Fortschritt, kleinen Erfolgen und einem Grund weiterzumachen.' }
         ]
       },
       tutor: {
         eyebrow: 'KI-Tutor',
-        title: 'Kein bloßer Chat. Ein Lern-Motor.',
-        lead: 'Generische Chatbots antworten aus allgemeinem Wissen. Minallo antwortet aus deinen hochgeladenen Vorlesungen, Übungen und Formelsammlungen und nennt die genutzten Seiten.',
+        title: 'Ein KI-Tutor, der mit deinem Material lernt.',
+        lead: 'Minallo beginnt mit dem PDF vor dir, durchsucht bei Bedarf den gesamten Kurs und erklärt Antworten anhand deiner hochgeladenen Vorlesungen, Übungen und Formelsammlungen.',
         items: [
-          'Suche über Vorlesungen, Übungen und Formelsammlungen',
-          'Antworten mit Quellenangabe auf Seitenebene',
-          'Mit dem geöffneten PDF beginnen und bei Bedarf den ganzen Kurs durchsuchen',
-          'Geprüfte Antworten für wiederholte Kursfragen erneut nutzen'
+          'Über Vorlesungen, Übungen, Notizen und Formelsammlungen suchen',
+          'Wichtige Antworten mit Seitenquellen anzeigen',
+          'Mit dem geöffneten PDF beginnen und dann auf den Kurs erweitern',
+          'Fehlenden Kontext markieren statt zu raten'
         ]
       },
       pipeline: {
-        eyebrow: 'Antwort-Pipeline',
-        title: 'Vom Upload bis zur geprüften Antwort',
+        eyebrow: 'So funktioniert es',
+        title: 'Vom hochgeladenen PDF zur belegten Antwort',
         steps: [
-          { title: 'Hochladen', text: 'Vorlesungs-PDFs, Übungsblätter, Notizen und Formeln landen im Lernbereich.' },
-          { title: 'Indexieren', text: 'Das System extrahiert Seiten, Abschnitte, Formeln, Übungen und Metadaten für eine smartere Suche.' },
-          { title: 'Abrufen', text: 'Minallo wählt den besten Kontext aus — statt jedes Mal die ganze Datei zu schicken.' },
-          { title: 'Antworten', text: 'Die KI gibt eine Schritt-für-Schritt-Antwort mit Quellenangaben und Hinweisen auf fehlenden Kontext.' }
+          { title: 'Hochladen', text: 'Füge Vorlesungs-PDFs, Übungsblätter, Notizen und Formelsammlungen zu deinem Workspace hinzu.' },
+          { title: 'Verstehen', text: 'Minallo macht Dateien als Seiten, Formeln, Aufgaben und nützliche Metadaten durchsuchbar.' },
+          { title: 'Abrufen', text: 'Für jede Frage wählt Minallo den relevantesten Kurskontext, statt jede Datei gleich zu behandeln.' },
+          { title: 'Antworten', text: 'Du bekommst eine klare Erklärung mit Quellen und ehrlichen Hinweisen, wenn Material fehlt.' }
         ]
       },
       workflow: {
-        eyebrow: 'Ablauf',
-        title: 'Ein Arbeitsbereich für den ganzen Lernalltag.',
-        lead: 'Minallo verbindet Kurse, PDFs, KI-Tutor, Deutschübungen, Fokus-Sessions, Playlists und Lernspiele in einem ruhigen Studierenden-Workspace.',
+        eyebrow: 'Workspace',
+        title: 'Alles Wichtige bleibt in einem Fluss.',
+        lead: 'Wechsle von Kursdateien zu Erklärungen, Notizen, Fokusarbeit, Deutschübungen und Wiederholung, ohne zwischen getrennten Tools zu springen.',
         cards: [
-          { title: 'Fragen', text: 'Stelle Fragen in natürlicher Sprache.' },
-          { title: 'Lösen', text: 'Übungen werden zu geführten Schritt-für-Schritt-Erklärungen.' },
-          { title: 'Lernen', text: 'Deutschlernende üben Vokabeln, Grammatik, Beispiele und Wiederholungsspiele.' },
-          { title: 'Genießen', text: 'Playlists und Lernspiele halten das Erlebnis motivierend.' }
+          { title: 'Fragen', text: 'Frage in natürlicher Sprache, auch wenn du nur Seite, Thema oder Aufgabe kennst.' },
+          { title: 'Lösen', text: 'Verwandle schwierige Übungen in strukturierte Schritte, die du nachvollziehen kannst.' },
+          { title: 'Lernen', text: 'Übe deutsche Vokabeln, Grammatik, Beispiele und Wiederholungsspiele in einem separaten Bereich.' },
+          { title: 'Dranbleiben', text: 'Nutze Fokus-Sessions, Playlists, Spiele und Lernserien, damit Lernen leichter weitergeht.' }
         ]
       },
       quote: {
-        title: '„Minallo fühlt sich an wie ein privater Tutor, der deine Vorlesungsdateien wirklich gelesen hat."',
-        text: 'Antworten bleiben im echten Kursmaterial verankert, mit klaren Quellen und ehrlichen Grenzen, wenn Kontext fehlt.'
+        title: '„Die Antwort passt endlich zu der Art, wie mein Kurs es erklärt."',
+        text: 'Genau darum geht es bei Minallo: kursbasierte Erklärungen, klare Quellen und ein Workspace, der Studierende beim Weitermachen unterstützt.'
       },
       pricing: {
         eyebrow: 'Preise',
-        title: 'Ein studierendenfreundlicher Plan.',
-        lead: 'Teste alles 7 Tage kostenlos und nutze danach ein bezahltes Abo fuer Dokumente, KI-Hilfe, PDF-Werkzeuge, Sprachpraxis, Playlists, Spiele und Fokus-Funktionen.',
+        title: 'Teste den ganzen Workspace, bevor du dich festlegst.',
+        lead: 'Starte mit 7 Tagen kostenloser Testphase. Danach nutzt du ein einfaches Abo für KI-Tutor, Dokumentwerkzeuge, Deutschübungen, Fokusfunktionen, Playlists und Lernspiele.',
         pro: {
           popular: '7 Tage kostenlos testen',
           name: 'Student Pro',
-          sub: 'Erst testen, dann ernsthaft weiterlernen.',
+          sub: 'Alles, was du für eine klare Lernroutine brauchst.',
           per: '/Monat nach der Testphase',
           items: [
-            'Mehr KI-Tutor-Nutzung',
-            'Kursbasierte Quellenangaben',
-            'PDF-Editor-Arbeitsbereich',
-            'Deutsch-Lernmodus',
-            'Playlists, Spiele und Fokus-Dashboard'
+            'Kursbasierter KI-Tutor mit Quellenangaben',
+            'Uploads, Notizen, Zusammenfassungen, Quizze und Karteikarten',
+            'PDF-Editor und Lernworkspace',
+            'Deutsch-Lernmodus und Wiederholungsspiele',
+            'Pomodoro, Playlists, Lernserien und Fokus-Dashboard'
           ],
-          cta: 'Lernfluss upgraden'
+          cta: '7 Tage kostenlos starten'
         }
       },
       ctaBanner: {
-        title: 'Bereit, Lernen klar anfühlen zu lassen?',
-        text: 'Wähle deinen Weg. Lade Kursdateien hoch oder übe Deutsch. Stelle Fragen, erhalte Erklärungen, höre deine Playlists, spiele kurze Lernspiele und bleib fokussiert, bis die Arbeit erledigt ist.',
-        cta: 'Minallo starten'
+        title: 'Baue einen Lernraum, der dein Material versteht.',
+        text: 'Lade deine Kursdateien hoch, stelle bessere Fragen, löse Aufgaben mit Quellen und halte deine Routine mit Fokuswerkzeugen und Wiederholungsfeatures in Bewegung.',
+        cta: 'Jetzt mit Minallo lernen'
       },
       footer: {
         copyPre: '© ',
-        copyPost: ' Minallo. Gebaut für fokussierte Studierende und Deutschlernende.',
+        copyPost: ' Minallo. Gebaut für klareres Lernen und bessere Routinen.',
         tutor: 'KI-Tutor',
         imprint: 'Impressum',
         privacy: 'Datenschutz',
@@ -358,73 +358,73 @@
   var PATH_CONTENT = {
     en: {
       student: {
-        title: 'Student dashboard',
-        subtitle: 'For university and school work',
-        description: 'A focused dashboard for courses, lecture PDFs, exercises, AI explanations, PDF editing, Pomodoro sessions, streaks, and study progress.',
+        title: 'Course workspace',
+        subtitle: 'For university and school study',
+        description: 'A focused workspace for course files, lecture PDFs, exercises, AI explanations, PDF editing, notes, Pomodoro sessions, streaks, and study progress.',
         icon: 'layout-dashboard',
         items: [
-          'Course pages for lectures, exercises, notes, and formula sheets',
+          'Organized course pages for lectures, exercises, notes, and formula sheets',
           'AI tutor answers grounded in uploaded course documents',
-          'PDF editor for highlighting, writing, signing, saving, and exporting',
-          'Pomodoro timer, study streaks, dashboard stats, and progress tracking'
+          'PDF tools for highlighting, writing, signing, saving, and exporting',
+          'Pomodoro sessions, study streaks, dashboard stats, and progress tracking'
         ],
         preview: [
-          ['file-text', 'Course library', 'Organize every subject and file in one clean place.'],
-          ['brain-circuit', 'AI study help', 'Ask questions and get cited, course-aware answers.'],
-          ['timer', 'Focus mode', 'Study with Pomodoro sessions and visible streaks.']
+          ['file-text', 'Course library', 'Keep every subject, file, and note in one clean place.'],
+          ['brain-circuit', 'Course-aware AI', 'Ask questions and get answers with source pages.'],
+          ['timer', 'Focus mode', 'Study with Pomodoro sessions, progress, and visible streaks.']
         ]
       },
       german: {
-        title: 'German learner',
-        subtitle: 'For language practice',
-        description: 'A dedicated German-learning space with vocabulary, grammar help, simple explanations, examples, and playful revision.',
+        title: 'German practice space',
+        subtitle: 'For daily language progress',
+        description: 'A dedicated German-learning space for vocabulary, grammar help, simple explanations, everyday examples, and playful revision.',
         icon: 'languages',
         items: [
           'German vocabulary practice with simple examples and translations',
-          'Grammar explanations in beginner-friendly language',
-          'Simple sentence examples for daily German situations',
-          'Mini-games and revision challenges to make practice less boring'
+          'Grammar explanations written for real understanding',
+          'Sentence examples for everyday German situations',
+          'Mini-games and revision challenges that make practice easier to repeat'
         ],
         preview: [
-          ['languages', 'German coach', 'Learn words, grammar, sentences, and everyday phrases.'],
-          ['book-open', 'Examples & phrases', 'Practice German with simple examples and everyday sentences.'],
-          ['gamepad-2', 'Language games', 'Review vocabulary through quick challenges and games.']
+          ['languages', 'German coach', 'Build vocabulary, grammar, sentences, and everyday phrases.'],
+          ['book-open', 'Examples & phrases', 'Practice with simple examples and useful daily sentences.'],
+          ['gamepad-2', 'Language games', 'Review vocabulary through quick challenges.']
         ]
       }
     },
     de: {
       student: {
-        title: 'Studierenden-Dashboard',
-        subtitle: 'Für Uni- und Schularbeit',
-        description: 'Ein fokussiertes Dashboard für Kurse, Vorlesungs-PDFs, Übungen, KI-Erklärungen, PDF-Bearbeitung, Pomodoro-Sitzungen, Lernserien und Lernfortschritt.',
+        title: 'Kurs-Workspace',
+        subtitle: 'Für Studium, Uni und Schule',
+        description: 'Ein fokussierter Workspace für Kursdateien, Vorlesungs-PDFs, Übungen, KI-Erklärungen, PDF-Bearbeitung, Notizen, Pomodoro-Sitzungen, Lernserien und Fortschritt.',
         icon: 'layout-dashboard',
         items: [
-          'Kursseiten für Vorlesungen, Übungen, Notizen und Formelsammlungen',
+          'Organisierte Kursseiten für Vorlesungen, Übungen, Notizen und Formelsammlungen',
           'KI-Tutor-Antworten verankert in hochgeladenen Kursdokumenten',
-          'PDF-Editor zum Markieren, Schreiben, Unterschreiben, Speichern und Exportieren',
-          'Pomodoro-Timer, Lernserien, Dashboard-Statistiken und Fortschrittsverfolgung'
+          'PDF-Werkzeuge zum Markieren, Schreiben, Unterschreiben, Speichern und Exportieren',
+          'Pomodoro-Sitzungen, Lernserien, Dashboard-Statistiken und Fortschrittsverfolgung'
         ],
         preview: [
-          ['file-text', 'Kursbibliothek', 'Organisiere jedes Fach und jede Datei an einem klaren Ort.'],
-          ['brain-circuit', 'KI-Lernhilfe', 'Stelle Fragen und erhalte belegte, kursbasierte Antworten.'],
-          ['timer', 'Fokus-Modus', 'Lerne mit Pomodoro-Sitzungen und sichtbaren Lernserien.']
+          ['file-text', 'Kursbibliothek', 'Behalte jedes Fach, jede Datei und jede Notiz an einem klaren Ort.'],
+          ['brain-circuit', 'Kursbasierte KI', 'Stelle Fragen und erhalte Antworten mit Seitenquellen.'],
+          ['timer', 'Fokus-Modus', 'Lerne mit Pomodoro-Sitzungen, Fortschritt und sichtbaren Lernserien.']
         ]
       },
       german: {
-        title: 'Deutsch-Lernbereich',
-        subtitle: 'Für Sprachpraxis',
-        description: 'Ein eigener Bereich zum Deutschlernen — mit Vokabeln, Grammatikhilfe, einfachen Erklärungen, Beispielen und spielerischer Wiederholung.',
+        title: 'Deutsch-Übungsbereich',
+        subtitle: 'Für täglichen Sprachfortschritt',
+        description: 'Ein eigener Bereich zum Deutschlernen mit Vokabeln, Grammatikhilfe, einfachen Erklärungen, Alltagsbeispielen und spielerischer Wiederholung.',
         icon: 'languages',
         items: [
           'Vokabelübungen mit einfachen Beispielen und Übersetzungen',
-          'Grammatikerklärungen in anfängerfreundlicher Sprache',
-          'Einfache Satzbeispiele für alltägliche Situationen auf Deutsch',
-          'Mini-Spiele und Wiederholungs-Challenges, damit Üben nicht langweilig wird'
+          'Grammatikerklärungen für echtes Verständnis',
+          'Satzbeispiele für alltägliche Situationen auf Deutsch',
+          'Mini-Spiele und Wiederholungs-Challenges, damit Üben leichter zur Routine wird'
         ],
         preview: [
-          ['languages', 'Deutsch-Coach', 'Lerne Wörter, Grammatik, Sätze und Alltagsphrasen.'],
-          ['book-open', 'Beispiele & Phrasen', 'Übe Deutsch mit einfachen Beispielen und Alltagssätzen.'],
-          ['gamepad-2', 'Sprachspiele', 'Wiederhole Vokabeln mit kurzen Challenges und Spielen.']
+          ['languages', 'Deutsch-Coach', 'Baue Vokabeln, Grammatik, Sätze und Alltagsphrasen auf.'],
+          ['book-open', 'Beispiele & Phrasen', 'Übe mit einfachen Beispielen und nützlichen Alltagssätzen.'],
+          ['gamepad-2', 'Sprachspiele', 'Wiederhole Vokabeln mit kurzen Challenges.']
         ]
       }
     }
