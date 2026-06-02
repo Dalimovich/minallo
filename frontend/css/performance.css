@@ -31,6 +31,18 @@
   filter: none !important;
 }
 
+#portal .dr-rail {
+  background:
+    linear-gradient(180deg, rgba(16, 29, 52, 0.98), rgba(8, 15, 31, 0.98)) !important;
+}
+
+#portal .dr-drawer {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(56, 189, 248, 0.10), transparent 34%),
+    linear-gradient(180deg, rgba(15, 27, 48, 0.98), rgba(8, 15, 31, 0.98)) !important;
+  border-color: rgba(125, 211, 252, 0.28) !important;
+}
+
 #portal .portal-section,
 #portal .psec-entering,
 #portal .psec-leaving,
