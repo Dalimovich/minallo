@@ -1880,8 +1880,14 @@ body.nl-pv-open {
   flex-direction: column;
   padding: clamp(1rem, 2.4vw, 1.6rem);
   border-radius: var(--nl-radius-2xl);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.14), transparent 38%),
+    linear-gradient(145deg, #101827 0%, #132235 58%, #0b1322 100%);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.55);
   animation: nl-pv-pop 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
+  isolation: isolate;
 }
 
 .nl-pv__head {
@@ -2506,10 +2512,11 @@ body.nl-body .nl-pv__backdrop {
   background: rgba(2, 6, 23, 0.9);
 }
 
-body.nl-body .nl-pv__dialog {
+body.nl-body .nl-pv__dialog,
+.nl-pv .nl-pv__dialog {
   background:
     radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.14), transparent 38%),
-    linear-gradient(145deg, #101827 0%, #132235 58%, #0b1322 100%);
+    linear-gradient(145deg, #101827 0%, #132235 58%, #0b1322 100%) !important;
   border-color: rgba(148, 163, 184, 0.24);
   box-shadow: 0 34px 90px rgba(0, 0, 0, 0.55);
 }
