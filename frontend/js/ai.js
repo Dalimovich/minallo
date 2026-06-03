@@ -671,6 +671,32 @@ function _captureSnipRegion(x1, y1, x2, y2) {
 
   btn.addEventListener('click', function () {
     if (typeof forceCloseAI === 'function') forceCloseAI();
+    // Collapse the whole document-rail drawer (not just the AI panel) so the
+    // PDF reflows to its FULL width before the snip — otherwise the crop is
+    // taken from the narrower, rail-occupied layout. We reopen it afterward.
+    var _dr = window.__minalloDocRail;
+    if (_dr && typeof _dr.close === 'function') _dr.close();
+    // Reopen the AI rail. The panel re-mounts asynchronously, so run `cb`
+    // (attach the capture, focus input) only once it signals ready.
+    function reopenRail(cb) {
+      if (!_dr || typeof _dr.open !== 'function') {
+        if (typeof openAI === 'function') openAI();
+        if (typeof pinAI === 'function') pinAI();
+        if (cb) cb();
+        return;
+      }
+      var done = false;
+      var run = function () {
+        if (done) return;
+        done = true;
+        if (typeof openAI === 'function') openAI();
+        if (typeof pinAI === 'function') pinAI();
+        if (cb) cb();
+      };
+      document.addEventListener('minallo-ai-panel-ready', run, { once: true });
+      _dr.open('ai');
+      setTimeout(run, 600); // fallback if the ready event never fires
+    }
     var overlay = document.createElement('div');
     overlay.id = 'snipOverlay';
     var hint = document.createElement('div');
@@ -712,24 +738,27 @@ function _captureSnipRegion(x1, y1, x2, y2) {
         endY = e.clientY;
       overlay.remove();
       document.removeEventListener('keydown', onKey);
-      // Open panel immediately so user sees the thumbnail without delay
-      if (typeof openAI === 'function') openAI();
-      if (typeof pinAI === 'function') pinAI();
+      // Capture FIRST — while the rail is still closed and the PDF is at full
+      // width — so the crop matches what the user selected. Then reopen.
       var result = _captureSnipRegion(startX, startY, endX, endY);
-      if (!result) {
-        if (typeof showToast === 'function')
-          showToast('Nothing captured', 'Select an area over the PDF');
-        return;
-      }
-      _addAttachedImage(result);
-      var ta = document.getElementById('aiInput');
-      if (ta) ta.focus();
+      reopenRail(function () {
+        if (!result) {
+          if (typeof showToast === 'function')
+            showToast('Nothing captured', 'Select an area over the PDF');
+          return;
+        }
+        _addAttachedImage(result);
+        var ta = document.getElementById('aiInput');
+        if (ta) ta.focus();
+      });
     });
 
     function onKey(e) {
       if (e.key === 'Escape') {
         overlay.remove();
         document.removeEventListener('keydown', onKey);
+        // Restore the rail we collapsed when the snip started.
+        reopenRail(null);
       }
     }
     document.addEventListener('keydown', onKey);
