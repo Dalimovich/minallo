@@ -114,6 +114,15 @@ function stripSourceMarkersLive(text: string): string {
     .replace(/\s+,/g, ',');
 }
 
+function takeSoftStreamChunk(text: string, target: number): string {
+  if (text.length <= target) return text;
+  const searchEnd = Math.min(text.length, target + 12);
+  for (let i = target; i < searchEnd; i++) {
+    if (/\s/.test(text[i] || '')) return text.slice(0, i + 1);
+  }
+  return text.slice(0, target);
+}
+
 function _sourceLine(s: { file_name?: string; pages?: string | null; section?: string | null }): string {
   let line = s.file_name || 'Unknown';
   if (s.pages) {
@@ -824,9 +833,10 @@ export function initAskAI(
             const _tokenQueue: string[] = [];
             let _streamTextBuffer = '';
             let _renderTimer: number | null = null;
+            let _visibleStreamText = '';
             let _pendingMeta: SseDoneEvent | null | undefined = undefined;
             const CFG = window.AI_TYPING || ({} as Partial<NonNullable<Window['AI_TYPING']>>);
-            const STREAM_CHARS_PER_FRAME = CFG.streamCharsPerFrame || 3;
+            const STREAM_CHARS_PER_FRAME = CFG.streamCharsPerFrame || 18;
 
             // Both `evt.done` and the reader's `result.done` can race to call
             // finalize() — guard so history/feedback bar aren't doubled.
@@ -844,15 +854,25 @@ export function initAskAI(
               bubble.setAttribute('data-raw', rawText);
               const display = stripSourceMarkersLive(rawText.replace(metaPattern, '').trimEnd());
 
-              let typingSpan = bubble.querySelector<HTMLElement>('.ss-typing-span');
-              if (!typingSpan) {
-                typingSpan = document.createElement('span');
-                typingSpan.className = 'ss-typing-span';
-                typingSpan.style.whiteSpace = 'pre-wrap';
-                bubble.appendChild(typingSpan);
+              let streamSpan = bubble.querySelector<HTMLElement>('.ss-stream-live');
+              if (!streamSpan) {
+                streamSpan = document.createElement('span');
+                streamSpan.className = 'ss-stream-live';
+                streamSpan.style.whiteSpace = 'pre-wrap';
+                bubble.appendChild(streamSpan);
               }
-
-              typingSpan.textContent = display;
+              if (!display.startsWith(_visibleStreamText)) {
+                streamSpan.textContent = '';
+                _visibleStreamText = '';
+              }
+              const delta = display.slice(_visibleStreamText.length);
+              if (delta) {
+                const chunk = document.createElement('span');
+                chunk.className = 'ss-stream-chunk';
+                chunk.textContent = delta;
+                streamSpan.appendChild(chunk);
+                _visibleStreamText = display;
+              }
               _autoScroll(aiMsgs);
             }
 
@@ -889,7 +909,7 @@ export function initAskAI(
                 return;
               }
               const frameBudget = document.hidden ? _streamTextBuffer.length : STREAM_CHARS_PER_FRAME;
-              const added = _streamTextBuffer.slice(0, frameBudget);
+              const added = takeSoftStreamChunk(_streamTextBuffer, frameBudget);
               _streamTextBuffer = _streamTextBuffer.slice(added.length);
               rawText += added;
               if (bubble) updateBlockRender();
@@ -912,6 +932,7 @@ export function initAskAI(
                 rawText += _streamTextBuffer;
                 _streamTextBuffer = '';
               }
+              _visibleStreamText = '';
               fullRender(rawText);
             };
 
@@ -1180,7 +1201,7 @@ export function initAskAI(
           const streamBubble = d._streamWrap.querySelector<HTMLElement>('.ai-bubble.bot');
           const rawFinal = d.content ? d.content.map((b) => b.text || '').join('') : '';
           if (streamBubble) {
-            const _typingSpan = streamBubble.querySelector('.ss-typing-span');
+            const _typingSpan = streamBubble.querySelector('.ss-stream-live, .ss-typing-span');
             if (_typingSpan) _typingSpan.remove();
             if (window._ssEnsureKatex) {
               window._ssEnsureKatex().then(() => {

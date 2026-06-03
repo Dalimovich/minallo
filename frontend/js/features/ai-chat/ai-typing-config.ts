@@ -15,7 +15,7 @@ export interface AiTypingConfig {
 export const AI_TYPING: AiTypingConfig = {
   // Streaming path. Tokens are buffered, then revealed on animation frames.
   streamTokenInterval: 12,
-  streamCharsPerFrame: 3,
+  streamCharsPerFrame: 18,
 
   // Fallback path (non-streaming ai-ask endpoint).
   fallbackWordsPerFrame: 1,

@@ -715,10 +715,9 @@ async function streamFromAskStream(
     throw new Error('Ask-stream ' + resp.status + ': ' + errText.slice(0, 200));
   }
 
-  // Clear the typing dots once we know the stream is open. Subsequent
-  // tokens are appended as plain text — full markdown rendering happens
-  // after the stream completes so we don't re-parse on every chunk.
-  if (bubble) bubble.innerHTML = '';
+  // Clear the typing dots once we know the stream is open. Live text is
+  // revealed as soft phrase chunks; full markdown rendering happens at the end.
+  const liveReveal = createSoftStreamReveal(bubble);
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -738,10 +737,7 @@ async function streamFromAskStream(
         const evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
         if (typeof evt.t === 'string') {
           answerBuf += evt.t;
-          if (bubble) {
-            bubble.textContent = stripSourceMarkers(answerBuf);
-            bubble.parentElement?.scrollIntoView({ block: 'end', behavior: 'auto' });
-          }
+          liveReveal.push(evt.t);
         }
         if (evt.done) doneMeta = evt;
         if (evt.error) throw new Error(String(evt.error));
@@ -755,6 +751,7 @@ async function streamFromAskStream(
   // [Source N] markers are internal grounding anchors; the user sees sources
   // only in the collapsible footer appended below.
   const displayAnswer = stripSourceMarkers(answerBuf || tStr('cb_no_response', 'No response.'));
+  await liveReveal.finish();
   if (bubble) bubble.innerHTML = renderInlineMarkdown(displayAnswer);
 
   // Append sources if the server included them. Verification stays internal.
@@ -799,6 +796,104 @@ function stripSourceMarkers(text: string): string {
     .replace(/\s+\./g, ".")
     .replace(/\s+,/g, ",")
     .trim();
+}
+
+function stripSourceMarkersLive(text: string): string {
+  return (text || "")
+    .replace(/\s*\[Source\s+\d+\]/gi, "")
+    .replace(/\s+\./g, ".")
+    .replace(/\s+,/g, ",");
+}
+
+function takeSoftStreamChunk(text: string, target = 18): string {
+  if (text.length <= target) return text;
+  const searchEnd = Math.min(text.length, target + 12);
+  for (let i = target; i < searchEnd; i++) {
+    if (/\s/.test(text[i] || '')) return text.slice(0, i + 1);
+  }
+  return text.slice(0, target);
+}
+
+function appendSoftChunk(host: HTMLElement, text: string): void {
+  if (!text) return;
+  const chunk = document.createElement('span');
+  chunk.className = 'ncb-stream-chunk';
+  chunk.textContent = text;
+  host.appendChild(chunk);
+}
+
+function createSoftStreamReveal(bubble: HTMLElement | null): {
+  push: (text: string) => void;
+  finish: () => Promise<void>;
+} {
+  if (!bubble) {
+    return { push: () => {}, finish: async () => {} };
+  }
+
+  bubble.innerHTML = '';
+  const live = document.createElement('span');
+  live.className = 'ncb-stream-live';
+  bubble.appendChild(live);
+
+  let rawText = '';
+  let visibleText = '';
+  let buffer = '';
+  let raf: number | null = null;
+  let finishResolve: (() => void) | null = null;
+
+  const scroll = (): void => {
+    const msgs = bubble.closest<HTMLElement>('.ncb-msgs');
+    if (msgs) scrollMsgsToBottom(msgs);
+  };
+
+  const renderVisible = (): void => {
+    const display = stripSourceMarkersLive(rawText);
+    if (!display.startsWith(visibleText)) {
+      live.textContent = '';
+      visibleText = '';
+    }
+    const delta = display.slice(visibleText.length);
+    if (delta) {
+      appendSoftChunk(live, delta);
+      visibleText = display;
+      scroll();
+    }
+  };
+
+  const drain = (): void => {
+    raf = null;
+    if (!buffer) {
+      if (finishResolve) {
+        const resolve = finishResolve;
+        finishResolve = null;
+        resolve();
+      }
+      return;
+    }
+    const added = document.hidden ? buffer : takeSoftStreamChunk(buffer, 18);
+    buffer = buffer.slice(added.length);
+    rawText += added;
+    renderVisible();
+    raf = window.requestAnimationFrame(drain);
+  };
+
+  const schedule = (): void => {
+    if (raf == null) raf = window.requestAnimationFrame(drain);
+  };
+
+  return {
+    push(text: string): void {
+      buffer += text;
+      schedule();
+    },
+    finish(): Promise<void> {
+      if (!buffer && raf == null) return Promise.resolve();
+      return new Promise((resolve) => {
+        finishResolve = resolve;
+        schedule();
+      });
+    },
+  };
 }
 
 
@@ -916,28 +1011,26 @@ function typeIntoBubble(
       resolve();
       return;
     }
-    bubble.innerHTML = '';
-    const words = raw.match(/\S+\s*/g) || [];
-    let i = 0;
-    const STEP = 2;
-    const INTERVAL = 22;
+    const liveReveal = createSoftStreamReveal(bubble);
+    let index = 0;
 
     const tick = (): void => {
       if (isAborted()) {
-        bubble.innerHTML = renderInlineMarkdown(words.slice(0, i).join('') || raw);
+        bubble.innerHTML = renderInlineMarkdown(raw.slice(0, index) || raw);
         resolve();
         return;
       }
-      if (i >= words.length) {
-        bubble.innerHTML = renderInlineMarkdown(raw);
-        resolve();
+      if (index >= raw.length) {
+        liveReveal.finish().then(() => {
+          bubble.innerHTML = renderInlineMarkdown(raw);
+          resolve();
+        });
         return;
       }
-      i = Math.min(i + STEP, words.length);
-      bubble.textContent = words.slice(0, i).join('');
-      const msgs = bubble.closest<HTMLElement>('.ncb-msgs');
-      if (msgs) scrollMsgsToBottom(msgs);
-      window.setTimeout(tick, INTERVAL);
+      const added = takeSoftStreamChunk(raw.slice(index), 18);
+      index += added.length;
+      liveReveal.push(added);
+      window.requestAnimationFrame(tick);
     };
     tick();
   });
