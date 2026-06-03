@@ -13,7 +13,7 @@ export interface AiTypingConfig {
 
 export const AI_TYPING: AiTypingConfig = {
   // Streaming path (edge function SSE tokens).
-  streamTokenInterval: 38,
+  streamTokenInterval: 12,
 
   // Fallback path (non-streaming ai-ask endpoint).
   fallbackWordsPerFrame: 1,

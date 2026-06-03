@@ -67,6 +67,20 @@ interface SseDoneEvent {
   [k: string]: unknown;
 }
 
+interface SseStreamEvent extends Partial<SseDoneEvent> {
+  t?: string;
+  error?: unknown;
+  meta?: boolean;
+  status?: string;
+  answerMode?: string;
+}
+
+interface ThinkingStatus {
+  el: HTMLElement;
+  set: (text: string) => void;
+  remove: () => void;
+}
+
 interface PdfPage {
   getViewport: (opts: { scale: number }) => { width: number; height: number };
   render: (opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
@@ -139,6 +153,71 @@ function _autoScroll(el: HTMLElement | null): void {
   if (!el) return;
   if (_userScrolledUp) return;
   el.scrollTop = el.scrollHeight;
+}
+
+const THINKING_STEPS: Record<'normal' | 'problem' | 'app', string[]> = {
+  normal: [
+    'Collecting course context...',
+    'Reading the current PDF page...',
+    'Searching your lectures and exercises...',
+    'Checking matching sources...',
+    'Preparing a clear answer...'
+  ],
+  problem: [
+    'Reading the problem statement...',
+    'Identifying givens and required values...',
+    'Searching formulas in your course files...',
+    'Preparing step-by-step solution...'
+  ],
+  app: [
+    'Checking Minallo features...',
+    'Finding the right section...',
+    'Preparing instructions...'
+  ]
+};
+
+function createThinkingStatus(
+  type: 'normal' | 'problem' | 'app' = 'normal',
+  aiMsgs?: HTMLElement | null
+): ThinkingStatus | null {
+  const host = aiMsgs || document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
+  if (!host) return null;
+
+  const steps = THINKING_STEPS[type];
+  const wrap = document.createElement('div');
+  wrap.className = 'ai-msg-wrap typing-wrap ai-thinking-status';
+  wrap.innerHTML =
+    '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
+    '<div class="ai-thinking-card">' +
+      '<span class="ai-thinking-pulse" aria-hidden="true"></span>' +
+      '<span class="ai-thinking-text">' + escapeHtml(steps[0] || 'Thinking...') + '</span>' +
+    '</div>';
+
+  host.appendChild(wrap);
+  _autoScroll(host);
+
+  let index = 0;
+  const timer = window.setInterval(() => {
+    index = Math.min(index + 1, steps.length - 1);
+    const text = wrap.querySelector<HTMLElement>('.ai-thinking-text');
+    if (text) text.textContent = steps[index] || steps[steps.length - 1] || 'Thinking...';
+    _autoScroll(host);
+  }, 900);
+
+  return {
+    el: wrap,
+    set(text: string): void {
+      const node = wrap.querySelector<HTMLElement>('.ai-thinking-text');
+      if (node && text) node.textContent = text;
+      _autoScroll(host);
+    },
+    remove(): void {
+      clearInterval(timer);
+      if (!wrap.parentNode) return;
+      wrap.classList.add('ai-thinking-status--hide');
+      setTimeout(() => wrap.remove(), 180);
+    }
+  };
 }
 
 const MINALLO_APP_CONTEXT =
@@ -454,13 +533,16 @@ export function initAskAI(
     _userScrolledUp = false;
     const _isProblemSolver = !!opts?.problemSolver;
 
-    const thinkWrap = document.createElement('div');
-    thinkWrap.className = 'ai-msg-wrap typing-wrap';
-    thinkWrap.innerHTML =
-      '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-      '<div class="typing-bubble"><span></span><span></span><span></span></div>';
-    aiMsgs.appendChild(thinkWrap);
-    aiMsgs.scrollTop = aiMsgs.scrollHeight;
+    let thinking = createThinkingStatus(_isProblemSolver ? 'problem' : 'normal', aiMsgs);
+    const thinkWrap = thinking?.el || document.createElement('div');
+    function removeThinking(): void {
+      if (thinking) {
+        thinking.remove();
+        thinking = null;
+      } else if (thinkWrap && thinkWrap.parentNode) {
+        thinkWrap.remove();
+      }
+    }
 
     const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
     let pdfFullText = window.pdfFullText || '';
@@ -736,7 +818,8 @@ export function initAskAI(
             let _renderTimer: ReturnType<typeof setTimeout> | null = null;
             let _pendingMeta: SseDoneEvent | null | undefined = undefined;
             const CFG = window.AI_TYPING || ({} as Partial<NonNullable<Window['AI_TYPING']>>);
-            const TOKEN_INTERVAL = CFG.streamTokenInterval || 38;
+            const TOKEN_INTERVAL = CFG.streamTokenInterval || 12;
+            const TOKEN_CHAR_BUDGET = 80;
 
             let _renderedBlockCount = 0;
             // Both `evt.done` and the reader's `result.done` can race to call
@@ -823,7 +906,7 @@ export function initAskAI(
                 _renderedBlockCount++;
               }
 
-              const typingText = stripSourceMarkers((blocks[blocks.length - 1] || '').replace(/<!--META-->[\s\S]*$/, ''));
+              const typingText = stripSourceMarkers(blocks[blocks.length - 1] || '');
               typingSpan.textContent = typingText;
               _autoScroll(aiMsgs);
             }
@@ -850,8 +933,14 @@ export function initAskAI(
                 if (_pendingMeta !== undefined) finalize(_pendingMeta);
                 return;
               }
-              const tok = _tokenQueue.shift()!;
-              rawText += tok;
+              let added = '';
+              let chars = 0;
+              while (_tokenQueue.length && chars < TOKEN_CHAR_BUDGET) {
+                const tok = _tokenQueue.shift()!;
+                added += tok;
+                chars += tok.length;
+              }
+              rawText += added;
               if (bubble) updateBlockRender();
               _renderTimer = setTimeout(drainQueue, TOKEN_INTERVAL);
             }
@@ -869,9 +958,7 @@ export function initAskAI(
 
             function ensureBubble(): void {
               if (ansWrap) return;
-              thinkWrap.style.transition = 'opacity .15s';
-              thinkWrap.style.opacity = '0';
-              setTimeout(() => thinkWrap.remove(), 160);
+              removeThinking();
 
               ansWrap = document.createElement('div');
               ansWrap.className = 'ai-msg-wrap';
@@ -978,7 +1065,20 @@ export function initAskAI(
                     lines.forEach((line) => {
                       if (!line.startsWith('data: ')) return;
                       try {
-                        const evt = JSON.parse(line.slice(6)) as Partial<SseDoneEvent> & { t?: string; error?: unknown };
+                        const evt = JSON.parse(line.slice(6)) as SseStreamEvent;
+                        if (evt.status && thinking) {
+                          thinking.set(evt.status);
+                        }
+                        if (evt.meta && thinking) {
+                          const answerMode = String(evt.answerMode || '');
+                          if (answerMode === 'math' || _isProblemSolver) {
+                            thinking.set('Preparing step-by-step solution...');
+                          } else if (answerMode === 'app') {
+                            thinking.set('Checking Minallo features...');
+                          } else {
+                            thinking.set('Structuring the answer...');
+                          }
+                        }
                         if (evt.t) {
                           ensureBubble();
                           queueToken(evt.t);
@@ -997,7 +1097,7 @@ export function initAskAI(
               })
               .catch((err: unknown) => {
                 if (err && (err as { name?: string }).name === 'AbortError') {
-                  if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
+                  removeThinking();
                   // Drop a partial streaming bubble entirely instead of letting
                   // its cropped contents get persisted by saveChatForFile on
                   // the next unload/showPortal trigger. The user explicitly
@@ -1019,13 +1119,8 @@ export function initAskAI(
 
             function fallbackToRag(): void {
               if (ansWrap) ansWrap.remove();
-              if (thinkWrap && !thinkWrap.parentNode) {
-                thinkWrap.className = 'ai-msg-wrap typing-wrap';
-                thinkWrap.innerHTML =
-                  '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-                  '<div class="typing-bubble"><span></span><span></span><span></span></div>';
-                aiMsgs.appendChild(thinkWrap);
-              }
+              if (!thinking) thinking = createThinkingStatus(_isProblemSolver ? 'problem' : 'normal', aiMsgs);
+              if (thinking) thinking.set('Preparing answer...');
               sendRagRequest(
                 _courseId,
                 question,
@@ -1035,12 +1130,12 @@ export function initAskAI(
                 _streamOpenFileCtx || undefined
               )
                 .then((data: RagAskResponse) => {
-                  if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
+                  removeThinking();
                   let answer = stripSourceMarkers(data.answer || 'No answer found.');
                   resolve({ content: [{ text: answer }], _ragData: data as unknown as AiResponse['_ragData'] });
                 })
                 .catch((err: unknown) => {
-                  if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
+                  removeThinking();
                   const msg = err instanceof Error ? ' (' + err.message + ')' : '';
                   resolve({ content: [{ text: '❌ Could not reach the AI' + msg + '. Please try again.' }] });
                 });
@@ -1118,7 +1213,7 @@ export function initAskAI(
       .then((data: unknown) => {
         const d = data as AiResponse;
         if (myGenId !== state.currentGenId) {
-          if (!d._streamWrap) thinkWrap.remove();
+          if (!d._streamWrap) removeThinking();
           return;
         }
 
@@ -1155,11 +1250,7 @@ export function initAskAI(
           return;
         }
 
-        if (thinkWrap && thinkWrap.parentNode) {
-          thinkWrap.style.transition = 'opacity .3s';
-          thinkWrap.style.opacity = '0';
-          setTimeout(() => thinkWrap.remove(), 320);
-        }
+        removeThinking();
 
         const _ragMeta: RagMeta | null = d._ragData
           ? {
@@ -1271,7 +1362,7 @@ export function initAskAI(
         }, 60);
       })
       .catch((e: unknown) => {
-        thinkWrap.remove();
+        removeThinking();
         const msg = e instanceof Error ? e.message : String(e);
         if (window.addBotMsg)
           window.addBotMsg(_isSubscriptionError(msg) ? _subscriptionMsg() : '❌ Error: ' + msg);

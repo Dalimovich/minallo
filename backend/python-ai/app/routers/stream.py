@@ -280,8 +280,8 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         )
 
     def cached_stream():
-        # Emit the cached answer in a single 'done' event so the client
-        # renders it without setup overhead.
+        # Replay cached answers in small chunks so cache hits still feel like
+        # the live stream instead of appearing as one sudden blob.
         import json
         # Cached answers carry the verification block they were generated
         # with — honour it instead of falling back to the legacy
@@ -303,8 +303,9 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             "confidence": cached_confidence,
             "unsupported": cached.get("retrievalMode") != "strong",
         }))
-        # Send the answer as one token so the existing client loop renders it.
-        yield _sse_bytes(json.dumps({"t": cached.get("answer", "")}))
+        cached_answer = cached.get("answer", "")
+        for i in range(0, len(cached_answer), 28):
+            yield _sse_bytes(json.dumps({"t": cached_answer[i:i + 28]}))
         # Translate Python-shape groundedSources to the JS-frontend shape.
         sources_js = _cached_grounded_sources_to_js(cached.get("groundedSources") or [])
         yield _sse_bytes(json.dumps({
