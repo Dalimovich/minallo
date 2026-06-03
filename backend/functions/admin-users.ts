@@ -5,8 +5,9 @@ import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { logSecurityEvent } from '../lib/logger';
 import { isUuid } from '../lib/validation';
 import {
-  bucketSignups, summarizeSubscriptions, computeRetention,
-  isBucket, isRange, RANGE_DAYS, type Bucket, type Range, type SubRow, type SubEvent
+  bucketSignups, summarizeSubscriptions, computeRetention, computeFinancials,
+  isBucket, isRange, RANGE_DAYS, type Bucket, type Range, type SubRow, type SubEvent,
+  type CostConfig, type UserUsage
 } from '../lib/admin-stats';
 import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../lib/types';
 
@@ -60,7 +61,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   let action: unknown, query = '', userId: unknown, plan: unknown,
       reportId: unknown, status: unknown, resolutionNote = '',
-      range: unknown, bucket: unknown, months: unknown;
+      range: unknown, bucket: unknown, months: unknown, config: unknown;
   try {
     const b = JSON.parse(event.body || '{}') as Record<string, unknown>;
     if (!b || typeof b !== 'object' || Array.isArray(b)) return fail(400, 'Invalid body');
@@ -74,6 +75,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     range = b.range;
     bucket = b.bucket;
     months = b.months;
+    config = b.config;
   } catch { return fail(400, 'Invalid body'); }
 
   const callerToken = extractBearerToken(event.headers);
@@ -88,7 +90,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(500, 'Delete failed');
   }
 
-  if (typeof action !== 'string' || !['status', 'search', 'setplan', 'reports', 'resolvereport', 'signups', 'subscriptions', 'retention'].includes(action)) {
+  if (typeof action !== 'string' || !['status', 'search', 'setplan', 'reports', 'resolvereport', 'signups', 'subscriptions', 'retention', 'financials', 'getcostconfig', 'savecostconfig'].includes(action)) {
     return fail(400, 'Unknown action');
   }
 
@@ -270,5 +272,137 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     });
   }
 
+  // ── Financial: editable cost config (get / save) ──────────────────────────
+  if (action === 'getcostconfig') {
+    return jsonResponse(200, { config: await loadCostConfig(serviceKey) });
+  }
+
+  if (action === 'savecostconfig') {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return fail(400, 'Invalid config');
+    const c = config as Record<string, unknown>;
+    const num = (v: unknown): number | null => {
+      const n = typeof v === 'number' ? v : parseFloat(String(v));
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+    const row = {
+      id: 1,
+      monthly_price_cents: num(c.monthlyPriceCents),
+      payment_fee_pct: num(c.paymentFeePct),
+      payment_fee_fixed_cents: num(c.paymentFeeFixedCents),
+      ai_interactive_cost_cents: num(c.aiInteractiveCostCents),
+      ai_generation_cost_cents: num(c.aiGenerationCostCents),
+      supabase_cost_cents: num(c.supabaseCostCents),
+      hosting_cost_cents: num(c.hostingCostCents),
+      other_cost_cents: num(c.otherCostCents),
+      updated_at: new Date().toISOString()
+    };
+    if (Object.values(row).some((v) => v === null)) return fail(400, 'All cost fields must be non-negative numbers');
+    const saveRes = await supaRequest('POST', 'admin_financial_config?on_conflict=id', row,
+      serviceKey, { Prefer: 'resolution=merge-duplicates,return=minimal' });
+    if (saveRes.status < 200 || saveRes.status >= 300) return fail(500, 'Could not save cost config');
+    await logSecurityEvent(serviceKey, callerUser.id, 'admin_save_cost_config', { auth_method: adminCheck.method });
+    return jsonResponse(200, { ok: true, config: await loadCostConfig(serviceKey) });
+  }
+
+  // ── Financial: revenue / cost / profit overview ───────────────────────────
+  if (action === 'financials') {
+    const cfg = await loadCostConfig(serviceKey);
+
+    // Paid users (pro + active) from the subscriptions table.
+    const subRes = await supaRequest<Array<{ user_id?: string; plan?: string; status?: string }>>(
+      'GET', 'subscriptions?select=user_id,plan,status', null, serviceKey
+    );
+    const subRows = Array.isArray(subRes.body) ? subRes.body : [];
+    const paidSet = new Set<string>();
+    for (const r of subRows) {
+      if (r.user_id && String(r.plan).toLowerCase() === 'pro' && String(r.status).toLowerCase() === 'active') {
+        paidSet.add(String(r.user_id));
+      }
+    }
+
+    // This month's AI usage from security_events.
+    const since = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+    const INTERACTIVE_TYPES = ['ai_ask', 'ai_chat', 'writing_coach_analyse', 'ask_stream'];
+    const GENERATION_TYPES = ['ai_generate', 'notes_generate'];
+    const allTypes = [...INTERACTIVE_TYPES, ...GENERATION_TYPES].map(encodeURIComponent).join(',');
+    const evRes = await supaRequest<Array<{ user_id?: string; event_type?: string }>>(
+      'GET',
+      'security_events?event_type=in.(' + allTypes + ')&created_at=gte.' + encodeURIComponent(since) +
+        '&select=user_id,event_type&limit=200000',
+      null, serviceKey
+    );
+    const evRows = Array.isArray(evRes.body) ? evRes.body : [];
+
+    const usageMap = new Map<string, { interactive: number; generation: number }>();
+    for (const e of evRows) {
+      const uid = e.user_id ? String(e.user_id) : '';
+      if (!uid) continue;
+      const u = usageMap.get(uid) || { interactive: 0, generation: 0 };
+      if (GENERATION_TYPES.includes(String(e.event_type))) u.generation++;
+      else u.interactive++;
+      usageMap.set(uid, u);
+    }
+
+    // Union of paid users and users with usage.
+    const userIds = new Set<string>([...paidSet, ...usageMap.keys()]);
+    const users: UserUsage[] = Array.from(userIds).map((uid) => {
+      const u = usageMap.get(uid) || { interactive: 0, generation: 0 };
+      return { userId: uid, interactive: u.interactive, generation: u.generation, paid: paidSet.has(uid) };
+    });
+
+    const result = computeFinancials(users, cfg);
+
+    // Attach emails for the (bounded) danger-user list only.
+    for (const d of result.dangerUsers) {
+      try {
+        const uRes = await supaAuthAdminRequest<{ email?: string }>('GET', 'users/' + d.userId, serviceKey);
+        if (uRes.status >= 200 && uRes.status < 300 && uRes.body && uRes.body.email) d.email = uRes.body.email;
+      } catch { /* best-effort */ }
+    }
+
+    await logSecurityEvent(serviceKey, callerUser.id, 'admin_stats_financials', {
+      active_paid: result.activePaid, auth_method: adminCheck.method
+    });
+    return jsonResponse(200, { ...result, metadata: { generatedAt: new Date().toISOString() } });
+  }
+
   return fail(400, 'Unknown action');
 };
+
+// Loads the singleton cost-config row, mapping snake_case → CostConfig and
+// falling back to sensible defaults if the table/row isn't present yet.
+async function loadCostConfig(serviceKey: string): Promise<CostConfig> {
+  const defaults: CostConfig = {
+    monthlyPriceCents: 1199,
+    paymentFeePct: 2.9,
+    paymentFeeFixedCents: 35,
+    aiInteractiveCostCents: 0.1,
+    aiGenerationCostCents: 0.5,
+    supabaseCostCents: 2500,
+    hostingCostCents: 500,
+    otherCostCents: 0
+  };
+  try {
+    const res = await supaRequest<Array<Record<string, unknown>>>(
+      'GET', 'admin_financial_config?id=eq.1&select=*&limit=1', null, serviceKey
+    );
+    const row = Array.isArray(res.body) && res.body[0] ? res.body[0] : null;
+    if (!row) return defaults;
+    const n = (v: unknown, d: number): number => {
+      const x = typeof v === 'number' ? v : parseFloat(String(v));
+      return Number.isFinite(x) ? x : d;
+    };
+    return {
+      monthlyPriceCents: n(row.monthly_price_cents, defaults.monthlyPriceCents),
+      paymentFeePct: n(row.payment_fee_pct, defaults.paymentFeePct),
+      paymentFeeFixedCents: n(row.payment_fee_fixed_cents, defaults.paymentFeeFixedCents),
+      aiInteractiveCostCents: n(row.ai_interactive_cost_cents, defaults.aiInteractiveCostCents),
+      aiGenerationCostCents: n(row.ai_generation_cost_cents, defaults.aiGenerationCostCents),
+      supabaseCostCents: n(row.supabase_cost_cents, defaults.supabaseCostCents),
+      hostingCostCents: n(row.hosting_cost_cents, defaults.hostingCostCents),
+      otherCostCents: n(row.other_cost_cents, defaults.otherCostCents)
+    };
+  } catch {
+    return defaults;
+  }
+}

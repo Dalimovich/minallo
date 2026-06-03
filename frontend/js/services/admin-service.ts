@@ -1,7 +1,8 @@
 interface AdminFetchBody {
   action:
     | 'status' | 'search' | 'setplan' | 'reports' | 'resolvereport' | 'deleteself'
-    | 'signups' | 'subscriptions' | 'retention';
+    | 'signups' | 'subscriptions' | 'retention'
+    | 'financials' | 'getcostconfig' | 'savecostconfig';
   [k: string]: unknown;
 }
 
@@ -84,6 +85,71 @@ export async function getRetentionStats(months = 12): Promise<RetentionStats | n
   const res = await _adminFetch({ action: 'retention', months });
   if (!res.ok) return null;
   return res.json().catch(() => null);
+}
+
+// ── Financial overview ──────────────────────────────────────────────────────
+
+export interface CostConfig {
+  monthlyPriceCents: number;
+  paymentFeePct: number;
+  paymentFeeFixedCents: number;
+  aiInteractiveCostCents: number;
+  aiGenerationCostCents: number;
+  supabaseCostCents: number;
+  hostingCostCents: number;
+  otherCostCents: number;
+}
+
+export interface DangerUser {
+  userId: string;
+  email?: string;
+  paid: boolean;
+  revenueCents: number;
+  aiCostCents: number;
+  feeCents: number;
+  profitCents: number;
+  interactive: number;
+  generation: number;
+  flag: 'loss' | 'high' | 'ok';
+}
+
+export interface FinancialStats {
+  activePaid: number;
+  totalUsersWithUsage: number;
+  mrrCents: number;
+  revenueCents: number;
+  aiCostCents: number;
+  paymentFeesCents: number;
+  fixedCostsCents: number;
+  netProfitCents: number;
+  profitMargin: number;
+  aiCostPerUserCents: number;
+  aiCostPerPaidUserCents: number;
+  profitPerPaidUserCents: number;
+  interactiveCalls: number;
+  generationCalls: number;
+  dangerUsers: DangerUser[];
+  config: CostConfig;
+}
+
+export async function getFinancials(): Promise<FinancialStats | null> {
+  const res = await _adminFetch({ action: 'financials' });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+export async function getCostConfig(): Promise<CostConfig | null> {
+  const res = await _adminFetch({ action: 'getcostconfig' });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  return data && typeof data === 'object' && 'config' in data ? (data as { config: CostConfig }).config : null;
+}
+
+export async function saveCostConfig(config: CostConfig): Promise<FinancialStats['config'] | null> {
+  const res = await _adminFetch({ action: 'savecostconfig', config });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  return data && typeof data === 'object' && 'config' in data ? (data as { config: CostConfig }).config : null;
 }
 
 export interface ReindexCourseResult {

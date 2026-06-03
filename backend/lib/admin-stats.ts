@@ -192,6 +192,148 @@ export interface RetentionMonth {
   cancelled: number; // users who cancelled/expired this month
 }
 
+// ── Financial overview ───────────────────────────────────────────────────────
+// Revenue + cost + profit, computed from real subscription rows and the monthly
+// AI request counts (security_events), plus the editable cost config. All money
+// in integer cents in, rounded cents out.
+export interface CostConfig {
+  monthlyPriceCents: number;
+  paymentFeePct: number;            // e.g. 2.9 (%)
+  paymentFeeFixedCents: number;     // e.g. 35 (per paying user / transaction)
+  aiInteractiveCostCents: number;   // estimated cost per interactive AI call
+  aiGenerationCostCents: number;    // estimated cost per generation AI call
+  supabaseCostCents: number;
+  hostingCostCents: number;
+  otherCostCents: number;
+}
+
+// Per-user monthly AI usage + whether they're a paying (pro/active) user.
+export interface UserUsage {
+  userId: string;
+  email?: string;
+  interactive: number;
+  generation: number;
+  paid: boolean;
+}
+
+export interface DangerUser {
+  userId: string;
+  email?: string;
+  paid: boolean;
+  revenueCents: number;
+  aiCostCents: number;
+  feeCents: number;
+  profitCents: number;
+  interactive: number;
+  generation: number;
+  flag: 'loss' | 'high' | 'ok';
+}
+
+export interface FinancialResult {
+  activePaid: number;
+  totalUsersWithUsage: number;
+  mrrCents: number;
+  revenueCents: number;            // monthly subscription revenue
+  aiCostCents: number;
+  paymentFeesCents: number;
+  fixedCostsCents: number;
+  netProfitCents: number;
+  profitMargin: number;            // percent, 1 decimal
+  aiCostPerUserCents: number;      // across all users with usage
+  aiCostPerPaidUserCents: number;
+  profitPerPaidUserCents: number;
+  interactiveCalls: number;
+  generationCalls: number;
+  dangerUsers: DangerUser[];
+  config: CostConfig;
+}
+
+function _round(n: number): number {
+  return Math.round(n);
+}
+
+export function computeFinancials(
+  users: UserUsage[],
+  cfg: CostConfig,
+  dangerLimit = 15
+): FinancialResult {
+  const price = cfg.monthlyPriceCents;
+  const perPaidFeeCents = (u: { paid: boolean }) =>
+    u.paid ? (price * cfg.paymentFeePct) / 100 + cfg.paymentFeeFixedCents : 0;
+
+  let activePaid = 0;
+  let interactiveCalls = 0;
+  let generationCalls = 0;
+  let aiCostCents = 0;
+
+  const rows: DangerUser[] = [];
+  for (const u of users) {
+    if (u.paid) activePaid++;
+    interactiveCalls += u.interactive;
+    generationCalls += u.generation;
+    const userAiCost =
+      u.interactive * cfg.aiInteractiveCostCents + u.generation * cfg.aiGenerationCostCents;
+    aiCostCents += userAiCost;
+
+    const revenueCents = u.paid ? price : 0;
+    const feeCents = perPaidFeeCents(u);
+    const profitCents = revenueCents - userAiCost - feeCents;
+    // Flag a paying user who costs more than they bring in, or a heavy user.
+    let flag: DangerUser['flag'] = 'ok';
+    if (u.paid && profitCents < 0) flag = 'loss';
+    else if (userAiCost > price) flag = 'high';
+    rows.push({
+      userId: u.userId,
+      email: u.email,
+      paid: u.paid,
+      revenueCents: _round(revenueCents),
+      aiCostCents: _round(userAiCost),
+      feeCents: _round(feeCents),
+      profitCents: _round(profitCents),
+      interactive: u.interactive,
+      generation: u.generation,
+      flag
+    });
+  }
+
+  const mrrCents = activePaid * price;
+  const revenueCents = mrrCents; // monthly recurring revenue = monthly revenue here
+  const paymentFeesCents = activePaid * ((price * cfg.paymentFeePct) / 100 + cfg.paymentFeeFixedCents);
+  const fixedCostsCents = cfg.supabaseCostCents + cfg.hostingCostCents + cfg.otherCostCents;
+  const netProfitCents = revenueCents - aiCostCents - paymentFeesCents - fixedCostsCents;
+  const profitMargin =
+    revenueCents > 0 ? Math.round((netProfitCents / revenueCents) * 1000) / 10 : 0;
+
+  const usersWithUsage = users.filter((u) => u.interactive > 0 || u.generation > 0).length;
+  const paidAiCost = users
+    .filter((u) => u.paid)
+    .reduce((s, u) => s + u.interactive * cfg.aiInteractiveCostCents + u.generation * cfg.aiGenerationCostCents, 0);
+
+  const dangerUsers = rows
+    .filter((r) => r.aiCostCents > 0 || r.paid)
+    .sort((a, b) => a.profitCents - b.profitCents) // worst (most negative) first
+    .slice(0, dangerLimit);
+
+  return {
+    activePaid,
+    totalUsersWithUsage: usersWithUsage,
+    mrrCents: _round(mrrCents),
+    revenueCents: _round(revenueCents),
+    aiCostCents: _round(aiCostCents),
+    paymentFeesCents: _round(paymentFeesCents),
+    fixedCostsCents: _round(fixedCostsCents),
+    netProfitCents: _round(netProfitCents),
+    profitMargin,
+    aiCostPerUserCents: usersWithUsage > 0 ? _round(aiCostCents / usersWithUsage) : 0,
+    aiCostPerPaidUserCents: activePaid > 0 ? _round(paidAiCost / activePaid) : 0,
+    profitPerPaidUserCents: activePaid > 0 ? _round(netProfitCents / activePaid) : 0,
+    interactiveCalls,
+    generationCalls,
+    dangerUsers,
+    config: cfg
+  };
+}
+
 const PAID_EVENTS = new Set(['paid', 'converted', 'renewed']);
 const END_EVENTS = new Set(['cancelled', 'expired']);
 

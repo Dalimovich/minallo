@@ -11,6 +11,9 @@ import {
   type SignupStats,
   type SubscriptionStats,
   type RetentionStats,
+  type FinancialStats,
+  type DangerUser,
+  type CostConfig,
 } from '../../services/admin-service.js';
 // Analytics functions are reached via a namespace import on purpose: this
 // module is lazy-imported when the admin page opens, and a stale browser-cached
@@ -121,7 +124,7 @@ async function loadAdminStats(): Promise<void> {
     return;
   }
   try {
-    await Promise.all([reloadSignupChart(), loadSubscriptionCards(), loadRetention()]);
+    await Promise.all([loadFinancials(), reloadSignupChart(), loadSubscriptionCards(), loadRetention()]);
     if (loading) loading.style.display = 'none';
     if (body) body.style.display = '';
   } catch {
@@ -241,6 +244,167 @@ async function loadRetention(): Promise<void> {
   }
   table.appendChild(tbody);
   host.appendChild(table);
+}
+
+// ── Financial overview ──────────────────────────────────────────────────────
+
+function _eur(cents: number): string {
+  return (cents / 100).toFixed(2) + ' €';
+}
+
+async function loadFinancials(): Promise<void> {
+  const cards = document.getElementById('adminFinanceCards');
+  if (!cards) return;
+  const data: FinancialStats | null = adminSvc.getFinancials ? await adminSvc.getFinancials() : null;
+  if (!data) {
+    cards.innerHTML =
+      '<div style="color:var(--on-glass-muted);font-size:.8rem">Financial data unavailable. Apply the <code>admin_financial_config</code> migration.</div>';
+    return;
+  }
+  cards.innerHTML = '';
+  const profitAccent = data.netProfitCents >= 0 ? '#6ee7b7' : '#f87171';
+  cards.appendChild(_statCard('MRR', _eur(data.mrrCents), '#7dd3fc'));
+  cards.appendChild(_statCard('Revenue / mo', _eur(data.revenueCents), '#7dd3fc'));
+  cards.appendChild(_statCard('Net profit', _eur(data.netProfitCents), profitAccent));
+  cards.appendChild(_statCard('Profit margin', data.profitMargin + '%', profitAccent));
+  cards.appendChild(_statCard('Active paid', data.activePaid));
+  cards.appendChild(_statCard('Profit / paid user', _eur(data.profitPerPaidUserCents), profitAccent));
+  cards.appendChild(_statCard('AI cost / mo', _eur(data.aiCostCents), '#fbbf24'));
+  cards.appendChild(_statCard('AI cost / paid user', _eur(data.aiCostPerPaidUserCents), '#fbbf24'));
+
+  _renderFinanceBreakdown(data);
+  _renderDangerUsers(data.dangerUsers);
+  _renderCostConfig(data.config);
+}
+
+function _renderFinanceBreakdown(data: FinancialStats): void {
+  const host = document.getElementById('adminFinanceBreakdown');
+  if (!host) return;
+  const rows: Array<[string, number, boolean]> = [
+    ['Subscription revenue', data.revenueCents, false],
+    ['AI API costs', -data.aiCostCents, true],
+    ['Payment fees', -data.paymentFeesCents, true],
+    ['Fixed costs (Supabase / hosting / other)', -data.fixedCostsCents, true],
+    ['Net profit', data.netProfitCents, false],
+  ];
+  host.innerHTML =
+    '<div style="background:var(--glass-surface,rgba(255,255,255,.04));border:1px solid var(--glass-border,rgba(255,255,255,.08));border-radius:14px;padding:14px 16px">' +
+    rows
+      .map((r, i) => {
+        const isResult = i === rows.length - 1;
+        const color = r[1] < 0 ? '#f87171' : isResult ? (r[1] >= 0 ? '#6ee7b7' : '#f87171') : 'var(--on-glass)';
+        return (
+          '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;' +
+          (isResult ? 'border-top:1px solid var(--glass-border,rgba(255,255,255,.12));margin-top:4px;font-weight:800' : 'font-size:.85rem') +
+          '">' +
+          '<span style="color:var(--on-glass-muted)">' + escapeHtml(r[0]) + '</span>' +
+          '<span style="color:' + color + ';font-weight:700">' + _eur(r[1]) + '</span>' +
+          '</div>'
+        );
+      })
+      .join('') +
+    '<div style="font-size:.7rem;color:var(--on-glass-muted);margin-top:8px">' +
+    data.interactiveCalls + ' interactive + ' + data.generationCalls + ' generation AI calls this month' +
+    '</div></div>';
+}
+
+function _renderDangerUsers(users: DangerUser[]): void {
+  const host = document.getElementById('adminDangerUsers');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!users.length) {
+    host.innerHTML = '<div style="color:var(--on-glass-muted);font-size:.8rem">No paid users or AI usage yet.</div>';
+    return;
+  }
+  const table = document.createElement('table');
+  table.style.cssText = 'width:100%;border-collapse:collapse;font-size:.8rem';
+  table.innerHTML =
+    '<thead><tr>' +
+    ['User', 'Plan', 'Revenue', 'AI cost', 'Profit', 'Calls', '']
+      .map((h) => '<th style="text-align:left;padding:6px 9px;color:var(--on-glass-muted);font-weight:700;border-bottom:1px solid var(--glass-border,rgba(255,255,255,.1))">' + h + '</th>')
+      .join('') +
+    '</tr></thead>';
+  const tbody = document.createElement('tbody');
+  users.forEach((u) => {
+    const flag =
+      u.flag === 'loss' ? '<span style="color:#f87171;font-weight:800">✕ loss</span>'
+      : u.flag === 'high' ? '<span style="color:#fbbf24;font-weight:800">⚠ high</span>'
+      : '<span style="color:#6ee7b7">ok</span>';
+    const profitColor = u.profitCents < 0 ? '#f87171' : '#6ee7b7';
+    const cells = [
+      escapeHtml(u.email || u.userId.slice(0, 8) + '…'),
+      u.paid ? 'Paid' : 'Free',
+      _eur(u.revenueCents),
+      _eur(u.aiCostCents),
+      '<span style="color:' + profitColor + ';font-weight:700">' + _eur(u.profitCents) + '</span>',
+      String(u.interactive + u.generation),
+      flag,
+    ];
+    const tr = document.createElement('tr');
+    tr.innerHTML = cells
+      .map((c, i) => '<td style="padding:6px 9px;border-bottom:1px solid var(--glass-border,rgba(255,255,255,.06));' + (i === 0 ? 'font-weight:700' : 'color:var(--on-glass-muted)') + '">' + c + '</td>')
+      .join('');
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  host.appendChild(table);
+}
+
+// Editable cost config — euro inputs mapped to/from cents.
+const _COST_FIELDS: Array<{ key: keyof CostConfig; label: string; unit: 'eur' | 'pct'; cents: boolean }> = [
+  { key: 'monthlyPriceCents', label: 'Subscription price (€)', unit: 'eur', cents: true },
+  { key: 'paymentFeePct', label: 'Payment fee (%)', unit: 'pct', cents: false },
+  { key: 'paymentFeeFixedCents', label: 'Payment fee fixed (€)', unit: 'eur', cents: true },
+  { key: 'aiInteractiveCostCents', label: 'AI cost / interactive call (¢)', unit: 'pct', cents: false },
+  { key: 'aiGenerationCostCents', label: 'AI cost / generation call (¢)', unit: 'pct', cents: false },
+  { key: 'supabaseCostCents', label: 'Supabase / mo (€)', unit: 'eur', cents: true },
+  { key: 'hostingCostCents', label: 'Hosting / mo (€)', unit: 'eur', cents: true },
+  { key: 'otherCostCents', label: 'Other / mo (€)', unit: 'eur', cents: true },
+];
+
+function _renderCostConfig(cfg: CostConfig): void {
+  const host = document.getElementById('adminCostConfig');
+  if (!host || host.dataset['built'] === '1') return;
+  host.dataset['built'] = '1';
+  host.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">' +
+    _COST_FIELDS.map((f) => {
+      const raw = cfg[f.key];
+      const val = f.cents ? (raw / 100).toFixed(2) : String(raw);
+      return (
+        '<label style="font-size:.72rem;color:var(--on-glass-muted);font-weight:600;display:flex;flex-direction:column;gap:3px">' +
+        escapeHtml(f.label) +
+        '<input class="chat-friend-search" data-cfg="' + f.key + '" type="number" step="0.01" min="0" value="' + escapeHtml(val) + '" style="width:100%" /></label>'
+      );
+    }).join('') +
+    '</div>' +
+    '<button id="adminCostSave" class="sub-btn" style="width:auto;padding:8px 18px;font-size:.78rem;margin-top:10px">Save & recompute</button>';
+
+  const saveBtn = document.getElementById('adminCostSave') as HTMLButtonElement | null;
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const next = {} as CostConfig;
+      _COST_FIELDS.forEach((f) => {
+        const el = host.querySelector<HTMLInputElement>('input[data-cfg="' + f.key + '"]');
+        const num = el ? parseFloat(el.value) : NaN;
+        const safe = Number.isFinite(num) && num >= 0 ? num : 0;
+        next[f.key] = f.cents ? Math.round(safe * 100) : safe;
+      });
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        if (adminSvc.saveCostConfig) await adminSvc.saveCostConfig(next);
+        if (typeof window.showToast === 'function') window.showToast('Cost config saved', 'Recomputing profit…');
+        await loadFinancials();
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (typeof window.showToast === 'function') window.showToast('Save failed', msg);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save & recompute';
+      }
+    });
+  }
 }
 
 // ── Retrieval inspector ────────────────────────────────────────────────────
