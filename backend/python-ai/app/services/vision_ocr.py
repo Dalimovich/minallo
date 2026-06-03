@@ -428,4 +428,79 @@ def select_pages_needing_ocr(pages: list[str]) -> list[int]:
     return bad
 
 
-__all__ = ("pages_via_vision", "select_pages_needing_ocr")
+# Filename markers for the German/English "formula sheet" genre. A doc whose
+# name matches is routed to Mathpix under ``formulasheet_only`` even when its
+# pdfminer text is empty (scanned) — the filename is the only signal we get
+# for an image-only formula sheet.
+_FORMULA_NAME_HINTS = (
+    "formel",        # Formel, Formelzettel, Formelsammlung
+    "formula",
+    "cheatsheet",
+    "cheat-sheet",
+    "cheat_sheet",
+    "spickzettel",
+)
+
+# Minimum number of `=` across the pages we're about to OCR before the
+# content heuristic calls a document a formula sheet. Tuned low because a
+# real formula sheet page carries many equations; a prose lecture page with
+# one ``F = ma`` stays well under it.
+_FORMULA_EQ_THRESHOLD = 8
+
+
+def _is_formula_sheet(file_name: str, pages: list[str], bad_idx: list[int]) -> bool:
+    """True when the document looks like a formula sheet — by filename or by
+    the equation density of the pages flagged for OCR."""
+    name = (file_name or "").lower()
+    if any(hint in name for hint in _FORMULA_NAME_HINTS):
+        return True
+    # Content signal: measure `=` density on the bad pages specifically (the
+    # ones heading to OCR). Fall back to all pages when the bad pages are
+    # empty — a scanned formula sheet has no extractable `=` to count, so the
+    # filename branch above is its only route to Mathpix.
+    sample = [pages[i] for i in bad_idx if 0 <= i < len(pages) and pages[i]]
+    if not sample:
+        return False
+    eq_total = sum(p.count("=") for p in sample)
+    return eq_total >= _FORMULA_EQ_THRESHOLD
+
+
+def choose_ocr_provider(file_name: str, pages: list[str], bad_idx: list[int]) -> str:
+    """Pick the OCR backend for this document's bad pages.
+
+    Honours ``settings.mathpix_routing``:
+      * ``"off"``               → always OpenAI vision
+      * ``"always"``            → Mathpix (when credentials present)
+      * ``"formulasheet_only"`` → Mathpix only when the doc looks like a
+                                  formula sheet (filename hint or equation
+                                  density), else OpenAI
+
+    Falls back to ``"openai"`` whenever Mathpix is requested but its
+    credentials are missing, or the routing value is unrecognised — so the
+    indexer never silently does nothing.
+    """
+    settings = get_settings()
+    routing = (settings.mathpix_routing or "off").lower()
+
+    if routing == "off":
+        return "openai"
+
+    # Mathpix needs both credentials regardless of mode. Without them, the
+    # only safe choice is the OpenAI path.
+    if not (settings.mathpix_app_id and settings.mathpix_app_key):
+        log.info("mathpix_routing=%s but MATHPIX_APP_ID/KEY unset — using OpenAI vision", routing)
+        return "openai"
+
+    if routing == "always":
+        return "mathpix"
+
+    if routing == "formulasheet_only":
+        if _is_formula_sheet(file_name, pages, bad_idx):
+            return "mathpix"
+        return "openai"
+
+    log.warning("unknown MINALLO_MATHPIX_ROUTING=%r — defaulting to OpenAI vision", routing)
+    return "openai"
+
+
+__all__ = ("pages_via_vision", "select_pages_needing_ocr", "choose_ocr_provider")

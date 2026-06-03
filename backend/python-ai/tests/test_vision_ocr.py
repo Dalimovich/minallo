@@ -27,9 +27,14 @@ class _FakeSettings:
     vision_ocr_max_pages = 20
     vision_ocr_render_dpi = 150
     openai_api_key = "test"
+    # Mathpix routing defaults — overridden per-test below.
+    mathpix_routing = "off"
+    mathpix_app_id = None
+    mathpix_app_key = None
 
 
 from app.services.vision_ocr import (  # noqa: E402
+    choose_ocr_provider,
     pages_via_vision,
     select_pages_needing_ocr,
 )
@@ -269,3 +274,95 @@ def test_select_pages_needing_ocr_combines_both_signals() -> None:
     assert 0 in flagged   # letter-starved
     assert 1 not in flagged  # clean
     assert 2 in flagged   # structurally garbled
+
+
+# ── choose_ocr_provider (Mathpix routing) ──────────────────────────────────
+
+
+def _provider_with(settings_cls, file_name, pages, bad_idx) -> str:
+    with patch("app.services.vision_ocr.get_settings", lambda: settings_cls()):
+        return choose_ocr_provider(file_name, pages, bad_idx)
+
+
+def test_routing_off_always_openai() -> None:
+    """routing='off' never picks Mathpix, even with credentials + a formula
+    sheet name."""
+    class S(_FakeSettings):
+        mathpix_routing = "off"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    assert _provider_with(S, "Formelzettel.pdf", ["x = y " * 10], [0]) == "openai"
+
+
+def test_routing_always_picks_mathpix_with_credentials() -> None:
+    class S(_FakeSettings):
+        mathpix_routing = "always"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    assert _provider_with(S, "lecture.pdf", ["plain prose"], [0]) == "mathpix"
+
+
+def test_routing_always_falls_back_to_openai_without_credentials() -> None:
+    """Mathpix requested but credentials missing → must not silently no-op;
+    fall back to OpenAI vision."""
+    class S(_FakeSettings):
+        mathpix_routing = "always"
+        mathpix_app_id = None
+        mathpix_app_key = None
+
+    assert _provider_with(S, "lecture.pdf", ["plain prose"], [0]) == "openai"
+
+
+def test_formulasheet_only_matches_by_filename() -> None:
+    class S(_FakeSettings):
+        mathpix_routing = "formulasheet_only"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    # Filename hint wins even when the page text is empty (scanned sheet).
+    assert _provider_with(S, "GdK_Formelzettel.pdf", [""], [0]) == "mathpix"
+    assert _provider_with(S, "Formula_Sheet.pdf", [""], [0]) == "mathpix"
+
+
+def test_formulasheet_only_matches_by_equation_density() -> None:
+    """No filename hint, but the OCR'd pages are equation-dense → Mathpix."""
+    class S(_FakeSettings):
+        mathpix_routing = "formulasheet_only"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    dense = "a = b = c = d = e = f = g = h = i = j"  # 9 `=`
+    assert _provider_with(S, "anhang.pdf", [dense], [0]) == "mathpix"
+
+
+def test_formulasheet_only_skips_plain_lecture() -> None:
+    """No filename hint and sparse equations → stays on OpenAI vision."""
+    class S(_FakeSettings):
+        mathpix_routing = "formulasheet_only"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    prose = "Eine Vorlesungsfolie mit nur einer Gleichung F = ma im Text."
+    assert _provider_with(S, "vorlesung_03.pdf", [prose], [0]) == "openai"
+
+
+def test_formulasheet_only_empty_pages_without_name_hint_use_openai() -> None:
+    """Scanned page (empty text) with no formula-sheet filename: we have no
+    signal it's formula-heavy, so don't pay Mathpix — use OpenAI vision."""
+    class S(_FakeSettings):
+        mathpix_routing = "formulasheet_only"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    assert _provider_with(S, "scan_001.pdf", [""], [0]) == "openai"
+
+
+def test_unknown_routing_value_defaults_to_openai() -> None:
+    class S(_FakeSettings):
+        mathpix_routing = "bogus"
+        mathpix_app_id = "id"
+        mathpix_app_key = "key"
+
+    assert _provider_with(S, "Formelzettel.pdf", ["a = b = c = d = e = f = g = h = i"], [0]) == "openai"

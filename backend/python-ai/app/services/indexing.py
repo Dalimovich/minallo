@@ -87,20 +87,30 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         # flag; no-op otherwise.
         ocr_pages_run = 0
         ocr_pages_recovered = 0
+        ocr_provider = "openai"
         try:
-            from .vision_ocr import pages_via_vision, select_pages_needing_ocr  # noqa: WPS433
+            from .vision_ocr import (  # noqa: WPS433
+                choose_ocr_provider,
+                pages_via_vision,
+                select_pages_needing_ocr,
+            )
             bad_idx = select_pages_needing_ocr(pages)
             if bad_idx:
+                # Phase A: route formula-dense pages to Mathpix when
+                # MINALLO_MATHPIX_ROUTING enables it (off → always OpenAI).
+                ocr_provider = choose_ocr_provider(
+                    doc.get("file_name") or "", pages, bad_idx
+                )
                 ocr_pages_run = len(bad_idx)
-                ocr_results = pages_via_vision(pdf_bytes, bad_idx)
+                ocr_results = pages_via_vision(pdf_bytes, bad_idx, provider=ocr_provider)
                 for idx, text in ocr_results.items():
                     if 0 <= idx < len(pages):
                         pages[idx] = text
                 ocr_pages_recovered = len(ocr_results)
                 if ocr_results:
                     log.info(
-                        "vision OCR recovered %d/%d bad pages",
-                        ocr_pages_recovered, ocr_pages_run,
+                        "vision OCR via %s recovered %d/%d bad pages",
+                        ocr_provider, ocr_pages_recovered, ocr_pages_run,
                     )
         except Exception:  # noqa: BLE001
             log.exception("vision OCR pass failed — continuing with pdfminer text only")
@@ -111,9 +121,10 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         # vision_ocr.py, so it survives even when the OCR call itself
         # raises and gets swallowed by the broad except above.
         log.info(
-            "indexing.ocr_summary document_id=%s file=%s pages_attempted=%d pages_recovered=%d",
+            "indexing.ocr_summary document_id=%s file=%s provider=%s pages_attempted=%d pages_recovered=%d",
             document_id,
             (doc.get("file_name") or "?"),
+            ocr_provider,
             ocr_pages_run,
             ocr_pages_recovered,
         )
@@ -233,12 +244,14 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             if isinstance(ocr_assessment_json, dict):
                 ocr_assessment_json = {
                     **ocr_assessment_json,
+                    "indexer_ocr_provider": ocr_provider,
                     "indexer_ocr_attempted": ocr_pages_run,
                     "indexer_ocr_recovered": ocr_pages_recovered,
                     "indexer_ocr_status": "partial_failure",
                 }
             else:
                 ocr_assessment_json = {
+                    "indexer_ocr_provider": ocr_provider,
                     "indexer_ocr_attempted": ocr_pages_run,
                     "indexer_ocr_recovered": ocr_pages_recovered,
                     "indexer_ocr_status": "partial_failure",
@@ -249,6 +262,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             if isinstance(ocr_assessment_json, dict):
                 ocr_assessment_json = {
                     **ocr_assessment_json,
+                    "indexer_ocr_provider": ocr_provider,
                     "indexer_ocr_attempted": ocr_pages_run,
                     "indexer_ocr_recovered": ocr_pages_recovered,
                     "indexer_ocr_status": (
@@ -257,6 +271,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 }
             else:
                 ocr_assessment_json = {
+                    "indexer_ocr_provider": ocr_provider,
                     "indexer_ocr_attempted": ocr_pages_run,
                     "indexer_ocr_recovered": ocr_pages_recovered,
                     "indexer_ocr_status": (
