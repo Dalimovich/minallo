@@ -312,20 +312,39 @@ function _renderHistoryPairs(pairs: HistoryPair[] | null, aiMsgs: HTMLElement): 
     const wrap = document.createElement('div');
     wrap.className = 'ai-msg-wrap';
     wrap.setAttribute('data-restored', 'true');
+    // Mirror addBotMsg: copy button in the meta row, and the export/download
+    // action bar below — so restored answers look and behave like live ones.
     wrap.innerHTML =
       '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-      '<div class="msg-body"><div class="ai-bubble bot restored-answer"></div></div>';
+      '<div class="msg-body">' +
+      '<div class="ai-bubble bot restored-answer"></div>' +
+      '<div class="msg-meta">' +
+      '<button class="msg-action-btn" data-action="copy">' +
+      (window._t ? window._t('copy_btn') : 'Copy') +
+      '</button>' +
+      '</div>' +
+      '</div>';
     const bubble = wrap.querySelector<HTMLElement>('.ai-bubble.bot');
     if (bubble) {
       bubble.setAttribute('data-raw', pair.a);
       const _doRender = (): void => {
         bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(pair.a) : escapeHtml(pair.a);
+        // Markdown is only half the job — LaTeX (\(…\), \frac, …) and code
+        // blocks need their own passes, exactly like the live message path.
+        if (window._renderMath) window._renderMath(bubble);
+        if (window._renderCode) window._renderCode(bubble);
       };
       if (window._ssEnsureKatex) {
         window._ssEnsureKatex().then(_doRender).catch(_doRender);
       } else {
         _doRender();
       }
+    }
+    bindMessageActionButtons(wrap);
+    const msgBody = wrap.querySelector<HTMLElement>('.msg-body');
+    if (msgBody && typeof window._aiResponseActions === 'function') {
+      const actions = window._aiResponseActions(pair.a, 'panel') as Node | null;
+      if (actions) msgBody.appendChild(actions);
     }
     aiMsgs.appendChild(wrap);
   });

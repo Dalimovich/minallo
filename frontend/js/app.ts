@@ -711,9 +711,14 @@ window.stopGeneration = (): void => {
   void _ensureAiAskBridge().then((bridge) => bridge.stopGeneration());
 };
 window.restoreCourseHistory = (courseId?: string | null): void => {
-  void _ensureAiAskBridge().then(() => {
-    if (typeof window.restoreCourseHistory === 'function') window.restoreCourseHistory(courseId);
-  });
+  // Ensure the render + export bridges too (not just ask) — otherwise restored
+  // history renders with renderMarkdown/_renderMath/_aiResponseActions missing,
+  // so answers come back as raw markdown/LaTeX with no export buttons.
+  void Promise.all([_ensureAiRenderBridge(), _ensureAiExportBridge()])
+    .then(() => _ensureAiAskBridge())
+    .then(() => {
+      if (typeof window.restoreCourseHistory === 'function') window.restoreCourseHistory(courseId);
+    });
 };
 window.clearCourseHistory = (courseId: string): void => {
   void _ensureAiAskBridge().then(() => {
