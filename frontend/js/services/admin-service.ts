@@ -2,7 +2,7 @@ interface AdminFetchBody {
   action:
     | 'status' | 'search' | 'setplan' | 'reports' | 'resolvereport' | 'deleteself'
     | 'signups' | 'subscriptions' | 'retention'
-    | 'financials' | 'getcostconfig' | 'savecostconfig';
+    | 'financials' | 'getcostconfig' | 'savecostconfig' | 'usage';
   [k: string]: unknown;
 }
 
@@ -83,6 +83,21 @@ export interface RetentionStats {
 
 export async function getRetentionStats(months = 12): Promise<RetentionStats | null> {
   const res = await _adminFetch({ action: 'retention', months });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+// ── Activity & feature usage ────────────────────────────────────────────────
+
+export interface UsageStats {
+  dau: number;
+  wau: number;
+  mau: number;
+  features: Array<{ key: string; label: string; count: number }>;
+}
+
+export async function getUsageStats(): Promise<UsageStats | null> {
+  const res = await _adminFetch({ action: 'usage' });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }

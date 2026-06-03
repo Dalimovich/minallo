@@ -14,6 +14,7 @@ import {
   type FinancialStats,
   type DangerUser,
   type CostConfig,
+  type UsageStats,
 } from '../../services/admin-service.js';
 // Analytics functions are reached via a namespace import on purpose: this
 // module is lazy-imported when the admin page opens, and a stale browser-cached
@@ -124,7 +125,7 @@ async function loadAdminStats(): Promise<void> {
     return;
   }
   try {
-    await Promise.all([loadFinancials(), reloadSignupChart(), loadSubscriptionCards(), loadRetention()]);
+    await Promise.all([loadFinancials(), loadUsage(), reloadSignupChart(), loadSubscriptionCards(), loadRetention()]);
     if (loading) loading.style.display = 'none';
     if (body) body.style.display = '';
   } catch {
@@ -405,6 +406,45 @@ function _renderCostConfig(cfg: CostConfig): void {
       }
     });
   }
+}
+
+// ── Activity & feature usage ────────────────────────────────────────────────
+
+async function loadUsage(): Promise<void> {
+  const cards = document.getElementById('adminActivityCards');
+  if (!cards) return;
+  const data: UsageStats | null = adminSvc.getUsageStats ? await adminSvc.getUsageStats() : null;
+  if (!data) {
+    cards.innerHTML = '<div style="color:var(--on-glass-muted);font-size:.8rem">Usage data unavailable.</div>';
+    return;
+  }
+  cards.innerHTML = '';
+  cards.appendChild(_statCard('Active today (DAU)', data.dau, '#7dd3fc'));
+  cards.appendChild(_statCard('Active this week (WAU)', data.wau, '#7dd3fc'));
+  cards.appendChild(_statCard('Active this month (MAU)', data.mau, '#6ee7b7'));
+
+  const host = document.getElementById('adminFeatureUsage');
+  if (!host) return;
+  const feats = data.features || [];
+  const max = feats.reduce((m, f) => (f.count > m ? f.count : m), 0) || 1;
+  host.innerHTML =
+    '<div style="font-size:.72rem;color:var(--on-glass-muted);margin-bottom:6px">Feature usage this month</div>' +
+    '<div style="display:flex;flex-direction:column;gap:6px">' +
+    feats
+      .map((f) => {
+        const pct = Math.round((f.count / max) * 100);
+        return (
+          '<div style="display:flex;align-items:center;gap:10px">' +
+          '<div style="flex:0 0 130px;font-size:.78rem;color:var(--on-glass)">' + escapeHtml(f.label) + '</div>' +
+          '<div style="flex:1;height:14px;background:var(--glass-surface,rgba(255,255,255,.05));border-radius:7px;overflow:hidden">' +
+          '<div style="height:100%;width:' + (f.count > 0 ? Math.max(pct, 4) : 0) + '%;background:linear-gradient(90deg,#38bdf8,#0284c7)"></div>' +
+          '</div>' +
+          '<div style="flex:0 0 50px;text-align:right;font-size:.78rem;font-weight:700;color:var(--on-glass)">' + f.count + '</div>' +
+          '</div>'
+        );
+      })
+      .join('') +
+    '</div>';
 }
 
 // ── Retrieval inspector ────────────────────────────────────────────────────

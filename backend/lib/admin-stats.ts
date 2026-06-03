@@ -334,6 +334,66 @@ export function computeFinancials(
   };
 }
 
+// ── Activity & feature usage ─────────────────────────────────────────────────
+// DAU/WAU/MAU (distinct active users) + per-feature counts this month, computed
+// from a unified event stream: AI events (security_events) + chat messages
+// (mapped to a synthetic 'chat_message' type by the handler).
+export interface UsageEvent {
+  user_id?: string | null;
+  event_type?: string | null;
+  created_at?: string | number | Date | null;
+}
+export interface UsageResult {
+  dau: number;
+  wau: number;
+  mau: number;
+  features: Array<{ key: string; label: string; count: number }>;
+}
+
+const _FEATURE_GROUPS: Array<{ key: string; label: string; types: string[] }> = [
+  { key: 'asks', label: 'AI chat / asks', types: ['ai_ask', 'ai_chat', 'ask_stream'] },
+  { key: 'generations', label: 'Quiz / flashcards', types: ['ai_generate'] },
+  { key: 'notes', label: 'Notes summaries', types: ['notes_generate'] },
+  { key: 'writing', label: 'Writing coach', types: ['writing_coach_analyse'] },
+  { key: 'chat', label: 'Chat messages', types: ['chat_message'] }
+];
+
+export function computeUsage(events: UsageEvent[], now: Date = new Date()): UsageResult {
+  const nowMs = now.getTime();
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+
+  const dayUsers = new Set<string>();
+  const weekUsers = new Set<string>();
+  const monthUsers = new Set<string>();
+  const counts: Record<string, number> = {};
+
+  for (const e of events) {
+    const uid = e.user_id ? String(e.user_id) : '';
+    const d = e.created_at instanceof Date ? e.created_at : new Date(e.created_at as string);
+    const t = d.getTime();
+    if (isNaN(t)) continue;
+    const age = nowMs - t;
+    if (uid) {
+      if (age < DAY_MS) dayUsers.add(uid);
+      if (age < 7 * DAY_MS) weekUsers.add(uid);
+      if (age < 30 * DAY_MS) monthUsers.add(uid);
+    }
+    // Feature counts are calendar-month-to-date.
+    if (t >= monthStart) {
+      const type = String(e.event_type || '');
+      counts[type] = (counts[type] || 0) + 1;
+    }
+  }
+
+  const features = _FEATURE_GROUPS.map((g) => ({
+    key: g.key,
+    label: g.label,
+    count: g.types.reduce((s, t) => s + (counts[t] || 0), 0)
+  }));
+
+  return { dau: dayUsers.size, wau: weekUsers.size, mau: monthUsers.size, features };
+}
+
 const PAID_EVENTS = new Set(['paid', 'converted', 'renewed']);
 const END_EVENTS = new Set(['cancelled', 'expired']);
 

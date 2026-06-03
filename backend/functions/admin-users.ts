@@ -5,9 +5,9 @@ import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { logSecurityEvent } from '../lib/logger';
 import { isUuid } from '../lib/validation';
 import {
-  bucketSignups, summarizeSubscriptions, computeRetention, computeFinancials,
+  bucketSignups, summarizeSubscriptions, computeRetention, computeFinancials, computeUsage,
   isBucket, isRange, RANGE_DAYS, type Bucket, type Range, type SubRow, type SubEvent,
-  type CostConfig, type UserUsage
+  type CostConfig, type UserUsage, type UsageEvent
 } from '../lib/admin-stats';
 import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../lib/types';
 
@@ -90,7 +90,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(500, 'Delete failed');
   }
 
-  if (typeof action !== 'string' || !['status', 'search', 'setplan', 'reports', 'resolvereport', 'signups', 'subscriptions', 'retention', 'financials', 'getcostconfig', 'savecostconfig'].includes(action)) {
+  if (typeof action !== 'string' || !['status', 'search', 'setplan', 'reports', 'resolvereport', 'signups', 'subscriptions', 'retention', 'financials', 'getcostconfig', 'savecostconfig', 'usage'].includes(action)) {
     return fail(400, 'Unknown action');
   }
 
@@ -270,6 +270,37 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       available: Array.isArray(evRes.body),
       metadata: { generatedAt: new Date().toISOString() }
     });
+  }
+
+  // ── Activity & feature usage (DAU/WAU/MAU + per-feature counts) ───────────
+  if (action === 'usage') {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const AI_TYPES = ['ai_ask', 'ai_chat', 'writing_coach_analyse', 'ask_stream', 'ai_generate', 'notes_generate'];
+    const typesParam = AI_TYPES.map(encodeURIComponent).join(',');
+    const [aiRes, msgRes] = await Promise.all([
+      supaRequest<Array<{ user_id?: string; event_type?: string; created_at?: string }>>(
+        'GET',
+        'security_events?event_type=in.(' + typesParam + ')&created_at=gte.' + encodeURIComponent(since) +
+          '&select=user_id,event_type,created_at&limit=200000',
+        null, serviceKey
+      ),
+      supaRequest<Array<{ user_id?: string; created_at?: string }>>(
+        'GET',
+        'messages?created_at=gte.' + encodeURIComponent(since) + '&select=user_id,created_at&limit=200000',
+        null, serviceKey
+      )
+    ]);
+    const aiRows = Array.isArray(aiRes.body) ? aiRes.body : [];
+    const msgRows = Array.isArray(msgRes.body) ? msgRes.body : [];
+    const events: UsageEvent[] = [
+      ...aiRows.map((r) => ({ user_id: r.user_id, event_type: r.event_type, created_at: r.created_at })),
+      ...msgRows.map((r) => ({ user_id: r.user_id, event_type: 'chat_message', created_at: r.created_at }))
+    ];
+    const result = computeUsage(events);
+    await logSecurityEvent(serviceKey, callerUser.id, 'admin_stats_usage', {
+      dau: result.dau, mau: result.mau, auth_method: adminCheck.method
+    });
+    return jsonResponse(200, { ...result, metadata: { generatedAt: new Date().toISOString() } });
   }
 
   // ── Financial: editable cost config (get / save) ──────────────────────────
