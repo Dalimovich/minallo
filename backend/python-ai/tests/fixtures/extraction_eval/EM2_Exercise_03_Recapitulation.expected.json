@@ -1,0 +1,7 @@
+{
+  "description": "Clean text-layer recap/theory page (English). Good extraction; reads as lecture/recap prose.",
+  "document_type": "lecture",
+  "min_pages": 5,
+  "must_contain": ["Recapitulation", "Kinematics", "separating the variables"],
+  "expect_ocr_recommended": false
+}

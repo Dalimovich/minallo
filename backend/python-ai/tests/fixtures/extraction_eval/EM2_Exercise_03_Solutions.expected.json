@@ -1,0 +1,7 @@
+{
+  "description": "Clean text-layer solution sheet (English). Good pdfminer extraction; classifies as solution_sheet; no OCR needed.",
+  "document_type": "solution_sheet",
+  "min_pages": 4,
+  "must_contain": ["TU Braunschweig", "Solution for Exercise 1.4", "v = const"],
+  "expect_ocr_recommended": false
+}
