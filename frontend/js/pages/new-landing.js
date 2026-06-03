@@ -1318,7 +1318,7 @@
         eyebrow: 'Step 1 · Product map',
         title: 'Start from the real Minallo shell.',
         body: 'The preview opens on an empty dashboard so the tour focuses on the actual sidebar and the next useful action.',
-        calls: [['Expand menu', 6, 6.2, 0], ['Profile', 6, 14.9, 1200], ['Dashboard', 6, 27, 2400], ['Courses', 6, 39, 3600], ['Lecture Notes', 6, 51.4, 4800], ['Editor', 6, 63.8, 6000], ['Chatbot', 6, 76.3, 7200]],
+        calls: [['Expand menu', 6.5, 9, 0], ['Profile', 6.5, 18.4, 1200], ['Dashboard', 6.5, 30.9, 2400], ['Courses', 6.5, 43, 3600], ['Lecture Notes', 6.5, 55, 4800], ['Editor', 6.5, 67.1, 6000], ['Chatbot', 6.5, 79.1, 7200]],
         build: buildPagesOverview
       },
       {
