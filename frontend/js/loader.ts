@@ -268,7 +268,7 @@ interface LandingTranslation {
         link.href = href;
         document.head.appendChild(link);
       }
-      ensureStylesheet('css/new-landing.css?v=12');
+      ensureStylesheet('css/new-landing.css?v=13');
       ensureStylesheet('css/auth.css?v=4');
     })();
 
@@ -284,7 +284,7 @@ interface LandingTranslation {
         // can find its #/data-* hooks on first query.
         (function () {
           const script = document.createElement('script');
-          script.src = 'js/pages/new-landing.js?v=10';
+          script.src = 'js/pages/new-landing.js?v=11';
           script.defer = true;
           document.body.appendChild(script);
         })();

@@ -909,7 +909,7 @@
       close:   document.getElementById('nlPvClose')
     };
 
-    var state = { track: null, index: 0, playing: false, timer: null, lastFocus: null, hover: false };
+    var state = { track: null, index: 0, playing: false, timer: null, shellTimer: null, lastFocus: null, hover: false };
 
     // -- i18n resolvers (fall back to EN if a key is missing) --
     function t(key) {
@@ -966,6 +966,7 @@
       var item = el('div', 'nl-mini-nav__item' + (active ? ' is-active' : ''));
       item.setAttribute('title', label);
       item.setAttribute('aria-label', label);
+      item.setAttribute('data-tour-page', label);
       var wrap = el('span', 'nl-mini-nav__icon');
       wrap.appendChild(buildSvgUse(icon, 24));
       item.appendChild(wrap);
@@ -1004,7 +1005,54 @@
       shell.appendChild(content);
       screen.appendChild(shell);
       frame.appendChild(screen);
+      frame.appendChild(el('span', 'nl-shell-cursor'));
+      frame.appendChild(el('div', 'nl-shell-popover'));
       return frame;
+    }
+    function clearShellCursor() {
+      if (state.shellTimer) {
+        clearTimeout(state.shellTimer);
+        state.shellTimer = null;
+      }
+    }
+    function startShellCursor() {
+      clearShellCursor();
+      var frame = els.visual.querySelector('.nl-tour--shell');
+      if (!frame || prefersReducedMotion) return;
+      var cursor = frame.querySelector('.nl-shell-cursor');
+      var pop = frame.querySelector('.nl-shell-popover');
+      var title = el('strong');
+      var body = el('span');
+      clearChildren(pop);
+      pop.appendChild(title);
+      pop.appendChild(body);
+      var pages = [
+        ['Home', 'Dashboard', 'Your starting place: the empty overview before opening any course or study tool.'],
+        ['Courses', 'Courses', 'Course workspaces for subjects, folders, uploaded PDFs, exercises, and formulas.'],
+        ['Lecture Notes', 'Lecture Notes', 'The note area for lecture material and coming note workflows.'],
+        ['Editor', 'Editor', 'The PDF and writing workspace for marking, editing, and saving documents.'],
+        ['Chatbot', 'Chatbot', 'The full AI chat page for wider course-grounded study conversations.'],
+        ['Chat', 'Chat', 'Rooms and classmates for study conversations outside the AI tutor.']
+      ];
+      function step(i) {
+        var page = pages[i % pages.length];
+        var target = frame.querySelector('[data-tour-page="' + page[0] + '"]');
+        if (!target) return;
+        frame.querySelectorAll('.nl-mini-nav__item.is-tour-hover').forEach(function (node) {
+          node.classList.remove('is-tour-hover');
+        });
+        target.classList.add('is-tour-hover');
+        var fr = frame.getBoundingClientRect();
+        var tr = target.getBoundingClientRect();
+        var cx = tr.left - fr.left + (tr.width / 2);
+        var cy = tr.top - fr.top + (tr.height / 2);
+        cursor.style.transform = 'translate(' + Math.round(cx + 20) + 'px, ' + Math.round(cy + 10) + 'px)';
+        pop.style.transform = 'translate(' + Math.round(cx + 48) + 'px, ' + Math.round(cy - 18) + 'px)';
+        title.textContent = page[1];
+        body.textContent = page[2];
+        state.shellTimer = setTimeout(function () { step(i + 1); }, 1600);
+      }
+      requestAnimationFrame(function () { step(0); });
     }
 
     // -- scene visual builders (each returns a DOM node) --
@@ -1142,7 +1190,7 @@
     // -- track definitions (single source of truth) --
     var TRACKS = {
       course: [
-        { keyBase: 'course.shell',   build: 'shell',   ms: 5200 },
+        { keyBase: 'course.shell',   build: 'shell',   ms: 10400 },
         { keyBase: 'course.upload',  build: 'upload',  ms: 4200 },
         { keyBase: 'course.ask',     build: 'ask',     ms: 4000 },
         { keyBase: 'course.sources', build: 'sources', ms: 4200 },
@@ -1202,8 +1250,10 @@
 
     function paint() {
       var sc = scenes()[state.index];
+      clearShellCursor();
       clearChildren(els.visual);
       if (builders[sc.build]) els.visual.appendChild(builders[sc.build]());
+      if (sc.build === 'shell') startShellCursor();
       els.eyebrow.textContent = t(sc.keyBase + '.eyebrow');
       els.headline.textContent = t(sc.keyBase + '.headline');
       els.body.textContent = t(sc.keyBase + '.body');
@@ -1576,6 +1626,7 @@
     }
     function close() {
       clearTimer();
+      clearShellCursor();
       modal.hidden = true;
       document.documentElement.classList.remove('nl-pv-open');
       document.body.classList.remove('nl-pv-open');

@@ -2576,6 +2576,18 @@ body.nl-pv-open {
     0 0 14px rgba(59, 130, 246, 0.30),
     inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
+.nl-mini-nav__item.is-tour-hover {
+  border-color: rgba(125, 211, 252, 0.62);
+  background: rgba(59, 130, 246, 0.24);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.20),
+    0 0 22px rgba(56, 189, 248, 0.28);
+}
+.nl-mini-nav__item.is-tour-hover .nl-mini-nav__icon {
+  color: #fff;
+  border-color: rgba(186, 230, 253, 0.48);
+  background: rgba(59, 130, 246, 0.28);
+}
 .nl-mini-nav__item.is-active::before {
   content: '';
   position: absolute;
@@ -3112,6 +3124,71 @@ body.nl-pv-open {
   box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5);
   animation: nl-tour-pulse 1.6s ease-out infinite;
 }
+.nl-shell-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  z-index: 9;
+  pointer-events: none;
+  transform: translate(0, 0);
+  transition: transform 560ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.48));
+}
+.nl-shell-cursor::before {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 0.95rem solid #fff;
+  border-top: 0.6rem solid transparent;
+  border-bottom: 0.6rem solid transparent;
+  transform: rotate(-22deg);
+}
+.nl-shell-cursor::after {
+  content: '';
+  position: absolute;
+  left: 0.34rem;
+  top: 0.32rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #38bdf8;
+  box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5);
+  animation: nl-tour-pulse 1.6s ease-out infinite;
+}
+.nl-shell-popover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 8;
+  width: min(18rem, calc(100% - 8rem));
+  min-height: 3.6rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.85rem;
+  color: #e0f2fe;
+  background: rgba(8, 15, 31, 0.94);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+  transform: translate(0, 0);
+  transition: transform 560ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nl-shell-popover strong {
+  display: block;
+  margin-bottom: 0.18rem;
+  font-size: 0.76rem;
+  line-height: 1.15;
+  font-weight: 900;
+}
+.nl-shell-popover span {
+  display: block;
+  color: rgba(203, 213, 225, 0.94);
+  font-size: 0.66rem;
+  line-height: 1.3;
+  font-weight: 750;
+}
 .nl-tour-call {
   position: absolute;
   z-index: 7;
@@ -3443,6 +3520,13 @@ body.nl-pv-open {
     transition: none;
   }
   .nl-pv__dot.is-active.is-playing .nl-pv__dot-pip::after {
+    animation: none;
+  }
+  .nl-shell-cursor,
+  .nl-shell-popover {
+    transition: none;
+  }
+  .nl-shell-cursor::after {
     animation: none;
   }
 }
