@@ -67,19 +67,33 @@ export function initAdminPanel(): void {
 
 let _statsLoaded = false;
 
-function _statCard(label: string, value: string | number, accent?: string): HTMLElement {
+// Big KPI card for the top strip (mirrors the preview's `.kpi`).
+// `tone` tints the delta chip: 'ok' (green), 'warn' (yellow), 'loss' (red).
+function _kpiCard(
+  label: string,
+  value: string | number,
+  delta?: string,
+  tone: 'ok' | 'warn' | 'loss' = 'ok',
+): HTMLElement {
+  const card = document.createElement('article');
+  card.className = 'adm-kpi' + (tone === 'warn' ? ' warn' : tone === 'loss' ? ' loss' : '');
+  card.innerHTML =
+    '<div class="adm-kpi-label">' + escapeHtml(label) + '</div>' +
+    '<div class="adm-kpi-value">' + escapeHtml(String(value)) + '</div>' +
+    (delta ? '<div class="adm-kpi-delta">' + escapeHtml(delta) + '</div>' : '');
+  return card;
+}
+
+// Compact stat used inside cards (growth / activity / subscriptions).
+function _miniCard(label: string, value: string | number, accent?: string): HTMLElement {
   const card = document.createElement('div');
-  card.style.cssText =
-    'background:var(--glass-surface,rgba(255,255,255,.04));border:1px solid var(--glass-border,rgba(255,255,255,.08));' +
-    'border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:4px';
-  const v = document.createElement('div');
-  v.style.cssText = 'font-size:1.5rem;font-weight:800;color:' + (accent || '#fff');
-  v.textContent = String(value);
-  const l = document.createElement('div');
-  l.style.cssText = 'font-size:.72rem;color:var(--on-glass-muted);font-weight:600';
-  l.textContent = label;
-  card.appendChild(v);
-  card.appendChild(l);
+  card.className = 'adm-mini';
+  const b = document.createElement('b');
+  if (accent) b.style.color = accent;
+  b.textContent = String(value);
+  const s = document.createElement('span');
+  s.textContent = label;
+  card.append(b, s);
   return card;
 }
 
@@ -151,12 +165,12 @@ function _renderGrowthCards(data: SignupStats): void {
   if (!host) return;
   host.innerHTML = '';
   const s = data.summary;
-  host.appendChild(_statCard('Today', s.today, '#7dd3fc'));
-  host.appendChild(_statCard('This week', s.week, '#7dd3fc'));
-  host.appendChild(_statCard('This month', s.month));
-  host.appendChild(_statCard('This year', s.year));
-  host.appendChild(_statCard('Total users', s.total, '#6ee7b7'));
-  host.appendChild(_statCard('Current (>7d)', s.currentUsers));
+  host.appendChild(_miniCard('Today', s.today, '#7dd3fc'));
+  host.appendChild(_miniCard('This week', s.week, '#7dd3fc'));
+  host.appendChild(_miniCard('This month', s.month));
+  host.appendChild(_miniCard('This year', s.year));
+  host.appendChild(_miniCard('Total users', s.total, '#6ee7b7'));
+  host.appendChild(_miniCard('Current (>7d)', s.currentUsers));
 }
 
 function _renderSignupChart(data: SignupStats): void {
@@ -165,14 +179,13 @@ function _renderSignupChart(data: SignupStats): void {
   host.innerHTML = '';
   const series = data.series || [];
   if (!series.length) {
-    host.innerHTML = '<div style="color:var(--on-glass-muted);font-size:.8rem">No signups in this range.</div>';
+    host.innerHTML = '<div class="adm-empty">No signups in this range.</div>';
     return;
   }
   const max = series.reduce((m, p) => (p.count > m ? p.count : m), 0) || 1;
   const wrap = document.createElement('div');
   wrap.style.cssText =
-    'display:flex;align-items:flex-end;gap:2px;height:160px;padding:10px 4px;' +
-    'background:var(--glass-surface,rgba(255,255,255,.03));border:1px solid var(--glass-border,rgba(255,255,255,.08));border-radius:14px;overflow-x:auto';
+    'display:flex;align-items:flex-end;gap:2px;height:150px;padding:8px 2px;overflow-x:auto';
   for (const p of series) {
     const col = document.createElement('div');
     col.style.cssText = 'flex:1 0 6px;min-width:6px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%';
@@ -200,15 +213,15 @@ async function loadSubscriptionCards(): Promise<void> {
   const data: SubscriptionStats | null = adminSvc.getSubscriptionStats ? await adminSvc.getSubscriptionStats() : null;
   host.innerHTML = '';
   if (!data) {
-    host.innerHTML = '<div style="color:var(--on-glass-muted);font-size:.8rem">Subscription stats unavailable.</div>';
+    host.innerHTML = '<div class="adm-empty">Subscription stats unavailable.</div>';
     return;
   }
-  host.appendChild(_statCard('Trials started', data.trialsStarted, '#fbbf24'));
-  host.appendChild(_statCard('Converted', data.converted, '#6ee7b7'));
-  host.appendChild(_statCard('Conversion', data.conversionRate + '%', '#6ee7b7'));
-  host.appendChild(_statCard('Active paid', data.activePaid, '#7dd3fc'));
-  host.appendChild(_statCard('Trialing now', data.trialing));
-  host.appendChild(_statCard('Cancelled', data.cancelled, '#f87171'));
+  host.appendChild(_miniCard('Trials started', data.trialsStarted, '#fbbf24'));
+  host.appendChild(_miniCard('Converted', data.converted, '#6ee7b7'));
+  host.appendChild(_miniCard('Conversion', data.conversionRate + '%', '#6ee7b7'));
+  host.appendChild(_miniCard('Active paid', data.activePaid, '#7dd3fc'));
+  host.appendChild(_miniCard('Trialing now', data.trialing));
+  host.appendChild(_miniCard('Cancelled', data.cancelled, '#f87171'));
 }
 
 async function loadRetention(): Promise<void> {
@@ -218,28 +231,24 @@ async function loadRetention(): Promise<void> {
   host.innerHTML = '';
   if (!data || !data.available) {
     host.innerHTML =
-      '<div style="color:var(--on-glass-muted);font-size:.8rem">' +
+      '<div class="adm-empty">' +
       'No retention history yet. Apply the <code>subscription_events</code> migration; numbers fill in as Stripe/PayPal webhooks fire.' +
       '</div>';
     return;
   }
   const rows = data.series || [];
   const table = document.createElement('table');
-  table.style.cssText = 'width:100%;border-collapse:collapse;font-size:.82rem';
+  table.className = 'adm-table';
   table.innerHTML =
     '<thead><tr>' +
-    ['Month', 'Active paid', 'New paid', 'Renewed', 'Cancelled']
-      .map((h) => '<th style="text-align:left;padding:7px 10px;color:var(--on-glass-muted);font-weight:700;border-bottom:1px solid var(--glass-border,rgba(255,255,255,.1))">' + h + '</th>')
-      .join('') +
+    ['Month', 'Active paid', 'New paid', 'Renewed', 'Cancelled'].map((h) => '<th>' + h + '</th>').join('') +
     '</tr></thead>';
   const tbody = document.createElement('tbody');
   for (const r of rows) {
     const tr = document.createElement('tr');
     const cells = [r.month, String(r.active), String(r.newPaid), String(r.renewed), String(r.cancelled)];
     tr.innerHTML = cells
-      .map((c, i) =>
-        '<td style="padding:7px 10px;border-bottom:1px solid var(--glass-border,rgba(255,255,255,.06));' +
-        (i === 0 ? 'font-weight:700' : 'color:var(--on-glass-muted)') + '">' + escapeHtml(c) + '</td>')
+      .map((c, i) => '<td' + (i === 0 ? ' class="lead"' : '') + '>' + escapeHtml(c) + '</td>')
       .join('');
     tbody.appendChild(tr);
   }
@@ -259,19 +268,18 @@ async function loadFinancials(): Promise<void> {
   const data: FinancialStats | null = adminSvc.getFinancials ? await adminSvc.getFinancials() : null;
   if (!data) {
     cards.innerHTML =
-      '<div style="color:var(--on-glass-muted);font-size:.8rem">Financial data unavailable. Apply the <code>admin_financial_config</code> migration.</div>';
+      '<div class="adm-empty">Financial data unavailable. Apply the <code>admin_financial_config</code> migration.</div>';
     return;
   }
   cards.innerHTML = '';
-  const profitAccent = data.netProfitCents >= 0 ? '#6ee7b7' : '#f87171';
-  cards.appendChild(_statCard('MRR', _eur(data.mrrCents), '#7dd3fc'));
-  cards.appendChild(_statCard('Revenue / mo', _eur(data.revenueCents), '#7dd3fc'));
-  cards.appendChild(_statCard('Net profit', _eur(data.netProfitCents), profitAccent));
-  cards.appendChild(_statCard('Profit margin', data.profitMargin + '%', profitAccent));
-  cards.appendChild(_statCard('Active paid', data.activePaid));
-  cards.appendChild(_statCard('Profit / paid user', _eur(data.profitPerPaidUserCents), profitAccent));
-  cards.appendChild(_statCard('AI cost / mo', _eur(data.aiCostCents), '#fbbf24'));
-  cards.appendChild(_statCard('AI cost / paid user', _eur(data.aiCostPerPaidUserCents), '#fbbf24'));
+  const profitTone: 'ok' | 'loss' = data.netProfitCents >= 0 ? 'ok' : 'loss';
+  const aiPctOfRevenue = data.revenueCents > 0 ? Math.round((data.aiCostCents / data.revenueCents) * 100) : 0;
+  cards.appendChild(_kpiCard('MRR', _eur(data.mrrCents), '↗ ' + data.activePaid + ' paid users'));
+  cards.appendChild(_kpiCard('Revenue this month', _eur(data.revenueCents)));
+  cards.appendChild(_kpiCard('Net profit', _eur(data.netProfitCents), data.profitMargin + '% margin', profitTone));
+  cards.appendChild(_kpiCard('AI API costs', _eur(data.aiCostCents), aiPctOfRevenue + '% of revenue', 'warn'));
+  cards.appendChild(_kpiCard('Active paid', data.activePaid));
+  cards.appendChild(_kpiCard('Profit / paid user', _eur(data.profitPerPaidUserCents), undefined, profitTone));
 
   _renderFinanceBreakdown(data);
   _renderDangerUsers(data.dangerUsers);
@@ -281,32 +289,21 @@ async function loadFinancials(): Promise<void> {
 function _renderFinanceBreakdown(data: FinancialStats): void {
   const host = document.getElementById('adminFinanceBreakdown');
   if (!host) return;
-  const rows: Array<[string, number, boolean]> = [
-    ['Subscription revenue', data.revenueCents, false],
-    ['AI API costs', -data.aiCostCents, true],
-    ['Payment fees', -data.paymentFeesCents, true],
-    ['Fixed costs (Supabase / hosting / other)', -data.fixedCostsCents, true],
-    ['Net profit', data.netProfitCents, false],
-  ];
+  const profitClass = data.netProfitCents >= 0 ? 'good' : 'bad';
+  const margin = Math.max(0, Math.min(100, data.profitMargin));
   host.innerHTML =
-    '<div style="background:var(--glass-surface,rgba(255,255,255,.04));border:1px solid var(--glass-border,rgba(255,255,255,.08));border-radius:14px;padding:14px 16px">' +
-    rows
-      .map((r, i) => {
-        const isResult = i === rows.length - 1;
-        const color = r[1] < 0 ? '#f87171' : isResult ? (r[1] >= 0 ? '#6ee7b7' : '#f87171') : 'var(--on-glass)';
-        return (
-          '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;' +
-          (isResult ? 'border-top:1px solid var(--glass-border,rgba(255,255,255,.12));margin-top:4px;font-weight:800' : 'font-size:.85rem') +
-          '">' +
-          '<span style="color:var(--on-glass-muted)">' + escapeHtml(r[0]) + '</span>' +
-          '<span style="color:' + color + ';font-weight:700">' + _eur(r[1]) + '</span>' +
-          '</div>'
-        );
-      })
-      .join('') +
-    '<div style="font-size:.7rem;color:var(--on-glass-muted);margin-top:8px">' +
-    data.interactiveCalls + ' interactive + ' + data.generationCalls + ' generation AI calls this month' +
-    '</div></div>';
+    '<div class="adm-money-box">' +
+      '<div class="adm-money-row"><span>Subscription revenue</span><b class="good">' + _eur(data.revenueCents) + '</b></div>' +
+      '<div class="adm-money-row"><span>AI API costs</span><b class="bad">-' + _eur(data.aiCostCents) + '</b></div>' +
+      '<div class="adm-money-row"><span>Payment fees</span><b class="bad">-' + _eur(data.paymentFeesCents) + '</b></div>' +
+      '<div class="adm-money-row"><span>Fixed costs (Supabase / hosting / other)</span><b class="bad">-' + _eur(data.fixedCostsCents) + '</b></div>' +
+      '<div class="adm-money-row result"><span>Net profit</span><b class="' + profitClass + '">' + _eur(data.netProfitCents) + '</b></div>' +
+    '</div>' +
+    '<div class="adm-meter-label"><span>Profit margin</span><span>' + data.profitMargin + '%</span></div>' +
+    '<div class="adm-meter"><span style="width:' + margin + '%"></span></div>' +
+    '<div class="adm-note">' +
+      data.interactiveCalls + ' interactive + ' + data.generationCalls + ' generation AI calls this month' +
+    '</div>';
 }
 
 function _renderDangerUsers(users: DangerUser[]): void {
@@ -314,37 +311,34 @@ function _renderDangerUsers(users: DangerUser[]): void {
   if (!host) return;
   host.innerHTML = '';
   if (!users.length) {
-    host.innerHTML = '<div style="color:var(--on-glass-muted);font-size:.8rem">No paid users or AI usage yet.</div>';
+    host.innerHTML = '<div class="adm-empty">No paid users or AI usage yet.</div>';
     return;
   }
   const table = document.createElement('table');
-  table.style.cssText = 'width:100%;border-collapse:collapse;font-size:.8rem';
+  table.className = 'adm-table';
   table.innerHTML =
     '<thead><tr>' +
-    ['User', 'Plan', 'Revenue', 'AI cost', 'Profit', 'Calls', '']
-      .map((h) => '<th style="text-align:left;padding:6px 9px;color:var(--on-glass-muted);font-weight:700;border-bottom:1px solid var(--glass-border,rgba(255,255,255,.1))">' + h + '</th>')
-      .join('') +
+    ['User', 'Plan', 'Revenue', 'AI cost', 'Profit', 'Calls', 'Status']
+      .map((h) => '<th>' + h + '</th>').join('') +
     '</tr></thead>';
   const tbody = document.createElement('tbody');
   users.forEach((u) => {
-    const flag =
-      u.flag === 'loss' ? '<span style="color:#f87171;font-weight:800">✕ loss</span>'
-      : u.flag === 'high' ? '<span style="color:#fbbf24;font-weight:800">⚠ high</span>'
-      : '<span style="color:#6ee7b7">ok</span>';
-    const profitColor = u.profitCents < 0 ? '#f87171' : '#6ee7b7';
+    const tag =
+      u.flag === 'loss' ? '<span class="adm-tag red">Too costly</span>'
+      : u.flag === 'high' ? '<span class="adm-tag">Watch</span>'
+      : '<span class="adm-tag green">Healthy</span>';
+    const profitColor = u.profitCents < 0 ? '#fb7185' : '#6ee7b7';
     const cells = [
-      escapeHtml(u.email || u.userId.slice(0, 8) + '…'),
-      u.paid ? 'Paid' : 'Free',
-      _eur(u.revenueCents),
-      _eur(u.aiCostCents),
-      '<span style="color:' + profitColor + ';font-weight:700">' + _eur(u.profitCents) + '</span>',
-      String(u.interactive + u.generation),
-      flag,
+      '<td class="lead">' + escapeHtml(u.email || u.userId.slice(0, 8) + '…') + '</td>',
+      '<td>' + (u.paid ? 'Paid' : 'Free') + '</td>',
+      '<td>' + _eur(u.revenueCents) + '</td>',
+      '<td>' + _eur(u.aiCostCents) + '</td>',
+      '<td style="color:' + profitColor + ';font-weight:700">' + _eur(u.profitCents) + '</td>',
+      '<td>' + String(u.interactive + u.generation) + '</td>',
+      '<td>' + tag + '</td>',
     ];
     const tr = document.createElement('tr');
-    tr.innerHTML = cells
-      .map((c, i) => '<td style="padding:6px 9px;border-bottom:1px solid var(--glass-border,rgba(255,255,255,.06));' + (i === 0 ? 'font-weight:700' : 'color:var(--on-glass-muted)') + '">' + c + '</td>')
-      .join('');
+    tr.innerHTML = cells.join('');
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -368,18 +362,17 @@ function _renderCostConfig(cfg: CostConfig): void {
   if (!host || host.dataset['built'] === '1') return;
   host.dataset['built'] = '1';
   host.innerHTML =
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">' +
+    '<div class="adm-cfg-grid">' +
     _COST_FIELDS.map((f) => {
       const raw = cfg[f.key];
       const val = f.cents ? (raw / 100).toFixed(2) : String(raw);
       return (
-        '<label style="font-size:.72rem;color:var(--on-glass-muted);font-weight:600;display:flex;flex-direction:column;gap:3px">' +
-        escapeHtml(f.label) +
-        '<input class="chat-friend-search" data-cfg="' + f.key + '" type="number" step="0.01" min="0" value="' + escapeHtml(val) + '" style="width:100%" /></label>'
+        '<label>' + escapeHtml(f.label) +
+        '<input data-cfg="' + f.key + '" type="number" step="0.01" min="0" value="' + escapeHtml(val) + '" /></label>'
       );
     }).join('') +
     '</div>' +
-    '<button id="adminCostSave" class="sub-btn" style="width:auto;padding:8px 18px;font-size:.78rem;margin-top:10px">Save & recompute</button>';
+    '<button id="adminCostSave" class="sub-btn" style="width:auto;padding:8px 18px;font-size:.78rem;margin-top:12px">Save & recompute</button>';
 
   const saveBtn = document.getElementById('adminCostSave') as HTMLButtonElement | null;
   if (saveBtn) {
@@ -415,36 +408,32 @@ async function loadUsage(): Promise<void> {
   if (!cards) return;
   const data: UsageStats | null = adminSvc.getUsageStats ? await adminSvc.getUsageStats() : null;
   if (!data) {
-    cards.innerHTML = '<div style="color:var(--on-glass-muted);font-size:.8rem">Usage data unavailable.</div>';
+    cards.innerHTML = '<div class="adm-empty">Usage data unavailable.</div>';
     return;
   }
   cards.innerHTML = '';
-  cards.appendChild(_statCard('Active today (DAU)', data.dau, '#7dd3fc'));
-  cards.appendChild(_statCard('Active this week (WAU)', data.wau, '#7dd3fc'));
-  cards.appendChild(_statCard('Active this month (MAU)', data.mau, '#6ee7b7'));
+  cards.appendChild(_miniCard('Active today', data.dau, '#7dd3fc'));
+  cards.appendChild(_miniCard('This week', data.wau, '#7dd3fc'));
+  cards.appendChild(_miniCard('This month', data.mau, '#6ee7b7'));
 
   const host = document.getElementById('adminFeatureUsage');
   if (!host) return;
   const feats = data.features || [];
   const max = feats.reduce((m, f) => (f.count > m ? f.count : m), 0) || 1;
   host.innerHTML =
-    '<div style="font-size:.72rem;color:var(--on-glass-muted);margin-bottom:6px">Feature usage this month</div>' +
-    '<div style="display:flex;flex-direction:column;gap:6px">' +
+    '<div style="font-size:11.5px;color:var(--on-glass-muted);font-weight:700;margin-bottom:12px">Feature usage this month</div>' +
     feats
       .map((f) => {
         const pct = Math.round((f.count / max) * 100);
         return (
-          '<div style="display:flex;align-items:center;gap:10px">' +
-          '<div style="flex:0 0 130px;font-size:.78rem;color:var(--on-glass)">' + escapeHtml(f.label) + '</div>' +
-          '<div style="flex:1;height:14px;background:var(--glass-surface,rgba(255,255,255,.05));border-radius:7px;overflow:hidden">' +
-          '<div style="height:100%;width:' + (f.count > 0 ? Math.max(pct, 4) : 0) + '%;background:linear-gradient(90deg,#38bdf8,#0284c7)"></div>' +
-          '</div>' +
-          '<div style="flex:0 0 50px;text-align:right;font-size:.78rem;font-weight:700;color:var(--on-glass)">' + f.count + '</div>' +
+          '<div class="adm-bar-row">' +
+          '<span>' + escapeHtml(f.label) + '</span>' +
+          '<div class="adm-track"><span style="width:' + (f.count > 0 ? Math.max(pct, 4) : 0) + '%"></span></div>' +
+          '<b>' + f.count + '</b>' +
           '</div>'
         );
       })
-      .join('') +
-    '</div>';
+      .join('');
 }
 
 // ── Retrieval inspector ────────────────────────────────────────────────────

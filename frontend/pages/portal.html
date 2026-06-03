@@ -1,4 +1,363 @@
 ﻿<!-- PORTAL -->
+<style id="adm-dash-styles">
+  /* Admin "Business Control Center" — scoped to #psec-admin so it never
+     leaks into the rest of the app. Mirrors the standalone preview mockup. */
+  #psec-admin.adm-dash {
+    --adm-line: rgba(148, 163, 184, 0.16);
+    --adm-line-2: rgba(148, 163, 184, 0.26);
+    --adm-muted: var(--on-glass-muted, #94a3b8);
+    --adm-blue: #38bdf8;
+    --adm-green: #6ee7b7;
+    --adm-yellow: #facc15;
+    --adm-red: #fb7185;
+    --adm-radius: 20px;
+    --adm-card-bg: linear-gradient(180deg, rgba(40, 56, 82, 0.34), rgba(18, 30, 50, 0.42));
+    --adm-card-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  #psec-admin .adm-topbar {
+    margin: 4px 0 22px;
+  }
+  #psec-admin .adm-eyebrow {
+    color: var(--adm-green);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+  }
+  #psec-admin .adm-topbar h1 {
+    margin: 0;
+    font-size: clamp(24px, 2.6vw, 36px);
+    line-height: 1.05;
+    letter-spacing: -0.05em;
+  }
+  #psec-admin .adm-topbar p {
+    margin: 8px 0 0;
+    color: var(--adm-muted);
+    max-width: 720px;
+    line-height: 1.55;
+    font-size: 0.9rem;
+  }
+  #psec-admin .adm-loading {
+    color: var(--adm-muted);
+    font-size: 0.85rem;
+    padding: 8px 2px;
+  }
+
+  /* KPI strip */
+  #psec-admin .adm-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 13px;
+    margin-bottom: 18px;
+  }
+  #psec-admin .adm-kpi {
+    border: 1px solid var(--adm-line);
+    background: var(--adm-card-bg);
+    border-radius: var(--adm-radius);
+    box-shadow: var(--adm-card-shadow);
+    min-height: 120px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+  #psec-admin .adm-kpi::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 42%);
+    pointer-events: none;
+  }
+  #psec-admin .adm-kpi .adm-kpi-label {
+    color: var(--adm-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  #psec-admin .adm-kpi .adm-kpi-value {
+    font-size: 27px;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+  #psec-admin .adm-kpi .adm-kpi-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: max-content;
+    color: var(--adm-green);
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.24);
+    border-radius: 999px;
+    padding: 4px 8px;
+  }
+  #psec-admin .adm-kpi.warn .adm-kpi-delta {
+    color: var(--adm-yellow);
+    background: rgba(250, 204, 21, 0.11);
+    border-color: rgba(250, 204, 21, 0.23);
+  }
+  #psec-admin .adm-kpi.loss .adm-kpi-delta {
+    color: var(--adm-red);
+    background: rgba(251, 113, 133, 0.11);
+    border-color: rgba(251, 113, 133, 0.25);
+  }
+
+  /* Two-column layout */
+  #psec-admin .adm-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+    gap: 16px;
+    align-items: start;
+  }
+  #psec-admin .adm-stack {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  /* Cards */
+  #psec-admin .adm-card {
+    border: 1px solid var(--adm-line);
+    background: var(--adm-card-bg);
+    border-radius: var(--adm-radius);
+    box-shadow: var(--adm-card-shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  #psec-admin .adm-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 20px 0;
+  }
+  #psec-admin .adm-card-title {
+    margin: 0;
+    font-size: 16px;
+    letter-spacing: -0.03em;
+  }
+  #psec-admin .adm-card-desc {
+    margin: 5px 0 0;
+    color: var(--adm-muted);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  #psec-admin .adm-card-body {
+    padding: 16px 20px 20px;
+  }
+  #psec-admin .adm-card-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  #psec-admin .adm-pill {
+    border: 1px solid var(--adm-line-2);
+    color: var(--on-glass, #f8fafc);
+    background: rgba(17, 29, 48, 0.5);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  #psec-admin .adm-select {
+    border: 1px solid var(--adm-line-2);
+    color: var(--on-glass, #f8fafc);
+    background: rgba(17, 29, 48, 0.5);
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    outline: none;
+  }
+
+  /* Mini stat grid (growth / activity / subscriptions) */
+  #psec-admin .adm-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 11px;
+  }
+  #psec-admin .adm-mini {
+    border: 1px solid var(--adm-line);
+    background: rgba(8, 17, 31, 0.32);
+    border-radius: 16px;
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  #psec-admin .adm-mini b {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+  #psec-admin .adm-mini span {
+    color: var(--adm-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+
+  /* Money breakdown */
+  #psec-admin .adm-money-box {
+    border: 1px solid var(--adm-line);
+    background: rgba(8, 17, 31, 0.32);
+    border-radius: 16px;
+    padding: 6px 15px;
+  }
+  #psec-admin .adm-money-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    color: var(--adm-muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  #psec-admin .adm-money-row:last-child { border-bottom: 0; }
+  #psec-admin .adm-money-row b { color: var(--on-glass, #f8fafc); font-weight: 800; }
+  #psec-admin .adm-money-row b.good { color: var(--adm-green); }
+  #psec-admin .adm-money-row b.bad { color: var(--adm-red); }
+  #psec-admin .adm-money-row.result {
+    border-top: 1px solid var(--adm-line-2);
+    border-bottom: 0;
+    margin-top: 2px;
+    padding-top: 11px;
+  }
+  #psec-admin .adm-money-row.result span,
+  #psec-admin .adm-money-row.result b { font-size: 14px; font-weight: 900; }
+  #psec-admin .adm-note {
+    margin-top: 12px;
+    font-size: 11.5px;
+    color: var(--adm-muted);
+  }
+  #psec-admin .adm-meter {
+    margin-top: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.14);
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.1);
+  }
+  #psec-admin .adm-meter > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--adm-blue), var(--adm-green));
+    border-radius: inherit;
+  }
+  #psec-admin .adm-meter-label {
+    display: flex;
+    justify-content: space-between;
+    color: var(--adm-muted);
+    font-size: 12.5px;
+    font-weight: 800;
+    margin-top: 12px;
+  }
+
+  /* Bar lists (feature usage) */
+  #psec-admin .adm-bar-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 54px;
+    gap: 12px;
+    align-items: center;
+    font-size: 12.5px;
+    color: var(--adm-muted);
+    font-weight: 800;
+  }
+  #psec-admin .adm-bar-row + .adm-bar-row { margin-top: 12px; }
+  #psec-admin .adm-track {
+    height: 10px;
+    background: rgba(148, 163, 184, 0.13);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  #psec-admin .adm-track > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--adm-blue), var(--adm-green));
+  }
+  #psec-admin .adm-bar-row b { color: var(--on-glass, #f8fafc); text-align: right; font-weight: 800; }
+
+  /* Tables (danger / retention) */
+  #psec-admin .adm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  #psec-admin .adm-table th {
+    text-align: left;
+    padding: 9px 10px;
+    color: var(--adm-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    border-bottom: 1px solid var(--adm-line);
+    font-weight: 800;
+  }
+  #psec-admin .adm-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    color: var(--adm-muted);
+  }
+  #psec-admin .adm-table tr:last-child td { border-bottom: 0; }
+  #psec-admin .adm-table td.lead { color: var(--on-glass, #f8fafc); font-weight: 700; }
+  #psec-admin .adm-tag {
+    display: inline-flex;
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--adm-blue);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+  }
+  #psec-admin .adm-tag.green { color: var(--adm-green); background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.22); }
+  #psec-admin .adm-tag.red { color: var(--adm-red); background: rgba(251, 113, 133, 0.1); border-color: rgba(251, 113, 133, 0.22); }
+
+  /* Cost settings inputs */
+  #psec-admin .adm-cfg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  #psec-admin .adm-cfg-grid label {
+    font-size: 11.5px;
+    color: var(--adm-muted);
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #psec-admin .adm-cfg-grid input {
+    width: 100%;
+    border: 1px solid var(--adm-line-2);
+    background: rgba(8, 17, 31, 0.4);
+    color: var(--on-glass, #f8fafc);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    outline: none;
+  }
+  #psec-admin .adm-empty {
+    color: var(--adm-muted);
+    font-size: 0.82rem;
+  }
+
+  @media (max-width: 900px) {
+    #psec-admin .adm-grid { grid-template-columns: 1fr; }
+  }
+</style>
 <div id="portal">
   <div class="blobs">
     <div class="blob blob-1"></div>
@@ -302,63 +661,125 @@
         <div id="psec-subscription" class="portal-section" style="display: none"></div>
 
         <!-- ADMIN -->
-        <div id="psec-admin" class="portal-section" style="display: none">
-          <div class="dash-greeting">
-            <h1><span data-i18n="admin_title">🛡️ Admin</span></h1>
-            <p data-i18n="admin_subtitle">Manage user subscriptions</p>
-          </div>
+        <div id="psec-admin" class="portal-section adm-dash" style="display: none">
+          <header class="adm-topbar">
+            <div>
+              <div class="adm-eyebrow" data-i18n="admin_eyebrow">Minallo admin</div>
+              <h1 data-i18n="admin_title">Business Control Center</h1>
+              <p data-i18n="admin_subtitle">Users, subscriptions, revenue, AI costs and real net profit — live from your database.</p>
+            </div>
+          </header>
 
           <!-- ANALYTICS DASHBOARD (populated by admin-panel.ts) -->
-          <div id="adminStats" style="max-width: 960px; margin: 0 auto 34px">
-            <div id="adminStatsLoading" style="color: var(--on-glass-muted); font-size: .85rem">Loading stats…</div>
+          <div id="adminStats">
+            <div id="adminStatsLoading" class="adm-loading">Loading stats…</div>
             <div id="adminStatsBody" style="display: none">
-              <h2 style="font-size: 1.05rem; margin: 0 0 10px">💰 <span data-i18n="admin_finance_title">Financial overview</span></h2>
-              <div id="adminFinanceCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px"></div>
-              <div id="adminFinanceBreakdown" style="margin-top: 12px"></div>
-              <details style="margin-top: 12px">
-                <summary style="cursor: pointer; font-size: .8rem; color: var(--on-glass-muted); font-weight: 700">⚙️ <span data-i18n="admin_cost_settings">Cost settings</span></summary>
-                <div id="adminCostConfig" style="margin-top: 10px"></div>
-              </details>
-              <h3 style="font-size: .95rem; margin: 22px 0 8px">⚠️ <span data-i18n="admin_danger_title">Cost per paid user — watchlist</span></h3>
-              <div id="adminDangerUsers" style="overflow-x: auto"></div>
 
-              <h2 style="font-size: 1.05rem; margin: 28px 0 10px">⚡ <span data-i18n="admin_activity_title">Activity & feature usage</span></h2>
-              <div id="adminActivityCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px"></div>
-              <div id="adminFeatureUsage" style="margin-top: 12px"></div>
+              <!-- KPI strip -->
+              <section class="adm-kpi-grid" id="adminFinanceCards" aria-label="Main KPIs"></section>
 
-              <h2 style="font-size: 1.05rem; margin: 28px 0 10px">📈 <span data-i18n="admin_growth_title">User growth</span></h2>
-              <div id="adminGrowthCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px"></div>
-              <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px 0 10px">
-                <label style="font-size: .8rem; color: var(--on-glass-muted)">
-                  <span data-i18n="admin_range">Range</span>
-                  <select id="adminRangeSel" class="chat-friend-search" style="margin-left: 6px; width: auto">
-                    <option value="7d" data-i18n="admin_range_7d">Last 7 days</option>
-                    <option value="30d" selected data-i18n="admin_range_30d">Last 30 days</option>
-                    <option value="90d" data-i18n="admin_range_90d">Last 90 days</option>
-                    <option value="365d" data-i18n="admin_range_365d">Last year</option>
-                    <option value="all" data-i18n="admin_range_all">All time</option>
-                  </select>
-                </label>
-                <label style="font-size: .8rem; color: var(--on-glass-muted)">
-                  <span data-i18n="admin_bucket">Bucket</span>
-                  <select id="adminBucketSel" class="chat-friend-search" style="margin-left: 6px; width: auto">
-                    <option value="day" data-i18n="admin_bucket_day">Daily</option>
-                    <option value="week" data-i18n="admin_bucket_week">Weekly</option>
-                    <option value="month" data-i18n="admin_bucket_month">Monthly</option>
-                  </select>
-                </label>
+              <div class="adm-grid">
+                <!-- LEFT column -->
+                <div class="adm-stack">
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_growth_title">User growth</h2>
+                        <p class="adm-card-desc" data-i18n="admin_growth_desc">Daily signups over the selected range.</p>
+                      </div>
+                      <div class="adm-card-controls">
+                        <select id="adminRangeSel" class="adm-select">
+                          <option value="7d" data-i18n="admin_range_7d">Last 7 days</option>
+                          <option value="30d" selected data-i18n="admin_range_30d">Last 30 days</option>
+                          <option value="90d" data-i18n="admin_range_90d">Last 90 days</option>
+                          <option value="365d" data-i18n="admin_range_365d">Last year</option>
+                          <option value="all" data-i18n="admin_range_all">All time</option>
+                        </select>
+                        <select id="adminBucketSel" class="adm-select">
+                          <option value="day" data-i18n="admin_bucket_day">Daily</option>
+                          <option value="week" data-i18n="admin_bucket_week">Weekly</option>
+                          <option value="month" data-i18n="admin_bucket_month">Monthly</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="adm-card-body">
+                      <div class="adm-mini-grid" id="adminGrowthCards"></div>
+                      <div id="adminSignupChart" style="margin-top: 14px"></div>
+                    </div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_danger_title">User profitability</h2>
+                        <p class="adm-card-desc" data-i18n="admin_danger_desc">Which paid users are healthy and which cost more than they pay.</p>
+                      </div>
+                      <span class="adm-pill" data-i18n="admin_top_consumers">Top API consumers</span>
+                    </div>
+                    <div class="adm-card-body" id="adminDangerUsers"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_retention_title">Monthly retention</h2>
+                        <p class="adm-card-desc" data-i18n="admin_retention_desc">Active paid, new, renewed and cancelled per month.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminRetention"></div>
+                  </section>
+                </div>
+
+                <!-- RIGHT column -->
+                <aside class="adm-stack">
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_finance_title">Profit breakdown</h2>
+                        <p class="adm-card-desc" data-i18n="admin_finance_desc">Real result after AI, payment and fixed costs.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminFinanceBreakdown"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_cost_settings">Cost settings</h2>
+                        <p class="adm-card-desc" data-i18n="admin_cost_desc">Tune prices and per-call costs, then recompute.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminCostConfig"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_activity_title">Activity</h2>
+                        <p class="adm-card-desc" data-i18n="admin_activity_desc">Active users today, this week and this month.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body">
+                      <div class="adm-mini-grid" id="adminActivityCards"></div>
+                      <div id="adminFeatureUsage" style="margin-top: 14px"></div>
+                    </div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_subs_title">Subscriptions</h2>
+                        <p class="adm-card-desc" data-i18n="admin_subs_desc">Trials, conversions and churn.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body adm-mini-grid" id="adminSubCards"></div>
+                  </section>
+                </aside>
               </div>
-              <div id="adminSignupChart" style="margin-bottom: 8px"></div>
-
-              <h2 style="font-size: 1.05rem; margin: 28px 0 10px">💳 <span data-i18n="admin_subs_title">Subscriptions</span></h2>
-              <div id="adminSubCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px"></div>
-
-              <h2 style="font-size: 1.05rem; margin: 28px 0 10px">🔁 <span data-i18n="admin_retention_title">Monthly retention</span></h2>
-              <div id="adminRetention"></div>
             </div>
           </div>
 
-          <div style="max-width: 640px; margin: 0 auto">
+          <div class="adm-search" style="max-width: 640px; margin: 26px auto 0">
             <div style="display: flex; gap: 10px; margin-bottom: 18px">
               <input
                 id="adminSearchInput"
