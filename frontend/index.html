@@ -104,7 +104,7 @@
        injected by loader.js (it's only needed once the landing renders),
        and dashboard CSS is injected post-auth. -->
   <link rel="stylesheet" href="/css/typography.css?v=1" />
-  <link rel="stylesheet" href="/css/new-landing.css?v=13" />
+  <link rel="stylesheet" href="/css/new-landing.css?v=14" />
   <link rel="stylesheet" href="/css/performance.css?v=4" />
   <style>
     /* Visually hide the static SEO hero (still in the DOM for crawlers
@@ -169,7 +169,7 @@
          relies on the in-order execution `defer` guarantees. -->
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
-    <script src="js/config.js?v=27" defer></script>
+    <script src="js/config.js?v=28" defer></script>
     <!-- AI chat typing config — only read inside the dashboard chat
          features, never on the public landing. `async` removes it from
          the critical-request chain so it loads in parallel without
@@ -177,6 +177,6 @@
     <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=1"></script>
     <script src="js/auth-bootstrap.js?v=5" defer></script>
     <script src="js/supabase.js?v=6" defer></script>
-    <script type="module" src="js/loader.js?v=13"></script>
+    <script type="module" src="js/loader.js?v=14"></script>
   </body>
 </html>

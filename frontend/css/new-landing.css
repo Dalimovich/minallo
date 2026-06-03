@@ -2921,6 +2921,345 @@ body.nl-pv-open {
   font-size: 0.62rem;
   font-weight: 900;
 }
+.nl-mini-studip {
+  height: 100%;
+  overflow: hidden;
+  color: #e2e8f0;
+}
+.nl-mini-studip .sd-shell {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.nl-mini-studip .sd-hero {
+  position: relative;
+  padding: 1rem 1.05rem;
+  margin-bottom: 0.65rem;
+  border-radius: 1.05rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(15, 23, 42, 0.45) 60%, rgba(99, 102, 241, 0.12));
+}
+.nl-mini-studip .sd-hero-glow {
+  position: absolute;
+  top: -40%;
+  right: -8%;
+  width: 55%;
+  height: 220%;
+  background: radial-gradient(closest-side, rgba(96, 165, 250, 0.28), transparent 70%);
+  pointer-events: none;
+  filter: blur(8px);
+}
+.nl-mini-studip .sd-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9.3rem;
+  gap: 0.95rem;
+  align-items: center;
+}
+.nl-mini-studip .sd-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.55rem;
+  font-weight: 800;
+}
+.nl-mini-studip .sd-hero-eyebrow svg {
+  color: rgba(147, 197, 253, 0.95);
+}
+.nl-mini-studip .sd-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.55rem 0 0.35rem;
+  color: #fff;
+  font-size: 1.45rem;
+  line-height: 1.05;
+  font-weight: 900;
+}
+.nl-mini-studip .sd-hero-emoji {
+  font-size: 1.28rem;
+}
+.nl-mini-studip .sd-hero-sub {
+  margin: 0 0 0.65rem;
+  max-width: 29rem;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+.nl-mini-studip .sd-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+}
+.nl-mini-studip .sd-hero-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.34rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.56rem;
+  font-weight: 800;
+}
+.nl-mini-studip .sd-hero-stat-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #06d6a0;
+  box-shadow: 0 0 8px rgba(6, 214, 160, 0.7);
+}
+.nl-mini-studip .sd-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.nl-mini-studip .sem-btn,
+.nl-mini-studip .sd-add-btn,
+.nl-mini-studip .sd-layout-btn {
+  min-height: 2.3rem;
+  border-radius: 0.75rem;
+  font-family: inherit;
+  font-size: 0.66rem;
+  font-weight: 900;
+}
+.nl-mini-studip .sem-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+.nl-mini-studip .sd-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  box-shadow: 0 10px 28px -8px rgba(37, 99, 235, 0.6);
+}
+.nl-mini-studip .sd-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  margin-bottom: 0.65rem;
+}
+.nl-mini-studip .sd-search-wrap {
+  position: relative;
+  min-width: 0;
+}
+.nl-mini-studip .sd-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(147, 197, 253, 0.62);
+  pointer-events: none;
+}
+.nl-mini-studip .sd-search-input {
+  min-height: 2.65rem;
+  padding: 0.75rem 0.75rem 0.75rem 2.15rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+  font-size: 0.66rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+}
+.nl-mini-studip .nl-mini-type-placeholder {
+  color: rgba(226, 232, 240, 0.42);
+}
+.nl-mini-studip .nl-mini-type-value {
+  color: #fff;
+}
+.nl-mini-studip .sd-search-drop {
+  display: none;
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  padding: 0.35rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+.nl-mini-search-option {
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  color: #e2e8f0;
+  background: rgba(59, 130, 246, 0.15);
+  font-size: 0.62rem;
+  font-weight: 850;
+}
+.nl-mini-studip .sd-layout-btn {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.9);
+}
+.nl-mini-studip .sd-course-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.nl-mini-studip .sd-empty-state {
+  grid-column: 1 / -1;
+  min-height: 8.3rem;
+  padding: 1.55rem 1rem;
+  text-align: center;
+  border-radius: 1.05rem;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+.nl-mini-studip .sd-empty-icon {
+  font-size: 1.65rem;
+  margin-bottom: 0.45rem;
+  opacity: 0.7;
+}
+.nl-mini-studip .sd-empty-title {
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.nl-mini-studip .sd-empty-sub {
+  max-width: 18rem;
+  margin: 0.25rem auto 0;
+  color: rgba(226, 232, 240, 0.62);
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+.nl-mini-studip .sd-course-card {
+  --sd-card-accent: #2563eb;
+  position: relative;
+  display: none;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 12rem;
+  padding: 1rem 1.05rem;
+  border-radius: 1.05rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)), rgba(15, 23, 42, 0.4);
+  color: inherit;
+}
+.nl-mini-studip .sd-course-card.is-created {
+  display: flex;
+  animation: nl-course-card-created 520ms ease both;
+}
+.nl-mini-studip .sd-course-card.is-tour-hover,
+.nl-mini-studip .sd-search-input.is-tour-hover,
+.nl-mini-studip .sd-add-btn.is-tour-hover,
+.nl-mini-studip .sd-course-open-btn.is-tour-hover {
+  border-color: rgba(125, 211, 252, 0.62);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.20),
+    0 0 22px rgba(56, 189, 248, 0.28);
+}
+.nl-mini-studip .sd-course-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, var(--sd-card-accent), rgba(96, 165, 250, 0.55));
+}
+.nl-mini-studip .sd-del-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+.nl-mini-studip .sd-course-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding-right: 2rem;
+}
+.nl-mini-studip .sd-course-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.7rem;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.28);
+}
+.nl-mini-studip .sd-course-name {
+  margin: 0;
+  color: #fff;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  font-weight: 900;
+}
+.nl-mini-studip .sd-course-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.38rem;
+}
+.nl-mini-studip .sd-course-chip {
+  padding: 0.26rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.55rem;
+  font-weight: 800;
+}
+.nl-mini-studip .sd-course-empty-msg {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.8rem;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+}
+.nl-mini-studip .sd-course-empty-msg-title {
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+.nl-mini-studip .sd-course-empty-msg-sub {
+  margin-top: 0.18rem;
+  color: rgba(226, 232, 240, 0.6);
+  font-size: 0.58rem;
+  line-height: 1.35;
+}
+.nl-mini-studip .sd-course-open-btn {
+  width: 100%;
+  margin-top: auto;
+  padding: 0.65rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.66rem;
+  font-weight: 900;
+}
+@keyframes nl-course-card-created {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .nl-mini-upload-drop {
   margin-top: 0.6rem;
   padding: 0.7rem;

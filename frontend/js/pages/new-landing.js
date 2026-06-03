@@ -231,7 +231,7 @@
         },
         course: {
           shell: { chapter: 'Shell', eyebrow: 'Step 1 · App shell', headline: 'Start from the real Minallo sidebar.', body: 'The preview opens on an empty dashboard and uses the same sidebar order and icons students see in the app.' },
-          upload: { chapter: 'Upload', eyebrow: 'Step 1 · Set up', headline: 'Start with your real material.', body: 'Drop in lecture PDFs, exercise sheets, and formula collections. Minallo organizes them into one course workspace.' },
+          setup: { chapter: 'Course', eyebrow: 'Step 2 · Course setup', headline: 'Create the course first.', body: 'Open Courses, type the subject name, add it, and Minallo places the new course card in front of you.' },
           ask: { chapter: 'Ask', eyebrow: 'Step 2 · Ask', headline: 'Ask in your own words.', body: 'No prompt engineering. Ask the way you would ask a tutor sitting next to you.' },
           sources: { chapter: 'Sources', eyebrow: 'Step 3 · Retrieve', headline: 'It finds the exact pages.', body: 'Minallo searches your files and pulls the passages that actually answer the question.' },
           answer: { chapter: 'Answer', eyebrow: 'Step 4 · Explain', headline: 'A structured answer you can trust.', body: 'Worked the way your course teaches it — with page citations you can open and verify.' },
@@ -452,7 +452,7 @@
         },
         course: {
           shell: { chapter: 'Shell', eyebrow: 'Schritt 1 · App-Shell', headline: 'Starte mit der echten Minallo-Seitenleiste.', body: 'Die Vorschau öffnet ein leeres Dashboard und nutzt dieselbe Reihenfolge und dieselben Icons wie die App.' },
-          upload: { chapter: 'Hochladen', eyebrow: 'Schritt 1 · Einrichten', headline: 'Beginne mit deinem echten Material.', body: 'Lade Vorlesungs-PDFs, Übungsblätter und Formelsammlungen hoch. Minallo ordnet sie in einem Kurs-Workspace.' },
+          setup: { chapter: 'Kurs', eyebrow: 'Schritt 2 · Kurs einrichten', headline: 'Erstelle zuerst den Kurs.', body: 'Öffne Kurse, tippe den Fachnamen ein, füge ihn hinzu und Minallo zeigt dir direkt die neue Kurskarte.' },
           ask: { chapter: 'Fragen', eyebrow: 'Schritt 2 · Fragen', headline: 'Frag in deinen eigenen Worten.', body: 'Kein Prompt-Engineering. Frag so, wie du einen Tutor neben dir fragen würdest.' },
           sources: { chapter: 'Quellen', eyebrow: 'Schritt 3 · Finden', headline: 'Es findet die genauen Seiten.', body: 'Minallo durchsucht deine Dateien und zieht die Stellen heraus, die die Frage wirklich beantworten.' },
           answer: { chapter: 'Antwort', eyebrow: 'Schritt 4 · Erklären', headline: 'Eine strukturierte Antwort, der du vertrauen kannst.', body: 'Gelöst, wie es dein Kurs lehrt — mit Seitenquellen, die du öffnen und prüfen kannst.' },
@@ -909,7 +909,7 @@
       close:   document.getElementById('nlPvClose')
     };
 
-    var state = { track: null, index: 0, playing: false, timer: null, shellTimer: null, lastFocus: null, hover: false };
+    var state = { track: null, index: 0, playing: false, timer: null, shellTimer: null, courseTimer: null, lastFocus: null, hover: false };
 
     // -- i18n resolvers (fall back to EN if a key is missing) --
     function t(key) {
@@ -1005,8 +1005,6 @@
       shell.appendChild(content);
       screen.appendChild(shell);
       frame.appendChild(screen);
-      frame.appendChild(el('span', 'nl-shell-cursor'));
-      frame.appendChild(el('div', 'nl-shell-popover'));
       return frame;
     }
     function clearShellCursor() {
@@ -1054,19 +1052,168 @@
       }
       requestAnimationFrame(function () { step(0); });
     }
+    function clearCourseSetupCursor() {
+      if (state.courseTimer) {
+        clearTimeout(state.courseTimer);
+        state.courseTimer = null;
+      }
+    }
+    function courseSetupScene() {
+      var frame = appShell('Courses', el('div', 'nl-mini-studip'));
+      frame.classList.add('nl-tour--course-setup');
+      var root = frame.querySelector('.nl-mini-studip');
+      var shell = el('div', 'sd-shell');
+      root.appendChild(shell);
+
+      var hero = el('section', 'sd-hero');
+      hero.appendChild(el('div', 'sd-hero-glow'));
+      var heroGrid = el('div', 'sd-hero-grid');
+      var heroLeft = el('div', 'sd-hero-left');
+      var eyebrow = el('div', 'sd-hero-eyebrow');
+      eyebrow.appendChild(buildSvgUse('plus', 14));
+      eyebrow.appendChild(el('span', null, 'AI-ready course workspace'));
+      heroLeft.appendChild(eyebrow);
+      var title = el('h1', 'sd-hero-title');
+      title.appendChild(el('span', 'sd-hero-emoji', '📚'));
+      title.appendChild(el('span', null, 'My Courses'));
+      heroLeft.appendChild(title);
+      heroLeft.appendChild(el('p', 'sd-hero-sub', 'Organize your semester, upload lecture files, and open AI, notes, or summaries directly from each subject.'));
+      var stats = el('div', 'sd-hero-stats');
+      [['semester', 'SS 2026'], ['courses', '0 courses'], ['files', '0 files'], ['progress', '0% avg progress']].forEach(function (s, idx) {
+        var stat = el('span', 'sd-hero-stat');
+        if (idx === 0) stat.appendChild(el('span', 'sd-hero-stat-dot'));
+        stat.appendChild(el('span', null, s[1]));
+        stat.setAttribute('data-mini-stat', s[0]);
+        stats.appendChild(stat);
+      });
+      heroLeft.appendChild(stats);
+      heroGrid.appendChild(heroLeft);
+      var actions = el('div', 'sd-hero-actions');
+      var semWrap = el('div', 'sd-hero-sem');
+      var semBtn = el('button', 'sem-btn sd-sem-btn');
+      semBtn.type = 'button';
+      semBtn.appendChild(el('span', 'sem-btn-l', '● SS 2026'));
+      semBtn.appendChild(el('span', 'sem-chev', '▼'));
+      semWrap.appendChild(semBtn);
+      actions.appendChild(semWrap);
+      var addBtn = el('button', 'sd-add-btn');
+      addBtn.type = 'button';
+      addBtn.setAttribute('data-course-target', 'add');
+      addBtn.appendChild(buildSvgUse('plus', 16));
+      addBtn.appendChild(el('span', null, 'Add Subject'));
+      actions.appendChild(addBtn);
+      heroGrid.appendChild(actions);
+      hero.appendChild(heroGrid);
+      shell.appendChild(hero);
+
+      var controls = el('div', 'sd-controls');
+      var searchWrap = el('div', 'sd-search-wrap');
+      searchWrap.appendChild(buildSvgUse('search', 16));
+      searchWrap.querySelector('svg').classList.add('sd-search-icon');
+      var input = el('div', 'sd-search-input');
+      input.setAttribute('data-course-target', 'search');
+      input.appendChild(el('span', 'nl-mini-type-placeholder', 'Search subjects...'));
+      input.appendChild(el('span', 'nl-mini-type-value'));
+      searchWrap.appendChild(input);
+      var drop = el('div', 'sd-search-drop');
+      drop.appendChild(el('div', 'nl-mini-search-option', 'Engineering Mechanics 2'));
+      searchWrap.appendChild(drop);
+      controls.appendChild(searchWrap);
+      var layoutBtn = el('button', 'sd-layout-btn', 'Manage layout');
+      layoutBtn.type = 'button';
+      controls.appendChild(layoutBtn);
+      shell.appendChild(controls);
+
+      var list = el('div', 'sd-course-grid');
+      var empty = el('div', 'sd-empty-state');
+      empty.setAttribute('data-course-target', 'empty');
+      empty.appendChild(el('div', 'sd-empty-icon', '📚'));
+      empty.appendChild(el('div', 'sd-empty-title', 'No subjects yet'));
+      empty.appendChild(el('div', 'sd-empty-sub', "Use the search above to add the courses you're taking this semester."));
+      list.appendChild(empty);
+      var card = el('article', 'sd-course-card sd-course-card-empty');
+      card.setAttribute('data-course-target', 'card');
+      card.style.setProperty('--sd-card-accent', '#2563eb');
+      card.innerHTML =
+        '<div class="sd-course-bar"></div>' +
+        '<button type="button" class="sd-del-btn" aria-label="Remove course" title="Remove"></button>' +
+        '<header class="sd-course-head"><div class="sd-course-icon" aria-hidden="true">📘</div><div class="sd-course-head-text"><h3 class="sd-course-name">Engineering Mechanics 2</h3><div class="sd-course-chips"><span class="sd-course-chip sd-course-chip-files">0 files</span><span class="sd-course-chip sd-course-chip-time">just now</span></div></div></header>' +
+        '<div class="sd-course-empty-msg"><svg class="sd-course-empty-icon" width="20" height="20"><use href="#i-upload-cloud"></use></svg><div><div class="sd-course-empty-msg-title">No files yet</div><div class="sd-course-empty-msg-sub">Upload lectures, exercises, or formula sheets to start.</div></div></div>' +
+        '<button type="button" class="sd-course-open-btn" data-course-target="open">Open course</button>';
+      list.appendChild(card);
+      shell.appendChild(list);
+
+      frame.appendChild(el('span', 'nl-shell-cursor nl-course-cursor'));
+      frame.appendChild(el('div', 'nl-shell-popover nl-course-popover'));
+      return frame;
+    }
+    function startCourseSetupCursor() {
+      clearCourseSetupCursor();
+      var frame = els.visual.querySelector('.nl-tour--course-setup');
+      if (!frame || prefersReducedMotion) return;
+      var cursor = frame.querySelector('.nl-course-cursor');
+      var pop = frame.querySelector('.nl-course-popover');
+      var title = el('strong');
+      var body = el('span');
+      clearChildren(pop);
+      pop.appendChild(title);
+      pop.appendChild(body);
+      var value = frame.querySelector('.nl-mini-type-value');
+      var placeholder = frame.querySelector('.nl-mini-type-placeholder');
+      var drop = frame.querySelector('.sd-search-drop');
+      var empty = frame.querySelector('[data-course-target="empty"]');
+      var card = frame.querySelector('[data-course-target="card"]');
+      var courseStat = frame.querySelector('[data-mini-stat="courses"] span:last-child');
+      var steps = [
+        { target: '[data-tour-page="Courses"]', title: 'Courses', body: 'Click Courses in the real sidebar.', typed: '', phase: 'empty' },
+        { target: '[data-course-target="search"]', title: 'Course name', body: 'Type the subject name into the course search field.', typed: 'Engineering Mechanics 2', phase: 'typing' },
+        { target: '[data-course-target="add"]', title: 'Add Subject', body: 'Click Add Subject to create the course.', typed: 'Engineering Mechanics 2', phase: 'ready' },
+        { target: '[data-course-target="open"]', title: 'Engineering Mechanics 2', body: 'The new course card appears in front of you, ready to open.', typed: 'Engineering Mechanics 2', phase: 'created' }
+      ];
+      function applyPhase(step) {
+        if (value) value.textContent = step.typed || '';
+        if (placeholder) placeholder.hidden = !!step.typed;
+        if (drop) drop.style.display = step.phase === 'typing' ? 'block' : 'none';
+        if (empty) empty.hidden = step.phase === 'created';
+        if (card) card.classList.toggle('is-created', step.phase === 'created');
+        if (courseStat) courseStat.textContent = step.phase === 'created' ? '1 course' : '0 courses';
+      }
+      function moveTo(selector, step) {
+        var target = frame.querySelector(selector);
+        if (!target) return;
+        frame.querySelectorAll('.is-tour-hover').forEach(function (node) {
+          node.classList.remove('is-tour-hover');
+        });
+        target.classList.add('is-tour-hover');
+        var fr = frame.getBoundingClientRect();
+        var tr = target.getBoundingClientRect();
+        var cx = tr.left - fr.left + (tr.width / 2);
+        var cy = tr.top - fr.top + (tr.height / 2);
+        cursor.style.transform = 'translate(' + Math.round(cx + 10) + 'px, ' + Math.round(cy) + 'px)';
+        var px = Math.min(cx + 44, fr.width - 310);
+        pop.style.transform = 'translate(' + Math.round(Math.max(92, px)) + 'px, ' + Math.round(Math.max(72, cy - 22)) + 'px)';
+        title.textContent = step.title;
+        body.textContent = step.body;
+      }
+      function step(i) {
+        var s = steps[i % steps.length];
+        applyPhase(s);
+        moveTo(s.target, s);
+        state.courseTimer = setTimeout(function () { step(i + 1); }, i === 1 ? 2300 : 1800);
+      }
+      requestAnimationFrame(function () { step(0); });
+    }
 
     // -- scene visual builders (each returns a DOM node) --
     var builders = {
       shell: function () {
-        return appShell('Home', el('div', 'nl-mini-empty-dashboard'));
+        var frame = appShell('Home', el('div', 'nl-mini-empty-dashboard'));
+        frame.appendChild(el('span', 'nl-shell-cursor'));
+        frame.appendChild(el('div', 'nl-shell-popover'));
+        return frame;
       },
-      upload: function () {
-        var m = mock();
-        m.appendChild(badge('check-circle-2', L('synced')));
-        m.appendChild(row('file-text', 'Mechanics_lecture_03.pdf', 'PDF'));
-        m.appendChild(row('pen-tool', 'Exercise_sheet_06.pdf', 'PDF'));
-        m.appendChild(row('book-open', 'Formula_collection.pdf', 'PDF'));
-        return m;
+      courseSetup: function () {
+        return courseSetupScene();
       },
       ask: function () {
         var m = mock();
@@ -1191,7 +1338,7 @@
     var TRACKS = {
       course: [
         { keyBase: 'course.shell',   build: 'shell',   ms: 10400 },
-        { keyBase: 'course.upload',  build: 'upload',  ms: 4200 },
+        { keyBase: 'course.setup',   build: 'courseSetup', ms: 8400 },
         { keyBase: 'course.ask',     build: 'ask',     ms: 4000 },
         { keyBase: 'course.sources', build: 'sources', ms: 4200 },
         { keyBase: 'course.answer',  build: 'answer',  ms: 6000 },
@@ -1251,9 +1398,11 @@
     function paint() {
       var sc = scenes()[state.index];
       clearShellCursor();
+      clearCourseSetupCursor();
       clearChildren(els.visual);
       if (builders[sc.build]) els.visual.appendChild(builders[sc.build]());
       if (sc.build === 'shell') startShellCursor();
+      if (sc.build === 'courseSetup') startCourseSetupCursor();
       els.eyebrow.textContent = t(sc.keyBase + '.eyebrow');
       els.headline.textContent = t(sc.keyBase + '.headline');
       els.body.textContent = t(sc.keyBase + '.body');
@@ -1310,6 +1459,8 @@
     }
     function showChooser() {
       clearTimer();
+      clearShellCursor();
+      clearCourseSetupCursor();
       els.player.hidden = true;
       els.sw.hidden = true;
       els.chooser.hidden = false;
@@ -1627,6 +1778,7 @@
     function close() {
       clearTimer();
       clearShellCursor();
+      clearCourseSetupCursor();
       modal.hidden = true;
       document.documentElement.classList.remove('nl-pv-open');
       document.body.classList.remove('nl-pv-open');
