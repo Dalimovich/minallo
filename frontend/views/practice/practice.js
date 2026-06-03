@@ -12,7 +12,13 @@
       tmp.innerHTML = html;
       var sec = tmp.querySelector('#psec-german');
       if (sec) {
+        // Preserve the live display. practice.html's #psec-german ships with
+        // style="display:none", and this fetch resolves AFTER the first click
+        // already revealed the section — clobbering cssText would re-hide it,
+        // forcing a pointless second click.
+        var prevDisplay = container.style.display || 'none';
         container.style.cssText = sec.getAttribute('style') || '';
+        container.style.display = prevDisplay;
         while (sec.firstChild) container.appendChild(sec.firstChild);
       }
       _init();
