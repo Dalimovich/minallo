@@ -2894,5 +2894,15 @@
       }
       if (typeof _origShowPortalSectionForChat === 'function') _origShowPortalSectionForChat(sec);
     };
+
+    // First-click init. This script is lazy-loaded, and the router's
+    // _ssAfterFeature('chat', …) callback that calls window._chatInit fires on
+    // script load — which is BEFORE this async fetch resolves and _chatInit
+    // exists, so the first click used to leave the panel blank until a second
+    // click. If the user is already on the Chat section now (the section is
+    // visible), initialise immediately. When chat.js is merely prewarmed in the
+    // background the section is hidden, so we skip and let the navigation call.
+    var _chatSec = document.getElementById('psec-chat');
+    if (_chatSec && _chatSec.style.display !== 'none') _chatInit();
   } // end _init
 })();
