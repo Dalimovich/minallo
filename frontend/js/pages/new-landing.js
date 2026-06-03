@@ -1318,7 +1318,7 @@
         eyebrow: 'Step 1 · Product map',
         title: 'See the useful Minallo pages first.',
         body: 'The tour starts with the real app structure: Dashboard, Courses, PDF Workspace, AI Tutor, Chatbot, Chat, Games, Study Lounge, Profile, Settings, and Subscription.',
-        calls: [['Dashboard', 12, 24, 0], ['Courses', 12, 34, 900], ['PDF workspace', 12, 45, 1800], ['AI Tutor', 12, 55, 2700], ['Chatbot and Chat', 12, 66, 3600], ['Account pages', 12, 78, 4700]],
+        calls: [['Expand rail', 6, 6.2, 0], ['Profile', 6, 14.9, 900], ['Courses', 6, 39, 1800], ['Lecture Notes', 6, 51.4, 2700], ['Editor', 6, 63.8, 3600], ['Chatbot', 6, 76.3, 4700]],
         build: buildPagesOverview
       },
       {
@@ -1389,8 +1389,8 @@
     }
     function miniShell(active, mainHtml, extraClass) {
       var pages = [
-        ['Dashboard', 'house'], ['Courses', 'book-open'], ['PDF Workspace', 'panel-left'],
-        ['AI Tutor', 'pen-tool'], ['Study Lounge', 'briefcase'], ['Chatbot', 'message-circle'],
+        ['Dashboard', 'layout-dashboard'], ['Courses', 'book-open'], ['Lecture Notes', 'file-text'],
+        ['Editor', 'sparkles'], ['Chatbot', 'brain-circuit'], ['Chat', 'quote'],
         ['__divider__', ''], ['Notifications', 'bell']
       ];
       var nav = pages.map(function (p) {
@@ -1399,7 +1399,7 @@
         return '<div class="nl-mini-nav__item' + on + '" title="' + p[0] + '"><span class="nl-mini-nav__icon">' + iconUse(p[1], 24) + '</span><b>' + p[0] + '</b></div>';
       }).join('');
       return '<div class="nl-mini-shell ' + (extraClass || '') + '">' +
-        '<aside class="nl-mini-nav"><div class="nl-mini-nav-list">' + nav + '</div></aside>' +
+        '<aside class="nl-mini-nav"><button class="nl-mini-toggle" aria-hidden="true">' + iconUse('chevron-right', 18) + '</button><div class="nl-mini-brand"><span>M</span><strong>Minallo</strong></div><div class="nl-mini-nav-list">' + nav + '</div></aside>' +
         '<section class="nl-mini-main"><div class="nl-mini-top"><strong>' + active + '</strong><span>Study with clarity</span></div><div class="nl-mini-scroll">' + mainHtml + '</div></section>' +
         '</div>';
     }
