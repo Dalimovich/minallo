@@ -3145,7 +3145,12 @@ body.night .music-yt-input {
 /* Hover action row */
 .chat-msg-actions {
   position: absolute;
-  right: 14px;
+  /* Incoming messages are left-aligned, so anchor the toolbar to the LEFT and
+     let it extend right into open space — anchoring it right made it overflow
+     past the bubble's left edge on short messages and get clipped by the
+     container. Own messages flip to right-anchored below. */
+  left: 6px;
+  right: auto;
   top: -16px;
   display: flex;
   gap: 2px;
@@ -3167,6 +3172,12 @@ body.night .music-yt-input {
 .chat-msg:hover .chat-msg-actions {
   opacity: 1;
   pointer-events: auto;
+}
+/* Own messages are right-aligned — anchor the toolbar to the right so it
+   extends left into the open space beside the bubble. */
+.chat-msg-me .chat-msg-actions {
+  left: auto;
+  right: 6px;
 }
 .chat-act-btn {
   background: none;
