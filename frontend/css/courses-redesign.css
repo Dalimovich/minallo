@@ -1157,7 +1157,7 @@ body:not(.night) #psec-studip .sd-skel-bar {
   text-align: center;
 }
 
-/* Files/Quiz/Flashcards tab bar */
+/* Files/Quiz/Flashcards/ExamForge tab bar */
 /* Tabs as an inner pill inside the workspace card. */
 .co-inner-v2 .co-course-tabs {
   display: flex;
@@ -1645,13 +1645,14 @@ body.minallo-in-course .welcome-state {
 
 /* Tabs centered as a compact pill inside the workspace card. */
 .co-inner-v2 .co-course-tabs {
-  max-width: 480px;
+  max-width: min(720px, 100%);
   margin-left: auto;
   margin-right: auto;
   justify-content: center;
 }
 .co-inner-v2 .co-course-tab {
-  flex: 0 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* ── Tool buttons: each gets a different accent border per the design ──── */
