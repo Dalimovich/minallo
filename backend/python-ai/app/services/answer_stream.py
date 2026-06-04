@@ -1022,15 +1022,34 @@ def stream_answer(
     else:
         user_content = user_message
 
-    def _source_payload(c):
+    def _source_payload(c, index=None):
+        # ``index`` is the 1-based [Source N] number (N = position in the
+        # COURSE CONTEXT block). The frontend uses it to make inline
+        # [Source N] markers clickable; documentId + pageStart let it open
+        # the right PDF at the right page.
         return {
+            "index": index,
+            "documentId": c.document_id,
             "file_name": doc_names.get(c.document_id, "Unknown"),
+            "pageStart": c.page_start,
+            "pageEnd": c.page_end,
             "pages": (
                 str(c.page_start)
                 if c.page_start and c.page_start == c.page_end
                 else (f"{c.page_start}-{c.page_end}" if c.page_start and c.page_end else None)
             ),
             "section": c.section_title,
+        }
+
+    def _source_zero_payload():
+        return {
+            "index": 0,
+            "documentId": None,
+            "file_name": "Problem Solver input" if has_problem_source else (active_file_name or "Source 0"),
+            "pageStart": None,
+            "pageEnd": None,
+            "pages": None if has_problem_source else "currently visible",
+            "section": "Problem statement" if has_problem_source else "Open PDF (visible page)",
         }
 
     # Buffer the streamed answer so we can filter sources by the [Source N]
@@ -1135,7 +1154,7 @@ def stream_answer(
             full_answer += diagram_fence
 
     cited = _cited_indices(full_answer, len(used_chunks))
-    filtered_sources = [_source_payload(c) for i, c in enumerate(used_chunks, start=1) if i in cited]
+    filtered_sources = [_source_payload(c, i) for i, c in enumerate(used_chunks, start=1) if i in cited]
 
     # [Source 0] = the visible PDF text snippet the model received when the
     # question was deictic ("explain this"). _cited_indices only handles
@@ -1144,25 +1163,17 @@ def stream_answer(
     # but the final Sources block would be missing that source entirely —
     # a misleading UX gap the user can't tell from a fabricated citation.
     if include_source_zero and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
-        filtered_sources.insert(0, {
-            "file_name": "Problem Solver input" if has_problem_source else (active_file_name or "Source 0"),
-            "pages": None if has_problem_source else "currently visible",
-            "section": "Problem statement" if has_problem_source else "Open PDF (visible page)",
-        })
+        filtered_sources.insert(0, _source_zero_payload())
     if has_problem_source and used_chunks and not any(src.get("file_name") != "Problem Solver input" for src in filtered_sources):
-        filtered_sources.extend(_source_payload(c) for c in used_chunks[:3])
+        filtered_sources.extend(_source_payload(c, i) for i, c in enumerate(used_chunks[:3], start=1))
     if not filtered_sources:
         # The UI should still show the material the answer was grounded on.
         # Verification may mark the answer down when inline citations are
         # missing, but hiding sources entirely makes students think retrieval
         # did not use their lectures/exercises at all.
         if include_source_zero:
-            filtered_sources.append({
-                "file_name": "Problem Solver input" if has_problem_source else (active_file_name or "Source 0"),
-                "pages": None if has_problem_source else "currently visible",
-                "section": "Problem statement" if has_problem_source else "Open PDF (visible page)",
-            })
-        filtered_sources.extend(_source_payload(c) for c in used_chunks[:4])
+            filtered_sources.append(_source_zero_payload())
+        filtered_sources.extend(_source_payload(c, i) for i, c in enumerate(used_chunks[:4], start=1))
 
     # Phase 10 — deterministic verification on the streamed answer.
     # Include the open-file text in the haystack so formulas / numbers the

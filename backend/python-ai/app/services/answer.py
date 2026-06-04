@@ -918,8 +918,13 @@ def _sources_for_answer(
     doc_names: dict[str, str],
 ) -> list[dict[str, Any]]:
     cited = _cited_indices(answer_text, len(used_chunks))
-    sources = [
-        {
+
+    def _src(c, index):
+        # ``index`` is the 1-based [Source N] number so the frontend can
+        # linkify inline markers; documentId + pages let it open the PDF.
+        return {
+            "index":     index,
+            "documentId": c.document_id,
             "fileName":  doc_names.get(c.document_id, "Unknown"),
             "pageStart": c.page_start,
             "pageEnd":   c.page_end,
@@ -927,8 +932,8 @@ def _sources_for_answer(
             "chunkType": c.chunk_type,
             "similarity": round(c.similarity, 4),
         }
-        for i, c in enumerate(used_chunks, start=1) if i in cited
-    ]
+
+    sources = [_src(c, i) for i, c in enumerate(used_chunks, start=1) if i in cited]
     if sources:
         return sources
 
@@ -936,17 +941,7 @@ def _sources_for_answer(
     # forgot inline [Source N] tags. Verification still downgrades the answer
     # for missing citations; this only prevents an empty Sources footer from
     # making retrieval look unused.
-    return [
-        {
-            "fileName":  doc_names.get(c.document_id, "Unknown"),
-            "pageStart": c.page_start,
-            "pageEnd":   c.page_end,
-            "sectionTitle": c.section_title,
-            "chunkType": c.chunk_type,
-            "similarity": round(c.similarity, 4),
-        }
-        for c in used_chunks[:4]
-    ]
+    return [_src(c, i) for i, c in enumerate(used_chunks[:4], start=1)]
 
 
 def _context_strength(chunks: list[RetrievedChunk]) -> str:

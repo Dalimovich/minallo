@@ -118,6 +118,8 @@ def test_sources_fallback_keeps_context_visible_when_citations_missing() -> None
     sources = _sources_for_answer("Die Formel lautet delta = l / EA.", chunks, {"doc1": "Lecture.pdf"})
 
     assert sources == [{
+        "index": 1,
+        "documentId": "doc1",
         "fileName": "Lecture.pdf",
         "pageStart": 8,
         "pageEnd": 8,
