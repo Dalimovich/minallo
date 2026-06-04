@@ -75,13 +75,11 @@ _SYSTEM = (
     "rather than spending space on prose.\n"
     "- Match the language of the source material.\n"
     "\n"
-    "DENSITY MANDATE — this is a REFERENCE sheet, not a summary. For each "
-    "section list EVERY distinct formula the evidence supports as its own "
-    "display formula ($$...$$): general forms AND their special cases. A strong "
-    "sheet carries many formulas (aim for 30-60 across the sheet WHEN the "
-    "evidence supports them — never invent to hit a number). Do not consolidate "
-    "or drop a supported formula to save space; only drop duplicates and "
-    "anything not grounded in the evidence.\n"
+    "DENSITY — this is a compact REFERENCE sheet, not a summary. Cover the "
+    "HIGHEST-VALUE formulas the evidence supports, each as a display formula "
+    "($$...$$). Be RUTHLESSLY TERSE: at most a few words of context per formula, "
+    "no prose paragraphs, no filler. Prefer fewer well-chosen formulas over a "
+    "long sheet. Drop duplicates and anything not grounded; never invent.\n"
     "\n"
     "EMPHASIS MARKERS (use exactly these; never inside a formula):\n"
     "- Wrap THE single most important fact/result of a block in ==double "
@@ -109,19 +107,26 @@ _SYSTEM = (
 
 _PRESETS: dict[str, dict[str, Any]] = {
     # name            topics  density   columns  font
-    "exam_night":     {"topics": 10, "density": "max",     "columns": 4, "font": "xs"},
-    "balanced":       {"topics": 14, "density": "high",    "columns": 3, "font": "sm"},
-    "deep_revision":  {"topics": 18, "density": "high",    "columns": 3, "font": "md"},
-    "topic_mastery":  {"topics": 6,  "density": "thorough","columns": 2, "font": "md"},
+    "exam_night":     {"topics": 9,  "density": "max",     "columns": 4, "font": "xs"},
+    "balanced":       {"topics": 10, "density": "high",    "columns": 3, "font": "sm"},
+    "deep_revision":  {"topics": 12, "density": "high",    "columns": 3, "font": "md"},
+    "topic_mastery":  {"topics": 5,  "density": "thorough","columns": 2, "font": "md"},
 }
 _DEFAULT_PRESET = "balanced"
 _VALID_PAGES = (1, 2, 3, 4)
 _VALID_LANGS = ("source", "en", "de")
-# Density label → the count band we ask the model to aim for. Bounded so even
-# "max" stays inside the 45s output budget (see Stage 1 validation).
+# Density label → the count band we ask the model to aim for. HARD CONSTRAINT:
+# output runs ~40 tok/s against the upstream timeout, AND the sheet is one JSON
+# string (a run that overshoots the token cap truncates → "could not parse model
+# JSON"). Model verbosity varies run-to-run, so we keep the TARGET modest enough
+# that even a verbose run finishes well under both the cap and ~45s of wall time.
+# Bigger bands gave ~30 formulas but intermittently timed out / truncated.
 _DENSITY_TARGET = {
-    "max": "40-60", "high": "30-50", "thorough": "20-40",
+    "max": "16-24", "high": "14-20", "thorough": "10-16",
 }
+# Headroom above the typical ~1300-1500 completion tokens so normal variance
+# never truncates the JSON; wall-clock (not this cap) is the real budget.
+_MAX_TOKENS = 2400
 _LANG_INSTRUCTION = {
     "source": "Match the language of the source material.",
     "en": "Write the cheatsheet in English regardless of the source language.",
@@ -140,9 +145,10 @@ def normalize_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
 
     pages = s.get("pages")
     pages = pages if pages in _VALID_PAGES else (1 if preset == "exam_night" else 2)
-    # More pages → room for more sections; fewer → tighter. Scale topics with
-    # pages but keep the preset's character and stay output-budget-safe.
-    base["topics"] = max(4, min(20, int(base["topics"] * (0.6 + 0.35 * pages))))
+    # More pages → a few more sections; fewer → tighter. A gentle ±delta (NOT a
+    # multiplier — that re-inflated topics to 18-20 and blew the 45s timeout).
+    # Capped at 14 so even "4 pages" stays inside the output budget.
+    base["topics"] = max(4, min(14, base["topics"] + (pages - 2) * 2))
 
     lang = str(s.get("language") or "source").lower()
     if lang not in _VALID_LANGS:
@@ -399,10 +405,10 @@ def generate_cheatsheet(
     title = (topic_query + " — Cheatsheet") if topic_query else "Course Cheatsheet"
     user = "COURSE CONTEXT:\n\n" + _format_evidence(evidence, merged_names, topics)
     try:
-        # Keep output bounded: at ~40 tok/s a longer sheet blows the edge
-        # proxy's upstream timeout. ~2800 tokens (a tight 1.5-page sheet) plus
-        # the raised proxy timeout keeps generation inside the budget.
-        res = chat_json(system=_settings_system_prompt(cfg), user=user, max_tokens=2800)
+        # Keep output bounded: at ~40 tok/s, output length is wall-clock, and the
+        # edge proxy aborts at 45s. _MAX_TOKENS caps generation so a verbose sheet
+        # can't run past the timeout ("Upstream AI service error").
+        res = chat_json(system=_settings_system_prompt(cfg), user=user, max_tokens=_MAX_TOKENS)
     except Exception as e:  # noqa: BLE001
         log.exception("cheatsheet LLM call failed")
         return {"text": "", "error": str(e), "groundedSources": []}

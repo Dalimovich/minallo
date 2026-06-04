@@ -98,7 +98,7 @@ def test_settings_exam_night_defaults_one_page():
     cfg = cs.normalize_settings({"preset": "exam_night"})
     assert cfg["pages"] == 1
     assert cfg["columns"] == 4
-    assert cfg["densityTarget"] == "40-60"
+    assert cfg["densityTarget"] == "16-24"
 
 
 def test_settings_pages_clamped():
