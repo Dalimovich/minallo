@@ -28,6 +28,18 @@ interface PyExamForgeResponse {
   error?: string;
 }
 
+interface PyQuizFallbackResponse {
+  requestedCount?: number;
+  actualCount?: number;
+  questions?: unknown[];
+  groundedSources?: unknown[];
+  warning?: string;
+  model?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  error?: string;
+}
+
 function _docIds(raw: unknown): string[] | null {
   if (!Array.isArray(raw) || !raw.length) return null;
   return raw.filter((x): x is string => typeof x === 'string').slice(0, MAX_DOCUMENT_IDS);
@@ -115,6 +127,33 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     save: true,
   });
   if (!upstream.ok) {
+    if (upstream.status === 404) {
+      const fallback = await forwardToPython<PyQuizFallbackResponse>('generate-quiz', {
+        userId: user.id,
+        courseId,
+        documentIds: docIds,
+        requestedCount,
+        difficulty: typeof difficulty === 'string' ? difficulty : 'medium',
+        questionTypes,
+        save: false,
+      });
+      if (fallback.ok) {
+        const py = fallback.body as PyQuizFallbackResponse;
+        return jsonResponse(200, {
+          sessionId: null,
+          title: typeof topic === 'string' && topic.trim() ? topic.trim() : 'ExamForge',
+          requestedCount: py.requestedCount ?? requestedCount,
+          actualCount: py.actualCount ?? (py.questions || []).length,
+          questions: py.questions || [],
+          topicMap: [],
+          groundedSources: py.groundedSources || [],
+          warning: py.warning,
+          model: py.model,
+          promptTokens: py.promptTokens,
+          completionTokens: py.completionTokens,
+        });
+      }
+    }
     const err = (upstream.body as { error?: string }).error;
     return jsonResponse(200, {
       sessionId: null,
