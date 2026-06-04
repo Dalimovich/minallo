@@ -676,9 +676,19 @@ def _replace_pages(
         for start in range(0, len(rows), 100):
             sb.table("document_pages").insert(rows[start:start + 100]).execute()
     except Exception as exc:  # noqa: BLE001
-        # Deploy-order safety: if the text_blocks column isn't present yet
-        # (migration 20260604_000001 not applied), retry without it so
-        # indexing still succeeds — bbox data is additive, not required.
+        # Deploy-order safety: the additive OCR/text-block columns may be
+        # unavailable to PostgREST — either the migration (20260604_000001)
+        # hasn't run, or it ran but PostgREST is still serving a STALE schema
+        # cache (columns added via SQL aren't visible until it reloads). In
+        # both cases we degrade by reinserting without the additive metadata so
+        # indexing still succeeds.
+        #
+        # Crucially, scope this to genuine schema/column errors. The old check
+        # ``any(col in str(exc))`` also matched constraint-violation messages
+        # (e.g. ``document_pages_ocr_confidence_chk``) and silently dropped the
+        # data instead of surfacing a real bug — and it logged a misleading
+        # "columns missing" line even when the true cause was a stale cache.
+        msg = str(exc)
         optional_page_cols = {
             "text_blocks",
             "ocr_provider",
@@ -687,11 +697,23 @@ def _replace_pages(
             "ocr_needs_review",
             "ocr_unclear_count",
         }
-        if not any(col in str(exc) for col in optional_page_cols):
+        mentions_optional = any(col in msg for col in optional_page_cols)
+        lower = msg.lower()
+        schema_issue = (
+            "schema cache" in lower          # PostgREST PGRST204 — stale/unknown column
+            or "could not find" in lower     # PostgREST "Could not find the 'X' column"
+            or "does not exist" in lower      # Postgres 42703 — column really absent
+        )
+        if not (mentions_optional and schema_issue):
+            # Not a missing-column/cache problem (constraint violation, FK,
+            # NOT NULL, …) — never hide that by dropping data.
             raise
         log.warning(
-            "document_pages optional OCR/text-block columns missing; inserting "
-            "pages without additive metadata"
+            "document_pages additive OCR/text-block columns unavailable — "
+            "reinserting WITHOUT that metadata. Likely a missing migration or a "
+            "stale PostgREST schema cache (reload it if the columns do exist). "
+            "Underlying error: %s",
+            msg,
         )
         sb.table("document_pages").delete().eq("document_id", document_id).execute()
         stripped = [
