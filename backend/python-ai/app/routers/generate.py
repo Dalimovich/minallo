@@ -151,7 +151,10 @@ class GenerateDeepLearnResponse(BaseModel):
     lesson: str = ""
     workedExample: str = ""
     check: dict[str, Any] | None = None
+    structuredLesson: dict[str, Any] | None = None
     groundedSources: list[dict[str, Any]] = []
+    citationWarning: str | None = None
+    evidenceSummary: dict[str, int] = {}
     warning: str | None = None
     error: str | None = None
     model: str | None = None
@@ -310,7 +313,10 @@ async def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> Gen
         lesson=out.get("lesson", ""),
         workedExample=out.get("workedExample", ""),
         check=out.get("check"),
+        structuredLesson=out.get("structuredLesson"),
         groundedSources=out.get("groundedSources", []),
+        citationWarning=out.get("citationWarning"),
+        evidenceSummary=out.get("evidenceSummary", {}),
         warning=out.get("warning"),
         error=out.get("error"),
         model=out.get("model"),

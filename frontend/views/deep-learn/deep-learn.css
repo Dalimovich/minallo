@@ -194,3 +194,152 @@
   opacity: 0.7;
 }
 .dl-saved-del:hover { background: rgba(248, 113, 113, 0.15); color: #fca5a5; opacity: 1; }
+
+/* Structured guided lesson */
+.dl-kicker {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #93c5fd;
+  font-weight: 700;
+}
+.dl-warning {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.10);
+  color: #fcd34d;
+  font-size: 0.86rem;
+}
+.dl-study-section {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border, #1e293b);
+  border-radius: 8px;
+  background: var(--card-inner, rgba(255, 255, 255, 0.035));
+}
+.dl-study-section h4 {
+  margin: 0 0 8px;
+  color: var(--text, #e2e8f0);
+}
+.dl-muted {
+  margin: 0;
+  color: var(--muted, #94a3b8);
+  font-size: 0.88rem;
+}
+.dl-formulas {
+  display: grid;
+  gap: 10px;
+}
+.dl-formula-box {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  background: rgba(59, 130, 246, 0.08);
+}
+.dl-formula-main {
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+.dl-formula-box dl {
+  display: grid;
+  grid-template-columns: minmax(100px, 150px) 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.dl-formula-box dt {
+  color: #bfdbfe;
+  font-weight: 700;
+}
+.dl-formula-box dd {
+  margin: 0;
+  color: var(--text, #e2e8f0);
+}
+.dl-worked ol,
+.dl-method ol,
+.dl-mistakes ul {
+  margin: 6px 0 0;
+  padding-left: 22px;
+}
+.dl-source-basis {
+  color: var(--muted, #94a3b8);
+  font-size: 0.88rem;
+}
+.dl-checks {
+  display: grid;
+  gap: 10px;
+}
+.dl-check-card {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.dl-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dl-source-list .src-cite,
+.dl-source-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(147, 197, 253, 0.26);
+  background: rgba(59, 130, 246, 0.10);
+  color: #bfdbfe;
+  font-size: 0.8rem;
+}
+.dl-source-list .src-cite {
+  cursor: pointer;
+}
+
+/* Rich saved lesson rows */
+.dl-saved-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #1e293b);
+  background: var(--card-inner, rgba(255, 255, 255, 0.04));
+}
+.dl-saved-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dl-saved-source,
+.dl-saved-preview {
+  margin-top: 4px;
+  color: var(--muted, #94a3b8);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.dl-saved-preview {
+  color: rgba(226, 232, 240, 0.78);
+}
+.dl-saved-actions {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.dl-saved-actions button {
+  flex: 0 0 auto;
+  width: auto;
+  opacity: 1;
+  border-radius: 8px;
+  border: 1px solid var(--border, #1e293b);
+  background: transparent;
+  color: var(--text, #e2e8f0);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 10px;
+}
+.dl-saved-actions button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}

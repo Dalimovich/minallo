@@ -401,8 +401,37 @@ export interface DeepLearnResult {
   title?: string | null;
   lesson: string;
   workedExample: string;
+  structuredLesson?: {
+    title?: string;
+    learningGoal?: string;
+    intuition?: string;
+    coreExplanation?: string;
+    keyFormulas?: Array<{
+      formula?: string;
+      meaning?: string;
+      variables?: string;
+      conditions?: string;
+      source?: string;
+      commonMistake?: string;
+    }>;
+    stepByStepMethod?: string[];
+    workedExample?: {
+      problem?: string;
+      solutionSteps?: string[];
+      finalAnswer?: string;
+      sourceOrBasis?: string;
+      isMiniExample?: boolean;
+    };
+    commonMistakes?: string[];
+    selfCheck?: Array<{ question?: string; answer?: string; explanation?: string }>;
+    nextTopics?: string[];
+    groundedSources?: string[];
+    citationWarning?: string;
+  } | null;
   check?: { question: string; answer: string; explanation: string } | null;
-  groundedSources?: Array<{ fileName?: string; pageStart?: number | null; documentId?: string | null }>;
+  groundedSources?: Array<{ fileName?: string; pageStart?: number | null; documentId?: string | null; label?: string }>;
+  citationWarning?: string;
+  evidenceSummary?: Record<string, number>;
   warning?: string;
   error?: string;
 }
@@ -425,6 +454,11 @@ export interface SavedNote {
   id: string;
   title: string;
   type: string;
+  preview?: string;
+  content_markdown?: string;
+  course_id?: string;
+  document_id?: string | null;
+  note_sources?: Array<{ fileName?: string; pageStart?: number | null; file_name?: string }>;
   created_at?: string;
   updated_at?: string;
 }
@@ -444,7 +478,7 @@ export async function listCourseNotes(courseId: string): Promise<SavedNote[]> {
 /** Fetch one saved note (with full content_markdown). */
 export async function getNoteById(
   id: string
-): Promise<{ id: string; title: string; content_markdown: string } | null> {
+): Promise<{ id: string; title: string; content_markdown: string; note_sources?: unknown[] } | null> {
   const response = await fetch(
     _backendUrl() + '/api/notes?id=' + encodeURIComponent(id),
     { headers: _authJsonHeaders() }
@@ -452,7 +486,7 @@ export async function getNoteById(
   if (response.status === 401) throw new Error('SESSION_EXPIRED');
   if (!response.ok) return null;
   const data = (await response.json()) as {
-    note?: { id: string; title: string; content_markdown: string } | null;
+    note?: { id: string; title: string; content_markdown: string; note_sources?: unknown[] } | null;
   };
   return data.note || null;
 }

@@ -23,8 +23,11 @@ interface PyDeepLearnResponse {
   title?: string | null;
   lesson?: string;
   workedExample?: string;
+  structuredLesson?: unknown;
   check?: unknown;
   groundedSources?: unknown[];
+  citationWarning?: string;
+  evidenceSummary?: Record<string, number>;
   warning?: string;
   error?: string;
 }

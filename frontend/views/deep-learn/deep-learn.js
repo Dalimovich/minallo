@@ -59,6 +59,7 @@
 
   // Flatten a live lesson into one markdown doc for the printable view.
   function _composeLesson(res) {
+    if (res && res.structuredLesson) return _structuredToMarkdown(res.structuredLesson);
     var parts = [];
     if (res.lesson && res.lesson.trim()) parts.push(res.lesson.trim());
     if (res.workedExample && res.workedExample.trim()) parts.push('## Worked example\n\n' + res.workedExample.trim());
@@ -69,6 +70,199 @@
       parts.push(b);
     }
     return parts.join('\n\n');
+  }
+
+  function _asList(v) {
+    return Array.isArray(v) ? v.filter(Boolean) : [];
+  }
+
+  function _parseStructuredNote(note) {
+    try {
+      var parsed = JSON.parse((note && note.content_markdown) || '');
+      return parsed && parsed.structuredLesson && typeof parsed.structuredLesson === 'object'
+        ? parsed.structuredLesson
+        : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _structuredToMarkdown(lesson) {
+    lesson = lesson || {};
+    var parts = ['# ' + (lesson.title || 'Deep Learn')];
+    if (lesson.learningGoal) parts.push('## Learning Goal\n\n' + lesson.learningGoal);
+    if (lesson.intuition) parts.push('## Intuition\n\n' + lesson.intuition);
+    if (lesson.coreExplanation) parts.push('## Core Explanation\n\n' + lesson.coreExplanation);
+    if (_asList(lesson.keyFormulas).length) {
+      parts.push('## Key Formulas\n\n' + _asList(lesson.keyFormulas).map(function (f) {
+        return '**Formula:** ' + (f.formula || '') +
+          '\n\n**Meaning:** ' + (f.meaning || '') +
+          '\n\n**Variables:** ' + (f.variables || '') +
+          '\n\n**Use when / conditions:** ' + (f.conditions || '') +
+          (f.commonMistake ? '\n\n**Common mistake:** ' + f.commonMistake : '') +
+          '\n\n**Source:** ' + (f.source || '');
+      }).join('\n\n---\n\n'));
+    }
+    if (_asList(lesson.stepByStepMethod).length) {
+      parts.push('## Step-by-Step Method\n\n' + _asList(lesson.stepByStepMethod).map(function (s, i) {
+        return (i + 1) + '. ' + s;
+      }).join('\n'));
+    }
+    var worked = lesson.workedExample || {};
+    if (worked.problem || _asList(worked.solutionSteps).length) {
+      parts.push('## ' + (worked.isMiniExample ? 'Mini-example based on formulas above' : 'Worked Example') + '\n\n' +
+        (worked.problem ? '**Problem:** ' + worked.problem + '\n\n' : '') +
+        _asList(worked.solutionSteps).map(function (s, i) { return (i + 1) + '. ' + s; }).join('\n') +
+        (worked.finalAnswer ? '\n\n**Final answer:** ' + worked.finalAnswer : '') +
+        (worked.sourceOrBasis ? '\n\n**Source or basis:** ' + worked.sourceOrBasis : ''));
+    }
+    if (_asList(lesson.commonMistakes).length) parts.push('## Common Mistakes\n\n' + _asList(lesson.commonMistakes).map(function (s) { return '- ' + s; }).join('\n'));
+    if (_asList(lesson.selfCheck).length) {
+      parts.push('## Self-Check\n\n' + _asList(lesson.selfCheck).map(function (c) {
+        return '**Question:** ' + (c.question || '') + '\n\n**Answer:** ' + (c.answer || '') + '\n\n**Explanation:** ' + (c.explanation || '');
+      }).join('\n\n'));
+    }
+    if (_asList(lesson.nextTopics).length) parts.push('## Next Topics\n\n' + _asList(lesson.nextTopics).map(function (s) { return '- ' + s; }).join('\n'));
+    if (_asList(lesson.groundedSources).length) parts.push('## Sources\n\n' + _asList(lesson.groundedSources).map(function (s) { return '- ' + s; }).join('\n'));
+    return parts.filter(Boolean).join('\n\n');
+  }
+
+  function _previewFromLesson(lesson, fallback) {
+    var raw = lesson
+      ? [lesson.learningGoal, lesson.intuition, lesson.coreExplanation].filter(Boolean).join(' ')
+      : fallback;
+    raw = String(raw || '').replace(/[#$*_`>\-[\]{}"]/g, ' ').replace(/\s+/g, ' ').trim();
+    return raw.length > 150 ? raw.slice(0, 150) + '…' : raw;
+  }
+
+  function _sourceSummary(note) {
+    var sources = note && note.note_sources;
+    if (!Array.isArray(sources) || !sources.length) return '';
+    return sources.slice(0, 2).map(function (s) {
+      var fn = s.fileName || s.file_name || 'Source';
+      var pg = s.pageStart == null ? '' : ', p.' + s.pageStart;
+      return fn + pg;
+    }).join(' · ');
+  }
+
+  function _renderList(el, items, ordered) {
+    if (!el) return;
+    if (!items || !items.length) {
+      el.innerHTML = '<p class="dl-muted">No strong course evidence for this section.</p>';
+      return;
+    }
+    var tag = ordered ? 'ol' : 'ul';
+    el.innerHTML = '<' + tag + '>' + items.map(function (x) { return '<li>' + _esc(x) + '</li>'; }).join('') + '</' + tag + '>';
+  }
+
+  function _bindSourceClicks(host) {
+    host.querySelectorAll('.src-cite').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var fn = el.getAttribute('data-src-file');
+        if (!fn || typeof window.openCitedSource !== 'function') return;
+        window.openCitedSource({ fileName: fn, page: el.getAttribute('data-src-page') }, 'popup');
+      });
+    });
+  }
+
+  function _renderStructuredResult(els, res, lesson) {
+    var formulas = _asList(lesson.keyFormulas);
+    var worked = lesson.workedExample || {};
+    var checks = _asList(lesson.selfCheck);
+    var sources = res.groundedSources || [];
+    var hasWorked = worked.problem || _asList(worked.solutionSteps).length || worked.finalAnswer;
+    els._print = {
+      course: els.courseName || '',
+      title: lesson.title || res.title || res.topic || 'Lesson',
+      markdown: _structuredToMarkdown(lesson),
+    };
+    els.result.innerHTML =
+      '<article class="dl-lesson-card dl-structured">' +
+        '<div class="dl-lesson-head"><div><p class="dl-kicker">Guided tutor lesson</p><h3>' + _esc(lesson.title || res.title || res.topic || 'Lesson') + '</h3></div>' +
+        '<button type="button" class="dl-btn dl-download" data-dl-print>⤓ Download PDF</button></div>' +
+        ((res.citationWarning || lesson.citationWarning) ? '<div class="dl-warning">' + _esc(res.citationWarning || lesson.citationWarning) + '</div>' : '') +
+        '<section class="dl-study-section"><h4>Learning Goal</h4><div class="dl-learning-goal"></div></section>' +
+        '<section class="dl-study-section"><h4>Intuition</h4><div class="dl-intuition"></div></section>' +
+        '<section class="dl-study-section"><h4>Core Explanation</h4><div class="dl-core"></div></section>' +
+        '<section class="dl-study-section"><h4>Formula Box</h4><div class="dl-formulas"></div></section>' +
+        '<section class="dl-study-section"><h4>Step-by-Step Method</h4><div class="dl-method"></div></section>' +
+        (hasWorked ? '<section class="dl-study-section"><h4>' + _esc(worked.isMiniExample ? 'Mini-example based on the formulas above' : 'Worked Example') + '</h4><div class="dl-worked"></div></section>' : '') +
+        '<section class="dl-study-section"><h4>Common Mistakes</h4><div class="dl-mistakes"></div></section>' +
+        '<section class="dl-study-section"><h4>Self-Check</h4><div class="dl-checks"></div></section>' +
+        '<section class="dl-study-section"><h4>Sources</h4><div class="dl-source-list"></div></section>' +
+      '</article>';
+
+    _renderMarkdown(els.result.querySelector('.dl-learning-goal'), lesson.learningGoal || '');
+    _renderMarkdown(els.result.querySelector('.dl-intuition'), lesson.intuition || '');
+    _renderMarkdown(els.result.querySelector('.dl-core'), lesson.coreExplanation || '');
+    _renderList(els.result.querySelector('.dl-method'), _asList(lesson.stepByStepMethod), true);
+    _renderList(els.result.querySelector('.dl-mistakes'), _asList(lesson.commonMistakes), false);
+
+    var formulaHost = els.result.querySelector('.dl-formulas');
+    if (formulaHost) {
+      formulaHost.innerHTML = formulas.length ? formulas.map(function (f, i) {
+        return '<div class="dl-formula-box">' +
+          '<div class="dl-formula-main" data-formula="' + i + '"></div>' +
+          '<dl><dt>Meaning</dt><dd>' + _esc(f.meaning || '') + '</dd>' +
+          '<dt>Variables</dt><dd>' + _esc(f.variables || '') + '</dd>' +
+          '<dt>Use when / conditions</dt><dd>' + _esc(f.conditions || '') + '</dd>' +
+          (f.commonMistake ? '<dt>Common mistake</dt><dd>' + _esc(f.commonMistake) + '</dd>' : '') +
+          '<dt>Source</dt><dd>' + _esc(f.source || 'Missing source') + '</dd></dl></div>';
+      }).join('') : '<p class="dl-muted">No formula was strongly supported by the retrieved course material.</p>';
+      formulaHost.querySelectorAll('.dl-formula-main').forEach(function (el) {
+        var f = formulas[Number(el.getAttribute('data-formula') || 0)] || {};
+        _renderMarkdown(el, f.formula ? '$$' + f.formula + '$$' : '');
+      });
+    }
+
+    var workedHost = els.result.querySelector('.dl-worked');
+    if (workedHost) {
+      workedHost.innerHTML =
+        (worked.problem ? '<p><strong>Problem:</strong> ' + _esc(worked.problem) + '</p>' : '') +
+        (_asList(worked.solutionSteps).length ? '<ol>' + _asList(worked.solutionSteps).map(function (s) { return '<li>' + _esc(s) + '</li>'; }).join('') + '</ol>' : '') +
+        (worked.finalAnswer ? '<p><strong>Final answer:</strong> ' + _esc(worked.finalAnswer) + '</p>' : '') +
+        (worked.sourceOrBasis ? '<p class="dl-source-basis"><strong>Source or basis:</strong> ' + _esc(worked.sourceOrBasis) + '</p>' : '');
+    }
+
+    var checkHost = els.result.querySelector('.dl-checks');
+    if (checkHost) {
+      checkHost.innerHTML = checks.length ? checks.map(function (c, i) {
+        return '<div class="dl-check-card"><p class="dl-check-q">' + _esc(c.question || '') + '</p>' +
+          '<button class="dl-btn dl-reveal" type="button" data-check="' + i + '">Show answer</button>' +
+          '<div class="dl-check-a" hidden></div></div>';
+      }).join('') : '<p class="dl-muted">No self-check was generated from the available evidence.</p>';
+      checkHost.querySelectorAll('.dl-reveal').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var c = checks[Number(btn.getAttribute('data-check') || 0)] || {};
+          var ans = btn.parentElement && btn.parentElement.querySelector('.dl-check-a');
+          if (!ans) return;
+          if (ans.hasAttribute('hidden')) {
+            _renderMarkdown(ans, (c.answer || '') + (c.explanation ? '\n\n*' + c.explanation + '*' : ''));
+            ans.removeAttribute('hidden');
+            btn.textContent = 'Hide answer';
+          } else {
+            ans.setAttribute('hidden', '');
+            btn.textContent = 'Show answer';
+          }
+        });
+      });
+    }
+
+    var sourceHost = els.result.querySelector('.dl-source-list');
+    if (sourceHost) {
+      sourceHost.innerHTML = sources.length ? sources.map(function (s) {
+        var pg = s.pageStart == null ? '' : s.pageStart;
+        return '<button type="button" class="src-cite" data-src-file="' + _esc(s.fileName || '') +
+          '" data-src-page="' + _esc(pg) + '">' + _esc(s.label || s.fileName || 'Source') + '</button>';
+      }).join('') : _asList(lesson.groundedSources).map(function (s) {
+        return '<span class="dl-source-chip">' + _esc(s) + '</span>';
+      }).join('');
+      if (!sourceHost.innerHTML) sourceHost.innerHTML = '<p class="dl-muted">No clickable sources were returned.</p>';
+      _bindSourceClicks(sourceHost);
+    }
+
+    var dlBtn = els.result.querySelector('[data-dl-print]');
+    if (dlBtn) dlBtn.addEventListener('click', function () { _openPrint(els._print); });
   }
 
   // ── printable white lesson view + download (PDF via the browser) ───────────
@@ -124,6 +318,10 @@
     }
     if ((!res.lesson || !res.lesson.trim()) && res.warning) {
       els.result.innerHTML = '<div class="dl-msg">' + _esc(res.warning) + '</div>';
+      return;
+    }
+    if (res.structuredLesson && typeof res.structuredLesson === 'object') {
+      _renderStructuredResult(els, res, res.structuredLesson);
       return;
     }
     var sources = res.groundedSources || [];
@@ -189,13 +387,7 @@
     var dlBtn = els.result.querySelector('[data-dl-print]');
     if (dlBtn) dlBtn.addEventListener('click', function () { _openPrint(els._print); });
 
-    els.result.querySelectorAll('.dl-sources .src-cite').forEach(function (el) {
-      el.addEventListener('click', function () {
-        var fn = el.getAttribute('data-src-file');
-        if (!fn || typeof window.openCitedSource !== 'function') return;
-        window.openCitedSource({ fileName: fn, page: el.getAttribute('data-src-page') }, 'popup');
-      });
-    });
+    _bindSourceClicks(els.result);
   }
 
   function _fillTopicSelect(sel, topics) {
@@ -266,6 +458,16 @@
     els.result.innerHTML = '<div class="dl-msg dl-loading">Loading lesson…</div>';
     svc.getNoteById(id).then(function (note) {
       if (!note) { els.result.innerHTML = '<div class="dl-msg dl-error">Could not load this lesson.</div>'; return; }
+      var structured = _parseStructuredNote(note);
+      if (structured) {
+        _renderStructuredResult(els, {
+          title: note.title,
+          topic: note.title,
+          structuredLesson: structured,
+          groundedSources: note.note_sources || [],
+        }, structured);
+        return;
+      }
       els._print = { course: els.courseName || '', title: note.title || 'Lesson', markdown: note.content_markdown || '' };
       els.result.innerHTML =
         '<div class="dl-lesson-card"><div class="dl-lesson-head"><h3>' + _esc(note.title || 'Lesson') + '</h3>' +
@@ -308,11 +510,55 @@
     });
   }
 
+  function _renderSavedListRich(svc, els, courseId, lessons) {
+    if (!els.saved || !els.savedList) return;
+    if (!lessons || !lessons.length) {
+      els.saved.setAttribute('hidden', '');
+      els.savedList.innerHTML = '';
+      return;
+    }
+    els.saved.removeAttribute('hidden');
+    els.savedList.innerHTML = lessons.map(function (n) {
+      var structured = _parseStructuredNote(n);
+      var preview = _previewFromLesson(structured, n.content_markdown || n.preview || '');
+      var source = _sourceSummary(n);
+      return '<div class="dl-saved-item">' +
+        '<div class="dl-saved-main">' +
+          '<div class="dl-saved-meta"><span class="dl-saved-title">' + _esc(n.title || 'Lesson') + '</span>' +
+          '<span class="dl-saved-date">' + _esc(_fmtDate(n.created_at || n.updated_at)) + '</span></div>' +
+          (source ? '<div class="dl-saved-source">' + _esc(source) + '</div>' : '') +
+          (preview ? '<div class="dl-saved-preview">' + _esc(preview) + '</div>' : '') +
+        '</div>' +
+        '<div class="dl-saved-actions">' +
+          '<button type="button" class="dl-saved-open" data-id="' + _esc(n.id) + '">Open</button>' +
+          '<button type="button" class="dl-saved-regenerate" data-topic="' + _esc(n.title || '') + '">Regenerate</button>' +
+          '<button type="button" class="dl-saved-del" data-id="' + _esc(n.id) + '" title="Delete lesson" aria-label="Delete lesson">×</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    els.savedList.querySelectorAll('.dl-saved-open').forEach(function (b) {
+      b.addEventListener('click', function () { _viewSaved(svc, els, b.getAttribute('data-id')); });
+    });
+    els.savedList.querySelectorAll('.dl-saved-del').forEach(function (b) {
+      b.addEventListener('click', function () {
+        b.disabled = true;
+        svc.deleteNote(b.getAttribute('data-id')).then(function () { _loadSaved(svc, els, courseId); });
+      });
+    });
+    els.savedList.querySelectorAll('.dl-saved-regenerate').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (els.text) els.text.value = (b.getAttribute('data-topic') || '').replace(/\s+—\s+Version\s+\d+$/i, '');
+        if (els.select) els.select.value = '';
+        if (els.gen) els.gen.click();
+      });
+    });
+  }
+
   function _loadSaved(svc, els, courseId) {
     if (!svc.listCourseNotes || !courseId) return;
     svc.listCourseNotes(courseId).then(function (notes) {
       var lessons = (notes || []).filter(function (n) { return n.type === 'deep_learn'; });
-      _renderSavedList(svc, els, courseId, lessons);
+      _renderSavedListRich(svc, els, courseId, lessons);
     }).catch(function () { /* non-fatal: saved list is additive */ });
   }
 
