@@ -413,28 +413,100 @@ def _looks_structurally_garbled(text: str) -> bool:
     return short_ratio > 0.45
 
 
-def select_pages_needing_ocr(pages: list[str]) -> list[int]:
+# Image-aware OCR selection tunables. A page in the "sparse text" band
+# (>= _OCR_MIN_LETTERS but < _OCR_SPARSE_LETTERS) is a diagram page when the
+# rendered page is ink-dense: pdfminer pulled only a caption / a few axis
+# labels while the figure that carries the actual problem is invisible to the
+# text layer. Engineering exercise sheets are full of these — the old
+# letter-count-only rule (flag below _OCR_MIN_LETTERS) let them through and the
+# vision model never saw the figure. Measured ink coverage separates a real
+# (but short) text page from a figure page; a clean dense-text page never
+# enters the band at all so it's never rendered.
+_OCR_MIN_LETTERS = 80         # below this: scanned / near-empty → always OCR
+_OCR_SPARSE_LETTERS = 300     # 80..300 letters → candidate, decided by ink
+_OCR_INK_DENSE_PCT = 2.5      # rendered dark-pixel % above which it's a figure
+_OCR_INK_DPI = 72             # cheap render just for the ink measurement
+
+
+def _page_ink_coverage(pdf_bytes: bytes, page_indices: list[int]) -> dict[int, float]:
+    """Render the given 0-based pages at a low DPI and return ``{idx: pct}``
+    where pct is the percentage of dark (< 200/255) pixels — a cheap proxy for
+    "how much of the page is figure/ink". Empty mapping when rendering deps are
+    missing or a render fails; the caller treats a missing entry as 0%."""
+    pdfium = _try_import_pypdfium2()
+    if pdfium is None:
+        return {}
+    try:
+        from PIL import Image  # noqa: F401  (pypdfium2.to_pil needs it)
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[int, float] = {}
+    try:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+    except Exception:  # noqa: BLE001
+        log.exception("ink-coverage: failed to open PDF")
+        return {}
+    try:
+        scale = _OCR_INK_DPI / 72.0
+        for idx in page_indices:
+            try:
+                if idx < 0 or idx >= len(pdf):
+                    continue
+                grey = pdf[idx].render(scale=scale).to_pil().convert("L")
+                hist = grey.histogram()
+                total = sum(hist) or 1
+                dark = sum(hist[:200])
+                out[idx] = dark / total * 100.0
+            except Exception:  # noqa: BLE001
+                log.exception("ink-coverage render failed for page %s", idx)
+    finally:
+        pdf.close()
+    return out
+
+
+def select_pages_needing_ocr(
+    pages: list[str], pdf_bytes: bytes | None = None
+) -> list[int]:
     """Helper for the indexer: returns the 0-based indices of pages that
     look bad enough to retry with vision OCR.
 
-    Two failure modes covered:
-      * Image-heavy / scanned page  → pdfminer extracts < 80 letters
-      * Structurally garbled page   → plenty of text but column / fraction
-        order is destroyed (formula sheets, multi-col tables). Caught by
-        ``_looks_structurally_garbled``.
+    Failure modes covered:
+      * Image-heavy / scanned page → pdfminer extracts < 80 letters. Always
+        flagged (no render needed).
+      * Diagram page with a thin caption → 80..300 letters but the rendered
+        page is ink-dense (a figure). Only detectable by looking at the page
+        image, so this branch needs ``pdf_bytes``. This is the case that made
+        the AI "not see" picture-based exercise sheets.
+
+    When ``pdf_bytes`` is omitted (legacy/text-only callers, unit tests) the
+    function falls back to the previous text-only behaviour: < 80 letters OR
+    the lexical ``_looks_structurally_garbled`` heuristic. That heuristic is
+    NOT used on the image-aware path because it false-positives on clean
+    English solution sheets (and would route them to paid OCR); ink coverage
+    separates those cases reliably.
     """
     bad: list[int] = []
+    sparse_candidates: list[int] = []
     for i, text in enumerate(pages):
-        if not text:
+        letters = sum(1 for c in (text or "") if c.isalpha())
+        if letters < _OCR_MIN_LETTERS:
             bad.append(i)
             continue
-        letters = sum(1 for c in text if c.isalpha())
-        if letters < 80:
-            bad.append(i)
-            continue
-        if _looks_structurally_garbled(text):
-            bad.append(i)
-    return bad
+        if pdf_bytes is None:
+            # Legacy text-only path: keep the old garble heuristic.
+            if _looks_structurally_garbled(text):
+                bad.append(i)
+        elif letters < _OCR_SPARSE_LETTERS:
+            # Image-aware path: a short page might be a figure — decide by ink.
+            sparse_candidates.append(i)
+
+    if pdf_bytes is not None and sparse_candidates:
+        ink = _page_ink_coverage(pdf_bytes, sparse_candidates)
+        for i in sparse_candidates:
+            if ink.get(i, 0.0) > _OCR_INK_DENSE_PCT:
+                bad.append(i)
+
+    return sorted(bad)
 
 
 # Filename markers for the German/English "formula sheet" genre. A doc whose

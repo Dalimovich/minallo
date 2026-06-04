@@ -277,6 +277,81 @@ def test_select_pages_needing_ocr_combines_both_signals() -> None:
     assert 2 in flagged   # structurally garbled
 
 
+# ── image-aware selection (ink coverage) ────────────────────────────────────
+
+
+def _page(letters: int) -> str:
+    """A page with exactly ``letters`` alphabetic characters (plus spaces so
+    word tokens exist)."""
+    return ("ab cd " * ((letters // 4) + 1))[:letters * 2]
+
+
+def test_image_aware_flags_sparse_inkdense_diagram_page() -> None:
+    """A diagram page: 80..300 letters (clears the scanned bar) but the
+    rendered page is ink-dense → must be flagged when pdf_bytes is given."""
+    from app.services import vision_ocr
+
+    pages = [_page(1500), _page(150), _page(1500)]  # page 1 = sparse diagram
+    assert sum(c.isalpha() for c in pages[1]) < 300
+    with patch.object(vision_ocr, "_page_ink_coverage", lambda b, idx: {1: 5.0}):
+        assert vision_ocr.select_pages_needing_ocr(pages, b"%PDF") == [1]
+
+
+def test_image_aware_skips_sparse_but_blank_page() -> None:
+    """A short page with little ink (a title / mostly-empty page) is NOT a
+    figure — must not be sent to paid OCR."""
+    from app.services import vision_ocr
+
+    pages = [_page(1500), _page(150), _page(1500)]
+    with patch.object(vision_ocr, "_page_ink_coverage", lambda b, idx: {1: 0.4}):
+        assert vision_ocr.select_pages_needing_ocr(pages, b"%PDF") == []
+
+
+def test_image_aware_never_flags_dense_text_page() -> None:
+    """A clean dense-text page (>= 300 letters) is never a candidate, so it is
+    never even rendered — this is what stops clean solution sheets from being
+    falsely routed to OCR. Ink is irrelevant here."""
+    from app.services import vision_ocr
+
+    pages = [_page(1200), _page(1200)]
+
+    def _boom(_b, _idx):  # would only be called for a sparse candidate
+        raise AssertionError("dense pages must not be rendered for ink")
+
+    with patch.object(vision_ocr, "_page_ink_coverage", _boom):
+        assert vision_ocr.select_pages_needing_ocr(pages, b"%PDF") == []
+
+
+def test_image_aware_still_flags_scanned_page_without_render() -> None:
+    """< 80 letters is flagged on the image-aware path too, and such pages are
+    not passed to the ink renderer (no point — already known bad)."""
+    from app.services import vision_ocr
+
+    pages = [_page(1500), "", _page(1500)]
+    seen: dict[str, list[int]] = {}
+
+    def _spy(_b, idx):
+        seen["idx"] = idx
+        return {}
+
+    with patch.object(vision_ocr, "_page_ink_coverage", _spy):
+        assert vision_ocr.select_pages_needing_ocr(pages, b"%PDF") == [1]
+    # The empty page was flagged by letter count, not handed to the renderer.
+    assert seen.get("idx", []) == []
+
+
+def test_image_aware_path_does_not_use_garble_heuristic() -> None:
+    """Clean English solution-sheet text that the lexical garble heuristic
+    used to false-positive on must NOT be flagged on the image-aware path when
+    the page is text-dense and ink is low."""
+    from app.services import vision_ocr
+
+    # Dense (>300 letters) → never a candidate regardless of garble shape.
+    solution = _page(900)
+    with patch.object(vision_ocr, "_page_ink_coverage", lambda b, idx: {}):
+        assert vision_ocr.select_pages_needing_ocr([solution], b"%PDF") == []
+
+
 # ── choose_ocr_provider (Mathpix routing) ──────────────────────────────────
 
 

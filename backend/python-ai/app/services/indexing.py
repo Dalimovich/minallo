@@ -103,7 +103,10 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 pages_via_vision,
                 select_pages_needing_ocr,
             )
-            bad_idx = select_pages_needing_ocr(pages)
+            # Pass pdf_bytes so the selector can use the image-aware path:
+            # diagram pages with a thin text caption (which pdfminer can't
+            # read) are flagged by rendered ink coverage, not just letter count.
+            bad_idx = select_pages_needing_ocr(pages, pdf_bytes)
             if bad_idx:
                 # Phase A: route formula-dense pages to Mathpix when
                 # MINALLO_MATHPIX_ROUTING enables it (off → always OpenAI).
