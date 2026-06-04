@@ -14,14 +14,17 @@ Event schema (newline-delimited JSON inside an SSE `data:` field):
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import os
 import re
 from typing import Any, Generator
 
 from openai import OpenAI
 
 from ..config import get_settings
+from ..supabase_client import get_supabase
 from .answer import (
     DEFAULT_TUTOR_MODE,
     MINALLO_APP_CONTEXT,
@@ -35,8 +38,108 @@ from .answer import (
     pick_system_prompt,
 )
 from .retrieval import RetrievedChunk
+from .storage import download_document_bytes
 
 log = logging.getLogger(__name__)
+
+
+# ── Figure vision: let the tutor SEE the exercise drawing ─────────────────────
+#
+# Engineering exercises put most of their data — lengths, diameters, the shape
+# of the part, which dimension is l_K vs l_i — in a FIGURE. OCR flattens that
+# badly (labels survive, spatial layout and dimension lines do not). When the
+# pipeline is solving a math/exercise question we therefore render the actual
+# page bitmap of the retrieved exercise/figure pages and attach it to the
+# (vision-capable) strong model alongside the OCR text chunks, so it can read
+# values straight off the drawing. Best-effort: any failure attaches no image.
+_FIGURE_CHUNK_TYPES = {"exercise", "diagram", "figure", "image", "solution"}
+_FIGURE_RENDER_DPI = 150
+_MAX_ATTACHED_IMAGES = 2  # hard cap on open-file + figure images per request
+
+
+def _figure_vision_enabled() -> bool:
+    return os.getenv("MINALLO_FIGURE_VISION", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _figure_page_image_parts(
+    used_chunks: list[RetrievedChunk],
+    *,
+    max_images: int,
+) -> list[dict[str, Any]]:
+    """Render page image(s) for the retrieved exercise/figure pages.
+
+    Returns OpenAI ``image_url`` content blocks (same shape as
+    ``_open_file_image_parts``). Exercise/figure-typed chunks are preferred;
+    deduped by (document, page). Never raises — a missing storage path,
+    absent render deps, or a download error just yields fewer/no images.
+    """
+    if max_images <= 0 or not _figure_vision_enabled():
+        return []
+    # Figure/exercise chunks first, then the rest in retrieval rank order.
+    figure_first = [c for c in used_chunks if (c.chunk_type or "") in _FIGURE_CHUNK_TYPES]
+    rest = [c for c in used_chunks if c not in figure_first]
+    candidates: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for c in figure_first + rest:
+        if getattr(c, "is_synthetic", False):
+            continue
+        doc_id = c.document_id
+        page = c.page_start
+        if not doc_id or doc_id.startswith("__") or not page:
+            continue
+        key = (doc_id, int(page))
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(key)
+        if len(candidates) >= max_images:
+            break
+    if not candidates:
+        return []
+
+    try:
+        from .vision_ocr import _render_page_to_png, _try_import_pypdfium2  # noqa: WPS433
+    except Exception:  # noqa: BLE001
+        return []
+    pdfium = _try_import_pypdfium2()
+    if pdfium is None:
+        return []
+
+    try:
+        resp = (
+            get_supabase().table("documents")
+            .select("id, storage_path")
+            .in_("id", list({d for d, _ in candidates}))
+            .execute()
+        )
+        paths = {r["id"]: r.get("storage_path") for r in (resp.data or []) if r.get("storage_path")}
+    except Exception:  # noqa: BLE001
+        log.exception("figure-vision: storage_path lookup failed")
+        return []
+
+    parts: list[dict[str, Any]] = []
+    pdf_cache: dict[str, bytes | None] = {}
+    for doc_id, page in candidates:
+        sp = paths.get(doc_id)
+        if not sp:
+            continue
+        if doc_id not in pdf_cache:
+            try:
+                pdf_cache[doc_id] = download_document_bytes(sp)
+            except Exception:  # noqa: BLE001
+                log.exception("figure-vision: download failed doc=%s", doc_id)
+                pdf_cache[doc_id] = None
+        pdf_bytes = pdf_cache[doc_id]
+        if not pdf_bytes:
+            continue
+        png = _render_page_to_png(pdfium, pdf_bytes, page - 1, _FIGURE_RENDER_DPI)
+        if not png:
+            continue
+        b64 = base64.b64encode(png).decode("ascii")
+        parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+        if len(parts) >= max_images:
+            break
+    return parts
 
 # Questions that legitimately need the open-PDF text override. Deictic refs
 # ("this", "here", "above") and explicit-locality phrasing ("explain this
@@ -868,9 +971,30 @@ def stream_answer(
         user_message += _problem_solver_user_block(problem_solver)
     if context_block:
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
+
+    # Auto-attach the exercise/figure page bitmap on math/exercise questions so
+    # the vision model can read dimensions and geometry off the drawing — most
+    # of an engineering exercise's data lives in the figure, which OCR loses.
+    # Only when solving (answer_mode == "math"), only up to the image cap, and
+    # only when the student hasn't already supplied that visible page.
+    figure_image_parts: list[dict[str, Any]] = []
+    if not app_question and answer_mode == "math" and used_chunks:
+        remaining = _MAX_ATTACHED_IMAGES - len(open_image_parts)
+        if remaining > 0:
+            figure_image_parts = _figure_page_image_parts(used_chunks, max_images=remaining)
+            if figure_image_parts:
+                user_message += (
+                    "\n\nEXERCISE FIGURE: the attached page image(s) are from the exercise"
+                    " itself. Read dimensions, lengths, diameters, geometry, and labels"
+                    " directly from the figure and treat values you read there as given"
+                    " (cite the source page). Most of the exercise's data is in the figure,"
+                    " not in the surrounding text."
+                )
+
+    image_parts = [*open_image_parts, *figure_image_parts]
     user_content: str | list[dict[str, Any]]
-    if open_image_parts:
-        user_content = [{"type": "text", "text": user_message}, *open_image_parts]
+    if image_parts:
+        user_content = [{"type": "text", "text": user_message}, *image_parts]
     else:
         user_content = user_message
 
