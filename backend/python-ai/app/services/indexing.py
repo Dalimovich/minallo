@@ -107,11 +107,27 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             if bad_idx:
                 # Phase A: route formula-dense pages to Mathpix when
                 # MINALLO_MATHPIX_ROUTING enables it (off → always OpenAI).
+                # Provider choice sees the full bad-page set for the best
+                # formula-density signal.
                 ocr_provider = choose_ocr_provider(
                     doc.get("file_name") or "", pages, bad_idx
                 )
-                ocr_pages_run = len(bad_idx)
-                ocr_results = pages_via_vision(pdf_bytes, bad_idx, provider=ocr_provider)
+                # pages_via_vision caps the batch at vision_ocr_max_pages.
+                # Mirror that cap here so ocr_pages_run counts what was
+                # actually attempted — counting the uncapped bad_idx would
+                # over-report attempts and could falsely demote a fully
+                # successful (but capped) run to "partial" / "weak".
+                from ..config import get_settings  # noqa: WPS433
+
+                max_ocr_pages = get_settings().vision_ocr_max_pages
+                attempt_idx = bad_idx[:max_ocr_pages]
+                if len(bad_idx) > len(attempt_idx):
+                    log.info(
+                        "indexing.ocr_capped document_id=%s bad_pages=%d cap=%d",
+                        document_id, len(bad_idx), max_ocr_pages,
+                    )
+                ocr_pages_run = len(attempt_idx)
+                ocr_results = pages_via_vision(pdf_bytes, attempt_idx, provider=ocr_provider)
                 # Don't blindly trust OCR: only overwrite the page when the
                 # OCR text scores at least as well as the pdfminer original.
                 # A page that scores lower (mostly [unclear], blurred render)
