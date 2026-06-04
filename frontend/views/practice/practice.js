@@ -37,15 +37,19 @@
       writing: 'Schreiben',
       speaking: 'Sprechen',
       vocab: 'Wortschatz',
-      grammar: 'Grammatik'
+      grammar: 'Grammatik',
+      sentences: 'Satztraining',
+      games: 'Artikelspiele'
     };
     var _glSkillSubs = {
-      reading: _t('gl_reading_sub'),
-      listening: _t('gl_listening_sub'),
-      writing: _t('gl_writing_sub'),
-      speaking: _t('gl_speaking_sub'),
-      vocab: _t('gl_vocab_sub'),
-      grammar: _t('gl_grammar_sub')
+      reading: 'Short texts, comprehension questions, and useful phrases',
+      listening: 'Transcript-based listening practice',
+      writing: 'Writing tasks with structure help',
+      speaking: 'Speaking prompts and answer structure',
+      vocab: 'Flip cards with article, translation, and example sentence',
+      grammar: 'Short rules, examples, and correction practice',
+      sentences: 'Everyday sentence practice',
+      games: 'der, die, das drills'
     };
     var _glSkillChips = {
       reading: [
@@ -69,6 +73,16 @@
         'Top grammar topics for my exam',
         'Give me grammar exercises',
         'Explain Konjunktiv II'
+      ],
+      sentences: [
+        'Give me useful everyday German sentences',
+        'Correct my sentence politely',
+        'Show formal and informal versions'
+      ],
+      games: [
+        'Quiz me on der die das',
+        'Give me an article game',
+        'Explain German article patterns'
       ]
     };
     var _glActiveSkill = '';
@@ -102,10 +116,10 @@
     document.getElementById('glHome').addEventListener('click', function (e) {
       var startBtn = e.target.closest('#glStartPractice');
       if (startBtn) {
-        // Open last-used skill, or fall back to reading.
+        // Open last-used skill, or fall back to vocabulary.
         var last = '';
         try { last = localStorage.getItem('ss_gl_last_skill') || ''; } catch (_) {}
-        window._glOpenSkill(last || 'reading');
+        window._glOpenSkill(last || 'vocab');
         return;
       }
       var card = e.target.closest('.gl-skill-card');
@@ -208,6 +222,20 @@
 
     window._glOpenSkill = function (skill) {
       _glActiveSkill = skill;
+      var home = document.getElementById('glHome');
+      var detail = document.getElementById('glSkillView');
+      if (home) home.style.display = 'none';
+      if (detail) detail.style.display = '';
+      var titleEl = document.getElementById('glSkillTitle');
+      var subEl = document.getElementById('glSkillSub');
+      var eyebrowEl = document.getElementById('glSkillEyebrow');
+      if (titleEl) titleEl.textContent = _glSkillNames[skill] || 'German Practice';
+      if (subEl) subEl.textContent = _glSkillSubs[skill] || 'Practice German with quiz questions and flashcards.';
+      if (eyebrowEl) eyebrowEl.textContent = 'German practice';
+
+      _glLoadSampleTools(skill);
+      _glRenderStudyTools();
+
       // Seed activeCourseId/activeCourseRef if not yet set, then load DB tools.
       var _glCourseForSkill = _glEnsurePracticeCourse();
       console.log('[practice course]', {
@@ -217,17 +245,7 @@
         ragCourse: _glCourse()
       });
       if (_glCourseForSkill) {
-        _glQuizItems = [];
-        _glCards = [];
-        _glQuizIndex = 0;
-        _glSelectedOption = null;
-        _glCardIndex = 0;
-        _glCardFlipped = false;
-        _glRenderStudyTools();
         _glLoadDbTools(_glCourseForSkill.id);
-      } else {
-        _glLoadSampleTools(skill);
-        _glRenderStudyTools();
       }
 
       // Swap AI chips
@@ -246,7 +264,7 @@
         });
       }
 
-      _glLoadFiles();
+      _glRenderPracticeFileList();
     };
 
     window._glBackToHome = function () {
@@ -452,64 +470,79 @@
     }
 
     function _glSampleTools(skill) {
-      var title = _glSkillNames[skill] || 'German Practice';
-      var sharedCards = [
-        {
-          front: 'Was bedeutet "trotzdem"?',
-          back: '"Trotzdem" means "nevertheless" or "even so" and links two contrasting ideas.'
+      var sets = {
+        vocab: {
+          quiz: [
+            { category: 'Vocabulary', question: 'What does "die Rechnung" mean in a cafe?', options: { A: 'the reservation', B: 'the bill', C: 'the menu', D: 'the kitchen' }, answer: 'B', explanation: '"Die Rechnung" is the bill. You can say: "Kann ich bitte die Rechnung haben?"' },
+            { category: 'Vocabulary', question: 'Which article belongs to "Apfel"?', options: { A: 'der', B: 'die', C: 'das', D: 'den' }, answer: 'A', explanation: 'It is "der Apfel". In accusative it becomes "den Apfel".' },
+            { category: 'Vocabulary', question: 'What is the best everyday meaning of "suchen"?', options: { A: 'to search/look for', B: 'to book', C: 'to pay', D: 'to explain' }, answer: 'A', explanation: 'Example: "Ich suche den Bahnhof" means "I am looking for the train station."' }
+          ],
+          cards: [
+            { front: 'die Rechnung', back: 'the bill - Kann ich bitte die Rechnung haben?' },
+            { front: 'der Apfel', back: 'the apple - Ich kaufe einen Apfel.' },
+            { front: 'suchen', back: 'to search/look for - Ich suche den Bahnhof.' }
+          ]
         },
-        {
-          front: 'Konjunktiv II',
-          back: 'Konjunktiv II is used for polite requests, hypothetical situations, and wishes.'
+        grammar: {
+          quiz: [
+            { category: 'Dative after mit', question: 'Which sentence is correct?', options: { A: 'Ich spreche mit der Mann.', B: 'Ich spreche mit dem Mann.', C: 'Ich spreche mit den Mann.', D: 'Ich spreche mit die Mann.' }, answer: 'B', explanation: '"mit" always takes dative. Masculine "der Mann" changes to "dem Mann".' },
+            { category: 'Dative after mit', question: 'Complete: Ich fahre mit ___ Bus.', options: { A: 'der', B: 'die', C: 'dem', D: 'das' }, answer: 'C', explanation: 'Bus is masculine: der Bus. After "mit", it becomes "mit dem Bus".' },
+            { category: 'Dative after mit', question: 'Which preposition always takes dative?', options: { A: 'ohne', B: 'durch', C: 'mit', D: 'für' }, answer: 'C', explanation: 'Common dative prepositions include mit, nach, bei, seit, von, zu, aus.' }
+          ],
+          cards: [
+            { front: 'mit + dative', back: 'der Mann -> mit dem Mann; die Frau -> mit der Frau; das Kind -> mit dem Kind' },
+            { front: 'mit dem Bus', back: 'Use dative because "mit" requires dative.' },
+            { front: 'Dative signal', back: 'Ask: With whom? With what? Then choose the dative form.' }
+          ]
         },
-        {
-          front: 'Nebensatz word order',
-          back: 'In a subordinate clause, the conjugated verb usually moves to the end.'
+        sentences: {
+          quiz: [
+            { category: 'Everyday sentences', question: 'Translate: "I would like a coffee."', options: { A: 'Ich habe einen Kaffee.', B: 'Ich hätte gern einen Kaffee.', C: 'Ich bin ein Kaffee.', D: 'Ich möchte gern Kaffee bin.' }, answer: 'B', explanation: '"Ich hätte gern..." is a natural, polite ordering phrase.' },
+            { category: 'Everyday sentences', question: 'Which sentence is the polite request?', options: { A: 'Hilf mir jetzt.', B: 'Können Sie mir bitte helfen?', C: 'Du hilfst.', D: 'Ich helfe bitte.' }, answer: 'B', explanation: '"Können Sie..." plus "bitte" is polite and formal.' },
+            { category: 'Everyday sentences', question: 'Choose the natural phrase for asking where the station is.', options: { A: 'Wo ist der Bahnhof?', B: 'Was ist Bahnhof?', C: 'Wie bin Bahnhof?', D: 'Wo Bahnhof ist?' }, answer: 'A', explanation: 'In a main question with a question word, the conjugated verb comes second: "Wo ist..."' }
+          ],
+          cards: [
+            { front: 'Ich hätte gern einen Kaffee.', back: 'I would like a coffee. Use this for polite ordering.' },
+            { front: 'Könnten Sie das bitte wiederholen?', back: 'Could you repeat that, please?' },
+            { front: 'Ich suche den Bahnhof.', back: 'I am looking for the train station.' }
+          ]
+        },
+        games: {
+          quiz: [
+            { category: 'Article game', question: 'der, die oder das: ___ Apfel', options: { A: 'der', B: 'die', C: 'das', D: 'eine' }, answer: 'A', explanation: 'Correct: der Apfel.' },
+            { category: 'Article game', question: 'der, die oder das: ___ Rechnung', options: { A: 'der', B: 'die', C: 'das', D: 'den' }, answer: 'B', explanation: 'Correct: die Rechnung.' },
+            { category: 'Article game', question: 'der, die oder das: ___ Mädchen', options: { A: 'der', B: 'die', C: 'das', D: 'dem' }, answer: 'C', explanation: 'Correct: das Mädchen.' }
+          ],
+          cards: [
+            { front: 'der Apfel', back: 'masculine noun. Accusative: den Apfel.' },
+            { front: 'die Rechnung', back: 'feminine noun. Useful phrase: die Rechnung bitte.' },
+            { front: 'das Mädchen', back: 'neuter grammatical gender, even though it refers to a girl.' }
+          ]
+        },
+        writing: {
+          quiz: [
+            { category: 'Writing', question: 'Which opener is best for a formal email?', options: { A: 'Hey du,', B: 'Sehr geehrte Damen und Herren,', C: 'Na?', D: 'Hallo Leute!' }, answer: 'B', explanation: 'Use "Sehr geehrte..." for formal emails and exam writing tasks.' },
+            { category: 'Writing', question: 'Which connector adds another point?', options: { A: 'außerdem', B: 'trotzdem', C: 'obwohl', D: 'aber' }, answer: 'A', explanation: '"Außerdem" means "in addition".' }
+          ],
+          cards: [
+            { front: 'Sehr geehrte Damen und Herren,', back: 'Formal email greeting.' },
+            { front: 'Meiner Meinung nach...', back: 'In my opinion... Useful for arguments.' },
+            { front: 'Außerdem...', back: 'Furthermore / in addition.' }
+          ]
+        },
+        reading: {
+          quiz: [
+            { category: 'Reading', question: 'In a reading text, what does "Öffnungszeiten" usually mean?', options: { A: 'prices', B: 'opening hours', C: 'directions', D: 'appointments' }, answer: 'B', explanation: '"Öffnungszeiten" tells you when a shop, office, or service is open.' },
+            { category: 'Reading', question: 'Which word signals contrast?', options: { A: 'deshalb', B: 'zuerst', C: 'trotzdem', D: 'außerdem' }, answer: 'C', explanation: '"Trotzdem" means nevertheless/even so.' }
+          ],
+          cards: [
+            { front: 'Öffnungszeiten', back: 'opening hours' },
+            { front: 'trotzdem', back: 'nevertheless / even so' },
+            { front: 'zuerst', back: 'first / at first' }
+          ]
         }
-      ];
-      return {
-        quiz: [
-          {
-            category: title,
-            question: 'Which sentence uses correct subordinate-clause word order?',
-            options: {
-              A: 'Ich bleibe zu Hause, weil ich krank bin.',
-              B: 'Ich bleibe zu Hause, weil bin ich krank.',
-              C: 'Ich bleibe zu Hause, weil ich bin krank.',
-              D: 'Ich bleibe zu Hause, weil krank ich bin.'
-            },
-            answer: 'A',
-            explanation:
-              'After "weil", the conjugated verb moves to the end of the subordinate clause.'
-          },
-          {
-            category: title,
-            question: 'What is the best meaning of "sich bewerben"?',
-            options: {
-              A: 'to complain',
-              B: 'to apply',
-              C: 'to repeat',
-              D: 'to compare'
-            },
-            answer: 'B',
-            explanation:
-              '"Sich bewerben" is commonly used for applying for a job, university place, or program.'
-          },
-          {
-            category: title,
-            question: 'Which connector expresses contrast?',
-            options: {
-              A: 'deshalb',
-              B: 'außerdem',
-              C: 'trotzdem',
-              D: 'zuerst'
-            },
-            answer: 'C',
-            explanation: '"Trotzdem" signals contrast: something happens despite the previous idea.'
-          }
-        ],
-        cards: sharedCards
       };
+      return sets[skill] || sets.vocab;
     }
 
     function _glLoadSampleTools(skill) {
@@ -915,6 +948,49 @@
       return '📎';
     }
 
+    async function _glRenderPracticeFileList() {
+      var uid = _currentUser && (_currentUser.id || _currentUser.sub);
+      var list = document.getElementById('glFileList');
+      var empty = document.getElementById('glFileEmpty');
+      if (!list) return;
+      list.innerHTML = '';
+      if (!uid) {
+        if (empty) empty.style.display = '';
+        return;
+      }
+      var course = _glStorageCourse();
+      if (!course.files) course.files = [];
+      try {
+        await _ufMerge(course);
+      } catch (e) {
+        console.warn('glRenderPracticeFileList merge error:', e);
+      }
+      var files = course.files || [];
+      if (empty) empty.style.display = files.length ? 'none' : '';
+      files.forEach(function (file) {
+        var name = file.name || file.file_name || 'German file';
+        var row = document.createElement('div');
+        row.className = 'gl-file-row';
+        row.innerHTML =
+          '<span class="gl-file-icon">' + _glFileIcon(name) + '</span>' +
+          '<span class="gl-file-name">' + _glEscape(name) + '</span>' +
+          '<span class="gl-file-size">' + (file.size ? _glFmtSize(file.size) : '') + '</span>' +
+          '<button type="button" class="gl-file-open">Open</button>' +
+          '<button type="button" class="gl-file-quiz">Quiz</button>' +
+          '<button type="button" class="gl-file-explain">Explain</button>' +
+          '<button type="button" class="gl-file-del">Delete</button>';
+        var open = row.querySelector('.gl-file-open');
+        var quiz = row.querySelector('.gl-file-quiz');
+        var explain = row.querySelector('.gl-file-explain');
+        var del = row.querySelector('.gl-file-del');
+        if (open) open.addEventListener('click', function () { _glOpenFile(uid, name); });
+        if (quiz) quiz.addEventListener('click', function () { _glAskAboutFile(uid, name, 'quiz'); });
+        if (explain) explain.addEventListener('click', function () { _glAskAboutFile(uid, name, 'explain'); });
+        if (del) del.addEventListener('click', function () { _glDeleteFile(uid, name, row); });
+        list.appendChild(row);
+      });
+    }
+
     async function _glLoadFiles() {
       var uid = _currentUser && (_currentUser.id || _currentUser.sub);
       if (!uid) return;
@@ -1106,7 +1182,7 @@
       var inp = document.getElementById('glFileInput');
       if (inp) inp.value = '';
       showToast('Upload complete', arr.length + ' file' + (arr.length > 1 ? 's' : '') + ' saved');
-      await _glLoadFiles();
+      await _glRenderPracticeFileList();
     };
 
     window._glUploadClick = function () {
