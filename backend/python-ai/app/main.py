@@ -34,16 +34,17 @@ app = FastAPI(
 )
 
 # CORS — the streaming /ask-stream endpoint is called directly from the
-# browser (bypasses the Netlify proxy so the connection can stay open for
-# SSE). Restrict to the production domain + Netlify preview hosts. Localhost
-# origins are added in non-production environments only — without them a dev
-# frontend served from `localhost:8888` hitting prod `python-ai.fly.dev` gets
-# a 400 on the CORS preflight (the user is not bypassing auth — JWT still
-# verifies — they're just letting the browser pass the preflight).
+# browser (bypasses the Pages Function proxy so the connection can stay open
+# for SSE). Restrict to the production domain + Cloudflare Pages hosts.
+# Localhost origins are added in non-production environments only — without
+# them a dev frontend served from `localhost:8888` hitting prod
+# `python-ai.fly.dev` gets a 400 on the CORS preflight (the user is not
+# bypassing auth — JWT still verifies — they're just letting the browser pass
+# the preflight).
 _cors_origins = [
     "https://minallo.de",
     "https://www.minallo.de",
-    "https://minallo-website.netlify.app",
+    "https://minallo.pages.dev",
 ]
 if settings.environment != "production":
     _cors_origins += [
@@ -55,7 +56,8 @@ if settings.environment != "production":
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"^https://deploy-preview-\d+--minallo\.netlify\.app$",
+    # Cloudflare Pages preview deploys: https://<hash-or-branch>.minallo.pages.dev
+    allow_origin_regex=r"^https://[a-z0-9-]+\.minallo\.pages\.dev$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Internal-Token", "Accept"],
