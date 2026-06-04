@@ -911,7 +911,18 @@
       close:   document.getElementById('nlPvClose')
     };
 
-    var state = { track: null, index: 0, playing: false, timer: null, shellTimer: null, courseTimer: null, uploadTimer: null, lastFocus: null, hover: false };
+    var state = {
+      track: null,
+      index: 0,
+      playing: false,
+      timer: null,
+      shellTimer: null,
+      courseTimer: null,
+      uploadTimer: null,
+      askTimers: [],
+      lastFocus: null,
+      hover: false
+    };
 
     // -- i18n resolvers (fall back to EN if a key is missing) --
     function t(key) {
@@ -1386,6 +1397,116 @@
       requestAnimationFrame(function () { step(0); });
     }
 
+    function clearAskSceneLoop() {
+      if (!state.askTimers || !state.askTimers.length) return;
+      state.askTimers.forEach(function (timer) { clearTimeout(timer); });
+      state.askTimers = [];
+    }
+    function queueAsk(fn, delay) {
+      var timer = setTimeout(fn, delay);
+      state.askTimers.push(timer);
+      return timer;
+    }
+    function setAskVisible(node, visible) {
+      if (!node) return;
+      node.style.opacity = visible ? '1' : '0';
+      node.style.transform = visible ? 'translateY(0)' : 'translateY(8px)';
+      var max = '4rem';
+      if (node.classList.contains('nl-pv-ask-answer')) max = '12rem';
+      else if (node.classList.contains('nl-pv-ask-status')) max = '3.4rem';
+      node.style.maxHeight = visible ? max : '0';
+      node.style.pointerEvents = visible ? 'auto' : 'none';
+    }
+    function typeInto(node, text, stepMs, done) {
+      if (!node) {
+        if (done) done();
+        return;
+      }
+      node.textContent = '';
+      var chars = text.split('');
+      chars.forEach(function (_ch, idx) {
+        queueAsk(function () {
+          node.textContent = text.slice(0, idx + 1);
+          if (idx === chars.length - 1 && done) done();
+        }, idx * stepMs);
+      });
+    }
+    function startAskSceneLoop() {
+      clearAskSceneLoop();
+      var frame = els.visual.querySelector('.nl-pv-ask-scene');
+      if (!frame) return;
+
+      var typed = frame.querySelector('.nl-pv-ask-typed');
+      var send = frame.querySelector('.nl-pv-ask-send');
+      var user = frame.querySelector('.nl-pv-ask-user');
+      var thinking = frame.querySelector('.nl-pv-ask-thinking');
+      var status = frame.querySelector('.nl-pv-ask-status');
+      var answer = frame.querySelector('.nl-pv-ask-answer');
+      var answerText = frame.querySelector('.nl-pv-ask-answer-text');
+      var formula = frame.querySelector('.nl-pv-formula');
+      var chips = frame.querySelectorAll('.nl-pv-ask-answer .nl-pv-chip');
+      var question = 'Solve exercise 6 using my lecture method and cite the formula.';
+      var answerFull = answerText ? answerText.getAttribute('data-full-text') || '' : '';
+
+      function reset() {
+        if (typed) typed.textContent = '';
+        if (send) send.classList.remove('is-live');
+        setAskVisible(user, false);
+        setAskVisible(thinking, false);
+        setAskVisible(status, false);
+        setAskVisible(answer, false);
+        if (answerText) answerText.textContent = '';
+        if (formula) formula.style.opacity = '0';
+        chips.forEach(function (chipNode) {
+          chipNode.style.opacity = '0';
+          chipNode.style.transform = 'translateY(6px)';
+        });
+      }
+
+      function loop() {
+        clearAskSceneLoop();
+        reset();
+        queueAsk(function () {
+          typeInto(typed, question, 24, function () {
+            if (send) send.classList.add('is-live');
+          });
+        }, 180);
+        queueAsk(function () { setAskVisible(user, true); }, 1780);
+        queueAsk(function () { setAskVisible(thinking, true); }, 2360);
+        queueAsk(function () { setAskVisible(status, true); }, 3180);
+        queueAsk(function () {
+          setAskVisible(thinking, false);
+          setAskVisible(status, false);
+          setAskVisible(answer, true);
+          typeInto(answerText, answerFull, 13, function () {
+            if (formula) formula.style.opacity = '1';
+            chips.forEach(function (chipNode, idx) {
+              queueAsk(function () {
+                chipNode.style.opacity = '1';
+                chipNode.style.transform = 'translateY(0)';
+              }, 260 + idx * 180);
+            });
+          });
+        }, 4300);
+        queueAsk(loop, 7600);
+      }
+
+      if (prefersReducedMotion) {
+        reset();
+        if (typed) typed.textContent = question;
+        setAskVisible(user, true);
+        setAskVisible(answer, true);
+        if (answerText) answerText.textContent = answerFull;
+        if (formula) formula.style.opacity = '1';
+        chips.forEach(function (chipNode) {
+          chipNode.style.opacity = '1';
+          chipNode.style.transform = 'translateY(0)';
+        });
+        return;
+      }
+      loop();
+    }
+
     // -- scene visual builders (each returns a DOM node) --
     var builders = {
       shell: function () {
@@ -1434,7 +1555,9 @@
         chat.appendChild(status);
 
         var answer = el('div', 'nl-pv-bubble nl-pv-bubble--ai nl-pv-ask-answer');
-        answer.appendChild(el('p', null, 'I found the matching exercise and formula sheet. Use the equilibrium equations, substitute the given force and distances, then check the signs with force balance.'));
+        var answerText = el('p', 'nl-pv-ask-answer-text');
+        answerText.setAttribute('data-full-text', 'I found the matching exercise and formula sheet. Use the equilibrium equations, substitute the given force and distances, then check the signs with force balance.');
+        answer.appendChild(answerText);
         answer.appendChild(el('div', 'nl-pv-formula', 'ΣF = 0  ·  ΣM = 0'));
         var chips = el('div', 'nl-pv-chips');
         chips.appendChild(chip('file-text', 'Lecture 03 · p.12'));
@@ -1625,11 +1748,13 @@
       clearShellCursor();
       clearCourseSetupCursor();
       clearUploadCursor();
+      clearAskSceneLoop();
       clearChildren(els.visual);
       if (builders[sc.build]) els.visual.appendChild(builders[sc.build]());
       if (sc.build === 'shell') startShellCursor();
       if (sc.build === 'courseSetup') startCourseSetupCursor();
       if (sc.build === 'courseUpload') startUploadCursor();
+      if (sc.build === 'ask') startAskSceneLoop();
       els.eyebrow.textContent = t(sc.keyBase + '.eyebrow');
       els.headline.textContent = t(sc.keyBase + '.headline');
       els.body.textContent = t(sc.keyBase + '.body');
@@ -1689,6 +1814,7 @@
       clearShellCursor();
       clearCourseSetupCursor();
       clearUploadCursor();
+      clearAskSceneLoop();
       els.player.hidden = true;
       els.sw.hidden = true;
       els.chooser.hidden = false;
@@ -2008,6 +2134,7 @@
       clearShellCursor();
       clearCourseSetupCursor();
       clearUploadCursor();
+      clearAskSceneLoop();
       modal.hidden = true;
       document.documentElement.classList.remove('nl-pv-open');
       document.body.classList.remove('nl-pv-open');

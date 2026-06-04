@@ -2488,13 +2488,12 @@ body.nl-pv-open {
 }
 .nl-pv-ask-typed {
   min-width: 0;
-  width: 0;
-  max-width: max-content;
+  width: auto;
+  max-width: none;
   white-space: nowrap;
   overflow: hidden;
   font-size: 0.76rem;
   font-weight: 750;
-  animation: nl-pv-type-question var(--nl-pv-ask-cycle) steps(62, end) infinite;
 }
 .nl-pv-ask-typed::after {
   content: '';
@@ -2516,12 +2515,18 @@ body.nl-pv-open {
   color: #061021;
   opacity: 0;
   transform: translateY(4px);
-  animation: nl-pv-send-cycle var(--nl-pv-ask-cycle) ease infinite;
+  transition: opacity 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
+}
+.nl-pv-ask-send.is-live {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: nl-pv-send-pulse 0.85s ease-in-out infinite;
 }
 .nl-pv-ask-user {
   opacity: 0;
   transform: translateY(8px);
-  animation: nl-pv-user-cycle var(--nl-pv-ask-cycle) ease infinite;
+  overflow: hidden;
+  transition: opacity 0.28s ease, transform 0.28s ease, max-height 0.28s ease;
 }
 .nl-pv-ask-thinking {
   align-self: flex-start;
@@ -2533,7 +2538,8 @@ body.nl-pv-open {
   border: 1px solid var(--nl-white-10);
   background: var(--nl-white-07);
   opacity: 0;
-  animation: nl-pv-thinking-cycle var(--nl-pv-ask-cycle) ease infinite;
+  overflow: hidden;
+  transition: opacity 0.28s ease, transform 0.28s ease, max-height 0.28s ease;
 }
 .nl-pv-ask-thinking span {
   width: 0.34rem;
@@ -2562,7 +2568,8 @@ body.nl-pv-open {
   font-weight: 850;
   opacity: 0;
   transform: translateY(8px);
-  animation: nl-pv-status-cycle var(--nl-pv-ask-cycle) ease infinite;
+  overflow: hidden;
+  transition: opacity 0.28s ease, transform 0.28s ease, max-height 0.28s ease;
 }
 .nl-pv-ask-status i {
   position: relative;
@@ -2587,7 +2594,7 @@ body.nl-pv-open {
   opacity: 0;
   overflow: hidden;
   transform: translateY(8px);
-  animation: nl-pv-answer-cycle var(--nl-pv-ask-cycle) ease infinite;
+  transition: opacity 0.3s ease, transform 0.3s ease, max-height 0.35s ease;
 }
 .nl-pv-ask-answer p {
   margin: 0;
@@ -2603,103 +2610,21 @@ body.nl-pv-open {
 .nl-pv-ask-answer .nl-pv-chip {
   opacity: 0;
   transform: translateY(6px);
-  animation: nl-pv-chip-cycle var(--nl-pv-ask-cycle) ease infinite;
-}
-.nl-pv-ask-answer .nl-pv-chip:nth-child(2) {
-  animation-delay: 0.18s;
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
 
-@keyframes nl-pv-type-question {
-  0%, 7% { width: 0; }
-  31%, 92% { width: 100%; }
-  96%, 100% { width: 0; }
-}
 @keyframes nl-pv-caret {
   50% { opacity: 0; }
 }
-@keyframes nl-pv-send-cycle {
-  0%, 26%, 45%, 100% {
-    opacity: 0;
-    transform: translateY(4px) scale(0.94);
-  }
-  31%, 39% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  35% {
-    box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.16);
-  }
-}
-@keyframes nl-pv-user-cycle {
-  0%, 30%, 100% {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  36%, 94% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  97% {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-}
-@keyframes nl-pv-thinking-cycle {
-  0%, 38%, 63%, 100% {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  43%, 57% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  62% {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
+@keyframes nl-pv-send-pulse {
+  50% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.16); }
 }
 @keyframes nl-pv-dot {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
   40% { transform: translateY(-3px); opacity: 1; }
 }
-@keyframes nl-pv-status-cycle {
-  0%, 41%, 70%, 100% {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  46%, 64% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 @keyframes nl-pv-status-scan {
   to { transform: translateX(220%); }
-}
-@keyframes nl-pv-answer-cycle {
-  0%, 57%, 100% {
-    max-height: 0;
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  67%, 94% {
-    max-height: 22rem;
-    opacity: 1;
-    transform: translateY(0);
-  }
-  98% {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-}
-@keyframes nl-pv-chip-cycle {
-  0%, 72%, 100% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  79%, 94% {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 @media (max-width: 640px) {
