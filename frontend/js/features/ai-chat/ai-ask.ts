@@ -8,6 +8,7 @@ import {
 } from '../../services/ai-service.js';
 import { extractPdfText } from '../pdf-viewer/pdf-text-extraction.js';
 import { getPane } from '../pdf-viewer/pdf-panes.js';
+import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import { getCompareFileName } from '../pdf-viewer/pdf-compare.js';
 import { bindMessageActionButtons } from './ai-message-actions.js';
 import { escapeHtml } from '../../utils/escape-html.js';
@@ -57,9 +58,19 @@ interface ProblemSolverOptions {
   studentWork?: string;
 }
 
+interface SourceItem {
+  file_name?: string;
+  pages?: string | null;
+  section?: string | null;
+  index?: number | null;
+  documentId?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+}
+
 interface SseDoneEvent {
   done: true;
-  sources?: Array<{ file_name?: string; pages?: string | null; section?: string | null }>;
+  sources?: SourceItem[];
   confidence?: string;
   question_type?: string;
   unsupported?: boolean;
@@ -123,7 +134,7 @@ function takeSoftStreamChunk(text: string, target: number): string {
   return text.slice(0, target);
 }
 
-function _sourceLine(s: { file_name?: string; pages?: string | null; section?: string | null }): string {
+function _sourceLine(s: SourceItem): string {
   let line = s.file_name || 'Unknown';
   if (s.pages) {
     const pages = String(s.pages);
@@ -133,10 +144,18 @@ function _sourceLine(s: { file_name?: string; pages?: string | null; section?: s
   return line;
 }
 
-function appendSourcesDropdown(
-  bubble: HTMLElement | null,
-  sources?: Array<{ file_name?: string; pages?: string | null; section?: string | null }>
-): void {
+function _sourceClickPage(s: SourceItem): number {
+  return Number(s.pageStart) || firstPage(s.pages);
+}
+
+function _openSource(s: SourceItem): void {
+  handleSourceClick(
+    { fileName: s.file_name, documentId: s.documentId, page: _sourceClickPage(s) },
+    'sidebar'
+  );
+}
+
+function appendSourcesDropdown(bubble: HTMLElement | null, sources?: SourceItem[]): void {
   if (!bubble || !sources || !sources.length || bubble.querySelector('.ai-rag-sources')) return;
   const details = document.createElement('details');
   details.className = 'ai-rag-sources';
@@ -146,10 +165,65 @@ function appendSourcesDropdown(
   sources.forEach((s) => {
     const item = document.createElement('li');
     item.textContent = _sourceLine(s);
+    // Real course files become clickable; the [Source 0] visible-page /
+    // problem-solver pseudo-source is left as plain text.
+    const name = (s.file_name || '').toLowerCase();
+    if (s.file_name && !/problem solver|visible|^source 0$/.test(name)) {
+      item.className = 'src-cite-item';
+      item.title = 'Open this source';
+      item.addEventListener('click', () => _openSource(s));
+    }
     list.appendChild(item);
   });
   details.append(summary, list);
   bubble.appendChild(details);
+}
+
+// Turn inline [Source N] markers in a rendered answer bubble into clickable
+// chips that open the Nth source (matched by its `index`). Walks text nodes
+// only and skips math/code so KaTeX and code blocks are never touched.
+function linkifySourceCitations(bubble: HTMLElement | null, sources?: SourceItem[]): void {
+  if (!bubble || !sources || !sources.length) return;
+  const byIndex = new Map<number, SourceItem>();
+  sources.forEach((s) => {
+    if (typeof s.index === 'number') byIndex.set(s.index, s);
+  });
+  if (!byIndex.size) return;
+
+  const walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    const t = n as Text;
+    if (!/\[Source\s+\d+\]/i.test(t.nodeValue || '')) continue;
+    if ((t.parentElement || undefined)?.closest('.katex, code, pre')) continue;
+    targets.push(t);
+  }
+  targets.forEach((tn) => {
+    const frag = document.createDocumentFragment();
+    (tn.nodeValue || '').split(/(\[Source\s+\d+\])/i).forEach((part) => {
+      const m = part.match(/\[Source\s+(\d+)\]/i);
+      if (m) {
+        const idx = parseInt(m[1] || '0', 10);
+        const span = document.createElement('span');
+        span.className = 'src-cite';
+        span.textContent = '[' + idx + ']';
+        span.dataset.srcN = String(idx);
+        frag.appendChild(span);
+      } else if (part) {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+    tn.parentNode?.replaceChild(frag, tn);
+  });
+
+  bubble.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement | null)?.closest('.src-cite') as HTMLElement | null;
+    if (!chip) return;
+    const idx = parseInt(chip.dataset.srcN || '', 10);
+    const s = byIndex.get(idx);
+    if (s) _openSource(s);
+  });
 }
 
 // ── Auto-scroll controller ──────────────────────────────────────────────────
@@ -884,13 +958,17 @@ export function initAskAI(
               _autoScroll(aiMsgs);
             }
 
-            function fullRender(text: string): void {
+            function fullRender(text: string, opts?: { keepMarkers?: boolean; sources?: SourceItem[] }): void {
               if (!bubble) return;
-              const display = stripSourceMarkers(text.replace(metaPattern, '').trim());
+              const cleaned = text.replace(metaPattern, '').trim();
+              // For the final render we KEEP [Source N] so they can be linkified
+              // into clickable chips; mid-stream renders still strip them.
+              const display = opts?.keepMarkers ? cleaned : stripSourceMarkers(cleaned);
               if (!display) return;
               const _doFullRender = (): void => {
                 if (!bubble) return;
                 bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(display) : escapeHtml(display);
+                if (opts?.keepMarkers) linkifySourceCitations(bubble, opts.sources);
                 _autoScroll(aiMsgs);
               };
               if (window._ssEnsureKatex) {
@@ -1136,20 +1214,27 @@ export function initAskAI(
               const sources = (meta && meta.sources) || [];
               const unsupported = !!(meta && meta.unsupported);
 
-              const cleanText = stripSourceMarkers(rawText.replace(metaPattern, '').trim());
+              const markedText = rawText.replace(metaPattern, '').trim();
+              const cleanText = stripSourceMarkers(markedText);
               if (!cleanText) {
                 if (ansWrap) { ansWrap.remove(); ansWrap = null; }
                 fallbackToRag();
                 return;
               }
 
+              // displayText keeps [Source N] (linkified on render); fullAnswer is
+              // the clean version stored in history / data-raw (export stays tidy).
+              let displayText = markedText;
               let fullAnswer = cleanText;
               if (unsupported && !sources.length) {
-                fullAnswer =
-                  '⚠️ *No matching course materials found — answering from general knowledge.*\n\n' +
-                  fullAnswer;
+                const note = '⚠️ *No matching course materials found — answering from general knowledge.*\n\n';
+                displayText = note + displayText;
+                fullAnswer = note + fullAnswer;
               }
-              if (_ragMode === 'general') fullAnswer += '\n\n🌐 general mode';
+              if (_ragMode === 'general') {
+                displayText += '\n\n🌐 general mode';
+                fullAnswer += '\n\n🌐 general mode';
+              }
 
               const _cacheId = (meta && meta.answerCacheId) || null;
               (window as unknown as { _lastRagMeta?: RagMeta })._lastRagMeta = {
@@ -1165,7 +1250,7 @@ export function initAskAI(
                 bubble.removeAttribute('data-streaming');
               }
 
-              fullRender(fullAnswer);
+              fullRender(displayText, { keepMarkers: true, sources });
               appendSourcesDropdown(bubble, sources);
 
               if (ansWrap && !ansWrap.querySelector('.rag-feedback-bar')) {

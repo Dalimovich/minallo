@@ -61,6 +61,13 @@ declare global {
     _t?: (key: string) => string;
     showToast?: (title: string, sub?: string) => void;
 
+    // Open a cited AI source (set by features/pdf-viewer/source-link). Lets
+    // non-module views (ExamForge) open the PDF popup at the cited page.
+    openCitedSource?: (
+      src: { fileName?: string | null; documentId?: string | null; page?: number | null },
+      surface: 'sidebar' | 'popup'
+    ) => void;
+
     // ── Auth bridge ────────────────────────────────────────────────────
     _onLoginSuccess?: () => void;
 

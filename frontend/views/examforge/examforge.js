@@ -402,7 +402,7 @@
                   : '') +
                 ((q.sources || []).length
                   ? '<div class="ef-sources">' + q.sources.map(function (src) {
-                      return '<span>' + _esc(src.fileName || 'Source') + (src.pages ? ', ' + _esc(src.pages) : '') + '</span>';
+                      return '<span class="src-cite" title="Open this source" data-src-file="' + _esc(src.fileName || '') + '" data-src-page="' + _esc(src.pages == null ? '' : src.pages) + '">' + _esc(src.fileName || 'Source') + (src.pages ? ', ' + _esc(src.pages) : '') + '</span>';
                     }).join('') + '</div>'
                   : '') +
               '</article>'
@@ -422,6 +422,13 @@
       els.exam.querySelectorAll('.ef-written').forEach(function (input) {
         input.addEventListener('input', function () {
           st.answers[Number(input.getAttribute('data-q'))] = input.value || '';
+        });
+      });
+      els.exam.querySelectorAll('.ef-sources .src-cite').forEach(function (el) {
+        el.addEventListener('click', function () {
+          var fn = el.getAttribute('data-src-file');
+          if (!fn || typeof window.openCitedSource !== 'function') return;
+          window.openCitedSource({ fileName: fn, page: el.getAttribute('data-src-page') }, 'popup');
         });
       });
       var reset = els.exam.querySelector('#efResetAnswers');

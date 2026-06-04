@@ -7,6 +7,7 @@
 // PR-06: real markdown (KaTeX), file upload (img/.txt/.pdf), real Regenerate.
 
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
+import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 
 /** Tiny i18n wrapper: delegates to window._t (set up by language.ts) and
  * falls back to the English string when the language store isn't ready yet
@@ -778,9 +779,13 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
   let sourceHtml = '';
   if (sources.length) {
     const items = sources
-      .map((s) => {
-        const src = s as { file_name?: string; pages?: string | null; section?: string | null };
-        let line = '<li>' + escapeHtml(src.file_name || 'Unknown');
+      .map((s, i) => {
+        const src = s as SrcItem;
+        const name = src.file_name || 'Unknown';
+        const clickable = !!src.file_name && !/problem solver|visible|^source 0$/i.test(name);
+        let line =
+          '<li' + (clickable ? ' class="src-cite" title="Open this source" data-src-i="' + i + '"' : '') + '>' +
+          escapeHtml(name);
         if (src.pages) line += ', p.' + escapeHtml(String(src.pages));
         if (src.section) line += ' · <em>' + escapeHtml(src.section) + '</em>';
         line += '</li>';
@@ -794,8 +799,26 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
     const footer = document.createElement('div');
     footer.className = 'ncb-ask-footer';
     footer.innerHTML = footerHtml;
+    footer.querySelectorAll<HTMLElement>('.ncb-ask-sources .src-cite').forEach((el) => {
+      el.addEventListener('click', () => {
+        const src = sources[Number(el.dataset.srcI)] as SrcItem | undefined;
+        if (!src) return;
+        handleSourceClick(
+          { fileName: src.file_name, documentId: src.documentId, page: src.pageStart ?? firstPage(src.pages) },
+          'popup'
+        );
+      });
+    });
     bubble.appendChild(footer);
   }
+}
+
+interface SrcItem {
+  file_name?: string;
+  pages?: string | null;
+  section?: string | null;
+  documentId?: string | null;
+  pageStart?: number | null;
 }
 
 function stripSourceMarkers(text: string): string {

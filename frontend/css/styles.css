@@ -7987,3 +7987,92 @@ body:not(.night) .ai-cap-modal-btn-secondary {
   font-family: 'Courier New', ui-monospace, monospace;
   font-size: 0.78rem;
 }
+
+/* ── Clickable AI source citations + PDF source popup ─────────────────────── */
+.src-cite {
+  cursor: pointer;
+  color: #60a5fa;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+.src-cite:hover { color: #93c5fd; }
+.ai-rag-sources .src-cite-item,
+.ef-sources .src-cite {
+  cursor: pointer;
+}
+.ai-rag-sources .src-cite-item:hover { text-decoration: underline; }
+
+.src-pdf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2vh 2vw;
+}
+.src-pdf-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 96vw);
+  height: min(94vh, 1100px);
+  background: var(--card, #0f172a);
+  color: var(--text, #e2e8f0);
+  border: 1px solid var(--border, #1e293b);
+  border-radius: 10px;
+  box-shadow: var(--shadow, 0 8px 40px rgba(0, 0, 0, 0.5));
+  overflow: hidden;
+}
+.src-pdf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border, #1e293b);
+  flex: 0 0 auto;
+}
+.src-pdf-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.src-pdf-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.src-pdf-close:hover { opacity: 0.7; }
+.src-pdf-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  background: #525659;
+  padding: 16px 0;
+}
+.src-pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.src-pdf-page canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+  background: #fff;
+}
+.src-pdf-loading,
+.src-pdf-error {
+  text-align: center;
+  padding: 40px 16px;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
