@@ -233,7 +233,7 @@
           shell: { chapter: 'Shell', eyebrow: 'Step 1 · App shell', headline: 'Start from the real Minallo sidebar.', body: 'The preview opens on an empty dashboard and uses the same sidebar order and icons students see in the app.' },
           setup: { chapter: 'Course', eyebrow: 'Step 2 · Course setup', headline: 'Create the course first.', body: 'Open Courses, type the subject name, add it, and Minallo places the new course card in front of you.' },
           upload: { chapter: 'Upload', eyebrow: 'Step 3 · Upload files', headline: 'Open the course and add a file.', body: 'Inside the Files tab, click Upload files, choose the material you need, and Minallo shows the upload progress modal.' },
-          ask: { chapter: 'Ask', eyebrow: 'Step 2 · Ask', headline: 'Ask in your own words.', body: 'No prompt engineering. Ask the way you would ask a tutor sitting next to you.' },
+          ask: { chapter: 'Ask', eyebrow: 'Step 4 · Ask AI', headline: 'Ask in your own words.', body: 'Type a normal course question. Minallo sends it like the real chat, shows the thinking state, then streams a grounded answer with sources.' },
           sources: { chapter: 'Sources', eyebrow: 'Step 3 · Retrieve', headline: 'It finds the exact pages.', body: 'Minallo searches your files and pulls the passages that actually answer the question.' },
           answer: { chapter: 'Answer', eyebrow: 'Step 4 · Explain', headline: 'A structured answer you can trust.', body: 'Worked the way your course teaches it — with page citations you can open and verify.' },
           trust: { chapter: 'Trust', eyebrow: 'Step 5 · Honesty', headline: 'Honest when something is missing.', body: 'If the answer is not in your files, Minallo says so and asks for the right file or page instead of guessing.' },
@@ -455,7 +455,7 @@
           shell: { chapter: 'Shell', eyebrow: 'Schritt 1 · App-Shell', headline: 'Starte mit der echten Minallo-Seitenleiste.', body: 'Die Vorschau öffnet ein leeres Dashboard und nutzt dieselbe Reihenfolge und dieselben Icons wie die App.' },
           setup: { chapter: 'Kurs', eyebrow: 'Schritt 2 · Kurs einrichten', headline: 'Erstelle zuerst den Kurs.', body: 'Öffne Kurse, tippe den Fachnamen ein, füge ihn hinzu und Minallo zeigt dir direkt die neue Kurskarte.' },
           upload: { chapter: 'Upload', eyebrow: 'Schritt 3 · Dateien hochladen', headline: 'Öffne den Kurs und füge eine Datei hinzu.', body: 'Im Dateien-Tab klickst du auf Upload files, wählst dein Material aus und Minallo zeigt den Upload-Fortschritt.' },
-          ask: { chapter: 'Fragen', eyebrow: 'Schritt 2 · Fragen', headline: 'Frag in deinen eigenen Worten.', body: 'Kein Prompt-Engineering. Frag so, wie du einen Tutor neben dir fragen würdest.' },
+          ask: { chapter: 'Fragen', eyebrow: 'Schritt 4 · KI fragen', headline: 'Frag in deinen eigenen Worten.', body: 'Tippe eine normale Kursfrage. Minallo sendet sie wie im echten Chat, zeigt den Denkzustand und schreibt dann eine Antwort mit Quellen.' },
           sources: { chapter: 'Quellen', eyebrow: 'Schritt 3 · Finden', headline: 'Es findet die genauen Seiten.', body: 'Minallo durchsucht deine Dateien und zieht die Stellen heraus, die die Frage wirklich beantworten.' },
           answer: { chapter: 'Antwort', eyebrow: 'Schritt 4 · Erklären', headline: 'Eine strukturierte Antwort, der du vertrauen kannst.', body: 'Gelöst, wie es dein Kurs lehrt — mit Seitenquellen, die du öffnen und prüfen kannst.' },
           trust: { chapter: 'Vertrauen', eyebrow: 'Schritt 5 · Ehrlichkeit', headline: 'Ehrlich, wenn etwas fehlt.', body: 'Wenn die Antwort nicht in deinen Dateien steht, sagt Minallo das und fragt nach der richtigen Datei oder Seite, statt zu raten.' },
@@ -934,7 +934,7 @@
       if (text != null) n.textContent = text;
       return n;
     }
-    function mock() { return el('div', 'nl-pv__mock'); }
+    function mock(extraClass) { return el('div', 'nl-pv__mock' + (extraClass ? ' ' + extraClass : '')); }
     function row(icon, name, meta) {
       var r = el('div', 'nl-pv-row');
       var i = el('span', 'nl-pv-row__icon'); i.appendChild(buildSvgUse(icon, 16)); r.appendChild(i);
@@ -1401,9 +1401,42 @@
         return courseUploadScene();
       },
       ask: function () {
-        var m = mock();
-        m.appendChild(row('search', L('askPlaceholder'), ''));
-        m.appendChild(el('div', 'nl-pv-bubble nl-pv-bubble--user', tFull('tutorPreview.userMsg')));
+        var m = mock('nl-pv-ask-scene');
+        var top = el('div', 'nl-pv-ask-head');
+        var title = el('div', 'nl-pv-ask-title');
+        title.appendChild(buildSvgUse('sparkles', 16));
+        title.appendChild(el('span', null, 'Minallo AI'));
+        top.appendChild(title);
+        top.appendChild(el('span', 'nl-pv-ask-context', 'Engineering Mechanics 2'));
+        m.appendChild(top);
+
+        var chat = el('div', 'nl-pv-ask-chat');
+        var composer = el('div', 'nl-pv-ask-composer');
+        composer.appendChild(buildSvgUse('search', 14));
+        composer.appendChild(el('span', 'nl-pv-ask-typed', 'Solve exercise 6 using my lecture method and cite the formula.'));
+        var send = el('span', 'nl-pv-ask-send');
+        send.appendChild(buildSvgUse('arrow-right', 13));
+        composer.appendChild(send);
+        chat.appendChild(composer);
+
+        chat.appendChild(el('div', 'nl-pv-bubble nl-pv-bubble--user nl-pv-ask-user', 'Solve exercise 6 using my lecture method and cite the formula.'));
+
+        var thinking = el('div', 'nl-pv-ask-thinking');
+        thinking.appendChild(el('span'));
+        thinking.appendChild(el('span'));
+        thinking.appendChild(el('span'));
+        chat.appendChild(thinking);
+
+        var answer = el('div', 'nl-pv-bubble nl-pv-bubble--ai nl-pv-ask-answer');
+        answer.appendChild(el('p', null, 'I found the matching exercise and formula sheet. Use the equilibrium equations, substitute the given force and distances, then check the signs with force balance.'));
+        answer.appendChild(el('div', 'nl-pv-formula', 'ΣF = 0  ·  ΣM = 0'));
+        var chips = el('div', 'nl-pv-chips');
+        chips.appendChild(chip('file-text', 'Lecture 03 · p.12'));
+        chips.appendChild(chip('pen-tool', 'Exercise Sheet 06 · p.2'));
+        answer.appendChild(chips);
+        chat.appendChild(answer);
+
+        m.appendChild(chat);
         return m;
       },
       sources: function () {
@@ -1525,7 +1558,7 @@
         { keyBase: 'course.shell',   build: 'shell',   ms: 10400 },
         { keyBase: 'course.setup',   build: 'courseSetup', ms: 8400 },
         { keyBase: 'course.upload',  build: 'courseUpload', ms: 11200 },
-        { keyBase: 'course.ask',     build: 'ask',     ms: 4000 },
+        { keyBase: 'course.ask',     build: 'ask',     ms: 7600 },
         { keyBase: 'course.sources', build: 'sources', ms: 4200 },
         { keyBase: 'course.answer',  build: 'answer',  ms: 6000 },
         { keyBase: 'course.trust',   build: 'trust',   ms: 5000 },
