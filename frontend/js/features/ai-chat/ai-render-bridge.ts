@@ -32,15 +32,28 @@ export function initAiRenderBridge(options?: RenderBridgeOptions): {
 
   function renderAllMathBubbles(): void {
     document.querySelectorAll('.ai-bubble.bot, .aip-bubble.bot').forEach((el) => {
-      // Skip bubbles already rendered by renderMarkdown — they contain .katex.
-      // Re-running renderMathInElement on KaTeX HTML double-processes text.
-      if (el.querySelector('.katex')) return;
+      // If a long restored answer is only partly rendered, rebuild it from
+      // the saved markdown source once KaTeX is available.
+      if (el.querySelector('.katex')) {
+        const clone = el.cloneNode(true) as Element;
+        clone.querySelectorAll('.katex').forEach((mathEl) => mathEl.remove());
+        const hasRawMath = /\\\(|\\\[|\$\$|\$/.test(clone.textContent || '');
+        const raw = (el as HTMLElement).getAttribute('data-raw');
+        if (hasRawMath && raw && window.katex) {
+          el.innerHTML = renderMarkdown(raw);
+        }
+        return;
+      }
       renderMathIn(el);
     });
   }
 
   function scheduleKatexRender(): void {
-    if (katexRenderScheduled || (window.katex && window.renderMathInElement)) return;
+    if (katexRenderScheduled) return;
+    if (window.katex && window.renderMathInElement) {
+      renderAllMathBubbles();
+      return;
+    }
     katexRenderScheduled = true;
     const ensurePromise = window._ssEnsureKatex?.();
     if (!ensurePromise) {
