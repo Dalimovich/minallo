@@ -30,11 +30,12 @@ from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
-# A cheatsheet is dense but bounded. Cover broadly (like a printed handout) but
-# cap topics/evidence so a huge course doesn't blow the context window.
-_MAX_TOPICS = 16
-_PER_TOPIC_TOP_K = 4
-_MAX_EVIDENCE = 40
+# A cheatsheet is dense but bounded. Generation runs ~40 tok/s on this account,
+# so output length is the main driver of latency: keep topics/evidence modest so
+# a full sheet generates in time for the edge proxy's upstream timeout.
+_MAX_TOPICS = 10
+_PER_TOPIC_TOP_K = 3
+_MAX_EVIDENCE = 20
 
 _SYSTEM = (
     "You are ExamForge by Minallo, writing a DENSE, exam-ready CHEATSHEET from a "
@@ -197,7 +198,10 @@ def generate_cheatsheet(
     title = (topic_query + " — Cheatsheet") if topic_query else "Course Cheatsheet"
     user = "COURSE CONTEXT:\n\n" + _format_evidence(evidence, merged_names, topics)
     try:
-        res = chat_json(system=_SYSTEM, user=user, max_tokens=7000)
+        # Keep output bounded: at ~40 tok/s a longer sheet blows the edge
+        # proxy's upstream timeout. ~2800 tokens (a tight 1.5-page sheet) plus
+        # the raised proxy timeout keeps generation inside the budget.
+        res = chat_json(system=_SYSTEM, user=user, max_tokens=2800)
     except Exception as e:  # noqa: BLE001
         log.exception("cheatsheet LLM call failed")
         return {"text": "", "error": str(e), "groundedSources": []}

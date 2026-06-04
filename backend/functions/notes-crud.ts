@@ -28,7 +28,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       const rows = Array.isArray(full.body) ? full.body : [];
       return jsonResponse(200, { note: rows[0] || null });
     }
-    let path = 'notes?select=id,title,type,course_id,document_id,source_page_start,source_page_end,content_markdown,note_sources,created_at,updated_at' +
+    let path = 'notes?select=id,title,type,course_id,document_id,source_page_start,source_page_end,content_markdown,note_sources(*),created_at,updated_at' +
       '&user_id=eq.' + encodeURIComponent(user.id) +
       '&order=created_at.desc&limit=100';
     if (params.courseId)   path += '&course_id=eq.'   + encodeURIComponent(params.courseId);

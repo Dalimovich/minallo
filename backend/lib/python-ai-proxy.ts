@@ -12,7 +12,9 @@
 import { optionalEnv } from './env';
 import type { PythonProxyResult } from './types';
 
-const _UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_UPSTREAM_TIMEOUT_MS', '26000'), 10);
+// Grounded generation (cheatsheet, structured Deep Learn) runs ~40 tok/s and
+// can take 35–45s. Allow that headroom; override per-env with AI_UPSTREAM_TIMEOUT_MS.
+const _UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_UPSTREAM_TIMEOUT_MS', '45000'), 10);
 
 function _config(): { serviceUrl: string; internalToken: string } {
   return {
