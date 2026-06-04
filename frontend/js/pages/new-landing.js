@@ -212,6 +212,7 @@
           annotate: 'Annotate', annotateSub: 'Highlight & sign PDFs',
           flashcards: 'Flashcards', flashcardsSub: 'Auto-built from your files',
           quiz: 'Quiz', quizSub: 'Practice with scoring',
+          examforge: 'ExamForge', examforgeSub: 'Generate source-based mock exams',
           summary: 'Summary', summarySub: 'Key points from lectures',
           focus: 'Focus', streak: 'Streak', dayStreak: '7-day streak',
           askPlaceholder: 'Ask about your course…', tapToFlip: 'Tap to flip'
@@ -234,11 +235,10 @@
           setup: { chapter: 'Course', eyebrow: 'Step 2 · Course setup', headline: 'Create the course first.', body: 'Open Courses, type the subject name, add it, and Minallo places the new course card in front of you.' },
           upload: { chapter: 'Upload', eyebrow: 'Step 3 · Upload files', headline: 'Open the course and add a file.', body: 'Inside the Files tab, click Upload files, choose the material you need, and Minallo shows the upload progress modal.' },
           ask: { chapter: 'Ask', eyebrow: 'Step 4 · Ask AI', headline: 'Ask in your own words.', body: 'Type a normal course question. Minallo sends it like the real chat, shows the thinking state, then streams a grounded answer with sources.' },
-          sources: { chapter: 'Sources', eyebrow: 'Step 3 · Retrieve', headline: 'It finds the exact pages.', body: 'Minallo searches your files and pulls the passages that actually answer the question.' },
-          answer: { chapter: 'Answer', eyebrow: 'Step 4 · Explain', headline: 'A structured answer you can trust.', body: 'Worked the way your course teaches it — with page citations you can open and verify.' },
-          trust: { chapter: 'Trust', eyebrow: 'Step 5 · Honesty', headline: 'Honest when something is missing.', body: 'If the answer is not in your files, Minallo says so and asks for the right file or page instead of guessing.' },
-          tools: { chapter: 'Tools', eyebrow: 'Step 6 · Revise', headline: 'Turn material into practice.', body: 'Annotate PDFs, generate flashcards and quizzes, and get lecture summaries — all from the same files.' },
-          focus: { chapter: 'Focus', eyebrow: 'Step 7 · Momentum', headline: 'Then keep your momentum.', body: 'Run a Pomodoro, play a focus playlist, and watch your study streak grow.' }
+          sources: { chapter: 'Sources', eyebrow: 'Step 5 · Retrieve', headline: 'It finds the exact pages.', body: 'Minallo searches your files and pulls the passages that actually answer the question.' },
+          answer: { chapter: 'Answer', eyebrow: 'Step 6 · Explain', headline: 'A structured answer you can trust.', body: 'Worked the way your course teaches it — with page citations you can open and verify.' },
+          tools: { chapter: 'Tools', eyebrow: 'Step 7 · Practice', headline: 'Turn material into exam practice.', body: 'Annotate PDFs, generate flashcards and quizzes, and use ExamForge to create source-based mock exams from the same course files.' },
+          focus: { chapter: 'Focus', eyebrow: 'Step 8 · Momentum', headline: 'Then keep your momentum.', body: 'Run a Pomodoro, play a focus playlist, and watch your study streak grow.' }
         },
         german: {
           intro: { chapter: 'Start', eyebrow: 'Step 1 · German', headline: 'A space just for German.', body: 'Build vocabulary, grammar, and everyday phrases with simple explanations and playful revision.' },
@@ -434,6 +434,7 @@
           annotate: 'Markieren', annotateSub: 'PDFs markieren & signieren',
           flashcards: 'Karteikarten', flashcardsSub: 'Automatisch aus deinen Dateien',
           quiz: 'Quiz', quizSub: 'Üben mit Bewertung',
+          examforge: 'ExamForge', examforgeSub: 'Quellenbasierte Probeprüfungen',
           summary: 'Zusammenfassung', summarySub: 'Kernpunkte aus Vorlesungen',
           focus: 'Fokus', streak: 'Serie', dayStreak: '7-Tage-Serie',
           askPlaceholder: 'Frag zu deinem Kurs…', tapToFlip: 'Zum Umdrehen tippen'
@@ -456,11 +457,10 @@
           setup: { chapter: 'Kurs', eyebrow: 'Schritt 2 · Kurs einrichten', headline: 'Erstelle zuerst den Kurs.', body: 'Öffne Kurse, tippe den Fachnamen ein, füge ihn hinzu und Minallo zeigt dir direkt die neue Kurskarte.' },
           upload: { chapter: 'Upload', eyebrow: 'Schritt 3 · Dateien hochladen', headline: 'Öffne den Kurs und füge eine Datei hinzu.', body: 'Im Dateien-Tab klickst du auf Upload files, wählst dein Material aus und Minallo zeigt den Upload-Fortschritt.' },
           ask: { chapter: 'Fragen', eyebrow: 'Schritt 4 · KI fragen', headline: 'Frag in deinen eigenen Worten.', body: 'Tippe eine normale Kursfrage. Minallo sendet sie wie im echten Chat, zeigt den Denkzustand und schreibt dann eine Antwort mit Quellen.' },
-          sources: { chapter: 'Quellen', eyebrow: 'Schritt 3 · Finden', headline: 'Es findet die genauen Seiten.', body: 'Minallo durchsucht deine Dateien und zieht die Stellen heraus, die die Frage wirklich beantworten.' },
-          answer: { chapter: 'Antwort', eyebrow: 'Schritt 4 · Erklären', headline: 'Eine strukturierte Antwort, der du vertrauen kannst.', body: 'Gelöst, wie es dein Kurs lehrt — mit Seitenquellen, die du öffnen und prüfen kannst.' },
-          trust: { chapter: 'Vertrauen', eyebrow: 'Schritt 5 · Ehrlichkeit', headline: 'Ehrlich, wenn etwas fehlt.', body: 'Wenn die Antwort nicht in deinen Dateien steht, sagt Minallo das und fragt nach der richtigen Datei oder Seite, statt zu raten.' },
-          tools: { chapter: 'Werkzeuge', eyebrow: 'Schritt 6 · Wiederholen', headline: 'Mach aus Material echtes Üben.', body: 'Markiere PDFs, erstelle Karteikarten und Quizze und erhalte Vorlesungs-Zusammenfassungen — alles aus denselben Dateien.' },
-          focus: { chapter: 'Fokus', eyebrow: 'Schritt 7 · Schwung', headline: 'Und halte deinen Schwung.', body: 'Starte eine Pomodoro-Sitzung, spiele eine Fokus-Playlist und sieh deine Lernserie wachsen.' }
+          sources: { chapter: 'Quellen', eyebrow: 'Schritt 5 · Finden', headline: 'Es findet die genauen Seiten.', body: 'Minallo durchsucht deine Dateien und zieht die Stellen heraus, die die Frage wirklich beantworten.' },
+          answer: { chapter: 'Antwort', eyebrow: 'Schritt 6 · Erklären', headline: 'Eine strukturierte Antwort, der du vertrauen kannst.', body: 'Gelöst, wie es dein Kurs lehrt — mit Seitenquellen, die du öffnen und prüfen kannst.' },
+          tools: { chapter: 'Werkzeuge', eyebrow: 'Schritt 7 · Prüfung üben', headline: 'Mach aus Material echte Prüfungsvorbereitung.', body: 'Markiere PDFs, erstelle Karteikarten und Quizze und nutze ExamForge für quellenbasierte Probeprüfungen aus denselben Kursdateien.' },
+          focus: { chapter: 'Fokus', eyebrow: 'Schritt 8 · Schwung', headline: 'Und halte deinen Schwung.', body: 'Starte eine Pomodoro-Sitzung, spiele eine Fokus-Playlist und sieh deine Lernserie wachsen.' }
         },
         german: {
           intro: { chapter: 'Start', eyebrow: 'Schritt 1 · Deutsch', headline: 'Ein Bereich nur für Deutsch.', body: 'Baue Vokabeln, Grammatik und Alltagsphrasen mit einfachen Erklärungen und spielerischer Wiederholung auf.' },
@@ -1592,19 +1592,13 @@
         m.appendChild(chips);
         return m;
       },
-      trust: function () {
-        var m = mock();
-        m.appendChild(el('div', 'nl-pv-bubble nl-pv-bubble--ai', M('trustMsg')));
-        m.appendChild(badge('shield-check', L('verified')));
-        return m;
-      },
       tools: function () {
         var m = mock();
         var t2 = el('div', 'nl-pv-tiles');
         t2.appendChild(tile('pen-tool', L('annotate'), L('annotateSub')));
         t2.appendChild(tile('layers-3', L('flashcards'), L('flashcardsSub')));
         t2.appendChild(tile('check-circle-2', L('quiz'), L('quizSub')));
-        t2.appendChild(tile('file-text', L('summary'), L('summarySub')));
+        t2.appendChild(tile('graduation-cap', L('examforge'), L('examforgeSub')));
         m.appendChild(t2);
         return m;
       },
@@ -1690,7 +1684,6 @@
         { keyBase: 'course.ask',     build: 'ask',     ms: 7600 },
         { keyBase: 'course.sources', build: 'sources', ms: 4200 },
         { keyBase: 'course.answer',  build: 'answer',  ms: 6000 },
-        { keyBase: 'course.trust',   build: 'trust',   ms: 5000 },
         { keyBase: 'course.tools',   build: 'tools',   ms: 4600 },
         { keyBase: 'course.focus',   build: 'focus',   ms: 4600 }
       ],
