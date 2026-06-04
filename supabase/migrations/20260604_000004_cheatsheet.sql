@@ -12,12 +12,12 @@
 
 do $$
 declare
-  conname text;
+  v_conname text;  -- not "conname": that collides with pg_constraint.conname
 begin
   -- The original constraint is an unnamed/auto-named CHECK on notes.type.
   -- Find and drop whichever check constraint governs `type`, then re-add one
   -- that includes 'cheatsheet'. Idempotent.
-  select c.conname into conname
+  select c.conname into v_conname
   from pg_constraint c
   join pg_class t on t.oid = c.conrelid
   where t.relname = 'notes'
@@ -25,8 +25,8 @@ begin
     and pg_get_constraintdef(c.oid) ilike '%type%'
     and pg_get_constraintdef(c.oid) ilike '%notes%';
 
-  if conname is not null then
-    execute format('alter table public.notes drop constraint %I', conname);
+  if v_conname is not null then
+    execute format('alter table public.notes drop constraint %I', v_conname);
   end if;
 
   if not exists (

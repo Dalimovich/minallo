@@ -12,12 +12,12 @@
 
 do $$
 declare
-  conname text;
+  v_conname text;  -- not "conname": that collides with pg_constraint.conname
 begin
   -- Find and drop whichever CHECK constraint governs notes.type (named
   -- notes_type_chk after 20260604_000004, or auto-named before it), then re-add
   -- one that also allows 'deep_learn'. Idempotent.
-  select c.conname into conname
+  select c.conname into v_conname
   from pg_constraint c
   join pg_class t on t.oid = c.conrelid
   where t.relname = 'notes'
@@ -25,8 +25,8 @@ begin
     and pg_get_constraintdef(c.oid) ilike '%type%'
     and pg_get_constraintdef(c.oid) ilike '%notes%';
 
-  if conname is not null then
-    execute format('alter table public.notes drop constraint %I', conname);
+  if v_conname is not null then
+    execute format('alter table public.notes drop constraint %I', v_conname);
   end if;
 
   alter table public.notes
