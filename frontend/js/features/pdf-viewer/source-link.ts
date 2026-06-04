@@ -273,13 +273,33 @@ async function _renderPdfInto(
     wraps.forEach((wr) => io?.observe(wr));
   };
 
-  const goToTarget = async (): Promise<void> => {
+  // Scroll position of a page within the scroll container, offset for the
+  // sticky toolbar so the page top isn't hidden under it.
+  const pageScrollTop = (wrap: HTMLElement): number => {
+    const barH = bar.offsetHeight || 46;
+    const top = wrap.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+    return Math.max(0, top - barH - 8);
+  };
+
+  const goToTarget = async (animate: boolean): Promise<void> => {
     await renderPage(tp); // paint the cited page first so it's there to land on
-    wraps[tp - 1]?.scrollIntoView({ block: 'start' });
+    const wrap = wraps[tp - 1];
+    if (!wrap || !_activePopup) return;
+    if (!animate) {
+      body.scrollTop = pageScrollTop(wrap);
+      return;
+    }
+    // Start at the top, briefly, then smoothly scroll down to the cited page so
+    // the user sees where in the document it came from.
+    body.scrollTop = 0;
+    setTimeout(() => {
+      if (!_activePopup || !wrap.isConnected) return;
+      body.scrollTo({ top: pageScrollTop(wrap), behavior: 'smooth' });
+    }, 250);
   };
 
   build();
-  await goToTarget();
+  await goToTarget(tp > 1); // animate only when there's somewhere to scroll to
 
   bar.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.src-pdf-zoom') as HTMLElement | null;
@@ -288,7 +308,7 @@ async function _renderPdfInto(
     zoom = Math.min(3, Math.max(0.5, Math.round(next * 100) / 100));
     zoomVal.textContent = Math.round(zoom * 100) + '%';
     build();
-    void goToTarget();
+    void goToTarget(false); // keep the cited page in view, no animation on zoom
   });
 }
 
