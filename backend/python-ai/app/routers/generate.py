@@ -15,6 +15,7 @@ from ..services.notes import generate_notes, save_note
 from ..services.quiz import generate_quiz, save_quiz_set
 from ..services.examforge import generate_examforge, grade_examforge_answer
 from ..services.cheatsheet import generate_cheatsheet
+from ..services.deep_learn import generate_deep_learn
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -128,6 +129,27 @@ class GenerateCheatsheetResponse(BaseModel):
     title: str | None = None
     text: str
     topicsCovered: list[str] = []
+    groundedSources: list[dict[str, Any]] = []
+    warning: str | None = None
+    error: str | None = None
+    model: str | None = None
+    promptTokens: int | None = None
+    completionTokens: int | None = None
+
+
+class GenerateDeepLearnRequest(BaseModel):
+    userId: str
+    courseId: str
+    topic: str
+    documentIds: list[str] | None = None
+
+
+class GenerateDeepLearnResponse(BaseModel):
+    topic: str
+    title: str | None = None
+    lesson: str = ""
+    workedExample: str = ""
+    check: dict[str, Any] | None = None
     groundedSources: list[dict[str, Any]] = []
     warning: str | None = None
     error: str | None = None
@@ -253,6 +275,39 @@ async def generate_cheatsheet_endpoint(payload: GenerateCheatsheetRequest) -> Ge
         title=out.get("title"),
         text=out.get("text", ""),
         topicsCovered=out.get("topicsCovered", []),
+        groundedSources=out.get("groundedSources", []),
+        warning=out.get("warning"),
+        error=out.get("error"),
+        model=out.get("model"),
+        promptTokens=out.get("promptTokens"),
+        completionTokens=out.get("completionTokens"),
+    )
+
+
+# ── /generate-deep-learn ──────────────────────────────────────────────────────
+
+
+@router.post("/generate-deep-learn", response_model=GenerateDeepLearnResponse)
+async def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> GenerateDeepLearnResponse:
+    _require_uuid(payload.userId, "userId")
+    if payload.documentIds:
+        for did in payload.documentIds:
+            _require_uuid(did, "documentId")
+    doc_names = _verify_user_owns_documents(payload.userId, payload.courseId, payload.documentIds)
+
+    out = generate_deep_learn(
+        user_id=payload.userId,
+        course_id=payload.courseId,
+        topic=payload.topic,
+        document_ids=payload.documentIds,
+        doc_names=doc_names,
+    )
+    return GenerateDeepLearnResponse(
+        topic=out.get("topic", payload.topic),
+        title=out.get("title"),
+        lesson=out.get("lesson", ""),
+        workedExample=out.get("workedExample", ""),
+        check=out.get("check"),
         groundedSources=out.get("groundedSources", []),
         warning=out.get("warning"),
         error=out.get("error"),

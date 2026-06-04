@@ -317,6 +317,10 @@ function buildFilesContent(course: LegacyCourse): string {
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>' +
         '<span>Cheatsheet</span>' +
       '</button>' +
+      '<button class="co-course-tab" type="button" data-course-tab="deeplearn" role="tab" aria-selected="false">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.42A12 12 0 0 1 12 21a12 12 0 0 1-6.16-10.42L12 14z"/></svg>' +
+        '<span>Deep Learn</span>' +
+      '</button>' +
     '</div>' +
     '<div class="co-course-panel active" id="coFilesPanel" data-course-panel="files">' +
       '<div class="co-files-inner-card">' +
@@ -391,7 +395,8 @@ function buildFilesContent(course: LegacyCourse): string {
     '<div class="co-course-panel" id="coQuizPanel" data-course-panel="quiz"></div>' +
     '<div class="co-course-panel" id="coFlashPanel" data-course-panel="flashcards"></div>' +
     '<div class="co-course-panel" id="coExamForgePanel" data-course-panel="examforge"></div>' +
-    '<div class="co-course-panel" id="coCheatsheetPanel" data-course-panel="cheatsheet"></div>'
+    '<div class="co-course-panel" id="coCheatsheetPanel" data-course-panel="cheatsheet"></div>' +
+    '<div class="co-course-panel" id="coDeepLearnPanel" data-course-panel="deeplearn"></div>'
   );
 }
 
@@ -572,7 +577,7 @@ export function openCourse(course: LegacyCourse): void {
 }
 
 export function showCourseSection(course: LegacyCourse, section: string): void {
-  const sec = ['files', 'quiz', 'flashcards', 'examforge', 'cheatsheet'].includes(section) ? section : 'files';
+  const sec = ['files', 'quiz', 'flashcards', 'examforge', 'cheatsheet', 'deeplearn'].includes(section) ? section : 'files';
   window.activeCourseRef = course;
   window.activeCourseSection = sec;
 
@@ -824,7 +829,7 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
     co.querySelectorAll<HTMLElement>('[data-course-panel]').forEach((panel) => {
       panel.classList.toggle('active', panel.getAttribute('data-course-panel') === targetTab);
     });
-    if (targetTab === 'quiz' || targetTab === 'flashcards' || targetTab === 'examforge' || targetTab === 'cheatsheet') {
+    if (targetTab === 'quiz' || targetTab === 'flashcards' || targetTab === 'examforge' || targetTab === 'cheatsheet' || targetTab === 'deeplearn') {
       // The quiz/flashcards scripts are lazy-loaded on demand. On the FIRST
       // visit the module isn't on `window` yet, so a one-shot mount check
       // silently no-ops and the panel stays empty until a second click. Kick
@@ -833,7 +838,8 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
         targetTab === 'quiz' ? '#coQuizPanel' :
         targetTab === 'flashcards' ? '#coFlashPanel' :
         targetTab === 'examforge' ? '#coExamForgePanel' :
-        '#coCheatsheetPanel';
+        targetTab === 'cheatsheet' ? '#coCheatsheetPanel' :
+        '#coDeepLearnPanel';
       const panel = co.querySelector<HTMLElement>(panelSelector);
       const loadFeature = (window as unknown as {
         _ssLoadPortalFeature?: (name: string) => Promise<void>;
@@ -844,7 +850,8 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
           targetTab === 'quiz' ? window.mountQuiz :
           targetTab === 'flashcards' ? window.mountFlashcards :
           targetTab === 'examforge' ? window.mountExamForge :
-          window.mountCheatsheet;
+          targetTab === 'cheatsheet' ? window.mountCheatsheet :
+          window.mountDeepLearn;
         if (typeof mountFn === 'function') {
           // Guard against a later tab switch having replaced/detached the panel.
           if (panel && panel.isConnected) {

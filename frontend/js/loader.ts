@@ -590,6 +590,7 @@ interface LandingTranslation {
             quiz: ['js/utils/db-helpers.js', 'views/quiz/quiz.js'],
             examforge: ['js/utils/db-helpers.js', 'views/examforge/examforge.js'],
             cheatsheet: ['js/utils/db-helpers.js', 'views/cheatsheet/cheatsheet.js'],
+            deeplearn: ['js/utils/db-helpers.js', 'views/deep-learn/deep-learn.js'],
             notesPanel: ['views/notes/notes-panel.js'],
             // writer/merger register listeners for ss-editor-ready, so load
             // them before editor.js fetches markup and dispatches the event.
@@ -612,6 +613,7 @@ interface LandingTranslation {
             quiz: ['views/quiz/quiz.css'],
             examforge: ['views/examforge/examforge.css'],
             cheatsheet: ['views/cheatsheet/cheatsheet.css'],
+            deeplearn: ['views/deep-learn/deep-learn.css'],
             notesPanel: ['views/notes/notes-panel.css'],
             editor: ['views/editor/editor.css'],
           };

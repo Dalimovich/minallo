@@ -1,0 +1,85 @@
+/* Deep Learn course tool. */
+.dl-root {
+  padding: 18px 20px;
+  color: var(--text, #e2e8f0);
+}
+.dl-head h2 { margin: 0 0 4px; font-size: 1.25rem; }
+.dl-head p {
+  margin: 0 0 16px;
+  opacity: 0.75;
+  font-size: 0.9rem;
+  max-width: 62ch;
+}
+.dl-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.dl-select,
+.dl-topic {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #1e293b);
+  background: var(--card-inner, rgba(255, 255, 255, 0.05));
+  color: var(--text, #e2e8f0);
+  font-size: 0.9rem;
+}
+.dl-select { flex: 1 1 240px; min-width: 200px; }
+.dl-topic { flex: 1 1 200px; min-width: 160px; }
+.dl-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dl-btn-primary { background: #6366f1; color: #fff; }
+.dl-btn-primary:hover { background: #5457e6; }
+.dl-btn-primary:disabled { opacity: 0.55; cursor: default; }
+
+.dl-msg {
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--card-inner, rgba(255, 255, 255, 0.05));
+  font-size: 0.9rem;
+}
+.dl-msg.dl-error { color: #fca5a5; }
+.dl-msg.dl-loading { opacity: 0.85; }
+
+.dl-lesson-card {
+  border: 1px solid var(--border, #1e293b);
+  border-radius: 10px;
+  background: var(--card, #0f172a);
+  padding: 16px 18px;
+}
+.dl-lesson-card h3 { margin: 0 0 10px; font-size: 1.1rem; }
+.dl-lesson-card h4 { margin: 16px 0 6px; font-size: 0.98rem; }
+.dl-section { font-size: 0.92rem; line-height: 1.55; }
+.dl-section ul { margin: 4px 0 10px; padding-left: 20px; }
+
+.dl-check {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #1e293b);
+  border-radius: 8px;
+  background: var(--card-inner, rgba(255, 255, 255, 0.04));
+}
+.dl-check-q { font-weight: 600; margin: 0 0 10px; }
+.dl-reveal {
+  background: transparent;
+  border: 1px solid var(--border, #1e293b);
+  color: var(--text, #e2e8f0);
+}
+.dl-reveal:hover { background: rgba(255, 255, 255, 0.06); }
+.dl-check-a { margin-top: 10px; font-size: 0.9rem; line-height: 1.5; }
+
+.dl-sources {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #1e293b);
+  font-size: 0.8rem;
+  opacity: 0.85;
+}

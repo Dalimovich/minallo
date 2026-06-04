@@ -395,6 +395,31 @@ export async function generateCheatsheet(
   return response.json();
 }
 
+export interface DeepLearnResult {
+  topic: string;
+  title?: string | null;
+  lesson: string;
+  workedExample: string;
+  check?: { question: string; answer: string; explanation: string } | null;
+  groundedSources?: Array<{ fileName?: string; pageStart?: number | null; documentId?: string | null }>;
+  warning?: string;
+  error?: string;
+}
+
+export async function generateDeepLearn(
+  courseId: string,
+  topic: string,
+  opts?: { documentIds?: string[] }
+): Promise<DeepLearnResult> {
+  const response = await fetch(_backendUrl() + '/api/ai/deep-learn', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ courseId, topic, ...(opts || {}) }),
+  });
+  await _detectAiCapError(response);
+  return response.json();
+}
+
 export async function gradeExamForgeAnswer(
   examSessionId: string,
   examQuestionId: string,
