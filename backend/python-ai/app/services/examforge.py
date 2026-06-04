@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from . import mastery
+from .learning_agent import get_course_topic_map, retrieve_learning_context
 from .llm_json import chat_json
 from .quiz import _fetch_course_topics, generate_quiz
 from ..supabase_client import get_supabase
@@ -84,6 +86,188 @@ def _normalise_question(row: dict[str, Any], question_id: str | None = None) -> 
     }
 
 
+# ── Phase 3: grounded, blueprint-driven generation ────────────────────────────
+
+_EXAMFORGE_SYSTEM = (
+    "You are ExamForge by Minallo, generating a university practice exam.\n"
+    "\n"
+    "Use ONLY the provided COURSE CONTEXT. Do not use outside knowledge.\n"
+    "\n"
+    "Rules:\n"
+    "- Follow the per-question plan (type, topic, difficulty) as closely as the "
+    "context allows.\n"
+    "- Every question MUST be answerable from the context and MUST cite the chunk "
+    "id(s) it is based on in \"source_chunk_ids\" (copy the <id> from the "
+    "[chunk:<id> ...] tags) and the page number(s) in \"source_pages\".\n"
+    "- If the context cannot support a planned question, replace it with one the "
+    "context DOES support (same type), still cited. Never invent unsupported "
+    "facts and never cite a chunk id that is not present in the context.\n"
+    "- mcq: exactly 4 options; \"answer\" is the correct option LETTER (A-D). "
+    "Wrong options must be plausible (common student mistakes), never jokes.\n"
+    "- true_false: \"answer\" is \"true\" or \"false\".\n"
+    "- short_answer: no options; \"answer\" is a concise model answer and "
+    "\"explanation\" is the grading rubric.\n"
+    "- Match the course/professor style when exercise-style context is present.\n"
+    "\n"
+    "Return ONLY JSON:\n"
+    '{"questions":[{"question_type":"mcq|true_false|short_answer","topic":"",'
+    '"difficulty":"easy|medium|hard","points":1,"question":"","options":["","","",""],'
+    '"answer":"","explanation":"","source_chunk_ids":[],"source_pages":[]}]}'
+)
+
+
+def _build_blueprint(
+    *,
+    topic_map: list[dict[str, Any]],
+    requested: int,
+    types: list[str],
+    difficulty: str,
+    topic_focus: str | None,
+) -> list[dict[str, Any]]:
+    """Distribute the requested questions across topics + types.
+
+    Topics come from the importance-ranked course topic map (so high-importance
+    topics are covered first); an explicit ``topic_focus`` overrides the map.
+    Deterministic — unit tested.
+    """
+    if topic_focus:
+        topics: list[str | None] = [topic_focus]
+    else:
+        topics = [t.get("name") for t in (topic_map or []) if t.get("name")] or [None]
+    diff_cycle = ["easy", "medium", "hard"] if difficulty == "mixed" else [difficulty]
+    return [
+        {
+            "topic": topics[i % len(topics)],
+            "question_type": types[i % len(types)],
+            "difficulty": diff_cycle[i % len(diff_cycle)],
+        }
+        for i in range(requested)
+    ]
+
+
+def _pool_evidence(
+    *, user_id: str, course_id: str, blueprint: list[dict[str, Any]], document_ids: list[str] | None
+) -> list[dict[str, Any]]:
+    """Retrieve a deduped evidence pool for the blueprint's topics via the
+    Learning Agent's purpose-aware retrieval (purpose=exam_generation)."""
+    distinct: list[str | None] = []
+    for b in blueprint:
+        t = b.get("topic")
+        if t and t not in distinct:
+            distinct.append(t)
+    distinct = distinct[:5] or [None]
+    seen: set[str] = set()
+    pooled: list[dict[str, Any]] = []
+    for t in distinct:
+        try:
+            chunks = retrieve_learning_context(
+                user_id=user_id,
+                course_id=course_id,
+                topic=t,
+                query=(t or "key concepts, definitions, formulas, exercises"),
+                document_ids=document_ids or None,
+                purpose="exam_generation",
+                top_k=8,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("examforge evidence retrieval failed (topic=%s)", t)
+            chunks = []
+        for c in chunks:
+            cid = c.get("chunkId")
+            if cid and cid not in seen:
+                seen.add(cid)
+                pooled.append(c)
+    return pooled[:24]
+
+
+def _format_evidence(chunks: list[dict[str, Any]], doc_names: dict[str, str]) -> str:
+    out: list[str] = []
+    for c in chunks:
+        cid = c.get("chunkId")
+        if not cid:
+            continue
+        dn = doc_names.get(c.get("documentId") or "") or "source"
+        pg = c.get("pageStart")
+        text = (c.get("text") or "").strip().replace("\r", " ")
+        if len(text) > 900:
+            text = text[:900] + " …"
+        out.append(f"[chunk:{cid} | {dn}" + (f" p.{pg}" if pg else "") + f"]\n{text}")
+    return "\n\n".join(out)
+
+
+def _grounded_questions(
+    *,
+    blueprint: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    doc_names: dict[str, str],
+    diff: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """One grounded generation call. Returns (normalised questions, meta).
+
+    Questions are validated LOCALLY: a question is ``grounded`` when it cites at
+    least one chunk id we actually supplied; otherwise ``ungrounded`` (kept but
+    flagged). Full LLM validation (verify_answer) is the async Phase 3b step.
+    """
+    valid_ids = {c.get("chunkId") for c in evidence if c.get("chunkId")}
+    cid_meta: dict[str, tuple[str | None, Any]] = {}
+    for c in evidence:
+        cid = c.get("chunkId")
+        if cid:
+            cid_meta[cid] = (doc_names.get(c.get("documentId") or "") or None, c.get("pageStart"))
+
+    plan = "\n".join(
+        f"{i + 1}. type={b['question_type']} topic={b.get('topic') or 'any'} difficulty={b['difficulty']}"
+        for i, b in enumerate(blueprint)
+    )
+    user = (
+        "COURSE CONTEXT (each block tagged [chunk:<id> | <doc> p.<page>]):\n\n"
+        + _format_evidence(evidence, doc_names)
+        + "\n\nGENERATE these questions:\n"
+        + plan
+    )
+    meta: dict[str, Any] = {"model": None, "promptTokens": None, "completionTokens": None}
+    try:
+        res = chat_json(system=_EXAMFORGE_SYSTEM, user=user, max_tokens=3500)
+    except Exception:  # noqa: BLE001
+        log.exception("examforge grounded generation failed")
+        return [], meta
+    meta = {"model": res.model, "promptTokens": res.prompt_tokens, "completionTokens": res.completion_tokens}
+    data = res.data if isinstance(res.data, dict) else {}
+    raw_qs = data.get("questions") if isinstance(data.get("questions"), list) else []
+
+    out: list[dict[str, Any]] = []
+    for raw in raw_qs:
+        if not isinstance(raw, dict):
+            continue
+        cited = [str(x) for x in (raw.get("source_chunk_ids") or []) if str(x) in valid_ids]
+        source: str | None = None
+        pages: list[str] = []
+        if cited:
+            dn, pg = cid_meta.get(cited[0], (None, None))
+            if dn:
+                source = str(dn) + (f", {pg}" if pg else "")
+            pages = [str(cid_meta[c][1]) for c in cited if cid_meta.get(c) and cid_meta[c][1] is not None]
+        q = _normalise_question({
+            "type": raw.get("question_type") or raw.get("type"),
+            "question": raw.get("question"),
+            "options": raw.get("options"),
+            "answer": raw.get("answer") if raw.get("answer") is not None else raw.get("correct_answer"),
+            "explanation": raw.get("explanation"),
+            "difficulty": raw.get("difficulty") or diff,
+            "topic": raw.get("topic"),
+            "points": raw.get("points") or 1,
+            "source": source,
+            "validation_status": "grounded" if cited else "ungrounded",
+            "validation_score": 1 if cited else 0.4,
+        })
+        if not str(q.get("question") or "").strip():
+            continue
+        q["source_chunk_ids"] = cited
+        q["source_pages_list"] = pages
+        out.append(q)
+    return out, meta
+
+
 def generate_examforge(
     *,
     user_id: str,
@@ -101,16 +285,58 @@ def generate_examforge(
     types = [t for t in (question_types or ["mcq", "true_false", "short_answer"]) if t in _VALID_TYPES]
     if not types:
         types = ["mcq", "true_false", "short_answer"]
-    quiz_out = generate_quiz(
-        user_id=user_id,
-        course_id=course_id,
-        document_ids=document_ids,
-        requested_count=requested,
-        difficulty=diff,
-        question_types=types,
-        doc_names=doc_names,
+
+    # Phase 3: try grounded, blueprint-driven generation first. Falls back to the
+    # quiz-based generator when there is no retrievable evidence or generation
+    # produced nothing — so behaviour never regresses below the old path.
+    meta: dict[str, Any] = {"model": None, "promptTokens": None, "completionTokens": None}
+    warning: str | None = None
+    grounded_used = False
+    grounded_sources: list[dict[str, Any]] = []
+    try:
+        topic_map = get_course_topic_map(user_id, course_id)
+    except Exception:  # noqa: BLE001
+        log.exception("examforge: topic map read failed")
+        topic_map = []
+    blueprint = _build_blueprint(
+        topic_map=topic_map, requested=requested, types=types, difficulty=diff,
+        topic_focus=topic_query or None,
     )
-    questions = [_normalise_question(q) for q in quiz_out.get("questions", [])]
+    evidence = _pool_evidence(
+        user_id=user_id, course_id=course_id, blueprint=blueprint, document_ids=document_ids,
+    )
+    questions: list[dict[str, Any]] = []
+    if evidence:
+        questions, meta = _grounded_questions(
+            blueprint=blueprint, evidence=evidence, doc_names=doc_names, diff=diff,
+        )
+        grounded_used = bool(questions)
+        if grounded_used:
+            seen_docs: set[str] = set()
+            for c in evidence:
+                dn = doc_names.get(c.get("documentId") or "")
+                if dn and dn not in seen_docs:
+                    seen_docs.add(dn)
+                    grounded_sources.append({"fileName": dn})
+
+    if not questions:
+        quiz_out = generate_quiz(
+            user_id=user_id,
+            course_id=course_id,
+            document_ids=document_ids,
+            requested_count=requested,
+            difficulty=diff,
+            question_types=types,
+            doc_names=doc_names,
+        )
+        questions = [_normalise_question(q) for q in quiz_out.get("questions", [])]
+        warning = quiz_out.get("warning")
+        grounded_sources = quiz_out.get("groundedSources", [])
+        meta = {
+            "model": quiz_out.get("model"),
+            "promptTokens": quiz_out.get("promptTokens"),
+            "completionTokens": quiz_out.get("completionTokens"),
+        }
 
     sb = get_supabase()
     session_id: str | None = None
@@ -133,6 +359,9 @@ def generate_examforge(
             question_rows = []
             for idx, q in enumerate(questions):
                 src = (q.get("sources") or [{}])[0] if isinstance(q.get("sources"), list) else {}
+                pages = q.get("source_pages_list") or ([src.get("pages")] if src.get("pages") else None)
+                chunk_ids = q.get("source_chunk_ids") or None
+                val = q.get("validation") or {}
                 question_rows.append({
                     "exam_session_id": session_id,
                     "user_id": user_id,
@@ -145,10 +374,11 @@ def generate_examforge(
                     "options": q.get("options") or [],
                     "correct_answer": str(q.get("answer") or ""),
                     "explanation": q.get("explanation") or "",
+                    "source_chunk_ids": chunk_ids,
                     "source_document_names": [src.get("fileName")] if src.get("fileName") else None,
-                    "source_pages": [src.get("pages")] if src.get("pages") else None,
-                    "validation_status": "grounded",
-                    "validation_score": 1,
+                    "source_pages": pages,
+                    "validation_status": val.get("status") or "grounded",
+                    "validation_score": val.get("score") if val.get("score") is not None else 1,
                 })
             saved_resp = sb.table("exam_questions").insert(question_rows).execute()
             saved_rows = saved_resp.data or []
@@ -169,11 +399,12 @@ def generate_examforge(
         "actualCount": len(saved_questions),
         "questions": saved_questions,
         "topicMap": [{"name": t} for t in topics[:24]],
-        "groundedSources": quiz_out.get("groundedSources", []),
-        "warning": quiz_out.get("warning"),
-        "model": quiz_out.get("model"),
-        "promptTokens": quiz_out.get("promptTokens"),
-        "completionTokens": quiz_out.get("completionTokens"),
+        "grounded": grounded_used,
+        "groundedSources": grounded_sources,
+        "warning": warning,
+        "model": meta.get("model"),
+        "promptTokens": meta.get("promptTokens"),
+        "completionTokens": meta.get("completionTokens"),
     }
 
 
@@ -187,7 +418,7 @@ def grade_examforge_answer(
     sb = get_supabase()
     q_resp = (
         sb.table("exam_questions")
-        .select("id, exam_session_id, user_id, question_type, question_text, correct_answer, explanation, points")
+        .select("id, exam_session_id, user_id, question_type, question_text, correct_answer, explanation, points, topic")
         .eq("id", exam_question_id)
         .eq("exam_session_id", exam_session_id)
         .eq("user_id", user_id)
@@ -237,6 +468,29 @@ def grade_examforge_answer(
         }).execute()
     except Exception:
         log.exception("examforge answer save failed")
+
+    # Phase 3: feed the graded attempt into the shared topic-mastery table so
+    # exam performance surfaces the same weak topics as quizzes (grade →
+    # mastery). Best-effort; failures here never affect the grade response.
+    topic = q.get("topic")
+    if topic:
+        try:
+            sess = (
+                sb.table("exam_sessions")
+                .select("course_id")
+                .eq("id", exam_session_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            course_id = ((sess.data or [{}])[0] or {}).get("course_id")
+            if course_id:
+                mastery.record_course_topic_attempt(
+                    user_id=user_id, course_id=course_id, topic=topic, correct=is_correct,
+                )
+        except Exception:
+            log.exception("examforge mastery record failed")
+
     return {
         "ok": True,
         "isCorrect": is_correct,

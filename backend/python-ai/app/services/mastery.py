@@ -140,6 +140,81 @@ def record_writing_weakness(
         log.exception("record_writing_weakness upsert failed (ignored)")
 
 
+def _is_known_course_topic(sb, course_id: str, topic: str) -> bool:
+    """True when ``topic`` is an actual ``primary_topic`` for the course.
+
+    Anti-pollution gate — mirrors ai-quiz-attempt.ts: only topics that exist
+    in the course's own chunks may write to ``user_topic_mastery``, so an
+    LLM-paraphrased exam topic can't fork a near-duplicate mastery row.
+    """
+    resp = (
+        sb.table("document_chunks")
+        .select("id")
+        .eq("course_id", course_id)
+        .eq("primary_topic", topic)
+        .limit(1)
+        .execute()
+    )
+    return bool(resp.data)
+
+
+def record_course_topic_attempt(
+    user_id: str,
+    course_id: str,
+    topic: str,
+    correct: bool,
+) -> None:
+    """Record one graded attempt against a course topic's mastery.
+
+    The server-side counterpart to ai-quiz-attempt.ts: ExamForge grades
+    answers in the Python service, so it writes mastery here rather than via
+    the edge function. Validates the topic (anti-pollution), then upserts the
+    running totals with the same Laplace smoothing the edge function uses so
+    quiz- and exam-derived mastery stay on one consistent scale.
+
+    Best-effort: any DB error is swallowed — grading must never fail on a
+    mastery write.
+    """
+    topic = (topic or "").strip()
+    if not user_id or not course_id or not topic:
+        return
+    try:
+        sb = get_supabase()
+        if not _is_known_course_topic(sb, course_id, topic):
+            log.info(
+                "record_course_topic_attempt: %r not a known topic in course %s — skipping",
+                topic, course_id,
+            )
+            return
+        resp = (
+            sb.table("user_topic_mastery")
+            .select("attempts, correct")
+            .eq("user_id", user_id)
+            .eq("course_id", course_id)
+            .eq("topic", topic)
+            .limit(1)
+            .execute()
+        )
+        prev = (resp.data or [{}])[0] if resp.data else {}
+        attempts = int(prev.get("attempts") or 0) + 1
+        correct_n = int(prev.get("correct") or 0) + (1 if correct else 0)
+        # Laplace smoothing — mirrors backend/functions/ai-quiz-attempt.ts.
+        mastery = (correct_n + 1) / (attempts + 2)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        sb.table("user_topic_mastery").upsert({
+            "user_id": user_id,
+            "course_id": course_id,
+            "topic": topic,
+            "attempts": attempts,
+            "correct": correct_n,
+            "mastery_score": mastery,
+            "last_practiced_at": now_iso,
+            "updated_at": now_iso,
+        }, on_conflict="user_id,course_id,topic").execute()
+    except Exception:
+        log.exception("record_course_topic_attempt failed (ignored)")
+
+
 def coaching_overlay(weak_topics: list[str]) -> str:
     """Return the system-prompt block that nudges the tutor about prior practice-focus topics.
 

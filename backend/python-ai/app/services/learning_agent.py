@@ -121,21 +121,27 @@ def retrieve_learning_context(
     topic: str | None = None,
     query: str | None = None,
     document_types: list[str] | None = None,
+    document_ids: list[str] | None = None,
     purpose: str | None = None,
     top_k: int | None = None,
 ) -> list[dict[str, Any]]:
     """Purpose-aware retrieval for the learning features.
 
     Wraps ``retrieve_chunks`` (vector + keyword + study-rerank). ``topic`` is
-    used as the query when ``query`` isn't given. ``document_types`` restricts to
-    matching documents. Returns enriched chunk dicts (``to_api`` shape plus
-    ``topic``/``purpose``) so every feature consumes the same structure.
+    used as the query when ``query`` isn't given. ``document_ids`` is an explicit
+    hard filter (e.g. the user's selected exam sources) and takes precedence;
+    otherwise ``document_types`` restricts to matching documents. Returns
+    enriched chunk dicts (``to_api`` shape plus ``topic``/``purpose``).
     """
     q = (query or topic or "").strip()
     if not q:
         return []
     sb = get_supabase()
-    document_ids = _resolve_document_ids_by_type(sb, user_id, course_id, document_types)
+    if document_ids:
+        resolved_ids: list[str] | None = document_ids
+    else:
+        resolved_ids = _resolve_document_ids_by_type(sb, user_id, course_id, document_types)
+    document_ids = resolved_ids
     effective_top_k = top_k or _PURPOSE_TOP_K.get((purpose or "").lower(), 12)
     chunks = retrieve_chunks(
         user_id=user_id,
