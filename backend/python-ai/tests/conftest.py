@@ -23,3 +23,16 @@ os.environ.setdefault("SUPABASE_URL", "https://stub.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "stub-service-role-key")
 os.environ.setdefault("OPENAI_API_KEY", "stub-openai-key")
 os.environ.setdefault("INTERNAL_SECRET", "stub-internal-token")
+
+# Eagerly register the real service modules that some test files used to stub
+# with bare ``types.ModuleType`` placeholders (via
+# ``sys.modules.setdefault("app.services.embeddings", fake)``). Those fakes
+# omitted public symbols like ``EmbeddingServiceUnavailable`` and, because
+# ``setdefault`` leaves whatever is registered first in place, they leaked into
+# the whole session — breaking any later test that imported the real symbol
+# (e.g. the ask/stream/generate routers). The deps those stubs were guarding
+# against (``openai``, ``supabase``) are installed in CI/dev now, so importing
+# the real modules first turns every such ``setdefault`` into a harmless no-op.
+# Import is side-effect-free: the OpenAI client is only built at call time.
+import app.services.embeddings  # noqa: E402,F401
+import app.supabase_client  # noqa: E402,F401
