@@ -116,7 +116,7 @@ export function showPortal(): void {
     portal.classList.add('show');
     void portal.offsetWidth;
     portal.style.transition =
-      'opacity 380ms cubic-bezier(0.22,1,0.36,1),transform 380ms cubic-bezier(0.22,1,0.36,1)';
+      'opacity 180ms cubic-bezier(0.22,1,0.36,1),transform 180ms cubic-bezier(0.22,1,0.36,1)';
     portal.style.opacity = '1';
     portal.style.transform = 'scale(1)';
     portal.style.pointerEvents = 'auto';
@@ -126,7 +126,7 @@ export function showPortal(): void {
       portal.style.transition = '';
       portal.style.transform = '';
       portal.style.display = 'block';
-    }, 400);
+    }, 200);
   } else {
     hideFilesView();
     portal.classList.add('show');
@@ -281,7 +281,7 @@ export function navTo(navId: string, section: string): void {
   if (fromFiles) stashResumeFile();
   // Hide every portal-section *before* the portal fades in. Otherwise the
   // previously-active section (typically the courses dashboard, since we're
-  // coming from the PDF view) is still display:block during the 380ms
+  // coming from the PDF view) is still display:block during the shell
   // fade-in and flashes as a ghost page before showPortalSection swaps in
   // the target section.
   if (fromFiles || fromStudip) {

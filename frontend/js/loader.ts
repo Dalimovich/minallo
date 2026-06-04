@@ -559,7 +559,9 @@ interface LandingTranslation {
           function bindTrigger(): boolean {
             const btn = document.getElementById('psbGames');
             if (!btn) return false;
-            btn.addEventListener('click', loadGames, { once: true });
+            ['pointerenter', 'pointerdown', 'focusin', 'touchstart', 'click'].forEach((eventName) => {
+              btn.addEventListener(eventName, loadGames, { once: true, passive: eventName !== 'click' });
+            });
             return true;
           }
           if (!bindTrigger()) {
@@ -609,6 +611,20 @@ interface LandingTranslation {
             editor: ['views/editor/editor.css'],
           };
           const lazyPromises: Record<string, Promise<void>> = {};
+          const navFeatureMap: Record<string, string> = {
+            psbDashboard: 'dashboard',
+            pcStudip: 'studip',
+            psbGerman: 'german',
+            psbProfile: 'profile',
+            authAvatar: 'profile',
+            psbSettings: 'settings',
+            psbSubscription: 'subscription',
+            psbNotes: 'notes',
+            psbEditor: 'editor',
+            psbAIPage: 'aipage',
+            psbChat: 'chat',
+            psbGames: 'games',
+          };
           function ensureStylesheet(href: string): void {
             const hrefWithVersion = versioned(href);
             const path = href.split('?')[0] || href;
@@ -644,6 +660,52 @@ interface LandingTranslation {
             );
             return lazyPromises[name];
           };
+
+          function loadPortalRoute(name: string): Promise<void> {
+            const htmlFiles: Record<string, string> = {
+              profile: 'views/profile/profile.html',
+              settings: 'views/settings/settings.html',
+              subscription: 'views/subscription/subscription.html',
+            };
+            const htmlPromise = htmlFiles[name]
+              ? loadFeatureSection({ id: 'psec-' + name, file: htmlFiles[name] })
+              : Promise.resolve();
+            const featurePromise = (window as unknown as {
+              _ssLoadPortalFeature?: (featureName: string) => Promise<void>;
+            })._ssLoadPortalFeature?.(name) || Promise.resolve();
+            return Promise.all([htmlPromise, featurePromise]).then(() => undefined);
+          }
+
+          (window as unknown as {
+            _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+          })._ssPrewarmPortalFeature = function (name: string): Promise<void> {
+            if (!name || name === 'studip' || name === 'notifications' || name === 'lounge') {
+              return Promise.resolve();
+            }
+            return loadPortalRoute(name).catch((err: unknown) => {
+              console.warn('[loader] route prewarm failed:', name, err);
+            });
+          };
+
+          function setupNavIntentPrewarm(): void {
+            const rootNav = document.querySelector('#portal .sb-nav');
+            if (!rootNav) return;
+            const prewarmFromTarget = (target: EventTarget | null): void => {
+              const el = target instanceof Element ? target.closest<HTMLElement>('.sb-item') : null;
+              if (!el || el.dataset.comingSoon) return;
+              const featureName = navFeatureMap[el.id];
+              if (!featureName) return;
+              void (window as unknown as {
+                _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+              })._ssPrewarmPortalFeature?.(featureName);
+            };
+            ['pointerover', 'pointerdown', 'focusin', 'touchstart'].forEach((eventName) => {
+              rootNav.addEventListener(eventName, (event) => prewarmFromTarget(event.target), {
+                passive: true,
+              });
+            });
+          }
+          setupNavIntentPrewarm();
 
           function scheduleChatPrewarm(): void {
             const run = (): void => {

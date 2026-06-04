@@ -40,6 +40,9 @@ declare global {
     renderCourses?: () => void;
     sdRenderCourses?: () => void;
     showPortalSection?: (section: string) => void;
+    _ssLoadPortalFeature?: (name: string) => Promise<void>;
+    _ssLoadFeatureSection?: (name: string) => Promise<void>;
+    _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
     forceCloseAI?: () => void;
     _statsStopFile?: () => void;
     _stRunning?: boolean;
