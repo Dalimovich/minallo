@@ -43,6 +43,8 @@ const ROUTES = [
   ['documents/delete',                'documents-delete'],
   ['documents/index-existing',        'documents-index-existing'],
   ['documents/reindex-course',        'documents-reindex-course'],
+  ['documents/review-pages',          'documents-review-pages'],
+  ['documents/correct-page',          'documents-correct-page'],
   ['ai/ask',                          'ai-ask'],
   ['ai/generate',                     'ai-generate'],
   ['ai/feedback',                     'ai-feedback'],

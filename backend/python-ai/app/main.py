@@ -15,6 +15,7 @@ from .auth import require_internal_token
 from .config import get_settings
 from .routers import ask as ask_router
 from .routers import chat as chat_router
+from .routers import corrections as corrections_router
 from .routers import generate as generate_router
 from .routers import index as index_router
 from .routers import misc as misc_router
@@ -71,6 +72,7 @@ app.include_router(chat_router.router)
 app.include_router(misc_router.router)
 app.include_router(notes_full_router.router)
 app.include_router(writing_coach_router.router)
+app.include_router(corrections_router.router)
 
 
 @app.get("/health")

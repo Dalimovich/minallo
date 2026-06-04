@@ -403,6 +403,187 @@ def get_index_status(document_id: str) -> dict[str, Any]:
     return _status_payload(doc)
 
 
+# ── OCR review / correction surface ──────────────────────────────────────────
+
+
+def list_review_pages(document_id: str) -> list[dict[str, Any]]:
+    """Return the OCR'd pages a student should review for this document.
+
+    These are pages the vision/handwriting OCR path flagged with
+    ``ocr_needs_review=true`` (handwriting is always flagged; printed pages
+    with ``[unclear]`` markers or low confidence are flagged too). The frontend
+    correction UI lists them and lets the student fix ``cleaned_text``.
+    """
+    sb = get_supabase()
+    result = (
+        sb.table("document_pages")
+        .select(
+            "page_number, ocr_provider, ocr_mode, ocr_confidence, "
+            "ocr_needs_review, ocr_unclear_count, cleaned_text"
+        )
+        .eq("document_id", document_id)
+        .eq("ocr_needs_review", True)
+        .order("page_number")
+        .execute()
+    )
+    rows = result.data or []
+    return [
+        {
+            "pageNumber": r.get("page_number"),
+            "provider": r.get("ocr_provider"),
+            "mode": r.get("ocr_mode"),
+            "confidence": r.get("ocr_confidence"),
+            "unclearCount": r.get("ocr_unclear_count") or 0,
+            "text": r.get("cleaned_text") or "",
+        }
+        for r in rows
+    ]
+
+
+def correct_document_page(
+    document_id: str, page_number: int, corrected_text: str
+) -> int:
+    """Persist a student's correction to one OCR'd page (no re-embed).
+
+    Updates the page's ``cleaned_text``/``cleaned_markdown`` to the corrected
+    transcription, clears ``ocr_needs_review`` (the student has reviewed it),
+    and recomputes the ``[unclear]`` marker count. The PDF/raw_text/bbox layer
+    is left untouched. Returns the new ``[unclear]`` count.
+
+    This is the fast, synchronous half of a correction — the caller should run
+    :func:`reindex_chunks_from_pages` afterwards (typically in the background)
+    so retrieval reflects the fix.
+    """
+    text = (corrected_text or "").strip()
+    if not text:
+        raise IndexingError("corrected text is empty")
+
+    sb = get_supabase()
+    md = page_to_markdown(text, page_number)
+    unclear = text.lower().count("[unclear]")
+    update = {
+        "cleaned_text": text,
+        "cleaned_markdown": md.markdown,
+        "extraction_quality": md.quality,
+        "ocr_needs_review": False,
+        "ocr_unclear_count": unclear,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    resp = (
+        sb.table("document_pages")
+        .update(update)
+        .eq("document_id", document_id)
+        .eq("page_number", page_number)
+        .execute()
+    )
+    if not (resp.data or []):
+        raise IndexingError(
+            f"page {page_number} not found for document {document_id}"
+        )
+    return unclear
+
+
+def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
+    """Re-chunk + re-embed a document from its stored ``document_pages`` rows.
+
+    Used after a student corrects an OCR'd page: the corrected text is already
+    in ``document_pages``, so we rebuild the chunk/embedding layer from the
+    stored page text WITHOUT re-downloading the PDF or re-running OCR (which
+    would overwrite the correction). Exercises/formulas are rebuilt from the
+    same stored text; the PDF/raw_text/bbox layer is left untouched.
+    """
+    sb = get_supabase()
+    doc = _load_document(sb, document_id)
+    if not doc:
+        raise IndexingError(f"document {document_id} not found")
+
+    user_id = doc["user_id"]
+    course_id = doc["course_id"]
+    source_type = doc.get("source_type") or "lecture"
+
+    page_rows = (
+        sb.table("document_pages")
+        .select("page_number, cleaned_text")
+        .eq("document_id", document_id)
+        .order("page_number")
+        .execute()
+    ).data or []
+    if not page_rows:
+        raise IndexingError("no stored pages to reindex")
+
+    # Build a dense, page-number-ordered text list (gaps → empty page). The
+    # original indexer fed pdfminer/OCR text through page_to_markdown; the
+    # stored cleaned_text IS that final text, so we reproduce it exactly.
+    max_page = max(int(r["page_number"]) for r in page_rows)
+    texts: list[str] = [""] * max_page
+    for r in page_rows:
+        n = int(r["page_number"])
+        if 1 <= n <= max_page:
+            texts[n - 1] = r.get("cleaned_text") or ""
+
+    page_md = [page_to_markdown(t, i + 1) for i, t in enumerate(texts)]
+    chunks = chunk_pages(page_md)
+    if not chunks:
+        raise IndexingError("0 chunks produced from stored pages")
+
+    vectors = embed_texts([c.chunk_text for c in chunks])
+    if len(vectors) != len(chunks):
+        raise IndexingError(
+            f"embedding count mismatch: {len(vectors)} vs {len(chunks)} chunks"
+        )
+
+    doc_topics: list[str] = []
+    primary_topics: list[str | None] = [None] * len(chunks)
+    try:
+        doc_topics, primary_topics = extract_topics(
+            file_name=doc.get("file_name") or "", chunks=chunks
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("topic extraction failed during reindex — proceeding without topics")
+        doc_topics = []
+        primary_topics = [None] * len(chunks)
+
+    exercise_id_by_key: dict[tuple[str, str | None], str] = {}
+    try:
+        pages_md = [(p.page_number, p.markdown) for p in page_md if p.markdown]
+        exercises = detect_exercises(pages_md)
+        formulas = detect_formulas(pages_md)
+        exercise_id_by_key = _replace_exercises(
+            sb, document_id, user_id, course_id, exercises
+        )
+        _replace_formulas(sb, document_id, user_id, course_id, formulas)
+    except Exception:  # noqa: BLE001
+        log.exception("block detection failed during reindex — continuing")
+
+    _replace_chunks(
+        sb,
+        document_id=document_id,
+        user_id=user_id,
+        course_id=course_id,
+        source_type=source_type,
+        chunks=chunks,
+        vectors=vectors,
+        doc_topics=doc_topics,
+        primary_topics=primary_topics,
+        exercise_id_by_key=exercise_id_by_key,
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+    sb.table("documents").update(
+        {"chunk_count": len(chunks), "indexed_at": now, "updated_at": now}
+    ).eq("id", document_id).execute()
+
+    log.info(
+        "reindex_from_pages document_id=%s pages=%d chunks=%d",
+        document_id, len(texts), len(chunks),
+    )
+    return {
+        "documentId": document_id,
+        "status": "reindexed",
+        "chunkCount": len(chunks),
+    }
+
+
 # ── DB helpers ──────────────────────────────────────────────────────────────
 
 

@@ -34,6 +34,9 @@ function generateStudyTool(
 ): ReturnType<AiServiceModule['generateStudyTool']> {
   return _aiService().then((mod) => mod.generateStudyTool(courseId, tool, options)) as ReturnType<AiServiceModule['generateStudyTool']>;
 }
+function _openOcrReview(courseId: string, documentId: string, fileName: string): Promise<void> {
+  return import('./ocr-review.js').then((mod) => mod.openOcrReviewModal(courseId, documentId, fileName));
+}
 
 interface SelectedFile {
   name: string;
@@ -919,6 +922,7 @@ async function _bindRagStatus(co: HTMLElement, course: LegacyCourse): Promise<vo
 
     if (doc) {
       _setRagStatus(el, _displayStatusForDoc(doc));
+      if (doc.id) el.dataset.docId = doc.id;
       if (doc.processing_status === 'ready') {
         _ragConfirmed[cacheKey] = 'ready';
         return;
@@ -956,7 +960,14 @@ async function _bindRagStatus(co: HTMLElement, course: LegacyCourse): Promise<vo
     el.addEventListener('click', (e: Event) => {
       e.stopPropagation();
       const s = el.dataset.ragStatus;
-      if (s === 'ready' || s === 'uploading' || s === 'uploaded') return;
+      if (s === 'uploading' || s === 'uploaded') return;
+      // A page that indexed but needs OCR review opens the correction modal
+      // instead of blindly re-indexing — the student can fix the text directly.
+      if (s === 'ocr_weak' && el.dataset.docId) {
+        void _openOcrReview(courseId, el.dataset.docId, fname);
+        return;
+      }
+      if (s === 'ready') return;
       const fr = _findUploadedFile(course, fname);
       if (fr) {
         _ragConfirmed[cacheKey] = 'triggered';

@@ -245,6 +245,54 @@ export async function deleteRagDocument(documentId: string): Promise<unknown> {
   return response.json();
 }
 
+export interface OcrReviewPage {
+  pageNumber: number;
+  provider?: string | null;
+  mode?: string | null;
+  confidence?: number | null;
+  unclearCount?: number;
+  text: string;
+}
+
+/** Fetch the OCR'd pages of a document that were flagged for student review
+ *  (handwriting pages, or pages with [unclear] markers / low confidence). */
+export async function getDocumentReviewPages(
+  documentId: string
+): Promise<OcrReviewPage[]> {
+  const response = await fetch(_backendUrl() + '/api/documents/review-pages', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ documentId }),
+  });
+  if (response.status === 401) throw new Error('SESSION_EXPIRED');
+  if (!response.ok) throw new Error('Failed to load review pages (' + response.status + ')');
+  const data = (await response.json()) as { pages?: OcrReviewPage[] };
+  return data.pages || [];
+}
+
+/** Save a student's corrected transcription for one OCR'd page. The backend
+ *  updates the page text and re-embeds the document in the background. */
+export async function correctDocumentPage(
+  courseId: string,
+  documentId: string,
+  pageNumber: number,
+  correctedText: string
+): Promise<{ documentId: string; pageNumber: number; status: string }> {
+  const response = await fetch(_backendUrl() + '/api/documents/correct-page', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ courseId, documentId, pageNumber, correctedText }),
+  });
+  if (response.status === 401) throw new Error('SESSION_EXPIRED');
+  if (!response.ok) {
+    const text = await response.text();
+    let detail = 'Failed to save correction (' + response.status + ')';
+    try { detail = (JSON.parse(text) as { error?: string }).error || detail; } catch { /* keep */ }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
 export interface GenerateOpts {
   topic?: string;
   count?: number;
