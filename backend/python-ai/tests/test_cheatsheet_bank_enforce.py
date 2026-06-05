@@ -5,6 +5,7 @@ reached the Technische Mechanik 2 PDF."""
 from app.services.cheatsheet import (
     enforce_formula_bank,
     ensure_method_picker_targets,
+    ensure_drehimpuls_section,
     _broken_formula_reasons,
 )
 
@@ -91,6 +92,52 @@ def test_method_picker_injects_missing_targets():
     assert n == 2
     assert "## Polarkoordinaten" in out
     assert "## Tangential- und Normalkoordinaten" in out
+
+
+def test_traegheitsmoment_strict_removes_drehimpuls_leak():
+    # Model folded angular-momentum + rotational-energy formulas into Trägheitsmoment.
+    sheet = (
+        "## Trägheitsmoment\n"
+        "**Concept:** Resistance to angular acceleration.\n"
+        "**Formulas:**\n"
+        r"$\Theta = \int r^2\,dm$" "\n"
+        r"$\theta = \frac{dL}{dt}$" "\n"          # Drehimpuls leak
+        r"$\theta = \frac{1}{2}\theta_a\beta^2$" "\n"  # rotational-energy leak
+        r"$\Theta = mr^2$" "\n"                    # point-mass special case
+        "**Conditions:** Mass distribution known.\n"
+    )
+    out, n = enforce_formula_bank(sheet, ["Trägheitsmoment"])
+    assert n == 1
+    # Only the canonical Trägheitsmoment bank remains.
+    assert r"$\Theta = \int r^2\,dm$" in out
+    assert r"$\Theta_A = \Theta_S + m d^2$" in out
+    assert r"$E_{rot} = \tfrac{1}{2}\Theta\omega^2$" in out
+    assert "dL" not in out and "beta" not in out and "mr^2" not in out
+    # Prose preserved.
+    assert "**Concept:**" in out and "**Conditions:**" in out
+
+
+def test_drehimpuls_injected_when_rotation_present_and_missing():
+    sheet = (
+        "## Trägheitsmoment\n**Formulas:**\n"
+        r"$\Theta = \int r^2\,dm$" "\n"
+    )
+    out, n = ensure_drehimpuls_section(sheet, {"formulaDriven": True})
+    assert n == 1
+    assert "## Drehimpuls" in out
+    assert r"$\vec L_A = \Theta_A \vec\omega$" in out
+
+
+def test_drehimpuls_not_injected_when_already_present():
+    sheet = (
+        "## Trägheitsmoment\n**Formulas:**\n"
+        r"$\Theta = \int r^2\,dm$" "\n\n"
+        "## Drehimpuls\n**Formulas:**\n"
+        r"$\vec L_A = \Theta_A \vec\omega$" "\n"
+    )
+    out, n = ensure_drehimpuls_section(sheet, {"formulaDriven": True})
+    assert n == 0
+    assert out.count("## Drehimpuls") == 1
 
 
 def test_method_picker_no_dupe_when_present():

@@ -274,6 +274,7 @@ _MECHANICS_FORMULA_BANK: dict[str, tuple[str, ...]] = {
     "Trägheitsmoment": (
         r"\Theta = \int r^2\,dm",
         r"\Theta_A = \Theta_S + m d^2",
+        r"E_{rot} = \tfrac{1}{2}\Theta\omega^2",
     ),
     "Drehimpuls": (
         r"\vec L_A = \Theta_A \vec\omega",
@@ -282,8 +283,11 @@ _MECHANICS_FORMULA_BANK: dict[str, tuple[str, ...]] = {
     "Rotation starrer Körper": (
         r"\omega = \dot\varphi",
         r"\alpha = \ddot\varphi",
-        r"\Theta_a\ddot\varphi = \sum M_a",
-        r"E_{kin} = \tfrac{1}{2}\Theta_a\omega^2",
+        r"v_P = r\omega",
+        r"a_t = r\alpha",
+        r"a_n = r\omega^2",
+        r"\sum M_A = \Theta_A\alpha",
+        r"E_{rot} = \tfrac{1}{2}\Theta_A\omega^2",
     ),
     "Ebene Bewegung starrer Körper": (
         r"\vec v_P = \vec v_A + \vec\omega\times\vec r_{AP}",
@@ -2342,12 +2346,25 @@ def _bank_section_markdown(canonical: str) -> str:
     return "\n".join(lines)
 
 
+# Topics whose bank is the COMPLETE canonical set and which the model habitually
+# cross-contaminates (Drehimpuls / rotational-energy formulas leaking into
+# Trägheitsmoment, mixed notation in Rotation starrer Körper). For these we replace
+# the section's formula lines wholesale with the bank so the topics stay cleanly
+# separated; everywhere else enforcement is surgical (keep clean model formulas).
+_STRICT_BANK_TOPICS = frozenset({
+    "Trägheitsmoment",
+    "Drehimpuls",
+    "Rotation starrer Körper",
+})
+
+
 def enforce_formula_bank(text: str, topics: "list[str | None]") -> tuple[str, int]:
     """For sections whose topic has a canonical formula bank: drop the section's
     BROKEN/mangled formula lines and inject any MISSING canonical formula (clean
     $...$). Clean, well-formed formulas the model added are KEPT, and prose /
-    conditions / traps are never touched. Sections with no breakage and all bank
-    formulas already present are left exactly as-is. Returns (text, changes)."""
+    conditions / traps are never touched. For _STRICT_BANK_TOPICS the formula lines
+    are replaced WHOLESALE with the bank (cross-topic leaks removed). Returns
+    (text, changes)."""
     if not text:
         return text, 0
     changes = 0
@@ -2362,18 +2379,21 @@ def enforce_formula_bank(text: str, topics: "list[str | None]") -> tuple[str, in
         if not bank:
             rebuilt.append(head + body)
             continue
-        # 1) drop only the broken/mangled formula-only lines.
+        strict = canonical in _STRICT_BANK_TOPICS
+        # 1) drop formula-only lines: broken/mangled always; for strict topics ALL of
+        #    them (the bank is re-inserted), which removes cross-topic leaks.
         kept: list[str] = []
         insert_at: "int | None" = None
         dropped = 0
         for ln in body.split("\n"):
-            if _is_formula_only_line(ln) and _broken_formula_reasons(ln):
+            if _is_formula_only_line(ln) and (strict or _broken_formula_reasons(ln)):
                 if insert_at is None:
                     insert_at = len(kept)
                 dropped += 1
                 continue
             kept.append(ln)
-        # 2) inject only the canonical formulas not already present (in any notation).
+        # 2) inject the canonical formulas not already present (strict topics dropped
+        #    them all above, so the full bank is re-inserted, in order).
         present = _section_formula_keys("\n".join(kept))
         missing = [f for f in bank if _norm_formula_key(f) not in present]
         if not dropped and not missing:
@@ -2387,6 +2407,22 @@ def enforce_formula_bank(text: str, topics: "list[str | None]") -> tuple[str, in
         rebuilt.append(head + "\n".join(kept))
         changes += 1
     return "".join(rebuilt), changes
+
+
+def ensure_drehimpuls_section(text: str, cfg: dict[str, Any]) -> tuple[str, int]:
+    """If the sheet covers rigid-body rotation (Trägheitsmoment or Rotation starrer
+    Körper present) but has NO Drehimpuls section, inject a clean bank one — so
+    angular momentum is its own block and never folded into Trägheitsmoment."""
+    if not cfg.get("formulaDriven", True) or not text:
+        return text, 0
+    present = set()
+    for head, _ in _iter_sections(text):
+        if head:
+            present.add(_canonical_mechanics_topic(re.sub(r"^#{1,6}[ \t]+", "", head).strip()))
+    has_rotation = bool(present & {"Trägheitsmoment", "Rotation starrer Körper"})
+    if not has_rotation or "Drehimpuls" in present:
+        return text, 0
+    return text.rstrip() + "\n\n" + _bank_section_markdown("Drehimpuls") + "\n", 1
 
 
 # Method-Picker "Use" cell phrase → the canonical topic it tells the student to
@@ -2759,6 +2795,8 @@ def generate_cheatsheet(
     if cfg.get("formulaDriven", True):
         text, bank_repairs = enforce_formula_bank(text, covered_labels)
         text, method_picker_injected = ensure_method_picker_targets(text, topics, cfg)
+        text, _drehimpuls_added = ensure_drehimpuls_section(text, cfg)
+        method_picker_injected += _drehimpuls_added
         if bank_repairs:
             log.info("cheatsheet bank enforcement rewrote %d section(s)", bank_repairs)
         if method_picker_injected:
@@ -2861,6 +2899,7 @@ __all__ = (
     "generate_cheatsheet",
     "enforce_formula_bank",
     "ensure_method_picker_targets",
+    "ensure_drehimpuls_section",
     "sanitize_cheatsheet_markdown",
     "dedup_display_formulas",
     "drop_unsupported_display_formulas",
