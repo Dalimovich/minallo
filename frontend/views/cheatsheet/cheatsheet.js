@@ -374,13 +374,14 @@
       });
       paper.removeChild(mhost);
 
-      // ── Pack into pages: sequential column flow with atom splitting ──────────
-      // Atoms (split section fragments) flow in document order. Within a band we
-      // fill column 0 up to the page budget, then column 1, then column 2 … so a
-      // long section CONTINUES in the next column instead of forcing a blank page.
-      // When every column on the page is full, a new page opens. The last band is
-      // then re-balanced so the final page never ends with a big blank trailing
-      // column. Tables stay full-width; manual page breaks anchor a new page.
+      // ── Pack into pages: whole-section placement; split only when oversized ──
+      // A SECTION is placed as ONE unit (all its atoms in a single column → no
+      // "continued" label) using shortest-column balancing, so short/medium
+      // sections never fragment. A section that doesn't fit a column is moved whole
+      // to another column/page; a later short section is pulled forward to fill the
+      // gap (backfill). ONLY a section taller than a FULL column is split at atom
+      // boundaries across columns/pages, with a continuation label. Tables stay
+      // full-width; manual page breaks anchor a new page.
       var pages = [];
       var page = null;
       var open = null;
@@ -405,76 +406,129 @@
         if (page.bands.length) return true;
         return !!(open && open.cols.some(function (c) { return c.items.length; }));
       }
-      // Sequential column flow: fill the current column, then advance. Returns false
-      // only when every column on the page is full (caller opens a new page).
-      function placeSeq(b) {
-        if (!open) openBand();
-        while (open.cur < nCols) {
-          var c = open.cols[open.cur];
-          var add = (c.items.length ? _BLOCK_GAP : 0) + b.h;
-          if (!c.items.length || c.h + add <= open.maxH) {
-            if (c.items.length) c.h += _BLOCK_GAP;
-            c.items.push(bandItem(b));
-            c.h += b.h;
-            return true;
+
+      // Group atoms back into sections: consecutive blocks sharing data-cs-sec are
+      // one section; a block with no sec id is its own section. Each section keeps
+      // its atoms and total height (incl. inter-atom gaps).
+      var sections = [];
+      (function groupSections() {
+        var cur = null, curSec = null;
+        st.blocks.forEach(function (b) {
+          if (b.wide) {
+            sections.push({ wide: true, brk: _hasBreak(b.el), h: b.h, items: [bandItem(b)] });
+            cur = null; curSec = null;
+            return;
           }
-          open.cur++;
-        }
-        return false;
-      }
-      newPage(true);
-
-      st.blocks.forEach(function (b) {
-        // Manual page break: this section starts a new page (unless the current page
-        // holds only the header — never break to a header-only page).
-        if (_hasBreak(b.el) && pageHasContent()) { finalizeOpen(); newPage(false); }
-        if (b.wide) {
-          finalizeOpen();
-          if (page.used > 0 && b.h + _BAND_GAP > remaining()) newPage(false);
-          page.bands.push({ type: 'wide', el: b.el, h: b.h });
-          page.used += b.h + _BAND_GAP;
-          return;
-        }
-        if (!placeSeq(b)) {
-          finalizeOpen();
-          newPage(false);
-          openBand();
-          placeSeq(b);
-        }
-      });
-      finalizeOpen();
-
-      // Re-balance the LAST cols-band (target = its content / nCols) so the final
-      // page's columns end roughly even — no lone block beside two blank columns.
-      // Atoms keep document order, so a split section stays contiguous & in order.
-      (function rebalanceLastBand() {
-        var lastPage = pages[pages.length - 1];
-        if (!lastPage) return;
-        var band = null;
-        for (var k = lastPage.bands.length - 1; k >= 0; k--) {
-          if (lastPage.bands[k].type === 'cols') { band = lastPage.bands[k]; break; }
-        }
-        if (!band) return;
-        var items = [];
-        band.cols.forEach(function (c) { items = items.concat(c.items); });
-        if (items.length <= 1) return;
-        var total = 0;
-        items.forEach(function (it, idx) { total += it.h + (idx ? _BLOCK_GAP : 0); });
-        var target = total / nCols;
-        var cols = [];
-        for (var i = 0; i < nCols; i++) cols.push({ items: [], h: 0 });
-        var ci = 0;
-        items.forEach(function (it) {
-          if (ci < nCols - 1 && cols[ci].items.length && cols[ci].h + _BLOCK_GAP + it.h > target) ci++;
-          var c = cols[ci];
-          if (c.items.length) c.h += _BLOCK_GAP;
-          c.items.push(it);
-          c.h += it.h;
+          var sec = (b.el.getAttribute && b.el.getAttribute('data-cs-sec')) || null;
+          if (cur && sec && sec === curSec) {
+            cur.items.push(bandItem(b));
+            cur.h += _BLOCK_GAP + b.h;
+          } else {
+            cur = { wide: false, brk: _hasBreak(b.el), h: b.h, items: [bandItem(b)] };
+            curSec = sec;
+            sections.push(cur);
+          }
         });
-        band.cols = cols;
       })();
 
-      // Last-page fill ratio (recomputed post-rebalance) → drives auto-fit.
+      // Place a whole section into the shortest column that fits ALL of it.
+      function placeUnit(S) {
+        if (!open) openBand();
+        var best = -1, bestH = Infinity;
+        for (var i = 0; i < nCols; i++) {
+          var c = open.cols[i];
+          var add = (c.items.length ? _BLOCK_GAP : 0) + S.h;
+          if (c.h + add <= open.maxH && c.h < bestH) { best = i; bestH = c.h; }
+        }
+        if (best < 0) return false;
+        var col = open.cols[best];
+        S.items.forEach(function (it) {
+          if (col.items.length) col.h += _BLOCK_GAP;
+          col.items.push(it);
+          col.h += it.h;
+        });
+        return true;
+      }
+
+      // Split an OVERSIZED section sequentially across columns/pages (atoms in
+      // order). A continuation atom that starts a new column gets a label (build).
+      function placeSplit(S) {
+        S.items.forEach(function (it) {
+          if (!open) openBand();
+          var placed = false;
+          while (open.cur < nCols) {
+            var c = open.cols[open.cur];
+            var add = (c.items.length ? _BLOCK_GAP : 0) + it.h;
+            if (!c.items.length || c.h + add <= open.maxH) {
+              if (c.items.length) c.h += _BLOCK_GAP;
+              c.items.push(it); c.h += it.h; placed = true; break;
+            }
+            open.cur++;
+          }
+          if (!placed) {
+            finalizeOpen(); newPage(false); openBand();
+            open.cols[0].items.push(it); open.cols[0].h += it.h;
+          }
+        });
+      }
+
+      newPage(true);
+      var n = sections.length;
+      var consumed = new Array(n).fill(false);
+      var done = 0, i = 0, guard = 0;
+      while (done < n && guard++ < n * 4 + 50) {
+        while (i < n && consumed[i]) i++;
+        if (i >= n) break;
+        var S = sections[i];
+        if (S.brk && pageHasContent()) { finalizeOpen(); newPage(false); }
+        if (S.wide) {
+          finalizeOpen();
+          if (page.used > 0 && S.h + _BAND_GAP > remaining()) newPage(false);
+          page.bands.push({ type: 'wide', el: S.items[0].el, h: S.h });
+          page.used += S.h + _BAND_GAP;
+          consumed[i] = true; done++; i++;
+          continue;
+        }
+        // Oversized (taller than a full column) AND splittable → split it. Start on a
+        // clean band so the split reads top-to-bottom across fresh columns.
+        if (S.h > budget && S.items.length > 1) {
+          if (pageHasContent()) { finalizeOpen(); newPage(false); }
+          if (!open) openBand();
+          placeSplit(S);
+          consumed[i] = true; done++; i++;
+          continue;
+        }
+        if (!open) openBand();
+        if (placeUnit(S)) { consumed[i] = true; done++; i++; continue; }
+        // S doesn't fit any column as a unit. Backfill the gap with the earliest
+        // later short section that DOES fit, then retry S (likely on a new page).
+        var filled = false;
+        for (var j = i + 1; j < n; j++) {
+          if (consumed[j]) continue;
+          var T = sections[j];
+          if (T.wide || T.brk || (T.h > budget && T.items.length > 1)) continue;
+          if (placeUnit(T)) { consumed[j] = true; done++; filled = true; break; }
+        }
+        if (filled) continue;
+        var bandEmpty = open.cols.every(function (c) { return !c.items.length; });
+        finalizeOpen();
+        if (bandEmpty) {
+          // Unsplittable section taller than a full column → force-place so it is
+          // never dropped (rare; e.g. one giant unlabelled block).
+          if (page.used > 0) newPage(false);
+          openBand();
+          S.items.forEach(function (it) {
+            if (open.cols[0].items.length) open.cols[0].h += _BLOCK_GAP;
+            open.cols[0].items.push(it); open.cols[0].h += it.h;
+          });
+          consumed[i] = true; done++; i++;
+        } else {
+          newPage(false);
+        }
+      }
+      finalizeOpen();
+
+      // Last-page fill ratio → drives auto-fit.
       var last = pages[pages.length - 1];
       var lastUsed = 0;
       if (last) {
