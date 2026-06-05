@@ -259,7 +259,14 @@
   column-gap: 18px;
   column-rule: 1px solid #e5e7eb;
 }
-.cs-block { break-inside: avoid; margin-bottom: 12px; }
+/* Scanability: never split a section, a formula, a table, or a list item across
+   a column or printed page; keep a heading glued to the content under it. */
+.cs-block { break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px; }
+.cs-paper-body .katex-display,
+.cs-paper-body .md-table,
+.cs-paper-body li { break-inside: avoid; page-break-inside: avoid; }
+.cs-paper-body h2,
+.cs-paper-body h3 { break-after: avoid; page-break-after: avoid; }
 .cs-paper-body h2 {
   font-size: 0.92rem;
   font-weight: 700;

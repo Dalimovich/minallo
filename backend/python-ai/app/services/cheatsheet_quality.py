@@ -127,6 +127,15 @@ _MATH_OPERATORS = (
 _TEXT_OPERATOR_RE = re.compile(
     r"\\(?:text|mathrm|mathop|operatorname)\s*\{\s*(" + "|".join(_MATH_OPERATORS) + r")\s*\}"
 )
+# An accent command glued straight to its argument letter (``\vecg``, ``\dotr``)
+# is undefined in KaTeX and renders as the raw letters ("vecg"). ``\vec g`` /
+# ``\vec{g}`` are correct, so only the glued-to-a-letter case needs a space.
+_GLUED_ACCENT_RE = re.compile(
+    r"\\(vec|dot|ddot|hat|bar|tilde|acute|grave|check|breve)(?=[A-Za-z])"
+)
+# A run of 4+ single letters separated by spaces (``h e t a``) is OCR that split a
+# word/symbol glyph-by-glyph — unsalvageable, so the formula is dropped.
+_SPACED_LETTERS_RE = re.compile(r"(?:\b[A-Za-z]\b[ \t]+){4,}")
 
 
 def repair_mojibake(text: str) -> str:
@@ -147,6 +156,7 @@ def formula_to_latexish(text: str) -> str:
         out = out.replace(sym, latex)
     out = _DOUBLED_BACKSLASH_CMD_RE.sub(r"\\", out)
     out = _TEXT_OPERATOR_RE.sub(r"\\\1", out)
+    out = _GLUED_ACCENT_RE.sub(r"\\\1 ", out)
     return out
 
 
@@ -163,6 +173,8 @@ def formula_corruption_reasons(text: str) -> list[str]:
         reasons.append("unresolved-mojibake")
     if _OBVIOUS_GARBAGE_RE.search(repaired):
         reasons.append("ocr-garbage")
+    if _SPACED_LETTERS_RE.search(repaired):
+        reasons.append("spaced-letter-ocr")
     if repaired.count("{") != repaired.count("}"):
         reasons.append("unbalanced-braces")
     if repaired.count("$$") % 2 == 1:

@@ -377,6 +377,20 @@ _SECTION_SYSTEM = (
     "Never pad and never invent — if the context does not support something, leave "
     "it out. Match the language of the source material.\n"
     "\n"
+    "STRICT TOPIC BOUNDARIES — write each `## <name>` section using ONLY the "
+    "evidence under its matching `### TOPIC: <name>` block. If a formula belongs to "
+    "a DIFFERENT listed topic, put it in THAT topic's section, never here; the "
+    "evidence pool is fuzzy, so judge by what the formula IS, not where it was "
+    "retrieved. Examples: point-kinematics coordinate definitions "
+    "($r = x e_x + y e_y$, component velocities/accelerations) belong to the "
+    "coordinate-system topic, not to rigid-body or general kinematics; the "
+    "instantaneous centre of rotation and $v_P = v_A + \\omega\\times r_{AP}$ belong "
+    "to rigid-body planar motion, NOT to point kinematics or Cartesian coordinates; "
+    "1D constant-acceleration formulas belong to rectilinear motion, not Cartesian "
+    "coordinates; friction/drag laws ($R=\\mu N$) belong to the friction topic, not "
+    "work-energy; angular momentum belongs to its own section, not the equations of "
+    "motion.\n"
+    "\n"
     "EMPHASIS MARKERS (use exactly these; never inside a formula):\n"
     "- Wrap THE single most important fact/result of a block in ==double equals== "
     "(yellow highlight). Write it as `==text==` with NO spaces between the equals "
@@ -448,8 +462,9 @@ _PURPOSE_INSTRUCTION = {
         "and a compact method picker. Use minimal definitions and no long explanations."
     ),
     "open_book_exam": (
-        "Purpose: Open-book Exam. Prioritize lookup structure, procedures, source-backed "
-        "formulas, and clear section boundaries for fast scanning."
+        "Purpose: Open-book Exam — an exam NAVIGATION tool, not a summary. Prioritize "
+        "fast lookup: problem-type triggers, method selection, formula usage conditions, "
+        "assumptions, and traps. Clean section boundaries, minimal clutter, easy scanning."
     ),
     "formula_reference": (
         "Purpose: Formula Reference. Prioritize formulas, variable meanings, assumptions, "
@@ -466,6 +481,89 @@ _PURPOSE_INSTRUCTION = {
     "topic_mastery": (
         "Purpose: Topic Mastery. Go deeper on the focused topic: related formulas, "
         "assumptions, examples, and traps."
+    ),
+}
+
+# Each preset is a DISTINCT artefact, not a density knob on one template. The
+# section-format override (injected LAST, so it beats the generic block contract)
+# is what makes the modes feel different. Labels are bold lead-ins the renderer
+# already styles; formulas are always $...$ / $$...$$.
+_PRESET_SECTION_FORMAT = {
+    # Exam Night — one-page emergency formula+trap sheet, highest yield / smallest
+    # space. Formula-first, almost no prose.
+    "exam_night": (
+        "\n\nEXAM NIGHT FORMAT — OVERRIDES the section shape. This is a one-page "
+        "emergency sheet of only what a student would FORGET: highest-yield formulas "
+        "and the nastiest traps, in the least space. Each `## <name>` section:\n"
+        "- the highest-yield FORMULAS first, each on its own line, hardest-to-recall "
+        "special cases folded in as `$...$ (case)`. No definitions unless a symbol is "
+        "ambiguous.\n"
+        "- **Condition:** one line, only when non-obvious.\n"
+        "- **Trap:** one precise, exam-relevant mistake.\n"
+        "Drop low-yield topics and anything obvious. No prose, no explanations."
+    ),
+    # Open-book Exam — exam NAVIGATION tool: problem-type → method → formula →
+    # condition → trap, optimised for fast lookup.
+    "open_book_exam": (
+        "\n\nOPEN-BOOK EXAM FORMAT — OVERRIDES the section shape. Write EVERY "
+        "`## <name>` section as a fast-lookup card with these exact bold labels, in "
+        "order, no prose paragraphs, no definitions block:\n"
+        "- **Use when:** the problem-type trigger — what the question gives or asks "
+        "that signals this method/topic (the most important line for lookup).\n"
+        "- **Formulas:** the core formula(s), each on its own line; fold special "
+        "cases as `$...$ (case)`.\n"
+        "- **Conditions:** the assumptions that must hold.\n"
+        "- **Watch out:** the exam trap(s), one short line each.\n"
+        "Omit a label only when nothing grounded fits it. Clean section boundaries, "
+        "minimal clutter, scannable in seconds."
+    ),
+    # Formula Reference — densest mode: maximum formulas, minimum prose.
+    "formula_reference": (
+        "\n\nFORMULA REFERENCE FORMAT — OVERRIDES the section shape. The DENSEST mode: "
+        "maximum formulas, minimum words. Each `## <name>` section:\n"
+        "- **Main formulas:** core + derived formulas, each on its own line.\n"
+        "- **Variables:** terse `symbol: meaning` for the non-obvious symbols only.\n"
+        "- **Conditions:** assumptions in one line.\n"
+        "- **Special cases:** simplified formulas, each `$...$ (case)`.\n"
+        "No explanations, no worked examples, no concept sentences. Always prefer one "
+        "more formula over one more sentence."
+    ),
+    # Balanced Study — ~60% formulas, 25% short explanation, 15% traps.
+    "balanced": (
+        "\n\nBALANCED STUDY FORMAT — OVERRIDES the section shape. Compact but "
+        "understandable (≈60% formulas, 25% short explanation, 15% traps). Each "
+        "`## <name>` section:\n"
+        "- **Concept:** ONE short line — what it is / when it is used.\n"
+        "- **Formulas:** the core formulas, each on its own line.\n"
+        "- **Special cases:** the important simplified cases.\n"
+        "- **Trap:** the common mistake (one line).\n"
+        "Not a formula dump and not a textbook summary."
+    ),
+    # Deep Revision — deeper than Balanced, still compact (no paragraph > 3-4 lines).
+    "deep_revision": (
+        "\n\nDEEP REVISION FORMAT — OVERRIDES the section shape. Deeper than Balanced "
+        "but still compact — NO paragraph longer than 3-4 lines. Each `## <name>` "
+        "section:\n"
+        "- **Concept:** what the topic means (1-2 lines).\n"
+        "- **Why it matters:** how it is used in problems (1 line).\n"
+        "- **Formula cluster:** the main formulas, each on its own line.\n"
+        "- **Conditions:** when they apply.\n"
+        "- **Special cases:** important simplified cases.\n"
+        "- **Method hint:** a short numbered how-to-solve.\n"
+        "- **Trap:** the common mistake."
+    ),
+    # Topic Mastery — go DEEP on the single focus topic; expand it into ordered
+    # `##` subsections instead of one block.
+    "topic_mastery": (
+        "\n\nTOPIC MASTERY FORMAT — OVERRIDES the section shape AND the one-section-"
+        "per-topic rule. You are given ONE focus topic; cover ONLY it, in depth, by "
+        "expanding it into these `##` subsections in order (omit any with no grounded "
+        "content): `## Core Idea`, `## Prerequisites`, `## Main Formula Cluster`, "
+        "`## Coordinate / Case Variants`, `## Conditions & Assumptions`, "
+        "`## Problem-Solving Method` (numbered steps), `## Special Cases`, "
+        "`## Common Traps`, `## Related Topics`. Label any formula that holds only for "
+        "one exercise setup as **Example-specific** — never present it as a general "
+        "rule. Do not drift into unrelated course topics."
     ),
 }
 
@@ -567,6 +665,36 @@ _INLINE_FORMULA_RE = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)", re.S)
 # A real formula body has at least one relational/operator/structure token.
 _HAS_MATH_RE = re.compile(r"[=<>+\-*/^_]|\\frac|\\int|\\sum|\\sqrt|\\partial|\\cdot|\\times|\\le|\\ge")
 
+# Auto-wrap of bare formula lines: the per-preset formats sometimes make the model
+# drop the $...$ delimiters, leaving a line of raw LaTeX that renders as plain
+# text. A line is treated as a formula (and wrapped in $...$) when it carries a
+# math token but is NOT prose — two consecutive ≥3-letter words signal prose and
+# veto the wrap, so variable notes ("v: velocity") and sentences are left alone.
+_BARE_LINE_RE = re.compile(r"^(\s*(?:[-*]\s+)?)(\S.*?)\s*$")
+_MATH_TOKEN_RE = re.compile(r"\\[a-zA-Z]+|[=^_]")
+_PROSE_RUN_RE = re.compile(r"[A-Za-z]{3,}\s+[A-Za-z]{3,}")
+
+
+def _wrap_bare_formula_lines(text: str) -> str:
+    out: list[str] = []
+    for line in text.split("\n"):
+        m = _BARE_LINE_RE.match(line)
+        if not m:
+            out.append(line)
+            continue
+        prefix, body = m.group(1), m.group(2)
+        if (
+            "$" in body
+            or body[:2] == "**"
+            or body[:1] in "#|>"
+            or not _MATH_TOKEN_RE.search(body)
+            or _PROSE_RUN_RE.search(body)
+        ):
+            out.append(line)
+            continue
+        out.append(f"{prefix}${body}$")
+    return "\n".join(out)
+
 
 def _formula_body_ok(body: str) -> bool:
     """True if a display-formula body is safe to render: balanced braces, no
@@ -579,6 +707,42 @@ def _formula_body_ok(body: str) -> bool:
     if b.count("{") != b.count("}"):
         return False
     return bool(_HAS_MATH_RE.search(b))
+
+
+# Source-label patterns. A `## Sources` block (heading line that is ONLY the
+# sources keyword, through to the next heading); a `Source:`/`Quellen:` line; an
+# inline `(file.pdf, p.25)` / `(p. 25)` citation (no `$` inside, so formulas are
+# never touched); an echoed `[Source 3]` evidence tag.
+_SRC_HEADING_RE = re.compile(
+    r"(?ims)^#{1,6}[ \t]*(?:sources?|quellen|references|literatur)(?:[ \t]+used)?[ \t]*$.*?(?=^#{1,6}[ \t]|\Z)"
+)
+_SRC_LINE_RE = re.compile(r"(?im)^[ \t]*(?:sources?|quellen|references|literatur)[ \t]*:.*$")
+_SRC_PAREN_RE = re.compile(
+    r"[ \t]*\((?:[^()\n$]*?(?:p{1,2}\.?[ \t]*\d+|S\.[ \t]*\d+)[^()\n$]*?|"
+    r"[^()\n$]*?\.(?:pdf|pptx?|docx?|md)[^()\n$]*?)\)",
+    re.I,
+)
+_SRC_BRACKET_RE = re.compile(r"[ \t]*\[[ \t]*source[ \t]*\d+[^\]]*\]", re.I)
+# Internal prompt scaffolding the model occasionally echoes as a heading. These
+# are guidance labels, never real sections — drop the heading line. (`## Method
+# Picker` is a real, wanted section and is deliberately NOT listed.)
+_SCAFFOLD_HEADING_RE = re.compile(
+    r"(?im)^#{1,6}[ \t]*(?:curated exam traps|expected formula priorities|"
+    r"taxonomy[^\n]*|information architecture[^\n]*|spatial layout[^\n]*|"
+    r"settings|course context|emphasis markers)[ \t]*:?[ \t]*$\n?"
+)
+
+
+def _strip_source_labels(text: str) -> str:
+    out = _SRC_HEADING_RE.sub("", text or "")
+    out = _SCAFFOLD_HEADING_RE.sub("", out)
+    out = _SRC_LINE_RE.sub("", out)
+    out = _SRC_PAREN_RE.sub("", out)
+    out = _SRC_BRACKET_RE.sub("", out)
+    # Trim bullets left empty once their only content (a citation) is gone.
+    out = re.sub(r"(?m)^[ \t]*[-*][ \t]*$\n?", "", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
 
 
 def sanitize_cheatsheet_markdown(text: str) -> tuple[str, int]:
@@ -596,12 +760,22 @@ def sanitize_cheatsheet_markdown(text: str) -> tuple[str, int]:
     cleaned = text.replace("�", "").replace("\r", "")
     cleaned = _CTRL_RE.sub("", cleaned)
 
+    # 1·0) strip any visible source labels. The sheet must stay clean and
+    # uncluttered — grounding is internal-only — so a `## Sources` block, a
+    # `Source:`/`Quellen:` line, an inline `(lecture.pdf, p.25)` citation, or an
+    # echoed `[Source N]` tag never reaches the rendered/printed cheatsheet.
+    cleaned = _strip_source_labels(cleaned)
+
     # 1a) normalise LaTeX math delimiters to the ``$``/``$$`` the renderer expects.
     # Models intermittently emit ``\(...\)`` / ``\[...\]`` (and OCR'd sources carry
     # them in), which KaTeX-in-markdown does NOT render — they leak as raw text.
     # Done before the odd-``$$`` trim so the converted delimiters balance correctly.
     cleaned = cleaned.replace("\\[", "$$").replace("\\]", "$$")
     cleaned = cleaned.replace("\\(", "$").replace("\\)", "$")
+
+    # 1a·2) wrap bare formula lines (model dropped the $...$ under a preset format)
+    # so they render as math, not raw text.
+    cleaned = _wrap_bare_formula_lines(cleaned)
 
     # 1b) a salvaged (token-cap-truncated) sheet can end mid-formula, leaving a
     # dangling unterminated "$$" that would break KaTeX. If the display-delimiter
@@ -1383,6 +1557,7 @@ def _shard_system_prompt(
         f"{cfg['columns']}-column sheet.\n"
         + f"- {cfg['purposeInstruction']}"
     )
+    prompt += _PRESET_SECTION_FORMAT.get(str(cfg.get("preset")), "")
     if with_method_picker:
         prompt += _method_picker_guidance(
             [str(t) for t in topics], cfg

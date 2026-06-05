@@ -384,6 +384,102 @@ def test_doubled_backslash_repair_keeps_matrix_row_break():
         r"\begin{matrix} a \\ b \end{matrix}"
 
 
+def test_each_preset_injects_distinct_section_format():
+    markers = {
+        "exam_night": "EXAM NIGHT FORMAT",
+        "open_book_exam": "OPEN-BOOK EXAM FORMAT",
+        "formula_reference": "FORMULA REFERENCE FORMAT",
+        "balanced": "BALANCED STUDY FORMAT",
+        "deep_revision": "DEEP REVISION FORMAT",
+        "topic_mastery": "TOPIC MASTERY FORMAT",
+    }
+    for preset, marker in markers.items():
+        cfg = cs.normalize_settings({"preset": preset})
+        prompt = cs._shard_system_prompt(cfg, ["Polarkoordinaten"], with_method_picker=False)
+        assert marker in prompt, preset
+        # a preset must not leak another preset's format
+        for other_preset, other in markers.items():
+            if other_preset != preset:
+                assert other not in prompt, (preset, other_preset)
+
+
+def test_open_book_uses_use_when_labels():
+    cfg = cs.normalize_settings({"preset": "open_book_exam"})
+    prompt = cs._shard_system_prompt(cfg, ["Reibung und Widerstand"], with_method_picker=False)
+    assert "**Use when:**" in prompt
+    assert "**Watch out:**" in prompt
+
+
+def test_sanitize_strips_leaked_scaffold_heading():
+    md = "## Work\n- $W = F d$\n### CURATED EXAM TRAPS\n- friction work is negative"
+    out, _ = cs.sanitize_cheatsheet_markdown(md)
+    assert "CURATED EXAM TRAPS" not in out
+    assert "## Method Picker" not in out  # sanity: not present here
+    assert "$W = F d$" in out
+    assert "friction work is negative" in out
+
+
+def test_wrap_bare_formula_line():
+    out, _ = cs.sanitize_cheatsheet_markdown("**Formulas:**\nv = \\frac{dx}{dt}\nx = x_0 + v_0 t")
+    assert "$v = \\frac{dx}{dt}$" in out
+    assert "$x = x_0 + v_0 t$" in out
+    assert "**Formulas:**" in out  # label untouched
+
+
+def test_wrap_bare_formula_leaves_prose_alone():
+    out, _ = cs.sanitize_cheatsheet_markdown("- velocity changes when force acts\n- $a = 0$ holds")
+    assert "$velocity" not in out  # prose not wrapped
+    assert "velocity changes when force acts" in out
+
+
+def test_wrap_bare_formula_skips_existing_math_and_labels():
+    out, _ = cs.sanitize_cheatsheet_markdown("**Use when:** task asks for $v$\n## Heading = x")
+    assert "$**Use when" not in out
+    assert "## Heading" in out and "$## Heading" not in out
+
+
+def test_sanitize_keeps_method_picker_heading():
+    out, _ = cs.sanitize_cheatsheet_markdown("## Method Picker\n| a | b |\n|---|---|\n| x | y |")
+    assert "## Method Picker" in out
+
+
+def test_glued_accent_command_gets_a_space():
+    # \vecg / \dotr are undefined in KaTeX; repair to \vec g / \dot r.
+    assert cq.formula_to_latexish(r"\vecg") == r"\vec g"
+    assert cq.formula_to_latexish(r"\dotr + 1") == r"\dot r + 1"
+    # already-correct forms are untouched
+    assert cq.formula_to_latexish(r"\vec g") == r"\vec g"
+    assert cq.formula_to_latexish(r"\dot{r}") == r"\dot{r}"
+
+
+def test_spaced_letter_ocr_formula_dropped():
+    out, dropped = cs.sanitize_cheatsheet_markdown(r"angle $h e t a h e t a = 0$ here")
+    assert dropped == 1
+    assert "formula omitted" in out
+
+
+def test_strip_source_labels_removes_inline_citation():
+    out, _ = cs.sanitize_cheatsheet_markdown(
+        "- $F = ma$ (EngMec2 Lecture.pdf, p.25)\n- next"
+    )
+    assert "p.25" not in out
+    assert ".pdf" not in out
+    assert "$F = ma$" in out
+
+
+def test_strip_source_labels_removes_sources_section_and_line():
+    md = "## Work\n- $W = F d$\nSource: lecture 3\n## Sources\n- a.pdf, p.1\n- b.pdf, p.4"
+    out, _ = cs.sanitize_cheatsheet_markdown(md)
+    assert "## Sources" not in out
+    assert "Source:" not in out
+    assert "$W = F d$" in out
+
+
+def test_strip_keeps_non_source_parenthetical():
+    out, _ = cs.sanitize_cheatsheet_markdown("constant velocity (when $a = 0$) holds")
+    assert "when" in out  # not a citation — left intact
+
+
 def test_skeleton_drops_generic_nontopics():
     topic_map = [
         {"name": "Kinematik eines Punktes"},

@@ -372,7 +372,7 @@
         image: { type: 'jpeg', quality: 0.96 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-        pagebreak: { mode: ['css', 'legacy'], avoid: '.cs-block' },
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['.cs-block', '.katex-display', '.md-table'] },
       }).from(el).save();
     });
   }
@@ -691,6 +691,26 @@
 
     var state = { preset: 'balanced' };
 
+    // Recommended layout per mode — applied to the controls when a preset is
+    // picked so each mode also *looks* distinct (the user can still override).
+    var _PRESET_DEFAULTS = {
+      exam_night:        { pages: '1', columns: '3', style: 'compact',  fontSize: 'small',  detail: 'general' },
+      open_book_exam:    { pages: '2', columns: '3', style: 'academic', fontSize: 'auto',   detail: 'balanced' },
+      formula_reference: { pages: '2', columns: '3', style: 'compact',  fontSize: 'small',  detail: 'specific' },
+      balanced:          { pages: '2', columns: '3', style: 'academic', fontSize: 'auto',   detail: 'balanced' },
+      deep_revision:     { pages: '4', columns: '2', style: 'academic', fontSize: 'medium', detail: 'very_thorough' },
+      topic_mastery:     { pages: '2', columns: '2', style: 'modern',   fontSize: 'medium', detail: 'specific' },
+    };
+    function _applyPresetDefaults(name) {
+      var d = _PRESET_DEFAULTS[name];
+      if (!d) return;
+      if (els.pages) els.pages.value = d.pages;
+      if (els.columns) els.columns.value = d.columns;
+      if (els.style) els.style.value = d.style;
+      if (els.fontSize) els.fontSize.value = d.fontSize;
+      if (els.detail) els.detail.value = d.detail;
+    }
+
     // ── settings panel ──
     function _readSettings() {
       var s = { preset: state.preset };
@@ -732,6 +752,7 @@
       b.addEventListener('click', function () {
         state.preset = b.getAttribute('data-preset') || 'balanced';
         root.querySelectorAll('.cs-preset').forEach(function (x) { x.classList.toggle('is-active', x === b); });
+        _applyPresetDefaults(state.preset);
         _checkConflicts();
       });
     });
