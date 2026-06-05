@@ -155,6 +155,28 @@ _MECHANICS_TOPIC_ALIASES: tuple[tuple[str, str], ...] = (
     ("pendulum", "Pendel"),
 )
 
+# UNAMBIGUOUS mechanics topic words — used to decide whether the mechanics
+# taxonomy (alias-renaming, formula/trap banks, layout map, method picker) should
+# run AT ALL for a given course. The full alias table above is intentionally
+# aggressive (it maps "normal", "reibung", "rotation" onto mechanics sections),
+# which is correct for a real mechanics course but WRONG for any other formula
+# subject: a Grundlagen-des-Konstruierens sheet has "Normalspannung" and "Reibung
+# (Tribologie)" topics that the aggressive aliases would rewrite into
+# "Tangential- und Normalkoordinaten" / "Reibung und Widerstand" and then fill
+# with fabricated kinematics formulas. So we gate the whole mechanics path behind
+# a count of these STRONG, non-overlapping words (>= 2 ⇒ genuinely a mechanics
+# course). Ambiguous words (normal, tangential, reibung, arbeit, energie,
+# rotation, …) are deliberately EXCLUDED here.
+_MECHANICS_STRONG_NEEDLES = frozenset({
+    "kinematik", "kinematics", "kartesisch", "cartesian", "geradlinig",
+    "rectilinear", "wurf", "projectile", "polar", "punktmasse", "point mass",
+    "bewegungsgleich", "equations of motion", "impuls", "momentum", "impact",
+    "tragheitsmoment", "traegheitsmoment", "moment of inertia", "drehimpuls",
+    "angular momentum", "ebene bewegung", "plane motion", "rollbewegung",
+    "rakete", "rocket", "pendel", "pendulum", "schwerpunkt", "massenmittelpunkt",
+    "center of mass", "centre of mass",
+})
+
 _MECHANICS_TRAP_BANK: dict[str, tuple[str, ...]] = {
     "Kinematik eines Punktes": (
         "Constant-a formulas are only valid if a = const.",
@@ -650,13 +672,39 @@ _SUBJECT_TYPES = (
     "formula_heavy",
     "vocabulary_memorization",
     "process_comparison",
+    "engineering_design",
     "conceptual_theory",
     "proof_theory",
     "mixed",
 )
 # Which detected types keep the original formula-first pipeline. Everything else
 # uses the reference template (definitions / tables / Merken), never formulas.
+# ``engineering_design`` (Grundlagen des Konstruierens, Maschinenelemente) is
+# deliberately NOT formula-driven: it is a design-decision sheet that may carry a
+# few grounded strength formulas but must NOT be forced into a formula-cluster
+# shape, and must NEVER get the mechanics taxonomy. It uses its own template.
 _FORMULA_DRIVEN_TYPES = frozenset({"formula_heavy", "mixed"})
+
+# Engineering-design / machine-element vocabulary. These courses mix a little math
+# (Festigkeitsnachweis) with design methodology, standards, tolerances and machine
+# elements, so they read neither as a pure formula sheet nor as pure memorization.
+# Detection is data-driven from the student's OWN evidence, like every other type.
+_DESIGN_KEYWORDS = (
+    "konstru", "gestalt", "toleranz", "passung", "grundabma", "welle", "nabe",
+    "lager", "getriebe", "verzahnung", "schnappverbind", "maschinenelement",
+    "festigkeitsnachweis", "anforderungsliste", "funktionsstruktur", "morpholog",
+    "bewertung", "fügen", "fuegen", "niet", "schraubverbind", "schweißverbind",
+    "oberflächenbesch", "oberflaechenbesch", "beanspruchung", "steifigkeit",
+    "wälzlager", "waelzlager", "gleitlager", "schmierung", "tribolog",
+    "din en iso", "machine element", "shaft", "bearing", "gearbox", "tolerance fit",
+)
+# A stricter subset whose presence signals a genuine design course (not just a
+# stray mention). ``engineering_design`` requires >= 2 DISTINCT core terms.
+_DESIGN_CORE = (
+    "konstru", "toleranz", "passung", "welle", "nabe", "maschinenelement",
+    "gestalt", "anforderungsliste", "funktionsstruktur", "getriebe", "wälzlager",
+    "waelzlager", "gleitlager", "schnappverbind", "festigkeitsnachweis", "verzahnung",
+)
 
 # A line counts as "math" only on a STRONG token: an equals sign, a LaTeX math
 # command, a super/subscript on a letter, or a Greek letter. Deliberately NOT
@@ -708,13 +756,12 @@ def classify_subject_type(
     talks about Verfahren / Vorteile / Nachteile. Defaults to ``formula_heavy``
     on empty evidence so behaviour is unchanged when there is nothing to judge.
     """
-    # Strong prior: if the course topic map already resolves to the mechanics
-    # taxonomy, it is a formula course — trust that over a thin evidence sample.
-    mechanics_topics = sum(
-        1 for t in (topic_names or [])
-        if t and _canonical_mechanics_topic(str(t)) in _MECHANICS_TOPIC_ORDER
-    )
-    if mechanics_topics >= 2:
+    # Strong prior: if the course topic map carries two or more UNAMBIGUOUS
+    # mechanics topics, it is a mechanics formula course — trust that over a thin
+    # evidence sample. Uses the strong needles (not the aggressive alias table) so
+    # a design/standards course that merely says "Normalspannung"/"Reibung" is not
+    # misread as mechanics.
+    if _course_is_mechanics(topic_names or []):
         return "formula_heavy"
 
     corpus = " ".join((c.get("text") or "") for c in evidence)
@@ -731,6 +778,25 @@ def classify_subject_type(
     process_density = process_hits / n_lines
     vocab_density = vocab_hits / n_lines
     proof_density = proof_hits / n_lines
+    design_hits = sum(low.count(k) for k in _DESIGN_KEYWORDS)
+    design_density = design_hits / n_lines
+    design_core_hits = sum(1 for k in _DESIGN_CORE if k in low)
+
+    # Engineering design / machine elements (GdK, Maschinenelemente). Checked
+    # BEFORE the formula branch: these courses DO carry strength formulas, so the
+    # formula gate would otherwise mislabel them formula_heavy and route them into
+    # the mechanics pipeline. The signal is design/machine-element vocabulary that
+    # DOMINATES — several distinct core terms AND a design density clearly above the
+    # process/vocab densities. The dominance test is essential: a manufacturing
+    # course (Fertigungstechnik) also mentions Toleranz/Welle in passing but is
+    # overwhelmingly process vocabulary, so it must stay process_comparison.
+    if (
+        design_core_hits >= 3
+        and design_density >= 0.5
+        and design_density >= 2 * process_density
+        and design_density >= 2 * vocab_density
+    ):
+        return "engineering_design"
 
     # Strong, broad formula presence → formula-driven. A subject with BOTH heavy
     # formulas and heavy process/vocab vocabulary (e.g. Thermodynamik) is "mixed"
@@ -929,6 +995,106 @@ _PRESET_SECTION_FORMAT_REFERENCE = {
         "`## Varianten / Verfahren` (a comparison table), `## Vorteile & Nachteile`, "
         "`## Typische Fehler`, `## Auswahlregeln`, `## Abgrenzung`, `## Merksätze`, "
         "`## Prüfungsfallen`. Do not drift into unrelated course topics."
+    ),
+}
+
+
+# ── Engineering-design / machine-elements section writer ─────────────────────
+#
+# Grundlagen des Konstruierens / Maschinenelemente are NEITHER a pure formula
+# sheet NOR pure memorization: the student needs design-decision rules, selection
+# criteria, standards (DIN/ISO tolerances, fits), machine-element variants AND a
+# few grounded strength formulas (Festigkeitsnachweis). So this writer produces a
+# mixed design-decision card: definition → when to use → selection criteria →
+# rules → formulas ONLY if grounded → variants → pros/cons → trap. It must NEVER
+# pull in unrelated mechanics-coordinate sections (that is the mechanics path).
+_SECTION_SYSTEM_DESIGN = (
+    "You are ExamForge by Minallo, writing PART of a DENSE, exam-ready CHEATSHEET "
+    "from a student's own course materials. This is an ENGINEERING-DESIGN / "
+    "MACHINE-ELEMENTS subject (Grundlagen des Konstruierens, Maschinenelemente, "
+    "Konstruktionslehre): a DESIGN-DECISION sheet — design methodology, selection "
+    "rules, standards (tolerances/fits), machine-element variants, and ONLY the "
+    "strength formulas the material actually states. It is NOT a kinematics "
+    "formula sheet and NOT pure vocabulary.\n"
+    "\n"
+    "Use ONLY the provided COURSE CONTEXT. Never invent facts or formulas.\n"
+    "\n"
+    "OUTPUT: for each `### TOPIC: <name>` block in the context, write EXACTLY one "
+    "`## <name>` section, in the same order. Output ONLY these sections — no "
+    "document title, no introduction, no `## Sources` list, no closing remarks.\n"
+    "\n"
+    "EACH section is a tight, scannable design card. Use these bold-lead-in labels "
+    "IN THE SOURCE LANGUAGE (German label for a German course), omitting any label "
+    "with no grounded content — never write a label with an empty or `N/A` body:\n"
+    "- **Kurzdefinition:** one-line definition / core idea.\n"
+    "- **Anwenden bei:** when this method / element / rule is used.\n"
+    "- **Auswahlkriterien:** the criteria that drive the design choice.\n"
+    "- **Wichtige Regeln:** the key design / dimensioning / standards rules.\n"
+    "- **Formeln:** ONLY grounded strength/dimensioning formulas, inline as $...$ "
+    "with each symbol named once. If the topic has no formula in the context, OMIT "
+    "this label entirely — do NOT invent one and do NOT write a kinematics formula.\n"
+    "- **Varianten / Arten:** the types/variants (prefer a compact table when the "
+    "evidence names 3+).\n"
+    "- **Vorteile / Nachteile:** short bullets where relevant.\n"
+    "- **Prüfungsfalle:** ONE precise, subject-specific exam trap.\n"
+    "\n"
+    "USE TABLES for the high-value design comparisons when the evidence supports "
+    "them — Passungsarten (Spiel-/Übergangs-/Presspassung), Welle-Nabe-Verbindung "
+    "types, Lagerarten (Wälz- vs Gleitlager), Getriebe/Verzahnungsarten, "
+    "Konstruktionsphasen, Bewertungsmethoden, Schnappverbindungstypen. KEEP CELLS "
+    "SHORT (a few words) so the table fits the column width; never write a full "
+    "sentence in a cell, never clip a cell.\n"
+    "\n"
+    "HARD RULES:\n"
+    "- NEVER emit a kinematics / mechanics-coordinate section (Tangential- und "
+    "Normalkoordinaten, Reibung und Widerstand as a drag law, Wurfbewegung, "
+    "Impuls/Stoß, Drehimpuls) unless the COURSE CONTEXT for THIS topic genuinely "
+    "centres on it — those belong to a mechanics course, not a design sheet.\n"
+    "- Write formulas ONLY inside $...$; NEVER emit a raw LaTeX table, a "
+    "`\\begin{...}` / `cases` / `array` environment, `\\text{...}`, `&` column "
+    "separators or `\\\\` row breaks — use a real markdown `| … |` table instead.\n"
+    "- Traps and rules must be CONCRETE and subject-specific (e.g. 'Presspassung: "
+    "Übermaß sichert Drehmoment, aber erschwert Montage'), never generic.\n"
+    "- Match the language of the source material; do not mix English labels into "
+    "German content. NEVER use emoji or icon characters.\n"
+    "\n"
+    "OMIT WEAK SECTIONS — if a topic has no grounded definition, rule or fact you "
+    "can state cleanly, DROP its `## ` section rather than padding it.\n"
+    "\n"
+    "EMPHASIS MARKERS (use exactly these; never inside a formula):\n"
+    "- Wrap THE single most important fact of a block in ==double equals== "
+    "(yellow). Write `==text==` with NO inner spaces and TWO equals each side. At "
+    "most one per block.\n"
+    "- Begin a hard warning with `Important:` or `Critical:` (red).\n"
+    "- Begin a soft remark with `Note:` (orange).\n"
+    "- Wrap a key concept term in {{double braces}} (blue); use sparingly.\n"
+    "\n"
+    'Return ONLY JSON: {"text":"<markdown for these sections only>"}'
+)
+
+# Per-preset overrides for the design writer. Kept light — the base design card
+# already carries the shape — and falls back to the reference formats for modes
+# not listed here (see _shard_system_prompt).
+_PRESET_SECTION_FORMAT_DESIGN = {
+    "exam_night": (
+        "\n\nDESIGN EXAM-NIGHT FORMAT — OVERRIDES the section shape. A one-page "
+        "emergency sheet of only what a student would FORGET. Each `## <name>` "
+        "section: the decisive **Auswahlkriterien** / **Wichtige Regeln** (one "
+        "line), any grounded **Formel** inline $...$, and one **Prüfungsfalle**. "
+        "Drop low-yield topics and anything obvious. No prose."
+    ),
+    "formula_reference": (
+        "\n\nDESIGN QUICK-REFERENCE FORMAT — OVERRIDES the section shape. Lead with "
+        "the grounded **Formeln** ($...$, variables named) and the selection / "
+        "standards TABLES (Passungen, Welle-Nabe, Lager, Getriebe). Terse rule "
+        "bullets only; no prose paragraphs. Never invent a formula to fill space."
+    ),
+    "open_book_exam": (
+        "\n\nDESIGN OPEN-BOOK FORMAT — OVERRIDES the section shape. A fast-lookup "
+        "DECISION tool. Each `## <name>` section, with these exact bold labels in "
+        "order (omit one only when nothing grounded fits): **Anwenden bei:**, "
+        "**Auswahlkriterien:**, **Varianten / Arten:** (a table when 3+), "
+        "**Prüfungsfalle:**. Prefer a comparison table for a shared decision."
     ),
 }
 
@@ -1175,6 +1341,54 @@ def _strip_stray_carets(text: str) -> str:
     return "".join(parts)
 
 
+# Raw-LaTeX-table / environment leak: when the model emits a `cases`/`array`
+# environment (or a hand-built aligned table) WITHOUT a math wrapper, the body
+# leaks onto the page as red raw LaTeX — observed in real output as
+# "1.0 & \text{Vollwelle} \\ 2.0 bis 3.0 & \text{Torsion}". The legit `\text{…}`
+# spans get math-wrapped by the fragment wrapper, but the `&` column separators
+# and `\\` row breaks stay raw. We neutralize them to readable plain text so the
+# page never shows raw LaTeX (a missing/plain row beats a red one).
+_TEXT_CMD_RE = re.compile(r"\\(?:text|mathrm|mathbf|mathit|operatorname)\s*\{([^{}]*)\}")
+_ENV_CMD_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}|\\hline\b")
+
+
+def _clean_latex_text(seg: str) -> str:
+    """Strip LaTeX table/environment scaffolding from an out-of-math text segment,
+    turning it into readable plain text (`\\text{X}`→X, `&`→' — ', `\\\\`→' ',
+    drop `\\begin/\\end`, bare commands and stray braces)."""
+    s = _TEXT_CMD_RE.sub(lambda m: m.group(1), seg)
+    s = _ENV_CMD_RE.sub("", s)
+    s = s.replace("\\\\", " ")               # LaTeX row break
+    s = re.sub(r"\\[a-zA-Z]+\*?", "", s)     # remaining bare commands (\nd, \quad)
+    s = s.replace("&", " — ")                # column separator
+    s = re.sub(r"[{}]", "", s)               # stray braces
+    s = re.sub(r"\s*—\s*(?:—\s*)+", " — ", s)
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    return s
+
+
+def _strip_raw_latex_outside_math(text: str) -> str:
+    """Final backstop: neutralize any raw LaTeX that survived OUTSIDE the math
+    spans (table/cases scaffolding, a leaked `\\begin{}`, a bare `\\nd`). Real
+    `$...$` / `$$...$$` spans are left untouched. Only lines that actually carry a
+    raw-LaTeX signal are rewritten, so a lone prose `&` ('R&D') is preserved."""
+    out: list[str] = []
+    for line in (text or "").split("\n"):
+        residue = _strip_math_spans(line)
+        if not (re.search(r"\\[a-zA-Z]", residue) or "\\\\" in residue or "\\text" in residue):
+            out.append(line)
+            continue
+        parts: list[str] = []
+        last = 0
+        for m in _MATH_SPAN_RE.finditer(line):
+            parts.append(_clean_latex_text(line[last:m.start()]))
+            parts.append(m.group(0))
+            last = m.end()
+        parts.append(_clean_latex_text(line[last:]))
+        out.append("".join(parts))
+    return "\n".join(out)
+
+
 def _formula_body_ok(body: str) -> bool:
     """True if a display-formula body is safe to render: balanced braces, no
     replacement char, non-empty, and actually contains math (not just "(20)")."""
@@ -1317,13 +1531,25 @@ def sanitize_cheatsheet_markdown(text: str) -> tuple[str, int]:
     def _inline_repl(m: "re.Match[str]") -> str:
         nonlocal dropped
         normalized = normalize_formula_text(m.group(1))
-        if normalized:
-            return "$" + normalized + "$"
-        dropped += 1
-        return ""
+        if not normalized:
+            dropped += 1
+            return ""
+        # A span whose whole body is a single unknown control word (e.g. "$\nd$")
+        # is not real math — KaTeX renders it as a red error — so drop it instead
+        # of letting it reach the page. Known symbols/operators (\theta, \frac, …)
+        # are in _LATEX_WORDS and kept.
+        lone = re.fullmatch(r"\\([a-zA-Z]+)", normalized.strip())
+        if lone and lone.group(1).lower() not in _LATEX_WORDS:
+            dropped += 1
+            return ""
+        return "$" + normalized + "$"
 
     cleaned = _DISPLAY_FORMULA_RE.sub(_display_repl, cleaned)
     cleaned = _INLINE_FORMULA_RE.sub(_inline_repl, cleaned)
+    # Final raw-LaTeX backstop: neutralize table/cases scaffolding (`&`, `\\`,
+    # `\text{}`) and any bare command still sitting OUTSIDE a math span, so no raw
+    # red LaTeX reaches the rendered/printed sheet.
+    cleaned = _strip_raw_latex_outside_math(cleaned)
     cleaned = _tidy_emptied_lines(cleaned)
     return cleaned, dropped
 
@@ -1496,6 +1722,31 @@ def _canonical_mechanics_topic(name: str) -> str:
     return repair_mojibake(name).strip()
 
 
+def _strong_mechanics_hits(names: "list[str | None]") -> int:
+    """How many of ``names`` carry an UNAMBIGUOUS mechanics word (word-start
+    match, like the alias resolver). Used to decide if the mechanics taxonomy
+    should run for this course at all."""
+    n = 0
+    for raw in names:
+        if not raw:
+            continue
+        key = _topic_key(str(raw))
+        if not key:
+            continue
+        padded = " " + key
+        if any(" " + ndl in padded for ndl in _MECHANICS_STRONG_NEEDLES):
+            n += 1
+    return n
+
+
+def _course_is_mechanics(names: "list[str | None]") -> bool:
+    """True if the course is genuinely mechanics — only then do we apply the
+    aggressive mechanics aliasing, formula/trap banks, layout map and method
+    picker. Everything else (incl. engineering-design courses that mention
+    Normalspannung / Reibung) keeps its real topic names."""
+    return _strong_mechanics_hits(names) >= 2
+
+
 # Generic method/scaffolding terms that the topic extractor occasionally emits as
 # top-level "topics". They are course-agnostic non-subjects — a real reference
 # sheet never has an "Integrals" or "Initial conditions" section — so we drop them
@@ -1550,11 +1801,16 @@ def _canonical_classification_topic(name: str) -> str:
     return name
 
 
-def _dedupe_topic_names(names: list[str]) -> list[str]:
+def _dedupe_topic_names(names: list[str], *, mechanics: bool = True) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for name in names:
-        canonical = _canonical_classification_topic(_canonical_mechanics_topic(name))
+        # Mechanics aliasing only for genuine mechanics courses — otherwise a
+        # design/standards course's "Normalspannung"/"Reibung" topics would be
+        # rewritten into mechanics section titles. Manufacturing DIN 8580
+        # collapsing and mojibake repair still apply to every course.
+        base = _canonical_mechanics_topic(name) if mechanics else repair_mojibake(name).strip()
+        canonical = _canonical_classification_topic(base)
         key = _topic_key(canonical)
         if not key or key in seen:
             continue
@@ -1582,11 +1838,14 @@ def _topic_names(
     topic_map: list[dict[str, Any]],
     topic_focus: str | None,
     limit: int = _MAX_TOPICS,
+    *,
+    mechanics: bool = True,
 ) -> list[str | None]:
     if topic_focus:
-        return [_canonical_mechanics_topic(topic_focus)]
+        canon = _canonical_mechanics_topic(topic_focus) if mechanics else repair_mojibake(topic_focus).strip()
+        return [canon]
     names = [t.get("name") for t in (topic_map or []) if t.get("name")]
-    names = _dedupe_topic_names([str(n) for n in names])
+    names = _dedupe_topic_names([str(n) for n in names], mechanics=mechanics)
     return names[:limit] or [None]
 
 
@@ -2139,8 +2398,18 @@ def _shard_system_prompt(
     else uses the reference (definition/classification/comparison/Merken) one.
     """
     formula_driven = cfg.get("formulaDriven", True)
-    base = _SECTION_SYSTEM if formula_driven else _SECTION_SYSTEM_REFERENCE
-    formats = _PRESET_SECTION_FORMAT if formula_driven else _PRESET_SECTION_FORMAT_REFERENCE
+    if cfg.get("subjectType") == "engineering_design":
+        # Design subjects get their own card; modes not in the design override fall
+        # back to the reference formats (memory/comparison shaped, which suit the
+        # non-formula design topics well enough).
+        base = _SECTION_SYSTEM_DESIGN
+        formats = {**_PRESET_SECTION_FORMAT_REFERENCE, **_PRESET_SECTION_FORMAT_DESIGN}
+    elif formula_driven:
+        base = _SECTION_SYSTEM
+        formats = _PRESET_SECTION_FORMAT
+    else:
+        base = _SECTION_SYSTEM_REFERENCE
+        formats = _PRESET_SECTION_FORMAT_REFERENCE
     prompt = (
         base
         + "\n\nSETTINGS:\n"
@@ -2175,7 +2444,7 @@ def _run_one_section_shard(
     # match) formula-driven courses. For reference subjects they no-op anyway,
     # so skip them to keep the prompt clean.
     banks = ""
-    if cfg.get("formulaDriven", True):
+    if cfg.get("formulaDriven", True) and cfg.get("mechanics", True):
         banks = (
             _formula_bank_guidance([str(t) for t in topics])
             + _trap_guidance([str(t) for t in topics])
@@ -2281,6 +2550,11 @@ def _broken_formula_reasons(text: str) -> list[str]:
     outside = _strip_math_spans(_wrap_inline_latex_fragments(_wrap_bare_formula_lines(text)))
     if re.search(r"\\[a-zA-Z]{2,}", outside):
         reasons.append("raw-latex-in-text")
+    # A leaked LaTeX table / cases / array environment: `&` column separators or
+    # `\\` row breaks (or a literal \begin{}) left outside any math span. Renders
+    # as red raw LaTeX, so a shard carrying it should regenerate.
+    if "\\\\" in outside or "\\begin" in outside or re.search(r"\S[ \t]+&[ \t]+\S", outside):
+        reasons.append("latex-table-leak")
     return reasons
 
 
@@ -2449,7 +2723,7 @@ def ensure_drehimpuls_section(text: str, cfg: dict[str, Any]) -> tuple[str, int]
     """If the sheet covers rigid-body rotation (Trägheitsmoment or Rotation starrer
     Körper present) but has NO Drehimpuls section, inject a clean bank one — so
     angular momentum is its own block and never folded into Trägheitsmoment."""
-    if not cfg.get("formulaDriven", True) or not text:
+    if not (cfg.get("formulaDriven", True) and cfg.get("mechanics", True)) or not text:
         return text, 0
     present = set()
     for head, _ in _iter_sections(text):
@@ -2477,7 +2751,7 @@ def ensure_method_picker_targets(
     """If the Method Picker references a method (Polar/Tangential-normal/…) but the
     sheet has no section for it, inject a clean bank section so the picker is never
     a dead end. Returns (text, injected)."""
-    if not cfg.get("formulaDriven", True) or not text:
+    if not (cfg.get("formulaDriven", True) and cfg.get("mechanics", True)) or not text:
         return text, 0
     if not re.search(r"(?im)^#{1,6}\s+method\s+picker\b", text):
         return text, 0
@@ -2526,6 +2800,10 @@ def _reference_gate_failures(text: str, cfg: dict[str, Any]) -> list[str]:
         failures.append("na-leak")
     if _LITERAL_NEWLINE_RE.search(text):
         failures.append("raw-markdown")
+    # Reference/design subjects must never emit a raw LaTeX table/cases/array env
+    # (the GdK "1.0 & \\text{Vollwelle} \\\\ …" leak) — use a markdown table instead.
+    if any(r in ("latex-table-leak", "raw-latex-in-text") for r in _broken_formula_reasons(text)):
+        failures.append("raw-latex")
     titles = re.findall(r"(?im)^#{1,6}\s+(.+?)\s*$", text)
     n_topic = len(titles)
     # Real structure = a markdown table, a bold lead-in label, or a numbered list.
@@ -2590,6 +2868,12 @@ def _corrective_guidance(failures: list[str]) -> str:
         )
     if "raw-markdown" in failures:
         fixes.append("emit clean markdown with real line breaks — never a literal '\\n'")
+    if "raw-latex" in failures:
+        fixes.append(
+            "NEVER emit a raw LaTeX table or `\\begin{cases}`/`array` environment, "
+            "`\\text{...}`, `&` column separators or `\\\\` row breaks — render any "
+            "comparison as a real markdown '| … |' table, and put formulas only in $...$"
+        )
     if "no-structure" in failures:
         fixes.append(
             "give each section real structure: a one-line definition plus bold "
@@ -2639,6 +2923,7 @@ def _generate_sections_parallel(
     # subjects (no mechanics topics to pick), so don't expect/require it there.
     _mp_preset = (
         cfg.get("formulaDriven", True)
+        and cfg.get("mechanics", True)
         and str(cfg.get("preset")) not in ("formula_reference", "topic_mastery")
     )
 
@@ -2732,7 +3017,18 @@ def generate_cheatsheet(
     except Exception:  # noqa: BLE001
         log.exception("cheatsheet: topic map read failed")
         topic_map = []
-    topics = _topic_names(topic_map, topic_query, limit=cfg["maxTopics"])
+    # Decide ONCE, from the raw topic-map names (+ any focus topic), whether the
+    # mechanics taxonomy applies. If not (e.g. Grundlagen des Konstruierens), the
+    # aggressive aliasing, formula/trap banks, layout map and method picker are all
+    # skipped so the course keeps its real topic names and gets no fabricated
+    # kinematics formulas.
+    raw_topic_names = [str(t.get("name")) for t in (topic_map or []) if t.get("name")]
+    if topic_query:
+        raw_topic_names.append(topic_query)
+    cfg["mechanics"] = _course_is_mechanics(raw_topic_names)
+    topics = _topic_names(
+        topic_map, topic_query, limit=cfg["maxTopics"], mechanics=cfg["mechanics"]
+    )
 
     # Per-PDF mode: a small explicit multi-PDF selection → one section per PDF,
     # deduped across them. The topic map still ranks the evidence in the
@@ -2828,7 +3124,7 @@ def generate_cheatsheet(
     # never a dead end.
     bank_repairs = 0
     method_picker_injected = 0
-    if cfg.get("formulaDriven", True):
+    if cfg.get("formulaDriven", True) and cfg.get("mechanics", True):
         text, bank_repairs = enforce_formula_bank(text, covered_labels)
         text, method_picker_injected = ensure_method_picker_targets(text, topics, cfg)
         text, _drehimpuls_added = ensure_drehimpuls_section(text, cfg)

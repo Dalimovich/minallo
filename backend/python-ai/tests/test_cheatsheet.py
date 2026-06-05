@@ -746,7 +746,11 @@ def test_generate_cheatsheet_grounded(monkeypatch):
         doc_names={"d1": "a.pdf"}, save=True,
     )
     assert out["noteId"] == "note-123"
-    assert out["topicsCovered"] == ["Reibung und Widerstand"]
+    # A lone, ambiguous topic ("Friction") is NOT a mechanics course (needs >= 2
+    # strong mechanics topics), so the aggressive English→German mechanics aliasing
+    # is gated off and the real topic name is kept. (Aliasing for a genuine
+    # mechanics map is covered by test_generate_cheatsheet_per_pdf_*.)
+    assert out["topicsCovered"] == ["Friction"]
     assert "Friction" in out["text"]
     # No on-page citation metric (the target sheet shows none); grounding stays
     # internal via sourceSupport.
@@ -967,6 +971,143 @@ def test_generate_cheatsheet_routes_reference_subject(monkeypatch):
     assert "Prüfungsfalle" in out["text"]
 
 
+# ── engineering-design routing + mechanics gate ─────────────────────────────
+
+
+_GDK_EVIDENCE = [
+    {"text": (
+        "Konstruktionsmethodik nach VDI 2221: Anforderungsliste, Funktionsstruktur, "
+        "morphologischer Kasten, Bewertung der Konzepte.\n"
+        "Konstruktionsphasen: Planen, Konzipieren, Entwerfen, Ausarbeiten."
+    )},
+    {"text": (
+        "Toleranzen und Passungen nach DIN EN ISO 286: Spielpassung, Übergangspassung, "
+        "Presspassung. Das Grundabmaß bestimmt die Lage des Toleranzfeldes.\n"
+        "Welle-Nabe-Verbindung: Passfeder, Keilwelle, Pressverband übertragen das Drehmoment."
+    )},
+    {"text": (
+        "Lager: Wälzlager gegen Gleitlager. Schmierung und Tribologie bestimmen "
+        "Verschleiß. Getriebe und Verzahnung setzen die Drehzahl um."
+    )},
+]
+
+
+def test_classify_engineering_design_from_design_corpus():
+    # GdK/Maschinenelemente: design vocabulary dominates, so it routes to the
+    # engineering-design template even though some strength formulas exist.
+    assert cs.classify_subject_type(_GDK_EVIDENCE) == "engineering_design"
+    assert "engineering_design" not in cs._FORMULA_DRIVEN_TYPES
+
+
+def test_course_is_mechanics_gate():
+    assert cs._course_is_mechanics(["Kinematik eines Punktes", "Impuls und Stoß"]) is True
+    # ambiguous design topics are NOT a mechanics course
+    assert cs._course_is_mechanics(["Normalspannung", "Reibung in Lagern", "Toleranzen"]) is False
+    # a single strong mechanics topic is not enough
+    assert cs._course_is_mechanics(["Drehimpuls", "Toleranzen"]) is False
+
+
+def test_dedupe_topic_names_skips_mechanics_alias_when_not_mechanics():
+    names = ["Normalspannung", "Reibung in Lagern"]
+    # mechanics ON → aggressive aliasing rewrites into mechanics sections
+    aliased = cs._dedupe_topic_names(names, mechanics=True)
+    assert "Tangential- und Normalkoordinaten" in aliased
+    # mechanics OFF → the course keeps its real design topic names
+    assert cs._dedupe_topic_names(names, mechanics=False) == ["Normalspannung", "Reibung in Lagern"]
+
+
+def test_design_shard_prompt_uses_design_template():
+    cfg = cs.normalize_settings({"preset": "balanced", "subjectType": "engineering_design"})
+    assert cfg["formulaDriven"] is False
+    prompt = cs._shard_system_prompt(cfg, ["Welle-Nabe-Verbindung"], with_method_picker=False)
+    assert "ENGINEERING-DESIGN / MACHINE-ELEMENTS" in prompt
+    assert "Auswahlkriterien" in prompt
+    # balanced has no design-specific override → falls back to the reference format
+    assert "REFERENCE BALANCED FORMAT" in prompt
+    # never the mechanics formula contract
+    assert "BALANCED STUDY FORMAT" not in prompt
+
+
+def test_generate_cheatsheet_routes_engineering_design(monkeypatch):
+    monkeypatch.setattr(cs, "get_course_topic_map", lambda u, c: [
+        {"name": "Toleranzen und Passungen"},
+        {"name": "Welle-Nabe-Verbindung"},
+        {"name": "Normalspannung"},
+        {"name": "Lager und Schmierung"},
+    ])
+    monkeypatch.setattr(cs, "retrieve_learning_context", lambda **k: _GDK_EVIDENCE)
+    captured = {}
+
+    def _fake_chat(**k):
+        captured["system"] = k["system"]
+        return _FakeChatResult({"text": (
+            "## Toleranzen und Passungen\n**Kurzdefinition:** Passung beschreibt Spiel/Übermaß.\n"
+            "**Varianten / Arten:**\n| Art | Merkmal |\n|---|---|\n| Spielpassung | immer Spiel |\n"
+            "**Prüfungsfalle:** Presspassung erschwert die Montage."
+        )})
+
+    monkeypatch.setattr(cs, "chat_json", _fake_chat)
+    monkeypatch.setattr(cs, "save_note", lambda **k: "n1")
+
+    out = cs.generate_cheatsheet(
+        user_id="u", course_id="c", document_ids=None, topic=None, doc_names={}, save=True,
+    )
+    assert out["subjectType"] == "engineering_design"
+    assert out["settings"]["formulaDriven"] is False
+    assert out["settings"]["mechanics"] is False
+    # the design writer was used, not the mechanics formula one
+    assert "ENGINEERING-DESIGN / MACHINE-ELEMENTS" in captured["system"]
+    # GdK topics keep their REAL names — never rewritten into mechanics sections
+    assert "Normalspannung" in out["topicsCovered"]
+    assert "Tangential- und Normalkoordinaten" not in out["topicsCovered"]
+    assert "Reibung und Widerstand" not in out["topicsCovered"]
+
+
+# ── raw-LaTeX / table-leak sanitation ───────────────────────────────────────
+
+
+def test_sanitize_strips_latex_table_leak():
+    # The exact shape that leaked red onto the GdK sheet: a cases/array row body
+    # with `&` separators and `\\` row breaks left outside any math wrapper.
+    src = (
+        r"1.0 & \text{Vollwelle (solid shaft)} \\ 1.0 & \text{Hohlwelle (hollow shaft)} "
+        r"\text{2.0 bis 3.0} & \text{Torsion} > 3.0 & \text{Beliebig}"
+    )
+    out, _ = cs.sanitize_cheatsheet_markdown(src)
+    assert "&" not in out          # column separators neutralized
+    assert "\\\\" not in out       # row breaks neutralized
+    assert "Vollwelle" in out      # the actual content is preserved
+    # no raw LaTeX env scaffolding survives outside a math span
+    assert not cs._broken_formula_reasons(out)
+
+
+def test_sanitize_drops_lone_unknown_command():
+    out, dropped = cs.sanitize_cheatsheet_markdown("Variablen: \\nd: Durchmesser, D: Nennmaß")
+    assert "\\nd" not in out
+    assert "Durchmesser" in out
+
+
+def test_broken_formula_reasons_flags_table_leak():
+    reasons = cs._broken_formula_reasons(r"1.0 & \text{Vollwelle} \\ 2.0 & \text{Torsion}")
+    assert "latex-table-leak" in reasons
+
+
+def test_reference_gate_flags_raw_latex():
+    cfg = cs.normalize_settings({"subjectType": "engineering_design"})
+    text = (
+        "## Festigkeitsnachweis\n**Kurzdefinition:** Nachweis der Tragfähigkeit.\n"
+        r"1.0 & \text{Vollwelle} \\ 2.0 & \text{Hohlwelle}"
+    )
+    fails = cs._shard_gate_failures(text, cfg, expect_method_picker=False)
+    assert "raw-latex" in fails
+
+
+def test_corrective_guidance_raw_latex():
+    g = cs._corrective_guidance(["raw-latex"])
+    assert "markdown" in g
+    assert "\\begin{cases}" in g or "cases" in g
+
+
 def test_generate_cheatsheet_topic_focus_titles(monkeypatch):
     monkeypatch.setattr(cs, "get_course_topic_map", lambda u, c: [{"name": "Other"}])
     monkeypatch.setattr(
@@ -981,4 +1122,7 @@ def test_generate_cheatsheet_topic_focus_titles(monkeypatch):
         doc_names={"d1": "a.pdf"}, save=True,
     )
     assert out["title"] == "Energy — Cheatsheet"
-    assert out["topicsCovered"] == ["Arbeit, Energie und Leistung"]
+    # Focus topic "Energy" with a non-mechanics map ("Other") is not a mechanics
+    # course, so the focus topic keeps its given name rather than being aliased to
+    # the German mechanics canonical "Arbeit, Energie und Leistung".
+    assert out["topicsCovered"] == ["Energy"]
