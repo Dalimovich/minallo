@@ -717,6 +717,129 @@
     }).catch(function () { /* non-fatal: saved list is additive */ });
   }
 
+  function _courseFileFolderIndex(course) {
+    var fileToFolder = {};
+    var live = {};
+    (course && course.files || []).forEach(function (f) {
+      if (f && f.name) live[f.name] = true;
+    });
+    (course && course.userFolders || []).forEach(function (fd) {
+      (fd.files || []).forEach(function (f) {
+        if (!f || !f.name) return;
+        live[f.name] = true;
+        fileToFolder[f.name] = fd.name || 'Folder';
+      });
+    });
+    return { fileToFolder: fileToFolder, live: live };
+  }
+
+  function _groupDocsByFolder(docs, course) {
+    var idx = _courseFileFolderIndex(course);
+    var liveNames = Object.keys(idx.live);
+    if (liveNames.length) {
+      docs = (docs || []).filter(function (d) {
+        return !!idx.live[d.file_name || d.fileName || ''];
+      });
+    }
+    var map = {};
+    var order = [];
+    var other = [];
+    (docs || []).forEach(function (d) {
+      var name = d.file_name || d.fileName || '';
+      var folder = idx.fileToFolder[name];
+      if (folder) {
+        if (!map[folder]) { map[folder] = []; order.push(folder); }
+        map[folder].push(d);
+      } else {
+        other.push(d);
+      }
+    });
+    return { map: map, order: order, other: other };
+  }
+
+  function _showSourcePicker(docs, course, onConfirm) {
+    var existing = document.getElementById('dlSourcePickerOverlay');
+    if (existing) existing.remove();
+    var grouped = _groupDocsByFolder(docs, course);
+    function itemHtml(d) {
+      return '<label class="dl-sp-item">' +
+        '<input type="checkbox" class="dl-sp-cb" value="' + _esc(d.id) + '" checked>' +
+        '<span class="dl-sp-name">' + _esc(d.file_name || d.fileName || 'Untitled') + '</span>' +
+      '</label>';
+    }
+    function folderHtml(name, docsInFolder, idx) {
+      return '<div class="dl-sp-folder" data-folder-idx="' + _esc(idx) + '">' +
+        '<div class="dl-sp-folder-head">' +
+          '<button class="dl-sp-folder-toggle" type="button" aria-label="Toggle folder">&#9662;</button>' +
+          '<span class="dl-sp-folder-name">' + _esc(name) + '</span>' +
+          '<span class="dl-sp-folder-count">' + docsInFolder.length + ' file' + (docsInFolder.length === 1 ? '' : 's') + '</span>' +
+          '<button class="dl-sp-folder-action" data-folder-act="all" type="button">Select all</button>' +
+          '<button class="dl-sp-folder-action" data-folder-act="none" type="button">Clear</button>' +
+        '</div>' +
+        '<div class="dl-sp-folder-files">' + docsInFolder.map(itemHtml).join('') + '</div>' +
+      '</div>';
+    }
+    var sections = grouped.order.map(function (name, i) {
+      return folderHtml(name, grouped.map[name], i);
+    }).join('');
+    if (grouped.other.length) sections += folderHtml('Other files', grouped.other, 'other');
+
+    var ov = document.createElement('div');
+    ov.id = 'dlSourcePickerOverlay';
+    ov.className = 'dl-sp-overlay';
+    ov.innerHTML =
+      '<div class="dl-sp-modal">' +
+        '<div class="dl-sp-head"><span class="dl-sp-title">Choose lesson sources</span>' +
+          '<button class="dl-sp-close" type="button" aria-label="Close">&times;</button></div>' +
+        '<p class="dl-sp-sub">Select which indexed files Deep Learn should use. Folder controls affect only files inside that folder.</p>' +
+        '<div class="dl-sp-list dl-sp-folder-list">' + sections + '</div>' +
+        '<div class="dl-sp-actions">' +
+          '<button class="dl-sp-ghost" id="dlSpAll" type="button">Select all</button>' +
+          '<button class="dl-sp-ghost" id="dlSpClear" type="button">Clear</button>' +
+          '<button class="dl-sp-primary" id="dlSpConfirm" type="button">Generate from selected</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    function close() { ov.remove(); }
+    ov.querySelector('.dl-sp-close').onclick = close;
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    ov.querySelectorAll('.dl-sp-folder-head').forEach(function (head) {
+      head.addEventListener('click', function (e) {
+        if (e.target.closest('.dl-sp-folder-action')) return;
+        var folder = head.closest('.dl-sp-folder');
+        var files = folder && folder.querySelector('.dl-sp-folder-files');
+        var collapsed = folder && folder.classList.toggle('is-collapsed');
+        if (files) files.style.display = collapsed ? 'none' : 'flex';
+        var toggle = head.querySelector('.dl-sp-folder-toggle');
+        if (toggle) toggle.innerHTML = collapsed ? '&#9656;' : '&#9662;';
+      });
+    });
+    ov.querySelectorAll('.dl-sp-folder-action').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var folder = btn.closest('.dl-sp-folder');
+        var checked = btn.getAttribute('data-folder-act') === 'all';
+        if (folder) folder.querySelectorAll('.dl-sp-cb').forEach(function (cb) { cb.checked = checked; });
+      });
+    });
+    ov.querySelector('#dlSpAll').onclick = function () {
+      ov.querySelectorAll('.dl-sp-cb').forEach(function (cb) { cb.checked = true; });
+    };
+    ov.querySelector('#dlSpClear').onclick = function () {
+      ov.querySelectorAll('.dl-sp-cb').forEach(function (cb) { cb.checked = false; });
+    };
+    ov.querySelector('#dlSpConfirm').onclick = function () {
+      var ids = [];
+      ov.querySelectorAll('.dl-sp-cb:checked').forEach(function (cb) { ids.push(cb.value); });
+      if (!ids.length) {
+        if (window.showToast) window.showToast('No files selected', 'Select at least one indexed file.');
+        return;
+      }
+      close();
+      onConfirm(ids.length === (docs || []).length ? null : ids);
+    };
+  }
+
   window.mountDeepLearn = function (target, course) {
     if (!target) return;
     target.innerHTML = _HTML;
@@ -747,8 +870,7 @@
       if (els.text.value && els.select) els.select.value = '';
     });
 
-    if (els.gen) els.gen.addEventListener('click', function () {
-      if (!courseId) return;
+    function doGenerate(documentIds) {
       var topic = ((els.text && els.text.value) || (els.select && els.select.value) || '').trim();
       if (!topic) {
         if (typeof window.showToast === 'function') window.showToast('Pick a topic', 'Choose a topic from the list or type one.');
@@ -760,7 +882,9 @@
       progress = _startBuildSteps(els, topic);
       _aiService()
         .then(function (svc) {
-          return svc.generateDeepLearn(courseId, topic).then(function (res) {
+          var opts = {};
+          if (documentIds && documentIds.length) opts.documentIds = documentIds;
+          return svc.generateDeepLearn(courseId, topic, opts).then(function (res) {
             els.gen.disabled = false;
             progress.stop();
             _renderResultProgressive(els, res, progress.id);
@@ -772,6 +896,31 @@
           els.gen.disabled = false;
           progress.stop();
           els.result.innerHTML = '<div class="dl-msg dl-error">' + _esc(err && err.message ? err.message : 'Deep Learn failed. Please try again.') + '</div>';
+        });
+    }
+
+    if (els.gen) els.gen.addEventListener('click', function () {
+      if (!courseId) return;
+      var topic = ((els.text && els.text.value) || (els.select && els.select.value) || '').trim();
+      if (!topic) {
+        if (typeof window.showToast === 'function') window.showToast('Pick a topic', 'Choose a topic from the list or type one.');
+        return;
+      }
+      els.gen.disabled = true;
+      _aiService()
+        .then(function (svc) { return svc.listCourseDocuments(courseId); })
+        .then(function (docs) {
+          els.gen.disabled = false;
+          var ready = (docs || []).filter(function (d) { return d.processing_status === 'ready'; });
+          if (!ready.length) {
+            els.result.innerHTML = '<div class="dl-msg">No indexed files yet. Upload and index a PDF first.</div>';
+            return;
+          }
+          _showSourcePicker(ready, course, function (documentIds) { doGenerate(documentIds); });
+        })
+        .catch(function () {
+          els.gen.disabled = false;
+          els.result.innerHTML = '<div class="dl-msg dl-error">Could not load your files. Please try again.</div>';
         });
     });
   };

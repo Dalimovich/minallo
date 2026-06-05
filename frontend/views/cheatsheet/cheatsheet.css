@@ -540,6 +540,203 @@
 }
 .cs-saved-del:hover { background: rgba(248, 113, 113, 0.15); color: #fca5a5; opacity: 1; }
 
+/* Unified course-tool redesign */
+.cs-root {
+  --cs-accent: #6366f1;
+  --cs-accent-2: #0ea5e9;
+  --cs-surface: color-mix(in srgb, var(--card, #0f172a) 88%, transparent);
+  --cs-nested: var(--card-inner, rgba(255, 255, 255, 0.05));
+  --cs-line: var(--border, #1e293b);
+  display: grid;
+  gap: 14px;
+}
+
+.cs-head {
+  display: grid;
+  gap: 4px;
+}
+
+.cs-head h2 {
+  color: var(--text, #e2e8f0);
+  letter-spacing: 0;
+}
+
+.cs-head p {
+  color: var(--muted, #94a3b8);
+  opacity: 1;
+}
+
+.cs-settings,
+.cs-controls,
+.cs-saved-wrap,
+.cs-sheet,
+.cs-msg,
+.cs-build {
+  border: 1px solid var(--cs-line);
+  border-radius: 12px;
+  background: var(--cs-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.cs-settings,
+.cs-controls {
+  padding: 14px;
+  margin-bottom: 0;
+}
+
+.cs-controls {
+  align-items: stretch;
+}
+
+.cs-topic {
+  border-radius: 10px;
+}
+
+.cs-preset {
+  border-radius: 10px;
+  font-weight: 750;
+}
+
+.cs-preset.is-active,
+.cs-btn-primary,
+.cs-sp-primary {
+  background: linear-gradient(135deg, var(--cs-accent), var(--cs-accent-2));
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.18);
+}
+
+.cs-opt {
+  color: var(--muted, #94a3b8);
+  opacity: 1;
+}
+
+.cs-opt select,
+.cs-topic {
+  background: var(--cs-nested);
+  border-color: var(--cs-line);
+  color: var(--text, #e2e8f0);
+}
+
+.cs-sheet,
+.cs-build {
+  padding: 16px;
+}
+
+.cs-sheet-head {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--cs-line);
+}
+
+.cs-progress-section {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.cs-progress-section:last-child {
+  border-bottom: 0;
+}
+
+.cs-section-tools {
+  opacity: 1;
+}
+
+.cs-section-tools button {
+  border-radius: 7px;
+  color: var(--muted, #94a3b8);
+}
+
+.cs-saved-wrap {
+  padding: 14px;
+}
+
+body:not(.night) .cs-root {
+  --cs-accent: #2563eb;
+  --cs-accent-2: #0ea5e9;
+  --cs-surface: var(--lm-card-bg);
+  --cs-nested: var(--lm-nested-bg);
+  --cs-line: var(--lm-card-border);
+  color: var(--lm-text);
+}
+
+body:not(.night) .cs-head h2,
+body:not(.night) .cs-sheet-head h3,
+body:not(.night) .cs-saved-title,
+body:not(.night) .cs-build-title {
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .cs-head p,
+body:not(.night) .cs-opt,
+body:not(.night) .cs-saved-date,
+body:not(.night) .cs-topics,
+body:not(.night) .cs-sources,
+body:not(.night) .cs-sources-label,
+body:not(.night) .cs-build-step {
+  color: var(--lm-muted) !important;
+}
+
+body:not(.night) .cs-settings,
+body:not(.night) .cs-controls,
+body:not(.night) .cs-saved-wrap,
+body:not(.night) .cs-sheet,
+body:not(.night) .cs-msg,
+body:not(.night) .cs-build,
+body:not(.night) .cs-sp-modal {
+  background: var(--lm-card-bg) !important;
+  border-color: var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .cs-topic,
+body:not(.night) .cs-opt select,
+body:not(.night) .cs-preset,
+body:not(.night) .cs-view-print,
+body:not(.night) .cs-saved-open,
+body:not(.night) .cs-section-tools button,
+body:not(.night) .cs-sp-folder,
+body:not(.night) .cs-sp-item,
+body:not(.night) .cs-sp-ghost,
+body:not(.night) .cs-sp-folder-action {
+  background: var(--lm-nested-bg) !important;
+  border-color: var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+  box-shadow: var(--lm-nested-shadow) !important;
+}
+
+body:not(.night) .cs-preset:hover,
+body:not(.night) .cs-view-print:hover,
+body:not(.night) .cs-saved-open:hover,
+body:not(.night) .cs-section-tools button:hover,
+body:not(.night) .cs-sp-item:hover,
+body:not(.night) .cs-sp-ghost:hover,
+body:not(.night) .cs-sp-folder-action:hover {
+  background: rgba(239, 246, 255, 0.96) !important;
+  border-color: var(--lm-card-border-strong) !important;
+}
+
+body:not(.night) .cs-preset.is-active,
+body:not(.night) .cs-btn-primary,
+body:not(.night) .cs-sp-primary {
+  color: #fff !important;
+  border-color: rgba(37, 99, 235, 0.70) !important;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9) !important;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.22) !important;
+}
+
+body:not(.night) .cs-sp-folder-count,
+body:not(.night) .cs-sp-sub,
+body:not(.night) .cs-sp-folder-toggle {
+  color: var(--lm-muted) !important;
+}
+
+body:not(.night) .cs-cite-warn {
+  background: rgba(245, 158, 11, 0.10) !important;
+  border-left-color: rgba(245, 158, 11, 0.55) !important;
+  color: #92400e !important;
+}
+
 /* Progressive generation */
 .cs-build {
   padding: 16px 18px;

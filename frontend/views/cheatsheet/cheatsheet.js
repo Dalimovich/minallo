@@ -688,6 +688,9 @@
       return folderHtml(name, grouped.map[name], i);
     }).join('');
     if (grouped.other.length) sections += folderHtml('Other files', grouped.other, 'other');
+    var visibleCount = grouped.order.reduce(function (n, name) {
+      return n + grouped.map[name].length;
+    }, grouped.other.length);
     var ov = document.createElement('div');
     ov.id = 'csSourcePickerOverlay';
     ov.className = 'cs-sp-overlay';
@@ -743,7 +746,7 @@
       // Small selection (incl. a small all-checked course) → pass ids so the
       // backend runs per-PDF mode (≤5 docs). A large all-checked selection →
       // null = whole-course topic sheet (also avoids the proxy's 25-doc cap).
-      var allChecked = ids.length === docs.length;
+      var allChecked = ids.length === visibleCount;
       onConfirm(allChecked && ids.length > 5 ? null : ids);
     };
   }

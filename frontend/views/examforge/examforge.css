@@ -546,3 +546,121 @@
     min-height: 420px;
   }
 }
+
+/* Light-mode alignment with the rest of the course workspace. ExamForge used a
+   hard-coded dark/cyan palette; these scoped overrides bring it back onto the
+   shared white card, blue accent, and soft nested-panel system. */
+body:not(.night) .ef-root {
+  color: var(--lm-text);
+}
+
+body:not(.night) .ef-type-row label,
+body:not(.night) .ef-field,
+body:not(.night) .ef-search,
+body:not(.night) .ef-doc-group,
+body:not(.night) .ef-doc,
+body:not(.night) .ef-session,
+body:not(.night) .ef-question,
+body:not(.night) .ef-option,
+body:not(.night) .ef-feedback,
+body:not(.night) .ef-submit-row {
+  background: var(--lm-nested-bg) !important;
+  border-color: var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+  box-shadow: var(--lm-nested-shadow) !important;
+}
+
+body:not(.night) .ef-side,
+body:not(.night) .ef-main {
+  background: var(--lm-card-bg) !important;
+  border-color: var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .ef-doc-group-head {
+  background: rgba(247, 250, 255, 0.92) !important;
+  border-bottom-color: var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .ef-doc-group-head:hover,
+body:not(.night) .ef-doc:hover,
+body:not(.night) .ef-session:hover,
+body:not(.night) .ef-option:hover {
+  background: rgba(239, 246, 255, 0.95) !important;
+  border-color: var(--lm-card-border-strong) !important;
+}
+
+body:not(.night) .ef-side-head p,
+body:not(.night) .ef-empty p,
+body:not(.night) .ef-exam-head p,
+body:not(.night) .ef-field label,
+body:not(.night) .ef-doc-state,
+body:not(.night) .ef-session-meta,
+body:not(.night) .ef-folder-count,
+body:not(.night) .ef-topics-empty,
+body:not(.night) .ef-muted,
+body:not(.night) .ef-folder-chevron {
+  color: var(--lm-muted) !important;
+}
+
+body:not(.night) .ef-link,
+body:not(.night) .ef-topic-chip.is-active,
+body:not(.night) .ef-folder-icon,
+body:not(.night) .ef-option b {
+  color: #1d4ed8 !important;
+}
+
+body:not(.night) .ef-folder-icon,
+body:not(.night) .ef-option b,
+body:not(.night) .ef-empty-icon,
+body:not(.night) .ef-score {
+  background: rgba(37, 99, 235, 0.10) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+}
+
+body:not(.night) .ef-score {
+  color: #1d4ed8 !important;
+}
+
+body:not(.night) .ef-topic-chip {
+  background: rgba(255, 255, 255, 0.90) !important;
+  border-color: var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .ef-topic-chip:hover,
+body:not(.night) .ef-topic-chip.is-active {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.36) !important;
+}
+
+body:not(.night) .ef-session.active,
+body:not(.night) .ef-option.selected {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.42) !important;
+}
+
+body:not(.night) .ef-option.correct {
+  background: rgba(16, 185, 129, 0.10) !important;
+  border-color: rgba(16, 185, 129, 0.34) !important;
+}
+
+body:not(.night) .ef-option.wrong {
+  background: rgba(239, 68, 68, 0.10) !important;
+  border-color: rgba(239, 68, 68, 0.32) !important;
+}
+
+body:not(.night) .ef-warning {
+  background: rgba(245, 158, 11, 0.10) !important;
+  border-color: rgba(245, 158, 11, 0.30) !important;
+  color: #92400e !important;
+}
+
+body:not(.night) .ef-btn-primary {
+  color: #fff !important;
+  border-color: rgba(37, 99, 235, 0.70) !important;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9) !important;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.22) !important;
+}
