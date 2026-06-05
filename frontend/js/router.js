@@ -36,6 +36,56 @@ function _ssReplaceHistory(state, hash) {
   } catch (e) {}
 }
 
+function _ssCourseHash(course, section) {
+  var id = course && (course.id || course.short) ? String(course.id || course.short) : '';
+  return '#course=' + encodeURIComponent(id) + '&section=' + encodeURIComponent(section || 'files');
+}
+
+function _ssFileHash(fileName, course, section) {
+  var id = course && (course.id || course.short) ? String(course.id || course.short) : '';
+  return (
+    '#file=' + encodeURIComponent(fileName || '') +
+    '&course=' + encodeURIComponent(id) +
+    '&section=' + encodeURIComponent(section || 'files')
+  );
+}
+
+function _ssStateFromHash(hash) {
+  if (!hash || hash.indexOf('access_token') !== -1) return null;
+  var raw = hash.charAt(0) === '#' ? hash.slice(1) : hash;
+  var params;
+  try {
+    params = new URLSearchParams(raw);
+  } catch (e) {
+    return null;
+  }
+  var portal = params.get('portal');
+  if (portal) {
+    var sec = portal === 'courses' ? 'studip' : portal;
+    return { view: 'portal', section: sec };
+  }
+  var file = params.get('file');
+  if (file) {
+    return {
+      view: 'file',
+      courseId: params.get('course') || params.get('courseId') || null,
+      courseShort: params.get('courseShort') || null,
+      fileName: file,
+      section: params.get('section') || 'files'
+    };
+  }
+  var course = params.get('course');
+  if (course) {
+    return {
+      view: 'course',
+      courseId: course,
+      courseShort: params.get('courseShort') || null,
+      section: params.get('section') || 'files'
+    };
+  }
+  return null;
+}
+
 // Authoritative URL + ss_portal_tab + ss_last_section commit. Belt-and-suspenders
 // alongside the showPortalSection wrapper — calling this after every navigation
 // guarantees URL and storage match the visible section even if the wrapper
@@ -181,7 +231,7 @@ function _ssApplyHistoryState(state) {
   // section the user was on before. This is the bug from the screenshot —
   // browser back from chatbot to a file left the AI sidebar item highlighted.
   if (state.view === 'course') {
-    var course = _ssFindCourseById(state.courseId) || _ssFindCourseByShort(state.courseShort);
+    var course = _ssFindCourseById(state.courseId) || _ssFindCourseByShort(state.courseShort) || _ssFindCourseByShort(state.courseId);
     if (course) {
       setNavActive('pcStudip');
       if (typeof window.openCourse === 'function') window.openCourse(course);
@@ -192,7 +242,7 @@ function _ssApplyHistoryState(state) {
   }
 
   if (state.view === 'file') {
-    var fileCourse = _ssFindCourseById(state.courseId) || _ssFindCourseByShort(state.courseShort);
+    var fileCourse = _ssFindCourseById(state.courseId) || _ssFindCourseByShort(state.courseShort) || _ssFindCourseByShort(state.courseId);
     if (fileCourse) {
       setNavActive('pcStudip');
       var file = _ssFindFileInCourse(fileCourse, state.fileName);
@@ -212,14 +262,15 @@ window.openCourse = function (c) {
   _pendingPortalRestore = null;
   if (typeof _origOpenCourse === 'function') _origOpenCourse(c);
   saveState();
+  var section = activeCourseSection || 'files';
   _ssPushHistory(
     {
       view: 'course',
       courseId: c.id || null,
       courseShort: c.short || null,
-      section: activeCourseSection || 'files'
+      section: section
     },
-    '#course=' + encodeURIComponent(c.id || c.short || '')
+    _ssCourseHash(c, section)
   );
 };
 
@@ -236,7 +287,7 @@ window.openFile = function (f, c) {
       fileName: f.name || null,
       section: activeCourseSection || 'files'
     },
-    '#file=' + encodeURIComponent(f.name || '')
+    _ssFileHash(f.name || '', c, activeCourseSection || 'files')
   );
 };
 
@@ -255,10 +306,7 @@ window.showCourseSection = function (c, s) {
       courseShort: c.short || null,
       section: s || 'files'
     },
-    '#course=' +
-      encodeURIComponent(c.id || c.short || '') +
-      '&section=' +
-      encodeURIComponent(s || 'files')
+    _ssCourseHash(c, s || 'files')
   );
 };
 
@@ -299,11 +347,14 @@ try {
 
 if (!_ssSkipBootRoute &&
     (!window.location.hash || window.location.hash.indexOf('access_token') === -1)) {
+  var _hashState = _ssStateFromHash(window.location.hash);
   var _rst = {};
   try {
     _rst = JSON.parse(localStorage.getItem('ss_state') || '{}');
   } catch (e) {}
-  if (_rst.inApp && (_rst.view === 'studip' || _rst.view === 'courses')) {
+  if (_hashState) {
+    _ssReplaceHistory(_hashState, window.location.hash);
+  } else if (_rst.inApp && (_rst.view === 'studip' || _rst.view === 'courses')) {
     _ssReplaceHistory({ view: 'courses' }, '#portal=courses');
   } else if (_rst.inApp && _rst.fileName) {
     _ssReplaceHistory(
@@ -313,12 +364,15 @@ if (!_ssSkipBootRoute &&
         fileName: _rst.fileName,
         section: _rst.section || 'files'
       },
-      '#file=' + encodeURIComponent(_rst.fileName)
+      '#file=' + encodeURIComponent(_rst.fileName) +
+        '&course=' + encodeURIComponent(_rst.courseId || '') +
+        '&section=' + encodeURIComponent(_rst.section || 'files')
     );
   } else if (_rst.inApp && _rst.courseId) {
     _ssReplaceHistory(
-      { view: 'course', courseId: _rst.courseId, section: _rst.section },
-      '#course=' + encodeURIComponent(_rst.courseId)
+      { view: 'course', courseId: _rst.courseId, section: _rst.section || 'files' },
+      '#course=' + encodeURIComponent(_rst.courseId) +
+        '&section=' + encodeURIComponent(_rst.section || 'files')
     );
   } else {
     var _initSec = _pendingPortalRestore || 'dashboard';
@@ -328,6 +382,22 @@ if (!_ssSkipBootRoute &&
     );
   }
 }
+
+function _ssApplyBootRoute() {
+  if (!_currentUser) return;
+  var st = history.state || _ssStateFromHash(window.location.hash);
+  if (!st) return;
+  _ssHandlingPop = true;
+  try {
+    _ssApplyHistoryState(st);
+  } finally {
+    _ssHandlingPop = false;
+  }
+}
+
+window.addEventListener('ss-ready', function () {
+  setTimeout(_ssApplyBootRoute, 0);
+}, { once: true });
 
 window.addEventListener('popstate', function (e) {
   // Guard: never restore portal/file views without an authenticated user.

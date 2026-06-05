@@ -738,7 +738,7 @@ function _ssClearRestoredFileState(course, message) {
     );
     _ssReplaceHistory(
       { view: 'course', courseId: course.id, section: 'files' },
-      '#course=' + encodeURIComponent(course.id || '')
+      '#course=' + encodeURIComponent(course.id || '') + '&section=files'
     );
   } catch (e) {}
   if (message && typeof showToast === 'function') showToast('File not reopened', message);

@@ -478,6 +478,10 @@ export function openCourse(course: LegacyCourse): void {
   if (typeof window.renderCourses === 'function') window.renderCourses();
 
   const myCourseSeq = ++(window._courseOpenSeq as number);
+  const currentCourseSection = (): string =>
+    window.activeCourseRef === course && window.activeCourseSection
+      ? window.activeCourseSection
+      : 'files';
 
   // Render the root-level files the moment they arrive — folder listings keep
   // running in the background. Without this, the spinner persists until the
@@ -489,7 +493,7 @@ export function openCourse(course: LegacyCourse): void {
     course._filesLoading = false;
     // Keep _filesRefreshing true — folders are still loading. Toolbar pill stays.
     window._ssRestoring = true;
-    showCourseSection(course, 'files');
+    showCourseSection(course, currentCourseSection());
     window._ssRestoring = false;
   };
   window.addEventListener('uf-merge-root-done', onRootDone);
@@ -502,7 +506,7 @@ export function openCourse(course: LegacyCourse): void {
     lastSeenFileCount = nextCount;
     course._filesLoading = false;
     window._ssRestoring = true;
-    showCourseSection(course, 'files');
+    showCourseSection(course, currentCourseSection());
     window._ssRestoring = false;
   };
   const repaintTimer = window.setInterval(repaintIfFilesArrive, 150);
@@ -515,7 +519,7 @@ export function openCourse(course: LegacyCourse): void {
     course._filesLoading = false;
     course._filesRefreshing = false;
     window._ssRestoring = true;
-    showCourseSection(course, 'files');
+    showCourseSection(course, currentCourseSection());
     window._ssRestoring = false;
   }, 10000);
 
@@ -533,7 +537,7 @@ export function openCourse(course: LegacyCourse): void {
       const stillOnThisCourse = myCourseSeq === window._courseOpenSeq;
       if (stillOnThisCourse) {
         window._ssRestoring = true;
-        showCourseSection(course, 'files');
+        showCourseSection(course, currentCourseSection());
         window._ssRestoring = false;
       }
       try {
@@ -570,7 +574,7 @@ export function openCourse(course: LegacyCourse): void {
       const stillOnThisCourse = myCourseSeq === window._courseOpenSeq;
       if (stillOnThisCourse) {
         window._ssRestoring = true;
-        showCourseSection(course, 'files');
+        showCourseSection(course, currentCourseSection());
         window._ssRestoring = false;
       }
     });
@@ -605,10 +609,6 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
   if (welcome) welcome.style.display = 'none';
   const co = document.getElementById('courseOverview');
   if (!co) return;
-
-  let prevTab: string | null = null;
-  const prevActivePanel = co.querySelector('[data-course-panel].active');
-  if (prevActivePanel) prevTab = prevActivePanel.getAttribute('data-course-panel');
 
   co.style.display = 'block';
 
@@ -819,7 +819,7 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
     co.querySelectorAll<HTMLElement>('.co-folder-more-menu.open').forEach((m) => m.classList.remove('open'));
   }, { once: false });
 
-  const targetTab = sec !== 'files' ? sec : prevTab && prevTab !== 'files' ? prevTab : null;
+  const targetTab = sec !== 'files' ? sec : null;
   if (targetTab) {
     co.querySelectorAll<HTMLElement>('[data-course-tab]').forEach((tab) => {
       const isActive = tab.getAttribute('data-course-tab') === targetTab;
