@@ -783,6 +783,139 @@ def test_generate_cheatsheet_parallel_shards_stitch_and_dedup(monkeypatch):
     assert text.count("$$p=q$$") == 1
 
 
+# ── subject-type detection + reference template ──────────────────────────────
+
+
+_FT_EVIDENCE = [
+    {"text": (
+        "Druckguss ist ein Gießverfahren für Großserien.\n"
+        "Vorteile: kurze Zykluszeiten, gute Oberfläche.\n"
+        "Nachteile: hohe Werkzeugkosten.\n"
+        "Typische Fehler: Lunker, Poren, Kaltlauf."
+    )},
+    {"text": (
+        "Sandguss ist flexibel und günstig, aber geringe Maßgenauigkeit.\n"
+        "Fertigungsverfahren nach DIN 8580: Urformen, Umformen, Trennen, Fügen.\n"
+        "Urformen schafft Stoffzusammenhalt; Umformen erhält ihn."
+    )},
+]
+
+_MECH_EVIDENCE = [
+    {"text": "v = \\frac{dx}{dt}\na = \\frac{dv}{dt}\nx = x_0 + v_0 t + \\frac{1}{2} a t^2"},
+    {"text": "F = m a\nE_{kin} = \\frac{1}{2} m v^2\n\\sum F = m \\ddot x\nv^2 = v_0^2 + 2 a x"},
+]
+
+
+def test_classify_formula_heavy_from_formula_corpus():
+    assert cs.classify_subject_type(_MECH_EVIDENCE) == "formula_heavy"
+
+
+def test_classify_vocabulary_from_manufacturing_corpus():
+    st = cs.classify_subject_type(_FT_EVIDENCE)
+    assert st in ("vocabulary_memorization", "process_comparison")
+    assert st not in cs._FORMULA_DRIVEN_TYPES
+
+
+def test_classify_uses_mechanics_topic_prior():
+    # Even thin/odd evidence is formula-driven when the topic map is mechanics.
+    topics = ["Kinematik eines Punktes", "Impuls und Stoß"]
+    assert cs.classify_subject_type([{"text": "x"}], topics) == "formula_heavy"
+
+
+def test_classify_empty_defaults_formula_heavy():
+    assert cs.classify_subject_type([]) == "formula_heavy"
+
+
+def test_reference_shard_prompt_uses_reference_template():
+    cfg = cs.normalize_settings({"preset": "balanced", "subjectType": "vocabulary_memorization"})
+    assert cfg["formulaDriven"] is False
+    prompt = cs._shard_system_prompt(cfg, ["Druckguss"], with_method_picker=False)
+    assert "MEMORIZATION / REFERENCE" in prompt
+    assert "Prüfungsfalle" in prompt
+    assert "REFERENCE BALANCED FORMAT" in prompt
+    # must NOT carry the formula-first contract
+    assert "BALANCED STUDY FORMAT" not in prompt
+
+
+def test_formula_shard_prompt_unchanged_for_formula_subjects():
+    cfg = cs.normalize_settings({"preset": "balanced"})  # auto → formula-driven
+    assert cfg["formulaDriven"] is True
+    prompt = cs._shard_system_prompt(cfg, ["Polarkoordinaten"], with_method_picker=False)
+    assert "BALANCED STUDY FORMAT" in prompt
+    assert "MEMORIZATION / REFERENCE" not in prompt
+
+
+def test_reference_gate_does_not_require_formulas():
+    cfg = cs.normalize_settings({"subjectType": "vocabulary_memorization"})
+    text = (
+        "## Druckguss\n**Kurzdefinition:** Gießen unter Druck.\n"
+        "**Vorteile:**\n- schnell\n**Prüfungsfalle:** nicht für Kleinserien."
+    )
+    fails = cs._shard_gate_failures(text, cfg, expect_method_picker=False)
+    assert "no-formulas" not in fails
+    assert fails == []
+
+
+def test_reference_gate_flags_formula_cluster_and_na_leak():
+    cfg = cs.normalize_settings({"subjectType": "vocabulary_memorization"})
+    text = "## Druckguss\n**Formula cluster:**\nN/A\n**Definition:** x"
+    fails = cs._shard_gate_failures(text, cfg, expect_method_picker=False)
+    assert "formula-cluster-leak" in fails
+    assert "na-leak" in fails
+
+
+def test_reference_gate_flags_missing_structure():
+    cfg = cs.normalize_settings({"subjectType": "vocabulary_memorization"})
+    text = "## Druckguss\nGießverfahren unter hohem Druck fuer Grossserien."
+    fails = cs._shard_gate_failures(text, cfg, expect_method_picker=False)
+    assert "no-structure" in fails
+
+
+def test_strip_reference_template_leaks():
+    md = (
+        "## Druckguss\n**Kurzdefinition:** x\n- **Formula cluster:** $$F=ma$$\n"
+        "**Vorteile:** N/A\n**Merken:** Großserie."
+    )
+    out = cs.strip_reference_template_leaks(md)
+    assert "Formula cluster" not in out
+    assert "N/A" not in out
+    assert "**Merken:** Großserie." in out
+    assert "**Kurzdefinition:** x" in out
+
+
+def test_corrective_guidance_reference_failures():
+    g = cs._corrective_guidance(["formula-cluster-leak", "no-structure", "raw-markdown"])
+    assert "Formula cluster" in g
+    assert "comparison table" in g
+    assert "literal" in g
+
+
+def test_generate_cheatsheet_routes_reference_subject(monkeypatch):
+    monkeypatch.setattr(cs, "get_course_topic_map", lambda u, c: [{"name": "Druckguss"}, {"name": "Sandguss"}])
+    monkeypatch.setattr(cs, "retrieve_learning_context", lambda **k: _FT_EVIDENCE)
+
+    captured = {}
+
+    def _fake_chat(**k):
+        captured["system"] = k["system"]
+        return _FakeChatResult({"text": (
+            "## Druckguss\n**Kurzdefinition:** Gießen unter Druck.\n"
+            "**Vorteile:**\n- schnell\n**Prüfungsfalle:** nicht für Kleinserien."
+        )})
+
+    monkeypatch.setattr(cs, "chat_json", _fake_chat)
+    monkeypatch.setattr(cs, "save_note", lambda **k: "n1")
+
+    out = cs.generate_cheatsheet(
+        user_id="u", course_id="c", document_ids=None, topic=None,
+        doc_names={}, save=True,
+    )
+    assert out["subjectType"] not in cs._FORMULA_DRIVEN_TYPES
+    # The reference (non-formula) writer was used, not the mechanics formula one.
+    assert "MEMORIZATION / REFERENCE" in captured["system"]
+    assert "Prüfungsfalle" in out["text"]
+
+
 def test_generate_cheatsheet_topic_focus_titles(monkeypatch):
     monkeypatch.setattr(cs, "get_course_topic_map", lambda u, c: [{"name": "Other"}])
     monkeypatch.setattr(

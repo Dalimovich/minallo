@@ -629,6 +629,268 @@ _PRESET_SECTION_FORMAT = {
     ),
 }
 
+
+# ── Subject-type detection + reference (non-formula) template ─────────────────
+#
+# The generator above was built for formula-heavy mechanics: it forces a
+# formula-cluster shape onto every section and the quality gate FAILS any
+# section without formulas. That is exactly wrong for memorization / process
+# subjects — Fertigungstechnik, Werkstoffkunde, Biologie, Jura — where the
+# student needs definitions, classifications, comparison tables, advantages /
+# disadvantages, typical defects, selection rules and exam memory cues, NOT
+# invented formulas. So before generation we CLASSIFY the subject from its OWN
+# retrieved evidence (data-driven, not a hardcoded course list) and route
+# non-formula subjects to a reference template with a reference-shaped gate.
+
+_SUBJECT_TYPES = (
+    "formula_heavy",
+    "vocabulary_memorization",
+    "process_comparison",
+    "conceptual_theory",
+    "proof_theory",
+    "mixed",
+)
+# Which detected types keep the original formula-first pipeline. Everything else
+# uses the reference template (definitions / tables / Merken), never formulas.
+_FORMULA_DRIVEN_TYPES = frozenset({"formula_heavy", "mixed"})
+
+# A line counts as "math" only on a STRONG token: an equals sign, a LaTeX math
+# command, a super/subscript on a letter, or a Greek letter. Deliberately NOT
+# bare +/-/* (German prose is full of hyphens and bullet dashes), so plain
+# definition/process text does not register as formulas.
+_CORPUS_FORMULA_RE = re.compile(
+    r"\\frac|\\int|\\sum|\\sqrt|\\cdot|\\times|\\partial|\\Theta|\\omega|"
+    r"[=<>≤≥]|[A-Za-z]\^|[A-Za-z]_\{?\w|[Α-Ωα-ω]"
+)
+# Substring signals (lowercased corpus). German first, English equivalents next.
+_PROCESS_KEYWORDS = (
+    "vorteil", "nachteil", "verfahren", "prozess", "geeignet", "anwendung",
+    "werkstoff", "eigenschaft", "fehler", "defekt", "serie", "guss", "schwei",
+    "umform", "urform", "zerspan", "advantage", "disadvantage", "process",
+    "suitable", "application", "defect", "tooling", "workpiece",
+)
+_VOCAB_KEYWORDS = (
+    "definition", "bedeutet", "bezeichnet", "begriff", "einordnung", "klassifik",
+    "einteilung", "kategorie", "unterscheid", "abgrenzung", "din ", "means ",
+    "refers to", "defined as", "classification", "category", "terminology",
+)
+_PROOF_KEYWORDS = (
+    "beweis", "theorem", "satz ", "lemma", "korollar", "proof", "corollary",
+    "q.e.d", "genau dann", "if and only if", "induktion", "induction",
+    "automat", "turing", "komplexit", "decidab", "entscheidbar",
+)
+
+
+def _line_is_formula(line: str) -> bool:
+    """True if a source line reads as a formula, not prose. A strong math token
+    must be present AND the line must not be a long prose sentence."""
+    if not _CORPUS_FORMULA_RE.search(line):
+        return False
+    # A long, word-dense line that merely contains an '=' (e.g. a definition
+    # "Wirkungsgrad = Nutzen / Aufwand" written as prose) is not a formula line.
+    words = re.findall(r"[A-Za-zÄÖÜäöüß]{3,}", line)
+    return not (len(words) >= 8 and len(line) > 90)
+
+
+def classify_subject_type(
+    evidence: list[dict[str, Any]],
+    topic_names: "list[str | None]" = (),
+) -> str:
+    """Classify the course's subject type from its retrieved evidence.
+
+    Returns one of ``_SUBJECT_TYPES``. The decisive signal is the formula
+    density of the student's OWN source text: a real formula sheet has many
+    equation lines; a Fertigungstechnik script has almost none and instead
+    talks about Verfahren / Vorteile / Nachteile. Defaults to ``formula_heavy``
+    on empty evidence so behaviour is unchanged when there is nothing to judge.
+    """
+    # Strong prior: if the course topic map already resolves to the mechanics
+    # taxonomy, it is a formula course — trust that over a thin evidence sample.
+    mechanics_topics = sum(
+        1 for t in (topic_names or [])
+        if t and _canonical_mechanics_topic(str(t)) in _MECHANICS_TOPIC_ORDER
+    )
+    if mechanics_topics >= 2:
+        return "formula_heavy"
+
+    corpus = " ".join((c.get("text") or "") for c in evidence)
+    lines = [ln.strip() for ln in re.split(r"[\n;]+", corpus) if len(ln.strip()) >= 6]
+    if not lines:
+        return "formula_heavy"
+    formula_lines = sum(1 for ln in lines if _line_is_formula(ln))
+    formula_ratio = formula_lines / len(lines)
+    low = corpus.lower()
+    n_lines = len(lines)
+    process_hits = sum(low.count(k) for k in _PROCESS_KEYWORDS)
+    vocab_hits = sum(low.count(k) for k in _VOCAB_KEYWORDS)
+    proof_hits = sum(low.count(k) for k in _PROOF_KEYWORDS)
+    process_density = process_hits / n_lines
+    vocab_density = vocab_hits / n_lines
+    proof_density = proof_hits / n_lines
+
+    # Strong, broad formula presence → formula-driven. A subject with BOTH heavy
+    # formulas and heavy process/vocab vocabulary (e.g. Thermodynamik) is "mixed"
+    # — still formula-driven, but the label is recorded for diagnostics.
+    if formula_ratio >= 0.18 and formula_lines >= 5:
+        if process_density >= 0.5 or vocab_density >= 0.5:
+            return "mixed"
+        return "formula_heavy"
+
+    # Low formula density → a reference subject. Pick the best-fit shape.
+    if proof_density >= 0.4 and proof_hits >= 3 and proof_density >= process_density:
+        return "proof_theory"
+    if process_density >= 0.25 and process_density >= vocab_density:
+        return "process_comparison"
+    if vocab_density >= 0.15 or vocab_hits >= 3:
+        return "vocabulary_memorization"
+    # Some formulas but not dominant, and no strong vocab/process signal → treat
+    # as conceptual theory (reference template, no forced formulas).
+    if formula_ratio >= 0.08:
+        return "conceptual_theory"
+    return "vocabulary_memorization"
+
+
+def _resolve_subject_type(
+    cfg: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    topics: "list[str | None]",
+) -> str:
+    """Honour an explicit ``subjectType`` setting; otherwise auto-detect."""
+    forced = str(cfg.get("subjectType") or "auto")
+    if forced != "auto" and forced in _SUBJECT_TYPES:
+        return forced
+    return classify_subject_type(evidence, topics)
+
+
+# Reference (non-formula) section writer. Mirrors _SECTION_SYSTEM's contract
+# (one `## <name>` per `### TOPIC:` block, emphasis markers, JSON envelope) but
+# the section SHAPE is memory/comparison, never formula clusters. Labels are
+# given bilingually so the model uses the German labels for a German course.
+_SECTION_SYSTEM_REFERENCE = (
+    "You are ExamForge by Minallo, writing PART of a DENSE, exam-ready CHEATSHEET "
+    "from a student's own course materials. This is a MEMORIZATION / REFERENCE "
+    "subject (manufacturing, materials, biology, law, theory) — NOT a formula "
+    "subject. Do NOT force formulas. The student needs definitions, "
+    "classifications, comparisons, advantages/disadvantages, typical defects, "
+    "selection rules and exam memory cues.\n"
+    "\n"
+    "Use ONLY the provided COURSE CONTEXT. Never invent facts or formulas.\n"
+    "\n"
+    "OUTPUT: for each `### TOPIC: <name>` block in the context, write EXACTLY one "
+    "`## <name>` section, in the same order. Output ONLY these sections — no "
+    "document title, no introduction, no `## Sources` list, no closing remarks.\n"
+    "\n"
+    "EACH section is a tight, scannable memory block. Use these bold-lead-in "
+    "labels IN THE SOURCE LANGUAGE (for a German course use the German label), "
+    "omitting any label with no grounded content — never write a label with an "
+    "empty or `N/A` body:\n"
+    "- **Kurzdefinition:** one-line definition / core idea.\n"
+    "- **Einordnung:** where it sits in the classification / process family.\n"
+    "- **Geeignet für:** typical use case / application.\n"
+    "- **Vorteile:** bullets (for a process/method).\n"
+    "- **Nachteile:** bullets (for a process/method).\n"
+    "- **Typische Fehler:** common defects / mistakes (for a process).\n"
+    "- **Abgrenzung:** how it differs from an easily-confused neighbour.\n"
+    "- **Merken:** ONE short, punchy exam memory cue.\n"
+    "- **Prüfungsfalle:** ONE precise, subject-specific exam trap.\n"
+    "\n"
+    "COMPARISON TABLES — THE MOST VALUABLE FORMAT here. When a topic compares "
+    "several items (casting methods, joining methods, material classes), render a "
+    "compact markdown table instead of repeated prose, e.g.:\n"
+    "| Verfahren | Geeignet für | Vorteile | Nachteile | Typische Fehler |\n"
+    "|---|---|---|---|---|\n"
+    "A classification topic (e.g. Fertigungsverfahren nach DIN 8580) → a "
+    "classification table (group | meaning | examples).\n"
+    "\n"
+    "HARD RULES:\n"
+    "- NEVER write a `Formula cluster` heading/label, and NEVER write `N/A`. Only "
+    "include a formula if the context genuinely has one for the topic, inline as "
+    "$...$ (e.g. the Taylor cutting model); otherwise omit formulas entirely.\n"
+    "- Traps and Merken must be CONCRETE and subject-specific (e.g. 'Druckguss "
+    "lohnt wegen hoher Werkzeugkosten nicht für Kleinserien'), never generic "
+    "('wrong choice can cause defects', 'pay attention to quality').\n"
+    "- For every process, prefer to give its Vorteile, Nachteile and Typische "
+    "Fehler — these are exactly the exam-relevant facts.\n"
+    "- Keep each line tight; prefer tables and bullets over paragraphs. Match the "
+    "language of the source material consistently — do not mix English structural "
+    "labels into German content.\n"
+    "\n"
+    "OMIT WEAK SECTIONS — if a topic has no grounded definition or facts you can "
+    "state cleanly, DROP its `## ` section rather than padding it.\n"
+    "\n"
+    "EMPHASIS MARKERS (use exactly these; never inside a formula):\n"
+    "- Wrap THE single most important fact of a block in ==double equals== "
+    "(yellow). Write `==text==` with NO inner spaces and TWO equals each side. At "
+    "most one per block.\n"
+    "- Begin a hard warning with `Important:` or `Critical:` (red).\n"
+    "- Begin a soft remark with `Note:` (orange).\n"
+    "- Wrap a key concept term in {{double braces}} (blue); use sparingly.\n"
+    "\n"
+    'Return ONLY JSON: {"text":"<markdown for these sections only>"}'
+)
+
+# Per-preset section-format override for REFERENCE subjects (mirrors
+# _PRESET_SECTION_FORMAT, but memory/comparison-shaped). Injected LAST so it
+# beats the generic reference contract. Markers are kept distinct per preset.
+_PRESET_SECTION_FORMAT_REFERENCE = {
+    "exam_night": (
+        "\n\nREFERENCE EXAM NIGHT FORMAT — OVERRIDES the section shape. A one-page "
+        "emergency MEMORY sheet of only what a student would FORGET. Each "
+        "`## <name>` section:\n"
+        "- **Merken:** the single highest-yield memory cue (one line).\n"
+        "- **Prüfungsfalle:** the nastiest, most exam-specific trap.\n"
+        "- a compact comparison table ONLY when it captures several items at once.\n"
+        "Drop low-yield topics and anything obvious. No prose, no full definitions."
+    ),
+    "open_book_exam": (
+        "\n\nREFERENCE OPEN-BOOK FORMAT — OVERRIDES the section shape. A fast-lookup "
+        "SELECTION tool. Each `## <name>` section, with these exact bold labels in "
+        "order (omit one only when nothing grounded fits):\n"
+        "- **Geeignet für:** the use case / when to pick this (most important line).\n"
+        "- **Vorteile:** short bullets.\n"
+        "- **Nachteile:** short bullets.\n"
+        "- **Prüfungsfalle:** the selection/exam trap.\n"
+        "Prefer a comparison table when several processes share a decision."
+    ),
+    "formula_reference": (
+        "\n\nREFERENCE QUICK-REFERENCE FORMAT — OVERRIDES the section shape. The "
+        "DENSEST reference: maximum facts, minimum prose. Lead with comparison and "
+        "classification TABLES wherever the context supports them; otherwise terse "
+        "`- **Begriff:** Bedeutung` definition bullets. Add a one-line **Merken** "
+        "per block. No paragraphs."
+    ),
+    "balanced": (
+        "\n\nREFERENCE BALANCED FORMAT — OVERRIDES the section shape. Each "
+        "`## <name>` section:\n"
+        "- **Kurzdefinition:** one line.\n"
+        "- **Einordnung** / **Geeignet für:** one line each when relevant.\n"
+        "- **Vorteile** / **Nachteile:** short bullets for processes.\n"
+        "- **Merken:** one memory cue.\n"
+        "- **Prüfungsfalle:** one concrete trap.\n"
+        "Use a comparison table when several items are compared."
+    ),
+    "deep_revision": (
+        "\n\nREFERENCE DEEP-REVISION FORMAT — OVERRIDES the section shape. Deeper "
+        "but still compact. Each `## <name>` section:\n"
+        "- **Kurzdefinition** and **Einordnung.**\n"
+        "- **Geeignet für**, **Vorteile**, **Nachteile.**\n"
+        "- **Typische Fehler:** defects and their cause.\n"
+        "- **Abgrenzung:** the most-confused neighbour.\n"
+        "- **Merken** and **Prüfungsfalle.**\n"
+        "Use classification/comparison tables for process families."
+    ),
+    "topic_mastery": (
+        "\n\nREFERENCE TOPIC-MASTERY FORMAT — OVERRIDES the section shape AND the "
+        "one-section-per-topic rule. You are given ONE focus topic; cover ONLY it, "
+        "in depth, expanding it into these `##` subsections in order (omit any with "
+        "no grounded content): `## Kurzdefinition`, `## Einordnung`, "
+        "`## Varianten / Verfahren` (a comparison table), `## Vorteile & Nachteile`, "
+        "`## Typische Fehler`, `## Auswahlregeln`, `## Abgrenzung`, `## Merksätze`, "
+        "`## Prüfungsfallen`. Do not drift into unrelated course topics."
+    ),
+}
+
+
 # Realistic topic density per PAGE for each preset — the scope cap is pages ×
 # this. Open-book lookup cards and Deep-Revision blocks take more room (fewer per
 # page); Exam Night and Formula Reference are dense (more per page).
@@ -704,8 +966,18 @@ def normalize_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
         lang = "source"
     font = _FONT_TO_LAYOUT[font_size] or base["font"]
 
+    # Subject type can be forced via settings; "auto" (the default) means detect
+    # it from the evidence at generation time (see _resolve_subject_type). Until
+    # then we assume the formula-driven pipeline so a directly-built cfg (tests,
+    # callers that never reach generation) keeps the original behaviour.
+    subject_type = str(s.get("subjectType") or "auto").lower()
+    if subject_type != "auto" and subject_type not in _SUBJECT_TYPES:
+        subject_type = "auto"
+
     return {
         "preset": preset,
+        "subjectType": subject_type,
+        "formulaDriven": subject_type == "auto" or subject_type in _FORMULA_DRIVEN_TYPES,
         "pages": pages,
         "columns": columns,
         "style": style,
@@ -1041,6 +1313,28 @@ def drop_unsupported_display_formulas(
 
     out = _DISPLAY_FORMULA_RE.sub(_repl, text or "")
     return _tidy_emptied_lines(out), removed
+
+
+# A whole bullet/line whose lead-in is the forced "Formula cluster" label, or
+# whose body is just "N/A" — both are formula-template residue on a reference
+# topic. Also a label line left with an N/A body (`**Vorteile:** N/A`).
+_FORMULA_CLUSTER_LINE_RE = re.compile(
+    r"(?im)^[ \t]*[-*]?[ \t]*\**[ \t]*formula\s+cluster\b.*$\n?"
+)
+_NA_LINE_RE = re.compile(
+    r"(?im)^[ \t]*(?:[-*][ \t]*)?(?:\*\*[^*\n]+\*\*[ \t]*:?[ \t]*)?n/?a\.?[ \t]*$\n?"
+)
+
+
+def strip_reference_template_leaks(text: str) -> str:
+    """Remove formula-template residue from a REFERENCE sheet: a forced "Formula
+    cluster" label, an "N/A" body, and literal escaped newlines. Deterministic
+    backstop behind the reference quality gate."""
+    out = _LITERAL_NEWLINE_RE.sub("\n", text or "")
+    out = _FORMULA_CLUSTER_LINE_RE.sub("", out)
+    out = _NA_LINE_RE.sub("", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
 
 
 def remove_generic_filler_notes(text: str) -> tuple[str, int]:
@@ -1686,16 +1980,24 @@ def _format_section_evidence(group: list[SectionGroup], doc_names: dict[str, str
 def _shard_system_prompt(
     cfg: dict[str, Any], topics: list[str], *, with_method_picker: bool
 ) -> str:
-    """Per-shard system prompt: the comprehensive section writer + settings."""
+    """Per-shard system prompt: the comprehensive section writer + settings.
+
+    The base writer and per-preset section format switch on the detected subject
+    type: formula-driven subjects keep the formula-first contract; everything
+    else uses the reference (definition/classification/comparison/Merken) one.
+    """
+    formula_driven = cfg.get("formulaDriven", True)
+    base = _SECTION_SYSTEM if formula_driven else _SECTION_SYSTEM_REFERENCE
+    formats = _PRESET_SECTION_FORMAT if formula_driven else _PRESET_SECTION_FORMAT_REFERENCE
     prompt = (
-        _SECTION_SYSTEM
+        base
         + "\n\nSETTINGS:\n"
         + f"- {cfg['langInstruction']}\n"
         + f"- Visual style: {cfg['style']}; keep each line compact for a "
         f"{cfg['columns']}-column sheet.\n"
         + f"- {cfg['purposeInstruction']}"
     )
-    prompt += _PRESET_SECTION_FORMAT.get(str(cfg.get("preset")), "")
+    prompt += formats.get(str(cfg.get("preset")), "")
     if with_method_picker:
         prompt += _method_picker_guidance(
             [str(t) for t in topics], cfg
@@ -1717,12 +2019,16 @@ def _run_one_section_shard(
     """
     topics = [label for label, _ in group]
     system = _shard_system_prompt(cfg, topics, with_method_picker=with_method_picker) + corrective
-    user = (
-        "COURSE CONTEXT:\n\n"
-        + _format_section_evidence(group, doc_names)
-        + _formula_bank_guidance([str(t) for t in topics])
-        + _trap_guidance([str(t) for t in topics])
-    )
+    # The formula/trap banks are mechanics-specific; they only help (and only
+    # match) formula-driven courses. For reference subjects they no-op anyway,
+    # so skip them to keep the prompt clean.
+    banks = ""
+    if cfg.get("formulaDriven", True):
+        banks = (
+            _formula_bank_guidance([str(t) for t in topics])
+            + _trap_guidance([str(t) for t in topics])
+        )
+    user = "COURSE CONTEXT:\n\n" + _format_section_evidence(group, doc_names) + banks
     try:
         return chat_json(
             system=system, user=user,
@@ -1755,10 +2061,52 @@ def _count_renderable_formulas(text: str) -> int:
     return _formula_count(_wrap_inline_latex_fragments(_wrap_bare_formula_lines(text or "")))
 
 
+# Raw-markdown / template-leak artifacts that must NEVER reach a reference sheet
+# (all observed in the bad Fertigungstechnik output): a forced "Formula cluster"
+# label on a non-formula topic, an "N/A" body, or a literal escaped newline.
+_FORMULA_CLUSTER_LEAK_RE = re.compile(r"(?im)^\s*[-*]?\s*\**\s*formula\s+cluster\b")
+# An "N/A" value: a standalone line (optionally bulleted / bold-labelled) or one
+# following a `label:`. Catches both `**Vorteile:** N/A` and a lone `N/A`.
+_NA_BODY_RE = re.compile(
+    r"(?im)(?::[ \t]*n/?a\b\.?[ \t]*$|"
+    r"^[ \t]*(?:[-*][ \t]*)?(?:\*\*[^*\n]+\*\*[ \t]*:?[ \t]*)?n/?a\b\.?[ \t]*$)"
+)
+_LITERAL_NEWLINE_RE = re.compile(r"\\n")
+
+
+def _reference_gate_failures(text: str, cfg: dict[str, Any]) -> list[str]:
+    """Content gate for REFERENCE (non-formula) subjects. Unlike the formula
+    gate it never demands formulas; it rejects the formula-template leaks and
+    demands real memory structure (a definition, table, or labelled fact)."""
+    failures: list[str] = []
+    low = text.lower()
+    if "formula omitted" in low or "formulaomitted" in low:
+        failures.append("omitted-marker")
+    if _FORMULA_CLUSTER_LEAK_RE.search(text):
+        failures.append("formula-cluster-leak")
+    if _NA_BODY_RE.search(text):
+        failures.append("na-leak")
+    if _LITERAL_NEWLINE_RE.search(text):
+        failures.append("raw-markdown")
+    titles = re.findall(r"(?im)^#{1,6}\s+(.+?)\s*$", text)
+    n_topic = len(titles)
+    # Real structure = a markdown table, a bold lead-in label, or a numbered list.
+    has_structure = bool(
+        re.search(r"(?m)^\s*\|.+\|", text)            # table row
+        or re.search(r"\*\*[^*\n]+\*\*", text)        # **Label:** bold lead-in
+        or re.search(r"(?m)^\s*\d+[.)]\s+\S", text)   # numbered list
+    )
+    if n_topic >= 1 and not has_structure:
+        failures.append("no-structure")
+    return failures
+
+
 def _shard_gate_failures(text: str, cfg: dict[str, Any], *, expect_method_picker: bool) -> list[str]:
     """Return the content checks a shard's output fails (empty list = pass)."""
     if not (text and text.strip()):
         return ["empty"]
+    if not cfg.get("formulaDriven", True):
+        return _reference_gate_failures(text, cfg)
     failures: list[str] = []
     if "formula omitted" in text.lower() or "formulaomitted" in text.lower():
         failures.append("omitted-marker")
@@ -1787,6 +2135,20 @@ def _corrective_guidance(failures: list[str]) -> str:
             "every section MUST carry its grounded formulas in $...$ — no prose-only "
             "sections; mine the evidence for every formula it supports"
         )
+    # Reference-subject fixes.
+    if "formula-cluster-leak" in failures or "na-leak" in failures:
+        fixes.append(
+            "NEVER write a 'Formula cluster' label or 'N/A' — this is a memorization "
+            "subject; use definitions, classification/comparison tables, "
+            "Vorteile/Nachteile, Merken and a concrete Prüfungsfalle instead"
+        )
+    if "raw-markdown" in failures:
+        fixes.append("emit clean markdown with real line breaks — never a literal '\\n'")
+    if "no-structure" in failures:
+        fixes.append(
+            "give each section real structure: a one-line definition plus bold "
+            "lead-in labels (**Kurzdefinition:**, **Vorteile:** …) or a comparison table"
+        )
     for f in failures:
         if f.startswith("missing-label:"):
             fixes.append(f"use the required **{f.split(':', 1)[1].title()}:** label in every section")
@@ -1795,7 +2157,7 @@ def _corrective_guidance(failures: list[str]) -> str:
     return (
         "\n\nREGENERATION — your previous attempt FAILED these checks: "
         + ", ".join(failures) + ". Fix ALL of them: " + "; ".join(fixes)
-        + ". Keep every formula grounded in the COURSE CONTEXT; never invent."
+        + ". Use ONLY the COURSE CONTEXT; never invent."
     )
 
 
@@ -1827,7 +2189,12 @@ def _generate_sections_parallel(
     if not shards:
         return "", diag
 
-    _mp_preset = str(cfg.get("preset")) not in ("formula_reference", "topic_mastery")
+    # The Method Picker is a mechanics formula-selection aid — never for reference
+    # subjects (no mechanics topics to pick), so don't expect/require it there.
+    _mp_preset = (
+        cfg.get("formulaDriven", True)
+        and str(cfg.get("preset")) not in ("formula_reference", "topic_mastery")
+    )
 
     def _expect_mp(idx: int) -> bool:
         return idx == 0 and not per_pdf and _mp_preset
@@ -1967,6 +2334,14 @@ def generate_cheatsheet(
             },
         }
 
+    # Subject-aware routing: classify from the student's OWN evidence (unless a
+    # subject type was forced in settings) and thread it through cfg so the shard
+    # writer, the quality gate and the method-picker logic all switch templates.
+    subject_type = _resolve_subject_type(cfg, evidence, topics)
+    cfg["subjectType"] = subject_type
+    cfg["formulaDriven"] = subject_type in _FORMULA_DRIVEN_TYPES
+    log.info("cheatsheet subject type=%s (formulaDriven=%s)", subject_type, cfg["formulaDriven"])
+
     if per_pdf:
         n_pdfs = len(groups)
         title = f"Cheatsheet — {n_pdfs} PDF" + ("s" if n_pdfs != 1 else "")
@@ -1982,6 +2357,11 @@ def generate_cheatsheet(
         return {"text": "", "error": "Cheatsheet generation produced no sections.", "groundedSources": []}
 
     text, dropped_formulas = sanitize_cheatsheet_markdown(raw_text)
+    # Reference subjects: deterministic backstop for the formula-template leaks
+    # the gate guards against (a forced "Formula cluster: N/A" line that slipped
+    # past regeneration), so they can never reach the rendered sheet.
+    if not cfg.get("formulaDriven", True):
+        text = strip_reference_template_leaks(text)
     text, filler_notes = remove_generic_filler_notes(text)
     # Deterministic backstop so a repeated formula is GUARANTEED removed, even if
     # the model didn't dedup the per-PDF sections perfectly.
@@ -2037,6 +2417,7 @@ def generate_cheatsheet(
         "title": title,
         "text": text,
         "topicsCovered": covered_labels,
+        "subjectType": subject_type,
         "groundedSources": sources[:20],
         "settings": cfg,
         "grounding": grounding,
@@ -2092,6 +2473,8 @@ __all__ = (
     "dedup_display_formulas",
     "drop_unsupported_display_formulas",
     "remove_generic_filler_notes",
+    "strip_reference_template_leaks",
+    "classify_subject_type",
     "normalize_settings",
     "formula_grounding",
 )
