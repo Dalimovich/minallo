@@ -38,15 +38,15 @@ function _ssReplaceHistory(state, hash) {
 
 function _ssCourseHash(course, section) {
   var id = course && (course.id || course.short) ? String(course.id || course.short) : '';
-  return '#course=' + encodeURIComponent(id) + '&section=' + encodeURIComponent(section || 'files');
+  return '#portal=courses&course=' + encodeURIComponent(id) + '&section=' + encodeURIComponent(section || 'files');
 }
 
 function _ssFileHash(fileName, course, section) {
   var id = course && (course.id || course.short) ? String(course.id || course.short) : '';
   return (
-    '#file=' + encodeURIComponent(fileName || '') +
-    '&course=' + encodeURIComponent(id) +
-    '&section=' + encodeURIComponent(section || 'files')
+    '#portal=courses&course=' + encodeURIComponent(id) +
+    '&section=' + encodeURIComponent(section || 'files') +
+    '&file=' + encodeURIComponent(fileName || '')
   );
 }
 
@@ -59,22 +59,17 @@ function _ssStateFromHash(hash) {
   } catch (e) {
     return null;
   }
-  var portal = params.get('portal');
-  if (portal) {
-    var sec = portal === 'courses' ? 'studip' : portal;
-    return { view: 'portal', section: sec };
-  }
   var file = params.get('file');
+  var course = params.get('course');
   if (file) {
     return {
       view: 'file',
-      courseId: params.get('course') || params.get('courseId') || null,
+      courseId: course || params.get('courseId') || null,
       courseShort: params.get('courseShort') || null,
       fileName: file,
       section: params.get('section') || 'files'
     };
   }
-  var course = params.get('course');
   if (course) {
     return {
       view: 'course',
@@ -82,6 +77,11 @@ function _ssStateFromHash(hash) {
       courseShort: params.get('courseShort') || null,
       section: params.get('section') || 'files'
     };
+  }
+  var portal = params.get('portal');
+  if (portal) {
+    var sec = portal === 'courses' ? 'studip' : portal;
+    return { view: 'portal', section: sec };
   }
   return null;
 }
@@ -364,14 +364,14 @@ if (!_ssSkipBootRoute &&
         fileName: _rst.fileName,
         section: _rst.section || 'files'
       },
-      '#file=' + encodeURIComponent(_rst.fileName) +
-        '&course=' + encodeURIComponent(_rst.courseId || '') +
-        '&section=' + encodeURIComponent(_rst.section || 'files')
+      '#portal=courses&course=' + encodeURIComponent(_rst.courseId || '') +
+        '&section=' + encodeURIComponent(_rst.section || 'files') +
+        '&file=' + encodeURIComponent(_rst.fileName)
     );
   } else if (_rst.inApp && _rst.courseId) {
     _ssReplaceHistory(
       { view: 'course', courseId: _rst.courseId, section: _rst.section || 'files' },
-      '#course=' + encodeURIComponent(_rst.courseId) +
+      '#portal=courses&course=' + encodeURIComponent(_rst.courseId) +
         '&section=' + encodeURIComponent(_rst.section || 'files')
     );
   } else {
