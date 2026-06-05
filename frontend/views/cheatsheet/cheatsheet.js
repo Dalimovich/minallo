@@ -274,131 +274,159 @@
     var colW = Math.floor((innerW - (nCols - 1) * _COL_GAP) / nCols);
     var budget = innerH - _SAFETY;
 
-    // Measure heights inside the real paper (so fonts/styles apply). flow-root on
-    // .cs-block (CSS) means offsetHeight already contains child margins.
-    var mhost = document.createElement('div');
-    // Match the rendered wrapping so measured heights equal rendered heights
-    // (a long compound word that wraps at render must also wrap when measured).
-    mhost.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;'
-      + 'overflow-wrap:break-word;word-break:break-word;';
-    paper.appendChild(mhost);
-    var headerH = 0;
-    if (st.header) {
-      mhost.style.width = innerW + 'px';
-      mhost.appendChild(st.header);
-      headerH = st.header.offsetHeight;
-      mhost.removeChild(st.header);
-    }
-    var headerGap = st.header ? 14 : 0;
-    st.blocks.forEach(function (b) {
-      mhost.style.width = (b.wide ? innerW : colW) + 'px';
-      mhost.appendChild(b.el);
-      b.h = b.el.offsetHeight;
-      mhost.removeChild(b.el);
-    });
-    paper.removeChild(mhost);
-
-    // Pack into pages.
-    var pages = [];
-    var page = null;
-    var open = null; // open multi-column band on the current page
-    function newPage(first) {
-      page = { first: first, used: first ? headerH + headerGap : 0, bands: [] };
-      pages.push(page);
-    }
-    function remaining() { return budget - page.used; }
-    function openBand() {
-      open = { type: 'cols', maxH: remaining(), cols: [] };
-      for (var i = 0; i < nCols; i++) open.cols.push({ els: [], h: 0 });
-    }
-    function finalizeOpen() {
-      if (!open) return;
-      var maxH = 0, any = false;
-      open.cols.forEach(function (c) { if (c.els.length) any = true; if (c.h > maxH) maxH = c.h; });
-      if (any) { page.bands.push(open); page.used += maxH + _BAND_GAP; }
-      open = null;
-    }
-    function pageHasContent() {
-      if (page.bands.length) return true;
-      return !!(open && open.cols.some(function (c) { return c.els.length; }));
-    }
-    newPage(true);
-
-    // Place a narrow block into the shortest fitting column of the open band.
-    // Returns true if it fit.
-    function tryPlaceNarrow(b) {
-      if (!open) openBand();
-      var best = -1, bestH = Infinity;
-      for (var i = 0; i < nCols; i++) {
-        var c = open.cols[i];
-        var add = (c.els.length ? _BLOCK_GAP : 0) + b.h;
-        if (c.h + add <= open.maxH && c.h < bestH) { best = i; bestH = c.h; }
+    // Measure every block + pack into pages at a given font-fit SCALE, returning a
+    // plan. Re-run per scale: a smaller font changes wrapping and block heights, so
+    // heights must be re-measured to pack correctly. Measuring happens inside the
+    // real paper (so fonts/styles apply); flow-root on .cs-block means offsetHeight
+    // already contains child margins.
+    function _measureAndPack(scale) {
+      paper.style.setProperty('--cs-fit', String(scale));
+      var mhost = document.createElement('div');
+      // Match the rendered wrapping so measured heights equal rendered heights
+      // (a long compound word that wraps at render must also wrap when measured).
+      mhost.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;'
+        + 'overflow-wrap:break-word;word-break:break-word;';
+      paper.appendChild(mhost);
+      var headerH = 0;
+      if (st.header) {
+        mhost.style.width = innerW + 'px';
+        mhost.appendChild(st.header);
+        headerH = st.header.offsetHeight;
+        mhost.removeChild(st.header);
       }
-      if (best < 0) return false;
-      var col = open.cols[best];
-      if (col.els.length) col.h += _BLOCK_GAP;
-      col.els.push(b.el);
-      col.h += b.h;
-      return true;
-    }
+      var headerGap = st.header ? 14 : 0;
+      st.blocks.forEach(function (b) {
+        mhost.style.width = (b.wide ? innerW : colW) + 'px';
+        mhost.appendChild(b.el);
+        b.h = b.el.offsetHeight;
+        mhost.removeChild(b.el);
+      });
+      paper.removeChild(mhost);
 
-    // AUTO-FILL packer. Walks blocks in order, but when the next section is too
-    // tall for the leftover column space, it pulls a LATER, shorter section
-    // forward to fill the gap (first one that fits) instead of stranding the empty
-    // band and breaking to a new page. Wide (table) bands and manual page breaks
-    // stay anchored in place — they are never pulled forward. Result: dense pages,
-    // order kept as close to the original as the heights allow.
-    var n = st.blocks.length;
-    var consumed = new Array(n).fill(false);
-    var done = 0, i = 0, guard = 0;
-    while (done < n && guard++ < n * 4 + 50) {
-      while (i < n && consumed[i]) i++;
-      if (i >= n) break;
-      var b = st.blocks[i];
+      // Pack into pages.
+      var pages = [];
+      var page = null;
+      var open = null; // open multi-column band on the current page
+      function newPage(first) {
+        page = { first: first, used: first ? headerH + headerGap : 0, bands: [] };
+        pages.push(page);
+      }
+      function remaining() { return budget - page.used; }
+      function openBand() {
+        open = { type: 'cols', maxH: remaining(), cols: [] };
+        for (var i = 0; i < nCols; i++) open.cols.push({ els: [], h: 0 });
+      }
+      function finalizeOpen() {
+        if (!open) return;
+        var maxH = 0, any = false;
+        open.cols.forEach(function (c) { if (c.els.length) any = true; if (c.h > maxH) maxH = c.h; });
+        if (any) { page.bands.push(open); page.used += maxH + _BAND_GAP; }
+        open = null;
+      }
+      function pageHasContent() {
+        if (page.bands.length) return true;
+        return !!(open && open.cols.some(function (c) { return c.els.length; }));
+      }
+      newPage(true);
 
-      // Manual page break: this section starts a new page (unless the current page
-      // holds only the header — never break to a header-only page).
-      if (_hasBreak(b.el) && pageHasContent()) { finalizeOpen(); newPage(false); }
+      // Place a narrow block into the shortest fitting column of the open band.
+      // Returns true if it fit.
+      function tryPlaceNarrow(b) {
+        if (!open) openBand();
+        var best = -1, bestH = Infinity;
+        for (var i = 0; i < nCols; i++) {
+          var c = open.cols[i];
+          var add = (c.els.length ? _BLOCK_GAP : 0) + b.h;
+          if (c.h + add <= open.maxH && c.h < bestH) { best = i; bestH = c.h; }
+        }
+        if (best < 0) return false;
+        var col = open.cols[best];
+        if (col.els.length) col.h += _BLOCK_GAP;
+        col.els.push(b.el);
+        col.h += b.h;
+        return true;
+      }
 
-      if (b.wide) {
+      // AUTO-FILL packer. Walks blocks in order, but when the next section is too
+      // tall for the leftover column space, it pulls a LATER, shorter section
+      // forward to fill the gap (first one that fits) instead of stranding the empty
+      // band and breaking to a new page. Wide (table) bands and manual page breaks
+      // stay anchored in place — they are never pulled forward. Result: dense pages,
+      // order kept as close to the original as the heights allow.
+      var n = st.blocks.length;
+      var consumed = new Array(n).fill(false);
+      var done = 0, i = 0, guard = 0;
+      while (done < n && guard++ < n * 4 + 50) {
+        while (i < n && consumed[i]) i++;
+        if (i >= n) break;
+        var b = st.blocks[i];
+
+        // Manual page break: this section starts a new page (unless the current page
+        // holds only the header — never break to a header-only page).
+        if (_hasBreak(b.el) && pageHasContent()) { finalizeOpen(); newPage(false); }
+
+        if (b.wide) {
+          finalizeOpen();
+          if (page.used > 0 && b.h + _BAND_GAP > remaining()) newPage(false);
+          page.bands.push({ type: 'wide', el: b.el, h: b.h });
+          page.used += b.h + _BAND_GAP;
+          consumed[i] = true; done++; i++;
+          continue;
+        }
+
+        if (tryPlaceNarrow(b)) { consumed[i] = true; done++; i++; continue; }
+
+        // b doesn't fit the open band. Backfill the band's leftover column space with
+        // the earliest later narrow section that DOES fit (don't reorder across a
+        // table or a manual break).
+        var filled = false;
+        for (var j = i + 1; j < n; j++) {
+          if (consumed[j]) continue;
+          var c2 = st.blocks[j];
+          if (c2.wide || _hasBreak(c2.el)) continue;
+          if (tryPlaceNarrow(c2)) { consumed[j] = true; done++; filled = true; break; }
+        }
+        if (filled) continue; // band got fuller; retry b (still pending) next loop
+
+        // Nothing more fits this band. Close it and place b on fresh space.
+        var bandEmpty = !!open && open.cols.every(function (c) { return !c.els.length; });
         finalizeOpen();
-        if (page.used > 0 && b.h + _BAND_GAP > remaining()) newPage(false);
-        page.bands.push({ type: 'wide', el: b.el, h: b.h });
-        page.used += b.h + _BAND_GAP;
-        consumed[i] = true; done++; i++;
-        continue;
+        if (bandEmpty) {
+          // b taller than a fresh full-page column → force-place (can't split a
+          // section). Start a clean page first if the current one has content.
+          if (page.used > 0) newPage(false);
+          openBand();
+          open.cols[0].els.push(b.el);
+          open.cols[0].h += b.h;
+          consumed[i] = true; done++; i++;
+        } else {
+          newPage(false); // b retried on the new empty page next loop
+        }
       }
-
-      if (tryPlaceNarrow(b)) { consumed[i] = true; done++; i++; continue; }
-
-      // b doesn't fit the open band. Backfill the band's leftover column space with
-      // the earliest later narrow section that DOES fit (don't reorder across a
-      // table or a manual break).
-      var filled = false;
-      for (var j = i + 1; j < n; j++) {
-        if (consumed[j]) continue;
-        var c2 = st.blocks[j];
-        if (c2.wide || _hasBreak(c2.el)) continue;
-        if (tryPlaceNarrow(c2)) { consumed[j] = true; done++; filled = true; break; }
-      }
-      if (filled) continue; // band got fuller; retry b (still pending) next loop
-
-      // Nothing more fits this band. Close it and place b on fresh space.
-      var bandEmpty = !!open && open.cols.every(function (c) { return !c.els.length; });
       finalizeOpen();
-      if (bandEmpty) {
-        // b taller than a fresh full-page column → force-place (can't split a
-        // section). Start a clean page first if the current one has content.
-        if (page.used > 0) newPage(false);
-        openBand();
-        open.cols[0].els.push(b.el);
-        open.cols[0].h += b.h;
-        consumed[i] = true; done++; i++;
-      } else {
-        newPage(false); // b retried on the new empty page next loop
+
+      var last = pages[pages.length - 1];
+      var lastFill = last ? Math.min(1, last.used / budget) : 1;
+      return { pages: pages, pageCount: pages.length, lastFill: lastFill };
+    }
+
+    // AUTO-FIT. Pack at full size first. If the LAST page is a sparse orphan (well
+    // under FILL_MIN of the page), try progressively smaller font scales and keep
+    // the first that actually REMOVES a page — so a lone block on a near-empty page
+    // gets absorbed into the previous pages. Never shrink text unless it eliminates
+    // a page; if no step helps, stay at full size (no worse than before).
+    var FIT_STEPS = [1, 0.96, 0.92, 0.88, 0.84, 0.8];
+    var FILL_MIN = 0.72;
+    var basePlan = _measureAndPack(1);
+    var chosen = basePlan, chosenScale = 1;
+    if (basePlan.pageCount > 1 && basePlan.lastFill < FILL_MIN) {
+      for (var si = 1; si < FIT_STEPS.length; si++) {
+        var plan = _measureAndPack(FIT_STEPS[si]);
+        if (plan.pageCount < basePlan.pageCount) { chosen = plan; chosenScale = FIT_STEPS[si]; break; }
       }
     }
-    finalizeOpen();
+    paper.style.setProperty('--cs-fit', String(chosenScale));
+    var pages = chosen.pages;
 
     // Build the page DOM.
     pages.forEach(function (pg, idx) {

@@ -245,7 +245,9 @@
   padding: 10mm;
   border-radius: 4px;
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4);
-  font-size: var(--cs-font, 0.78rem);
+  /* --cs-fit is the auto-fit multiplier the layout engine lowers (down to ~0.8)
+     only when shrinking removes an otherwise near-empty orphan page. */
+  font-size: calc(var(--cs-font, 0.78rem) * var(--cs-fit, 1));
   line-height: 1.32;
   box-sizing: border-box;
 }
