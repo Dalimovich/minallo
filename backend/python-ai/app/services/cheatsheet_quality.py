@@ -112,6 +112,10 @@ _OBVIOUS_GARBAGE_RE = re.compile(
 _FORMULAISH_RE = re.compile(
     r"(=|\\frac|\\int|\\sum|[+\-*/^_]|[\u222b\u03bc\u03b8\u03c6\u03c9\u03b1\u03c1\u0398\u03a3])"
 )
+# ``\\`` glued to a command letter (``\\dot``, ``\\mathbf``) is a doubled-escape
+# artifact \u2014 a real LaTeX line break ``\\`` is only ever followed by whitespace,
+# ``[``, or end-of-line, never a letter.
+_DOUBLED_BACKSLASH_CMD_RE = re.compile(r"\\\\(?=[A-Za-z])")
 
 
 def repair_mojibake(text: str) -> str:
@@ -130,6 +134,7 @@ def formula_to_latexish(text: str) -> str:
     out = repair_mojibake(text)
     for sym, latex in _LATEX_SYMBOL_REPAIRS.items():
         out = out.replace(sym, latex)
+    out = _DOUBLED_BACKSLASH_CMD_RE.sub(r"\\", out)
     return out
 
 

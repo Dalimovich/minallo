@@ -348,6 +348,48 @@ def test_grounding_formula_matched_to_evidence():
     assert g["ratio"] == 1.0
 
 
+# ── math gate (Stage C) ──────────────────────────────────────────────────────
+
+
+def test_formula_count_counts_inline_and_display():
+    text = "intro $a=v_0$ and $$F = m a$$ plus $E=mc^2$"
+    assert cs._formula_count(text) == 3
+
+
+def test_sanitize_normalises_paren_math_delimiters():
+    out, _ = cs.sanitize_cheatsheet_markdown(r"position \(\mathbf{r}\) and \[F = m a\]")
+    assert r"\(" not in out and r"\)" not in out
+    assert r"\[" not in out and r"\]" not in out
+    assert "$\\mathbf{r}$" in out
+    assert "$$F = m a$$" in out
+
+
+def test_sanitize_collapses_doubled_backslash_command():
+    out, _ = cs.sanitize_cheatsheet_markdown(r"$\\dot{r} \\mathbf{e}_r$")
+    assert "\\\\dot" not in out
+    assert "\\dot{r}" in out
+
+
+def test_doubled_backslash_repair_keeps_matrix_row_break():
+    # ``\\`` followed by whitespace is a real row break and must survive.
+    assert cq.formula_to_latexish(r"\begin{matrix} a \\ b \end{matrix}") == \
+        r"\begin{matrix} a \\ b \end{matrix}"
+
+
+def test_skeleton_drops_generic_nontopics():
+    topic_map = [
+        {"name": "Kinematik eines Punktes"},
+        {"name": "Integrale"},
+        {"name": "Initialbedingungen"},
+        {"name": "Impuls und Stoß"},
+    ]
+    names = cs._topic_names(topic_map, None, limit=10)
+    assert "Integrale" not in names
+    assert "Initialbedingungen" not in names
+    assert "Kinematik eines Punktes" in names
+    assert "Impuls und Stoß" in names
+
+
 def test_grounding_flags_ungrounded_formula():
     text = "$$\\zeta_{xyz} = \\alpha_{qrs} + \\beta_{tuv}$$"
     evidence = [{"text": "completely unrelated lecture content about history"}]
@@ -392,7 +434,6 @@ def test_quality_metrics_surface_deterministic_counts():
     metrics = cs._quality_metrics(
         text="$$E = m c^2$$",
         topics=["Arbeit, Energie und Leistung"],
-        sources=[{"chunkId": "c1"}],
         grounding={"total": 1, "grounded": 1, "ratio": 1.0},
         cfg=cs.normalize_settings({"detailLevel": "general"}),
         dropped_formulas=1,
@@ -402,6 +443,7 @@ def test_quality_metrics_surface_deterministic_counts():
     )
     assert metrics["formulaCount"] == 1
     assert metrics["sourceSupport"] == 100
+    assert "citationCoverage" not in metrics
     assert metrics["corruptionCount"] == 2
     assert metrics["unsupportedFormulaCount"] == 2
     assert metrics["genericFillerCount"] == 3
@@ -440,7 +482,11 @@ def test_generate_cheatsheet_grounded(monkeypatch):
     assert out["noteId"] == "note-123"
     assert out["topicsCovered"] == ["Reibung und Widerstand"]
     assert "Friction" in out["text"]
-    assert out["quality"]["metrics"]["citationCoverage"] == 100
+    # No on-page citation metric (the target sheet shows none); grounding stays
+    # internal via sourceSupport.
+    assert "citationCoverage" not in out["quality"]["metrics"]
+    # The inline `$F=\mu N$` formula is counted (display-only counting reported 0).
+    assert out["quality"]["metrics"]["formulaCount"] == 1
     assert out["model"] == "fake-model"
     # grounded sources carry the filename + chunk linkage
     assert out["groundedSources"][0]["fileName"] == "a.pdf"

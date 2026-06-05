@@ -337,9 +337,8 @@ _SYSTEM = (
     "- Wrap a key concept term in {{double braces}} (renders blue). Use "
     "sparingly — only genuinely central terms.\n"
     "\n"
-    "SOURCES — keep them subtle: do NOT cite every line. Add a small "
-    "`(filename, p.N)` only where a specific formula needs provenance, and end "
-    "with one short `## Sources` list. Never spam citations.\n"
+    "SOURCES — do NOT print any citations or a `## Sources` list. The target "
+    "reference shows none; grounding is an internal guard, not on-page text.\n"
     "\n"
     'Return ONLY JSON: {"text":"<markdown cheatsheet>"}'
 )
@@ -595,6 +594,13 @@ def sanitize_cheatsheet_markdown(text: str) -> tuple[str, int]:
     cleaned = text.replace("�", "").replace("\r", "")
     cleaned = _CTRL_RE.sub("", cleaned)
 
+    # 1a) normalise LaTeX math delimiters to the ``$``/``$$`` the renderer expects.
+    # Models intermittently emit ``\(...\)`` / ``\[...\]`` (and OCR'd sources carry
+    # them in), which KaTeX-in-markdown does NOT render — they leak as raw text.
+    # Done before the odd-``$$`` trim so the converted delimiters balance correctly.
+    cleaned = cleaned.replace("\\[", "$$").replace("\\]", "$$")
+    cleaned = cleaned.replace("\\(", "$").replace("\\)", "$")
+
     # 1b) a salvaged (token-cap-truncated) sheet can end mid-formula, leaving a
     # dangling unterminated "$$" that would break KaTeX. If the display-delimiter
     # count is odd, drop everything from the last "$$" onward.
@@ -770,6 +776,32 @@ def _canonical_mechanics_topic(name: str) -> str:
     return repair_mojibake(name).strip()
 
 
+# Generic method/scaffolding terms that the topic extractor occasionally emits as
+# top-level "topics". They are course-agnostic non-subjects — a real reference
+# sheet never has an "Integrals" or "Initial conditions" section — so we drop them
+# from the skeleton before generation. Kept tight to avoid culling real topics in
+# non-mechanics courses; match is on the normalised _topic_key.
+_GENERIC_NONTOPIC_WORDS = frozenset({
+    "integral", "integrale", "integrals", "integration",
+    "grundlagen", "basics", "einleitung", "introduction", "intro", "notation",
+    "anfangsbedingungen", "randbedingungen", "initialbedingungen",
+})
+_GENERIC_NONTOPIC_PHRASES = frozenset({
+    "initial conditions", "initial condition", "boundary conditions",
+})
+_GENERIC_NONTOPIC_PREFIXES = ("initialbeding", "anfangsbeding", "randbeding")
+
+
+def _is_generic_nontopic(key: str) -> bool:
+    if not key:
+        return False
+    if key in _GENERIC_NONTOPIC_PHRASES:
+        return True
+    if any(key.startswith(p) for p in _GENERIC_NONTOPIC_PREFIXES):
+        return True
+    return any(tok in _GENERIC_NONTOPIC_WORDS for tok in key.split())
+
+
 def _dedupe_topic_names(names: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -777,6 +809,11 @@ def _dedupe_topic_names(names: list[str]) -> list[str]:
         canonical = _canonical_mechanics_topic(name)
         key = _topic_key(canonical)
         if not key or key in seen:
+            continue
+        if _is_generic_nontopic(key):
+            # Generic scaffolding the topic extractor sometimes promotes to a
+            # top-level topic (e.g. "Integrals", "Initial conditions"). These make
+            # near-formula-free junk sections; a real reference never has them.
             continue
         seen.add(key)
         out.append(canonical)
@@ -852,14 +889,17 @@ def _formula_bank_guidance(topics: list[str | None]) -> str:
 
 
 def _formula_count(text: str) -> int:
-    return len(_DISPLAY_FORMULA_RE.findall(text or ""))
+    # Sections emit mostly inline ``$...$`` formulas, not display ``$$...$$``, so
+    # counting display blocks alone reports 0 for a sheet full of math. The inline
+    # regex's ``$$`` guards mean display formulas are never double-counted here.
+    t = text or ""
+    return len(_DISPLAY_FORMULA_RE.findall(t)) + len(_INLINE_FORMULA_RE.findall(t))
 
 
 def _quality_metrics(
     *,
     text: str,
     topics: list[str | None],
-    sources: list[dict[str, Any]],
     grounding: dict[str, Any],
     cfg: dict[str, Any],
     dropped_formulas: int,
@@ -880,7 +920,9 @@ def _quality_metrics(
         "formulaDensity": round(formulas / topic_count, 2),
         "formulaReadability": max(0, 100 - (dropped_formulas + evidence_quality.dropped_formula_lines) * 12),
         "sourceSupport": None if grounded_ratio is None else round(float(grounded_ratio) * 100),
-        "citationCoverage": 100 if sources else 0,
+        # No on-page citations (the Hyperknow target shows none); grounding is an
+        # internal guard only (sourceSupport), so a "100% cited" metric would be a
+        # false claim. Deliberately omitted.
         "topicCoverage": min(100, round((covered_topics / topic_count) * 100)),
         "layoutFit": max(40, min(100, 100 - layout_penalty)),
         "languageConsistency": 100,
@@ -1528,7 +1570,6 @@ def generate_cheatsheet(
     metrics = _quality_metrics(
         text=text,
         topics=covered_labels,
-        sources=sources,
         grounding=grounding,
         cfg=cfg,
         dropped_formulas=dropped_formulas,
