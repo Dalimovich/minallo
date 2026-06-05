@@ -6,6 +6,7 @@ from app.services.cheatsheet import (
     enforce_formula_bank,
     ensure_method_picker_targets,
     ensure_drehimpuls_section,
+    localize_section_labels,
     _broken_formula_reasons,
 )
 
@@ -138,6 +139,27 @@ def test_drehimpuls_not_injected_when_already_present():
     out, n = ensure_drehimpuls_section(sheet, {"formulaDriven": True})
     assert n == 0
     assert out.count("## Drehimpuls") == 1
+
+
+def test_localize_labels_de():
+    md = (
+        "## Polarkoordinaten\n"
+        "**Use when:** radial motion.\n"
+        "**Formulas:**\n$r = r e_r$\n"
+        "**Conditions:** basis vectors are time-dependent.\n"
+        "**Watch out:** do not forget 2ṙφ̇.\n"
+        "Important: keep the reference point fixed.\n"
+    )
+    out = localize_section_labels(md, "de")
+    assert "**Anwenden bei:**" in out
+    assert "**Formeln:**" in out
+    assert "**Bedingungen:**" in out
+    assert "**Achtung:**" in out
+    # English emphasis markers are NOT touched (renderer keys styling off them).
+    assert "Important: keep the reference point fixed." in out
+    # No-op for non-German.
+    assert localize_section_labels(md, "source") == md
+    assert localize_section_labels(md, "en") == md
 
 
 def test_method_picker_no_dupe_when_present():

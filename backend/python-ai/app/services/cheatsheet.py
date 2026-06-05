@@ -2358,6 +2358,42 @@ _STRICT_BANK_TOPICS = frozenset({
 })
 
 
+# When the user explicitly chose German output, the formula-template section
+# labels (hardcoded English in the preset formats) must follow. Only the known
+# structural labels are mapped; ``Important:/Critical:/Note:`` emphasis markers are
+# left untouched (the renderer keys its red/orange styling off the English words).
+_LABEL_DE = {
+    "use when": "Anwenden bei",
+    "formulas": "Formeln",
+    "formula": "Formel",
+    "conditions": "Bedingungen",
+    "condition": "Bedingung",
+    "watch out": "Achtung",
+    "special cases": "Sonderfälle",
+    "special case": "Sonderfall",
+    "variables": "Variablen",
+    "concept": "Konzept",
+    "trap": "Falle",
+    "why it matters": "Warum wichtig",
+    "method hint": "Lösungsweg",
+    "formula cluster": "Formelsammlung",
+}
+_BOLD_LABEL_RE = re.compile(r"\*\*([^*\n:]+?):?\*\*")
+
+
+def localize_section_labels(text: str, lang: str | None) -> str:
+    """Translate the known English section labels to German when the user picked
+    German output, so labels match the German content. No-op for other languages."""
+    if lang != "de" or not text:
+        return text
+
+    def _repl(m: "re.Match[str]") -> str:
+        de = _LABEL_DE.get(m.group(1).strip().lower())
+        return f"**{de}:**" if de else m.group(0)
+
+    return _BOLD_LABEL_RE.sub(_repl, text)
+
+
 def enforce_formula_bank(text: str, topics: "list[str | None]") -> tuple[str, int]:
     """For sections whose topic has a canonical formula bank: drop the section's
     BROKEN/mangled formula lines and inject any MISSING canonical formula (clean
@@ -2801,6 +2837,8 @@ def generate_cheatsheet(
             log.info("cheatsheet bank enforcement rewrote %d section(s)", bank_repairs)
         if method_picker_injected:
             log.info("cheatsheet injected %d method-picker target section(s)", method_picker_injected)
+    # German output → German section labels (the preset formats hardcode English).
+    text = localize_section_labels(text, cfg.get("language"))
     grounding = formula_grounding(text, evidence)
     sources = [
         {
@@ -2900,6 +2938,7 @@ __all__ = (
     "enforce_formula_bank",
     "ensure_method_picker_targets",
     "ensure_drehimpuls_section",
+    "localize_section_labels",
     "sanitize_cheatsheet_markdown",
     "dedup_display_formulas",
     "drop_unsupported_display_formulas",
