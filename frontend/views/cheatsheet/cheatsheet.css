@@ -299,14 +299,18 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* Stack header + bands top-down; the last band grows to fill the page so the
-     empty space below the content is a real, full-height drop target (see
-     .cs-cols:last-child below) — not dead space the layout snaps back over. */
-  display: flex;
-  flex-direction: column;
   /* long German compounds / URLs must wrap, never widen a column past the page. */
   overflow-wrap: break-word;
   word-break: break-word;
+}
+/* SCREEN ONLY: stack header + bands top-down so the last band can grow and fill
+   the page, turning the empty space below the content into a full-height drop
+   target. This must NOT apply during export — a flex column lets html2canvas
+   shrink/clip the 210mm tiles, which drops whole pages of sections and leaves a
+   blank page. Export keeps the proven block-flow tiling. */
+.cs-paper:not(.is-exporting) .cs-page-inner {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Layout editor (screen only; stripped from the exported PDF in onclone) ──── */
@@ -345,13 +349,18 @@
 @media print { .cs-block-tools { display: none !important; } }
 /* A run of normal blocks → a multi-column band; the columns are exact equal
    widths (flex: 1 + min-width: 0) so nothing overflows the page. */
-/* align-items: stretch makes every column as tall as the band, so the empty area
-   below a short column is part of the droppable .cs-col — you can drop a section
-   into the gap. The last band grows to fill the rest of the page, turning the big
-   blank band at the bottom into a full-height drop target. */
-.cs-cols { display: flex; align-items: stretch; margin-bottom: 12px; }
-.cs-cols:last-child { margin-bottom: 0; flex: 1 1 auto; }
+.cs-cols { display: flex; align-items: flex-start; margin-bottom: 12px; }
+.cs-cols:last-child { margin-bottom: 0; }
 .cs-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+/* SCREEN ONLY drop-target fill (export keeps flex-start / no grow, see above):
+   stretch makes every column as tall as its band so the empty area below a short
+   column is part of the droppable .cs-col; the last band grows to fill the rest
+   of the page, turning the big blank band at the bottom into a drop target.
+   flex: 0 0 auto on the other bands stops them being shrunk/clipped. */
+.cs-paper:not(.is-exporting) .cs-cols,
+.cs-paper:not(.is-exporting) .cs-band-wide { flex: 0 0 auto; }
+.cs-paper:not(.is-exporting) .cs-cols { align-items: stretch; }
+.cs-paper:not(.is-exporting) .cs-cols:last-child { flex: 1 1 auto; }
 /* A visible drop target spawned on table-only / leftover-space pages so a section
    can be dragged there even when the page has no normal column band. */
 .cs-dropzone { flex: 1 1 auto; min-height: 60px; }
