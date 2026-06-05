@@ -373,17 +373,25 @@ export async function generateExamForge(
 }
 
 export interface CheatsheetSettings {
-  preset?: 'exam_night' | 'balanced' | 'deep_revision' | 'topic_mastery';
+  preset?: 'exam_night' | 'open_book_exam' | 'formula_reference' | 'balanced' | 'deep_revision' | 'topic_mastery';
   pages?: number;
-  language?: 'source' | 'en' | 'de';
+  columns?: 2 | 3 | 4;
+  style?: 'academic' | 'modern' | 'compact' | 'classic';
+  fontSize?: 'auto' | 'small' | 'medium' | 'large';
+  detailLevel?: 'general' | 'balanced' | 'specific' | 'very_thorough';
+  focusMode?: 'whole_course' | 'specific_topic' | 'selected_files' | 'selected_pages';
+  language?: 'source' | 'en' | 'de' | 'de_terms_en_explanations';
+  output?: 'web' | 'pdf' | 'both';
 }
 
 /** Normalized layout config the backend echoes back (drives the renderer). */
 export interface CheatsheetResolvedSettings extends CheatsheetSettings {
-  columns?: number;
+  columns?: 2 | 3 | 4;
   font?: 'xs' | 'sm' | 'md';
   densityTarget?: string;
   maxTopics?: number;
+  perTopicTopK?: number;
+  maxEvidence?: number;
 }
 
 export interface CheatsheetResult {
@@ -404,6 +412,8 @@ export interface CheatsheetResult {
     };
     droppedMalformedFormulas?: number;
     droppedUnsupportedFormulas?: number;
+    droppedGenericNotes?: number;
+    metrics?: Record<string, number | boolean | null>;
   };
   warning?: string;
   citationWarning?: string;

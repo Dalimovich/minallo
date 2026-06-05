@@ -121,7 +121,13 @@ class CheatsheetSettings(BaseModel):
     # are exposed (no à-la-carte matrix).
     preset: str | None = None        # exam_night | balanced | deep_revision | topic_mastery
     pages: int | None = None         # 1..4
-    language: str | None = None      # source | en | de
+    columns: int | None = None       # 2..4
+    style: str | None = None
+    fontSize: str | None = None
+    detailLevel: str | None = None
+    focusMode: str | None = None
+    language: str | None = None
+    output: str | None = None
 
 
 class GenerateCheatsheetRequest(BaseModel):

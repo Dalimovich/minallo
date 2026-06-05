@@ -166,6 +166,33 @@
 .cs-view-print:hover { background: rgba(255, 255, 255, 0.07); }
 .cs-sheet-head { display: flex; align-items: center; gap: 10px; }
 
+.cs-progress-section,
+.cs-edit-section {
+  position: relative;
+}
+.cs-section-tools {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+  opacity: 0.72;
+}
+.cs-section-tools button {
+  border: 1px solid var(--border, #334155);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e2e8f0);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.cs-section-tools button:hover { background: rgba(255, 255, 255, 0.09); }
+.cs-progress-section.is-locked {
+  outline: 1px dashed rgba(99, 102, 241, 0.55);
+  outline-offset: 3px;
+}
+.cs-pruned-line { display: none; }
+
 /* ── White Hyperknow-style paper view + print ─────────────────────────────── */
 .cs-paper-overlay {
   position: fixed;
@@ -196,20 +223,31 @@
   font-size: 0.85rem;
   cursor: pointer;
 }
+.cs-paper-select {
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
 .cs-paper-btn:hover { background: #334155; }
 .cs-paper-close { background: transparent; }
 .cs-paper-scroll { flex: 1 1 auto; overflow: auto; padding: 22px; }
 
 .cs-paper {
-  max-width: 1100px;
+  width: 297mm;
+  min-height: 210mm;
+  max-width: none;
   margin: 0 auto;
   background: #fff;
   color: #111827;
-  padding: 26px 30px 34px;
+  padding: 10mm;
   border-radius: 4px;
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4);
   font-size: var(--cs-font, 0.78rem);
-  line-height: 1.4;
+  line-height: 1.32;
+  box-sizing: border-box;
 }
 .cs-paper-head { border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 14px; }
 .cs-paper-head h1 { font-size: 1.35rem; margin: 0; color: #111827; }
@@ -217,8 +255,8 @@
 .cs-paper-meta { font-size: 0.72rem; color: #6b7280; margin-top: 3px; }
 
 .cs-paper-body {
-  column-count: var(--cs-columns, 4);
-  column-gap: 22px;
+  column-count: var(--cs-columns, 3);
+  column-gap: 18px;
   column-rule: 1px solid #e5e7eb;
 }
 .cs-block { break-inside: avoid; margin-bottom: 12px; }
@@ -242,9 +280,55 @@
 .cs-paper .cs-warn { color: #b91c1c; }
 .cs-paper .cs-note { color: #b45309; }
 
+.cs-paper[data-style="compact"] {
+  line-height: 1.22;
+}
+.cs-paper[data-style="compact"] .cs-paper-head {
+  margin-bottom: 9px;
+  padding-bottom: 5px;
+}
+.cs-paper[data-style="compact"] .cs-block {
+  margin-bottom: 8px;
+}
+.cs-paper[data-style="classic"] {
+  font-family: Georgia, "Times New Roman", serif;
+}
+.cs-paper[data-style="classic"] .cs-paper-body {
+  column-rule-color: #cbd5e1;
+}
+.cs-paper[data-style="modern"] .cs-paper-body h2 {
+  border-bottom-color: #2563eb;
+}
+
 @media (max-width: 1100px) { .cs-paper-body { column-count: 3; } }
 @media (max-width: 820px)  { .cs-paper-body { column-count: 2; } }
 @media (max-width: 560px)  { .cs-paper-body { column-count: 1; } }
+
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
+@media print {
+  .cs-paper-overlay,
+  .cs-paper-scroll {
+    position: static;
+    display: block;
+    overflow: visible;
+    padding: 0;
+    background: #fff;
+  }
+  .cs-paper-bar {
+    display: none;
+  }
+  .cs-paper {
+    width: auto;
+    min-height: auto;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+  }
+}
 
 /* Source picker (choose which PDFs to build from) */
 .cs-sp-overlay {

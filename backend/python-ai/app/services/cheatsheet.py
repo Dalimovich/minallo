@@ -29,6 +29,7 @@ from .learning_agent import get_course_topic_map, retrieve_learning_context
 from .llm_json import chat_json
 from .notes import save_note
 from .cheatsheet_quality import (
+    EvidenceNormalizationStats,
     formula_corruption_reasons,
     formula_to_latexish,
     normalize_evidence_chunks,
@@ -184,6 +185,94 @@ _MECHANICS_TRAP_BANK: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_MECHANICS_FORMULA_BANK: dict[str, tuple[str, ...]] = {
+    "Kinematik eines Punktes": (
+        r"v = \frac{dx}{dt}",
+        r"a = \frac{dv}{dt}",
+        r"v(t) = v_0 + \int a(t)\,dt",
+    ),
+    "Geradlinige Bewegung": (
+        r"x = x_0 + v_0 t + \frac{1}{2} a t^2",
+        r"v^2 = v_0^2 + 2 a (x - x_0)",
+    ),
+    "Wurfbewegung": (
+        r"x = v_0\cos\alpha\,t",
+        r"z = z_0 + v_0\sin\alpha\,t - \frac{1}{2}gt^2",
+        r"h_{max} = \frac{v_0^2\sin^2\alpha}{2g}",
+    ),
+    "Polarkoordinaten": (
+        r"\vec v = \dot r\,\vec e_r + r\dot\varphi\,\vec e_\varphi",
+        r"\vec a = (\ddot r-r\dot\varphi^2)\vec e_r + (r\ddot\varphi+2\dot r\dot\varphi)\vec e_\varphi",
+    ),
+    "Tangential- und Normalkoordinaten": (
+        r"a_t = \dot v",
+        r"a_n = \frac{v^2}{\rho}",
+    ),
+    "Dynamik von Punktmassen": (
+        r"\sum \vec F = m\vec a",
+        r"\vec G = m\vec g",
+    ),
+    "Reibung und Widerstand": (
+        r"|H| \le \mu_0 N",
+        r"R = \mu N",
+    ),
+    "Arbeit, Energie und Leistung": (
+        r"dW = \vec F \cdot d\vec r",
+        r"E_{kin} = \frac{1}{2}mv^2",
+        r"E_{kin,1} - E_{kin,0} = W",
+        r"E_p = mgz",
+        r"E_p = \frac{1}{2}cx^2",
+        r"P = \vec F \cdot \vec v",
+    ),
+    "Impuls und Stoß": (
+        r"\vec p = m\vec v",
+        r"\int \vec F\,dt = \Delta \vec p",
+    ),
+    "Dynamik von Punktsystemen": (
+        r"m\vec a_S = \sum \vec F^{ext}",
+        r"\vec p = m\vec v_S",
+    ),
+    "Schwerpunkt / Massenmittelpunkt": (
+        r"\vec r_S = \frac{1}{M}\sum m_i \vec r_i",
+        r"M\vec a_S = \sum \vec F^{ext}",
+    ),
+    "Trägheitsmoment": (
+        r"\Theta = \int r^2\,dm",
+        r"\Theta_A = \Theta_S + m d^2",
+    ),
+    "Drehimpuls": (
+        r"\vec L_A = \Theta_A \vec\omega",
+        r"\sum \vec M_A = \frac{d\vec L_A}{dt}",
+    ),
+    "Rollbewegung": (
+        r"v_S = r\omega",
+        r"a_S = r\alpha",
+    ),
+    "Variable Masse / Raketenbewegung": (
+        r"m\dot v = F_{ext} + u(-\dot m)",
+    ),
+}
+
+_MECHANICS_LAYOUT_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("column1", (
+        "Kinematik eines Punktes", "Kartesische Koordinaten", "Geradlinige Bewegung",
+        "Wurfbewegung", "Polarkoordinaten", "Tangential- und Normalkoordinaten",
+    )),
+    ("column2", (
+        "Dynamik von Punktmassen", "Bewegungsgleichungen", "Reibung und Widerstand",
+        "Arbeit, Energie und Leistung", "Impuls und Stoß",
+    )),
+    ("column3", (
+        "Dynamik von Punktsystemen", "Schwerpunkt / Massenmittelpunkt",
+        "Rotation starrer Körper", "Trägheitsmoment", "Drehimpuls", "Rollbewegung",
+    )),
+)
+
+_CHEATSHEET_ITEM_TYPES = (
+    "definition", "formula", "derived_formula", "special_case", "procedure",
+    "trap", "variable_definition", "example_specific", "diagram_logic", "source_note",
+)
+
 _GENERIC_FILLER_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:"
     r"(?:be\s+)?careful\s+with\s+directions?|"
@@ -256,15 +345,23 @@ _SYSTEM = (
 # and a layout hint (columns/font) echoed back so the renderer matches.
 
 _PRESETS: dict[str, dict[str, Any]] = {
-    # name            topics  density   columns  font
-    "exam_night":     {"topics": 9,  "density": "max",     "columns": 4, "font": "xs"},
-    "balanced":       {"topics": 10, "density": "high",    "columns": 3, "font": "sm"},
-    "deep_revision":  {"topics": 12, "density": "high",    "columns": 3, "font": "md"},
-    "topic_mastery":  {"topics": 5,  "density": "thorough","columns": 2, "font": "md"},
+    # name                 topics  density   columns  font
+    "exam_night":          {"topics": 9,  "density": "max",     "columns": 4, "font": "xs"},
+    "open_book_exam":      {"topics": 11, "density": "high",    "columns": 3, "font": "sm"},
+    "formula_reference":   {"topics": 12, "density": "max",     "columns": 4, "font": "xs"},
+    "balanced":            {"topics": 10, "density": "high",    "columns": 3, "font": "sm"},
+    "deep_revision":       {"topics": 12, "density": "high",    "columns": 3, "font": "md"},
+    "topic_mastery":       {"topics": 5,  "density": "thorough","columns": 2, "font": "md"},
 }
 _DEFAULT_PRESET = "balanced"
 _VALID_PAGES = (1, 2, 3, 4)
-_VALID_LANGS = ("source", "en", "de")
+_VALID_COLUMNS = (2, 3, 4)
+_VALID_LANGS = ("source", "en", "de", "de_terms_en_explanations")
+_VALID_STYLES = ("academic", "modern", "compact", "classic")
+_VALID_FONT_SIZES = ("auto", "small", "medium", "large")
+_VALID_DETAIL_LEVELS = ("general", "balanced", "specific", "very_thorough")
+_VALID_FOCUS_MODES = ("whole_course", "specific_topic", "selected_files", "selected_pages")
+_VALID_OUTPUTS = ("web", "pdf", "both")
 # Density label → the count band we ask the model to aim for. HARD CONSTRAINT:
 # output runs ~40 tok/s against the upstream timeout, AND the sheet is one JSON
 # string (a run that overshoots the token cap truncates → "could not parse model
@@ -284,6 +381,48 @@ _LANG_INSTRUCTION = {
     "source": "Match the language of the source material.",
     "en": "Write the cheatsheet in English regardless of the source language.",
     "de": "Write the cheatsheet in German (Deutsch) regardless of the source language.",
+    "de_terms_en_explanations": "Use German technical terms with short English explanations.",
+}
+
+_PURPOSE_INSTRUCTION = {
+    "exam_night": (
+        "Purpose: Exam Night. Prioritize high-entropy formulas, critical traps, "
+        "and a compact method picker. Use minimal definitions and no long explanations."
+    ),
+    "open_book_exam": (
+        "Purpose: Open-book Exam. Prioritize lookup structure, procedures, source-backed "
+        "formulas, and clear section boundaries for fast scanning."
+    ),
+    "formula_reference": (
+        "Purpose: Formula Reference. Prioritize formulas, variable meanings, assumptions, "
+        "and special cases. Use the least prose of all modes."
+    ),
+    "balanced": (
+        "Purpose: Balanced Study. Balance formulas, short definitions, special cases, "
+        "and exam traps without becoming a study guide."
+    ),
+    "deep_revision": (
+        "Purpose: Deep Revision. Include formulas, definitions, special cases, and short "
+        "method hints with slightly more context."
+    ),
+    "topic_mastery": (
+        "Purpose: Topic Mastery. Go deeper on the focused topic: related formulas, "
+        "assumptions, examples, and traps."
+    ),
+}
+
+_DETAIL_CONFIG = {
+    "general": {"topicDelta": -3, "topK": 4, "evidence": 28, "density": "10-16"},
+    "balanced": {"topicDelta": 0, "topK": 5, "evidence": 36, "density": "14-20"},
+    "specific": {"topicDelta": 2, "topK": 6, "evidence": 48, "density": "20-32"},
+    "very_thorough": {"topicDelta": 4, "topK": 7, "evidence": 60, "density": "28-42"},
+}
+
+_FONT_TO_LAYOUT = {
+    "auto": None,
+    "small": "xs",
+    "medium": "sm",
+    "large": "md",
 }
 
 
@@ -298,24 +437,57 @@ def normalize_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
 
     pages = s.get("pages")
     pages = pages if pages in _VALID_PAGES else (1 if preset == "exam_night" else 2)
+    columns = s.get("columns")
+    columns = columns if columns in _VALID_COLUMNS else base["columns"]
+
+    style = str(s.get("style") or "academic").lower()
+    if style not in _VALID_STYLES:
+        style = "academic"
+
+    font_size = str(s.get("fontSize") or "auto").lower()
+    if font_size not in _VALID_FONT_SIZES:
+        font_size = "auto"
+
+    detail_explicit = "detailLevel" in s
+    detail_level = str(s.get("detailLevel") or "balanced").lower()
+    if detail_level not in _VALID_DETAIL_LEVELS:
+        detail_level = "balanced"
+    detail = _DETAIL_CONFIG[detail_level]
+
+    focus_mode = str(s.get("focusMode") or "whole_course").lower()
+    if focus_mode not in _VALID_FOCUS_MODES:
+        focus_mode = "whole_course"
+
+    output = str(s.get("output") or "both").lower()
+    if output not in _VALID_OUTPUTS:
+        output = "both"
     # More pages → a few more sections; fewer → tighter. A gentle ±delta (NOT a
     # multiplier — that re-inflated topics to 18-20 and blew the 45s timeout).
     # Capped at 14 so even "4 pages" stays inside the output budget.
-    base["topics"] = max(4, min(14, base["topics"] + (pages - 2) * 2))
+    base["topics"] = max(4, min(18, base["topics"] + (pages - 2) * 2 + detail["topicDelta"]))
 
     lang = str(s.get("language") or "source").lower()
     if lang not in _VALID_LANGS:
         lang = "source"
+    font = _FONT_TO_LAYOUT[font_size] or base["font"]
 
     return {
         "preset": preset,
         "pages": pages,
+        "columns": columns,
+        "style": style,
+        "fontSize": font_size,
+        "detailLevel": detail_level,
+        "focusMode": focus_mode,
         "language": lang,
-        "columns": base["columns"],
-        "font": base["font"],
-        "densityTarget": _DENSITY_TARGET.get(base["density"], "30-50"),
+        "output": output,
+        "font": font,
+        "densityTarget": detail["density"] if detail_explicit else _DENSITY_TARGET.get(base["density"], detail["density"]),
         "maxTopics": base["topics"],
+        "perTopicTopK": detail["topK"],
+        "maxEvidence": detail["evidence"],
         "langInstruction": _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["source"]),
+        "purposeInstruction": _PURPOSE_INSTRUCTION.get(preset, _PURPOSE_INSTRUCTION["balanced"]),
     }
 
 
@@ -526,8 +698,17 @@ def _canonical_mechanics_topic(name: str) -> str:
     key = _topic_key(name)
     if not key:
         return name
+    # Word-START matching (alias must begin at a word boundary), not a raw
+    # substring. A leading space still allows German morphology — an alias is a
+    # prefix of a longer word ("korpersystem" → "korpersystemen", "reibung" →
+    # "reibungskraft") — while killing compound false positives where the alias
+    # is only a SUFFIX ("work" in "net work" → "network", "homework",
+    # "framework"; "power" in "horsepower"). Standalone-word collisions
+    # ("normal" in "normal distribution") remain by design — the taxonomy is
+    # intentionally aggressive; gate it per-subject if this goes multi-course.
+    padded = " " + key
     for needle, canonical in _MECHANICS_TOPIC_ALIASES:
-        if needle in key:
+        if " " + needle in padded:
             return canonical
     return repair_mojibake(name).strip()
 
@@ -589,6 +770,242 @@ def _trap_guidance(topics: list[str | None]) -> str:
     )
 
 
+def _formula_bank_guidance(topics: list[str | None]) -> str:
+    lines: list[str] = []
+    seen: set[str] = set()
+    for topic in topics:
+        if not topic:
+            continue
+        canonical = _canonical_mechanics_topic(topic)
+        formulas = _MECHANICS_FORMULA_BANK.get(canonical, ())
+        if not formulas:
+            continue
+        key = _topic_key(canonical)
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f"- {canonical}: " + "; ".join(formulas[:4]))
+    if not lines:
+        return ""
+    return (
+        "\n\nEXPECTED FORMULA PRIORITIES (retrieval/selection guide only; "
+        "include a formula only when the COURSE CONTEXT supports it):\n"
+        + "\n".join(lines)
+    )
+
+
+def _formula_count(text: str) -> int:
+    return len(_DISPLAY_FORMULA_RE.findall(text or ""))
+
+
+def _quality_metrics(
+    *,
+    text: str,
+    topics: list[str | None],
+    sources: list[dict[str, Any]],
+    grounding: dict[str, Any],
+    cfg: dict[str, Any],
+    dropped_formulas: int,
+    unsupported_formulas: int,
+    filler_notes: int,
+    evidence_quality: EvidenceNormalizationStats,
+) -> dict[str, Any]:
+    formulas = _formula_count(text)
+    covered_topics = len([t for t in topics if t])
+    topic_count = max(1, covered_topics)
+    grounded_ratio = grounding.get("ratio")
+    m = re.match(r"\s*(\d+)\s*-\s*(\d+)", str(cfg.get("densityTarget") or ""))
+    expected_min = int(m.group(1)) if m else 0
+    density_ratio = min(1.0, formulas / expected_min) if expected_min else None
+    layout_penalty = max(0, formulas - expected_min) * 2 if expected_min else 20
+    return {
+        "formulaCount": formulas,
+        "formulaDensity": round(formulas / topic_count, 2),
+        "formulaReadability": max(0, 100 - (dropped_formulas + evidence_quality.dropped_formula_lines) * 12),
+        "sourceSupport": None if grounded_ratio is None else round(float(grounded_ratio) * 100),
+        "citationCoverage": 100 if sources else 0,
+        "topicCoverage": min(100, round((covered_topics / topic_count) * 100)),
+        "layoutFit": max(40, min(100, 100 - layout_penalty)),
+        "languageConsistency": 100,
+        "corruptionCount": evidence_quality.dropped_formula_lines + dropped_formulas,
+        "unsupportedFormulaCount": unsupported_formulas,
+        "genericFillerCount": filler_notes,
+        "formulaDensityTargetMet": density_ratio,
+    }
+
+
+
+
+def _classify_item(content: str) -> str:
+    text = repair_mojibake(content or "").strip()
+    low = text.lower()
+    if not text:
+        return "source_note"
+    if re.search(r"\b(trap|warning|critical|only valid|invalid|slip|rutsch|vorsicht)\b", low):
+        return "trap"
+    if re.search(r"\b(draw|free-body|freischnitt|sketch|choose|use|first|solve|procedure)\b", low):
+        return "procedure"
+    if re.search(r"^\s*[A-Za-z\\][A-Za-z0-9_\\{}^]*\s*[:=]\s*(?:is|ist|means|bedeutet)\b", text):
+        return "variable_definition"
+    if re.search(r"(?:^|\s)(?:if|for|bei|falls|wenn|const|constant|special case|sonderfall)\b", low):
+        return "special_case"
+    if re.search(r"(?:=|\\frac|\\int|\\sum|\\dot|\\Theta|theta|omega|alpha|mu|sqrt|\^|_)", text):
+        if re.search(r"(?:derived|follows|from|therefore|=>|->)", low):
+            return "derived_formula"
+        return "formula"
+    if re.search(r"\b(example|exercise|aufgabe|beispiel)\b", low):
+        return "example_specific"
+    if re.search(r"\b(diagram|sketch|graph|figure|free-body|freischnitt)\b", low):
+        return "diagram_logic"
+    if re.search(r"\b(is|ist|are|definition|defined as|bezeichnet)\b", low):
+        return "definition"
+    return "source_note"
+
+
+def _content_score(content: str, item_type: str | None = None) -> dict[str, int]:
+    text = repair_mojibake(content or "")
+    typ = item_type or _classify_item(text)
+    math_weight = len(re.findall(r"(\\frac|\\int|\\sum|\\dot|\\Theta|theta|omega|alpha|mu|sqrt|[=_^])", text))
+    variable_count = len(set(re.findall(r"\b[a-zA-Z](?:_[a-zA-Z0-9]+)?\b", text)))
+    entropy = 20 + min(45, math_weight * 7 + variable_count * 3)
+    if typ in ("formula", "derived_formula", "special_case"):
+        entropy += 20
+    if typ in ("trap", "procedure"):
+        entropy += 12
+    if len(text) > 160:
+        entropy -= 10
+    exam_utility = {
+        "formula": 92,
+        "derived_formula": 88,
+        "special_case": 84,
+        "trap": 82,
+        "procedure": 72,
+        "variable_definition": 66,
+        "diagram_logic": 62,
+        "definition": 45,
+        "example_specific": 38,
+        "source_note": 25,
+    }.get(typ, 30)
+    derivability = max(5, 80 - entropy)
+    memory = min(100, entropy + (15 if math_weight >= 3 else 0))
+    return {
+        "entropyScore": max(0, min(100, entropy)),
+        "examUtilityScore": exam_utility,
+        "derivabilityScore": derivability,
+        "memoryDifficultyScore": memory,
+    }
+
+
+def _evidence_candidates(
+    chunks: list[dict[str, Any]],
+    doc_names: dict[str, str],
+    limit: int = 18,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for c in chunks:
+        fn = doc_names.get(c.get("documentId") or "", "source")
+        pg = c.get("pageStart")
+        for raw in re.split(r"[\n;]+", c.get("text") or ""):
+            line = raw.strip(" -*\t\r")
+            if len(line) < 8:
+                continue
+            typ = _classify_item(line)
+            score = _content_score(line, typ)
+            support = 18 if c.get("chunkId") else 8
+            rank = score["entropyScore"] + score["examUtilityScore"] + support - score["derivabilityScore"] // 3
+            items.append({
+                "type": typ,
+                "content": line[:180],
+                "source": f"{fn}, p.{pg}" if pg else fn,
+                "score": score,
+                "rank": rank,
+            })
+    items.sort(key=lambda x: x["rank"], reverse=True)
+    return items[:limit]
+
+
+def _taxonomy_candidate_guidance(
+    chunks: list[dict[str, Any]],
+    doc_names: dict[str, str],
+) -> str:
+    candidates = _evidence_candidates(chunks, doc_names)
+    if not candidates:
+        return ""
+    lines = []
+    for item in candidates:
+        score = item["score"]
+        lines.append(
+            f"- {item['type']} | entropy {score['entropyScore']} | utility "
+            f"{score['examUtilityScore']} | {item['content']} ({item['source']})"
+        )
+    return (
+        "\n\nTAXONOMY + HIGH-ENTROPY CANDIDATES (use as planning input; still "
+        "write only what is supported by COURSE CONTEXT):\n"
+        "Item types: " + ", ".join(_CHEATSHEET_ITEM_TYPES) + ".\n"
+        "Selection rule: high entropy + high exam utility + strong source support wins; "
+        "remove generic filler and weak notes first.\n"
+        + "\n".join(lines)
+    )
+
+
+def _spatial_layout_guidance(topics: list[str | None]) -> str:
+    selected = {_canonical_mechanics_topic(t) for t in topics if t}
+    lines: list[str] = []
+    for col, names in _MECHANICS_LAYOUT_COLUMNS:
+        hits = [name for name in names if name in selected]
+        if hits:
+            lines.append(f"- {col}: " + " -> ".join(hits))
+    if not lines:
+        return (
+            "\n\nSPATIAL LAYOUT RULES:\n"
+            "- Arrange sections by conceptual dependency, not by retrieval order.\n"
+            "- Keep definitions, formulas, assumptions, special cases, traps, and sources inside one compact module.\n"
+            "- Place derived and special-case formulas directly next to their parent formula."
+        )
+    return (
+        "\n\nSPATIAL LAYOUT MAP (keep related blocks physically close; order sections "
+        "to match this map where possible):\n" + "\n".join(lines)
+    )
+
+
+def _method_picker_guidance(topics: list[str | None], cfg: dict[str, Any]) -> str:
+    selected = {_canonical_mechanics_topic(t) for t in topics if t}
+    mechanics_hits = selected.intersection(set(_MECHANICS_TOPIC_ORDER))
+    if not mechanics_hits or cfg.get("preset") == "topic_mastery":
+        return ""
+    return (
+        "\n\nMETHOD PICKER (include one tiny `## Method Picker` table near the top "
+        "when supported by the selected topics):\n"
+        "| Given / problem type | Use |\n"
+        "|---|---|\n"
+        "| Forces + acceleration | $\\sum F = ma$ |\n"
+        "| Known path / constraint | Tangential-normal coordinates |\n"
+        "| Central force / rotation | Polar coordinates |\n"
+        "| Force over distance | Work-energy |\n"
+        "| Collision / short impact | Impulse-momentum |\n"
+        "| Rigid body rotation | $\\sum M = \\Theta\\alpha$ |\n"
+        "| Rolling body | Translation + rotation + rolling constraint |"
+    )
+
+
+def _architecture_guidance(
+    *,
+    evidence: list[dict[str, Any]],
+    topics: list[str | None],
+    doc_names: dict[str, str],
+    cfg: dict[str, Any],
+) -> str:
+    return (
+        "\n\nINFORMATION ARCHITECTURE RULES:\n"
+        "- Treat the sheet as a compact knowledge map, not a flat summary.\n"
+        "- For each topic module use this internal order: core definition -> main formulas -> variable meanings -> assumptions/conditions -> special cases -> derived formulas -> procedures -> exam traps -> examples only if high-value -> sources.\n"
+        "- Related formulas must be adjacent; never scatter inverse relationships, coordinate systems, or method families.\n"
+        "- Iterative pruning order: generic filler, duplicate definitions, low-priority examples, weak notes, overlong explanations, then only lower-priority formulas.\n"
+        "- Never prune core formulas, critical assumptions, important traps, or source citations first.\n"
+        + _spatial_layout_guidance(topics)
+        + _method_picker_guidance(topics, cfg)
+        + _taxonomy_candidate_guidance(evidence, doc_names)
+    )
 
 
 def _pool_evidence(
@@ -597,6 +1014,8 @@ def _pool_evidence(
     course_id: str,
     topics: list[str | None],
     document_ids: list[str] | None,
+    top_k: int = _PER_TOPIC_TOP_K,
+    max_evidence: int = _MAX_EVIDENCE,
 ) -> list[dict[str, Any]]:
     """Retrieve a deduped, source-grounded evidence pool across the topics."""
     seen: set[str] = set()
@@ -610,7 +1029,7 @@ def _pool_evidence(
                 query=_topic_query(t),
                 document_ids=document_ids or None,
                 purpose="cheatsheet",
-                top_k=_PER_TOPIC_TOP_K,
+                top_k=top_k,
             )
         except Exception:  # noqa: BLE001
             log.exception("cheatsheet evidence retrieval failed (topic=%s)", t)
@@ -620,7 +1039,7 @@ def _pool_evidence(
             if cid and cid not in seen:
                 seen.add(cid)
                 pooled.append(c)
-    return pooled[:_MAX_EVIDENCE]
+    return pooled[:max_evidence]
 
 
 def _backfill_doc_names(chunks: list[dict[str, Any]], doc_names: dict[str, str]) -> dict[str, str]:
@@ -736,7 +1155,10 @@ def _settings_system_prompt(cfg: dict[str, Any], *, per_pdf: bool = False) -> st
         + "\n\nSETTINGS (override any generic guidance above):\n"
         + f"- Aim for {cfg['densityTarget']} formulas across the sheet when the "
         "evidence supports them; never invent to hit the number.\n"
-        + f"- {cfg['langInstruction']}"
+        + f"- Detail level: {cfg['detailLevel']}; pages: {cfg['pages']}; columns: {cfg['columns']}.\n"
+        + f"- Visual style: {cfg['style']}; keep prose compact enough for the selected layout.\n"
+        + f"- {cfg['langInstruction']}\n"
+        + f"- {cfg['purposeInstruction']}"
     )
     if per_pdf:
         prompt += (
@@ -784,7 +1206,7 @@ def generate_cheatsheet(
     per_pdf = bool(document_ids and 2 <= len(document_ids) <= _MAX_PER_PDF_DOCS)
     by_doc: dict[str, list[dict[str, Any]]] = {}
     if per_pdf:
-        per_doc_cap = max(4, _MAX_EVIDENCE // max(1, len(document_ids or [])))
+        per_doc_cap = max(4, int(cfg["maxEvidence"]) // max(1, len(document_ids or [])))
         by_doc = _pool_evidence_by_doc(
             user_id=user_id, course_id=course_id,
             document_ids=document_ids or [], topics=topics, per_doc_cap=per_doc_cap,
@@ -792,9 +1214,21 @@ def generate_cheatsheet(
         evidence = [c for chunks in by_doc.values() for c in chunks]
     else:
         evidence = _pool_evidence(
-            user_id=user_id, course_id=course_id, topics=topics, document_ids=document_ids,
+            user_id=user_id,
+            course_id=course_id,
+            topics=topics,
+            document_ids=document_ids,
+            top_k=int(cfg["perTopicTopK"]),
+            max_evidence=int(cfg["maxEvidence"]),
         )
     evidence, evidence_quality = normalize_evidence_chunks(evidence)
+    if per_pdf:
+        grouped_clean: dict[str, list[dict[str, Any]]] = {doc_id: [] for doc_id in (document_ids or [])}
+        for chunk in evidence:
+            doc_id = chunk.get("documentId")
+            if doc_id:
+                grouped_clean.setdefault(doc_id, []).append(chunk)
+        by_doc = {doc_id: chunks for doc_id, chunks in grouped_clean.items() if chunks}
     if not evidence:
         return {
             "text": "",
@@ -808,15 +1242,33 @@ def generate_cheatsheet(
     # Caller-supplied names (selected docs) take precedence; backfill the rest
     # so course-wide sheets still cite real filenames instead of "Unknown".
     merged_names = _backfill_doc_names(evidence, dict(doc_names or {}))
+    architecture = _architecture_guidance(
+        evidence=evidence,
+        topics=topics,
+        doc_names=merged_names,
+        cfg=cfg,
+    )
 
     if per_pdf:
         n_pdfs = len(by_doc)
         title = f"Cheatsheet — {n_pdfs} PDF" + ("s" if n_pdfs != 1 else "")
-        user = "COURSE CONTEXT (grouped by source PDF):\n\n" + _format_evidence_by_doc(by_doc, merged_names)
+        user = (
+            "COURSE CONTEXT (grouped by source PDF):\n\n"
+            + _format_evidence_by_doc(by_doc, merged_names)
+            + architecture
+            + _formula_bank_guidance(topics)
+            + _trap_guidance(topics)
+        )
         system = _settings_system_prompt(cfg, per_pdf=True)
     else:
         title = (topic_query + " — Cheatsheet") if topic_query else "Course Cheatsheet"
-        user = "COURSE CONTEXT:\n\n" + _format_evidence(evidence, merged_names, topics)
+        user = (
+            "COURSE CONTEXT:\n\n"
+            + _format_evidence(evidence, merged_names, topics)
+            + architecture
+            + _formula_bank_guidance(topics)
+            + _trap_guidance(topics)
+        )
         system = _settings_system_prompt(cfg)
     try:
         # Keep output bounded: at ~40 tok/s, output length is wall-clock, and the
@@ -829,6 +1281,7 @@ def generate_cheatsheet(
 
     raw_text = (res.data.get("text") if isinstance(res.data, dict) else "") or ""
     text, dropped_formulas = sanitize_cheatsheet_markdown(raw_text)
+    text, filler_notes = remove_generic_filler_notes(text)
     # Deterministic backstop so a repeated formula is GUARANTEED removed, even if
     # the model didn't dedup the per-PDF sections perfectly.
     text, deduped = dedup_display_formulas(text)
@@ -839,6 +1292,8 @@ def generate_cheatsheet(
         log.info("cheatsheet dedup removed %d repeated formula(s)", deduped)
     if unsupported_formulas:
         log.info("cheatsheet source gate removed %d unsupported formula(s)", unsupported_formulas)
+    if filler_notes:
+        log.info("cheatsheet filler filter removed %d generic note(s)", filler_notes)
     grounding = formula_grounding(text, evidence)
     sources = [
         {
@@ -850,6 +1305,17 @@ def generate_cheatsheet(
         }
         for c in evidence
     ]
+    metrics = _quality_metrics(
+        text=text,
+        topics=topics,
+        sources=sources,
+        grounding=grounding,
+        cfg=cfg,
+        dropped_formulas=dropped_formulas,
+        unsupported_formulas=unsupported_formulas,
+        filler_notes=filler_notes,
+        evidence_quality=evidence_quality,
+    )
 
     note_id: str | None = None
     if save and text.strip():
@@ -878,6 +1344,8 @@ def generate_cheatsheet(
             "evidenceNormalization": evidence_quality.__dict__,
             "droppedMalformedFormulas": dropped_formulas,
             "droppedUnsupportedFormulas": unsupported_formulas,
+            "droppedGenericNotes": filler_notes,
+            "metrics": metrics,
         },
         "model": res.model,
         "promptTokens": res.prompt_tokens,
@@ -900,6 +1368,8 @@ def generate_cheatsheet(
             f"{unsupported_formulas} formula(s) were removed because they were not "
             "supported by the retrieved source text."
         )
+    if filler_notes:
+        warns.append(f"{filler_notes} generic warning line(s) were removed.")
     if grounding["ratio"] is not None and grounding["total"] >= 3 and grounding["ratio"] < 0.6:
         ungrounded = grounding["total"] - grounding["grounded"]
         warns.append(
@@ -916,6 +1386,7 @@ __all__ = (
     "sanitize_cheatsheet_markdown",
     "dedup_display_formulas",
     "drop_unsupported_display_formulas",
+    "remove_generic_filler_notes",
     "normalize_settings",
     "formula_grounding",
 )

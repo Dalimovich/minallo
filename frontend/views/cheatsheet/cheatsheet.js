@@ -29,6 +29,8 @@
       '<div class="cs-settings" id="csSettings">' +
         '<div class="cs-preset-row" role="group" aria-label="Cheatsheet preset">' +
           '<button type="button" class="cs-preset" data-preset="exam_night">Exam Night</button>' +
+          '<button type="button" class="cs-preset" data-preset="open_book_exam">Open-book Exam</button>' +
+          '<button type="button" class="cs-preset" data-preset="formula_reference">Formula Reference</button>' +
           '<button type="button" class="cs-preset is-active" data-preset="balanced">Balanced Study</button>' +
           '<button type="button" class="cs-preset" data-preset="deep_revision">Deep Revision</button>' +
           '<button type="button" class="cs-preset" data-preset="topic_mastery">Topic Mastery</button>' +
@@ -37,8 +39,23 @@
           '<label class="cs-opt">Pages' +
             '<select id="csPages"><option value="">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option></select>' +
           '</label>' +
+          '<label class="cs-opt">Columns' +
+            '<select id="csColumns"><option value="">Auto</option><option>2</option><option selected>3</option><option>4</option></select>' +
+          '</label>' +
+          '<label class="cs-opt">Style' +
+            '<select id="csStyle"><option value="academic">Academic</option><option value="modern">Modern</option><option value="compact">Compact</option><option value="classic">Classic</option></select>' +
+          '</label>' +
+          '<label class="cs-opt">Text' +
+            '<select id="csFontSize"><option value="auto">Auto</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select>' +
+          '</label>' +
+          '<label class="cs-opt">Detail' +
+            '<select id="csDetail"><option value="general">General</option><option value="balanced" selected>Balanced</option><option value="specific">Specific</option><option value="very_thorough">Very Thorough</option></select>' +
+          '</label>' +
           '<label class="cs-opt">Language' +
-            '<select id="csLang"><option value="source">Same as material</option><option value="en">English</option><option value="de">Deutsch</option></select>' +
+            '<select id="csLang"><option value="source">Same as material</option><option value="en">English</option><option value="de">Deutsch</option><option value="de_terms_en_explanations">German terms + English</option></select>' +
+          '</label>' +
+          '<label class="cs-opt">Output' +
+            '<select id="csOutput"><option value="both">Both</option><option value="web">Web view</option><option value="pdf">PDF</option></select>' +
           '</label>' +
           '<span class="cs-conflict" id="csConflict" hidden></span>' +
         '</div>' +
@@ -188,6 +205,73 @@
     });
   }
 
+  function _sectionToolsHtml() {
+    return '<div class="cs-section-tools">' +
+      '<button type="button" data-sec-act="condense">Condense</button>' +
+      '<button type="button" data-sec-act="expand">Expand</button>' +
+      '<button type="button" data-sec-act="remove">Remove</button>' +
+      '<button type="button" data-sec-act="up">Up</button>' +
+      '<button type="button" data-sec-act="down">Down</button>' +
+      '<button type="button" data-sec-act="lock">Lock</button>' +
+      '<button type="button" data-sec-act="regen">Regenerate</button>' +
+    '</div>';
+  }
+
+  function _sectionTitle(block) {
+    var h = block && block.querySelector('h2, h3');
+    return h ? (h.textContent || '').trim() : '';
+  }
+
+  function _condenseSection(block) {
+    if (!block || block.classList.contains('is-locked')) return;
+    var content = block.querySelector('.cs-section-content') || block;
+    if (!content.dataset.fullHtml) content.dataset.fullHtml = content.innerHTML;
+    content.querySelectorAll('p, li').forEach(function (el) {
+      var txt = el.textContent || '';
+      var keep = el.querySelector('.katex, code, pre') ||
+        /important:|critical:|trap:|source:|p\.\d+|=|\\frac|\\int|\\sum|const|valid/i.test(txt);
+      if (!keep) el.classList.add('cs-pruned-line');
+    });
+    block.classList.add('is-condensed');
+  }
+
+  function _expandSection(block) {
+    if (!block) return;
+    var content = block.querySelector('.cs-section-content') || block;
+    if (content.dataset.fullHtml) content.innerHTML = content.dataset.fullHtml;
+    block.classList.remove('is-condensed');
+  }
+
+  function _wireSectionTools(scope, els) {
+    if (!scope) return;
+    scope.querySelectorAll('.cs-progress-section, .cs-edit-section').forEach(function (block) {
+      if (block.dataset.toolsWired) return;
+      block.dataset.toolsWired = '1';
+      if (!block.querySelector('.cs-section-tools')) block.insertAdjacentHTML('afterbegin', _sectionToolsHtml());
+    });
+    scope.querySelectorAll('.cs-section-tools button').forEach(function (btn) {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', function () {
+        var act = btn.getAttribute('data-sec-act');
+        var block = btn.closest('.cs-progress-section, .cs-edit-section');
+        if (!block) return;
+        if (act !== 'lock' && block.classList.contains('is-locked')) return;
+        if (act === 'condense') _condenseSection(block);
+        else if (act === 'expand') _expandSection(block);
+        else if (act === 'remove') block.remove();
+        else if (act === 'up' && block.previousElementSibling) block.parentNode.insertBefore(block, block.previousElementSibling);
+        else if (act === 'down' && block.nextElementSibling) block.parentNode.insertBefore(block.nextElementSibling, block);
+        else if (act === 'lock') {
+          block.classList.toggle('is-locked');
+          btn.textContent = block.classList.contains('is-locked') ? 'Unlock' : 'Lock';
+        } else if (act === 'regen' && els && typeof els._regenerateSection === 'function') {
+          els._regenerateSection(_sectionTitle(block));
+        }
+      });
+    });
+  }
+
   function _renderResultProgressive(els, res, runId) {
     if (runId !== _csRun) return;
     if (!res || res.error || !res.text || !res.text.trim()) {
@@ -242,10 +326,11 @@
         var writing = block.querySelector('.cs-section-writing');
         if (writing) writing.remove();
         block.classList.add('is-written');
+        _wireSectionTools(body, els);
         await _sleep(360);
       }
       if (runId !== _csRun) return;
-      if (line) line.textContent = 'Cheatsheet complete';
+      if (line) line.textContent = _completionLabel(res);
       if (after) after.removeAttribute('hidden');
       if (viewBtn) viewBtn.disabled = false;
       _bindSourceClicks(els.result);
@@ -282,14 +367,29 @@
   function _downloadPdf(el, filename) {
     return _ensureHtml2Pdf().then(function (h2p) {
       return h2p().set({
-        margin: [8, 8, 10, 8],
+        margin: [10, 10, 10, 10],
         filename: filename,
         image: { type: 'jpeg', quality: 0.96 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
         pagebreak: { mode: ['css', 'legacy'], avoid: '.cs-block' },
       }).from(el).save();
     });
+  }
+
+  function _hasQualityWarnings(res) {
+    var q = (res && res.quality) || {};
+    return !!(
+      (res && res.citationWarning) ||
+      q.droppedMalformedFormulas ||
+      q.droppedUnsupportedFormulas ||
+      q.droppedGenericNotes ||
+      (q.evidenceNormalization && q.evidenceNormalization.dropped_formula_lines)
+    );
+  }
+
+  function _completionLabel(res) {
+    return _hasQualityWarnings(res) ? 'Cheatsheet generated with quality warnings' : 'Cheatsheet complete';
   }
 
   function _wireDownload(btn, getEl, filename) {
@@ -320,6 +420,8 @@
       '<div class="cs-paper-bar">' +
         '<span class="cs-paper-bar-title">' + _esc(opts.title || 'Cheatsheet') + '</span>' +
         '<div class="cs-paper-bar-actions">' +
+          '<select class="cs-paper-select" data-act="columns" title="Change columns"><option value="2">2 cols</option><option value="3">3 cols</option><option value="4">4 cols</option></select>' +
+          '<select class="cs-paper-select" data-act="font" title="Change font size"><option value="0.72rem">Small</option><option value="0.78rem">Medium</option><option value="0.86rem">Large</option></select>' +
           '<button type="button" class="cs-paper-btn" data-act="download">⤓ Download PDF</button>' +
           '<button type="button" class="cs-paper-btn cs-paper-close" data-act="close">Close</button>' +
         '</div>' +
@@ -343,7 +445,18 @@
       if (st.columns) paper.style.setProperty('--cs-columns', String(st.columns));
       var fontEm = { xs: '0.72rem', sm: '0.78rem', md: '0.86rem' }[st.font || 'sm'];
       if (fontEm) paper.style.setProperty('--cs-font', fontEm);
+      if (st.style) paper.setAttribute('data-style', st.style);
     }
+    var colSel = ov.querySelector('[data-act="columns"]');
+    var fontSel = ov.querySelector('[data-act="font"]');
+    if (colSel && st.columns) colSel.value = String(st.columns);
+    if (fontSel) fontSel.value = ({ xs: '0.72rem', sm: '0.78rem', md: '0.86rem' }[st.font || 'sm']) || '0.78rem';
+    if (colSel) colSel.addEventListener('change', function () {
+      if (paper) paper.style.setProperty('--cs-columns', colSel.value);
+    });
+    if (fontSel) fontSel.addEventListener('change', function () {
+      if (paper) paper.style.setProperty('--cs-font', fontSel.value);
+    });
     var body = ov.querySelector('.cs-paper-body');
     if (body) _renderMarkdown(body, opts.markdown || '', true);
     ov.querySelector('[data-act="close"]').addEventListener('click', _closePaper);
@@ -566,7 +679,12 @@
       saved: root.querySelector('#csSaved'),
       savedList: root.querySelector('#csSavedList'),
       pages: root.querySelector('#csPages'),
+      columns: root.querySelector('#csColumns'),
+      style: root.querySelector('#csStyle'),
+      fontSize: root.querySelector('#csFontSize'),
+      detail: root.querySelector('#csDetail'),
       lang: root.querySelector('#csLang'),
+      output: root.querySelector('#csOutput'),
       conflict: root.querySelector('#csConflict'),
     };
     if (!els.gen) return;
@@ -578,16 +696,29 @@
       var s = { preset: state.preset };
       var p = els.pages && els.pages.value;
       if (p) s.pages = parseInt(p, 10);
+      var c = els.columns && els.columns.value;
+      if (c) s.columns = parseInt(c, 10);
+      if (els.style && els.style.value) s.style = els.style.value;
+      if (els.fontSize && els.fontSize.value) s.fontSize = els.fontSize.value;
+      if (els.detail && els.detail.value) s.detailLevel = els.detail.value;
       var l = els.lang && els.lang.value;
       if (l && l !== 'source') s.language = l;
+      if (els.output && els.output.value) s.output = els.output.value;
       return s;
     }
     function _checkConflicts() {
       if (!els.conflict) return;
       var topic = ((els.topic && els.topic.value) || '').trim();
       var pages = els.pages && els.pages.value ? parseInt(els.pages.value, 10) : null;
+      var columns = els.columns && els.columns.value ? parseInt(els.columns.value, 10) : null;
+      var fontSize = els.fontSize && els.fontSize.value;
+      var detail = els.detail && els.detail.value;
       var msg = '';
-      if (state.preset === 'topic_mastery' && !topic) {
+      if (pages === 1 && columns === 4 && fontSize === 'large') {
+        msg = '4 columns + Large text + 1 page may not fit. Use Small text or 2 pages.';
+      } else if (pages === 1 && detail === 'very_thorough') {
+        msg = 'Very Thorough + 1 page will keep only highest-priority details.';
+      } else if (state.preset === 'topic_mastery' && !topic) {
         msg = 'Topic Mastery works best with a topic in the focus box.';
       } else if (state.preset === 'deep_revision' && pages === 1) {
         msg = 'Deep Revision on 1 page will be very cramped — consider 2+ pages.';
@@ -605,6 +736,9 @@
       });
     });
     if (els.pages) els.pages.addEventListener('change', _checkConflicts);
+    if (els.columns) els.columns.addEventListener('change', _checkConflicts);
+    if (els.fontSize) els.fontSize.addEventListener('change', _checkConflicts);
+    if (els.detail) els.detail.addEventListener('change', _checkConflicts);
     if (els.topic) els.topic.addEventListener('input', _checkConflicts);
 
     _aiService().then(function (svc) { _loadSaved(svc, els, courseId); });
@@ -612,6 +746,9 @@
     function doGenerate(documentIds) {
       var topic = ((els.topic && els.topic.value) || '').trim();
       var settings = _readSettings();
+      settings.focusMode = documentIds && documentIds.length
+        ? 'selected_files'
+        : (topic ? 'specific_topic' : 'whole_course');
       els.gen.disabled = true;
       els.result.innerHTML = '<div class="cs-msg cs-loading">Generating cheatsheet… this can take a moment.</div>';
       var progress = _startBuildSteps(els, topic);
@@ -636,6 +773,11 @@
             '<div class="cs-msg cs-error">' + _esc(err && err.message ? err.message : 'Cheatsheet failed. Please try again.') + '</div>';
         });
     }
+
+    els._regenerateSection = function (title) {
+      if (title && els.topic) els.topic.value = title.replace(/^Method Picker$/i, '').trim();
+      doGenerate(null);
+    };
 
     els.gen.addEventListener('click', function () {
       if (!courseId) return;

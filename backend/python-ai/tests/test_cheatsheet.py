@@ -21,7 +21,7 @@ from app.services import cheatsheet_quality as cq  # noqa: E402
 
 def test_topic_names_focus_overrides_map():
     tm = [{"name": "Friction"}, {"name": "Momentum"}]
-    assert cs._topic_names(tm, "Energy") == ["Energy"]
+    assert cs._topic_names(tm, "Energy") == ["Arbeit, Energie und Leistung"]
 
 
 def test_topic_names_uses_map_capped():
@@ -49,10 +49,70 @@ def test_topic_focus_is_canonicalized_for_mechanics():
     assert cs._topic_names([], "projectile motion") == ["Wurfbewegung"]
 
 
+def test_canonicalization_ignores_compound_word_false_positives():
+    # Word-START matching: "work"/"power" must not match as a mere suffix of an
+    # unrelated compound word (the old substring bug mapped these to mechanics).
+    for benign in ("network protocols", "homework", "framework", "horsepower"):
+        assert cs._canonical_mechanics_topic(benign) == benign
+    # German morphology still canonicalizes (alias is a word-prefix).
+    assert cs._canonical_mechanics_topic("Koerpersystemen") == "Dynamik von Punktsystemen"
+
+
 def test_topic_query_keeps_aliases_for_retrieval():
     query = cs._topic_query("Dynamik von Punktsystemen")
     assert "systems of point masses" in query
     assert "Dynamik von Punktsystemen" in query
+
+
+def test_trap_guidance_uses_precise_curated_traps():
+    guidance = cs._trap_guidance(["Reibung und Widerstand", "Rollbewegung"])
+    assert "Static friction is not automatically" in guidance
+    assert "Rolling constraint" in guidance
+    assert "Direction matters" not in guidance
+
+
+def test_formula_bank_guidance_is_source_support_only():
+    guidance = cs._formula_bank_guidance(["Kinematik eines Punktes"])
+    assert r"v = \frac{dx}{dt}" in guidance
+    assert "include a formula only when the COURSE CONTEXT supports it" in guidance
+    assert cs._formula_bank_guidance(["Unknown topic"]) == ""
+
+
+def test_taxonomy_classifies_and_scores_high_entropy_formula():
+    formula = r"m(\ddot r-r\dot\varphi^2)=\sum F_r"
+    assert cs._classify_item(formula) == "formula"
+    formula_score = cs._content_score(formula)
+    filler_score = cs._content_score("Forces affect motion.")
+    assert formula_score["entropyScore"] > filler_score["entropyScore"]
+    assert formula_score["examUtilityScore"] > filler_score["examUtilityScore"]
+
+
+def test_architecture_guidance_includes_spatial_map_and_method_picker():
+    cfg = cs.normalize_settings({"preset": "exam_night"})
+    guidance = cs._architecture_guidance(
+        evidence=[{
+            "chunkId": "c1",
+            "documentId": "d1",
+            "pageStart": 3,
+            "text": r"m(\ddot r-r\dot\varphi^2)=\sum F_r",
+        }],
+        topics=["Polarkoordinaten", "Arbeit, Energie und Leistung"],
+        doc_names={"d1": "mec.pdf"},
+        cfg=cfg,
+    )
+    assert "INFORMATION ARCHITECTURE RULES" in guidance
+    assert "SPATIAL LAYOUT MAP" in guidance
+    assert "METHOD PICKER" in guidance
+    assert "TAXONOMY + HIGH-ENTROPY CANDIDATES" in guidance
+    assert "mec.pdf, p.3" in guidance
+
+
+def test_remove_generic_filler_notes():
+    md = "## Dynamik\n- Direction matters.\n- Static friction is not automatically mu_0 N."
+    out, removed = cs.remove_generic_filler_notes(md)
+    assert removed == 1
+    assert "Direction matters" not in out
+    assert "Static friction" in out
 
 
 # ── sanitizer (Stage 4) ──────────────────────────────────────────────────────
@@ -165,6 +225,17 @@ def test_settings_exam_night_defaults_one_page():
     assert cfg["pages"] == 1
     assert cfg["columns"] == 4
     assert cfg["densityTarget"] == "16-24"
+    assert "Exam Night" in cfg["purposeInstruction"]
+
+
+def test_settings_new_purpose_presets():
+    open_book = cs.normalize_settings({"preset": "open_book_exam"})
+    formula_ref = cs.normalize_settings({"preset": "formula_reference"})
+    assert open_book["preset"] == "open_book_exam"
+    assert "Open-book Exam" in open_book["purposeInstruction"]
+    assert formula_ref["preset"] == "formula_reference"
+    assert formula_ref["columns"] == 4
+    assert "Formula Reference" in formula_ref["purposeInstruction"]
 
 
 def test_settings_pages_clamped():
@@ -184,6 +255,46 @@ def test_settings_maxtopics_scales_with_pages():
     four = cs.normalize_settings({"preset": "deep_revision", "pages": 4})["maxTopics"]
     assert four > one
     assert 4 <= one <= 20 and 4 <= four <= 20
+
+
+def test_settings_expanded_controls_affect_budget_and_layout():
+    cfg = cs.normalize_settings({
+        "pages": 4,
+        "columns": 4,
+        "style": "compact",
+        "fontSize": "small",
+        "detailLevel": "very_thorough",
+        "focusMode": "selected_files",
+        "language": "de_terms_en_explanations",
+        "output": "pdf",
+    })
+    assert cfg["columns"] == 4
+    assert cfg["style"] == "compact"
+    assert cfg["font"] == "xs"
+    assert cfg["detailLevel"] == "very_thorough"
+    assert cfg["focusMode"] == "selected_files"
+    assert cfg["language"] == "de_terms_en_explanations"
+    assert cfg["output"] == "pdf"
+    assert cfg["perTopicTopK"] == 7
+    assert cfg["maxEvidence"] == 60
+    assert cfg["maxTopics"] > cs.normalize_settings({"detailLevel": "general"})["maxTopics"]
+
+
+def test_settings_invalid_expanded_controls_fall_back():
+    cfg = cs.normalize_settings({
+        "columns": 99,
+        "style": "nope",
+        "fontSize": "huge",
+        "detailLevel": "encyclopedia",
+        "focusMode": "magic",
+        "output": "printer",
+    })
+    assert cfg["columns"] == 3
+    assert cfg["style"] == "academic"
+    assert cfg["fontSize"] == "auto"
+    assert cfg["detailLevel"] == "balanced"
+    assert cfg["focusMode"] == "whole_course"
+    assert cfg["output"] == "both"
 
 
 # ── per-PDF dedup ────────────────────────────────────────────────────────────
@@ -274,6 +385,26 @@ def test_source_gate_keeps_supported_display_formula():
 # ── generation ──────────────────────────────────────────────────────────────
 
 
+def test_quality_metrics_surface_deterministic_counts():
+    stats = cq.EvidenceNormalizationStats(dropped_formula_lines=1)
+    metrics = cs._quality_metrics(
+        text="$$E = m c^2$$",
+        topics=["Arbeit, Energie und Leistung"],
+        sources=[{"chunkId": "c1"}],
+        grounding={"total": 1, "grounded": 1, "ratio": 1.0},
+        cfg=cs.normalize_settings({"detailLevel": "general"}),
+        dropped_formulas=1,
+        unsupported_formulas=2,
+        filler_notes=3,
+        evidence_quality=stats,
+    )
+    assert metrics["formulaCount"] == 1
+    assert metrics["sourceSupport"] == 100
+    assert metrics["corruptionCount"] == 2
+    assert metrics["unsupportedFormulaCount"] == 2
+    assert metrics["genericFillerCount"] == 3
+
+
 class _FakeChatResult:
     def __init__(self, data):
         self.data = data
@@ -305,8 +436,9 @@ def test_generate_cheatsheet_grounded(monkeypatch):
         doc_names={"d1": "a.pdf"}, save=True,
     )
     assert out["noteId"] == "note-123"
-    assert out["topicsCovered"] == ["Friction"]
+    assert out["topicsCovered"] == ["Reibung und Widerstand"]
     assert "Friction" in out["text"]
+    assert out["quality"]["metrics"]["citationCoverage"] == 100
     assert out["model"] == "fake-model"
     # grounded sources carry the filename + chunk linkage
     assert out["groundedSources"][0]["fileName"] == "a.pdf"
@@ -346,4 +478,4 @@ def test_generate_cheatsheet_topic_focus_titles(monkeypatch):
         doc_names={"d1": "a.pdf"}, save=True,
     )
     assert out["title"] == "Energy — Cheatsheet"
-    assert out["topicsCovered"] == ["Energy"]
+    assert out["topicsCovered"] == ["Arbeit, Energie und Leistung"]

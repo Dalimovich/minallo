@@ -39,8 +39,13 @@ function _docIds(raw: unknown): string[] | null {
 
 // Whitelist + clamp settings before forwarding — never trust the client body.
 // Only preset + two overrides are accepted; everything else is dropped.
-const _VALID_PRESETS = ['exam_night', 'balanced', 'deep_revision', 'topic_mastery'];
-const _VALID_LANGS = ['source', 'en', 'de'];
+const _VALID_PRESETS = ['exam_night', 'open_book_exam', 'formula_reference', 'balanced', 'deep_revision', 'topic_mastery'];
+const _VALID_LANGS = ['source', 'en', 'de', 'de_terms_en_explanations'];
+const _VALID_STYLES = ['academic', 'modern', 'compact', 'classic'];
+const _VALID_FONT_SIZES = ['auto', 'small', 'medium', 'large'];
+const _VALID_DETAIL_LEVELS = ['general', 'balanced', 'specific', 'very_thorough'];
+const _VALID_FOCUS_MODES = ['whole_course', 'specific_topic', 'selected_files', 'selected_pages'];
+const _VALID_OUTPUTS = ['web', 'pdf', 'both'];
 
 function _settings(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -48,7 +53,13 @@ function _settings(raw: unknown): Record<string, unknown> | null {
   const out: Record<string, unknown> = {};
   if (typeof s.preset === 'string' && _VALID_PRESETS.includes(s.preset)) out.preset = s.preset;
   if (typeof s.pages === 'number' && s.pages >= 1 && s.pages <= 4) out.pages = Math.floor(s.pages);
+  if (typeof s.columns === 'number' && s.columns >= 2 && s.columns <= 4) out.columns = Math.floor(s.columns);
+  if (typeof s.style === 'string' && _VALID_STYLES.includes(s.style)) out.style = s.style;
+  if (typeof s.fontSize === 'string' && _VALID_FONT_SIZES.includes(s.fontSize)) out.fontSize = s.fontSize;
+  if (typeof s.detailLevel === 'string' && _VALID_DETAIL_LEVELS.includes(s.detailLevel)) out.detailLevel = s.detailLevel;
+  if (typeof s.focusMode === 'string' && _VALID_FOCUS_MODES.includes(s.focusMode)) out.focusMode = s.focusMode;
   if (typeof s.language === 'string' && _VALID_LANGS.includes(s.language)) out.language = s.language;
+  if (typeof s.output === 'string' && _VALID_OUTPUTS.includes(s.output)) out.output = s.output;
   return Object.keys(out).length ? out : null;
 }
 
