@@ -25,6 +25,7 @@ from openai import OpenAI
 
 from ..config import get_settings
 from ..supabase_client import get_supabase
+from .answer_intent import classify_academic_intent
 from .answer import (
     DEFAULT_TUTOR_MODE,
     FIGURE_CHUNK_TYPES,
@@ -930,9 +931,18 @@ def stream_answer(
         if routing_context_parts:
             routing_question = (question.strip() + "\n\n" + "\n\n".join(routing_context_parts)).strip()
             routing_chunks = [*synthetic_routing_chunks, *used_chunks]
+        academic_intent = classify_academic_intent(
+            routing_question,
+            routing_chunks,
+            {
+                "app_question": app_question,
+                "tutor_mode": tutor_mode_norm,
+                "problem_solver": bool(problem_solver),
+            },
+        )
         system_prompt, answer_mode = pick_system_prompt(
             routing_question, effective_strength, routing_chunks, tutor_mode=tutor_mode_norm,
-            weak_topics=weak_topics,
+            weak_topics=weak_topics, intent=academic_intent,
         )
         if problem_mode:
             system_prompt += _problem_solver_overlay(problem_mode, problem_solver or {})

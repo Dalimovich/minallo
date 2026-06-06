@@ -27,6 +27,12 @@ from typing import Any
 from openai import OpenAI
 
 from ..config import get_settings
+from .answer_intent import (
+    AcademicIntent,
+    classify_academic_intent,
+    intent_is_math_like,
+    intent_style_instruction,
+)
 from .retrieval import RetrievedChunk
 
 log = logging.getLogger(__name__)
@@ -183,6 +189,7 @@ The boxed result on its own line, e.g. $$\\boxed{M = 100\\ \\mathrm{N\\,m}}$$.
 
 **Interactive missing input.** If finishing the calculation requires a numeric INPUT that the student could supply — a value that is NOT derivable (rule 1a), NOT stated in the problem text, and NOT visible in any attached figure — do NOT leave it symbolic and do NOT guess it. Instead, ASK the student for it:
 - Show ONLY the Given / Formula / Substitution needed to IDENTIFY the missing value. Keep it short so the student reaches the input quickly — do NOT write the Calculation / Unit check / Final answer sections and do NOT add a long explanation.
+- This flow is allowed only for real calculation/math intents or mixed concept-plus-calculation intents. Never emit a `minallo-input` block for conceptual explanation, summary, definition/theorem, comparison, coding/debugging, quiz, flashcards, case/application reasoning, general course Q&A, or Minallo app-support questions.
 - Then emit EXACTLY ONE fenced block requesting the value(s), and STOP. The block must be valid JSON on the lines between the fences:
 
 ```minallo-input
@@ -859,6 +866,7 @@ def pick_system_prompt(
     chunks: list[RetrievedChunk] | None = None,
     tutor_mode: str = DEFAULT_TUTOR_MODE,
     weak_topics: list[str] | None = None,
+    intent: AcademicIntent | str | None = None,
 ) -> tuple[str, str]:
     """Pick (system_prompt, mode_label) for the answer pipeline.
 
@@ -880,6 +888,12 @@ def pick_system_prompt(
       * none    → WEAK template (no chunks at all; can't help here)
     """
     tutor_mode = normalise_tutor_mode(tutor_mode)
+    if isinstance(intent, AcademicIntent):
+        academic_intent = intent
+    elif isinstance(intent, str) and intent in AcademicIntent._value2member_map_:
+        academic_intent = AcademicIntent(intent)
+    else:
+        academic_intent = classify_academic_intent(question, chunks, {"tutor_mode": tutor_mode})
 
     if strength == "weak":
         # Review fix #3 — partial retrieval mode. We DO have chunks, just
@@ -889,11 +903,16 @@ def pick_system_prompt(
     elif strength != "strong":
         base, label = _SYSTEM_PROMPT_WEAK, "weak"
     else:
-        # Local import: query_expansion may transitively import retrieval.
-        from .query_expansion import is_math_question  # noqa: WPS433
         use_math = False
         context_math_problem = _chunks_look_like_math_problem(chunks)
-        mathish = is_math_question(question) or context_math_problem
+        mathish = intent_is_math_like(academic_intent) or (
+            context_math_problem
+            and classify_academic_intent(
+                question,
+                chunks,
+                {"tutor_mode": tutor_mode},
+            ) in {AcademicIntent.MATH_PROBLEM, AcademicIntent.MIXED_MATH_AND_CONCEPT}
+        )
         if tutor_mode != "quiz" and mathish:
             # Review fix #7 — gate the rigid math template on a fuller
             # readiness check. Old criteria:
@@ -958,6 +977,7 @@ def pick_system_prompt(
         prompt += overlay
     if coach:
         prompt += coach
+    prompt += intent_style_instruction(academic_intent)
     prompt += MINALLO_APP_CONTEXT
     prompt += USER_INTENT_OVERLAY
     # Student-Dignity rules apply to every reply, every tutor mode, every
@@ -1142,13 +1162,18 @@ def generate_answer(
         used_chunks = chunks[:3]
     else:
         used_chunks = []
+    academic_intent = classify_academic_intent(
+        question,
+        used_chunks,
+        {"app_question": app_question, "tutor_mode": tutor_mode},
+    )
     if app_question:
         system_prompt = _APP_ONLY_SYSTEM_PROMPT + MINALLO_APP_CONTEXT
         answer_mode = "app"
     else:
         system_prompt, answer_mode = pick_system_prompt(
             question, strength, used_chunks, tutor_mode=tutor_mode,
-            weak_topics=weak_topics,
+            weak_topics=weak_topics, intent=academic_intent,
         )
     wants_diagram = _wants_diagram(question) and not app_question
     if wants_diagram:

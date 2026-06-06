@@ -90,10 +90,11 @@ def test_none_retrieval_uses_weak_prompt() -> None:
     "Calculate the bending moment when F = 200 N and l = 0.5 m",
     "Derive the formula for cantilever deflection",
     "Prove that sin² + cos² = 1",
-    "Aufgabe 1.2",
-    "Übung 3 (a)",
-    "Give me the formula for shear force",
+    "Solve Aufgabe 1.2",
+    "Löse Übung 3 (a)",
     "Berechne das Moment",
+    "Calculate ROI from revenue 1200 EUR and cost 900 EUR",
+    "Calculate the medication dose for 70 kg at 5 mg/kg",
 ])
 def test_math_question_with_strong_context_uses_math_prompt(q: str) -> None:
     prompt, mode = pick_system_prompt(q, "strong")
@@ -139,6 +140,26 @@ def test_non_math_question_with_strong_context_uses_strong_prompt(q: str) -> Non
     prompt, mode = pick_system_prompt(q, "strong")
     assert prompt.startswith(_SYSTEM_PROMPT_STRONG)
     assert mode == "strong"
+
+
+@pytest.mark.parametrize("q", [
+    "Give me the formula for shear force",
+    "Explain this medical case",
+    "What solution does the author propose?",
+    "Analyze this business problem",
+    "Explain Aufgabe 1, do not solve it",
+])
+def test_non_calculation_intents_do_not_use_math_prompt_or_input_flow(q: str) -> None:
+    prompt, mode = pick_system_prompt(q, "strong")
+    assert prompt.startswith(_SYSTEM_PROMPT_STRONG)
+    assert mode == "strong"
+    assert "Never emit `minallo-input` for this request" in prompt
+
+
+def test_case_reasoning_gets_structured_case_style() -> None:
+    prompt, mode = pick_system_prompt("Analyze this business case and recommend a strategy.", "strong")
+    assert mode == "strong"
+    assert "facts/context, relevant concept/framework, application to the case, conclusion/recommendation" in prompt
 
 
 # ── math prompt contract — must mention every section the template requires ─
@@ -243,6 +264,7 @@ def test_math_prompt_documents_interactive_missing_input() -> None:
     assert "partially verified — awaiting user input" in low
     # A missing FORMULA must NOT become an input request.
     assert "must not emit a `minallo-input` block" in low
+    assert "allowed only for real calculation/math intents" in low
 
 
 def test_strong_prompt_warns_against_single_phase_braking_error() -> None:
