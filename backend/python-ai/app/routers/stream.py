@@ -262,6 +262,10 @@ def _cached_grounded_sources_to_js(grounded_sources: list[dict[str, Any]] | None
             "file_name": s.get("fileName") or s.get("file_name") or "Unknown",
             "pages": pages,
             "section": s.get("sectionTitle") or s.get("section"),
+            # documentId + pageStart let the frontend open the cited PDF by id
+            # (robust against mangled file names) at the right page.
+            "documentId": s.get("documentId") or s.get("document_id"),
+            "pageStart": page_start,
         })
     return sources_js
 
@@ -681,6 +685,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                             "file_name": s.get("file_name") or s.get("fileName") or "Unknown",
                             "pages": pages,
                             "section": s.get("section") or s.get("sectionTitle"),
+                            # documentId + pageStart let the frontend open the
+                            # cited PDF by id (robust against mangled file
+                            # names) at the right page.
+                            "documentId": s.get("documentId") or s.get("document_id"),
+                            "pageStart": page_start,
                         })
                     evt["sources"] = sources_js
                     evt["cacheHit"] = False
@@ -711,6 +720,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                         "groundedSources": [
                             {
                                 "fileName": s.get("file_name"),
+                                "documentId": s.get("documentId") or s.get("document_id"),
                                 "pageStart": s.get("pageStart"),
                                 "pageEnd": s.get("pageEnd"),
                                 "sectionTitle": s.get("section"),

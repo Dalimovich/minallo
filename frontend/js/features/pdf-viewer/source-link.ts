@@ -22,6 +22,7 @@ export interface CitedSource {
 
 interface CourseFileRec {
   name?: string;
+  id?: string;
   _storageName?: string;
   _folder?: string | null;
   _uid?: string;
@@ -84,6 +85,26 @@ function _resolveAnywhere(fileName: string): { file: CourseFileRec; course: Cour
   for (const course of _allCourses()) {
     const file = _resolveFile(course, fileName);
     if (file) return { file, course };
+  }
+  return null;
+}
+
+// Resolve by document id. More robust than name matching when the stored file
+// name is mangled (e.g. an upload that dropped non-ASCII chars: "Übung" →
+// "bung"), since the id is exact. Course file records carry the same document
+// UUID the backend cites as `documentId`.
+function _resolveByIdAnywhere(documentId: string): { file: CourseFileRec; course: CourseLike } | null {
+  const want = (documentId || '').trim();
+  if (!want) return null;
+  const match = (arr?: CourseFileRec[]): CourseFileRec | undefined =>
+    (arr || []).find((f) => String(f.id || '') === want);
+  for (const course of _allCourses()) {
+    const direct = match(course.files);
+    if (direct) return { file: direct, course };
+    for (const fd of course.userFolders || []) {
+      const inFolder = match(fd.files);
+      if (inFolder) return { file: inFolder, course };
+    }
   }
   return null;
 }
@@ -316,6 +337,7 @@ async function _renderPdfInto(
 
 export function handleSourceClick(src: CitedSource, surface: 'sidebar' | 'popup'): void {
   const fileName = String(src.fileName || '').trim();
+  const documentId = String(src.documentId || '').trim();
   const page = firstPage(src.page); // tolerant of number | "12" | "12-14"
 
   if (_isPseudoSource(fileName)) {
@@ -325,7 +347,9 @@ export function handleSourceClick(src: CitedSource, surface: 'sidebar' | 'popup'
     return;
   }
 
-  const resolved = _resolveAnywhere(fileName);
+  // Prefer the document id (exact) over the file name, which may be mangled by
+  // a lossy upload; fall back to name match when no id resolves.
+  const resolved = _resolveByIdAnywhere(documentId) || _resolveAnywhere(fileName);
 
   if (surface === 'sidebar') {
     const open = String(window.activeFileName || '').trim().toLowerCase();
