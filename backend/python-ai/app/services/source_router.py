@@ -78,6 +78,15 @@ _INTERNET_SIGNAL_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+# Auto-routing relevance gate: with no explicit file/context/keyword signal,
+# route to course files only if retrieved chunks clear this bar. Only consulted
+# when classify_source_scope is called WITH retrieved_chunks.
+AUTO_ROUTE_RELEVANCE_THRESHOLD = 0.34
+# Post-retrieval gate the routers use to KEEP a course answer instead of falling
+# back to general knowledge. Lower than the routing bar above because by this
+# point retrieval has already run and we are scoring real chunks in hand.
+COURSE_ANCHOR_RELEVANCE_THRESHOLD = 0.18
+
 _TOKEN_RE = re.compile(r"[a-zA-ZÀ-ÿ][a-zA-ZÀ-ÿ0-9_+-]{2,}")
 _STOPWORDS = {
     "the", "and", "for", "with", "this", "that", "what", "does", "from", "your",
@@ -175,6 +184,12 @@ def classify_source_scope(
     q = question or ""
     has_context = bool((selected_text or "").strip() or (open_file_context or "").strip())
     has_specific_file = bool(document_ids or active_document_id)
+    # An explicitly selected/active file is a deliberate "use this" signal, so
+    # it outranks internet keywords that may just be part of a question *about*
+    # that file (e.g. "explain the current method in this PDF" — "current"
+    # shouldn't yank the answer to web search).
+    if has_specific_file:
+        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [])
     if _INTERNET_SIGNAL_RE.search(q):
         return SourceDecision(
             mode,
@@ -184,8 +199,6 @@ def classify_source_scope(
             used_ids or [],
             sanitized_web_query=sanitize_web_query(q),
         )
-    if has_specific_file:
-        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [])
     if has_context or inside_pdf_side_rail or _COURSE_SIGNAL_RE.search(q):
         if file_scope == CourseFileScope.SPECIFIC_FILES and not has_specific_file and not has_context:
             return SourceDecision(
@@ -201,7 +214,7 @@ def classify_source_scope(
 
     if retrieved_chunks:
         rel = course_relevance_score(q, retrieved_chunks)
-        if rel >= 0.34:
+        if rel >= AUTO_ROUTE_RELEVANCE_THRESHOLD:
             return SourceDecision(
                 mode,
                 SourceScope.COURSE_FILES,
@@ -264,6 +277,8 @@ def auto_general_prefix() -> str:
 
 
 __all__ = (
+    "AUTO_ROUTE_RELEVANCE_THRESHOLD",
+    "COURSE_ANCHOR_RELEVANCE_THRESHOLD",
     "CourseFileScope",
     "SourceDecision",
     "SourceMode",

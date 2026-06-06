@@ -116,7 +116,10 @@ def question_hash(
 # API-default temperature (1.0) with the corrupted (formfeed/tab) LaTeX
 # examples and the loose delimiter rule. v6 reflects temperature=0.2, the
 # fixed prompt escapes, and the $-only delimiter rule.
-_CACHE_SCHEMA_VERSION = "v8-2026-06-06-interactive-input"
+# v9 re-enables source-routed caching on a whole-course version hash with
+# symmetric lookup/save keys; older rows used the never-matching selected-doc
+# key and must not be reachable.
+_CACHE_SCHEMA_VERSION = "v9-2026-06-06-course-version-cache"
 
 
 def document_version_hash(document_hashes: list[str | None]) -> str:
@@ -146,6 +149,32 @@ def fetch_document_version_hash(user_id: str, course_id: str, document_ids: list
         log.exception("fetch document_hashes failed")
         return ""
     hashes = [row.get("document_hash") for row in (resp.data or [])]
+    return document_version_hash(hashes)
+
+
+def fetch_course_version_hash(user_id: str, course_id: str) -> str:
+    """Version hash over EVERY document in the course.
+
+    Academic answers search the whole course (selected docs are only ranking
+    hints), so the cache must invalidate when *any* course document changes —
+    not just the selected ones. This is the safe key the selected-doc hash
+    couldn't provide, which is why caching had to be disabled before. Returns
+    "" when the course has no documents (nothing to ground on → don't cache)."""
+    sb = get_supabase()
+    try:
+        resp = (
+            sb.table("documents")
+            .select("document_hash")
+            .eq("user_id", user_id)
+            .eq("course_id", course_id)
+            .execute()
+        )
+    except Exception:
+        log.exception("fetch course document_hashes failed")
+        return ""
+    hashes = [row.get("document_hash") for row in (resp.data or [])]
+    if not any(hashes):
+        return ""
     return document_version_hash(hashes)
 
 

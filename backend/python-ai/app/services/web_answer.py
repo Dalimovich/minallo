@@ -83,7 +83,10 @@ def generate_web_answer(question: str, *, query: str, max_tokens: int = 1400) ->
 
     text = _extract_text(response)
     sources = _extract_sources(response)
-    if not text or not sources:
+    # Only a missing answer means search truly failed. A valid answer whose
+    # citation annotations didn't parse is still a real web answer — return it
+    # with an empty source list rather than discarding it as "unavailable".
+    if not text:
         return _unavailable()
     usage = getattr(response, "usage", None)
     return {

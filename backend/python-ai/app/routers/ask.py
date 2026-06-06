@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
 from ..services.answer import DEFAULT_TUTOR_MODE, generate_answer, is_app_question, normalise_tutor_mode
-from ..services.cache import fetch_document_version_hash, lookup_answer, save_answer
+from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.general_answer import generate_general_answer
 from ..services.retrieval import (
     ExerciseHit,
@@ -475,10 +475,10 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
     # (the same question yields different turns depending on prior context)
     # and 'quiz' is generative — caching either would defeat the mode.
     version_hash = ""
-    # Cache scope tightened — also disable cache entirely for deictic
-    # questions ("explain this", "warum hier", etc.) because the answer
-    # references the visible PDF section, which the question string alone
-    # doesn't carry.
+    cached = None
+    # Disable cache for deictic questions ("explain this", "warum hier") because
+    # the answer references the visible PDF section, which the question string
+    # alone doesn't carry.
     from ..services.answer_stream import _is_deictic_question  # noqa: WPS433
     cacheable = (
         tutor_mode == "explain"
@@ -486,60 +486,69 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
         and not open_file_context
     )
     # Academic answers search the whole course while treating selected docs as
-    # ranking hints. A cache hash over only selected docs would miss updates to
-    # lecture/formula PDFs that may have grounded the answer.
-    selected_scope_cache_safe = False
-    if selected_scope_cache_safe and payload.documentIds and not payload.bypassCache and cacheable:
-        version_hash = fetch_document_version_hash(
-            payload.userId, payload.courseId, payload.documentIds
-        )
-        cached = lookup_answer(
-            user_id=payload.userId,
-            course_id=payload.courseId,
-            question=question,
-            version_hash=version_hash,
-            tutor_mode=tutor_mode,
-            active_document_id=payload.activeDocumentId,
-            # Non-stream /ask doesn't accept a visibleContext payload yet.
-            # Streaming does — covered below.
-            visible_context=None,
-            source_mode=source_decision.selected_source_mode.value,
-            source_scope=source_decision.source_scope.value,
-            course_file_scope=source_decision.course_file_scope.value,
-            selected_document_ids=payload.documentIds,
-        )
-        if cached:
-            record_retrieval_debug(DebugPayload(
-                user_id=payload.userId, course_id=payload.courseId,
-                endpoint="ask", question=question,
-                active_document_id=payload.activeDocumentId,
-                selected_document_ids=payload.documentIds,
-                retrieval_strategy="cache",
-                retrieval_mode=cached.get("retrievalMode", "strong"),
-                candidate_doc_count=None, exercise_hit=None, chunks=[],
-                model=cached.get("model"), cache_hit=True,
-                prompt_tokens=cached.get("promptTokens"),
-                completion_tokens=cached.get("completionTokens"),
-                doc_names=doc_name_map,
-            ))
-            cached_verification = cached.get("verification")
-            return AskResponse(
-                answer=cached.get("answer", ""),
-                retrievalMode=cached.get("retrievalMode", "strong"),
-                answerMode=cached.get("answerMode"),
-                tutorMode=cached.get("tutorMode") or tutor_mode,
-                verification=VerificationPayload(**cached_verification) if cached_verification else None,
-                groundedSources=[AskSourcePayload(**s) for s in cached.get("groundedSources", [])],
-                cacheHit=True,
-                model=cached.get("model"),
-                promptTokens=cached.get("promptTokens"),
-                completionTokens=cached.get("completionTokens"),
-                selectedSourceMode=cached.get("selectedSourceMode"),
-                sourceScope=cached.get("sourceScope"),
-                courseFileScope=cached.get("courseFileScope"),
-                sourceLabel=cached.get("sourceLabel"),
-                sourceDebug=cached.get("sourceDebug") if _source_debug_enabled() else None,
+    # ranking hints, so the cache is keyed on a whole-course version hash: any
+    # document change in the course invalidates it (this is the safety the old
+    # selected-doc hash lacked, which is why caching was disabled). The
+    # retrieval scope rides in the question hash so all-files vs specific-file
+    # answers to the same question stay distinct. lookup and save MUST pass the
+    # SAME key args or the row is never found, so both use cache_key_kwargs.
+    course_file_scope = CourseFileScope(source_decision.course_file_scope.value)
+    retrieval_document_ids = effective_document_ids(
+        document_ids=payload.documentIds,
+        active_document_id=payload.activeDocumentId,
+        course_file_scope=course_file_scope,
+    )
+    cache_key_kwargs = {
+        "tutor_mode": tutor_mode,
+        "active_document_id": payload.activeDocumentId,
+        "visible_context": None,
+        "source_mode": source_decision.selected_source_mode.value,
+        "source_scope": source_decision.source_scope.value,
+        "course_file_scope": source_decision.course_file_scope.value,
+        "selected_document_ids": retrieval_document_ids,
+    }
+    if not payload.bypassCache and cacheable:
+        version_hash = fetch_course_version_hash(payload.userId, payload.courseId)
+        if version_hash:
+            cached = lookup_answer(
+                user_id=payload.userId,
+                course_id=payload.courseId,
+                question=question,
+                version_hash=version_hash,
+                **cache_key_kwargs,
             )
+    if cached:
+        record_retrieval_debug(DebugPayload(
+            user_id=payload.userId, course_id=payload.courseId,
+            endpoint="ask", question=question,
+            active_document_id=payload.activeDocumentId,
+            selected_document_ids=payload.documentIds,
+            retrieval_strategy="cache",
+            retrieval_mode=cached.get("retrievalMode", "strong"),
+            candidate_doc_count=None, exercise_hit=None, chunks=[],
+            model=cached.get("model"), cache_hit=True,
+            prompt_tokens=cached.get("promptTokens"),
+            completion_tokens=cached.get("completionTokens"),
+            doc_names=doc_name_map,
+        ))
+        cached_verification = cached.get("verification")
+        return AskResponse(
+            answer=cached.get("answer", ""),
+            retrievalMode=cached.get("retrievalMode", "strong"),
+            answerMode=cached.get("answerMode"),
+            tutorMode=cached.get("tutorMode") or tutor_mode,
+            verification=VerificationPayload(**cached_verification) if cached_verification else None,
+            groundedSources=[AskSourcePayload(**s) for s in cached.get("groundedSources", [])],
+            cacheHit=True,
+            model=cached.get("model"),
+            promptTokens=cached.get("promptTokens"),
+            completionTokens=cached.get("completionTokens"),
+            selectedSourceMode=cached.get("selectedSourceMode"),
+            sourceScope=cached.get("sourceScope"),
+            courseFileScope=cached.get("courseFileScope"),
+            sourceLabel=cached.get("sourceLabel"),
+            sourceDebug=cached.get("sourceDebug") if _source_debug_enabled() else None,
+        )
 
     # ── 2. Retrieve ──────────────────────────────────────────────────────────
     # Phase 5/6: when the question references an exercise by number, try the
@@ -553,12 +562,8 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
         open_file_context=open_file_context,
         has_problem_solver=False,
     )
-    course_file_scope = CourseFileScope(source_decision.course_file_scope.value)
-    retrieval_document_ids = effective_document_ids(
-        document_ids=payload.documentIds,
-        active_document_id=payload.activeDocumentId,
-        course_file_scope=course_file_scope,
-    )
+    # course_file_scope / retrieval_document_ids were resolved above for the
+    # cache key and are reused here as the retrieval scope.
 
     try:
         exercise_hit = retrieve_exercise_block(
@@ -688,20 +693,17 @@ async def ask_endpoint(payload: AskRequest) -> AskResponse:
 
     # ── 4. Save to cache for next time ───────────────────────────────────────
     if version_hash and not payload.bypassCache and cacheable:
+        # Same key args as the lookup above — symmetry is mandatory or the row
+        # we save is unreachable on the next request. source_scope is unchanged
+        # on this path (the general-knowledge fallback returns earlier), so the
+        # cached cache_key_kwargs still describes this answer.
         save_answer(
             user_id=payload.userId,
             course_id=payload.courseId,
             question=question,
             version_hash=version_hash,
             answer_json=answer,
-            tutor_mode=tutor_mode,
-            active_document_id=payload.activeDocumentId,
-            visible_context=None,
-            source_mode=source_decision.selected_source_mode.value,
-            source_scope=source_decision.source_scope.value,
-            course_file_scope=source_decision.course_file_scope.value,
-            selected_document_ids=retrieval_document_ids,
-            retrieved_chunk_ids=[c.chunk_id for c in chunks],
+            **cache_key_kwargs,
         )
 
     record_retrieval_debug(DebugPayload(

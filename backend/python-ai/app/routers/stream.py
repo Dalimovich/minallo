@@ -27,7 +27,7 @@ from ..services.access_control import (
 )
 from ..services.answer import DEFAULT_TUTOR_MODE, is_app_question, normalise_tutor_mode
 from ..services.answer_stream import stream_answer
-from ..services.cache import fetch_document_version_hash, lookup_answer, save_answer
+from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
 from ..services.retrieval import retrieve_chunks, retrieve_exercise_block, retrieve_formula_block
@@ -380,45 +380,51 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     has_open_ctx = bool(payload.openFileContext and payload.openFileContext.strip()) or bool(open_file_images)
     # Cache only makes sense for the legacy 'explain' mode. 'solve' is
     # conversational and 'quiz' is generative, so we never want to serve
-    # a stale answer for either. Also bypass cache for deictic questions
-    # ("explain this", "warum hier") even in explain mode — the answer
-    # depends on the visible PDF section which we're now folding into the
-    # cache key anyway, but skipping the lookup is faster.
+    # a stale answer for either. Also bypass cache for deictic questions and
+    # whenever there's open-PDF context — those answers depend on the visible
+    # page, not just the question.
     from ..services.answer_stream import _is_deictic_question  # noqa: WPS433
     cacheable = (
         tutor_mode == "explain"
         and not _is_deictic_question(question)
         and payload.problemSolver is None
+        and not has_open_ctx
     )
-    # Academic answers now search the whole course even when the UI has a
-    # selected/open document, because lecture/formula PDFs often contain the
-    # professor's method while the selected PDF only contains the exercise.
-    # Do not cache such broad answers against only the selected-document hash.
-    selected_scope_cache_safe = False
-    if selected_scope_cache_safe and payload.documentIds and not has_open_ctx and cacheable:
-        version_hash = fetch_document_version_hash(user_id, payload.courseId, payload.documentIds)
-        # Previous turns fingerprint into cache key — two students asking
-        # "explain that again" in different sessions must not collide.
-        _prev_for_cache = [
-            {"role": t.role, "text": t.text}
-            for t in (payload.previousTurns or [])
-        ]
-        cached = lookup_answer(
-            user_id=user_id, course_id=payload.courseId,
-            question=question, version_hash=version_hash,
-            tutor_mode=tutor_mode,
-            active_document_id=payload.activeDocumentId,
-            # Streaming path: visibleContext == openFileContext when set.
-            # has_open_ctx is False here (cache only checked when not),
-            # but pass it through for symmetry — if a future codepath
-            # caches with open context, the key reflects it.
-            visible_context=payload.openFileContext,
-            previous_turns=_prev_for_cache,
-            source_mode=source_decision.selected_source_mode.value,
-            source_scope=source_decision.source_scope.value,
-            course_file_scope=source_decision.course_file_scope.value,
-            selected_document_ids=payload.documentIds,
-        )
+    # Normalise previousTurns once — folded into the cache key (two students
+    # asking "explain that again" in different sessions must not collide) and
+    # reused for retrieval/answer below.
+    previous_turns_payload: list[dict[str, str]] = [
+        {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
+    ]
+    # Academic answers search the whole course even when the UI has a selected
+    # document (lecture/formula PDFs hold the method while the selected PDF only
+    # holds the exercise). So the cache is keyed on a WHOLE-COURSE version hash:
+    # any document change in the course invalidates it. lookup and save MUST
+    # pass identical key args, so both use cache_key_kwargs.
+    course_file_scope = CourseFileScope(source_decision.course_file_scope.value)
+    retrieval_document_ids = effective_document_ids(
+        document_ids=payload.documentIds,
+        active_document_id=payload.activeDocumentId,
+        course_file_scope=course_file_scope,
+    )
+    cache_key_kwargs = {
+        "tutor_mode": tutor_mode,
+        "active_document_id": payload.activeDocumentId,
+        "visible_context": payload.openFileContext,
+        "previous_turns": previous_turns_payload,
+        "source_mode": source_decision.selected_source_mode.value,
+        "source_scope": source_decision.source_scope.value,
+        "course_file_scope": source_decision.course_file_scope.value,
+        "selected_document_ids": retrieval_document_ids,
+    }
+    if cacheable:
+        version_hash = fetch_course_version_hash(user_id, payload.courseId)
+        if version_hash:
+            cached = lookup_answer(
+                user_id=user_id, course_id=payload.courseId,
+                question=question, version_hash=version_hash,
+                **cache_key_kwargs,
+            )
 
     def cached_stream():
         # Replay cached answers in small chunks so cache hits still feel like
@@ -486,13 +492,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         ))
         return StreamingResponse(cached_stream(), media_type="text/event-stream")
 
-    # Normalise previousTurns from pydantic models → plain dicts before
-    # retrieval (so the follow-up rewriter below can use it) and before
-    # passing into the service layer.
-    previous_turns_payload: list[dict[str, str]] = []
-    if payload.previousTurns:
-        for t in payload.previousTurns:
-            previous_turns_payload.append({"role": t.role, "text": t.text})
+    # previous_turns_payload was normalised above (it feeds the cache key too).
 
     # ── Retrieve ─────────────────────────────────────────────────────────────
     # When the Problem Solver is active, the visible `question` is just a
@@ -544,12 +544,8 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         open_file_context=payload.openFileContext,
         has_problem_solver=payload.problemSolver is not None,
     )
-    course_file_scope = CourseFileScope(source_decision.course_file_scope.value)
-    retrieval_document_ids = effective_document_ids(
-        document_ids=payload.documentIds,
-        active_document_id=payload.activeDocumentId,
-        course_file_scope=course_file_scope,
-    )
+    # course_file_scope / retrieval_document_ids resolved above for the cache
+    # key; reused here as the retrieval scope.
 
     # App/product questions ("how do I upload", "where is settings", "what
     # features does Minallo have") should not trigger course-document
@@ -698,10 +694,6 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 save_answer(
                     user_id=user_id, course_id=payload.courseId,
                     question=question, version_hash=version_hash,
-                    tutor_mode=tutor_mode,
-                    active_document_id=payload.activeDocumentId,
-                    visible_context=payload.openFileContext,
-                    previous_turns=previous_turns_payload,
                     answer_json={
                         "answer": "".join(full_text_buf),
                         "retrievalMode": captured_meta.get("retrievalMode", "strong"),
@@ -735,11 +727,9 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                         "sourceLabel": captured_meta.get("sourceLabel"),
                         "sourceDebug": captured_meta.get("sourceDebug") if _source_debug_enabled() else None,
                     },
-                    source_mode=source_decision.selected_source_mode.value,
-                    source_scope=source_decision.source_scope.value,
-                    course_file_scope=source_decision.course_file_scope.value,
-                    selected_document_ids=retrieval_document_ids,
-                    retrieved_chunk_ids=[c.chunk_id for c in chunks],
+                    # Same key args as the lookup — symmetry is mandatory or the
+                    # saved row is never found on the next request.
+                    **cache_key_kwargs,
                 )
             except Exception:
                 log.exception("cache save after stream failed (non-fatal)")
