@@ -5059,17 +5059,23 @@ body:not(.night) .qzsp-btn-primary {
   border-radius: 14px;
   max-width: 100%;
 }
+/* AI answers are bubble-free (open, document-style like ChatGPT/Gemini).
+   Only USER messages keep a bubble. The nested cards (code, math, diagrams,
+   minallo-input) keep their own containers — only the OUTER answer bubble is
+   stripped. */
 .ai-bubble.bot {
-  background: rgba(37, 99, 235, 0.07);
-  border: 1px solid rgba(37, 99, 235, 0.13);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 2px 0 4px;
   color: var(--text);
 }
 body.night #aiPanel {
   background: rgba(15, 14, 23, 0.88);
 }
 body.night .ai-bubble.bot {
-  background: rgba(37, 99, 235, 0.11);
-  border-color: rgba(37, 99, 235, 0.2);
+  background: transparent;
+  border-color: transparent;
 }
 .ai-bubble.user {
   background: rgba(76, 201, 240, 0.08);
@@ -6392,8 +6398,9 @@ body.night .chip-sub-h {
     transform 0.18s;
 }
 .ai-bubble.bot:hover {
-  box-shadow: 0 2px 16px rgba(37, 99, 235, 0.14);
-  transform: translateX(2px);
+  /* Bubble-free answer — no card glow/slide on hover. */
+  box-shadow: none;
+  transform: none;
 }
 .ai-bubble.user:hover {
   box-shadow: 0 2px 16px rgba(76, 201, 240, 0.14);
@@ -8013,8 +8020,8 @@ body:not(.night) #portal {
 
 /* Message bubbles */
 #portal .ai-bubble.bot {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: transparent;
+  border: 0;
   color: #e2e8f0;
 }
 #portal .ai-bubble.user {

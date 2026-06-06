@@ -1157,10 +1157,15 @@
   line-height: 1.6;
 }
 .dr-drawer .dr-host-ai .ai-bubble.bot {
-  border: 1px solid var(--dr-glass-border);
-  background: rgba(2, 6, 23, 0.4);
+  /* Bubble-free AI answer in the side rail (open, document-style). Only the
+     user bubble below keeps its card. Nested code/math/diagram/input cards
+     keep their own containers. */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--dr-text);
-  box-shadow: 0 4px 18px rgba(2, 6, 23, 0.25);
+  box-shadow: none;
+  padding: 2px 0 4px;
 }
 .dr-drawer .dr-host-ai .ai-bubble.user {
   border: 1px solid rgba(56, 189, 248, 0.35);

@@ -1175,9 +1175,10 @@ body:not(.night) .ncb-bubble--user {
   color: #172033 !important;
 }
 body:not(.night) .ncb-bubble--ai {
-  background: var(--lm-card-bg) !important;
-  border-color: var(--lm-card-border) !important;
-  box-shadow: var(--lm-nested-shadow) !important;
+  /* Bubble-free AI answer in light mode too. */
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -1998,10 +1999,12 @@ body:not(.night) .dr-drawer .np-range-sep {
 /* AI panel hosted inside the document rail drawer — bot bubble + small
  * meta strings use white-on-dark and disappear on the white drawer. */
 body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot {
-  background: var(--lm-nested-bg) !important;
-  border: 1px solid var(--lm-nested-border) !important;
+  /* Bubble-free AI answer in the light-mode side rail too (keep readable text
+     color; drop the card bg/border/shadow). */
+  background: transparent !important;
+  border: 0 !important;
   color: var(--lm-text) !important;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.06) !important;
+  box-shadow: none !important;
 }
 body:not(.night) .dr-drawer .dr-host-ai .msg-sender.bot-sender {
   color: #2563eb !important;
