@@ -828,43 +828,106 @@ body.ncb-fullbleed .ncb-main {
   background: linear-gradient(135deg, rgba(100, 116, 139, 0.95), rgba(71, 85, 105, 0.88));
 }
 
-.ncb-source-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/* Compact source picker: a single drop-up button living on the tutor-mode
+   row (see .ncb-composer-modes), with the mode + file-scope options tucked
+   into a popup that opens upward so it never pushes the composer around. */
+.ncb-source-control {
+  position: relative;
+  margin-left: auto;
+}
+
+.ncb-source-trigger {
+  display: inline-flex;
   align-items: center;
-  margin: 8px 0 6px;
+  gap: 6px;
+  padding: 5px 10px;
+  font: 600 0.74rem/1 var(--font-main, inherit);
+  color: var(--on-glass-muted, rgba(255, 255, 255, 0.65));
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.ncb-source-trigger:hover,
+.ncb-source-control[data-open="true"] .ncb-source-trigger {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--on-glass, rgba(255, 255, 255, 0.92));
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.ncb-source-trigger .ncb-icon {
+  width: 14px;
+  height: 14px;
+}
+.ncb-source-caret {
+  width: 12px;
+  height: 12px;
+  transition: transform 160ms ease;
+}
+.ncb-source-control[data-open="true"] .ncb-source-caret {
+  transform: rotate(180deg);
+}
+
+.ncb-source-popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #0c1a30;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(2, 8, 20, 0.55);
+}
+.ncb-source-popup[hidden] {
+  display: none;
+}
+.ncb-source-popup-label {
+  margin: 0 0 6px;
+  font: 600 0.62rem/1 var(--font-main, inherit);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-glass-muted, rgba(255, 255, 255, 0.5));
+}
+.ncb-source-scope-section[hidden] {
+  display: none;
 }
 
 .ncb-source-mode-group,
 .ncb-course-scope-group {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: 2px;
-  padding: 2px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.04);
 }
 
 .ncb-source-mode,
 .ncb-course-scope {
+  width: 100%;
+  text-align: left;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--ncb-muted, #64748b);
+  color: var(--on-glass-muted, rgba(255, 255, 255, 0.65));
   font: inherit;
   font-size: 12px;
   line-height: 1;
-  padding: 7px 9px;
+  padding: 8px 10px;
   cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
 }
-
+.ncb-source-mode:hover,
+.ncb-course-scope:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--on-glass, rgba(255, 255, 255, 0.92));
+}
 .ncb-source-mode--active,
 .ncb-course-scope--active {
-  background: var(--ncb-panel, #fff);
-  color: var(--ncb-text, #0f172a);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(139, 92, 246, 0.22));
+  color: #c7d2fe;
 }
 
 .ncb-source-used {
@@ -2679,11 +2742,19 @@ body:not(.night) .ncb-bubble-body .ai-thinking-card {
    Three small pills above the chat input: Solve with me / Explain / Quiz me.
    Active pill is highlighted with the same blue tint the rest of the shell
    uses for selected affordances. */
+/* Row holding the tutor-mode pills and the compact source drop-up together,
+   so the source picker sits next to the pills instead of on its own line. */
+.ncb-composer-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
 .ncb-tutor-modes {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 10px 0;
 }
 .ncb-tutor-mode {
   display: inline-flex;

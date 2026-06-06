@@ -388,36 +388,61 @@ function courseFileScopeForActiveChat(): CourseFileScope {
   return normaliseCourseFileScope(chatStore.getActive().courseFileScope);
 }
 
+function setSourcePopupOpen(control: HTMLElement, open: boolean): void {
+  control.dataset.open = open ? 'true' : 'false';
+  const trigger = control.querySelector<HTMLButtonElement>('.ncb-source-trigger');
+  const popup = control.querySelector<HTMLElement>('.ncb-source-popup');
+  if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (popup) popup.hidden = !open;
+}
+
 function updateSourceControls(root: HTMLElement): void {
   const active = chatStore.getActive();
   const mode = normaliseSourceMode(active.sourceMode);
   const scope = normaliseCourseFileScope(active.courseFileScope);
+  let activeModeLabel = '';
   root.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
     const on = btn.dataset.sourceMode === mode;
     btn.classList.toggle('ncb-source-mode--active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) activeModeLabel = (btn.textContent || '').trim();
   });
   root.querySelectorAll<HTMLButtonElement>('.ncb-course-scope').forEach((btn) => {
     const on = btn.dataset.courseFileScope === scope;
     btn.classList.toggle('ncb-course-scope--active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
+  // Reflect the current mode on the collapsed trigger, and hide the file-scope
+  // section when Internet mode is selected (no course files involved then).
+  const label = root.querySelector<HTMLElement>('.ncb-source-trigger-label');
+  if (label) label.textContent = activeModeLabel || 'Auto';
+  const scopeSection = root.querySelector<HTMLElement>('.ncb-source-scope-section');
+  if (scopeSection) scopeSection.hidden = mode === 'internet';
 }
 
 function initSourceControls(root: HTMLElement): void {
-  const controls = root.querySelector<HTMLElement>('.ncb-source-controls');
-  if (!controls || controls.dataset.ncbBound === '1') return;
-  controls.dataset.ncbBound = '1';
-  controls.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
+  const control = root.querySelector<HTMLElement>('.ncb-source-control');
+  if (!control || control.dataset.ncbBound === '1') return;
+  control.dataset.ncbBound = '1';
+
+  const trigger = control.querySelector<HTMLButtonElement>('.ncb-source-trigger');
+  trigger?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setSourcePopupOpen(control, control.dataset.open !== 'true');
+  });
+
+  control.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
     btn.addEventListener('click', () => {
       const chat = chatStore.getActive();
       chat.sourceMode = normaliseSourceMode(btn.dataset.sourceMode);
       chat.updatedAt = Date.now();
       saveChatStore();
       updateSourceControls(root);
+      // Picking a source is the primary action — close the drop-up after it.
+      setSourcePopupOpen(control, false);
     });
   });
-  controls.querySelectorAll<HTMLButtonElement>('.ncb-course-scope').forEach((btn) => {
+  control.querySelectorAll<HTMLButtonElement>('.ncb-course-scope').forEach((btn) => {
     btn.addEventListener('click', () => {
       const chat = chatStore.getActive();
       chat.courseFileScope = normaliseCourseFileScope(btn.dataset.courseFileScope);
@@ -426,6 +451,17 @@ function initSourceControls(root: HTMLElement): void {
       updateSourceControls(root);
     });
   });
+
+  // Close on outside click / Escape. Bound once on document; guarded by the
+  // open state so it's a cheap no-op otherwise.
+  document.addEventListener('click', (ev) => {
+    if (control.dataset.open !== 'true') return;
+    if (!control.contains(ev.target as Node)) setSourcePopupOpen(control, false);
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && control.dataset.open === 'true') setSourcePopupOpen(control, false);
+  });
+
   updateSourceControls(root);
 }
 

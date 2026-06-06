@@ -110,6 +110,7 @@
                      applied by the shell on init. Default is 'explain' so
                      normal questions receive direct grounded answers. The
                      shell reads data-mode and forwards it to /ask-stream. -->
+                <div class="ncb-composer-modes">
                 <div class="ncb-tutor-modes" role="radiogroup" data-i18n-aria="cb_tutor_group_aria" aria-label="Tutor mode" data-testid="chatbot-tutor-modes">
                   <button type="button" class="ncb-tutor-mode" data-mode="solve" aria-pressed="false"
                           data-label-de="Gemeinsam lösen" data-label-en="Solve with me"
@@ -147,16 +148,30 @@
                   </button>
                 </div>
 
-                <div class="ncb-source-controls" aria-label="Answer source">
-                  <div class="ncb-source-mode-group" role="group" aria-label="Source mode">
-                    <button type="button" class="ncb-source-mode ncb-source-mode--active" data-source-mode="auto" aria-pressed="true">Auto</button>
-                    <button type="button" class="ncb-source-mode" data-source-mode="course_files" aria-pressed="false">Course Files</button>
-                    <button type="button" class="ncb-source-mode" data-source-mode="internet" aria-pressed="false">Internet</button>
+                <div class="ncb-source-control" data-open="false">
+                  <button type="button" class="ncb-source-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Answer source">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                    <span class="ncb-source-trigger-label">Auto</span>
+                    <svg class="ncb-source-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                  </button>
+                  <div class="ncb-source-popup" role="menu" hidden>
+                    <div class="ncb-source-popup-section">
+                      <p class="ncb-source-popup-label">Source</p>
+                      <div class="ncb-source-mode-group" role="group" aria-label="Source mode">
+                        <button type="button" class="ncb-source-mode ncb-source-mode--active" data-source-mode="auto" aria-pressed="true">Auto</button>
+                        <button type="button" class="ncb-source-mode" data-source-mode="course_files" aria-pressed="false">Course Files</button>
+                        <button type="button" class="ncb-source-mode" data-source-mode="internet" aria-pressed="false">Internet</button>
+                      </div>
+                    </div>
+                    <div class="ncb-source-popup-section ncb-source-scope-section">
+                      <p class="ncb-source-popup-label">Files</p>
+                      <div class="ncb-course-scope-group" role="group" aria-label="Course file scope">
+                        <button type="button" class="ncb-course-scope ncb-course-scope--active" data-course-file-scope="all_course_files" aria-pressed="true">All files</button>
+                        <button type="button" class="ncb-course-scope" data-course-file-scope="specific_files" aria-pressed="false">Selected file(s)</button>
+                      </div>
+                    </div>
                   </div>
-                  <div class="ncb-course-scope-group" role="group" aria-label="Course file scope">
-                    <button type="button" class="ncb-course-scope ncb-course-scope--active" data-course-file-scope="all_course_files" aria-pressed="true">All files</button>
-                    <button type="button" class="ncb-course-scope" data-course-file-scope="specific_files" aria-pressed="false">Selected file(s)</button>
-                  </div>
+                </div>
                 </div>
 
                 <!-- Attachment / paste / files previews. Empty by default,
