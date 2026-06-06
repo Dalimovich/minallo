@@ -469,6 +469,22 @@ function _appendCourseHistory(courseId: string | null | undefined, question: str
   }
 }
 
+function _dedupPairs(pairs: HistoryPair[] | null): HistoryPair[] {
+  // Collapse repeated asks of the same question to the LATEST answer, keeping
+  // first-seen order. The chat_history table inserts a row per ask with no
+  // dedup, so a question asked/regenerated N times would otherwise stack N
+  // answers on restore. Pairs arrive oldest-first, so the last write wins.
+  if (!pairs || !pairs.length) return [];
+  const byQ = new Map<string, HistoryPair>();
+  const order: string[] = [];
+  for (const p of pairs) {
+    const key = (p.q || '').trim().toLowerCase();
+    if (!byQ.has(key)) order.push(key);
+    byQ.set(key, p);
+  }
+  return order.map((k) => byQ.get(k)!);
+}
+
 function _renderHistoryPairs(pairs: HistoryPair[] | null, aiMsgs: HTMLElement): void {
   if (!pairs || !pairs.length) return;
   // We only reach here when there's no in-progress user conversation (see the
@@ -554,21 +570,41 @@ export function restoreCourseHistory(courseId: string | null | undefined): void 
       .then((rows: Array<{ question: string; answer: string }> | null) => {
         if (rows && rows.length) {
           const pairs = rows.map((r) => ({ q: r.question, a: r.answer }));
-          _renderHistoryPairs(pairs, aiMsgs);
+          _renderHistoryPairs(_dedupPairs(pairs), aiMsgs);
         } else {
-          _renderHistoryPairs(_loadCourseHistory(courseId), aiMsgs);
+          _renderHistoryPairs(_dedupPairs(_loadCourseHistory(courseId)), aiMsgs);
         }
       })
       .catch(() => {
-        _renderHistoryPairs(_loadCourseHistory(courseId), aiMsgs);
+        _renderHistoryPairs(_dedupPairs(_loadCourseHistory(courseId)), aiMsgs);
       });
   } else {
-    _renderHistoryPairs(_loadCourseHistory(courseId), aiMsgs);
+    _renderHistoryPairs(_dedupPairs(_loadCourseHistory(courseId)), aiMsgs);
   }
 }
 
 export function clearCourseHistory(courseId: string): void {
   try { localStorage.removeItem(_historyKey(courseId)); } catch { /* ignore */ }
+  // Also delete the rows synced to chat_history — otherwise restoreCourseHistory
+  // reads them back from Supabase on the next refresh and the "cleared" chat
+  // reappears. RLS scopes the delete to this user's rows for this course.
+  try {
+    const supaUrl = window._SUPA || '';
+    const tok = window._sbToken || '';
+    if (supaUrl && tok && courseId) {
+      void fetch(
+        supaUrl + '/rest/v1/chat_history?course_id=eq.' + encodeURIComponent(courseId),
+        {
+          method: 'DELETE',
+          headers: {
+            apikey: window._SAKEY || '',
+            Authorization: 'Bearer ' + tok,
+            Prefer: 'return=minimal',
+          },
+        }
+      ).catch(() => {});
+    }
+  } catch { /* best-effort — localStorage is already cleared above */ }
   // Also drop the active Problem Solver context — a wiped chat shouldn't
   // inherit the previous session's PS overlay on its first new turn.
   try {

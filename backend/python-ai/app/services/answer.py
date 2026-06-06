@@ -71,7 +71,10 @@ def chat_completion_params(
     temperature, as before.
     """
     if is_reasoning_model(model):
-        return {"max_completion_tokens": max(max_tokens, 12000)}
+        return {
+            "max_completion_tokens": max(max_tokens, 12000),
+            "reasoning_effort": get_settings().openai_reasoning_effort,
+        }
     params: dict[str, Any] = {"max_tokens": max_tokens}
     if temperature is not None:
         params["temperature"] = temperature

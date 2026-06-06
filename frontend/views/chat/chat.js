@@ -300,6 +300,13 @@
       var _mc = _msgs();
       if (_mc) _mc.innerHTML = '';
       if (_prevChatKey) deleteChatForFile(_prevChatKey);
+      // Also clear the course-scoped Q&A history (localStorage + the synced
+      // chat_history rows). Without this the PDF AI panel restores the old
+      // answers from Supabase on the next refresh, so "Clear chat" looked
+      // like it did nothing.
+      if (typeof window.clearCourseHistory === 'function') {
+        window.clearCourseHistory(window.activeCourseId || window.currentCourseId || '');
+      }
       if (typeof window.addBotMsg === 'function') {
         window.addBotMsg(window._t ? window._t('ai_chat_cleared_msg') : 'Chat cleared');
       }
