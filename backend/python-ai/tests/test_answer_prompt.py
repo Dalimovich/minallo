@@ -213,6 +213,15 @@ def test_math_prompt_requires_kinematics_phase_check() -> None:
     assert "entire shaft/track length as free fall" in body
 
 
+def test_math_prompt_requires_piecewise_kinematics_continuity() -> None:
+    body = _SYSTEM_PROMPT_MATH.lower()
+    assert "piecewise kinematics continuity check" in body
+    assert "never reset velocity to zero at an internal boundary" in body
+    assert "horizontal current/force acts only in one stated region" in body
+    assert "apply the horizontal acceleration only during the time spent in that region" in body
+    assert "second vertical segment must start with the velocity gained" in body
+
+
 def test_math_prompt_allows_complete_kinematics_general_formula_fallback() -> None:
     body = _SYSTEM_PROMPT_MATH.lower()
     assert "complete elementary kinematics" in body
