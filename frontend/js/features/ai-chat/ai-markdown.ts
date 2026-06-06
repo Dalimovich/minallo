@@ -36,7 +36,11 @@ function prettyLang(raw: string): string {
 // code block. Idempotent — re-importing the module won't double-bind. We
 // guard for browser environment so the tsx test runner doesn't blow up.
 declare global {
-  interface Window { _ssCodeCopyBound?: boolean; _ssAiInputBound?: boolean }
+  interface Window {
+    _ssCodeCopyBound?: boolean;
+    _ssAiInputBound?: boolean;
+    _ssAiInputModalBound?: boolean;
+  }
 }
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window._ssCodeCopyBound) {
   window._ssCodeCopyBound = true;
@@ -118,14 +122,91 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
       'Continue the previous calculation using these user-provided missing values: ' +
       parts.join(', ') +
       '. Do not restart from unrelated assumptions. Finish the numeric solution.';
-    const surface = form.closest('.ncb-root') ? 'chatbot' : 'pdf-panel';
+    // Surface is captured at promote time (data-surface) because by now the
+    // form has been moved into the body-level modal and is no longer inside
+    // .ncb-root — closest() would always say pdf-panel otherwise.
+    const surface =
+      form.dataset.surface || (form.closest('.ncb-root') ? 'chatbot' : 'pdf-panel');
+    const reqId = form.dataset.requestId || '';
     form.dispatchEvent(
       new CustomEvent('minallo-ai-input-submit', {
         bubbles: true,
-        detail: { text, requestId: form.dataset.requestId || '', surface },
+        detail: { text, requestId: reqId, surface },
       })
     );
+    // If the form lives in the modal, close it and update the in-bubble
+    // placeholder to a submitted summary.
+    const backdrop = form.closest('.md-ai-input-modal-backdrop');
+    if (backdrop) {
+      const sel = reqId ? '.md-ai-input-placeholder[data-request-id="' + (window.CSS && CSS.escape ? CSS.escape(reqId) : reqId) + '"]' : null;
+      const ph = sel ? document.querySelector(sel) : null;
+      if (ph) ph.textContent = '✓ Submitted: ' + parts.join(', ');
+      backdrop.remove();
+    }
   });
+}
+
+// Lift a `minallo-input` form out of the message bubble into a small centered
+// modal (a popup), leaving a placeholder note in the bubble. This both reads
+// as a dialog the student must answer and escapes the bubble's inline CSS that
+// otherwise mashed the labels/units together. Restored history forms (inside
+// [data-restored]) are left inline — they were already answered, so we don't
+// re-pop them. A global MutationObserver promotes forms as bubbles render
+// (streaming finalize, chat restore, etc.).
+function promoteAiInputToModal(form: HTMLFormElement): void {
+  if (form.dataset.promoted) return;
+  form.dataset.promoted = '1';
+  // Capture the surface NOW, while the form is still inside its bubble.
+  form.dataset.surface = form.closest('.ncb-root') ? 'chatbot' : 'pdf-panel';
+  // Don't pop up already-answered history.
+  if (form.closest('[data-restored]') || form.dataset.submitted) return;
+
+  const reqId = form.dataset.requestId || '';
+  const ph = document.createElement('div');
+  ph.className = 'md-ai-input-placeholder';
+  if (reqId) ph.setAttribute('data-request-id', reqId);
+  ph.textContent = '⌨ Waiting for your input…';
+  form.parentNode?.insertBefore(ph, form);
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'md-ai-input-modal-backdrop';
+  const card = document.createElement('div');
+  card.className = 'md-ai-input-modal';
+  backdrop.appendChild(card);
+  card.appendChild(form);
+  (document.body || document.documentElement).appendChild(backdrop);
+  (form.querySelector('input') as HTMLInputElement | null)?.focus();
+
+  // Click outside the card → dismiss, re-inlining the form so it isn't lost.
+  backdrop.addEventListener('mousedown', (e) => {
+    if (e.target !== backdrop) return;
+    if (ph.isConnected) ph.replaceWith(form); else card.replaceWith(form);
+    backdrop.remove();
+  });
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window._ssAiInputModalBound) {
+  window._ssAiInputModalBound = true;
+  const promoteAll = (root: ParentNode): void => {
+    root.querySelectorAll?.('form.md-ai-input:not([data-promoted])')
+      .forEach((f) => promoteAiInputToModal(f as HTMLFormElement));
+  };
+  const start = (): void => {
+    const obs = new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((n) => {
+          if (n.nodeType !== 1) return;
+          const el = n as Element;
+          if (el.matches?.('form.md-ai-input')) promoteAiInputToModal(el as HTMLFormElement);
+          else promoteAll(el);
+        });
+      }
+    });
+    obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    promoteAll(document); // sweep anything already present
+  };
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start, { once: true });
 }
 
 export function renderMarkdown(text: string): string {

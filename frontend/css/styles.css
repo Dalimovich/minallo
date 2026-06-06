@@ -179,6 +179,30 @@ body:not(.night) .co-files-loading {
   margin: 12px 0; padding: 10px 12px; border-radius: 12px;
   border: 1px dashed rgba(148, 163, 184, 0.4); color: rgba(203, 213, 225, 0.8); font-size: 0.84rem;
 }
+/* The input form is lifted into this centered modal (popup) by ai-markdown.ts. */
+.md-ai-input-modal-backdrop {
+  position: fixed; inset: 0; z-index: 10050;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(2, 6, 23, 0.6); backdrop-filter: blur(2px);
+  animation: mdAiInputFade 0.12s ease-out;
+}
+@keyframes mdAiInputFade { from { opacity: 0; } to { opacity: 1; } }
+.md-ai-input-modal {
+  width: 100%; max-width: 440px; max-height: 85vh; overflow-y: auto;
+  border-radius: 18px; border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #0b1220; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); padding: 18px;
+}
+/* Inside the modal the form is the whole card — drop its own framing and give
+   the fields breathing room (escapes the .ai-bubble inline CSS that mashed
+   labels/units together when the form rendered inline). */
+.md-ai-input-modal .md-ai-input { margin: 0; padding: 0; border: none; background: none; box-shadow: none; gap: 14px; }
+.md-ai-input-modal .md-ai-input-field { display: flex; flex-direction: column; gap: 5px; }
+.md-ai-input-modal .md-ai-input-label { display: block; }
+.md-ai-input-placeholder {
+  margin: 12px 0; padding: 8px 12px; border-radius: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  color: rgba(203, 213, 225, 0.85); font-size: 0.82rem;
+}
 .md-diagram-title {
   padding: 10px 12px 0;
   font-size: 0.78rem;

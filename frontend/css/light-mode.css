@@ -2055,6 +2055,12 @@ body:not(.night) .md-ai-input-value {
   border: 1px solid var(--lm-nested-border) !important;
   color: var(--lm-text) !important;
 }
+body:not(.night) .md-ai-input-modal {
+  background: #fff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .md-ai-input-modal-backdrop { background: rgba(15, 23, 42, 0.45) !important; }
+body:not(.night) .md-ai-input-placeholder { color: var(--lm-muted) !important; }
 body:not(.night) .md-diagram-title,
 body:not(.night) .md-diagram-placeholder-title {
   color: var(--lm-text) !important;
