@@ -36,7 +36,7 @@ function prettyLang(raw: string): string {
 // code block. Idempotent — re-importing the module won't double-bind. We
 // guard for browser environment so the tsx test runner doesn't blow up.
 declare global {
-  interface Window { _ssCodeCopyBound?: boolean }
+  interface Window { _ssCodeCopyBound?: boolean; _ssAiInputBound?: boolean }
 }
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window._ssCodeCopyBound) {
   window._ssCodeCopyBound = true;
@@ -67,6 +67,64 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
       try { document.execCommand('copy'); done(); } catch { /* swallow */ }
       ta.remove();
     }
+  });
+}
+
+// Normalise a German decimal comma to a dot, but only between digits, so
+// "5,5" → "5.5" while a thousands-style "1,000" also becomes "1.000" (we keep
+// it simple and predictable — users type one decimal value per field).
+// Exported for unit testing the submit composition without a DOM.
+export function normalizeDecimalValue(raw: string): string {
+  return raw.replace(/(\d),(\d)/g, '$1.$2');
+}
+
+// One-time delegated submit handler for `minallo-input` forms (the AI asking
+// the student for a missing value). Idempotent across re-imports. On submit it
+// validates that all fields are filled, normalises a decimal comma (5,5→5.5),
+// composes an explicit "continue the calculation with these values" follow-up,
+// locks the form, and dispatches a bubbling `minallo-ai-input-submit` event.
+// The per-surface listeners (PDF AI panel, Chatbot) route that to their own
+// send path — the renderer stays decoupled from how messages are sent.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window._ssAiInputBound) {
+  window._ssAiInputBound = true;
+  document.addEventListener('submit', (ev) => {
+    const target = ev.target as Element | null;
+    const form = target?.closest?.('.md-ai-input') as HTMLFormElement | null;
+    if (!form) return;
+    ev.preventDefault();
+    if (form.dataset.submitted) return;
+    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[data-symbol]'));
+    if (!inputs.length) return;
+    const parts: string[] = [];
+    let firstEmpty: HTMLInputElement | null = null;
+    for (const inp of inputs) {
+      const raw = (inp.value || '').trim();
+      if (!raw) { if (!firstEmpty) firstEmpty = inp; continue; }
+      // German decimal comma → dot (only between digits), so "5,5" → "5.5".
+      const val = normalizeDecimalValue(raw);
+      const sym = inp.dataset.symbol || '';
+      const unit = inp.dataset.unit || '';
+      parts.push(sym + ' = ' + val + (unit ? ' ' + unit : ''));
+    }
+    // Require every field before sending — a partial set just makes the model
+    // re-ask. Focus the first blank and wait.
+    if (firstEmpty) { firstEmpty.focus(); return; }
+    if (!parts.length) return;
+    form.dataset.submitted = 'true';
+    inputs.forEach((i) => { i.disabled = true; });
+    const btn = form.querySelector<HTMLButtonElement>('.md-ai-input-submit');
+    if (btn) { btn.disabled = true; btn.textContent = '✓ Submitted'; }
+    const text =
+      'Continue the previous calculation using these user-provided missing values: ' +
+      parts.join(', ') +
+      '. Do not restart from unrelated assumptions. Finish the numeric solution.';
+    const surface = form.closest('.ncb-root') ? 'chatbot' : 'pdf-panel';
+    form.dispatchEvent(
+      new CustomEvent('minallo-ai-input-submit', {
+        bubbles: true,
+        detail: { text, requestId: form.dataset.requestId || '', surface },
+      })
+    );
   });
 }
 
@@ -444,6 +502,65 @@ export function renderMarkdown(text: string): string {
     }
   }
 
+  // Render a `minallo-input` block — the AI asking the student for one or more
+  // missing values. Validation is strict (never trust the model's JSON): bad
+  // input renders a safe fallback, never raw HTML and never a throw. The
+  // delegated submit handler at module top reads data-symbol / data-unit.
+  function renderInputForm(raw: string): string {
+    const escAttr = (s: string): string => esc(s).replace(/"/g, '&quot;');
+    try {
+      const spec = JSON.parse(raw) as {
+        requestId?: string;
+        prompt?: string;
+        fields?: Array<{ symbol?: string; label?: string; unit?: string }>;
+      };
+      const fields = (Array.isArray(spec.fields) ? spec.fields : [])
+        .filter(
+          (f) => f && typeof f.symbol === 'string' && f.symbol.trim() &&
+                 typeof f.label === 'string' && f.label.trim()
+        )
+        .slice(0, 8);
+      if (!fields.length) throw new Error('no valid fields');
+      const reqId = typeof spec.requestId === 'string' ? spec.requestId.slice(0, 80) : '';
+      const promptText =
+        typeof spec.prompt === 'string' && spec.prompt.trim()
+          ? spec.prompt
+          : 'Enter the missing value to continue:';
+      const rows = fields
+        .map((f) => {
+          const sym = String(f.symbol).slice(0, 40);
+          const label = String(f.label).slice(0, 80);
+          const unit = typeof f.unit === 'string' ? f.unit.slice(0, 24) : '';
+          return (
+            '<label class="md-ai-input-field">' +
+              '<span class="md-ai-input-label">' + esc(label) +
+                ' <span class="md-ai-input-sym">' + esc(sym) + '</span></span>' +
+              '<span class="md-ai-input-control">' +
+                '<input type="text" inputmode="decimal" autocomplete="off" ' +
+                  'class="md-ai-input-value" data-symbol="' + escAttr(sym) + '" ' +
+                  'data-unit="' + escAttr(unit) + '" placeholder="' + escAttr(sym) + '">' +
+                (unit ? '<span class="md-ai-input-unit">' + esc(unit) + '</span>' : '') +
+              '</span>' +
+            '</label>'
+          );
+        })
+        .join('');
+      return (
+        '<form class="md-ai-input" data-request-id="' + escAttr(reqId) + '">' +
+          '<div class="md-ai-input-prompt">' + esc(promptText) + '</div>' +
+          '<div class="md-ai-input-fields">' + rows + '</div>' +
+          '<button type="submit" class="md-ai-input-submit">Submit</button>' +
+        '</form>'
+      );
+    } catch {
+      return (
+        '<div class="md-ai-input-fallback">' +
+          'The AI requested a value, but the input block was malformed.' +
+        '</div>'
+      );
+    }
+  }
+
   function inline(s: string): string {
     // Stash already-rendered math (and code spans) under sentinel placeholders
     // BEFORE escaping, so their trusted HTML survives the esc() pass that
@@ -537,6 +654,11 @@ export function renderMarkdown(text: string): string {
       }
       if (/^(minallo-plot|plot-json|plot)$/i.test(lang)) {
         out.push(renderPlot(code.join('\n')));
+        i++;
+        continue;
+      }
+      if (/^(minallo-input|input-json)$/i.test(lang)) {
+        out.push(renderInputForm(code.join('\n')));
         i++;
         continue;
       }

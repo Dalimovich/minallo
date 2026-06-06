@@ -230,6 +230,21 @@ def test_math_prompt_allows_complete_kinematics_general_formula_fallback() -> No
     assert "do not use \"missing context\" for a complete elementary constant-acceleration problem" in body
 
 
+def test_math_prompt_documents_interactive_missing_input() -> None:
+    body = _SYSTEM_PROMPT_MATH
+    low = body.lower()
+    # The interactive input contract must be documented.
+    assert "minallo-input" in body
+    assert "requestId" in body
+    assert "interactive missing input" in low
+    # Fast-stop: only the minimal setup, then the block, then stop.
+    assert "reaches the input quickly" in low or "show only the" in low
+    # The blocked-on-input confidence string the frontend keys off.
+    assert "partially verified — awaiting user input" in low
+    # A missing FORMULA must NOT become an input request.
+    assert "must not emit a `minallo-input` block" in low
+
+
 def test_strong_prompt_warns_against_single_phase_braking_error() -> None:
     body = _SYSTEM_PROMPT_STRONG.lower()
     assert "separate motion phases" in body

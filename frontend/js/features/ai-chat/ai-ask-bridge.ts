@@ -96,5 +96,21 @@ export function initAiAskBridge(state: AskAiState): {
   window.restoreCourseHistory = restoreCourseHistory;
   window.clearCourseHistory = clearCourseHistory;
 
+  // minallo-input forms (the AI asking for a missing value) dispatch
+  // 'minallo-ai-input-submit' on submit. On the PDF AI panel we resolve it
+  // through askAI so the value rides the existing Problem-Solver context +
+  // chat history and the model finishes numerically in a new bubble. Scoped by
+  // detail.surface; bound once.
+  const _w = window as Window & { _ssAiInputPanelBound?: boolean };
+  if (!_w._ssAiInputPanelBound) {
+    _w._ssAiInputPanelBound = true;
+    document.addEventListener('minallo-ai-input-submit', (ev) => {
+      const ce = ev as CustomEvent<{ text?: string; surface?: string }>;
+      if (!ce.detail || ce.detail.surface !== 'pdf-panel') return;
+      const text = (ce.detail.text || '').trim();
+      if (text) askAI(text);
+    });
+  }
+
   return { askAI, stopGeneration };
 }

@@ -532,7 +532,7 @@ async function getDocVersionHash(userId, courseId, supaUrl, serviceKey) {
 }
 
 async function makeQuestionHash(userId, courseId, question, docVersionHash, mode, openFileName, activeDocId) {
-  const str = 'v6-o4mini-reasoning|' + userId + '|' + courseId + '|' +
+  const str = 'v7-interactive-input|' + userId + '|' + courseId + '|' +
     question.toLowerCase().replace(/\s+/g, ' ').trim() + '|' +
     docVersionHash + '|' + (mode || 'strict') + '|' + (openFileName || '') + '|' + (activeDocId || '');
   return sha256hex(str);

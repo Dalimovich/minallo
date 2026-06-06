@@ -97,7 +97,7 @@ def question_hash(
 # API-default temperature (1.0) with the corrupted (formfeed/tab) LaTeX
 # examples and the loose delimiter rule. v6 reflects temperature=0.2, the
 # fixed prompt escapes, and the $-only delimiter rule.
-_CACHE_SCHEMA_VERSION = "v7-2026-06-06-o4mini-reasoning"
+_CACHE_SCHEMA_VERSION = "v8-2026-06-06-interactive-input"
 
 
 def document_version_hash(document_hashes: list[str | None]) -> str:
