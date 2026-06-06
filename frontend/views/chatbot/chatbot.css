@@ -2815,6 +2815,16 @@ body:not(.night) .ncb-bubble-body .ai-thinking-card {
   font-style: normal;
   font-size: 0.72rem;
 }
+/* Web-source links (Internet mode) — clickable, open in a new tab. */
+.ncb-ask-sources li.src-web a {
+  color: #93c5fd;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.ncb-ask-sources li.src-web a:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
 
 /* ── Tutor mode pill row (phase 1 of tutor-mode plan) ────────────────────
    Three small pills above the chat input: Solve with me / Explain / Quiz me.

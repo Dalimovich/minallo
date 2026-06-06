@@ -990,14 +990,23 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
     const items = sources
       .map((s, i) => {
         const src = s as SrcItem;
-        const name = src.file_name || 'Unknown';
-        const clickable = !!src.file_name && !src.url && !/problem solver|visible|^source 0$/i.test(name);
+        const name = src.file_name || src.title || 'Unknown';
+        // Web sources carry a URL — render them as real links that open in a
+        // new tab. Scheme-check so a model-supplied `javascript:`/`data:` URL
+        // can never become a clickable anchor.
+        const safeUrl = src.url && /^https?:\/\//i.test(src.url) ? src.url : '';
+        if (safeUrl) {
+          return (
+            '<li class="src-web"><a href="' + escapeAttr(safeUrl) +
+            '" target="_blank" rel="noopener noreferrer nofollow">' + escapeHtml(name) + '</a></li>'
+          );
+        }
+        const clickable = !!src.file_name && !/problem solver|visible|^source 0$/i.test(name);
         let line =
           '<li' + (clickable ? ' class="src-cite" title="Open this source" data-src-i="' + i + '"' : '') + '>' +
           escapeHtml(name);
         if (src.pages) line += ', p.' + escapeHtml(String(src.pages));
         if (src.section) line += ' · <em>' + escapeHtml(src.section) + '</em>';
-        if (src.url) line += ' · <em>' + escapeHtml(src.url) + '</em>';
         line += '</li>';
         return line;
       })
@@ -1018,6 +1027,11 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
           'popup'
         );
       });
+    });
+    // Web-source links open natively in a new tab; stop the click from
+    // bubbling to any app-level link handler that might keep it in-tab.
+    footer.querySelectorAll<HTMLAnchorElement>('.ncb-ask-sources .src-web a').forEach((a) => {
+      a.addEventListener('click', (ev) => ev.stopPropagation());
     });
     bubble.appendChild(footer);
   }
