@@ -740,6 +740,9 @@ function wireResize(): void {
         rafId = 0;
         _drawerWidth = pendingWidth;
         applyWidth(drawer, pendingWidth);
+        if (document.body.classList.contains('pdf-maximized')) {
+          setDrawerWidthVar(pendingWidth);
+        }
       });
     }
   };

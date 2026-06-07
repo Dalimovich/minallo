@@ -1489,7 +1489,7 @@ body.night .sb-acc-chev-btn {
 @media (min-width: 769px) {
   body.dr-pdf-split-open #pdfViewerWrap.is-maximized,
   body:has(#drDrawer.is-open:not(.dr-sheet)) #pdfViewerWrap.is-maximized {
-    right: var(--dr-reserved-w, 0px);
+    right: var(--dr-drawer-w, 0px);
     max-width: none;
   }
 }
@@ -1521,8 +1521,8 @@ body.pdf-maximized #pdfToolbar {
 @media (min-width: 769px) {
   body.pdf-maximized.dr-pdf-split-open #pdfToolbar,
   body.pdf-maximized:has(#drDrawer.is-open:not(.dr-sheet)) #pdfToolbar {
-    left: calc((100vw - var(--dr-reserved-w)) / 2);
-    max-width: min(calc(100vw - var(--dr-reserved-w) - 32px), 980px);
+    left: calc((100vw - var(--dr-drawer-w)) / 2);
+    max-width: min(calc(100vw - var(--dr-drawer-w) - 32px), 980px);
   }
 }
 body.pdf-maximized #pdfToolbar .pdf-toolbar-inner {
@@ -2445,8 +2445,8 @@ body.pdf-maximized .annotate-popover {
 @media (min-width: 769px) {
   body.pdf-maximized.dr-pdf-split-open .annotate-popover,
   body.pdf-maximized:has(#drDrawer.is-open:not(.dr-sheet)) .annotate-popover {
-    left: calc((100vw - var(--dr-reserved-w)) / 2);
-    max-width: min(calc(100vw - var(--dr-reserved-w) - 48px), 980px);
+    left: calc((100vw - var(--dr-drawer-w)) / 2);
+    max-width: min(calc(100vw - var(--dr-drawer-w) - 48px), 980px);
   }
 }
 .annotate-popover::before {
