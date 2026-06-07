@@ -155,6 +155,23 @@
   }
 }
 
+/* ── Inline split mode: drawer sits in .app-body as a flex sibling ──── */
+.dr-drawer.dr-inline-split {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  flex: 0 0 var(--dr-drawer-w);
+  width: var(--dr-drawer-w) !important;
+  height: auto;
+  border-radius: 0;
+  margin-right: var(--dr-rail-w);
+  opacity: 1;
+  pointer-events: auto;
+  z-index: auto;
+}
+
 .dr-drawer[hidden] {
   display: none !important;
 }

@@ -1465,11 +1465,9 @@ body.night .sb-acc-chev-btn {
 @media (min-width: 769px) {
   body.dr-pdf-split-open #pdfViewerWrap,
   body:has(#drDrawer.is-open:not(.dr-sheet)) #pdfViewerWrap {
-    flex: 0 1 calc(100% - var(--dr-reserved-w));
-    width: calc(100% - var(--dr-reserved-w));
-    max-width: calc(100% - var(--dr-reserved-w));
-    margin-right: var(--dr-reserved-w);
-    transition: margin-right 180ms ease;
+    flex: 1 1 0%;
+    min-width: 0;
+    transition: flex 180ms ease;
   }
 }
 
@@ -1492,7 +1490,6 @@ body.night .sb-acc-chev-btn {
   body.dr-pdf-split-open #pdfViewerWrap.is-maximized,
   body:has(#drDrawer.is-open:not(.dr-sheet)) #pdfViewerWrap.is-maximized {
     right: var(--dr-reserved-w, 0px);
-    margin-right: 0;
     max-width: none;
   }
 }

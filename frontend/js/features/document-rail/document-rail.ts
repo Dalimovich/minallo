@@ -150,6 +150,12 @@ function clearSplitState(): void {
   }
   document.body.classList.remove(SPLIT_CLASS);
   document.body.style.removeProperty('--dr-drawer-w');
+  // Move drawer back to #drRoot if it was promoted into .app-body
+  const drawer = $('drDrawer');
+  if (drawer && root && drawer.parentElement !== root) {
+    drawer.classList.remove('dr-inline-split');
+    root.appendChild(drawer);
+  }
 }
 
 function applySplitState(drawer?: HTMLElement | null): void {
@@ -161,9 +167,20 @@ function applySplitState(drawer?: HTMLElement | null): void {
   document.body.classList.toggle(SPLIT_CLASS, shouldSplit);
   if (shouldSplit) {
     setDrawerWidthVar(_drawerWidth);
+    // Move drawer into .app-body as a flex sibling so it participates in flow
+    const appBody = document.querySelector('.app-body') as HTMLElement | null;
+    if (drawer && appBody && drawer.parentElement !== appBody) {
+      drawer.classList.add('dr-inline-split');
+      appBody.appendChild(drawer);
+    }
   } else {
     root.style.removeProperty('--dr-drawer-w');
     document.body.style.removeProperty('--dr-drawer-w');
+    // Return drawer to #drRoot
+    if (drawer && root && drawer.parentElement !== root) {
+      drawer.classList.remove('dr-inline-split');
+      root.appendChild(drawer);
+    }
   }
 }
 
@@ -527,10 +544,10 @@ function mountNotesPanel(mode: 'notes' | 'summary'): void {
     return;
   }
   if (!_notesHomeParent) _notesHomeParent = panel.parentElement;
-  // The legacy open() may have set #pdfView to .pdf-split — undo so the
+  // The legacy open() may have set #centreContent to .pdf-split — undo so the
   // PDF page keeps its full width while the drawer hosts the panel.
-  const pdfView = document.getElementById('pdfView');
-  if (pdfView) pdfView.classList.remove('pdf-split');
+  const centre = document.getElementById('centreContent');
+  if (centre) centre.classList.remove('pdf-split');
   // Reset legacy inline styles & host inside the drawer.
   panel.classList.add('dr-host-notes');
   panel.style.position = 'static';
