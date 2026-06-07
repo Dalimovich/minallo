@@ -36,9 +36,19 @@ function _ssReplaceHistory(state, hash) {
   } catch (e) {}
 }
 
+function _ssCurrentPanel() {
+  var rail = window.__minalloDocRail;
+  return (rail && rail.currentMode) ? rail.currentMode() : null;
+}
+
+function _ssPanelSuffix() {
+  var p = _ssCurrentPanel();
+  return p ? '&panel=' + encodeURIComponent(p) : '';
+}
+
 function _ssCourseHash(course, section) {
   var id = course && (course.id || course.short) ? String(course.id || course.short) : '';
-  return '#portal=courses&course=' + encodeURIComponent(id) + '&section=' + encodeURIComponent(section || 'files');
+  return '#portal=courses&course=' + encodeURIComponent(id) + '&section=' + encodeURIComponent(section || 'files') + _ssPanelSuffix();
 }
 
 function _ssFileHash(fileName, course, section) {
@@ -46,7 +56,8 @@ function _ssFileHash(fileName, course, section) {
   return (
     '#portal=courses&course=' + encodeURIComponent(id) +
     '&section=' + encodeURIComponent(section || 'files') +
-    '&file=' + encodeURIComponent(fileName || '')
+    '&file=' + encodeURIComponent(fileName || '') +
+    _ssPanelSuffix()
   );
 }
 
@@ -61,13 +72,15 @@ function _ssStateFromHash(hash) {
   }
   var file = params.get('file');
   var course = params.get('course');
+  var panel = params.get('panel') || null;
   if (file) {
     return {
       view: 'file',
       courseId: course || params.get('courseId') || null,
       courseShort: params.get('courseShort') || null,
       fileName: file,
-      section: params.get('section') || 'files'
+      section: params.get('section') || 'files',
+      panel: panel
     };
   }
   if (course) {
@@ -75,7 +88,8 @@ function _ssStateFromHash(hash) {
       view: 'course',
       courseId: course,
       courseShort: params.get('courseShort') || null,
-      section: params.get('section') || 'files'
+      section: params.get('section') || 'files',
+      panel: panel
     };
   }
   var portal = params.get('portal');
@@ -85,6 +99,36 @@ function _ssStateFromHash(hash) {
   }
   return null;
 }
+
+// Sync the URL to match the actual visible app state. Uses replaceState so it
+// doesn't create extra history entries — just corrects the hash if it drifted.
+// Called after file open/close, drawer open/close, and section switches.
+function _ssSyncUrl() {
+  try {
+    var hash;
+    var portalEl = document.getElementById('portal');
+    var activeView = portalEl ? portalEl.dataset.activeView || null : null;
+    if (!activeView) {
+      var appEl = document.getElementById('app');
+      activeView = (appEl && appEl.style.display !== 'none' && appEl.style.display !== '') ? 'file' : 'portal';
+    }
+    if (activeView === 'file' && activeFileName) {
+      hash = _ssFileHash(activeFileName, activeCourseRef || { id: activeCourseId }, activeCourseSection || 'files');
+      _ssReplaceHistory(
+        { view: 'file', courseId: activeCourseId || null, courseShort: (activeCourseRef && activeCourseRef.short) || null, fileName: activeFileName, section: activeCourseSection || 'files', panel: _ssCurrentPanel() },
+        hash
+      );
+    } else if (activeView === 'file' && activeCourseId) {
+      hash = _ssCourseHash(activeCourseRef || { id: activeCourseId }, activeCourseSection || 'files');
+      _ssReplaceHistory(
+        { view: 'course', courseId: activeCourseId, courseShort: (activeCourseRef && activeCourseRef.short) || null, section: activeCourseSection || 'files', panel: _ssCurrentPanel() },
+        hash
+      );
+    }
+    // Portal sections are handled by _finalizeNav — don't override those.
+  } catch (e) {}
+}
+window._ssSyncUrl = _ssSyncUrl;
 
 // Authoritative URL + ss_portal_tab + ss_last_section commit. Belt-and-suspenders
 // alongside the showPortalSection wrapper — calling this after every navigation
@@ -237,6 +281,7 @@ function _ssApplyHistoryState(state) {
       if (typeof window.openCourse === 'function') window.openCourse(course);
       if (state.section && typeof window.showCourseSection === 'function')
         window.showCourseSection(course, state.section);
+      _ssRestorePanel(state.panel);
     }
     return;
   }
@@ -253,8 +298,17 @@ function _ssApplyHistoryState(state) {
         if (state.section && typeof window.showCourseSection === 'function')
           window.showCourseSection(fileCourse, state.section);
       }
+      _ssRestorePanel(state.panel);
     }
   }
+}
+
+function _ssRestorePanel(panel) {
+  if (!panel) return;
+  setTimeout(function () {
+    var rail = window.__minalloDocRail;
+    if (rail && typeof rail.open === 'function') rail.open(panel);
+  }, 400);
 }
 
 var _origOpenCourse = window.openCourse;
@@ -268,10 +322,12 @@ window.openCourse = function (c) {
       view: 'course',
       courseId: c.id || null,
       courseShort: c.short || null,
-      section: section
+      section: section,
+      panel: _ssCurrentPanel()
     },
     _ssCourseHash(c, section)
   );
+  setTimeout(_ssSyncUrl, 120);
 };
 
 var _origOpenFile = window.openFile;
@@ -285,10 +341,13 @@ window.openFile = function (f, c) {
       courseId: c.id || null,
       courseShort: c.short || null,
       fileName: f.name || null,
-      section: activeCourseSection || 'files'
+      section: activeCourseSection || 'files',
+      panel: _ssCurrentPanel()
     },
     _ssFileHash(f.name || '', c, activeCourseSection || 'files')
   );
+  // Safety net: if _ssPushHistory bailed due to guard flags, correct the URL.
+  setTimeout(_ssSyncUrl, 120);
 };
 
 var _origShowSection = window.showCourseSection;

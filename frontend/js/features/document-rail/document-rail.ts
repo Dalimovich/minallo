@@ -27,6 +27,7 @@ interface DocRailWindow extends Window {
     setRouteVisibility: (route: DocRailRoute) => void;
     open: (mode: DocRailMode) => void;
     close: () => void;
+    currentMode: () => DocRailMode | null;
   };
   openAI?: () => void;
   askAI?: (
@@ -43,6 +44,7 @@ interface DocRailWindow extends Window {
   ) => unknown;
   _notesPanel?: NotesPanelApi;
   _ssLoadPortalFeature?: (name: string) => Promise<void>;
+  _ssSyncUrl?: () => void;
 }
 
 const WIDTH_KEY = 'ss_dr_width';
@@ -674,6 +676,8 @@ function openDrawer(mode: DocRailMode): void {
       }
     }, 320);
   }
+  const w2 = window as DocRailWindow;
+  if (typeof w2._ssSyncUrl === 'function') w2._ssSyncUrl();
 }
 
 function closeDrawer(): void {
@@ -712,6 +716,8 @@ function closeDrawer(): void {
       (window as any).renderPages();
     }
   }, 320);
+  const w2 = window as DocRailWindow;
+  if (typeof w2._ssSyncUrl === 'function') w2._ssSyncUrl();
 }
 
 function toggleMode(mode: DocRailMode): void {
@@ -847,6 +853,7 @@ export function initDocumentRail(): void {
     setRouteVisibility,
     open: openDrawer,
     close: closeDrawer,
+    currentMode: () => _openMode,
   };
 
   root.classList.remove('is-pdf', 'is-courses', 'is-open');
