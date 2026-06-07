@@ -264,7 +264,7 @@ export function chipPrompt(type: string, level?: string): void {
     },
     formulas:
       base +
-      'extract and explain every formula, equation and mathematical expression in the document. For each one: show the formula, define every symbol, and give a brief explanation of what it calculates.',
+      'extract and explain every formula, equation and mathematical expression in the document. For each one: show the original formula, define every symbol, explain what it calculates, then show a simplified or factored final form if that makes the expression clearer.',
     quiz: {
       easy:
         base +

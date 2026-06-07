@@ -107,7 +107,7 @@ export function initAiPanelBridge(options?: AiPanelBridgeOptions): {
     });
     formulaBtn.addEventListener('click', () => {
       banner.remove();
-      askAI('Break down this formula step by step, explain every symbol: "' + txt + '"');
+      askAI('Break down this formula step by step, explain every symbol, keep the original form first, then show a simplified or factored final form if that makes it clearer: "' + txt + '"');
     });
     dismissBtn.addEventListener('click', () => {
       banner.remove();

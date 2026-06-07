@@ -28,6 +28,7 @@ from ..supabase_client import get_supabase
 from .answer_intent import classify_academic_intent
 from .answer import (
     DEFAULT_TUTOR_MODE,
+    EQUATION_READABILITY_RULE,
     FIGURE_CHUNK_TYPES,
     MINALLO_APP_CONTEXT,
     _APP_ONLY_SYSTEM_PROMPT,
@@ -683,11 +684,12 @@ CODE / CS structure:
 
 Rules:
 - For math problems: extract all numeric values and units before solving. State missing data explicitly before making assumptions.
+- For setup/check/solve modes on math or engineering problems, follow the equation readability rule below.
 - For code problems: write code in triple-backtick fences with a language tag (```python, ```java, ```c, ```sql, ...). Inline identifiers, function names, paths in `single backticks`. Preserve indentation exactly. NEVER wrap code in `$...$` math delimiters.
 - Cite source material with [Source N] tags exactly as the base prompt requires.
 - Do not invent course-specific formulas, APIs, or library functions. If the needed material is absent, say what is missing.
 - Reply in the same language the student is writing in (German or English). Section headings translate too ("Given" → "Gegeben", "Approach" → "Vorgehen", "Complexity" → "Komplexität", ...).
-"""
+""" + EQUATION_READABILITY_RULE
     mode_rules = {
         "hint": """
 

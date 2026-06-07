@@ -33,6 +33,7 @@ sys.modules.setdefault("app.services.embeddings", _fake_emb)
 # required env vars at session start, so the real `app.config` loads fine.
 
 from app.services.answer import (  # noqa: E402
+    EQUATION_READABILITY_RULE,
     _SYSTEM_PROMPT_MATH,
     _SYSTEM_PROMPT_PARTIAL,
     _SYSTEM_PROMPT_STRONG,
@@ -363,6 +364,26 @@ def test_problem_solver_full_solution_requires_final_arithmetic() -> None:
     assert "exact missing quantities" in body
     assert "mach weiter" in body
     assert "rechnerisch" in body
+
+
+def test_math_prompt_includes_equation_readability_rule() -> None:
+    body = _SYSTEM_PROMPT_MATH.lower()
+    assert "equation readability" in body
+    assert "keep the original" in body
+    assert "physical contribution form first" in body
+    assert "factor" in body
+    assert "$f/(ea)$" in body
+    assert "do not over-factor" in body
+    assert "single-line `$$...$$` blocks" in _SYSTEM_PROMPT_MATH
+
+
+def test_problem_solver_overlay_includes_equation_readability_rule() -> None:
+    body = _problem_solver_overlay("solve", {}).lower()
+    assert "equation readability" in body
+    assert "physical contribution form first" in body
+    assert "do not over-factor" in body
+    assert "factoring obvious common terms" in body
+    assert EQUATION_READABILITY_RULE.strip() in _problem_solver_overlay("solve", {})
 
 
 def test_problem_solver_input_is_primary_source() -> None:
