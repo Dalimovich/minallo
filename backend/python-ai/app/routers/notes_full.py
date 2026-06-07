@@ -44,15 +44,12 @@ _METADATA_NOISE = (
 
 _EXAM_FINAL_SECTIONS = (
     "Muss-Definitionen",
-    "DIN-Einteilungen",
-    "Werkstoffverhalten",
-    "Kristallstruktur, Gleiten und Versetzungen",
-    "Rekristallisation",
+    "Einteilungen und Klassifikationen",
+    "Physikalische Grundlagen / Werkstoffverhalten",
     "Wichtige Formeln",
-    "Eigenschaften des Umformgrads",
-    "Fließspannung, Temperatur und Umformgeschwindigkeit",
-    "Fließkurven und Grenzformänderung",
-    "Typische Prüfungsfragen",
+    "Verfahren und Prozessschritte",
+    "Vergleiche",
+    "Prüfungsrelevanz",
     "Typische Fehler",
 )
 
@@ -182,6 +179,129 @@ Target length: up to ~4000 words. Be as thorough as needed to cover every exam-r
 Only infer exam relevance from emphasis in the PDF, repeated concepts, definitions, formulas,
 examples, or explicitly marked learning goals. Do NOT invent exam questions from outside knowledge.
 
+## STEP 1: CLASSIFY THE CONTENT TYPE (internal — do NOT output the classification)
+
+Before choosing a structure, silently classify the material as one of:
+
+- **math-problem-solving**: The material is dominated by formulas, derivations, solved examples,
+  calculation methods, proofs, or exercise patterns. Examples: Mathematics, Mechanics, Statistics,
+  Physics calculations, Signals & Systems.
+
+- **technical-conceptual**: The material mixes engineering knowledge (definitions, DIN norms,
+  classifications, process descriptions, material properties) with technical formulas. Examples:
+  Fertigungstechnik, Werkstoffkunde, Konstruktionslehre, Thermodynamik.
+
+- **memorization-heavy**: The material is dominated by definitions, classifications, lists, facts,
+  comparisons, legal rules, or descriptive theory with few or no calculations. Examples: Biology,
+  Law, Medicine theory, Business/Management, History.
+
+- **mixed**: The material contains roughly equal parts of the above.
+
+## STEP 2: USE THE MATCHING STRUCTURE
+
+### IF math-problem-solving:
+Use these sections — OMIT any that would be empty:
+
+## 1. Kernformeln (Core Formulas)
+Every formula from the PDF in KaTeX, grouped by topic. For each formula: what it computes,
+meaning of every variable with units, and under which conditions it applies.
+
+## 2. Wann welche Formel? (When to Use Each Formula)
+Decision guide: for each formula, state the typical problem setup that requires it.
+Use a compact "If … → use …" format.
+
+## 3. Standard-Lösungsmethoden (Standard Solving Methods)
+Step-by-step procedures for the main problem types in the PDF. Number each step.
+Include which formula to apply at each step and what to check.
+
+## 4. Typische Aufgabentypen (Typical Exercise Types)
+List the exercise patterns that appear in the PDF or can be inferred from the formulas and examples.
+For each: one-line description of the setup, which method applies, and what the expected result looks like.
+
+## 5. Mini-Rechenbeispiele (Mini Solved Examples)
+Reproduce solved examples from the PDF. If no full example exists but a formula is demonstrated
+with numbers, show that. Do NOT invent examples — only use what the PDF provides.
+
+## 6. Typische Fehler (Common Mistakes)
+Calculation traps: sign errors, unit confusion, wrong formula choice, forgetting boundary conditions.
+Infer ONLY from the material.
+
+## 7. Prüfungs-Checkliste (Exam Checklist)
+The 10-15 things to know cold: key formulas, method steps, definitions, special cases.
+
+### IF memorization-heavy:
+Use these sections — OMIT any that would be empty:
+
+## 1. Muss-Definitionen (Must-Know Definitions)
+Every formal definition, quoted near-verbatim with page references.
+
+## 2. Einteilungen und Klassifikationen (Classifications)
+Every classification, taxonomy, or categorization. List all categories completely.
+
+## 3. Wichtige Konzepte (Key Concepts)
+Core ideas, principles, theories, and their relationships. Explain each concisely.
+
+## 4. Vergleiche (Comparisons)
+Differences and similarities between concepts, methods, or categories. Use markdown tables.
+
+## 5. Beispiele aus der Vorlesung (Lecture Examples)
+Examples used in the PDF to illustrate concepts. Cite pages.
+
+## 6. Prüfungsrelevante Fakten (Exam-Relevant Facts)
+Facts, numbers, properties, or rules the student must memorize. Bullet list format.
+
+## 7. Typische Prüfungsfragen (Typical Exam Questions)
+Questions that can be inferred from the material. Do NOT invent questions from outside knowledge.
+
+## 8. Typische Fehler (Common Mistakes)
+Confusing similar terms, wrong classifications, incomplete lists. Infer ONLY from the material.
+
+## 9. Mini-Zusammenfassung (Mini Recap)
+3-5 memory-friendly sentences capturing the most critical points.
+
+### IF technical-conceptual:
+Use these sections — OMIT any that would be empty:
+
+## 1. Muss-Definitionen (Must-Know Definitions)
+Every formal definition in the PDF, quoted near-verbatim with page references.
+Include DIN/norm definitions, technical terms, and key distinctions.
+Start with the most fundamental definition of the chapter topic.
+
+## 2. Einteilungen und Klassifikationen (Classifications & Tables)
+Every classification scheme, taxonomy, or categorization from the PDF.
+List all categories and subcategories completely.
+
+## 3. Physikalische Grundlagen (Physical Mechanisms)
+Physical principles, material properties, deformation behavior, crystal structures,
+microstructural phenomena — anything that explains WHY processes work.
+
+## 4. Wichtige Formeln (Important Formulas)
+Every formula from the PDF. For each: the formula in KaTeX, meaning of every variable with units,
+and when/how to apply it.
+
+## 5. Was die Formeln bedeuten (What the Formulas Mean)
+Practical interpretation: what changes when a variable increases? What are typical values?
+Connect formulas to the physical concepts from section 3.
+
+## 6. Verfahren und Prozessschritte (Methods and Process Steps)
+Every named method or process with: what it is, how it works, advantages, disadvantages, applications.
+
+## 7. Vergleiche (Exam-Relevant Comparisons)
+Comparisons between methods, materials, processes, or concepts. Use markdown tables.
+Reproduce table structures faithfully — keep all original columns and values.
+
+## 8. Typische Fehler (Common Mistakes)
+Confusing similar terms, wrong column values in tables (e.g. slip planes vs. total slip systems),
+mixing up related formulas, forgetting conservation laws. Infer from the material.
+
+## 9. Mini-Zusammenfassung (Mini Recap)
+3-5 sentences: the most important things to remember for the exam.
+
+### IF mixed:
+Combine elements from the above templates. Use technical-conceptual as the base structure,
+but add "Standard-Lösungsmethoden" and "Typische Aufgabentypen" sections if the material
+contains calculation methods or exercises.
+
 ## COVERAGE TRANSPARENCY
 After your content-type marker, output a brief coverage line:
 > **Abgedeckte Seiten:** S. X–Y (von Z Seiten im Dokument).
@@ -195,49 +315,7 @@ When reproducing tables from the PDF (e.g. crystal structures, material properti
 - Do NOT merge or rename columns. If the PDF has separate columns for "Bevorzugte Gleitebenen",
   "Gleitrichtungen", and "Gleitsystemanzahl", reproduce all three — do not collapse them into fewer columns.
 - Cross-check each cell value against the [S. X] source page. A number that belongs to one column
-  must not be placed under a different column header.
-
-Use this structure — ONLY include sections that have real content. OMIT sections that would be empty:
-
-## 1. Muss-Definitionen (Must-Know Definitions)
-Every formal definition in the PDF, quoted near-verbatim with page references.
-Include DIN/norm definitions, technical terms, and key distinctions.
-Start with the most fundamental definition of the chapter topic (e.g. Umformen nach DIN 8580).
-
-## 2. Einteilungen und Klassifikationen (Classifications)
-Every classification scheme, taxonomy, or categorization from the PDF.
-List all categories and subcategories completely.
-
-## 3. Werkstoffverhalten und Grundlagen (Material Behavior / Fundamentals)
-Physical principles, material properties, deformation behavior, crystal structures,
-microstructural phenomena — anything that explains WHY processes work.
-
-## 4. Verfahren und Prozesse (Methods and Processes)
-Every named method or process with: what it is, how it works, advantages, disadvantages, applications.
-
-## 5. Wichtige Formeln (Important Formulas)
-Every formula from the PDF. For each: the formula in KaTeX, meaning of every variable with units,
-and when/how to apply it.
-
-## 6. Kennwerte und Eigenschaften (Properties and Characteristics)
-Key properties, relationships, rules of thumb, and their implications.
-Include properties like Umformgrad properties, Volumenkonstanz, isotropy/anisotropy.
-
-## 7. Diagramme und Kurven (Diagrams and Curves)
-Describe important diagrams, curves, or graphs from the PDF. What they show, axes, key features.
-
-## 8. Vergleiche (Comparisons)
-Any comparisons between methods, materials, processes, or concepts. Use markdown tables.
-Reproduce table structures faithfully — keep all original columns and values in their correct positions.
-
-## 9. Prüfungsrelevanz (Exam Focus)
-The 10-15 most likely exam topics based on definitions, formulas, classifications,
-and concepts emphasized in the PDF. Infer ONLY from the PDF content.
-
-## 10. Typische Fehler (Common Mistakes)
-Typical misunderstandings or traps that can be inferred from the material.
-Include traps like confusing similar-looking values in tables (e.g. number of slip planes vs. total slip systems),
-mixing up related formulas (e.g. $\\varphi$ vs. $\\varepsilon$), or forgetting conservation laws (e.g. Volumenkonstanz)."""
+  must not be placed under a different column header."""
 
 
 def _summary_prompt(lang: str, detail_level: str) -> str:
@@ -309,7 +387,13 @@ def _exam_page_group_instructions(page_ref: str) -> str:
 
 Scan every provided [S. X] marker. Do not skip central theory pages in favor of examples.
 
-Extract page-local exam material for these final merge categories:
+Silently classify the content as math-problem-solving, technical-conceptual, memorization-heavy, or mixed
+(see the content-type definitions in the main exam instructions). Adapt which categories you extract:
+- For math-problem-solving: focus on formulas, solving methods, exercise types, worked examples.
+- For technical-conceptual: focus on definitions, classifications, physical mechanisms, formulas, processes.
+- For memorization-heavy: focus on definitions, classifications, facts, comparisons, lecture examples.
+
+Extract page-local exam material for these general categories (adapt naming to content type):
 {sections}
 
 Rules:
@@ -317,8 +401,11 @@ Rules:
 - Preserve exact page references for examples, definitions, formulas, diagrams, and classifications.
 - Quote Muss-Definitionen near-verbatim when the source gives a definition.
 - Capture DIN/norm classifications completely when present.
-- Include material behavior, elastic/plastic deformation, crystal structure, glide, dislocations, recrystallization, Umformgrad properties, flow stress, temperature effects, forming speed, flow curves, and forming limits whenever they appear in this page group.
-- When reproducing tables (e.g. crystal structures, material comparisons): copy every column header exactly as in the source. Do NOT merge columns. If the source has separate columns for e.g. "Bevorzugte Gleitebenen", "Gleitrichtungen", and "Gleitsystemanzahl", reproduce all three with their correct per-row values.
+- Include all domain-specific content: material behavior, crystal structures, process parameters, calculation methods,
+  derivation steps, exercise patterns — whatever the content type demands.
+- When reproducing tables: copy every column header exactly as in the source. Do NOT merge columns.
+  If the source has separate columns for e.g. "Bevorzugte Gleitebenen", "Gleitrichtungen", and
+  "Gleitsystemanzahl", reproduce all three with their correct per-row values.
 - Add Typische Fehler only when a trap can be inferred from the source content.
 - Math in KaTeX. Use clean subscripts: $k_f$, $A_1$, $l_1$, $l_0$, $\\varphi$, $\\varepsilon$; never plain kf, A1, l1, l0.
 - Prefer $\\varphi = \\ln(1+\\varepsilon) = \\ln\\left(\\frac{{l_1}}{{l_0}}\\right)$ when the source discusses logarithmic strain / Umformgrad.
@@ -377,7 +464,6 @@ Extract everything worth studying from {page_ref}. For each named method create 
 
 
 def _exam_merge_prompt(lang: str) -> str:
-    sections = "\n".join(f"## {i + 1}. {name}" for i, name in enumerate(_EXAM_FINAL_SECTIONS))
     return f"""You are merging multiple page-group EXAM summaries into one complete final exam summary.
 
 {_lang_instr(lang)}
@@ -392,8 +478,21 @@ Choose based on the merged result:
 - If some are content-light and others contain study content, use mixed-content. Include only brief context for content-light parts and focus on study content.
 - If all contain study content, use study-content.
 
-Final structure for study-content or mixed-content:
-{sections}
+## CONTENT-TYPE-ADAPTIVE STRUCTURE
+
+Before choosing the final structure, silently classify the merged content as one of:
+- **math-problem-solving**: dominated by formulas, derivations, solved examples, calculation methods.
+- **technical-conceptual**: engineering knowledge (definitions, DIN norms, classifications, processes) mixed with formulas.
+- **memorization-heavy**: definitions, classifications, lists, facts, comparisons, descriptive theory.
+- **mixed**: roughly equal parts.
+
+Then use the matching template from the exam section instructions:
+- math-problem-solving → Kernformeln, Wann welche Formel, Standard-Lösungsmethoden, Typische Aufgabentypen, Mini-Rechenbeispiele, Typische Fehler, Prüfungs-Checkliste
+- technical-conceptual → Muss-Definitionen, Einteilungen, Physikalische Grundlagen, Wichtige Formeln, Was die Formeln bedeuten, Verfahren, Vergleiche, Typische Fehler, Mini-Zusammenfassung
+- memorization-heavy → Muss-Definitionen, Einteilungen, Wichtige Konzepte, Vergleiche, Vorlesungsbeispiele, Prüfungsrelevante Fakten, Typische Prüfungsfragen, Typische Fehler, Mini-Zusammenfassung
+- mixed → technical-conceptual base + Standard-Lösungsmethoden and Typische Aufgabentypen if calculation content exists
+
+OMIT sections that would be empty.
 
 Coverage rules:
 - Preserve exam-relevant content from EVERY input section. Do not drop middle pages or later page ranges.
@@ -414,7 +513,7 @@ Coverage transparency:
   > **Abgedeckte Seiten:** S. X–Y (von Z Seiten im Dokument).
   Use the page ranges from the input section headers to determine X–Y. If total pages is unknown, omit "von Z".
 - If the merged content clearly does not cover the entire PDF (e.g. early pages only, or a table of contents mentions topics not found in any input section), add:
-  > Wichtige Themen ab S. [estimated page] (z. B. [topic names visible in ToC/headings]) sind in diesem Bereich nicht enthalten.
+  > Wichtige Themen ab S. [first uncovered page] (z. B. [topic names visible in ToC/headings]) sind in diesem Bereich nicht enthalten.
   Only name topics that appear in a table of contents, chapter heading, or cross-reference within the input. Do NOT guess."""
 
 

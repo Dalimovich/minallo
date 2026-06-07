@@ -22,10 +22,8 @@ def test_exam_section_prompt_covers_complete_page_group() -> None:
     prompt = notes_full._section_prompt("de", 3, 6, "summary", "exam")
 
     assert "Muss-Definitionen" in prompt
-    assert "DIN-Einteilungen" in prompt
-    assert "Werkstoffverhalten" in prompt
-    assert "Kristallstruktur, Gleiten und Versetzungen" in prompt
-    assert "Rekristallisation" in prompt
+    assert "Physikalische Grundlagen" in prompt
+    assert "Wichtige Formeln" in prompt
     assert "Typische Fehler" in prompt
     assert "Do not skip central theory pages" in prompt
     assert "explicit [S. X] markers" in prompt
@@ -36,24 +34,52 @@ def test_exam_section_prompt_covers_complete_page_group() -> None:
     assert "\\ln\\left(\\frac{l_1}{l_0}\\right)" in prompt
 
 
-def test_exam_merge_prompt_uses_required_final_structure() -> None:
+def test_exam_section_prompt_has_content_type_classification() -> None:
+    from app.routers import notes_full
+
+    prompt = notes_full._section_prompt("de", 3, 6, "summary", "exam")
+
+    assert "math-problem-solving" in prompt
+    assert "technical-conceptual" in prompt
+    assert "memorization-heavy" in prompt
+
+
+def test_exam_merge_prompt_uses_content_type_adaptive_structure() -> None:
     from app.routers import notes_full
 
     prompt = notes_full._merge_prompt("de", "summary", "exam")
 
-    expected_headings = [
-        "## 1. Muss-Definitionen",
-        "## 2. DIN-Einteilungen",
-        "## 6. Wichtige Formeln",
-        "## 10. Typische Prüfungsfragen",
-        "## 11. Typische Fehler",
-    ]
-    for heading in expected_headings:
-        assert heading in prompt
-
+    assert "math-problem-solving" in prompt
+    assert "technical-conceptual" in prompt
+    assert "memorization-heavy" in prompt
+    assert "Kernformeln" in prompt
+    assert "Standard-Lösungsmethoden" in prompt
+    assert "Muss-Definitionen" in prompt
     assert "Preserve exam-relevant content from EVERY input section" in prompt
     assert "If examples are on S. 6, keep S. 6" in prompt
     assert "$\\varphi$ with $\\varepsilon$" in prompt
+
+
+def test_exam_main_prompt_has_all_templates() -> None:
+    from app.routers import notes_full
+
+    prompt = notes_full._summary_prompt("de", "exam")
+
+    assert "math-problem-solving" in prompt
+    assert "technical-conceptual" in prompt
+    assert "memorization-heavy" in prompt
+    assert "Kernformeln" in prompt
+    assert "Wann welche Formel" in prompt
+    assert "Standard-Lösungsmethoden" in prompt
+    assert "Typische Aufgabentypen" in prompt
+    assert "Mini-Rechenbeispiele" in prompt
+    assert "Muss-Definitionen" in prompt
+    assert "Einteilungen und Klassifikationen" in prompt
+    assert "Physikalische Grundlagen" in prompt
+    assert "Verfahren und Prozessschritte" in prompt
+    assert "Prüfungsrelevante Fakten" in prompt
+    assert "COVERAGE TRANSPARENCY" in prompt
+    assert "TABULAR DATA PRECISION" in prompt
 
 
 def test_staged_merge_sends_all_sections_without_silent_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
