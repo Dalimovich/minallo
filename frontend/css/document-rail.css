@@ -167,19 +167,27 @@
   height: auto;
   border-radius: 0;
   border-right: none;
-  padding-right: calc(var(--dr-rail-w) + 12px);
   opacity: 1;
   pointer-events: auto;
   z-index: auto;
 }
 
-/* Rail becomes transparent and floats over the drawer in split mode */
-body.dr-pdf-split-open .dr-rail {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+/* Rail inside drawer in split mode: floats on top at right edge */
+.dr-drawer.dr-inline-split .dr-rail {
+  position: absolute !important;
+  right: 0;
+  top: 50%;
+  left: auto !important;
+  bottom: auto !important;
+  transform: translateY(-50%) !important;
+  height: auto;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+  border: none;
+  z-index: 10;
 }
 
 .dr-drawer[hidden] {
