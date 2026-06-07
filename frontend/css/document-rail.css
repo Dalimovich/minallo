@@ -134,8 +134,7 @@
 }
 
 @media (min-width: 769px) {
-  body.dr-pdf-split-open .dr-rail,
-  body:has(#drDrawer.is-open:not(.dr-sheet)) .dr-rail {
+  body:not(.dr-pdf-split-open):has(#drDrawer.is-open:not(.dr-sheet)) .dr-rail {
     top: 0;
     right: 0;
     bottom: 0;
@@ -145,8 +144,7 @@
     justify-content: center;
   }
 
-  body.dr-pdf-split-open .dr-drawer,
-  body:has(#drDrawer.is-open:not(.dr-sheet)) .dr-drawer {
+  body:not(.dr-pdf-split-open):has(#drDrawer.is-open:not(.dr-sheet)) .dr-drawer {
     top: 0;
     right: var(--dr-rail-w);
     bottom: 0;
