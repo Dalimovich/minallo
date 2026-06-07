@@ -66,6 +66,9 @@ export function initAiPanelBridge(options?: AiPanelBridgeOptions): {
     if (cid && typeof window.restoreCourseHistory === 'function') {
       window.restoreCourseHistory(cid);
     }
+    if (aiMsgs) {
+      requestAnimationFrame(() => { aiMsgs.scrollTop = aiMsgs.scrollHeight; });
+    }
   }
 
   function pinAI(): void {
