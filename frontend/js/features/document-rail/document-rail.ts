@@ -647,6 +647,15 @@ function openDrawer(mode: DocRailMode): void {
       if (_openMode === mode) renderModeContent(mode);
     }, 40);
   }
+  // Re-render PDF after the drawer slide-in transition completes so the
+  // canvas fills the new column width instead of staying clipped.
+  if (!wasOpen) {
+    window.setTimeout(() => {
+      if (typeof (window as any).renderPages === 'function') {
+        (window as any).renderPages();
+      }
+    }, 320);
+  }
 }
 
 function closeDrawer(): void {
@@ -678,6 +687,13 @@ function closeDrawer(): void {
   window.setTimeout(() => {
     if (!drawer.classList.contains('is-open')) drawer.hidden = true;
   }, 360);
+  // Re-render PDF after the slide-out transition so the canvas expands
+  // back to the full column width.
+  window.setTimeout(() => {
+    if (typeof (window as any).renderPages === 'function') {
+      (window as any).renderPages();
+    }
+  }, 320);
 }
 
 function toggleMode(mode: DocRailMode): void {
@@ -717,6 +733,10 @@ function wireResize(): void {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     saveWidth(_drawerWidth);
+    // Re-render PDF pages at the new column width.
+    if (typeof (window as any).renderPages === 'function') {
+      (window as any).renderPages();
+    }
   };
 
   handle.addEventListener('mousedown', (e: MouseEvent) => {
@@ -724,7 +744,7 @@ function wireResize(): void {
     if (drawer.classList.contains('dr-sheet')) return;
     dragging = true;
     startX = e.clientX;
-    startW = drawer.offsetWidth || _drawerWidth;
+    startW = _drawerWidth;
     handle.classList.add('is-active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';

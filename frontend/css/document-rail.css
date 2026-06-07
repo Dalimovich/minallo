@@ -9,11 +9,10 @@
 
 :root {
   --dr-rail-w: 64px;
-  --dr-gutter-w: 12px;
   --dr-drawer-w: 390px;
   --dr-rail-right: 0px;
-  --dr-drawer-right: calc(var(--dr-rail-w) + var(--dr-gutter-w));
-  --dr-reserved-w: calc(var(--dr-drawer-w) + var(--dr-rail-w) + var(--dr-gutter-w));
+  --dr-drawer-right: var(--dr-rail-w);
+  --dr-reserved-w: calc(var(--dr-drawer-w) + var(--dr-rail-w));
 }
 
 /* Root container hides everything by default. */
@@ -151,7 +150,7 @@
     top: 0;
     right: var(--dr-rail-w);
     bottom: 0;
-    width: calc(var(--dr-drawer-w) + var(--dr-gutter-w)) !important;
+    width: var(--dr-drawer-w) !important;
     border-radius: 0;
   }
 }
