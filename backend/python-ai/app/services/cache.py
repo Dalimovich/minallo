@@ -119,7 +119,7 @@ def question_hash(
 # v9 re-enables source-routed caching on a whole-course version hash with
 # symmetric lookup/save keys; older rows used the never-matching selected-doc
 # key and must not be reachable.
-_CACHE_SCHEMA_VERSION = "v9-2026-06-06-course-version-cache"
+_CACHE_SCHEMA_VERSION = "v10-2026-06-07-source-index"
 
 
 def document_version_hash(document_hashes: list[str | None]) -> str:

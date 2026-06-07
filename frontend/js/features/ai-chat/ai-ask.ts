@@ -184,8 +184,9 @@ function appendSourcesDropdown(bubble: HTMLElement | null, sources?: SourceItem[
 function linkifySourceCitations(bubble: HTMLElement | null, sources?: SourceItem[]): void {
   if (!bubble || !sources || !sources.length) return;
   const byIndex = new Map<number, SourceItem>();
-  sources.forEach((s) => {
-    if (typeof s.index === 'number') byIndex.set(s.index, s);
+  sources.forEach((s, i) => {
+    const idx = typeof s.index === 'number' ? s.index : i + 1;
+    byIndex.set(idx, s);
   });
   if (!byIndex.size) return;
 

@@ -1,0 +1,1440 @@
+import { sendAiRequest, sendRagRequest, listCourseDocuments, submitRagFeedback, } from '../../services/ai-service.js';
+import { extractPdfText } from '../pdf-viewer/pdf-text-extraction.js';
+import { getPane } from '../pdf-viewer/pdf-panes.js';
+import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
+import { getCompareFileName } from '../pdf-viewer/pdf-compare.js';
+import { bindMessageActionButtons } from './ai-message-actions.js';
+import { escapeHtml } from '../../utils/escape-html.js';
+import { createAIThinkingStatus, getThinkingContext } from './ai-thinking-status.js';
+/** The subscription gate (HTTP 402 / "subscription required") should read as a
+ * calm upgrade prompt, not a raw server error. */
+function _isSubscriptionError(msg) {
+    return /\b402\b/.test(msg) || /subscription/i.test(msg);
+}
+function _subscriptionMsg() {
+    const v = typeof window._t === 'function' ? window._t('cb_need_subscription') : '';
+    return v && v !== 'cb_need_subscription'
+        ? v
+        : 'You need an active subscription to use the AI tutor. Open **Subscription** in the menu to unlock it.';
+}
+function _getTime() {
+    const d = new Date();
+    return (d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0'));
+}
+function stripSourceMarkers(text) {
+    return (text || '')
+        .replace(/\s*\[Source\s+\d+\]/gi, '')
+        .replace(/\s+\./g, '.')
+        .replace(/\s+,/g, ',')
+        .trim();
+}
+function stripSourceMarkersLive(text) {
+    return (text || '')
+        .replace(/\s*\[Source\s+\d+\]/gi, '')
+        .replace(/\s+\./g, '.')
+        .replace(/\s+,/g, ',');
+}
+function takeSoftStreamChunk(text, target) {
+    if (text.length <= target)
+        return text;
+    const searchEnd = Math.min(text.length, target + 12);
+    for (let i = target; i < searchEnd; i++) {
+        if (/\s/.test(text[i] || ''))
+            return text.slice(0, i + 1);
+    }
+    return text.slice(0, target);
+}
+function _sourceLine(s) {
+    let line = s.file_name || 'Unknown';
+    if (s.pages) {
+        const pages = String(s.pages);
+        line += /^\d/.test(pages) ? ', p.' + pages : ', ' + pages;
+    }
+    if (s.section)
+        line += ' · ' + s.section;
+    return line;
+}
+function _sourceClickPage(s) {
+    return Number(s.pageStart) || firstPage(s.pages);
+}
+function _openSource(s) {
+    handleSourceClick({ fileName: s.file_name, documentId: s.documentId, page: _sourceClickPage(s) }, 'sidebar');
+}
+function appendSourcesDropdown(bubble, sources) {
+    if (!bubble || !sources || !sources.length || bubble.querySelector('.ai-rag-sources'))
+        return;
+    const details = document.createElement('details');
+    details.className = 'ai-rag-sources';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Sources';
+    const list = document.createElement('ul');
+    sources.forEach((s) => {
+        const item = document.createElement('li');
+        item.textContent = _sourceLine(s);
+        // Real course files become clickable; the [Source 0] visible-page /
+        // problem-solver pseudo-source is left as plain text.
+        const name = (s.file_name || '').toLowerCase();
+        if (s.file_name && !/problem solver|visible|^source 0$/.test(name)) {
+            item.className = 'src-cite-item';
+            item.title = 'Open this source';
+            item.addEventListener('click', () => _openSource(s));
+        }
+        list.appendChild(item);
+    });
+    details.append(summary, list);
+    bubble.appendChild(details);
+}
+// Turn inline [Source N] markers in a rendered answer bubble into clickable
+// chips that open the Nth source (matched by its `index`). Walks text nodes
+// only and skips math/code so KaTeX and code blocks are never touched.
+function linkifySourceCitations(bubble, sources) {
+    if (!bubble || !sources || !sources.length)
+        return;
+    const byIndex = new Map();
+    sources.forEach((s, i) => {
+        const idx = typeof s.index === 'number' ? s.index : i + 1;
+        byIndex.set(idx, s);
+    });
+    if (!byIndex.size)
+        return;
+    const walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT);
+    const targets = [];
+    let n;
+    while ((n = walker.nextNode())) {
+        const t = n;
+        if (!/\[Source\s+\d+\]/i.test(t.nodeValue || ''))
+            continue;
+        if ((t.parentElement || undefined)?.closest('.katex, code, pre'))
+            continue;
+        targets.push(t);
+    }
+    targets.forEach((tn) => {
+        const frag = document.createDocumentFragment();
+        (tn.nodeValue || '').split(/(\[Source\s+\d+\])/i).forEach((part) => {
+            const m = part.match(/\[Source\s+(\d+)\]/i);
+            if (m) {
+                const idx = parseInt(m[1] || '0', 10);
+                const span = document.createElement('span');
+                span.className = 'src-cite';
+                span.textContent = '[' + idx + ']';
+                span.dataset.srcN = String(idx);
+                frag.appendChild(span);
+            }
+            else if (part) {
+                frag.appendChild(document.createTextNode(part));
+            }
+        });
+        tn.parentNode?.replaceChild(frag, tn);
+    });
+    bubble.addEventListener('click', (e) => {
+        const chip = e.target?.closest('.src-cite');
+        if (!chip)
+            return;
+        const idx = parseInt(chip.dataset.srcN || '', 10);
+        const s = byIndex.get(idx);
+        if (s)
+            _openSource(s);
+    });
+}
+// ── Auto-scroll controller ──────────────────────────────────────────────────
+let _userScrolledUp = false;
+let _scrollListenerAttached = false;
+function _ensureScrollTracker() {
+    if (_scrollListenerAttached)
+        return;
+    const el = document.getElementById('aiMsgs') || document.querySelector('.ai-msgs');
+    if (!el)
+        return;
+    el.addEventListener('scroll', () => {
+        const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+        _userScrolledUp = dist > 60;
+    });
+    _scrollListenerAttached = true;
+}
+function _autoScroll(el) {
+    if (!el)
+        return;
+    if (_userScrolledUp)
+        return;
+    el.scrollTop = el.scrollHeight;
+}
+const MINALLO_APP_CONTEXT = '\n\nMINALLO APP CONTEXT.\n' +
+    'You are running inside Minallo at minallo.de — a study platform + AI tutor for university students. ' +
+    'When the user asks a product / navigation question, give numbered step-by-step instructions naming the exact sidebar item, tab and button. ' +
+    'Do NOT say "look for the Upload button" or "check the interface" — use the map below. App questions do NOT need [Source N] citations.\n\n' +
+    'SIDEBAR (top → bottom):\n' +
+    '1. Home — dashboard, greeting, study widget, recent courses, calendar.\n' +
+    '2. Courses — semesters and courses. Inside a course: Files | Notes | Summaries | Quiz | Flashcards | Forum | Calendar tabs.\n' +
+    '3. Lecture Notes — every auto-generated note / summary across courses.\n' +
+    '4. Editor — Writer (rich-text + AI rewrite/shorten/expand), PDF Editor (annotate/sign/fill), PDF Merger (combine PDFs).\n' +
+    '5. Chatbot — general Minallo AI chat. Supports file + image uploads.\n' +
+    '6. Chat — student/friend chat rooms (Öffentlich / Freunde / Nur mit Einladung). Toggles: NSFW, Slow-mode.\n' +
+    '7. Games — "🎮 Game Room" hub. Tetris, Chess, Flappy Bird, and Solitaire with 7 variants (Klondike, Spider, Freecell, Pyramid, Scorpion, TriPeaks, Vegas).\n' +
+    '8. Study Lounge — total minutes, current/longest streak, opened files, per-course breakdown, weekly chart, Reset stats button.\n' +
+    '9. Profile — account profile.\n' +
+    '10. Settings — language DE/EN, German level + test type, sign-out, delete account.\n' +
+    '11. Subscription — plan, period end, Stripe billing portal, PayPal pause/resume/cancel/reactivate, retention discount.\n' +
+    '12. Admin — admin-only tools (visible only to admins).\n' +
+    'Top bar "Study" = focus timer. Sidebar bottom "Night" = dark/light toggle. Footer: Impressum + Privacy Policy.\n\n' +
+    'UPLOAD A DOCUMENT: 1) Click Courses in the sidebar. 2) Open the semester, open the course. ' +
+    '3) On the Files tab, click "+ Upload" or drag-and-drop. Allowed: PDF, TXT, DOCX, PNG, JPG. Max 25 MB (6 MB for images). ' +
+    '4) Indexing runs automatically; once finished, open the PDF and use the AI panel on the right.\n\n' +
+    'PDF VIEWER: toolbar = Page/zoom/Fit/Single-page/Annotate/Download. Right rail = AI chat, Problem solver, Notes, Summary. ' +
+    'Open a second PDF tab to enter split view (each pane has its own controls; Annotate + Download stay shared). ' +
+    'Annotate popover: Pen / Highlight / Text / Eraser, six colours + custom, thickness, Undo, Clear, Save, Upload back to course.\n\n' +
+    'PROBLEM SOLVER MODES (AI panel "Problem" button): Hint (nudge), Setup (Given/Required/Formula), Check (verify student work), Solve (full solution), Practice (similar problem).\n\n' +
+    'GENERATING STUDY MATERIAL: inside a course, the Notes / Summaries / Quiz / Flashcards tabs each have a "Generate" button — pick source file(s) and options.\n\n' +
+    'STYLE: Numbered steps. Name the exact UI element. Suggest the next action. ' +
+    'Never claim you don\'t know which website you\'re in — you ARE Minallo AI on Minallo. ' +
+    'If a feature does NOT exist in the map above, say so plainly; do not invent one.';
+export function _resetScrollFollow() {
+    _userScrolledUp = false;
+    const el = document.getElementById('aiMsgs') || document.querySelector('.ai-msgs');
+    if (el)
+        el.scrollTop = el.scrollHeight;
+}
+export async function pdfToImages(maxPages) {
+    const pdfDoc = window.pdfDoc;
+    if (!pdfDoc)
+        return [];
+    const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+    return pdfDocToImages(pdfDoc, currentPage, maxPages);
+}
+async function pdfDocToImages(pdfDoc, currentPage = 1, maxPages) {
+    const limit = maxPages || 6;
+    const total = pdfDoc.numPages;
+    const half = Math.floor(limit / 2);
+    let startPage = Math.max(1, currentPage - half);
+    const endPage = Math.min(total, startPage + limit - 1);
+    if (endPage - startPage + 1 < limit)
+        startPage = Math.max(1, endPage - limit + 1);
+    const imgs = [];
+    for (let i = startPage; i <= endPage; i++) {
+        try {
+            const page = await pdfDoc.getPage(i);
+            const vp = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            canvas.width = vp.width;
+            canvas.height = vp.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx)
+                continue;
+            await page.render({ canvasContext: ctx, viewport: vp }).promise;
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            const b64 = dataUrl.split(',')[1];
+            if (b64)
+                imgs.push(b64);
+        }
+        catch { /* skip failed page */ }
+    }
+    return imgs;
+}
+export function addTyping() {
+    const aiMsgs = document.getElementById('aiMsgs') || document.querySelector('.ai-msgs');
+    if (!aiMsgs)
+        return null;
+    _ensureScrollTracker();
+    const thinking = createAIThinkingStatus({
+        context: 'general',
+        host: aiMsgs,
+        surface: 'panel',
+        compact: true
+    });
+    _autoScroll(aiMsgs);
+    return thinking?.el || null;
+}
+// ── Per-course chat history (localStorage) ──────────────────────────────────
+const _HISTORY_MAX = 40;
+const _HISTORY_PREFIX = 'ss_course_qa_';
+function _historyKey(courseId) {
+    return _HISTORY_PREFIX + (courseId || 'default');
+}
+// Courses cleared this session. The clear button deletes the chat_history rows
+// asynchronously (fire-and-forget fetch), but the AI panel re-opens ~100ms
+// later and restoreCourseHistory() would read the not-yet-deleted rows and
+// repopulate — so "Clear chat" looked like it did nothing. This tombstone
+// suppresses the restore for a cleared course until a new question is asked
+// (which removes the tombstone via _appendCourseHistory).
+const _clearedCourses = new Set();
+function _loadCourseHistory(courseId) {
+    try {
+        return JSON.parse(localStorage.getItem(_historyKey(courseId)) || '[]');
+    }
+    catch {
+        return [];
+    }
+}
+function _saveCourseHistory(courseId, pairs) {
+    try {
+        let trimmed = pairs;
+        if (trimmed.length > _HISTORY_MAX)
+            trimmed = trimmed.slice(trimmed.length - _HISTORY_MAX);
+        localStorage.setItem(_historyKey(courseId), JSON.stringify(trimmed));
+    }
+    catch { /* quota */ }
+}
+function _appendCourseHistory(courseId, question, answer) {
+    // A new turn means this course has live history again — lift any clear tombstone.
+    _clearedCourses.delete(_historyKey(courseId));
+    const pairs = _loadCourseHistory(courseId);
+    // If the most recent pair has the same question, this is a regenerate —
+    // replace its answer instead of appending a duplicate pair. Without this,
+    // restoring history after a regenerate renders both the old and the new
+    // answer back-to-back.
+    const last = pairs.length ? pairs[pairs.length - 1] : null;
+    if (last && (last.q || '').trim() === (question || '').trim()) {
+        last.a = answer;
+        last.ts = Date.now();
+    }
+    else {
+        pairs.push({ q: question, a: answer, ts: Date.now() });
+    }
+    _saveCourseHistory(courseId, pairs);
+    // Also persist to the chat_history table (RLS-scoped to the user) so history
+    // survives a refresh and syncs across devices. restoreCourseHistory() reads
+    // this table first, then falls back to the localStorage copy above. This
+    // write was missing on the python-ai /ask-stream path, so the rail used to
+    // only save locally. Best-effort — never block or throw on failure.
+    try {
+        const supaUrl = window._SUPA || '';
+        const tok = window._sbToken || '';
+        const uid = (window._currentUser && (window._currentUser.id || window._currentUser.sub)) || '';
+        if (supaUrl && tok && uid && courseId) {
+            void fetch(supaUrl + '/rest/v1/chat_history', {
+                method: 'POST',
+                headers: {
+                    apikey: window._SAKEY || '',
+                    Authorization: 'Bearer ' + tok,
+                    'Content-Type': 'application/json',
+                    Prefer: 'return=minimal',
+                },
+                body: JSON.stringify({ user_id: uid, course_id: courseId, question, answer }),
+            }).catch(() => { });
+        }
+    }
+    catch {
+        /* best-effort persistence — localStorage above is the fallback */
+    }
+}
+function _dedupPairs(pairs) {
+    // Collapse repeated asks of the same question to the LATEST answer, keeping
+    // first-seen order. The chat_history table inserts a row per ask with no
+    // dedup, so a question asked/regenerated N times would otherwise stack N
+    // answers on restore. Pairs arrive oldest-first, so the last write wins.
+    if (!pairs || !pairs.length)
+        return [];
+    const byQ = new Map();
+    const order = [];
+    for (const p of pairs) {
+        const key = (p.q || '').trim().toLowerCase();
+        if (!byQ.has(key))
+            order.push(key);
+        byQ.set(key, p);
+    }
+    return order.map((k) => byQ.get(k));
+}
+function _renderHistoryPairs(pairs, aiMsgs) {
+    if (!pairs || !pairs.length)
+        return;
+    // We only reach here when there's no in-progress user conversation (see the
+    // guard in restoreCourseHistory). Clear any lone welcome greeting so the
+    // restored history becomes the panel's content instead of sitting below it.
+    aiMsgs.querySelectorAll('.ai-msg-wrap:not(.typing-wrap)').forEach((el) => el.remove());
+    pairs.forEach((pair) => {
+        const uWrap = window.addUserMsg ? window.addUserMsg(pair.q, true) : null;
+        if (uWrap)
+            uWrap.setAttribute('data-restored', 'true');
+        const wrap = document.createElement('div');
+        wrap.className = 'ai-msg-wrap';
+        wrap.setAttribute('data-restored', 'true');
+        // Mirror addBotMsg: copy button in the meta row, and the export/download
+        // action bar below — so restored answers look and behave like live ones.
+        wrap.innerHTML =
+            '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
+                '<div class="msg-body">' +
+                '<div class="ai-bubble bot restored-answer"></div>' +
+                '<div class="msg-meta">' +
+                '<button class="msg-action-btn" data-action="copy">' +
+                (window._t ? window._t('copy_btn') : 'Copy') +
+                '</button>' +
+                '</div>' +
+                '</div>';
+        const bubble = wrap.querySelector('.ai-bubble.bot');
+        if (bubble) {
+            bubble.setAttribute('data-raw', pair.a);
+            const _doRender = () => {
+                bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(pair.a) : escapeHtml(pair.a);
+                // Markdown is only half the job — LaTeX (\(…\), \frac, …) and code
+                // blocks need their own passes, exactly like the live message path.
+                if (window._renderMath)
+                    window._renderMath(bubble);
+                if (window._renderCode)
+                    window._renderCode(bubble);
+            };
+            const _renderState = window;
+            if (!_renderState._minalloRenderMarkdownReady && _renderState._ensureAiRenderBridge) {
+                _renderState._ensureAiRenderBridge()
+                    .then(() => (window._ssEnsureKatex ? window._ssEnsureKatex().then(_doRender).catch(_doRender) : _doRender()))
+                    .catch(_doRender);
+            }
+            else if (window._ssEnsureKatex) {
+                window._ssEnsureKatex().then(_doRender).catch(_doRender);
+            }
+            else {
+                _doRender();
+            }
+        }
+        bindMessageActionButtons(wrap);
+        const msgBody = wrap.querySelector('.msg-body');
+        if (msgBody && typeof window._aiResponseActions === 'function') {
+            const actions = window._aiResponseActions(pair.a, 'panel');
+            if (actions)
+                msgBody.appendChild(actions);
+        }
+        aiMsgs.appendChild(wrap);
+    });
+    aiMsgs.scrollTop = aiMsgs.scrollHeight;
+}
+export function restoreCourseHistory(courseId) {
+    if (!courseId)
+        return;
+    // Just-cleared course: don't repopulate from the DB rows that are still being
+    // deleted. Stays suppressed until the student asks something new.
+    if (_clearedCourses.has(_historyKey(courseId)))
+        return;
+    const aiMsgs = document.getElementById('aiMsgs') || document.querySelector('.ai-msgs');
+    if (!aiMsgs)
+        return;
+    // Only skip restore if a real conversation is already present (a user
+    // message). A lone bot greeting must NOT block restore — otherwise the
+    // boot-time welcome message permanently hides saved history.
+    if (aiMsgs.querySelector('.ai-msg-wrap.user'))
+        return;
+    const supaUrl = window._SUPA || '';
+    const tok = window._sbToken || '';
+    if (supaUrl && tok) {
+        fetch(supaUrl + '/rest/v1/chat_history?course_id=eq.' + encodeURIComponent(courseId) +
+            '&order=created_at.asc&limit=40', {
+            headers: {
+                apikey: window._SAKEY || '',
+                Authorization: 'Bearer ' + tok,
+            },
+        })
+            .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+            .then((rows) => {
+            if (rows && rows.length) {
+                const pairs = rows.map((r) => ({ q: r.question, a: r.answer }));
+                _renderHistoryPairs(_dedupPairs(pairs), aiMsgs);
+            }
+            else {
+                _renderHistoryPairs(_dedupPairs(_loadCourseHistory(courseId)), aiMsgs);
+            }
+        })
+            .catch(() => {
+            _renderHistoryPairs(_dedupPairs(_loadCourseHistory(courseId)), aiMsgs);
+        });
+    }
+    else {
+        _renderHistoryPairs(_dedupPairs(_loadCourseHistory(courseId)), aiMsgs);
+    }
+}
+export function clearCourseHistory(courseId) {
+    // Tombstone so the panel's re-open (openAI → restoreCourseHistory) doesn't
+    // race the async DB delete below and bring the chat back.
+    _clearedCourses.add(_historyKey(courseId));
+    try {
+        localStorage.removeItem(_historyKey(courseId));
+    }
+    catch { /* ignore */ }
+    // Also delete the rows synced to chat_history — otherwise restoreCourseHistory
+    // reads them back from Supabase on the next refresh and the "cleared" chat
+    // reappears. RLS scopes the delete to this user's rows for this course.
+    try {
+        const supaUrl = window._SUPA || '';
+        const tok = window._sbToken || '';
+        if (supaUrl && tok && courseId) {
+            void fetch(supaUrl + '/rest/v1/chat_history?course_id=eq.' + encodeURIComponent(courseId), {
+                method: 'DELETE',
+                headers: {
+                    apikey: window._SAKEY || '',
+                    Authorization: 'Bearer ' + tok,
+                    Prefer: 'return=minimal',
+                },
+            }).catch(() => { });
+        }
+    }
+    catch { /* best-effort — localStorage is already cleared above */ }
+    // Also drop the active Problem Solver context — a wiped chat shouldn't
+    // inherit the previous session's PS overlay on its first new turn.
+    try {
+        const _w = window;
+        if (_w._activePsContext)
+            _w._activePsContext = undefined;
+    }
+    catch { /* ignore */ }
+}
+export function initAskAI(state) {
+    return function askAI(question, skipUserBubble, opts) {
+        if (!question)
+            return;
+        // Persist Problem Solver context across follow-up turns. The first
+        // submission from document-rail.ts arrives with opts.problemSolver
+        // set; the student's reply ("I don't know") goes through the plain
+        // chat input which calls askAI(q) with no opts. Without this, the
+        // backend would see no problem_mode on turn 2 and fall back to
+        // STRONG mode (full worked solution), breaking the Hint Ladder.
+        const _w = window;
+        if (opts?.problemSolver) {
+            _w._activePsContext = opts.problemSolver;
+        }
+        else if (_w._activePsContext) {
+            opts = { ...(opts || {}), problemSolver: _w._activePsContext };
+        }
+        if (window._abortCurrentStream)
+            window._abortCurrentStream();
+        state.generationStopped = false;
+        state.currentGenId++;
+        const myGenId = state.currentGenId;
+        if (window.pinAI)
+            window.pinAI();
+        const _chatHistory = window.serializeChatDOM ? window.serializeChatDOM() : [];
+        if (!skipUserBubble && window.addUserMsg)
+            window.addUserMsg(question);
+        const _aiSendBtn = document.getElementById('aiSend');
+        const _stopBtn = document.getElementById('stopBtn');
+        if (_aiSendBtn)
+            _aiSendBtn.disabled = true;
+        if (_stopBtn) {
+            _stopBtn.style.display = 'flex';
+            if (!_stopBtn.__ssAbortBound) {
+                _stopBtn.addEventListener('click', () => {
+                    if (window._abortCurrentStream)
+                        window._abortCurrentStream();
+                });
+                _stopBtn.__ssAbortBound = true;
+            }
+        }
+        const aiMsgs = document.getElementById('aiMsgs');
+        const aiPanel = document.getElementById('aiPanel');
+        _ensureScrollTracker();
+        _userScrolledUp = false;
+        const _isProblemSolver = !!opts?.problemSolver;
+        const initialThinkingContext = getThinkingContext({
+            problemSolver: opts?.problemSolver,
+            courseId: window.activeCourseId || window.currentCourseId || '',
+            hasCourseMaterial: !!(window.pdfFullText || window.activeFileName)
+        });
+        let thinking = createAIThinkingStatus({
+            context: initialThinkingContext,
+            host: aiMsgs,
+            surface: 'panel',
+            compact: true
+        });
+        const thinkWrap = thinking?.el || document.createElement('div');
+        function removeThinking(immediate = false) {
+            if (thinking) {
+                thinking.remove(immediate);
+                thinking = null;
+            }
+            else if (thinkWrap && thinkWrap.parentNode) {
+                thinkWrap.remove();
+            }
+        }
+        const pdfDoc = window.pdfDoc;
+        let pdfFullText = window.pdfFullText || '';
+        const _compareName = _isProblemSolver ? null : getCompareFileName();
+        let _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
+        const _comparePdfDoc = _compareName
+            ? getPane('right').pdfDoc
+            : null;
+        const _lang = window._lang || localStorage.getItem('ss_lang') || 'en';
+        const activeFileName = window.activeFileName || '';
+        const currentCourseShort = window.currentCourseShort || '';
+        const _MATH_PROMPT = window._MATH_PROMPT || '';
+        const _docList = _compareName
+            ? '"' + activeFileName + '" AND "' + _compareName + '" (a second document the student is comparing against)'
+            : '"' + activeFileName + '"';
+        let sysPrompt = (window._userType === 'learner'
+            ? 'You are Minallo, a German language tutor helping a student prepare for ' +
+                (window._germanTest || 'a German exam') +
+                (window._germanLevel ? ' at level ' + window._germanLevel : '') +
+                '. Always reply in ' + (_lang === 'de' ? 'German' : 'English') +
+                '. The student is reading ' + _docList +
+                '. ALWAYS base your answers on the actual document content below. Be thorough but concise.'
+            : 'You are Minallo, a friendly tutor for TU Braunschweig engineering students. Always reply in ' +
+                (_lang === 'de' ? 'German' : 'English') +
+                '. The student is reading ' + _docList + ' from ' + currentCourseShort +
+                '. ALWAYS base your answers on the actual document content provided below. Do not use general knowledge when the document covers the topic. Be thorough but concise.') +
+            MINALLO_APP_CONTEXT +
+            _MATH_PROMPT;
+        const _leftTextReady = pdfDoc && !pdfFullText.trim()
+            ? extractPdfText(pdfDoc, 30).then((t) => {
+                if (t) {
+                    window.pdfFullText = t;
+                    pdfFullText = t;
+                }
+            })
+            : Promise.resolve();
+        // Same on-demand extraction for the right (compare) pane. Without this,
+        // a question asked right after toggling split runs before pdf-compare's
+        // deferred extractText() completes, so the AI gets DOCUMENT 2 = "" and
+        // silently answers from DOCUMENT 1 only.
+        const _rightTextReady = _compareName && _comparePdfDoc && !_compareText.trim()
+            ? extractPdfText(_comparePdfDoc, 30).then((t) => {
+                if (t) {
+                    getPane('right').pdfFullText = t;
+                    _compareText = t;
+                }
+            })
+            : Promise.resolve();
+        const _textReady = Promise.all([_leftTextReady, _rightTextReady]);
+        _textReady
+            .then(() => {
+            if (!pdfDoc)
+                return [];
+            const _pp = window.pdfPage;
+            const _ppt = window.pdfPageTexts;
+            const _currentPageText = _pp && _ppt ? (_ppt[_pp] || '') : '';
+            const _visibleTextWeak = pdfFullText.trim().length < 500 ||
+                !_currentPageText.trim() ||
+                _currentPageText.trim().length < 80;
+            return _visibleTextWeak ? pdfToImages(1) : [];
+        })
+            .then(async (pageImages) => {
+            let userContent;
+            const isHandwritten = pdfFullText.trim().length < 100;
+            if (pageImages.length) {
+                sysPrompt += isHandwritten
+                    ? '\n\nThis document is handwritten or scanned. Pages are provided as images — read all handwritten text, equations, and diagrams carefully.'
+                    : '\n\nThe open PDF pages are included as images below. The document may contain handwritten solutions, diagrams, or worked examples alongside printed text. Read both the extracted text AND the images — if the images show a worked solution with specific values, use those exact values.';
+                userContent = [{ type: 'text', text: question }].concat(pageImages.map((b64) => ({
+                    type: 'image_url',
+                    image_url: { url: 'data:image/jpeg;base64,' + b64 },
+                })));
+            }
+            else {
+                if (_compareText) {
+                    sysPrompt +=
+                        '\n\nDOCUMENT 1 — "' + activeFileName + '":\n' + (pdfFullText || '(document text not yet extracted)') +
+                            '\n\nDOCUMENT 2 — "' + _compareName + '":\n' + _compareText;
+                }
+                else {
+                    sysPrompt +=
+                        '\n\nDOCUMENT CONTENT:\n' + (pdfFullText || '(document text not yet extracted)');
+                }
+                userContent = question;
+            }
+            const _courseId = window.activeCourseId || window.currentCourseId || '';
+            let _activeDocId = window.activeRagDocumentId || null;
+            // In split view, resolve the compare-pane doc ID too. The backend
+            // treats documentIds as preference hints, while still searching the
+            // whole course for professor lecture/formula support.
+            let _compareDocId = null;
+            if (_courseId) {
+                try {
+                    const _docs = await listCourseDocuments(_courseId);
+                    const _readyDocs = _docs.filter((d) => d.processing_status === 'ready');
+                    // If the user is reading a specific file, resolve its UUID so the
+                    // backend can boost that PDF without ignoring other course files.
+                    if (!_activeDocId && activeFileName) {
+                        const _open = _readyDocs.find((d) => (d.file_name || '').toLowerCase() === activeFileName.toLowerCase());
+                        if (_open?.id)
+                            _activeDocId = _open.id;
+                    }
+                    if (_compareName) {
+                        const _cmp = _readyDocs.find((d) => (d.file_name || '').toLowerCase() === _compareName.toLowerCase());
+                        if (_cmp?.id)
+                            _compareDocId = _cmp.id;
+                    }
+                }
+                catch { /* keep IDs as-is; backend will search the whole course */ }
+            }
+            // Extract a focused excerpt from the open PDF around the mentioned exercise/topic.
+            let _openFileCtx = '';
+            if (pdfFullText && pdfFullText.trim().length > 50) {
+                const _rawText = pdfFullText;
+                const _exercisePatterns = [
+                    /\b(aufgabe\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(aufgabe\s*\d+\s*[a-z]\b)/i,
+                    /\b(ü?bung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(uebung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(beispiel\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(l[oö]sung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(loesung\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(teilaufgabe\s+[a-z\d])\b/i,
+                    /\b(exercise\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(task\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(problem\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(example\s*\d+[\.,]?\d*\s*[a-z]?)\b/i,
+                    /\b(\d+\.\d+[a-z]?)\b/i,
+                    /\b(\d+\s*[a-z]\s*\))/i,
+                    /\b(\d+[a-z])\b/i,
+                ];
+                const _subqPattern = /\b([a-d])\s*\)?$|\b(?:question|teil|part|aufgabe|mach|solve|löse)\s+([a-d])\b/i;
+                const _subqMatch = question.match(_subqPattern);
+                let _matchTerm = null;
+                for (const pat of _exercisePatterns) {
+                    const _m = question.match(pat);
+                    if (_m && _m[0]) {
+                        _matchTerm = _m[0].trim();
+                        break;
+                    }
+                }
+                if (_matchTerm) {
+                    const _normDe = (s) => s.replace(/ü/g, 'ue').replace(/ö/g, 'oe').replace(/ä/g, 'ae')
+                        .replace(/Ü/g, 'Ue').replace(/Ö/g, 'Oe').replace(/Ä/g, 'Ae')
+                        .replace(/ß/g, 'ss').toLowerCase();
+                    const _normTerm = _normDe(_matchTerm);
+                    const _normText = _normDe(_rawText);
+                    let _idx = _normText.indexOf(_normTerm);
+                    if (_idx < 0) {
+                        const _compactTerm = _normTerm.replace(/\s+/g, '');
+                        const _compactText = _normText.replace(/\s+/g, '');
+                        const _cidx = _compactText.indexOf(_compactTerm);
+                        if (_cidx >= 0) {
+                            let _charCount = 0;
+                            let _rawIdx = 0;
+                            for (let _ri = 0; _ri < _rawText.length && _charCount < _cidx; _ri++) {
+                                if (_rawText[_ri].trim())
+                                    _charCount++;
+                                _rawIdx = _ri;
+                            }
+                            _idx = _rawIdx;
+                        }
+                    }
+                    if (_idx >= 0) {
+                        window._lastExerciseIdx = _idx;
+                        _openFileCtx = _rawText.slice(Math.max(0, _idx - 600), _idx + 8000);
+                    }
+                }
+                const _lastExerciseIdx = window._lastExerciseIdx;
+                if (!_openFileCtx && _subqMatch && _lastExerciseIdx != null) {
+                    const _subqLetter = (_subqMatch[1] || _subqMatch[2] || '').toLowerCase();
+                    const _exerciseSlice = _rawText.slice(_lastExerciseIdx, _lastExerciseIdx + 4000);
+                    const _subqRel = _subqLetter
+                        ? _exerciseSlice.search(new RegExp('\\b' + _subqLetter + '\\s*[\\)\\.]', 'i'))
+                        : -1;
+                    if (_subqRel > 0) {
+                        const _subqAbs = _lastExerciseIdx + _subqRel;
+                        _openFileCtx = _rawText.slice(Math.max(0, _subqAbs - 600), _subqAbs + 6000);
+                    }
+                    else {
+                        _openFileCtx = _rawText.slice(Math.max(0, _lastExerciseIdx - 600), _lastExerciseIdx + 8000);
+                    }
+                }
+                if (!_openFileCtx) {
+                    // No exercise term matched — fall back to the page the user is
+                    // currently looking at, since their question is most likely about
+                    // what's on screen. pdfPageTexts is populated per page as it
+                    // renders (or pre-extracted up front by pdf-viewer). Falls all
+                    // the way back to the document start only as a last resort.
+                    const _pp = window.pdfPage;
+                    const _ppt = window.pdfPageTexts;
+                    const _pageParts = [];
+                    if (_pp && _ppt) {
+                        [_pp - 1, _pp, _pp + 1].forEach((pageNo) => {
+                            const pageText = _ppt[pageNo];
+                            if (pageNo > 0 && pageText && pageText.trim().length > 30) {
+                                _pageParts.push('[PDF page ' + pageNo + ']\n' + pageText.trim());
+                            }
+                        });
+                    }
+                    const _currentPageText = _pageParts.join('\n\n');
+                    if (_currentPageText && _currentPageText.trim().length > 60) {
+                        _openFileCtx = _currentPageText.slice(0, 12000);
+                    }
+                    else {
+                        _openFileCtx = _rawText.slice(0, 12000);
+                    }
+                }
+            }
+            const _currentPageNo = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+            const _visibleTextWeak = !!pdfDoc &&
+                (isHandwritten ||
+                    !_openFileCtx ||
+                    _openFileCtx.trim().length < 500);
+            let _openFileImages = _visibleTextWeak && pageImages[0]
+                ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
+                : undefined;
+            let _streamActiveFileName = activeFileName;
+            let _streamOpenFileCtx = _openFileCtx;
+            if (_compareName) {
+                const _leftExcerpt = (_openFileCtx || pdfFullText || '').slice(0, 9500);
+                const _rightExcerpt = _compareText.slice(0, 9500);
+                const _rightPane = getPane('right');
+                const _rightPageNo = _rightPane.pdfPage && _rightPane.pdfPage >= 1 ? _rightPane.pdfPage : 1;
+                const _rightTextWeak = !_rightExcerpt || _rightExcerpt.trim().length < 500;
+                let _splitImages = _openFileImages ? [..._openFileImages] : [];
+                if (_rightTextWeak && _comparePdfDoc) {
+                    const _rightImages = await pdfDocToImages(_comparePdfDoc, _rightPageNo, 1);
+                    if (_rightImages[0]) {
+                        _splitImages.push({ mediaType: 'image/jpeg', data: _rightImages[0], page: _rightPageNo });
+                    }
+                }
+                if (_splitImages.length)
+                    _openFileImages = _splitImages.slice(0, 2);
+                _streamActiveFileName = activeFileName
+                    ? activeFileName + ' + ' + _compareName
+                    : _compareName;
+                _streamOpenFileCtx =
+                    'SPLIT VIEW: the student has two PDFs open and is asking about both. ' +
+                        'Use BOTH documents when the question asks what they contain, to compare them, or to use both as sources.\n\n' +
+                        'DOCUMENT 1 — "' + (activeFileName || 'left PDF') + '":\n' +
+                        (_leftExcerpt || '(left PDF text not yet extracted)') +
+                        '\n\nDOCUMENT 2 — "' + _compareName + '":\n' +
+                        (_rightExcerpt || '(right PDF text not yet extracted)');
+            }
+            // RAG-first routing: any question with a course_id goes through
+            // /ask-stream so the Phase-1 verification + math-template gating +
+            // confidence-from-verification on the Python backend always apply.
+            // The previous gate (`if (_hasRag)`) let questions fall through to
+            // free-form Claude whenever the course had zero ready docs or
+            // listCourseDocuments() failed transiently — bypassing all grounding
+            // and letting the model invent textbook formulas. /ask-stream
+            // handles the "no chunks" case correctly (returns the weak prompt
+            // with low confidence) so it's safe to always prefer it.
+            if (_courseId) {
+                const _modeToggle = document.getElementById('aiModeStrict');
+                const _ragMode = !_modeToggle || _modeToggle.checked ? 'strict' : 'general';
+                return new Promise((resolve) => {
+                    const token = window._sbToken || '';
+                    let ansWrap = null;
+                    let bubble = null;
+                    let rawText = '';
+                    const metaPattern = /<!--META-->[\s\S]*?<!--\/META-->/g;
+                    const _tokenQueue = [];
+                    let _streamTextBuffer = '';
+                    let _renderTimer = null;
+                    let _visibleStreamText = '';
+                    let _pendingMeta = undefined;
+                    const CFG = window.AI_TYPING || {};
+                    const STREAM_CHARS_PER_FRAME = CFG.streamCharsPerFrame || 18;
+                    // Both `evt.done` and the reader's `result.done` can race to call
+                    // finalize() — guard so history/feedback bar aren't doubled.
+                    let _finalized = false;
+                    let _finalizeWaitingForThinking = false;
+                    function updateBlockRender() {
+                        if (!bubble)
+                            return;
+                        // Keep data-raw current with the accumulated stream so serializers
+                        // (per-file save in chat.js, per-course in ai-message-actions.ts)
+                        // can persist the in-progress text properly. Without this, if a
+                        // save fires mid-stream (panel close, course switch, page unload),
+                        // serializeChatDOM falls back to textContent which flattens the
+                        // rendered KaTeX/markdown HTML and produces a cropped/corrupted
+                        // answer on reload.
+                        bubble.setAttribute('data-raw', rawText);
+                        const display = stripSourceMarkersLive(rawText.replace(metaPattern, '').trimEnd());
+                        let streamSpan = bubble.querySelector('.ss-stream-live');
+                        if (!streamSpan) {
+                            streamSpan = document.createElement('span');
+                            streamSpan.className = 'ss-stream-live';
+                            streamSpan.style.whiteSpace = 'pre-wrap';
+                            bubble.appendChild(streamSpan);
+                        }
+                        if (!display.startsWith(_visibleStreamText)) {
+                            streamSpan.textContent = '';
+                            _visibleStreamText = '';
+                        }
+                        const delta = display.slice(_visibleStreamText.length);
+                        if (delta) {
+                            const chunk = document.createElement('span');
+                            chunk.className = 'ss-stream-chunk';
+                            chunk.textContent = delta;
+                            streamSpan.appendChild(chunk);
+                            _visibleStreamText = display;
+                        }
+                        _autoScroll(aiMsgs);
+                    }
+                    function fullRender(text, opts) {
+                        if (!bubble)
+                            return;
+                        const cleaned = text.replace(metaPattern, '').trim();
+                        // For the final render we KEEP [Source N] so they can be linkified
+                        // into clickable chips; mid-stream renders still strip them.
+                        const display = opts?.keepMarkers ? cleaned : stripSourceMarkers(cleaned);
+                        if (!display)
+                            return;
+                        const _doFullRender = () => {
+                            if (!bubble)
+                                return;
+                            bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(display) : escapeHtml(display);
+                            if (opts?.keepMarkers)
+                                linkifySourceCitations(bubble, opts.sources);
+                            _autoScroll(aiMsgs);
+                        };
+                        if (window._ssEnsureKatex) {
+                            window._ssEnsureKatex().then(_doFullRender).catch(_doFullRender);
+                        }
+                        else {
+                            _doFullRender();
+                        }
+                    }
+                    function pullQueuedTokens() {
+                        while (_tokenQueue.length)
+                            _streamTextBuffer += _tokenQueue.shift();
+                    }
+                    function scheduleDrain() {
+                        if (_renderTimer == null)
+                            _renderTimer = window.requestAnimationFrame(drainQueue);
+                    }
+                    function drainQueue() {
+                        _renderTimer = null;
+                        pullQueuedTokens();
+                        if (!_streamTextBuffer.length) {
+                            _renderTimer = null;
+                            if (_pendingMeta !== undefined)
+                                finalize(_pendingMeta);
+                            return;
+                        }
+                        const frameBudget = document.hidden ? _streamTextBuffer.length : STREAM_CHARS_PER_FRAME;
+                        const added = takeSoftStreamChunk(_streamTextBuffer, frameBudget);
+                        _streamTextBuffer = _streamTextBuffer.slice(added.length);
+                        rawText += added;
+                        if (bubble)
+                            updateBlockRender();
+                        if (_streamTextBuffer.length || _tokenQueue.length) {
+                            scheduleDrain();
+                        }
+                        else if (_pendingMeta !== undefined) {
+                            finalize(_pendingMeta);
+                        }
+                    }
+                    function queueToken(tok) {
+                        _tokenQueue.push(tok);
+                        if (ansWrap)
+                            scheduleDrain();
+                        else
+                            beginStreamingWhenReady();
+                    }
+                    window._activeStreamRender = function () {
+                        if (_renderTimer != null) {
+                            cancelAnimationFrame(_renderTimer);
+                            _renderTimer = null;
+                        }
+                        while (_tokenQueue.length)
+                            rawText += _tokenQueue.shift();
+                        if (_streamTextBuffer) {
+                            rawText += _streamTextBuffer;
+                            _streamTextBuffer = '';
+                        }
+                        _visibleStreamText = '';
+                        fullRender(rawText);
+                    };
+                    function ensureBubble() {
+                        if (ansWrap)
+                            return;
+                        removeThinking(true);
+                        ansWrap = document.createElement('div');
+                        ansWrap.className = 'ai-msg-wrap';
+                        ansWrap.innerHTML =
+                            '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
+                                '<div class="msg-body"><div class="ai-bubble bot" style="min-height:20px"></div></div>';
+                        aiMsgs.appendChild(ansWrap);
+                        _autoScroll(aiMsgs);
+                        bubble = ansWrap.querySelector('.ai-bubble.bot');
+                        // Mark the bubble as actively streaming so serializers know to
+                        // either skip it or persist its data-raw value rather than the
+                        // partially-rendered DOM contents.
+                        if (bubble)
+                            bubble.setAttribute('data-streaming', 'true');
+                    }
+                    let _streamStartScheduled = false;
+                    function beginStreamingWhenReady() {
+                        if (ansWrap || _streamStartScheduled)
+                            return;
+                        _streamStartScheduled = true;
+                        const ready = thinking ? thinking.waitMinimum() : Promise.resolve();
+                        ready.then(() => {
+                            _streamStartScheduled = false;
+                            if (ansWrap || _finalized)
+                                return;
+                            if (!_tokenQueue.length && !_streamTextBuffer.length)
+                                return;
+                            ensureBubble();
+                            scheduleDrain();
+                        }).catch(() => {
+                            _streamStartScheduled = false;
+                        });
+                    }
+                    const _streamController = new AbortController();
+                    window._abortCurrentStream = () => _streamController.abort();
+                    // Collect the last 4 messages (≈ 2 Q&A pairs) so the backend can
+                    // resolve follow-up references like "explain the formula above"
+                    // without having to re-derive them from retrieval alone. Backend
+                    // hard-caps this further (max 6 messages, 2k chars total), so
+                    // it's safe to send a few more here than strictly needed.
+                    let _previousTurns = [];
+                    try {
+                        const _allMsgs = typeof window.serializeChatDOM === 'function'
+                            ? window.serializeChatDOM()
+                            : [];
+                        // Drop the current user message if it's already in the DOM
+                        // (addUserMsg ran above). We want prior turns, not the one
+                        // being asked right now.
+                        const _prior = [];
+                        for (let _ci = _allMsgs.length - 1; _ci >= 0; _ci--) {
+                            const m = _allMsgs[_ci];
+                            const _txt = (m.text || '').trim();
+                            if (!_txt)
+                                continue;
+                            if (m.role === 'user' && _txt === question.trim())
+                                continue; // skip current
+                            _prior.unshift({ role: m.role, text: _txt });
+                            if (_prior.length >= 4)
+                                break;
+                        }
+                        _previousTurns = _prior;
+                    }
+                    catch { /* ignore — sending [] is safe */ }
+                    const _aiHost = (window.AI_SERVICE_URL || '').replace(/\/$/, '');
+                    if (!_aiHost) {
+                        fallbackToRag();
+                        return;
+                    }
+                    fetch(_aiHost + '/ask-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                        signal: _streamController.signal,
+                        body: JSON.stringify({
+                            // documentIds is a preference hint for answer quality. Even
+                            // in split view, the backend still searches the whole course
+                            // so professor lecture/formula PDFs can support the answer.
+                            courseId: _courseId,
+                            question: question,
+                            documentIds: _activeDocId && _compareDocId
+                                ? [_activeDocId, _compareDocId]
+                                : undefined,
+                            activeDocumentId: _activeDocId || undefined,
+                            // Tell the backend which file the user is reading and give it
+                            // a slice of the actually-visible text. Without this the model
+                            // sees only retrieved chunks, which can miss the section the
+                            // user is pointing at when they say "this question".
+                            activeFileName: _streamActiveFileName || undefined,
+                            openFileContext: _streamOpenFileCtx || undefined,
+                            openFileImages: _openFileImages,
+                            // Recent chat history so the model can resolve anaphoric
+                            // references ("the formula above", "explain that again").
+                            previousTurns: _previousTurns.length ? _previousTurns : undefined,
+                            // Problem Solver modes carry their own behavior contract.
+                            // Keep the base mode direct so "Solve" can produce the full
+                            // answer instead of inheriting the Socratic tutor overlay.
+                            tutorMode: 'explain',
+                            problemSolver: opts?.problemSolver || undefined,
+                            bypassCache: opts && opts.forceRefresh ? true : undefined,
+                        }),
+                    })
+                        .then(async (res) => {
+                        if (!res.ok) {
+                            if (res.status === 503 || res.status === 429) {
+                                let detail = 'AI retrieval is temporarily unavailable. Please try again later.';
+                                try {
+                                    const data = await res.json();
+                                    detail = data.detail || detail;
+                                }
+                                catch { /* keep fallback detail */ }
+                                resolve({ content: [{ text: '❌ ' + detail }] });
+                                return;
+                            }
+                            fallbackToRag();
+                            return;
+                        }
+                        if (!res.body || !res.body.getReader) {
+                            fallbackToRag();
+                            return;
+                        }
+                        const reader = res.body.getReader();
+                        const decoder = new TextDecoder();
+                        let sseBuffer = '';
+                        function read() {
+                            reader.read().then((result) => {
+                                if (result.done) {
+                                    finalize(_pendingMeta || null);
+                                    return;
+                                }
+                                sseBuffer += decoder.decode(result.value, { stream: true });
+                                const lines = sseBuffer.split('\n');
+                                sseBuffer = lines.pop() || '';
+                                lines.forEach((line) => {
+                                    if (!line.startsWith('data: '))
+                                        return;
+                                    try {
+                                        const evt = JSON.parse(line.slice(6));
+                                        if (evt.status && thinking) {
+                                            thinking.set(evt.status);
+                                        }
+                                        if (evt.meta && thinking) {
+                                            const answerMode = String(evt.answerMode || '');
+                                            if (answerMode === 'math' || _isProblemSolver) {
+                                                thinking.set('Preparing step-by-step solution...');
+                                            }
+                                            else if (answerMode === 'app') {
+                                                thinking.set('Checking Minallo features...');
+                                            }
+                                            else {
+                                                thinking.set('Structuring the answer...');
+                                            }
+                                        }
+                                        if (evt.t) {
+                                            queueToken(evt.t);
+                                        }
+                                        if (evt.done) {
+                                            _pendingMeta = evt;
+                                            if (!_renderTimer && !_tokenQueue.length && !_streamTextBuffer.length)
+                                                finalize(_pendingMeta);
+                                        }
+                                        if (evt.error)
+                                            fallbackToRag();
+                                    }
+                                    catch { /* ignore malformed line */ }
+                                });
+                                read();
+                            }).catch(() => fallbackToRag());
+                        }
+                        read();
+                    })
+                        .catch((err) => {
+                        if (err && err.name === 'AbortError') {
+                            removeThinking();
+                            // Drop a partial streaming bubble entirely instead of letting
+                            // its cropped contents get persisted by saveChatForFile on
+                            // the next unload/showPortal trigger. The user explicitly
+                            // aborted — don't overwrite the prior complete answer (which
+                            // still lives in localStorage / Supabase) with a half-stream.
+                            if (ansWrap && ansWrap.querySelector('.ai-bubble.bot[data-streaming="true"]')) {
+                                ansWrap.remove();
+                                ansWrap = null;
+                            }
+                            const _sb = document.getElementById('aiSend');
+                            if (_sb)
+                                _sb.disabled = false;
+                            const _st = document.getElementById('stopBtn');
+                            if (_st)
+                                _st.style.display = 'none';
+                            resolve({ content: [{ text: '' }] });
+                        }
+                        else {
+                            fallbackToRag();
+                        }
+                    });
+                    function fallbackToRag() {
+                        if (ansWrap)
+                            ansWrap.remove();
+                        if (!thinking) {
+                            thinking = createAIThinkingStatus({
+                                context: _isProblemSolver ? 'exercise-solver' : 'course-qa',
+                                host: aiMsgs,
+                                surface: 'panel',
+                                compact: true
+                            });
+                        }
+                        if (thinking)
+                            thinking.set('Preparing answer...');
+                        sendRagRequest(_courseId, question, _ragMode, _activeDocId || undefined, _streamActiveFileName || undefined, _streamOpenFileCtx || undefined)
+                            .then(async (data) => {
+                            if (thinking)
+                                await thinking.waitMinimum();
+                            removeThinking(true);
+                            let answer = stripSourceMarkers(data.answer || 'No answer found.');
+                            resolve({ content: [{ text: answer }], _ragData: data });
+                        })
+                            .catch((err) => {
+                            removeThinking();
+                            const msg = err instanceof Error ? ' (' + err.message + ')' : '';
+                            resolve({ content: [{ text: '❌ Could not reach the AI' + msg + '. Please try again.' }] });
+                        });
+                    }
+                    function finalize(meta) {
+                        if (_finalized)
+                            return;
+                        if (!ansWrap && thinking && !_finalizeWaitingForThinking) {
+                            _finalizeWaitingForThinking = true;
+                            thinking.waitMinimum().then(() => {
+                                if (_tokenQueue.length || _streamTextBuffer.length)
+                                    ensureBubble();
+                                finalize(meta);
+                            }).catch(() => finalize(meta));
+                            return;
+                        }
+                        _finalized = true;
+                        // Flush anything the throttled reveal (STREAM_CHARS_PER_FRAME)
+                        // hasn't drained into rawText yet. On a fast stream the body
+                        // closes and read() calls finalize() while most tokens are still
+                        // sitting in _tokenQueue/_streamTextBuffer — without this flush
+                        // we'd persist only the slowly-revealed prefix (data-raw + saved
+                        // history get truncated mid-answer) even though the bubble keeps
+                        // revealing the rest afterward and LOOKS complete on screen.
+                        pullQueuedTokens();
+                        if (_streamTextBuffer) {
+                            rawText += _streamTextBuffer;
+                            _streamTextBuffer = '';
+                        }
+                        if (_renderTimer != null) {
+                            cancelAnimationFrame(_renderTimer);
+                            _renderTimer = null;
+                        }
+                        window._activeStreamRender = null;
+                        const sources = (meta && meta.sources) || [];
+                        const unsupported = !!(meta && meta.unsupported);
+                        const markedText = rawText.replace(metaPattern, '').trim();
+                        const cleanText = stripSourceMarkers(markedText);
+                        if (!cleanText) {
+                            if (ansWrap) {
+                                ansWrap.remove();
+                                ansWrap = null;
+                            }
+                            fallbackToRag();
+                            return;
+                        }
+                        // displayText keeps [Source N] (linkified on render); fullAnswer is
+                        // the clean version stored in history / data-raw (export stays tidy).
+                        let displayText = markedText;
+                        let fullAnswer = cleanText;
+                        if (unsupported && !sources.length) {
+                            const note = '⚠️ *No matching course materials found — answering from general knowledge.*\n\n';
+                            displayText = note + displayText;
+                            fullAnswer = note + fullAnswer;
+                        }
+                        if (_ragMode === 'general') {
+                            displayText += '\n\n🌐 general mode';
+                            fullAnswer += '\n\n🌐 general mode';
+                        }
+                        const _cacheId = (meta && meta.answerCacheId) || null;
+                        window._lastRagMeta = {
+                            courseId: _courseId,
+                            question,
+                            answerCacheId: _cacheId,
+                        };
+                        _appendCourseHistory(_courseId, question, fullAnswer);
+                        if (bubble) {
+                            bubble.setAttribute('data-raw', fullAnswer);
+                            bubble.removeAttribute('data-streaming');
+                        }
+                        fullRender(displayText, { keepMarkers: true, sources });
+                        appendSourcesDropdown(bubble, sources);
+                        if (ansWrap && !ansWrap.querySelector('.rag-feedback-bar')) {
+                            const _mb = ansWrap.querySelector('.msg-body');
+                            if (_mb) {
+                                _mb.appendChild(_buildRagFeedbackBar({ courseId: _courseId, question, answerCacheId: _cacheId }));
+                            }
+                        }
+                        resolve({
+                            content: [{ text: fullAnswer }],
+                            _streamWrap: ansWrap,
+                            _ragData: meta,
+                        });
+                    }
+                });
+            }
+            let prior = _chatHistory.slice(-20);
+            let firstUser = 0;
+            while (firstUser < prior.length && prior[firstUser].role !== 'user')
+                firstUser++;
+            prior = prior.slice(firstUser);
+            const messages = [];
+            prior.forEach((m) => {
+                messages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text || '' });
+            });
+            messages.push({ role: 'user', content: userContent });
+            return sendAiRequest({ max_tokens: 1024, system: sysPrompt, messages });
+        })
+            .then(async (data) => {
+            const d = data;
+            if (myGenId !== state.currentGenId) {
+                if (!d._streamWrap)
+                    removeThinking();
+                return;
+            }
+            if (d._streamWrap) {
+                const streamBubble = d._streamWrap.querySelector('.ai-bubble.bot');
+                const rawFinal = d.content ? d.content.map((b) => b.text || '').join('') : '';
+                if (streamBubble) {
+                    const _typingSpan = streamBubble.querySelector('.ss-stream-live, .ss-typing-span');
+                    if (_typingSpan)
+                        _typingSpan.remove();
+                    if (window._ssEnsureKatex) {
+                        window._ssEnsureKatex().then(() => {
+                            if (window._renderMath && streamBubble)
+                                window._renderMath(streamBubble);
+                            if (window._renderCode && streamBubble)
+                                window._renderCode(streamBubble);
+                            streamBubble.querySelectorAll('.ss-rendered-block').forEach((sd) => {
+                                sd.style.opacity = '1';
+                            });
+                            _autoScroll(aiMsgs);
+                        }).catch(() => { });
+                    }
+                }
+                if (window._aiResponseActions && rawFinal && !d._streamWrap.querySelector('.ai-action-bar')) {
+                    const mb = d._streamWrap.querySelector('.msg-body');
+                    if (mb) {
+                        const actions = window._aiResponseActions(rawFinal, 'panel');
+                        if (actions)
+                            mb.appendChild(actions);
+                    }
+                }
+                const _sb0 = document.getElementById('aiSend');
+                if (_sb0)
+                    _sb0.disabled = false;
+                const _st0 = document.getElementById('stopBtn');
+                if (_st0)
+                    _st0.style.display = 'none';
+                if (window.spawnConfetti)
+                    window.spawnConfetti();
+                _autoScroll(aiMsgs);
+                return;
+            }
+            if (thinking)
+                await thinking.waitMinimum();
+            removeThinking(true);
+            const _ragMeta = d._ragData
+                ? {
+                    courseId: window.activeCourseId || '',
+                    question,
+                    answerCacheId: d._ragData.id || null,
+                }
+                : null;
+            const rawTextLocal = d.error
+                ? _isSubscriptionError(d.error.message || '')
+                    ? _subscriptionMsg()
+                    : '❌ Error: ' + (d.error.message || JSON.stringify(d.error))
+                : d.content
+                    ? d.content.map((b) => b.text || '').join('')
+                    : 'No response';
+            const displayTextLocal = d._ragData ? stripSourceMarkers(rawTextLocal) : rawTextLocal;
+            // Persist non-RAG answers too. The RAG/stream path saves history inside
+            // finalize(); without this the non-RAG branch silently dropped chat
+            // history on reload for users with no indexed course docs.
+            if (!d.error && displayTextLocal && displayTextLocal !== 'No response') {
+                _appendCourseHistory(window.activeCourseId || window.currentCourseId || '', question, displayTextLocal);
+            }
+            const ansWrap = document.createElement('div');
+            ansWrap.className = 'ai-msg-wrap';
+            const tNow = _getTime();
+            ansWrap.innerHTML =
+                '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
+                    '<div class="msg-body">' +
+                    '<div class="ai-bubble bot" style="min-height:20px"></div>' +
+                    '<div class="msg-meta" style="display:none">' +
+                    '<span class="msg-time">' + tNow + '</span>' +
+                    '<button class="msg-action-btn" data-action="copy">' +
+                    (window._t ? window._t('copy_btn') : 'Copy') +
+                    '</button>' +
+                    '</div>' +
+                    '</div>';
+            bindMessageActionButtons(ansWrap);
+            aiMsgs.appendChild(ansWrap);
+            _autoScroll(aiMsgs);
+            setTimeout(() => {
+                const bubble = ansWrap.querySelector('.ai-bubble.bot');
+                const meta = ansWrap.querySelector('.msg-meta');
+                if (!bubble || !meta)
+                    return;
+                const tokens = displayTextLocal.match(/\S+\s*/g) || [];
+                let idx = 0;
+                let displayed = '';
+                const _fbCfg = window.AI_TYPING || {};
+                const WORDS_PER_FRAME = _fbCfg.fallbackWordsPerFrame || 1;
+                const FRAME_INTERVAL = _fbCfg.fallbackFrameInterval || 38;
+                function frame() {
+                    if (state.generationStopped || myGenId !== state.currentGenId) {
+                        bubble.innerHTML = window.renderMarkdown
+                            ? window.renderMarkdown(displayed)
+                            : displayed;
+                        meta.style.display = 'flex';
+                        const eb = ansWrap.querySelector('.ai-action-bar');
+                        if (!eb && displayed.trim() && window._aiResponseActions) {
+                            const mb = ansWrap.querySelector('.msg-body');
+                            const actions = window._aiResponseActions(displayed, 'panel');
+                            if (mb && actions)
+                                mb.appendChild(actions);
+                        }
+                        return;
+                    }
+                    if (idx >= tokens.length) {
+                        bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(displayTextLocal) : escapeHtml(displayTextLocal);
+                        appendSourcesDropdown(bubble, d._ragData?.sources);
+                        if (window._renderMath)
+                            window._renderMath(bubble);
+                        if (window._renderCode)
+                            window._renderCode(bubble);
+                        meta.style.display = 'flex';
+                        if (!ansWrap.querySelector('.ai-action-bar') && window._aiResponseActions) {
+                            const mb = ansWrap.querySelector('.msg-body');
+                            const actions = window._aiResponseActions(displayTextLocal, 'panel');
+                            if (mb && actions)
+                                mb.appendChild(actions);
+                        }
+                        if (_ragMeta && !ansWrap.querySelector('.rag-feedback-bar')) {
+                            const mb = ansWrap.querySelector('.msg-body');
+                            if (mb)
+                                mb.appendChild(_buildRagFeedbackBar(_ragMeta));
+                        }
+                        const _sb1 = document.getElementById('aiSend');
+                        if (_sb1)
+                            _sb1.disabled = false;
+                        const _st1 = document.getElementById('stopBtn');
+                        if (_st1)
+                            _st1.style.display = 'none';
+                        if (window.spawnConfetti)
+                            window.spawnConfetti();
+                        state.activeTypeTimer = null;
+                        return;
+                    }
+                    const appEl = document.getElementById('app');
+                    const panelHidden = document.hidden ||
+                        !!(appEl && appEl.style.display === 'none') ||
+                        !aiPanel.classList.contains('visible');
+                    const batch = panelHidden ? tokens.length : WORDS_PER_FRAME;
+                    for (let w = 0; w < batch && idx < tokens.length; w++)
+                        displayed += tokens[idx++];
+                    bubble.innerHTML =
+                        (window.renderMarkdown ? window.renderMarkdown(displayed) : escapeHtml(displayed)) +
+                            (idx < tokens.length ? '<span class="stream-cursor">▋</span>' : '');
+                    if (!panelHidden && aiMsgs.scrollHeight - aiMsgs.scrollTop - aiMsgs.clientHeight < 80) {
+                        aiMsgs.scrollTop = aiMsgs.scrollHeight;
+                    }
+                    state.activeTypeTimer = setTimeout(frame, panelHidden ? 0 : FRAME_INTERVAL);
+                }
+                state.activeTypeTimer = setTimeout(frame, FRAME_INTERVAL);
+            }, 60);
+        })
+            .catch((e) => {
+            removeThinking();
+            const msg = e instanceof Error ? e.message : String(e);
+            if (window.addBotMsg)
+                window.addBotMsg(_isSubscriptionError(msg) ? _subscriptionMsg() : '❌ Error: ' + msg);
+            const _sb2 = document.getElementById('aiSend');
+            if (_sb2)
+                _sb2.disabled = false;
+            const _st2 = document.getElementById('stopBtn');
+            if (_st2)
+                _st2.style.display = 'none';
+        });
+    };
+}
+function _buildRagFeedbackBar(meta) {
+    const bar = document.createElement('div');
+    bar.className = 'rag-feedback-bar';
+    bar.innerHTML =
+        '<span class="rag-fb-label">Was this helpful?</span>' +
+            '<button class="rag-fb-btn rag-fb-yes" title="Helpful">👍</button>' +
+            '<button class="rag-fb-btn rag-fb-no" title="Not helpful">👎</button>' +
+            '<button class="rag-fb-btn rag-fb-wrong" title="Wrong answer">⚠️</button>' +
+            '<button class="rag-fb-btn rag-fb-cite" title="Missing citation">📄</button>';
+    function _send(rating) {
+        bar.querySelectorAll('.rag-fb-btn').forEach((b) => {
+            b.disabled = true;
+        });
+        const label = bar.querySelector('.rag-fb-label');
+        if (label)
+            label.textContent = 'Thanks for your feedback!';
+        submitRagFeedback(meta.courseId, meta.question, rating, meta.answerCacheId || null).catch(() => { });
+    }
+    bar.querySelector('.rag-fb-yes')?.addEventListener('click', () => _send('helpful'));
+    bar.querySelector('.rag-fb-no')?.addEventListener('click', () => _send('not_helpful'));
+    bar.querySelector('.rag-fb-wrong')?.addEventListener('click', () => _send('wrong_answer'));
+    bar.querySelector('.rag-fb-cite')?.addEventListener('click', () => _send('missing_citation'));
+    return bar;
+}
+//# sourceMappingURL=ai-ask.js.map

@@ -688,12 +688,9 @@ function closeDrawer() {
     }, 320);
 }
 function toggleMode(mode) {
-    if (_openMode === mode) {
-        closeDrawer();
-    }
-    else {
-        openDrawer(mode);
-    }
+    if (_openMode === mode)
+        return;
+    openDrawer(mode);
 }
 function wireResize() {
     const drawer = $('drDrawer');
@@ -770,12 +767,7 @@ function wireRailButtons() {
 function wireClose() {
     const btn = $('drClose');
     if (btn)
-        btn.addEventListener('click', closeDrawer);
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && _openMode != null) {
-            closeDrawer();
-        }
-    });
+        btn.style.display = 'none';
 }
 function setRouteVisibility(route) {
     const root = $('drRoot');
