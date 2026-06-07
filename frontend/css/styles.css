@@ -1466,6 +1466,7 @@ body.night .sb-acc-chev-btn {
   body.dr-pdf-split-open #pdfViewerWrap,
   body:has(#drDrawer.is-open:not(.dr-sheet)) #pdfViewerWrap {
     flex: 0 1 calc(100% - var(--dr-reserved-w));
+    width: calc(100% - var(--dr-reserved-w));
     max-width: calc(100% - var(--dr-reserved-w));
     margin-right: var(--dr-reserved-w);
     transition: margin-right 180ms ease;

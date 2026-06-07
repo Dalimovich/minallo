@@ -167,6 +167,10 @@ function applySplitState(drawer?: HTMLElement | null): void {
   }
 }
 
+function isDesktopDrawerOpen(drawer: HTMLElement): boolean {
+  return drawer.classList.contains('is-open') && !drawer.classList.contains('dr-sheet');
+}
+
 function updateDrawerModeClass(drawer: HTMLElement, mode: DocRailMode | null): void {
   drawer.classList.remove('dr-mode-ai', 'dr-mode-problem', 'dr-mode-notes', 'dr-mode-summary');
   if (mode) drawer.classList.add('dr-mode-' + mode);
@@ -699,7 +703,7 @@ function wireResize(): void {
     const next = clampWidth(startW - dx);
     _drawerWidth = next;
     applyWidth(drawer, next);
-    if (document.body.classList.contains(SPLIT_CLASS)) {
+    if (document.body.classList.contains(SPLIT_CLASS) || isDesktopDrawerOpen(drawer)) {
       setDrawerWidthVar(next);
     }
   };
