@@ -134,6 +134,28 @@
   pointer-events: auto;
 }
 
+@media (min-width: 769px) {
+  body.dr-pdf-split-open .dr-rail,
+  body:has(#drDrawer.is-open:not(.dr-sheet)) .dr-rail {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    height: auto;
+    transform: none;
+    border-radius: 0;
+    justify-content: center;
+  }
+
+  body.dr-pdf-split-open .dr-drawer,
+  body:has(#drDrawer.is-open:not(.dr-sheet)) .dr-drawer {
+    top: 0;
+    right: var(--dr-rail-w);
+    bottom: 0;
+    width: calc(var(--dr-drawer-w) + var(--dr-gutter-w)) !important;
+    border-radius: 0;
+  }
+}
+
 .dr-drawer[hidden] {
   display: none !important;
 }
