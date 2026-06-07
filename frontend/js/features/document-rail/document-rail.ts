@@ -47,8 +47,8 @@ interface DocRailWindow extends Window {
 
 const WIDTH_KEY = 'ss_dr_width';
 const WIDTH_MIN = 340;
-const WIDTH_MAX = 1200;
-const WIDTH_DEFAULT = 420;
+const WIDTH_MAX = 900;
+const WIDTH_DEFAULT = 520;
 const SPLIT_CLASS = 'dr-pdf-split-open';
 
 let _initialized = false;
