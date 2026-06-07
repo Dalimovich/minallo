@@ -428,6 +428,15 @@
     return resp.json();
   }
 
+  function _errorMessage(err, fallback) {
+    if (!err) return fallback || 'Request failed';
+    if (typeof err === 'string') return err;
+    if (err.message) return err.message;
+    if (err.error) return _errorMessage(err.error, fallback);
+    try { return JSON.stringify(err); } catch (_) {}
+    return fallback || 'Request failed';
+  }
+
   function _setGenMsg(msg) {
     var el = $id('npGenMsg');
     if (el) el.textContent = msg;
@@ -517,7 +526,7 @@
         topicTitle:  isSummary ? (g.title || null) : undefined,
         pageRange:   { start: g.start, end: g.end }
       });
-      if (data.error) throw new Error(data.error);
+      if (data.error) throw new Error(_errorMessage(data.error, 'Section generation failed'));
       if (!data.empty && data.markdown) {
         // Prefer the heading the AI generated (e.g. "## Sandguss") over the metadata title
         var cleanSectionMd = _stripMarker(data.markdown);
@@ -605,8 +614,9 @@
             }
           }, 1000);
         } else {
-          if (typeof showToast === 'function') showToast('Generation failed', data.error);
-          _setStatus(data.error, 'err');
+          var msg = _errorMessage(data.error, 'Generation failed');
+          if (typeof showToast === 'function') showToast('Generation failed', msg);
+          _setStatus(msg, 'err');
         }
       } else if (data.note) {
         data.note._summaryType = _detectSummaryType(data.note.content_markdown);
@@ -623,7 +633,7 @@
         if (typeof showToast === 'function') showToast('Notes ready', 'AI notes saved to your account.');
       }
     } catch (e) {
-      if (typeof showToast === 'function') showToast('Generation failed', e.message || 'Network error');
+      if (typeof showToast === 'function') showToast('Generation failed', _errorMessage(e, 'Network error'));
       _setStatus('Failed', 'err');
     } finally {
       _generating = false;

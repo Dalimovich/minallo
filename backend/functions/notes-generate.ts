@@ -54,25 +54,30 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
   const subBlocked = await requireActiveSubscription(serviceKey, user.id, 'notes_generate');
   if (subBlocked) return subBlocked;
-  const monthlyCapped = await enforceGenerationCap(serviceKey, user.id);
-  if (monthlyCapped) return monthlyCapped;
-  const limited = await enforceEventRateLimit(
-    serviceKey,
-    user.id,
-    'notes_generate',
-    NOTES_RATE_LIMIT_MAX,
-    NOTES_RATE_LIMIT_WINDOW,
-    'Notes generation limit reached. Please try again later.'
-  );
-  if (limited) return limited;
-
   let body: Record<string, unknown>;
   try { body = JSON.parse(event.body || '{}') as Record<string, unknown>; }
   catch { return fail(400, 'Invalid JSON'); }
 
+  const mode = typeof body.mode === 'string' ? body.mode : 'generate';
+  const countsAsGeneration = mode === 'generate' || mode === 'merge';
+  if (countsAsGeneration) {
+    const monthlyCapped = await enforceGenerationCap(serviceKey, user.id);
+    if (monthlyCapped) return monthlyCapped;
+    const limited = await enforceEventRateLimit(
+      serviceKey,
+      user.id,
+      'notes_generate',
+      NOTES_RATE_LIMIT_MAX,
+      NOTES_RATE_LIMIT_WINDOW,
+      'Notes generation limit reached. Please try again later.'
+    );
+    if (limited) return limited;
+  }
+
   if (typeof body.courseId !== 'string' || !isSafeCourseId(body.courseId)) {
     return fail(400, 'courseId is invalid');
   }
+  const courseId = body.courseId;
   if (typeof body.tool !== 'string' || !['notes', 'summary'].includes(body.tool)) {
     return fail(400, 'tool must be notes or summary');
   }
@@ -87,17 +92,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (body.documentId != null && (typeof body.documentId !== 'string' || !isUuid(body.documentId))) {
     return fail(400, 'documentId is invalid');
   }
-  if (body.documentId) {
+  const documentId = typeof body.documentId === 'string' ? body.documentId : null;
+  if (documentId) {
     const ownsDocument = await verifyDocumentOwner(
       serviceKey,
       user.id,
-      body.courseId,
-      body.documentId
+      courseId,
+      documentId
     );
     if (!ownsDocument) {
       await logSecurityEvent(serviceKey, user.id, 'notes_generate_denied', {
-        course_id: body.courseId,
-        document_id: body.documentId
+        course_id: courseId,
+        document_id: documentId
       });
       return fail(404, 'Document not found or access denied');
     }
@@ -111,18 +117,19 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (Array.isArray(body.sections) && body.sections.length > MAX_SECTIONS) {
     return fail(400, 'Too many sections');
   }
-  await logSecurityEvent(serviceKey, user.id, 'notes_generate', {
-    course_id: body.courseId,
+  await logSecurityEvent(serviceKey, user.id, countsAsGeneration ? 'notes_generate' : 'notes_generate_step', {
+    course_id: courseId,
     tool: body.tool,
-    scope: body.scope ?? 'document'
+    scope: body.scope ?? 'document',
+    mode
   });
 
   const upstream = await forwardToPython('notes-generate', {
     userId:         user.id,
-    courseId:       body.courseId,
-    documentId:     body.documentId ?? null,
+    courseId,
+    documentId,
     tool:           body.tool,
-    mode:           body.mode ?? 'generate',
+    mode,
     scope:          body.scope ?? 'document',
     fileName:       body.fileName ?? null,
     pdfText:        body.pdfText ?? null,
