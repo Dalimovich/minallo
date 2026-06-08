@@ -873,20 +873,22 @@ async function handleIntentRoute(
   const courseId = findPrimaryCourseId();
   const route = routeStudyIntent(last.text, courseId);
   if (!route) return null;
-  if (thinking) await thinking.waitMinimum();
-  thinking?.remove(true);
 
   if (route.needsClarification || !route.target.courseId) {
+    if (thinking) await thinking.waitMinimum();
+    thinking?.remove(true);
     const text = 'Which course should I create this for? Open a course first, then ask again.';
     if (bubble) renderRichBubble(bubble, text);
     return text;
   }
 
   if (route.intent === 'daily_mission') {
+    const skillStatus = showIntentSkillLoading(bubble, thinking, 'daily_mission');
     const targetCourseId = route.target.courseId;
     let data = await getDailyMission(targetCourseId);
     if (!data.hasPlan) data = await generateDailyMission(targetCourseId);
     const text = renderDailyMissionText(data);
+    await finishIntentSkillLoading(skillStatus, thinking);
     if (bubble) {
       bubble.innerHTML = '';
       const mod = await import('../daily-mission/daily-mission-ui.js');
@@ -898,17 +900,21 @@ async function handleIntentRoute(
   }
 
   if (route.intent === 'summary') {
+    const skillStatus = showIntentSkillLoading(bubble, thinking, 'summary');
     const mod = await import('../../services/ai-service.js');
     const result = await mod.generateStudyTool(route.target.courseId, 'summary') as { text?: string };
     const text = 'Summary created from your current course sources.\n\n' + ((result && result.text) || 'No summary was returned.');
+    await finishIntentSkillLoading(skillStatus, thinking);
     if (bubble) renderRichBubble(bubble, text);
     return text;
   }
 
   if (route.intent === 'cheatsheet') {
+    const skillStatus = showIntentSkillLoading(bubble, thinking, 'cheatsheet');
     const mod = await import('../../services/ai-service.js');
     const result = await mod.generateCheatsheet(route.target.courseId, {});
     const text = 'Cheatsheet created from your current course sources.\n\n' + ((result && result.text) || 'No cheatsheet was returned.');
+    await finishIntentSkillLoading(skillStatus, thinking);
     if (bubble) renderRichBubble(bubble, text);
     return text;
   }
@@ -918,6 +924,71 @@ async function handleIntentRoute(
   }
 
   return null;
+}
+
+type RoutedSkillIntent = 'daily_mission' | 'summary' | 'cheatsheet';
+
+const ROUTED_SKILL_UI: Record<RoutedSkillIntent, { title: string; chip: string; thinking: string }> = {
+  daily_mission: {
+    title: 'Planning Today',
+    chip: 'dailyMissionPlanning',
+    thinking: 'Building your Daily Mission'
+  },
+  summary: {
+    title: 'Generating a Summary',
+    chip: 'summaryGeneration',
+    thinking: 'Generating a summary'
+  },
+  cheatsheet: {
+    title: 'Generating a Cheatsheet',
+    chip: 'cheatsheetGeneration',
+    thinking: 'Generating a cheatsheet'
+  }
+};
+
+function showIntentSkillLoading(
+  bubble: HTMLElement | null,
+  thinking: AIThinkingStatus | null,
+  intent: RoutedSkillIntent
+): HTMLElement | null {
+  if (!bubble) return null;
+  const copy = ROUTED_SKILL_UI[intent];
+  thinking?.set(copy.thinking);
+
+  const el = document.createElement('div');
+  el.className = 'ncb-skill-loading';
+  el.setAttribute('aria-live', 'polite');
+  el.innerHTML =
+    '<div class="ncb-skill-loading-line">' +
+      '<span class="ncb-skill-loading-word">Loading</span>' +
+      '<span class="ncb-skill-loading-skill">skills</span>' +
+      '<span class="ncb-skill-loading-check" aria-hidden="true">✓</span>' +
+    '</div>' +
+    '<div class="ncb-skill-chip">' + escapeHtml(copy.chip) + '</div>' +
+    '<div class="ncb-skill-thinking-note">' +
+      '<strong>' + escapeHtml(copy.title) + '</strong>' +
+      '<span>I am preparing the right course tool and checking the available context before showing the result.</span>' +
+    '</div>';
+
+  if (thinking?.el && thinking.el.parentElement === bubble) {
+    bubble.insertBefore(el, thinking.el);
+  } else {
+    bubble.prepend(el);
+  }
+  return el;
+}
+
+async function finishIntentSkillLoading(
+  skillStatus: HTMLElement | null,
+  thinking: AIThinkingStatus | null
+): Promise<void> {
+  if (thinking) await thinking.waitMinimum();
+  if (skillStatus) {
+    skillStatus.classList.add('ncb-skill-loading--done');
+    await new Promise((resolve) => window.setTimeout(resolve, 160));
+    skillStatus.remove();
+  }
+  thinking?.remove(true);
 }
 
 /** Notes need a single, concrete source — unlike summary/cheatsheet which can

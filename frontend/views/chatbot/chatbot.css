@@ -1561,6 +1561,118 @@ body:not(.night) .ncb-bubble-body .ai-thinking-card {
   color: rgba(71, 85, 105, 0.84);
 }
 
+.ncb-skill-loading {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+  margin: 2px 0 12px;
+  padding-left: 14px;
+  border-left: 3px solid rgba(96, 165, 250, 0.88);
+  color: rgba(226, 232, 240, 0.9);
+  animation: ncb-stream-reveal 180ms ease-out both;
+}
+
+.ncb-skill-loading-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.95rem;
+}
+
+.ncb-skill-loading-word {
+  color: rgba(226, 232, 240, 0.74);
+}
+
+.ncb-skill-loading-skill {
+  color: #bfdbfe;
+  font-weight: 700;
+  animation: ncb-skill-pulse 1.1s ease-in-out infinite;
+}
+
+.ncb-skill-loading-check {
+  color: #93c5fd;
+  font-weight: 800;
+  transform-origin: center;
+  animation: ncb-skill-check 1.1s ease-in-out infinite;
+}
+
+.ncb-skill-chip {
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 16px;
+  border: 1px solid rgba(147, 197, 253, 0.38);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.36);
+  color: #dbeafe;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+}
+
+.ncb-skill-thinking-note {
+  display: grid;
+  gap: 4px;
+  max-width: 720px;
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.ncb-skill-thinking-note strong {
+  color: rgba(241, 245, 249, 0.92);
+  font-size: 0.95rem;
+}
+
+.ncb-skill-loading--done {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+body:not(.night) .ncb-skill-loading {
+  border-left-color: #3b82f6;
+  color: #334155;
+}
+
+body:not(.night) .ncb-skill-loading-word {
+  color: #64748b;
+}
+
+body:not(.night) .ncb-skill-loading-skill {
+  color: #1d4ed8;
+}
+
+body:not(.night) .ncb-skill-loading-check {
+  color: #1d4ed8;
+}
+
+body:not(.night) .ncb-skill-chip {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+  color: #1e3a8a;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+}
+
+body:not(.night) .ncb-skill-thinking-note {
+  color: #64748b;
+}
+
+body:not(.night) .ncb-skill-thinking-note strong {
+  color: #475569;
+}
+
+@keyframes ncb-skill-pulse {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+@keyframes ncb-skill-check {
+  0%, 100% { opacity: 0.72; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
 @keyframes ncb-stream-reveal {
   from {
     opacity: 0;
