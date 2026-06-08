@@ -59,6 +59,7 @@ class GenerateQuizRequest(BaseModel):
     requestedCount: int = Field(10, ge=1, le=20)
     difficulty: str = "medium"             # easy | medium | hard | mixed
     questionTypes: list[str] | None = None  # subset of ['mcq','true_false','short_answer']
+    language: str | None = None
     save: bool = True
     name: str | None = None
 
@@ -198,6 +199,7 @@ async def generate_quiz_endpoint(payload: GenerateQuizRequest) -> GenerateQuizRe
         difficulty=payload.difficulty,
         question_types=payload.questionTypes,
         doc_names=doc_names,
+        language=payload.language,
     )
 
     set_id: str | None = None

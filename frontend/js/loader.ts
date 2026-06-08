@@ -415,7 +415,7 @@ interface LandingTranslation {
       'views/games/games.css',
       // Light-mode polish loads LAST so it wins source-order ties
       // against feature CSS that still hard-codes greys.
-      'css/light-mode.css?v=49',
+      'css/light-mode.css?v=50',
     ].forEach((href) => {
       const link = document.createElement('link');
       link.rel = 'stylesheet';

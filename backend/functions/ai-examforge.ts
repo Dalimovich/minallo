@@ -137,6 +137,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         requestedCount,
         difficulty: typeof difficulty === 'string' ? difficulty : 'medium',
         questionTypes,
+        language: typeof language === 'string' ? language : null,
         save: false,
       });
       if (fallback.ok) {

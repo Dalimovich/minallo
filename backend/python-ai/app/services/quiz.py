@@ -41,11 +41,17 @@ _DEFAULT_TYPES = ["mcq", "true_false", "short_answer"]
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-def _system_prompt(count: int, difficulty: str, types: list[str], known_topics: list[str] | None = None) -> str:
+def _system_prompt(
+    count: int,
+    difficulty: str,
+    types: list[str],
+    known_topics: list[str] | None = None,
+    language: str = "auto",
+) -> str:
     diff_guide = {
         "easy":   "Mostly definition recall and single-step identification.",
         "medium": "Mix of concept application, formula use, and 1-step calculations.",
-        "hard":   "Multi-step reasoning, formula application, spotting wrong steps. Tough but fair.",
+        "hard":   "Multi-step reasoning, formula application, subtle conditions, and professor-style traps. Never simple naming or definition recall.",
         "mixed":  "Balanced spread across easy, medium, and hard.",
     }.get(difficulty, "Balanced.")
 
@@ -66,6 +72,12 @@ def _system_prompt(count: int, difficulty: str, types: list[str], known_topics: 
             "\n\nNo course-level topic list is available; you may set \"topic\" to null."
         )
 
+    language_guide = {
+        "auto": "Match the language of the context (German if the slides are German).",
+        "de": "Write all questions, options, answers, and explanations in German.",
+        "en": "Write all questions, options, answers, and explanations in English.",
+    }.get(language, "Match the language of the context (German if the slides are German).")
+
     return f"""You are an expert university professor writing an exam-quality quiz for a student.
 
 Generate EXACTLY {count} questions from the COURSE CONTEXT below.
@@ -81,7 +93,8 @@ Rules:
 5. For short_answer: write an answer key that an exam marker would accept.
 6. Cite the source like "filename, p.N" using the [Source N] header for every item.
 7. Math in KaTeX: $...$ inline, $$...$$ display.
-8. Match the language of the context (German if the slides are German).
+8. {language_guide}
+9. If the difficulty target is hard, questions must require applied reasoning from the context: formulas, conditions, comparisons, multi-step logic, or common exam traps. Do not ask only for the name or definition of a theorem.
 {topic_block}
 
 CRITICAL: emit EXACTLY {count} items in "items". Do not stop short. Do not pad with junk — quality must hold.
@@ -357,6 +370,7 @@ def _run_one_quiz_shard(
     *, shard_count: int, diff: str, types: list[str], context: str,
     already_taken: list[str], diversity_hint: str | None = None,
     known_topics: list[str] | None = None,
+    language: str = "auto",
 ) -> LlmResult | None:
     """Single LLM call for one shard's worth of items. Thread-safe."""
     avoid_block = ""
@@ -367,7 +381,7 @@ def _run_one_quiz_shard(
     diversity = ""
     if diversity_hint:
         diversity = f"\n\nFor this batch specifically: emphasise {diversity_hint}."
-    system = _system_prompt(shard_count, diff, types, known_topics) + avoid_block + diversity
+    system = _system_prompt(shard_count, diff, types, known_topics, language) + avoid_block + diversity
     # Per-shard completion budget — each MCQ with options + explanation +
     # source runs ~250-400 tokens. 6 items × 400 = 2400; round up to 3000.
     max_completion = min(4000, 800 + shard_count * 380)
@@ -391,12 +405,16 @@ def generate_quiz(
     difficulty: str,
     question_types: list[str] | None,
     doc_names: dict[str, str],
+    language: str | None = None,
 ) -> dict[str, Any]:
     # Capped at 20. Parallelisation keeps the wall-clock under Netlify's 30s
     # function timeout even at the high end (3 parallel shards of 6-7 items
     # finishes in ~15-20s, not 45-60s sequential).
     requested = max(1, min(int(requested_count or 1), 20))
     diff = difficulty if difficulty in ("easy", "medium", "hard", "mixed") else "medium"
+    lang = (language or "auto").strip().lower()
+    if lang not in ("auto", "de", "en"):
+        lang = "auto"
     types = [t for t in (question_types or _DEFAULT_TYPES) if t in _VALID_TYPES] or _DEFAULT_TYPES
 
     chunks = retrieve_chunks(
@@ -449,6 +467,7 @@ def generate_quiz(
                 already_taken=[],   # round 1: no avoid list — diversity hints carry the load
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
                 known_topics=known_topics_list,
+                language=lang,
             )
             for i in range(shard_count)
         ]
@@ -485,6 +504,7 @@ def generate_quiz(
             already_taken=[it.get("question") or "" for it in collected],
             diversity_hint=f"new high-value concepts not yet asked about; backfill round {round_idx + 1}",
             known_topics=known_topics_list,
+            language=lang,
         )
         if backfill is not None:
             diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0

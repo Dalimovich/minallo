@@ -374,7 +374,7 @@
             'views/games/games.css',
             // Light-mode polish loads LAST so it wins source-order ties
             // against feature CSS that still hard-codes greys.
-            'css/light-mode.css?v=49',
+            'css/light-mode.css?v=50',
         ].forEach((href) => {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
@@ -567,7 +567,7 @@
                     subscription: ['views/subscription/subscription.css'],
                     flashcards: ['views/flashcards/flashcards.css'],
                     quiz: ['views/quiz/quiz.css'],
-                    examforge: ['views/examforge/examforge.css'],
+                    examforge: ['views/examforge/examforge.css?v=2'],
                     cheatsheet: ['views/cheatsheet/cheatsheet.css'],
                     deeplearn: ['views/deep-learn/deep-learn.css'],
                     notesPanel: ['views/notes/notes-panel.css'],

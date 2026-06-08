@@ -352,6 +352,7 @@ def generate_examforge(
             difficulty=diff,
             question_types=types,
             doc_names=doc_names,
+            language=lang,
         )
         questions = [_normalise_question(q) for q in quiz_out.get("questions", [])]
         warning = quiz_out.get("warning")
