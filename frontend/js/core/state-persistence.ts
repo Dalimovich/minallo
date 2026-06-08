@@ -213,7 +213,10 @@ export function initStatePersistence(options: StatePersistenceOptions): {
             return;
         }
         // Course not found in SEMS — leave _stateRestored false so a later
-        // call (after courses load from network) can retry.
+        // call (after courses load from network) can retry. Revert the file
+        // view we speculatively showed above so the user doesn't see a blank
+        // shell while waiting for courses to load.
+        options.showPortal();
         return;
       }
 
