@@ -518,7 +518,7 @@
     els.result.innerHTML =
       '<article class="dl-lesson-card dl-structured" data-lang="' + _esc(lesson.lessonLanguage || 'en') + '">' +
         '<div class="dl-lesson-head"><div><p class="dl-kicker">' + _esc(_l(lesson, 'kicker')) + '</p><h3>' + _esc(lesson.title || res.title || res.topic || 'Lesson') + '</h3>' +
-        '<div class="dl-lesson-meta">' + _esc([lesson.lessonMode, lesson.subjectArea, lesson.contentType].filter(Boolean).join(' · ')) + '</div></div>' +
+        '<div class="dl-lesson-meta">' + _esc([lesson.lessonMode, lesson.subjectArea || lesson.courseName, lesson.contentTypeLabel || lesson.contentType].filter(Boolean).join(' · ')) + '</div></div>' +
         '<button type="button" class="dl-btn dl-download" data-dl-print>' + _esc(_l(lesson, 'downloadPdf')) + '</button></div>' +
         ((res.citationWarning || lesson.citationWarning) ? '<div class="dl-warning">' + _esc(res.citationWarning || lesson.citationWarning) + '</div>' : '') +
         sections.join('') +

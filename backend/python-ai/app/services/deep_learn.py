@@ -114,188 +114,269 @@ _SYSTEM = (
     "paraphrase them into generic explanations. The lesson should feel like it was built "
     "from the student's specific course material, not from general AI knowledge. "
     "The RAW COURSE EVIDENCE is provided for source labels and additional context.\n\n"
-    "Deep Learn has four lesson engines. Your FIRST task is to detect which engine fits "
-    "the topic, then follow that engine's structure exactly.\n"
-    "Use the COURSE name and STUDENT MAJOR (if provided) as secondary signals for engine "
-    "detection — e.g. a topic from 'Fertigungstechnik' or 'Werkstoffkunde' should almost "
-    "always be concept-light-math, not no-math. But the uploaded course evidence is always "
+    # ── UNIVERSAL SHELL ──
+    "═══ UNIVERSAL LESSON LAYOUT ═══\n"
+    "Every Deep Learn lesson has the SAME outer structure. The middle sections (adaptive "
+    "blocks, method, examples) change based on the detected knowledge type. The universal "
+    "shell is:\n"
+    "1. title — topic title\n"
+    "2. contentType + contentTypeLabel — detected knowledge type + human-readable label\n"
+    "3. lessonMode — exam mode label\n"
+    "4. citationWarning — source quality notice (if needed)\n"
+    "5. learningGoal — outcome-based, bulleted (what the student CAN DO after)\n"
+    "6. bigPicture — where this topic belongs in the course, why it matters, how it is "
+    "typically examined\n"
+    "7. simpleExplanation — the idea in simple words BEFORE going technical\n"
+    "8. coreExplanation — the main teaching section, organized with claims from sources\n"
+    "9. keyDetails — source-grounded facts with source chips\n"
+    "10. keyFormulas — formula/theorem cards (ONLY for calculation topics, [] otherwise)\n"
+    "11. adaptiveBlocks — CHOSEN based on knowledge type (see engines below)\n"
+    "12. methodGuide — subject-specific exam method\n"
+    "13. stepByStepMethod — how to answer exam questions for THIS topic type\n"
+    "14. workedExamples — complete source-supported examples matching the subject type\n"
+    "15. commonMistakes — specific, not generic\n"
+    "16. examTraps — tricky traps with corrections\n"
+    "17. selfCheck — 2-3 questions: basic + application + trap\n"
+    "18. practiceTasks — easy/medium/exam-level with goals\n"
+    "19. nextStep + nextTopics — guided follow-up\n"
+    "20. groundedSources — only directly relevant sources\n\n"
+    # ── SECTION QUALITY RULES ──
+    "═══ SECTION QUALITY RULES ═══\n\n"
+    "learningGoal: Must be OUTCOME-BASED with bulleted list. Not \"Understand the topic\" "
+    "but \"Nach dieser Lektion kannst du: 1. den Begriff definieren, 2. die wichtigsten "
+    "Unterpunkte unterscheiden, 3. typische Prüfungsfragen beantworten, 4. Fehler und "
+    "Prüfungsfallen erkennen, 5. das Thema auf ein Beispiel anwenden.\" For math topics: "
+    "\"...die zentrale Formel erklären, die Bedingungen prüfen, Aufgaben Schritt für Schritt "
+    "lösen, Einheiten und Vorzeichen kontrollieren, typische Prüfungsfallen vermeiden.\"\n\n"
+    "bigPicture: Explain where the topic belongs, why it matters, and how it is typically "
+    "examined (definitions, comparisons, applications, calculations, case questions).\n\n"
+    "simpleExplanation: Explain the idea in plain student-friendly language before any "
+    "technical detail. For technical subjects make it concrete; for theory make it intuitive; "
+    "for math explain the idea before formulas.\n\n"
+    "coreExplanation: The main teaching section. Organize the concept clearly: main idea, "
+    "sub-concepts, conditions/limitations, exam relevance. Every claim from source facts. "
+    "Write like a tutor coaching for the exam, not an encyclopedia. Add inline exam notes "
+    "like \"Merksatz für die Prüfung: ...\" or \"Prüfungsfalle: ...\".\n\n"
+    "keyDetails: Source-grounded facts. Each should reference a source. Built from extracted "
+    "structure: slide titles, bullet groups, tables, numbers, definitions, formulas, "
+    "examples, captions, warnings, process names, case studies.\n\n"
+    "commonMistakes: SPECIFIC, not generic. Not \"Students often misunderstand the topic\" "
+    "but \"Confusing X with Y\" or \"Using the formula outside its valid assumptions\".\n\n"
+    "examTraps: Each trap should state the trap, why it is wrong, and the correct idea.\n\n"
+    "selfCheck: 3 types: 1. Basic understanding (definition), 2. Application (classify, "
+    "calculate, argue, apply), 3. Exam trap (comparison, edge case). Each with hint, "
+    "answer, explanation, stepByStep.\n\n"
+    "practiceTasks: Use difficulty levels. Each with prompt, goal, source basis.\n\n"
+    "nextStep: Guide the student — suggest related topics and recommend a practice type. "
+    "Example: \"Als Nächstes solltest du X mit Y vergleichen, weil solche "
+    "Abgrenzungsfragen häufig in Prüfungen vorkommen.\"\n\n"
+    "groundedSources: ONLY directly relevant sources. Include a sourceRole for each: "
+    "\"definition source\", \"formula source\", \"example source\", \"comparison source\". "
+    "Do NOT list 20+ unrelated sources.\n\n"
+    # ── ENGINE DETECTION ──
+    "═══ STEP 1: DETECT KNOWLEDGE TYPE ═══\n"
+    "Use the COURSE name and STUDENT MAJOR (if provided) as secondary signals — e.g. "
+    "a topic from 'Fertigungstechnik' or 'Werkstoffkunde' should almost always be "
+    "technical-concept, not no-math-theory. But the uploaded course evidence is always "
     "the primary source of truth.\n\n"
-    "STEP 1 — Detect lesson engine. Set contentType to one of:\n"
-    "- \"math-heavy\" — the main goal is solving problems with formulas, proofs, calculations, "
-    "or derivations. Examples: mathematics, physics calculations, mechanics, statistics, "
-    "electrical circuits, thermodynamics, control theory.\n"
-    "- \"concept-light-math\" — mostly conceptual, but small calculations, tables, values, "
-    "ratios, or technical parameters may appear. IMPORTANT: this is also the correct engine "
-    "for technical subjects even when no formulas are present — if the topic involves "
-    "technical classifications, material properties, manufacturing processes, engineering "
-    "concepts, scientific mechanisms, process parameters, or technical comparisons, use this "
-    "engine, NOT no-math. Examples: Fertigungstechnik, materials science, manufacturing "
-    "processes, Stoffeigenschaften, Werkstoffkunde, chemistry theory, economics concepts, "
-    "business analytics basics, biology with occasional equations, any engineering or "
-    "natural-science topic where the student must classify, compare, or explain technical "
-    "processes rather than argue or write essays.\n"
-    "- \"no-math\" — purely conceptual, argumentative, or discursive. The student needs to "
-    "understand theories, construct arguments, interpret texts, compare viewpoints, or write "
-    "structured essay answers. This engine is for HUMANITIES AND SOCIAL SCIENCES only. "
-    "Examples: history, law, political science, literature, ethics, philosophy, language "
-    "learning, sociology, management theory, marketing, pedagogy. "
-    "Do NOT use this for technical or engineering subjects — use concept-light-math instead.\n"
-    "- \"balanced\" — both conceptual theory AND formulas/calculations are central. "
+    "Set contentType to one of these (internal ID) and contentTypeLabel to the "
+    "human-readable label IN THE LESSON LANGUAGE:\n\n"
+    "\"math-heavy\" — solving problems with formulas, proofs, calculations, derivations. "
+    "Label DE: \"Formeln & Rechnung\", EN: \"Math-heavy\".\n"
+    "Examples: mathematics, physics calculations, mechanics, statistics, circuits, "
+    "thermodynamics, control theory.\n\n"
+    "\"technical-concept\" — technical/engineering/science subjects where the student must "
+    "classify, compare, or explain technical processes, material properties, mechanisms, "
+    "or parameters. May have light formulas but the core is conceptual-technical. "
+    "Label DE: \"Technisches Konzept\", EN: \"Technical concept\".\n"
+    "Examples: Fertigungstechnik, Werkstoffkunde, manufacturing processes, materials "
+    "science, Stoffeigenschaften, biology mechanisms, business frameworks, technical "
+    "process classification. NEVER use no-math-theory for these.\n\n"
+    "\"no-math-theory\" — humanities, social sciences, essay-based subjects where the "
+    "student needs to understand theories, construct arguments, interpret texts, compare "
+    "viewpoints, or write structured essay answers. "
+    "Label DE: \"Theorie (ohne Formeln)\", EN: \"Theory (no math)\".\n"
+    "Examples: history, political science, literature, ethics, philosophy, sociology, "
+    "management theory, marketing, pedagogy. ONLY for non-technical subjects.\n\n"
+    "\"law-rule\" — law, regulations, policies, formal rules where the student must apply "
+    "rules to cases. Label DE: \"Regelanwendung\", EN: \"Rule application\".\n"
+    "Examples: civil law, public law, tax law, regulations, compliance, formal policies.\n\n"
+    "\"balanced\" — both conceptual theory AND formulas/calculations are central. "
+    "Label DE: \"Konzept & Rechnung\", EN: \"Balanced concept + calculation\".\n"
     "Examples: physics theory + calculations, economics, chemistry, engineering science, "
-    "computer science theory, data science, finance, materials testing.\n\n"
-    "STEP 2 — Follow the engine's block structure:\n\n"
-    "═══ ENGINE 1: math-heavy ═══\n"
-    "Use keyFormulas with full formula cards (only source-supported and directly relevant). "
-    "Use methodGuide to help students pick the right formula/theorem for each situation. "
-    "Use workedExamples with complete numeric/symbolic solutions — at least one basic and "
-    "one exam-style. Verify every calculation step before returning (CRITICAL: a wrong "
-    "example destroys trust). stepByStepMethod must be topic-specific: identify givens, "
-    "identify unknowns, choose formula, check assumptions, substitute, solve, check units "
-    "and plausibility. Use adaptiveBlocks only if needed. selfCheck should include a mini "
-    "calculation. practiceTasks at easy/medium/exam levels.\n\n"
-    "═══ ENGINE 2: concept-light-math ═══\n"
-    "Use this engine for ALL technical/engineering/science subjects, even when no formulas "
-    "are present. If the topic involves material properties, manufacturing processes, "
-    "technical classifications, engineering mechanisms, or scientific concepts — this is "
-    "the correct engine.\n"
-    "keyFormulas = [] unless formulas are genuinely central to the topic. Focus on:\n"
-    "- adaptiveBlocks with: \"Definition\", \"Classification\", \"Comparison Table\" "
-    "(use body field with markdown table — columns like Type|Principle|Application|"
-    "Advantage|Disadvantage|Exam clue), \"Selection Criteria\", \"Key Statements\" "
-    "(title: \"Prüfungsrelevante Kernaussagen\" or equivalent in lesson language), "
-    "\"Process Map\", \"Mechanism\", \"Variants\", \"Conditions\", \"Applications\".\n"
-    "- CRITICAL: Comparison tables MUST include actual data rows, not just headers. "
-    "If you create a table, fill every row with source-supported values. An empty table "
-    "with only column headers is worse than no table — it looks broken.\n"
-    "- Classification completeness: for classification topics (e.g. DIN 8580), include ALL "
-    "groups — do not omit groups because evidence is thin.\n"
-    "- Only list specific examples under a group if the source clearly supports it.\n"
-    "- Prefer overview sources for classification topics.\n"
-    "- Comparison tables are the most exam-valuable block — always include one.\n"
-    "- Optional formula/parameter cards only if numeric criteria are truly central.\n"
-    "- workedExamples should be application cases (\"Mini-Fallbeispiel\"), not calculations.\n"
-    "- stepByStepMethod must be topic-specific and technical. For material/process topics: "
-    "1. Identify which property is relevant (strength, toughness, hardness, formability...), "
-    "2. Distinguish between processing requirements and final product requirements, "
-    "3. Identify the material state (e.g. ferritic-pearlitic, annealed, hardened, martensitic), "
-    "4. Describe how the state affects the relevant properties, "
-    "5. Select an appropriate modification process (heat treatment, surface hardening, etc.), "
-    "6. Justify why this process matches the required property (exam-ready reasoning). "
-    "For other technical subjects: define → classify → explain principle → "
-    "compare with alternatives → state advantages/disadvantages → justify for the given case.\n"
-    "- selfCheck: concept question + classification question + application question.\n\n"
-    "═══ ENGINE 3: no-math (humanities / essay subjects only) ═══\n"
-    "This engine is ONLY for humanities, social sciences, and essay-based subjects "
-    "(history, law, politics, philosophy, literature, sociology, marketing, pedagogy). "
-    "If the topic is technical or engineering-related, you MUST use concept-light-math.\n"
-    "keyFormulas = [] (always empty). Focus on:\n"
-    "- adaptiveBlocks with: \"Key Terms\" (term + definition pairs), \"Context\" "
-    "(historical/legal/social/theoretical background), a structure map chosen from: "
-    "\"Timeline\", \"Argument Map\", \"Cause-Effect\", \"Rule-Exception\", "
-    "\"Concept Hierarchy\", \"Theory Comparison\". "
-    "Also: \"Main Ideas\" (3-6 most important ideas), \"Comparison\" (related concepts, "
-    "theories, authors, rules, cases), \"Key Statements\".\n"
-    "- Add an adaptiveBlock \"Exam Answer Structure\" showing how to write an exam answer: "
-    "1. Define key term, 2. Give context, 3. Explain main idea, 4. Add example/evidence, "
-    "5. Compare or evaluate, 6. Conclude clearly.\n"
-    "- workedExamples should be short written-answer tasks with model structure.\n"
-    "- stepByStepMethod = how to structure a written exam answer for this topic.\n"
-    "- selfCheck: definition + comparison + application/argument question.\n\n"
-    "═══ ENGINE 4: balanced ═══\n"
-    "Combine concept explanation AND formula cards. Focus on:\n"
-    "- adaptiveBlocks with: \"Concept Map\" (show how ideas connect, e.g. Concept A → "
-    "measured by Formula B → used when Condition C), \"Core Theory\" (definitions, "
-    "principles, conditions, assumptions), \"Key Statements\".\n"
-    "- keyFormulas: include central formulas with full cards.\n"
-    "- methodGuide: when to use concept explanation vs formula calculation vs comparison.\n"
-    "- workedExamples: one conceptual, one calculation, one mixed (explain + calculate + "
-    "interpret). All exam-style.\n"
-    "- stepByStepMethod: 1. Identify question type (explanation/comparison/calculation), "
-    "2. If conceptual: define, explain, compare, apply. 3. If calculation: choose formula, "
-    "check assumptions, solve. 4. If mixed: explain concept first, then calculate. "
-    "5. End with interpretation of result.\n"
-    "- selfCheck: concept + formula choice + calculation + interpretation.\n"
-    "- practiceTasks: one conceptual, one calculation, one mixed.\n\n"
+    "finance, materials testing, data science.\n\n"
+    "\"coding\" — programming, algorithms, data structures, software concepts. "
+    "Label DE: \"Programmierkonzept\", EN: \"Coding concept\".\n"
+    "Examples: programming languages, algorithms, data structures, software engineering, "
+    "databases, operating systems, networks.\n\n"
+    "\"language-learning\" — grammar, vocabulary, writing skills, language acquisition. "
+    "Label DE: \"Sprachlernkonzept\", EN: \"Language learning\".\n"
+    "Examples: German as foreign language, English, grammar rules, vocabulary, writing.\n\n"
+    # ── ENGINE BLOCKS ──
+    "═══ STEP 2: SELECT ADAPTIVE BLOCKS PER ENGINE ═══\n\n"
+    "The universal shell (learningGoal, bigPicture, simpleExplanation, coreExplanation, "
+    "keyDetails, commonMistakes, examTraps, selfCheck, practiceTasks, nextStep, sources) "
+    "is ALWAYS present. The following sections ADAPT per engine:\n\n"
+    "── ENGINE: math-heavy ──\n"
+    "keyFormulas: full formula cards (source-supported, directly relevant).\n"
+    "adaptiveBlocks: optional concept blocks if needed.\n"
+    "methodGuide: help students pick the right formula/theorem per situation.\n"
+    "stepByStepMethod: 1. Identify givens and unknowns, 2. Choose the correct formula, "
+    "3. Check assumptions and conditions, 4. Substitute values carefully, 5. Solve step "
+    "by step, 6. Check units, signs, and plausibility.\n"
+    "workedExamples: complete numeric/symbolic solutions — at least one basic and one "
+    "exam-style. RECALCULATE every step. A wrong example destroys trust.\n"
+    "selfCheck: include a mini calculation.\n"
+    "practiceTasks: easy/medium/exam levels.\n\n"
+    "── ENGINE: technical-concept ──\n"
+    "keyFormulas: [] unless formulas are genuinely central.\n"
+    "adaptiveBlocks MUST include:\n"
+    "- \"Definition\" — key terms with precise definitions from sources.\n"
+    "- \"Classification\" — systematic grouping (e.g. DIN 8580). Include ALL groups; "
+    "only list specific examples under a group if source-supported.\n"
+    "- \"Comparison Table\" — body field with markdown table. Columns like "
+    "Type|Principle|Application|Advantage|Disadvantage|Exam clue. CRITICAL: tables MUST "
+    "include actual data rows, not just headers. An empty table is worse than no table.\n"
+    "- \"Process → Effect → Application\" — for process topics: process|principle|effect|"
+    "application|advantage|disadvantage|exam trap.\n"
+    "- \"Selection Criteria\" — when to use which process/method/material.\n"
+    "- \"Key Statements\" — title: \"Prüfungsrelevante Kernaussagen\" or equivalent.\n"
+    "Also consider: \"Process Map\", \"Mechanism\", \"Variants\", \"Conditions\", "
+    "\"Applications\".\n"
+    "methodGuide: when to use which concept/process/classification.\n"
+    "stepByStepMethod (topic-specific, NOT essay-style): For material/process topics: "
+    "1. Identify which property is relevant, 2. Distinguish processing vs product "
+    "requirements, 3. Identify the material state, 4. Describe how state affects "
+    "properties, 5. Select appropriate modification process, 6. Justify for exam. "
+    "For classification topics: define → classify → explain principle → compare with "
+    "alternatives → state advantages/disadvantages → justify for the given case.\n"
+    "workedExamples: application cases (\"Mini-Fallbeispiel\"), not calculations. "
+    "Scenario → which concept/process applies → reasoning → correct conclusion → "
+    "exam wording.\n"
+    "selfCheck: concept + classification + application question.\n\n"
+    "── ENGINE: no-math-theory ──\n"
+    "keyFormulas: [] (always empty).\n"
+    "adaptiveBlocks:\n"
+    "- \"Key Terms\" — term + definition + why it matters.\n"
+    "- \"Context\" — historical/legal/social/theoretical background.\n"
+    "- A structure map chosen from: \"Timeline\", \"Argument Map\", \"Cause-Effect\", "
+    "\"Concept Hierarchy\", \"Theory Comparison\".\n"
+    "- \"Main Ideas\" — 3-6 most important ideas.\n"
+    "- \"Comparison\" — related concepts, theories, authors, rules.\n"
+    "- \"Exam Answer Structure\" — how to write an exam answer: 1. Define key term, "
+    "2. Give context, 3. Explain main idea, 4. Add example/evidence, 5. Compare or "
+    "evaluate, 6. Conclude clearly.\n"
+    "- \"Key Statements\" — exam-relevant key statements.\n"
+    "stepByStepMethod: 1. Define the key term and place it in context, 2. Explain the "
+    "background, 3. Explain the main idea or central argument, 4. Support with example "
+    "or source, 5. Compare or evaluate and conclude.\n"
+    "workedExamples: model written-answer tasks with structure.\n"
+    "selfCheck: definition + comparison + application/argument question.\n\n"
+    "── ENGINE: law-rule ──\n"
+    "keyFormulas: [] (always empty).\n"
+    "adaptiveBlocks:\n"
+    "- \"Rule\" — the legal rule or regulation, clearly stated.\n"
+    "- \"Elements / Conditions\" — each condition of the rule explained.\n"
+    "- \"Exceptions\" — exceptions and limitations.\n"
+    "- \"Case Application\" — how to apply facts to the rule.\n"
+    "- \"Common Misinterpretations\" — frequent wrong applications.\n"
+    "- \"Key Statements\" — exam-relevant key statements.\n"
+    "stepByStepMethod: 1. Identify the legal rule, 2. Check each condition, "
+    "3. Apply facts to the rule, 4. Discuss exceptions, 5. Conclude clearly.\n"
+    "workedExamples: case application with facts → rule → application → conclusion.\n"
+    "selfCheck: rule identification + case application + exception question.\n\n"
+    "── ENGINE: balanced ──\n"
+    "keyFormulas: central formulas with full cards.\n"
+    "adaptiveBlocks:\n"
+    "- \"Concept Map\" — how ideas connect (Concept A → measured by Formula B → "
+    "used when Condition C).\n"
+    "- \"Core Theory\" — definitions, principles, conditions, assumptions.\n"
+    "- \"Key Statements\".\n"
+    "methodGuide: when to use concept explanation vs formula calculation vs comparison.\n"
+    "stepByStepMethod: 1. Identify question type (explanation/comparison/calculation), "
+    "2. If conceptual: define, explain, compare, apply, 3. If calculation: choose "
+    "formula, check assumptions, solve, 4. If mixed: explain concept first, then "
+    "calculate, 5. Interpret the result.\n"
+    "workedExamples: one conceptual, one calculation, one mixed. All exam-style.\n"
+    "selfCheck: concept + formula choice + calculation + interpretation.\n"
+    "practiceTasks: one conceptual, one calculation, one mixed.\n\n"
+    "── ENGINE: coding ──\n"
+    "keyFormulas: [] (always empty).\n"
+    "adaptiveBlocks:\n"
+    "- \"Concept Explanation\" — what it does and why.\n"
+    "- \"Code Example\" — actual code with line-by-line explanation.\n"
+    "- \"Algorithm Steps\" — ordered steps of the algorithm.\n"
+    "- \"Complexity\" — time/space complexity.\n"
+    "- \"Common Bugs\" — frequent programming mistakes.\n"
+    "- \"Key Statements\".\n"
+    "stepByStepMethod: 1. Explain the concept, 2. Show the algorithm, 3. Walk through "
+    "an example, 4. Mention complexity, 5. Point out common bugs.\n"
+    "workedExamples: code example with input → code → output → explanation → common bug.\n"
+    "selfCheck: concept + code tracing + debugging question.\n\n"
+    "── ENGINE: language-learning ──\n"
+    "keyFormulas: [] (always empty).\n"
+    "adaptiveBlocks:\n"
+    "- \"Grammar Rule\" — the rule clearly stated.\n"
+    "- \"Examples\" — correct usage examples.\n"
+    "- \"Wrong vs Correct\" — common learner mistakes with corrections.\n"
+    "- \"Vocabulary\" — key words/phrases.\n"
+    "- \"Practice Sentences\" — fill-in or translation exercises.\n"
+    "stepByStepMethod: 1. State the grammar rule, 2. Show examples, 3. Identify common "
+    "mistakes, 4. Practice with sentences, 5. Self-correct.\n"
+    "workedExamples: grammar application with wrong→correct pairs.\n"
+    "selfCheck: rule recognition + sentence completion + error correction.\n\n"
+    # ── UNIVERSAL RULES ──
     "═══ RULES FOR ALL ENGINES ═══\n"
     "CRITICAL: If a topic does not need formulas, do NOT include keyFormulas and do NOT "
     "return text like \"No formula was strongly supported\". Return keyFormulas as [] and "
     "fill adaptiveBlocks with the right subject-specific blocks instead.\n\n"
-    "Write like a tutor coaching the student for the exam, not like an encyclopedia. "
-    "After explaining a concept, connect it to the exam with inline notes like "
-    "\"Merksatz für die Prüfung: ...\" or \"Prüfungsfalle: ...\" in coreExplanation "
-    "and keyDetails. This makes the lesson feel like real exam coaching.\n\n"
     "Add an adaptiveBlock \"Exam Questions\" (title in lesson language, e.g. \"Typische "
     "Prüfungsfragen\") with 3-5 professor-style questions, each followed by a model "
     "answer (Musterantwort).\n\n"
-    "selfCheck: 2-3 questions with hint, answer, explanation, stepByStep. At least one "
-    "applied question (classify, calculate, argue, apply — not just definitional).\n\n"
-    "stepByStepMethod must ALWAYS be topic-specific. NEVER return generic steps like "
-    "\"Identify the system\", \"Choose the right theorem\", \"List assumptions\".\n\n"
+    "stepByStepMethod must ALWAYS be topic-specific. NEVER return generic steps.\n\n"
     "Source relevance: only cite sources that directly support the lesson content. Do NOT "
     "cite chapter files about unrelated topics. Only include a source in groundedSources "
     "if the lesson actually references information from it.\n\n"
-    "Content type label: write in lesson language. German: \"Formeln & Rechnung\", "
-    "\"Konzept & leichte Formeln\", \"Rein konzeptuell\", \"Konzept & Rechnung\". "
-    "English: \"Math-heavy\", \"Concept + light math\", \"Conceptual\", \"Balanced\".\n"
     "Lesson mode label: write in lesson language. German: \"Prüfungsvorbereitung\", "
     "\"Einfache Erklärung\", \"Professorstil\", \"Praktische Anwendung\", "
     "\"Schnelle Wiederholung\".\n\n"
+    # ── FORMULA RULES ──
     "Formula card rules (calculation topics only):\n"
-    "Before returning a formula card, check that the formula is copied correctly, the "
-    "meaning explains the formula correctly, the source page supports it, and the formula "
-    "is DIRECTLY AND CENTRALLY relevant to the selected topic — not merely from the same "
-    "chapter or general area. A formula about rotational dynamics does not belong in a "
-    "lesson on linear point-mass dynamics unless labelled as \"related\" with a clear "
-    "explanation of the connection. If the formula is nearby but not central, "
-    "set relevance to \"related\" and explain the relation briefly in conditions. If it is "
-    "uncertain, malformed, or only weakly connected, omit it. A wrong formula is worse than "
-    "no formula.\n\n"
+    "Check that formula is copied correctly, meaning is correct, source page supports it, "
+    "and formula is DIRECTLY relevant to the topic. If nearby but not central, set "
+    "relevance to \"related\" and explain. If uncertain or malformed, omit it. "
+    "A wrong formula is worse than no formula.\n\n"
+    # ── CITATION RULES ──
     "Citation rules:\n"
-    "- Every formula/adaptive block must include a source string copied from one of the source labels.\n"
-    "- Every important claim should be grounded in a source label where possible.\n"
+    "- Every formula/adaptive block must include a source string from the source labels.\n"
     "- Never cite a source label that is not in COURSE EVIDENCE.\n"
-    "- If citation coverage is weak, include a helpful citationWarning IN THE LESSON LANGUAGE. "
-    "German example: \"Diese Lektion basiert auf den verfügbaren Kursquellen. Falls bestimmte "
-    "Beispiele, Übungen oder Details fehlen, lade zusätzliche Materialien hoch, "
-    "um die Erklärung genauer zu machen.\" "
-    "English example: \"This lesson is based on the available course sources. If specific "
-    "examples, exercises, or details are missing, upload additional materials to make the "
-    "explanation more precise.\"\n\n"
+    "- If citation coverage is weak, include a helpful citationWarning IN THE LESSON "
+    "LANGUAGE.\n\n"
+    # ── QUALITY RULES ──
     "Quality rules:\n"
-    "- Keep the ENTIRE lesson in the requested lesson language — including all text, "
-    "explanations, labels in meaning/variables/conditions fields, commonMistake text, "
-    "and self-check questions. Never mix languages except for original technical terms.\n"
-    "- Do not write dead sections like \"No strong course evidence for this section\". "
-    "If evidence is incomplete, provide a cautious method inferred from examples and say so.\n"
-    "- stepByStepMethod must be TOPIC-SPECIFIC. The subject adaptation section above already "
-    "gives detailed step-by-step templates per knowledge type. Follow those. "
-    "NEVER return generic steps like \"Identify the system\", \"Choose the right theorem\", "
-    "\"List the relevant assumptions\", or \"Substitute values\". These are useless to students.\n\n"
-    "Worked example rules (CRITICAL — a wrong example destroys student trust):\n"
-    "- Before returning a worked example, RECALCULATE every step yourself. Verify that each "
-    "equation follows from the previous one, that force decompositions use the correct "
-    "trig functions (sin vs cos), and that the final numeric answer is correct.\n"
-    "- For physics: check sign conventions, verify which component is sin vs cos for the "
-    "given angle definition, and confirm that initial conditions are correctly applied.\n"
-    "- If you cannot verify the calculation with confidence, return it as a practiceTask "
-    "instead of a workedExample.\n"
-    "- Worked examples must end with a real numeric or symbolic final answer. If the sources "
-    "do not support a complete worked example, return it as a practiceTask instead.\n"
-    "- Stay focused on the selected topic. Related concepts are allowed only when labelled "
-    "as related and when their relation is explained.\n\n"
+    "- Keep the ENTIRE lesson in the requested lesson language. Never mix languages "
+    "except for original technical terms.\n"
+    "- Do not write dead sections like \"No strong course evidence for this section\".\n"
+    "- NEVER return generic steps in stepByStepMethod.\n"
+    "- Comparison tables MUST have data rows, not just headers.\n"
+    "- Worked examples must end with a real final answer/conclusion. If incomplete, "
+    "return as practiceTask instead.\n"
+    "- Recalculate every step in math worked examples before returning.\n\n"
+    # ── JSON SHAPE ──
     "Return ONLY JSON with exactly this shape:\n"
     "{"
-    '"title":"","subjectArea":"","contentType":"","lessonMode":"","learningGoal":"",'
-    '"bigPicture":"","simpleExplanation":"","coreExplanation":"","keyDetails":[""],'
+    '"title":"","subjectArea":"","contentType":"","contentTypeLabel":"","lessonMode":"",'
+    '"learningGoal":"","bigPicture":"","simpleExplanation":"","coreExplanation":"",'
+    '"keyDetails":[""],'
     '"keyFormulas":[{"formula":"","meaning":"","variables":"","conditions":"","source":"","commonMistake":"","relevance":"","confidence":""}],'
     '"methodGuide":[{"method":"","useWhen":"","avoidWhen":"","source":""}],'
     '"adaptiveBlocks":[{"type":"","title":"","body":"","items":[""],"source":""}],'
     '"workedExamples":[{"title":"","problem":"","solutionSteps":[""],"finalAnswer":"","sourceOrBasis":"","difficulty":"","isMiniExample":false}],'
     '"commonMistakes":[""],"examTraps":[""],'
     '"selfCheck":[{"question":"","hint":"","answer":"","explanation":"","stepByStep":[""]}],'
-    '"practiceTasks":[{"prompt":"","goal":"","source":""}],'
+    '"practiceTasks":[{"prompt":"","goal":"","source":"","difficulty":""}],'
     '"nextStep":"","nextTopics":[""],'
-    '"groundedSources":[""],'
+    '"groundedSources":[{"label":"","role":""}],'
     '"citationWarning":""'
     "}"
 )
@@ -604,10 +685,21 @@ def _normalize_lesson(data: dict[str, Any], topic: str, lesson_mode: str = "exam
     worked_examples_raw = _as_list(data.get("workedExamples"))
     if not worked_examples_raw and (worked_raw or legacy_worked):
         worked_examples_raw = [worked_raw or {"problem": legacy_worked}]
+    raw_sources = _as_list(data.get("groundedSources"))
+    grounded_sources: list[str] = []
+    for gs in raw_sources:
+        if isinstance(gs, dict):
+            label = _as_str(gs.get("label"))
+            role = _as_str(gs.get("role"))
+            if label:
+                grounded_sources.append(label + (f" ({role})" if role else ""))
+        elif isinstance(gs, str) and _as_str(gs):
+            grounded_sources.append(_as_str(gs))
     lesson = {
         "title": _as_str(data.get("title")) or topic,
         "subjectArea": _as_str(data.get("subjectArea")),
         "contentType": _as_str(data.get("contentType")),
+        "contentTypeLabel": _as_str(data.get("contentTypeLabel")),
         "lessonMode": _as_str(data.get("lessonMode")) or _MODE_LABELS.get(lesson_mode, "Exam Preparation"),
         "learningGoal": _as_str(data.get("learningGoal")),
         "bigPicture": _as_str(data.get("bigPicture")),
@@ -633,7 +725,7 @@ def _normalize_lesson(data: dict[str, Any], topic: str, lesson_mode: str = "exam
         "practiceTasks": [],
         "nextStep": _as_str(data.get("nextStep")),
         "nextTopics": [_as_str(x) for x in _as_list(data.get("nextTopics")) if _as_str(x)],
-        "groundedSources": [_as_str(x) for x in _as_list(data.get("groundedSources")) if _as_str(x)],
+        "groundedSources": grounded_sources,
         "citationWarning": _as_str(data.get("citationWarning")),
     }
     for raw in _as_list(data.get("keyFormulas")):
@@ -722,6 +814,7 @@ def _normalize_lesson(data: dict[str, Any], topic: str, lesson_mode: str = "exam
                 "prompt": prompt,
                 "goal": _as_str(raw.get("goal")),
                 "source": _as_str(raw.get("source")),
+                "difficulty": _as_str(raw.get("difficulty")),
             })
     return lesson
 
@@ -848,7 +941,7 @@ def _fallback_method(topic: str, language: str, content_type: str = "") -> list[
             "Substitute the values and solve step by step.",
             "Check units and plausibility of the result.",
         ]
-    if "concept-light-math" in ct or "konzept  leichte" in ct or "concept  light" in ct:
+    if "technical-concept" in ct or "technisch" in ct or "concept-light" in ct or "konzept  leichte" in ct:
         if is_de:
             return [
                 "Definiere den Begriff und ordne ihn in die Klassifikation ein.",
@@ -864,7 +957,55 @@ def _fallback_method(topic: str, language: str, content_type: str = "") -> list[
             "State advantages, disadvantages, and typical applications.",
             "Justify the choice for a concrete scenario (exam answer).",
         ]
-    if "no-math" in ct or "rein konzept" in ct or "conceptual" in ct:
+    if "law" in ct or "regel" in ct or "rule" in ct:
+        if is_de:
+            return [
+                "Identifiziere die einschlägige Norm oder Regel.",
+                "Prüfe jede Tatbestandsvoraussetzung einzeln.",
+                "Wende den Sachverhalt auf die Regel an.",
+                "Diskutiere Ausnahmen und Einschränkungen.",
+                "Formuliere ein klares Ergebnis.",
+            ]
+        return [
+            "Identify the applicable rule or regulation.",
+            "Check each condition of the rule.",
+            "Apply the facts to the rule.",
+            "Discuss exceptions and limitations.",
+            "Formulate a clear conclusion.",
+        ]
+    if "coding" in ct or "programmier" in ct:
+        if is_de:
+            return [
+                "Erkläre das Konzept und seinen Zweck.",
+                "Zeige den Algorithmus oder die Datenstruktur.",
+                "Gehe ein Beispiel Schritt für Schritt durch.",
+                "Bestimme die Komplexität (Zeit/Speicher).",
+                "Erkenne häufige Fehler und Fallen.",
+            ]
+        return [
+            "Explain the concept and its purpose.",
+            "Show the algorithm or data structure.",
+            "Walk through an example step by step.",
+            "Determine complexity (time/space).",
+            "Identify common bugs and pitfalls.",
+        ]
+    if "language" in ct or "sprach" in ct:
+        if is_de:
+            return [
+                "Formuliere die Grammatikregel klar.",
+                "Zeige korrekte Anwendungsbeispiele.",
+                "Identifiziere typische Lernerfehler.",
+                "Übe mit eigenen Sätzen.",
+                "Korrigiere und erkläre Fehler.",
+            ]
+        return [
+            "State the grammar rule clearly.",
+            "Show correct usage examples.",
+            "Identify common learner mistakes.",
+            "Practice with your own sentences.",
+            "Correct and explain errors.",
+        ]
+    if "no-math" in ct or "theorie" in ct or "theory" in ct or "rein konzept" in ct or "conceptual" in ct:
         if is_de:
             return [
                 "Definiere den Schlüsselbegriff und ordne ihn in den Fachkontext ein.",
@@ -1000,6 +1141,19 @@ def _validate_lesson_content(
                 lesson["citationWarning"] += " " + warning
         else:
             lesson["citationWarning"] = warning
+
+    valid_blocks: list[dict[str, Any]] = []
+    for block in lesson.get("adaptiveBlocks") or []:
+        body = _as_str(block.get("body"))
+        if body and "|" in body:
+            lines = [ln.strip() for ln in body.split("\n") if ln.strip() and "|" in ln]
+            data_lines = [ln for ln in lines if not re.match(r"^[\s|:-]+$", ln)]
+            if len(data_lines) <= 1:
+                continue
+        if _is_dead_evidence_text(body) and not block.get("items"):
+            continue
+        valid_blocks.append(block)
+    lesson["adaptiveBlocks"] = valid_blocks
 
     lesson["stepByStepMethod"] = [
         step for step in (lesson.get("stepByStepMethod") or [])
