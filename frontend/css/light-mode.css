@@ -2368,3 +2368,491 @@ body:not(.night) .minallo-diagram svg [fill="#fff"],
 body:not(.night) .minallo-diagram svg [fill="white"] {
   fill: var(--lm-text) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * AI SIDE PANEL — full light-mode redesign
+ * Covers: document-rail drawer, rail buttons, hosted AI panel, composer,
+ * code blocks, sources, action buttons, scrollbar.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Rail (right shortcut buttons) ────────────────────────────────────── */
+body:not(.night) .dr-rail {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(245, 248, 255, 0.92)) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border: 1px solid #d9e6ff !important;
+  box-shadow: 0 18px 42px rgba(35, 65, 140, 0.14) !important;
+}
+body:not(.night) .dr-rail-avatar {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) .dr-rail-btn {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) .dr-rail-btn:hover {
+  background: #eef5ff !important;
+  border-color: #c4d8ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) .dr-rail-btn.is-active {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.28) !important;
+}
+
+/* ── Drawer shell ─────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer {
+  background:
+    radial-gradient(circle at 90% 8%, rgba(79, 109, 246, 0.10), transparent 26%),
+    linear-gradient(180deg, #fbfdff 0%, #f3f7ff 100%) !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 18px 42px rgba(35, 65, 140, 0.14) !important;
+  color: #17233f !important;
+}
+body:not(.night) .dr-orb-a,
+body:not(.night) .dr-orb-b {
+  display: none !important;
+}
+
+/* ── Drawer header ────────────────────────────────────────────────────── */
+body:not(.night) .dr-header {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-header-icon {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) .dr-title {
+  color: #17233f !important;
+}
+body:not(.night) .dr-subtitle {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-status-dot {
+  background: #34c58a !important;
+  box-shadow: 0 0 0 4px rgba(52, 197, 138, 0.14) !important;
+  border-color: #fbfdff !important;
+}
+body:not(.night) .dr-icon-btn {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #4f5f7d !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) .dr-icon-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── File chip (selected PDF indicator) ───────────────────────────────── */
+body:not(.night) .dr-drawer .ai-file-chip,
+body:not(.night) .dr-drawer .dr-host-ai .ai-file-chip {
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3f5fc9 !important;
+}
+
+/* ── Message area background ──────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-msgs {
+  background: transparent !important;
+}
+
+/* ── Bot bubble (transparent, readable text) ──────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot {
+  background: transparent !important;
+  border: 0 !important;
+  color: #17233f !important;
+  box-shadow: none !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot p,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot li,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot span,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot div {
+  color: #17233f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot b,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot strong {
+  color: #111a33 !important;
+  font-weight: 800 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot small {
+  color: #8390ad !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot .md-h {
+  color: #111a33 !important;
+}
+
+/* ── User bubble ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user {
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #17233f !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user * {
+  color: #17233f !important;
+}
+
+/* ── Sender labels ────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.bot-sender {
+  color: #4f6df6 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.bot-sender .msg-sender-dot {
+  background: #4f6df6 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.user-sender {
+  color: #0ea5e9 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.user-sender .msg-sender-dot {
+  background: #0ea5e9 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-time {
+  color: #8390ad !important;
+}
+
+/* ── Inline code ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble code {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── Code blocks ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .md-code-block {
+  background: #f4f8ff !important;
+  border: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-header {
+  background: #edf3ff !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-lang-tag {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-copy {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-copy:hover {
+  background: rgba(79, 109, 246, 0.10) !important;
+  color: #3859e8 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-block pre {
+  color: #17233f !important;
+}
+
+/* ── Blockquotes ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble .md-bq {
+  border-left-color: #4f6df6 !important;
+  background: #eef5ff !important;
+  color: #4f5f7d !important;
+}
+
+/* ── Math / formula blocks ────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .katex-display,
+body:not(.night) .dr-drawer .dr-host-ai .math-block,
+body:not(.night) .dr-drawer .dr-host-ai .MathJax_Display {
+  background: #f4f8ff !important;
+  border: 1px solid #d9e6ff !important;
+  border-radius: 14px !important;
+  padding: 10px 12px !important;
+  color: #17233f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .katex,
+body:not(.night) .dr-drawer .dr-host-ai .katex * {
+  color: #17233f !important;
+}
+
+/* ── RAG source pills ─────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-rag-sources {
+  border-top-color: #d9e6ff !important;
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-rag-sources > summary {
+  color: #17233f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-rag-sources li {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-src-chip,
+body:not(.night) .dr-drawer .dr-host-ai .ai-source-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3f5fc9 !important;
+  border-radius: 999px !important;
+  font-weight: 800 !important;
+}
+
+/* ── Action buttons (Copy, Export, Download) ──────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-export-row button,
+body:not(.night) .dr-drawer .dr-host-ai .ai-copy,
+body:not(.night) .dr-drawer .dr-host-ai .ai-action-btn,
+body:not(.night) .dr-drawer .dr-host-ai .msg-action-btn {
+  background: #ffffff !important;
+  border: 1px solid #c4d8ff !important;
+  color: #2c3857 !important;
+  box-shadow: 0 4px 10px rgba(35, 65, 140, 0.07) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-export-row button:hover,
+body:not(.night) .dr-drawer .dr-host-ai .ai-copy:hover,
+body:not(.night) .dr-drawer .dr-host-ai .ai-action-btn:hover,
+body:not(.night) .dr-drawer .dr-host-ai .msg-action-btn:hover {
+  background: #eef5ff !important;
+  border-color: #9db8ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── Thinking / loading status ────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-thinking-card {
+  color: #4f5f7d !important;
+}
+
+/* ── Composer / input area ────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-input-area {
+  border-top: 1px solid #d9e6ff !important;
+  background: rgba(255, 255, 255, 0.45) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-input-box {
+  background: #ffffff !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 12px 32px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-input-box:focus-within {
+  border-color: #8ea8ff !important;
+  box-shadow:
+    0 0 0 4px rgba(79, 109, 246, 0.12),
+    0 12px 32px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-textarea {
+  color: #17233f !important;
+  background: transparent !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-textarea::placeholder {
+  color: #8a98b7 !important;
+}
+
+/* ── Bottom row: mode pill, char count, tool buttons ──────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-mode-pill {
+  background: #eaf4ff !important;
+  color: #4f6df6 !important;
+  border: 1px solid #cfe2ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-mode-pill:hover {
+  background: #dfeeff !important;
+  border-color: #b8d4ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-char-count {
+  color: #a0abc2 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-attach-btn,
+body:not(.night) .dr-drawer .dr-host-ai .ai-snip-btn {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #50607f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-attach-btn:hover,
+body:not(.night) .dr-drawer .dr-host-ai .ai-snip-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── Send button ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-send {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.25) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-send:hover {
+  background: linear-gradient(145deg, #7090ff, #5878f6) !important;
+  box-shadow: 0 14px 26px rgba(79, 109, 246, 0.32) !important;
+}
+
+/* ── Quick-action chips (if visible) ──────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-tip {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-tip:hover {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+}
+
+/* ── Chip drawer (sub-menus) ──────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .chip-drawer {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #17233f !important;
+  box-shadow: 0 8px 24px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub:hover,
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub.is-active,
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub.active {
+  background: #eef5ff !important;
+  border-color: #4f6df6 !important;
+  color: #4f6df6 !important;
+}
+
+/* ── Problem Solver strip ─────────────────────────────────────────────── */
+body:not(.night) .dr-problem-strip {
+  background: linear-gradient(180deg, rgba(79, 109, 246, 0.06), rgba(79, 109, 246, 0.02)) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-problem-strip:hover {
+  background: linear-gradient(180deg, rgba(79, 109, 246, 0.10), rgba(79, 109, 246, 0.04)) !important;
+}
+body:not(.night) .dr-problem-strip-tag {
+  color: #4f6df6 !important;
+}
+body:not(.night) .dr-problem-strip-preview {
+  color: #8390ad !important;
+}
+body:not(.night) .dr-problem-strip-action {
+  color: #4f6df6 !important;
+  border-color: rgba(79, 109, 246, 0.35) !important;
+}
+
+/* ── Horizontal rule inside AI answers ────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble .md-hr {
+  border-top-color: #d9e6ff !important;
+}
+
+/* ── Scroll-to-bottom button ──────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-scroll-btn {
+  background: #ffffff !important;
+  border-color: #d9e6ff !important;
+  color: #4f6df6 !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.10) !important;
+}
+
+/* ── Scrollbar (subtle light) ─────────────────────────────────────────── */
+body:not(.night) .dr-drawer *::-webkit-scrollbar {
+  width: 8px !important;
+}
+body:not(.night) .dr-drawer *::-webkit-scrollbar-thumb {
+  background: #c9d9f8 !important;
+  border-radius: 999px !important;
+}
+body:not(.night) .dr-drawer *::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* ── Also override the standalone #aiPanel (non-drawer) in light mode ── */
+body:not(.night) #aiPanel:not(.dr-host-ai) {
+  background:
+    radial-gradient(circle at 90% 8%, rgba(79, 109, 246, 0.10), transparent 26%),
+    linear-gradient(180deg, #fbfdff 0%, #f3f7ff 100%) !important;
+  border-left: 1px solid #cddfff !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-hdr {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-hdr h3 {
+  color: #4f6df6 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-hdr p {
+  color: #4f5f7d !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-av {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-status-dot {
+  background: #34c58a !important;
+  border-color: #fbfdff !important;
+  box-shadow: 0 0 0 4px rgba(52, 197, 138, 0.14) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-icon-btn {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #4f5f7d !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-icon-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-close {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #4f5f7d !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-close:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot {
+  color: #17233f !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot p,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot li,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot span,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot div {
+  color: #17233f !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot b,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot strong {
+  color: #111a33 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.user {
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #17233f !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-input-area {
+  border-top: 1px solid #d9e6ff !important;
+  background: rgba(255, 255, 255, 0.45) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-input-box {
+  background: #ffffff !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 12px 32px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-tip {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-tip:hover {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-sender.bot-sender {
+  color: #4f6df6 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-sender.user-sender {
+  color: #0ea5e9 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-action-btn {
+  background: #ffffff !important;
+  border: 1px solid #c4d8ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-action-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
