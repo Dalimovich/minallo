@@ -787,9 +787,10 @@ function initCourseStudyTools(co: HTMLElement, course: LegacyCourse): void {
   co.querySelectorAll<HTMLElement>('[data-course-tab]').forEach((tab) => {
     tab.addEventListener('click', () => {
       const tabName = tab.getAttribute('data-course-tab') || 'files';
-      setCourseStudyMode(co, course, tabName);
       if (typeof window.showCourseSection === 'function') {
         window.showCourseSection(course, tabName);
+      } else {
+        setCourseStudyMode(co, course, tabName);
       }
     });
   });

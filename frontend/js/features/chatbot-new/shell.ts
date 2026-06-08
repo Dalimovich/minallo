@@ -13,6 +13,13 @@ import {
   getThinkingContext,
   type AIThinkingStatus
 } from '../ai-chat/ai-thinking-status.js';
+import { routeStudyIntent } from '../ai-chat/intent-router.js';
+import {
+  findPrimaryCourseId,
+  generateDailyMission,
+  getDailyMission,
+  type DailyMissionResponse
+} from '../../services/study-service.js';
 
 /** Tiny i18n wrapper: delegates to window._t (set up by language.ts) and
  * falls back to the English string when the language store isn't ready yet
@@ -756,6 +763,16 @@ async function streamAiReply(
     // file uploads), route to the Python /ask-stream so plan-v2's RAG +
     // ranking + math template + verification all kick in. Otherwise fall
     // back to /api/ai for free-form chat + image/file handling.
+    const routed = await handleIntentRoute(state, bubble, thinking);
+    if (routed) {
+      state.messages.push({ role: 'assistant', text: routed });
+      setBubbleSubtitle(aiRow, 'course_files');
+      touchActiveChat();
+      saveChatStore();
+      appendBubbleActions(aiRow, routed);
+      return;
+    }
+
     const rag = ragEligibility(state.messages);
     let raw: string;
     if (rag) {
@@ -841,6 +858,85 @@ async function streamAiReply(
     setSendBtnMode(sendBtn, 'send');
     scrollMsgsToBottom(msgs);
   }
+}
+
+async function handleIntentRoute(
+  state: ConversationState,
+  bubble: HTMLElement | null,
+  thinking: AIThinkingStatus | null
+): Promise<string | null> {
+  const last = state.messages[state.messages.length - 1];
+  if (!last || last.role !== 'user' || !last.text) return null;
+  if ((last.images && last.images.length) || (last.files && last.files.length)) return null;
+
+  const courseId = findPrimaryCourseId();
+  const route = routeStudyIntent(last.text, courseId);
+  if (!route) return null;
+  if (thinking) await thinking.waitMinimum();
+  thinking?.remove(true);
+
+  if (route.needsClarification || !route.target.courseId) {
+    const text = 'Which course should I create this for? Open a course first, then ask again.';
+    if (bubble) renderRichBubble(bubble, text);
+    return text;
+  }
+
+  if (route.intent === 'daily_mission') {
+    let data = await getDailyMission(route.target.courseId);
+    if (!data.hasPlan) data = await generateDailyMission(route.target.courseId);
+    const text = renderDailyMissionText(data);
+    if (bubble) renderRichBubble(bubble, text);
+    return text;
+  }
+
+  if (route.intent === 'summary') {
+    const mod = await import('../../services/ai-service.js');
+    const result = await mod.generateStudyTool(route.target.courseId, 'summary') as { text?: string };
+    const text = 'Summary created from your current course sources.\n\n' + ((result && result.text) || 'No summary was returned.');
+    if (bubble) renderRichBubble(bubble, text);
+    return text;
+  }
+
+  if (route.intent === 'cheatsheet') {
+    const mod = await import('../../services/ai-service.js');
+    const result = await mod.generateCheatsheet(route.target.courseId, {});
+    const text = 'Cheatsheet created from your current course sources.\n\n' + ((result && result.text) || 'No cheatsheet was returned.');
+    if (bubble) renderRichBubble(bubble, text);
+    return text;
+  }
+
+  const text = 'I can make notes from a selected file or course source. Open the source you want, then ask "make notes from this lecture".';
+  if (bubble) renderRichBubble(bubble, text);
+  return text;
+}
+
+function renderDailyMissionText(data: DailyMissionResponse): string {
+  if (data.summary.noValidCandidates) {
+    return 'Daily Study Mission\n\nMinallo needs confirmed course sources before it can create trusted tasks. Review your Course Map or upload/re-index course files first.';
+  }
+  if (!data.tasks.length) {
+    return 'Daily Study Mission\n\nNo mission exists yet for today. Choose a course with confirmed sources and ask me to generate it.';
+  }
+  const lines = [
+    'Daily Study Mission',
+    '',
+    String(data.summary.completedTasks) + '/' + String(data.summary.totalTasks) + ' done · ' + String(data.summary.minutesRemaining) + ' min left',
+    ''
+  ];
+  (['must_do', 'should_do', 'optional'] as const).forEach((group) => {
+    const rows = data.tasks.filter((t) => t.priority_group === group && t.status !== 'replaced');
+    if (!rows.length) return;
+    lines.push(group === 'must_do' ? 'Must Do' : group === 'should_do' ? 'Should Do' : 'Optional');
+    rows.forEach((t, i) => {
+      const mark = t.status === 'completed' ? '[x]' : t.status === 'unavailable' ? '[!]' : '[ ]';
+      const pages = t.page_start ? ' · p.' + t.page_start + (t.page_end && t.page_end !== t.page_start ? '-' + t.page_end : '') : '';
+      lines.push(mark + ' ' + String(i + 1) + '. ' + t.title + ' · ' + t.estimated_minutes + ' min' + pages);
+      if (t.reason) lines.push('   ' + t.reason);
+    });
+    lines.push('');
+  });
+  lines.push('Use the task buttons in the mission card to start, mark done, skip, or move work.');
+  return lines.join('\n');
 }
 
 function chatbotThinkingContext(state: ConversationState): ReturnType<typeof getThinkingContext> {

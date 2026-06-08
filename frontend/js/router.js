@@ -11,6 +11,18 @@ var _ssRestoring = false; // suppress history pushes during state restore
 function _ssPushHistory(state, hash) {
   if (_ssHandlingPop || _ssRestoring || window._ssRestoring) return;
   try {
+    var cur = history.state || {};
+    if (
+      hash &&
+      window.location.hash === hash &&
+      cur &&
+      cur.view === state.view &&
+      cur.section === state.section &&
+      cur.courseId === state.courseId &&
+      cur.fileName === state.fileName
+    ) {
+      return;
+    }
     history.pushState(state, '', hash || window.location.pathname);
   } catch (e) {}
 }
@@ -131,7 +143,12 @@ function _finalizeNav(section) {
   } catch (e) {}
   var urlSection = section === 'studip' ? 'courses' : section;
   try {
-    history.pushState({ view: 'portal', section: section }, '', '#portal=' + encodeURIComponent(urlSection));
+    var nextHash = '#portal=' + encodeURIComponent(urlSection);
+    var cur = history.state || {};
+    if (cur.view === 'portal' && cur.section === section && window.location.hash === nextHash) {
+      return;
+    }
+    history.pushState({ view: 'portal', section: section }, '', nextHash);
   } catch (e) {}
 }
 
@@ -306,6 +323,15 @@ window.openCourse = function (c) {
   if (typeof _origOpenCourse === 'function') _origOpenCourse(c);
   saveState();
   var section = activeCourseSection || 'files';
+  var current = history.state || {};
+  if (
+    current.view === 'course' &&
+    current.courseId === (c.id || null) &&
+    current.section === section
+  ) {
+    setTimeout(_ssSyncUrl, 120);
+    return;
+  }
   _ssPushHistory(
     {
       view: 'course',

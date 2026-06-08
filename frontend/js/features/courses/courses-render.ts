@@ -202,6 +202,7 @@ function _buildStatPill(label: string, value: string, accent: string): string {
 export function sdRenderCourses(state: CoursesRenderState): void {
   const cl = document.getElementById('sdCourseList');
   if (!cl) return;
+  _renderDailyMissionPreview(state, cl);
   cl.innerHTML = '';
   const sem = state.SEMS[state.sdActiveSemId];
   if (!sem) {
@@ -373,6 +374,77 @@ export function sdRenderCourses(state: CoursesRenderState): void {
 
   _renderNextStepsBelowGrid(progressByCourse);
   _updateHeroStats(state, progressByCourse);
+}
+
+function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLElement): void {
+  let host = document.getElementById('sdDailyMissionPreview') as HTMLElement | null;
+  if (!host) {
+    host = document.createElement('section');
+    host.id = 'sdDailyMissionPreview';
+    host.className = 'sd-daily-mission-card';
+    beforeEl.parentElement?.insertBefore(host, beforeEl);
+  }
+  const sem = state.SEMS[state.sdActiveSemId];
+  const course = sem?.courses?.find((c) => c.id);
+  const courseId = course?.id || null;
+  const courseName = course?.name || 'your selected course';
+
+  const openAi = (): void => {
+    try { sessionStorage.setItem('ss_daily_mission_seed', 'to-do'); } catch { /* ignore */ }
+    if (typeof window.showPortalSection === 'function') window.showPortalSection('aipage');
+    window.setTimeout(() => {
+      const ta = document.querySelector<HTMLTextAreaElement>('.ncb-input-textarea');
+      if (!ta) return;
+      ta.value = 'to-do';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      ta.focus();
+    }, 350);
+  };
+
+  const paint = (
+    title: string,
+    text: string,
+    cta: string,
+    active: boolean
+  ): void => {
+    if (!host) return;
+    host.innerHTML =
+      '<div class="sd-dm-left">' +
+        '<div class="sd-dm-kicker"><span class="sd-dm-dot' + (active ? ' is-active' : '') + '"></span>Daily Study Mission</div>' +
+        '<h2>' + title + '</h2>' +
+        '<p>' + text + '</p>' +
+      '</div>' +
+      '<button type="button" class="sd-dm-cta">' + cta + '</button>';
+    host.querySelector<HTMLButtonElement>('.sd-dm-cta')?.addEventListener('click', openAi);
+  };
+
+  if (!courseId) {
+    paint('Daily Study Mission', 'Turn your uploaded course files into a daily study plan.', 'Set Up Mission', false);
+    return;
+  }
+
+  paint('Daily Study Mission', 'Checking today\'s trusted study plan for ' + courseName + '...', 'Open in AI', false);
+  import('../../services/study-service.js')
+    .then((mod) => mod.getDailyMissionSummary(courseId))
+    .then((summary) => {
+      if (!summary.hasPlan) {
+        paint('Daily Study Mission', 'Turn your uploaded course files into a daily study plan.', 'Set Up Mission', false);
+        return;
+      }
+      if (summary.totalTasks > 0 && summary.completedTasks >= summary.totalTasks) {
+        paint('Mission complete for today', 'Good work. You finished today\'s trusted study plan.', 'View Today\'s Mission', true);
+        return;
+      }
+      paint(
+        'Daily Study Mission',
+        'Today: ' + summary.totalTasks + ' tasks · ' + summary.minutesRemaining + ' min left',
+        'Open in AI',
+        true
+      );
+    })
+    .catch(() => {
+      paint('Daily Study Mission', 'Confirm your course sources to generate trusted tasks.', 'Review Course Map', false);
+    });
 }
 
 function _updateHeroStats(

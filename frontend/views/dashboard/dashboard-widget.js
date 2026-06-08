@@ -81,6 +81,7 @@
       { type: 'ai', icon: '🤖', nameKey: 'wdg_ai_name', name: 'AI quick chat', descKey: 'wdg_ai_desc', desc: 'Ask anything', cols: 2, rows: 2 },
       { type: 'gcal', icon: '📆', nameKey: 'wdg_gcal_name', name: 'Google Calendar', descKey: 'wdg_gcal_desc', desc: 'View & edit events', cols: 1, rows: 3 },
       { type: 'mastery', icon: '🎯', nameKey: 'wdg_mastery_name', name: 'Practice focus', descKey: 'wdg_mastery_desc', desc: 'Weak topics from your quizzes', cols: 2, rows: 2 }
+      ,{ type: 'dailyMission', icon: 'DM', nameKey: 'wdg_daily_mission_name', name: 'Daily Mission', descKey: 'wdg_daily_mission_desc', desc: 'Today\'s study plan', cols: 2, rows: 2 }
     ];
     function defName(def) { return _t(def.nameKey, def.name || def.nameKey); }
     function defDesc(def) { return _t(def.descKey, def.desc || def.descKey); }
@@ -250,6 +251,9 @@
             '</div>' +
           '</div>'
         );
+      }
+      if (type === 'dailyMission') {
+        return '<div class="dmw-root"><div class="dmw-status">Loading today&rsquo;s mission...</div></div>';
       }
       return '';
     }
@@ -1114,6 +1118,60 @@
           _nwRender();
           _nwCloseCompose();
         });
+      });
+      canvas.querySelectorAll('.dw-body').forEach(function (body) {
+        var root = body.querySelector('.dmw-root');
+        if (!root || root._dmwBound) return;
+        root._dmwBound = true;
+        function _courseId() {
+          if (window.activeCourseRef && window.activeCourseRef.id) return window.activeCourseRef.id;
+          if (window.activeCourseId) return window.activeCourseId;
+          var sem = SEMS && SEMS[window.sdActiveSemId];
+          var first = sem && sem.courses && sem.courses.find(function (c) { return c.id; });
+          return first && first.id;
+        }
+        function _openAi() {
+          try { sessionStorage.setItem('ss_daily_mission_seed', 'to-do'); } catch (e) {}
+          if (typeof window.showPortalSection === 'function') {
+            window.showPortalSection('aipage');
+          }
+          setTimeout(function () {
+            var ta = document.querySelector('.ncb-input-textarea');
+            if (ta) {
+              ta.value = 'to-do';
+              ta.dispatchEvent(new Event('input', { bubbles: true }));
+              ta.focus();
+            }
+          }, 350);
+        }
+        function _paintLoading() {
+          root.innerHTML = '<div class="dmw-status">Loading today&rsquo;s mission...</div>';
+        }
+        function _paintEmpty() {
+          root.innerHTML =
+            '<div class="dmw-head"><span class="dmw-dot"></span><strong>Daily Study Mission</strong></div>' +
+            '<div class="dmw-status">Turn your course files into today&rsquo;s trusted study plan.</div>' +
+            '<button class="dmw-btn" type="button">Open in AI</button>';
+          var btn = root.querySelector('.dmw-btn');
+          if (btn) btn.addEventListener('click', _openAi);
+        }
+        function _paint(data) {
+          if (!data || !data.hasPlan) { _paintEmpty(); return; }
+          root.innerHTML =
+            '<div class="dmw-head"><span class="dmw-dot"></span><strong>Daily Study Mission</strong></div>' +
+            '<div class="dmw-progress">' + data.completedTasks + '/' + data.totalTasks + ' done &middot; ' + data.minutesRemaining + ' min left</div>' +
+            '<div class="dmw-focus">' + (data.mainFocus || 'Today&rsquo;s mission is ready') + '</div>' +
+            '<button class="dmw-btn" type="button">' + (data.totalTasks ? 'Open in AI' : 'Set Up Mission') + '</button>';
+          var btn = root.querySelector('.dmw-btn');
+          if (btn) btn.addEventListener('click', _openAi);
+        }
+        var cid = _courseId();
+        if (!cid) { _paintEmpty(); return; }
+        _paintLoading();
+        import('js/services/study-service.js')
+          .then(function (mod) { return mod.getDailyMissionSummary(cid); })
+          .then(_paint)
+          .catch(_paintEmpty);
       });
       updateCards();
     }
