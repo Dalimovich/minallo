@@ -1,4 +1,4 @@
-// All AI endpoints flow through Netlify proxies (which forward to python-ai).
+// All AI endpoints flow through Cloudflare Pages Functions (which forward to python-ai).
 // See docs/python-ai-endpoints.md for shapes.
 
 function _backendUrl(): string {

@@ -1,6 +1,6 @@
 # Minallo
 
-Minallo is an AI study workspace for students. It combines course PDFs, grounded AI tutoring, page-level citations, PDF tools, notes, flashcards, quizzes, German practice, focus tools, playlists, study games, and student chat in one authenticated app.
+Minallo is an AI study workspace for students. It combines course PDFs, grounded AI tutoring, page-level citations, PDF tools, notes, flashcards, quizzes, exam prep, cheatsheets, deep-learn mode, German practice, a writing coach, focus tools, music, study games, and student chat in one authenticated app.
 
 Production: [minallo.de](https://minallo.de)
 
@@ -16,13 +16,15 @@ Minallo is built around one promise: students should be able to ask questions ab
 
 Core user flows:
 - Upload lecture PDFs, exercise sheets, notes, and formula sheets.
-- Ask the AI tutor questions about course material.
-- Solve exercises with structured steps and source-page citations.
-- View, annotate, summarize, and organize PDFs.
-- Generate notes, flashcards, quizzes, and study guides.
-- Practice German in a separate learner space.
-- Use Pomodoro, playlists, streaks, games, and study progress tools.
+- Ask the AI tutor questions about course material with source-page citations.
+- Solve exercises with structured steps and grounded references.
+- View, annotate, summarize, merge, and organize PDFs.
+- Generate lecture notes, flashcards, quizzes, cheatsheets, and exam prep material.
+- Deep-learn mode for focused topic mastery with adaptive difficulty.
+- Practice German in a separate learner space with a writing coach.
+- Use Pomodoro timer, Spotify playlists, streaks, games, and study progress tools.
 - Chat with other students in rooms and direct messages.
+- Manage subscriptions (Stripe / PayPal) with pause, cancel, and retention flows.
 
 ## Architecture
 
@@ -31,22 +33,23 @@ Browser
   |
   | HTTPS
   v
-Netlify
-  - Static frontend from frontend/
-  - Netlify Functions under backend/functions/
-  - API routes such as /api/ai/ask, /api/documents/upload, /api/create-checkout
+Cloudflare Pages
+  - Static frontend from dist/ (built from frontend/)
+  - Pages Functions under functions/api/
+  - API routes: /api/ai/ask, /api/documents/upload, /api/create-checkout, etc.
   |
   | Authenticated proxy calls
   v
-FastAPI AI service
+FastAPI AI service (Fly.io, Frankfurt)
   - backend/python-ai
   - PDF indexing, retrieval, streaming answers, generation, writing coach
+  - Uses OpenAI models (gpt-4o, gpt-4o-mini, gpt-4.1-mini) and embeddings
   |
   v
 Supabase
-  - Auth
+  - Auth (email + Google OAuth)
   - Postgres + pgvector
-  - Storage
+  - Storage (course uploads)
   - Row-level security
 
 Payments:
@@ -58,16 +61,19 @@ Payments:
 
 | Layer | Technology |
 |---|---|
-| Frontend | HTML, CSS, TypeScript compiled in place, no runtime bundler |
-| Hosting | Netlify static hosting |
-| Functions | Netlify Functions, TypeScript, Node 20 |
-| AI service | FastAPI, Python 3.11+, deployed separately |
+| Frontend | HTML, CSS, TypeScript compiled to JS, custom loader (no runtime bundler) |
+| Hosting | Cloudflare Pages |
+| Functions | Cloudflare Pages Functions, TypeScript |
+| AI service | FastAPI, Python 3.11+, deployed on Fly.io |
+| LLM | OpenAI (gpt-4o, gpt-4o-mini, gpt-4.1-mini, gpt-4.1-nano) |
+| Embeddings | OpenAI text-embedding-3-small (1536 dim) |
 | Database | Supabase Postgres with pgvector |
-| Auth | Supabase Auth |
+| Auth | Supabase Auth + Google Sign-In |
 | Storage | Supabase Storage |
 | Payments | Stripe and PayPal subscriptions |
-| PDF rendering | pdf.js |
-| Tests | Node test runner, Playwright, pytest for Python service |
+| PDF rendering | PDF.js 3.11.174 (CDN) |
+| Math rendering | KaTeX 0.16.10 (CDN) |
+| Tests | Node test runner, Playwright, pytest |
 
 ## Repository Layout
 
@@ -77,70 +83,124 @@ frontend/
   pages/                      Landing, portal, auth, static legal pages
   css/                        Global app and performance styles
   js/                         TypeScript source compiled to JS
-    core/                     Navigation and state helpers
-    features/                 AI chat, PDF, courses, settings, etc.
+    core/                     Navigation, state persistence, panels
+    config/                   Icons, dependencies, app config
+    features/                 Feature modules (see below)
     pages/                    Landing page behavior
-    services/                 Frontend service wrappers
+    services/                 AI service, storage service wrappers
   views/                      Feature HTML/CSS/JS fragments loaded lazily
-  extension/                  Browser extension
+    chatbot/                  AI chatbot (standalone)
+    chat/                     Student social chat + rooms
+    dashboard/                Main dashboard
+    deep-learn/               Deep-learn study mode
+    editor/                   PDF editor (merge, write, convert)
+    examforge/                Exam preparation generator
+    flashcards/               Flashcard decks
+    games/                    Study games (Tetris, Chess, Solitaire, etc.)
+    lecturenotes/             Lecture notes viewer/generator
+    notes/                    Notes panel
+    practice/                 Practice/exercise mode
+    quiz/                     Quiz generation and taking
+    cheatsheet/               Cheatsheet generation
+    writing-coach/            German writing coach (Schreibtrainer)
+    profile/                  User profile
+    settings/                 App settings
+    subscription/             Billing and subscription management
+  extension/                  Chrome browser extension
+
+functions/
+  api/                        Cloudflare Pages Functions (API routes)
+    ai/                       AI endpoints (ask, stream, generate, feedback, etc.)
+    documents/                Upload, list, delete, index, reindex
+    learning/                 Topic map, next-action
+    notes/                    Notes CRUD
+    admin/                    Admin retrieval logs
+    ...                       Billing, chat, webhooks
 
 backend/
-  functions/                  Netlify API functions
-  lib/                        Shared backend helpers
+  lib/                        Shared TypeScript helpers (auth, cors, rate-limit, etc.)
   python-ai/                  FastAPI AI and retrieval service
 
-supabase/migrations/          Reproducible SQL migrations
-tests/                        Node and frontend tests
+supabase/migrations/          Reproducible SQL migrations (65+)
+tests/                        Node and Playwright tests
 docs/                         Specs, launch notes, endpoint docs
 ```
 
-## Important Frontend Notes
+## Features
 
-- `frontend/js/loader.ts` loads the application shell and lazy feature bundles.
-- `frontend/js/core/navigation.ts` owns portal section switching.
-- `frontend/pages/new_landing.html` and `frontend/js/pages/new-landing.js` are the current landing page.
-- Chatbot and Chat are lazy-loaded, with idle prewarming and skeleton placeholders for smoother navigation.
-- Runtime `.js` files generated from TypeScript may be ignored by git. Edit tracked `.ts` files first and run the frontend build.
+| Feature | Description |
+|---|---|
+| Course management | Semester-based course cards with file counts, progress, last-opened |
+| PDF viewer | Multi-tab, page navigation, text extraction, source-link citations |
+| AI tutor | RAG-grounded Q&A with streaming answers, source metadata, citations |
+| Chatbot | Standalone AI chat with image/file support |
+| Lecture notes | AI-generated full lecture notes from course PDFs |
+| Flashcards | AI-generated flashcard decks from course material |
+| Quiz | AI-generated quizzes with scoring |
+| Cheatsheet | Compressed formula/reference sheets |
+| ExamForge | Exam preparation material generator |
+| Deep Learn | Adaptive topic mastery with difficulty progression |
+| Writing Coach | German Schreibtrainer for language learners |
+| PDF editor | Merge, annotate, convert PDFs |
+| Practice mode | Exercise-focused study sessions |
+| Study timer | Pomodoro timer with session tracking |
+| Music | Spotify integration for study playlists |
+| Study games | Tetris, Chess, Solitaire, Flappy Bird |
+| Student chat | Rooms, DMs, friend lists, GIF search, reports |
+| Admin panel | User dashboard, retrieval debug logs, usage charts |
+| Subscriptions | Stripe + PayPal with pause, cancel, retention offers |
+| Onboarding | University/major selection, guided setup |
+| Notifications | In-app notification system |
 
 ## API Surface
 
-All paid user routes are authenticated with a Supabase JWT and checked against subscription/fair-use limits.
+All paid routes are authenticated with a Supabase JWT and checked against subscription/fair-use limits.
 
-Common routes:
+Key routes:
 
 | Route | Purpose |
 |---|---|
-| `POST /api/ai` | General AI chat with image/file support |
 | `POST /api/ai/ask` | Course-grounded RAG answer |
-| `POST /api/ai/generate` | Notes, quiz, flashcard, and summary generation |
+| `POST /api/ai/stream` | SSE streaming AI answers |
+| `POST /api/ai/generate` | Notes, quiz, flashcard, summary generation |
 | `POST /api/ai/feedback` | Per-answer feedback |
-| `POST /api/ai/evaluate` | Internal retrieval evaluation |
 | `POST /api/ai/writing-coach` | German writing coach |
-| `POST /api/notes/generate` | Full lecture-notes generation |
-| `GET /api/notes` | Notes CRUD entry point |
+| `POST /api/ai/cheatsheet` | Cheatsheet generation |
+| `POST /api/ai/deep-learn` | Deep-learn session |
+| `POST /api/ai/examforge` | Exam prep generation |
+| `POST /api/ai/mastery` | Topic mastery tracking |
+| `POST /api/ai/quiz-attempt` | Quiz attempt recording |
+| `POST /api/ai/usage` | AI usage tracking |
 | `POST /api/documents/upload` | Upload and index a document |
 | `POST /api/documents/list` | List indexed documents |
 | `POST /api/documents/delete` | Delete a document and chunks |
 | `POST /api/documents/reindex-course` | Reindex a course |
+| `POST /api/documents/index-existing` | Index already-uploaded file |
+| `POST /api/notes/generate` | Full lecture-notes generation |
+| `GET /api/notes` | Notes CRUD |
+| `POST /api/learning/topic-map-generate` | Generate topic map |
+| `GET /api/learning/topic-map` | Retrieve topic map |
 | `POST /api/create-checkout` | Stripe Checkout |
 | `POST /api/create-portal` | Stripe Billing Portal |
 | `POST /api/verify-payment` | Post-checkout verification |
 | `POST /api/activate-paypal-subscription` | PayPal activation |
+| `POST /api/pause-subscription` | Pause subscription |
+| `POST /api/cancel-subscription` | Cancel subscription |
+| `POST /api/resume-subscription` | Resume subscription |
 | `POST /api/stripe-webhook` | Stripe webhook |
 | `POST /api/paypal-webhook` | PayPal webhook |
 | `POST /api/chat-friends` | Friend list and profile reads |
 | `POST /api/send-chat-message` | Student chat message send |
+| `POST /api/chat-user-search` | Search for chat users |
+| `POST /api/join-room-by-code` | Join chat room by invite code |
 | `POST /api/admin-users` | Admin user dashboard |
-| `POST /api/admin-retrieval-logs` | Admin retrieval debug logs |
-
-The browser may also stream directly to the Python AI service for SSE answers when configured.
 
 ## Local Development
 
 ### Prerequisites
 
 - Node 20+
-- Netlify CLI
+- Wrangler CLI (Cloudflare)
 - Python 3.11+ for the AI service
 - Supabase project with migrations applied
 - OpenAI, Stripe, and PayPal keys for full local functionality
@@ -160,11 +220,11 @@ Fill `.env` with Supabase, OpenAI, Stripe, PayPal, and AI service values.
 npm run dev
 ```
 
-Use `netlify dev` through this command. Opening `frontend/index.html` directly only shows static markup and will not support auth, functions, payments, AI, or chat.
+This runs `wrangler pages dev`, serving the frontend and Cloudflare Pages Functions locally. Opening `frontend/index.html` directly will not support auth, functions, payments, AI, or chat.
 
 ### Run Python AI service
 
-```bash
+```powershell
 cd backend/python-ai
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -179,13 +239,14 @@ Set `AI_SERVICE_URL=http://localhost:8000` for local function proxying.
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Run Netlify dev |
-| `npm run dev:frontend` | Run Vite frontend dev server |
+| `npm run dev` | Run Wrangler Pages dev server |
+| `npm run dev:frontend` | Run Vite frontend dev server (HMR) |
+| `npm run build` | Full production build (TS compile + dist) |
 | `npm run build:frontend` | Compile frontend TypeScript |
 | `npm run typecheck` | Type-check backend, frontend, and functions |
-| `npm run typecheck:backend` | Type-check backend functions/lib |
+| `npm run typecheck:backend` | Type-check backend lib |
 | `npm run typecheck:frontend` | Type-check frontend |
-| `npm run typecheck:pages` | Type-check functions project |
+| `npm run typecheck:pages` | Type-check Cloudflare Pages Functions |
 | `npm run lint` | ESLint frontend JS/TS |
 | `npm run test` | Node tests |
 | `npm run test:e2e` | Playwright tests |
@@ -199,28 +260,30 @@ See [supabase/migrations/README.md](supabase/migrations/README.md).
 
 ## Deployment
 
-Normal production deployment is push-to-`main`.
+Frontend deploys automatically via Cloudflare Pages on push to `main`.
 
-Manual commands:
+Python AI service requires manual deploy:
 
 ```bash
-netlify deploy --prod
-
 cd backend/python-ai
 flyctl deploy
 ```
 
-After deploys that touch subscriptions, webhooks, RLS, or retrieval, run the relevant verification queries from the migration files and launch docs.
+After deploys that touch subscriptions, webhooks, RLS, or retrieval, run the relevant verification queries from the migration files.
 
 ## Security and Cost Controls
 
 - Supabase RLS protects user-owned tables.
-- Netlify functions verify Supabase JWTs before paid operations.
+- Cloudflare Pages Functions verify Supabase JWTs before paid operations.
 - Python AI endpoints require trusted authentication/proxy headers.
 - Stripe and PayPal webhooks use signature checks and idempotency tables.
 - AI usage is subscription-gated and rate-limited.
 - Monthly fair-use limits split interactive chat/RAG calls from heavier generation calls.
 - Retrieval uses document/course filters, debug logging, cache keys, and source citations.
+
+## Third-Party Licenses
+
+See [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) for all third-party software used.
 
 ## Documentation
 
@@ -229,7 +292,6 @@ After deploys that touch subscriptions, webhooks, RLS, or retrieval, run the rel
 - [supabase/migrations/README.md](supabase/migrations/README.md)
 - [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md)
 - [docs/python-ai-endpoints.md](docs/python-ai-endpoints.md)
-- [docs/frontend-ts-migration.md](docs/frontend-ts-migration.md)
 
 ## License
 

@@ -16,8 +16,8 @@
     },
     // Python AI service base URL (Fly.io). The streaming /ask-stream
     // endpoint is called directly from the browser so the SSE connection
-    // isn't capped by Netlify's 30s function timeout. All other AI calls
-    // still go through /api/* on Netlify.
+    // isn't capped by Cloudflare's function timeout. All other AI calls
+    // still go through /api/* on Cloudflare Pages.
     aiServiceUrl: 'https://python-ai.fly.dev'
   };
 

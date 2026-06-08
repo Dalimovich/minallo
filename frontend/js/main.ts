@@ -82,7 +82,7 @@ function lazyImportEncoded(encodedPath: string): Promise<Record<string, unknown>
   const path = atob(encodedPath);
   // Cache-bust with the same ?v=<assetVersion> the loader stamps onto boot
   // scripts (loader.ts). Lazily-imported chunks are served immutable for a
-  // year (netlify.toml), so without this a returning browser keeps the old
+  // year (Cloudflare cache), so without this a returning browser keeps the old
   // module forever and never sees post-deploy edits to these features.
   const v = window.MinalloConfig?.assetVersion;
   const url = v ? path + (path.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(String(v)) : path;

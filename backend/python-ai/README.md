@@ -2,7 +2,7 @@
 
 FastAPI service for document indexing, retrieval, grounded answers, streaming AI, notes, flashcards, quizzes, and German writing coach support.
 
-This service is no longer a skeleton. It is the AI/RAG backend used by the Netlify API layer.
+This service is the AI/RAG backend used by the Cloudflare Pages Functions API layer.
 
 ## Responsibilities
 
@@ -63,7 +63,7 @@ Health check:
 curl http://localhost:8000/health
 ```
 
-Point Netlify Functions at the local service:
+Point Cloudflare Pages Functions at the local service:
 
 ```text
 AI_SERVICE_URL=http://localhost:8000
@@ -132,19 +132,19 @@ Common variables:
 | `OPENAI_GENERATE_MODEL` | Default generation model |
 | `OPENAI_GENERATE_MODEL_STRONG` | Stronger model for harder tasks |
 | `OPENAI_EMBEDDING_MODEL` | Embedding model, dimension must match DB |
-| `INTERNAL_SECRET` | Shared trust secret with Netlify proxy |
+| `INTERNAL_SECRET` | Shared trust secret with Cloudflare Pages Functions |
 | `LOG_LEVEL` | Logging verbosity |
 | `ENVIRONMENT` | local/staging/production behavior |
 
 ## Security Model
 
-The browser should not call privileged endpoints without the same checks enforced by the Netlify layer.
+The browser should not call privileged endpoints without the same checks enforced by the Cloudflare Pages Functions layer.
 
 Expected production flow:
 
 ```text
 browser
-  -> Netlify /api/ai/*
+  -> Cloudflare Pages /api/ai/*
   -> JWT, subscription, and rate-limit checks
   -> Python AI service
   -> Supabase/OpenAI

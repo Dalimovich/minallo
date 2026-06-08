@@ -15,5 +15,7 @@ compatibility_flags = ["nodejs_compat"]
 # Pages serves files from this directory and auto-routes /functions/api/*
 # as Pages Functions on top of them.
 # Production uses dist/ (stripped of .ts, .map, and dev config files).
-# Run `npm run build` to generate dist/ from frontend/.
 pages_build_output_dir = "dist"
+
+[build]
+command = "npm run build"

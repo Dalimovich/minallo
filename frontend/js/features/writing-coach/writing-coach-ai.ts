@@ -1,6 +1,6 @@
 // Writing Coach — AI integration module.
 //
-// Calls /api/ai/writing-coach (Netlify → Python service) with the user's
+// Calls /api/ai/writing-coach (Cloudflare → Python service) with the user's
 // paragraph + profile level + task type. Returns the full analysis shape
 // defined in docs/schreibtrainer-ai-spec.md.
 //
