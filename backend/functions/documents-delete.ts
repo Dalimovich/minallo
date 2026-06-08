@@ -52,7 +52,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const docResult = await supaRequest<DocumentRow[]>(
     'GET',
     'documents?id=eq.' + encodeURIComponent(documentId) +
-      '&user_id=eq.' + user.id +
+      '&user_id=eq.' + encodeURIComponent(user.id) +
       '&select=id,storage_path,course_id&limit=1',
     null, serviceKey
   );
@@ -63,10 +63,10 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const doc = docResult.body[0];
 
-  await supaRequest('DELETE', 'document_chunks?document_id=eq.' + documentId + '&user_id=eq.' + user.id, null, serviceKey);
-  await supaRequest('DELETE', 'document_pages?document_id=eq.' + documentId + '&user_id=eq.' + user.id, null, serviceKey);
+  await supaRequest('DELETE', 'document_chunks?document_id=eq.' + encodeURIComponent(documentId) + '&user_id=eq.' + encodeURIComponent(user.id), null, serviceKey);
+  await supaRequest('DELETE', 'document_pages?document_id=eq.' + encodeURIComponent(documentId) + '&user_id=eq.' + encodeURIComponent(user.id), null, serviceKey);
   await supaRequest('DELETE',
-    'retrieval_cache?user_id=eq.' + user.id + '&course_id=eq.' + encodeURIComponent(doc.course_id),
+    'retrieval_cache?user_id=eq.' + encodeURIComponent(user.id) + '&course_id=eq.' + encodeURIComponent(doc.course_id),
     null, serviceKey
   ).catch((e: unknown) => {
     console.error('[documents-delete] cache purge error:', e instanceof Error ? e.message : String(e));
@@ -83,6 +83,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     await storageDelete(serviceKey, bucket, storagePath);
   }
 
-  await supaRequest('DELETE', 'documents?id=eq.' + documentId + '&user_id=eq.' + user.id, null, serviceKey);
+  await supaRequest('DELETE', 'documents?id=eq.' + encodeURIComponent(documentId) + '&user_id=eq.' + encodeURIComponent(user.id), null, serviceKey);
   return jsonResponse(200, { ok: true });
 };

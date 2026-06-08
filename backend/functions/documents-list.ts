@@ -21,7 +21,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
   const result = await supaRequest<unknown[]>(
     'GET',
-    'documents?user_id=eq.' + user.id +
+    'documents?user_id=eq.' + encodeURIComponent(user.id) +
       '&course_id=eq.' + encodeURIComponent(courseId) +
       '&select=id,file_name,file_type,source_type,processing_status,processing_error,page_count,extraction_quality,ocr_assessment,created_at,updated_at' +
       '&order=created_at.desc',

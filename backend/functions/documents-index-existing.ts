@@ -90,7 +90,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const existing = await supaRequest<DocumentRow[]>(
     'GET',
-    'documents?user_id=eq.' + user.id +
+    'documents?user_id=eq.' + encodeURIComponent(user.id) +
       '&course_id=eq.' + encodeURIComponent(courseId) +
       '&storage_path=eq.' + encodeURIComponent(docStoragePath) +
       '&select=id,processing_status,storage_path&limit=1',
@@ -104,11 +104,11 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         alreadyIndexed: true, documentId: doc.id, processingStatus: 'ready'
       });
     }
-    await supaRequest('PATCH', 'documents?id=eq.' + doc.id,
+    await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(doc.id),
       { processing_status: 'uploaded', storage_path: docStoragePath }, serviceKey);
-    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + doc.id, null, serviceKey)
+    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
-    await supaRequest('DELETE', 'document_pages?document_id=eq.' + doc.id, null, serviceKey)
+    await supaRequest('DELETE', 'document_pages?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
     await _kickIndex(doc.id, user.id, courseId, docStoragePath);
     return jsonResponse(200, {

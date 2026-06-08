@@ -7,6 +7,7 @@ ai-evaluate.js). Both are simple enough that they live in one file.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -142,7 +143,7 @@ async def evaluate_endpoint(payload: EvaluateRequest) -> dict[str, Any]:
                 "actual_confidence": "high" if answer.get("retrievalMode") == "strong" else "low",
                 "passed":            verdict["passed"],
                 "failure_reason":    verdict["failure_reason"],
-                "run_at":            "now()",
+                "run_at":            datetime.now(timezone.utc).isoformat(),
             }).eq("id", ev["id"]).execute()
         except Exception:
             log.exception("eval result store failed (non-fatal)")
