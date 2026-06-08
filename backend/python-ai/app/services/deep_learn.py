@@ -59,6 +59,30 @@ _EVIDENCE_BUCKETS: dict[str, dict[str, Any]] = {
     },
 }
 
+_EXTRACT_SYSTEM = (
+    "You are a fact-extraction engine for university course material. "
+    "Given a set of source chunks from a student's uploaded course documents, "
+    "extract the structured facts from EACH source. Do not invent information. "
+    "Only extract what the source text explicitly states.\n\n"
+    "For each source, extract whichever of these fields are present:\n"
+    "- topic: the main topic or heading of this chunk\n"
+    "- mainClaim: the central statement or thesis\n"
+    "- definitions: array of {term, definition} objects\n"
+    "- bulletGroups: array of {heading, items[]} — grouped bullet points\n"
+    "- comparisonCategories: array of category names if the source compares things\n"
+    "- values: array of {name, value, unit, context} — important numbers, ratios, thresholds\n"
+    "- formulas: array of {formula, meaning, variables, conditions} — only if clearly stated\n"
+    "- processSteps: array of ordered steps if the source describes a procedure\n"
+    "- examples: array of {description, context} — examples or case studies mentioned\n"
+    "- warnings: array of strings — exceptions, traps, common mistakes, caveats\n"
+    "- examRelevance: string — why this matters for an exam, if hinted in the source\n\n"
+    "Omit any field that has no content in the source. Keep extracted text close to "
+    "the original wording — do not paraphrase heavily. Preserve technical terms, "
+    "numbers, units, and names exactly as they appear.\n\n"
+    "Return JSON: {\"facts\": [{\"source\": \"<source label>\", ...extracted fields...}]}"
+)
+
+
 _VALID_LESSON_MODES = {
     "simple",
     "exam",
@@ -83,6 +107,13 @@ _SYSTEM = (
     "professor examples. If an example, case, calculation, code sample, grammar pattern, "
     "timeline, or framework comes from evidence, say which source supports it. If evidence "
     "is thin, stay honest and use a helpful source note rather than sounding weak.\n\n"
+    "SOURCE FACT USAGE: When STRUCTURED SOURCE FACTS are provided, you MUST use them as "
+    "the primary building blocks for the lesson. These facts were extracted from the "
+    "student's actual course material. Use the exact definitions, values, process steps, "
+    "formulas, examples, warnings, and comparison categories from the facts — do not "
+    "paraphrase them into generic explanations. The lesson should feel like it was built "
+    "from the student's specific course material, not from general AI knowledge. "
+    "The RAW COURSE EVIDENCE is provided for source labels and additional context.\n\n"
     "Deep Learn has four lesson engines. Your FIRST task is to detect which engine fits "
     "the topic, then follow that engine's structure exactly.\n\n"
     "STEP 1 — Detect lesson engine. Set contentType to one of:\n"
@@ -432,6 +463,81 @@ def _format_evidence_by_bucket(
             lines.append(f"[{label}]\n{text}")
         parts.append("\n\n".join(lines))
     return "\n\n---\n\n".join(parts)
+
+
+def _extract_source_facts(
+    topic: str,
+    evidence_text: str,
+) -> list[dict[str, Any]]:
+    """Run a lightweight LLM pass to extract structured facts from evidence."""
+    user = (
+        "TOPIC: " + topic + "\n\n"
+        "SOURCE CHUNKS:\n\n" + evidence_text
+    )
+    try:
+        res = chat_json(system=_EXTRACT_SYSTEM, user=user, max_tokens=3000)
+        data = res.data if isinstance(res.data, dict) else {}
+        facts = data.get("facts", [])
+        if isinstance(facts, list):
+            return [f for f in facts if isinstance(f, dict)]
+    except Exception:  # noqa: BLE001
+        log.exception("source fact extraction failed for topic=%s", topic)
+    return []
+
+
+def _format_extracted_facts(facts: list[dict[str, Any]]) -> str:
+    """Serialize extracted facts into a structured text block for the lesson prompt."""
+    if not facts:
+        return ""
+    parts: list[str] = []
+    for f in facts:
+        source = f.get("source", "unknown")
+        lines = [f"### [{source}]"]
+        if f.get("topic"):
+            lines.append(f"Topic: {f['topic']}")
+        if f.get("mainClaim"):
+            lines.append(f"Main claim: {f['mainClaim']}")
+        for d in f.get("definitions") or []:
+            if isinstance(d, dict):
+                lines.append(f"Definition: {d.get('term', '')} — {d.get('definition', '')}")
+        for bg in f.get("bulletGroups") or []:
+            if isinstance(bg, dict):
+                heading = bg.get("heading", "")
+                items = bg.get("items", [])
+                if heading:
+                    lines.append(f"Group: {heading}")
+                for item in (items if isinstance(items, list) else []):
+                    lines.append(f"  • {item}")
+        if f.get("comparisonCategories"):
+            lines.append("Comparison categories: " + ", ".join(str(c) for c in f["comparisonCategories"]))
+        for v in f.get("values") or []:
+            if isinstance(v, dict):
+                val_str = f"{v.get('name', '')}: {v.get('value', '')} {v.get('unit', '')}"
+                if v.get("context"):
+                    val_str += f" ({v['context']})"
+                lines.append(f"Value: {val_str}")
+        for fm in f.get("formulas") or []:
+            if isinstance(fm, dict):
+                lines.append(f"Formula: {fm.get('formula', '')} — {fm.get('meaning', '')}")
+                if fm.get("variables"):
+                    lines.append(f"  Variables: {fm['variables']}")
+                if fm.get("conditions"):
+                    lines.append(f"  Conditions: {fm['conditions']}")
+        if f.get("processSteps"):
+            lines.append("Process steps:")
+            for i, step in enumerate(f["processSteps"], 1):
+                lines.append(f"  {i}. {step}")
+        for ex in f.get("examples") or []:
+            if isinstance(ex, dict):
+                lines.append(f"Example: {ex.get('description', '')} ({ex.get('context', '')})")
+            elif isinstance(ex, str):
+                lines.append(f"Example: {ex}")
+        for w in f.get("warnings") or []:
+            lines.append(f"Warning: {w}")
+        if f.get("examRelevance"):
+            lines.append(f"Exam relevance: {f['examRelevance']}")
+        parts.append("\n".join(lines))
+    return "\n\n".join(parts)
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -1091,13 +1197,28 @@ def generate_deep_learn(
     sources = _sources(merged, merged_names)
     evidence = _format_evidence_by_bucket(buckets, merged, merged_names)
 
+    extracted_facts = _extract_source_facts(topic, evidence)
+    facts_text = _format_extracted_facts(extracted_facts)
+
     user = (
         "TOPIC TO TEACH: " + topic + "\n\n"
         + _mode_prompt(mode) + "\n\n"
         + _language_prompt(language) + "\n\n"
-        "COURSE EVIDENCE. Use only these source labels for citations:\n\n"
-        + evidence
     )
+    if facts_text:
+        user += (
+            "STRUCTURED SOURCE FACTS (extracted from the student's course material — "
+            "use these specific details, definitions, values, steps, and comparisons "
+            "to build the lesson):\n\n"
+            + facts_text + "\n\n"
+            "RAW COURSE EVIDENCE (for source labels and additional context):\n\n"
+            + evidence
+        )
+    else:
+        user += (
+            "COURSE EVIDENCE. Use only these source labels for citations:\n\n"
+            + evidence
+        )
     try:
         res = chat_json(system=_SYSTEM, user=user, max_tokens=4200)
     except Exception as e:  # noqa: BLE001
@@ -1145,6 +1266,7 @@ def generate_deep_learn(
         "groundedSources": sources,
         "citationWarning": structured.get("citationWarning") or None,
         "evidenceSummary": {k: len(v) for k, v in buckets.items()},
+        "factsExtracted": len(extracted_facts),
         "model": res.model,
         "promptTokens": res.prompt_tokens,
         "completionTokens": res.completion_tokens,
