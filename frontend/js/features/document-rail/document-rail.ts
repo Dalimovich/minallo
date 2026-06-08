@@ -663,18 +663,30 @@ function openDrawer(mode: DocRailMode): void {
     // Mode switch — render immediately.
     renderModeContent(mode);
   } else {
-    window.setTimeout(() => {
+    // First open — wait for the slide-in transition to finish so
+    // the drawer's final dimensions are settled before rendering.
+    const afterTransition = (): void => {
       if (_openMode === mode) renderModeContent(mode);
-    }, 40);
-  }
-  // Re-render PDF after the drawer slide-in transition completes so the
-  // canvas fills the new column width instead of staying clipped.
-  if (!wasOpen) {
-    window.setTimeout(() => {
       if (typeof (window as any).renderPages === 'function') {
         (window as any).renderPages();
       }
-    }, 320);
+    };
+    let fired = false;
+    const onEnd = (e: TransitionEvent): void => {
+      if (e.target !== drawer) return;
+      if (fired) return;
+      fired = true;
+      drawer.removeEventListener('transitionend', onEnd);
+      afterTransition();
+    };
+    drawer.addEventListener('transitionend', onEnd);
+    window.setTimeout(() => {
+      if (!fired) {
+        fired = true;
+        drawer.removeEventListener('transitionend', onEnd);
+        afterTransition();
+      }
+    }, 350);
   }
   const w2 = window as DocRailWindow;
   if (typeof w2._ssSyncUrl === 'function') w2._ssSyncUrl();
