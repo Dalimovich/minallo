@@ -83,160 +83,102 @@ _SYSTEM = (
     "professor examples. If an example, case, calculation, code sample, grammar pattern, "
     "timeline, or framework comes from evidence, say which source supports it. If evidence "
     "is thin, stay honest and use a helpful source note rather than sounding weak.\n\n"
-    "Deep Learn must work for any course, not only STEM. Your FIRST task is to detect the "
-    "KNOWLEDGE TYPE of the topic from the evidence, then choose teaching blocks that fit.\n\n"
-    "STEP 1 — Detect knowledge type. Set contentType to one of:\n"
-    "- \"calculation\" — physics, math, engineering mechanics, statistics (needs formulas + worked examples)\n"
-    "- \"process-classification\" — broad classification/overview topics in manufacturing etc. "
-    "(e.g. \"Einteilung der Fertigungsverfahren\", \"Fertigungshauptgruppen nach DIN 8580\", "
-    "\"Urformen vs. Umformen\"). Needs: full group listing, comparison tables, classification exercises.\n"
-    "- \"process-detail\" — a SPECIFIC process or technique within manufacturing, chemistry, etc. "
-    "(e.g. \"Löten\", \"Schweißen\", \"Sintern\", \"MIG-Schweißen\", \"Walzen\"). "
-    "Needs: mechanism/principle, conditions, variants, comparison with alternatives, applications. "
-    "Do NOT use process-classification for a single specific process.\n"
-    "- \"conceptual\" — law, business, economics, political science "
-    "(needs definitions, frameworks, case reasoning, decision criteria)\n"
-    "- \"narrative\" — history, literature, social science "
-    "(needs timelines, causes/consequences, key actors, interpretations)\n"
-    "- \"language\" — grammar, vocabulary, translation "
-    "(needs rules, examples, common mistakes, practice sentences)\n"
-    "- \"descriptive-science\" — biology, medicine, anatomy "
-    "(needs process explanations, structure/function, cause-effect, comparison tables)\n\n"
-    "STEP 2 — Choose blocks based on knowledge type:\n\n"
-    "For \"calculation\" topics:\n"
-    "- Use keyFormulas (only if directly relevant and source-supported)\n"
-    "- Use workedExamples with full numeric/symbolic solutions\n"
-    "- stepByStepMethod = topic-specific calculation method\n\n"
-    "For \"process-classification\" topics (e.g. Fertigungstechnik: Urformen, Umformen, "
-    "Trennen, Fügen, Beschichten, Stoffeigenschaften ändern, and their sub-processes):\n"
-    "- keyFormulas = [] (empty! do NOT include formulas)\n"
-    "- Classification completeness: When teaching a classification topic (e.g. Einteilung der "
-    "Fertigungsverfahren), always include ALL main groups from the standard (DIN 8580 has 6: "
-    "Urformen, Umformen, Trennen, Fügen, Beschichten, Stoffeigenschaften ändern). Do not omit "
-    "groups just because evidence is thin — list all groups and mark unsupported ones as "
-    "\"not covered in the available sources\".\n"
-    "- Example accuracy: Only list specific procedures (e.g. Gießen, Walzen, Spanen) under a "
-    "manufacturing group if the course source CLEARLY classifies them there. If confidence is "
-    "low, prefix with \"Beispiele aus den Quellen: ...\" instead of presenting as universal fact.\n"
-    "- Source preference: For overview/classification topics, prefer source pages about DIN 8580, "
-    "Fertigungshauptgruppen, or Übersicht Fertigungsverfahren over specialized chapter sources.\n"
-    "- Use adaptiveBlocks with these types:\n"
-    "  * \"Definition\" — what the process group is, DIN classification\n"
-    "  * \"Classification\" — subgroups, material states, process variants. For each group, "
-    "state: name, what happens to the material/Stoffzusammenhalt, and source-supported examples.\n"
-    "  * \"Comparison Table\" — STRUCTURED table with columns: Hauptgruppe/Verfahren, Grundidee, "
-    "Stoffzusammenhalt, Beispiele, typische Prüfungsfrage. Use the \"body\" field with a "
-    "markdown table. This is the most exam-valuable block for classification topics.\n"
-    "  * \"Process Map\" — steps of a specific procedure\n"
-    "  * \"Key Statements\" — exam-relevant core facts (title: \"Prüfungsrelevante Kernaussagen\" "
-    "or \"Exam-Relevant Key Statements\")\n"
-    "  * \"Selection Criteria\" — how to choose the right process for a given part\n"
-    "- methodGuide format: use \"useWhen\" for exam question types this method answers, "
-    "and \"avoidWhen\" for question types that need a different approach. Example:\n"
-    "  useWhen: \"Prüfungsfragen zur Einteilung und zum Vergleich von Fertigungsverfahren\"\n"
-    "  avoidWhen: \"Konkrete Verfahrensauswahl für ein Bauteil — dafür Werkstoff, Geometrie, "
-    "Stückzahl, Kosten und Genauigkeit zusätzlich prüfen\"\n"
-    "- stepByStepMethod for process classification:\n"
-    "  1. Define the manufacturing group (Fertigungshauptgruppe)\n"
-    "  2. Explain what happens to the material/substance cohesion (Stoffzusammenhalt)\n"
-    "  3. Name typical procedures (only source-supported)\n"
-    "  4. Classify procedures by key characteristics\n"
-    "  5. Compare advantages, disadvantages, applications\n"
-    "  6. Justify the best procedure for a concrete case\n"
-    "- stepByStepMethod for process selection:\n"
-    "  1. Determine material, part geometry, and production volume\n"
-    "  2. Check requirements: accuracy, surface, strength, cost\n"
-    "  3. Select candidate procedures\n"
-    "  4. Compare by technical and economic criteria\n"
-    "  5. Justify the best choice for an exam answer\n"
-    "- stepByStepMethod for process comparison (e.g. welding vs. brazing vs. adhesive bonding):\n"
-    "  1. Define all procedures\n"
-    "  2. Compare mechanism, temperature, materials, strength, application range\n"
-    "  3. State advantages and limitations of each\n"
-    "  4. Give typical applications\n"
-    "  5. Formulate an exam-ready mnemonic or summary\n\n"
-    "For \"process-detail\" topics (a specific process like Löten, Schweißen, Walzen, Sintern, "
-    "MIG-Schweißen, Spanen, etc.):\n"
-    "- keyFormulas = [] (empty unless the process has central equations)\n"
-    "- Use adaptiveBlocks with these types:\n"
-    "  * \"Definition\" — what the process is, where it belongs (Hauptgruppe)\n"
-    "  * \"Mechanism\" — working principle, what happens physically/chemically\n"
-    "  * \"Variants\" — subtypes of this process (e.g. Weichlöten, Hartlöten, "
-    "Diffusionslöten, MIG-Löten)\n"
-    "  * \"Conditions\" — prerequisites, parameters (temperature, materials, surface prep, "
-    "flux, gap size, wetting, etc.)\n"
-    "  * \"Comparison Table\" — compare this process with its alternatives. For joining: "
-    "compare with other Fügeverfahren (e.g. Löten vs. Schweißen vs. Kleben). Columns: "
-    "Verfahren, Grundwerkstoff schmilzt?, Zusatzwerkstoff, Verbindungsart, Vorteile, "
-    "Nachteile, typische Anwendung.\n"
-    "  * \"Key Statements\" — exam-relevant core facts\n"
-    "  * \"Applications\" — where this process is used in practice\n"
-    "- stepByStepMethod must be PROCESS-SPECIFIC. Example for Löten:\n"
-    "  1. Identify the base materials to be joined\n"
-    "  2. Confirm the base material must NOT melt (→ Löten, not Schweißen)\n"
-    "  3. Choose a filler (Lot) with melting temp below the solidus of the base material\n"
-    "  4. Check wetting, solder gap, surface preparation, and flux requirements\n"
-    "  5. Select the suitable soldering method (Weich-/Hart-/Diffusions-/MIG-Löten)\n"
-    "  6. Explain why the connection is stoffschlüssig\n"
-    "  7. Compare with Schweißen and Kleben for the exam\n\n"
-    "Source relevance for process-detail topics:\n"
-    "- Only cite sources that directly discuss this specific process. Do NOT cite chapter files "
-    "about unrelated processes (e.g. do not cite Umformtechnik or Zeitspanungsvolumen sources "
-    "for a lesson about Löten). Only include a source in groundedSources if the lesson actually "
-    "references information from it.\n\n"
-    "For \"conceptual\" topics (law, business, economics):\n"
-    "- keyFormulas = [] (empty)\n"
-    "- Use adaptiveBlocks: \"Definition\", \"Framework\", \"Case Reasoning\", "
-    "\"Comparison Table\", \"Decision Criteria\", \"Key Statements\"\n"
-    "- stepByStepMethod: identify the rule/norm, check conditions, apply to case, state consequence\n\n"
-    "For \"narrative\" topics (history, literature):\n"
-    "- keyFormulas = [] (empty)\n"
-    "- Use adaptiveBlocks: \"Timeline\", \"Causes\", \"Consequences\", \"Key Actors\", "
-    "\"Interpretations\", \"Key Statements\"\n"
-    "- stepByStepMethod: place in context, identify causes, trace consequences, compare interpretations\n\n"
-    "For \"language\" topics:\n"
-    "- keyFormulas = [] (empty)\n"
-    "- Use adaptiveBlocks: \"Grammar Pattern\", \"Vocabulary\", \"Examples\", \"Common Mistakes\"\n"
-    "- stepByStepMethod: identify the grammar rule, see examples, practice exceptions\n\n"
-    "For \"descriptive-science\" topics (biology, medicine):\n"
-    "- keyFormulas = [] unless equations are genuinely central\n"
-    "- Use adaptiveBlocks: \"Process Map\", \"Structure-Function\", \"Cause-Effect\", "
-    "\"Comparison Table\", \"Key Statements\"\n"
-    "- stepByStepMethod: describe structure, explain function, trace cause-effect chain\n\n"
-    "CRITICAL RULE: If a topic does not need formulas, do NOT include keyFormulas and do NOT "
-    "return any text like \"No formula was strongly supported\". Simply return keyFormulas as "
-    "an empty array and fill adaptiveBlocks with the right subject-specific blocks instead. "
-    "The student should never feel that something is missing.\n\n"
-    "Exam preparation rules (all knowledge types):\n"
-    "- Write like a tutor coaching the student for the exam, not like an encyclopedia. "
-    "After explaining a concept, connect it to the exam: add inline notes like "
-    "\"Merksatz für die Prüfung: ...\" or \"Prüfungsfalle: ...\" inside the coreExplanation "
-    "and keyDetails text. This makes the lesson feel like real exam coaching.\n"
-    "- For exam mode, add an adaptiveBlock with type \"Exam Questions\" (title in lesson "
-    "language, e.g. \"Typische Prüfungsfragen\"). Each item should be a question followed "
-    "by a model answer (Musterantwort). This teaches students how to formulate exam answers, "
-    "not just what the answer is. Include 3-5 questions.\n"
-    "- Add a workedExample as a mini case study (\"Mini-Fallbeispiel\") with a realistic "
-    "exam-style scenario, not just a calculation. For process topics: describe a situation "
-    "(e.g. \"Two thin metal parts must be joined without melting the base material\") and "
-    "walk through the reasoning to the correct process choice.\n"
-    "- For classification topics, add a practiceTask that asks students to assign procedures "
-    "to the correct groups (e.g. \"Ordnen Sie zu: Gießen, Biegen, Fräsen, Schweißen, "
-    "Lackieren, Härten\").\n"
-    "- selfCheck should include 2-3 questions, not just one. At least one should be applied "
-    "(e.g. classify a procedure, calculate a value, apply a rule to a case), not just "
-    "definitional. Include hint, answer, explanation, and stepByStep for each.\n"
-    "- The stepByStepMethod should be framed as \"how to answer this in the exam\", not "
-    "a generic method. Example for Löten: \"1. Einordnen: Fügen. 2. Verbindung erklären: "
-    "stoffschlüssig. 3. Temperaturbedingung: Lot schmilzt, Grundwerkstoff nicht. "
-    "4. Benetzung erklären. 5. Flussmittel erwähnen. 6. Abgrenzen: vs. Schweißen, Kleben. "
-    "7. Anwendung begründen.\"\n\n"
-    "Content type and lesson mode labels:\n"
-    "- Write contentType in the lesson language. German: \"Prozessklassifikation\", "
-    "\"Berechnung\", \"Konzept\", \"Beschreibende Wissenschaft\". English: keep as-is.\n"
-    "- Write lessonMode in the lesson language. German: \"Prüfungsvorbereitung\", "
+    "Deep Learn has four lesson engines. Your FIRST task is to detect which engine fits "
+    "the topic, then follow that engine's structure exactly.\n\n"
+    "STEP 1 — Detect lesson engine. Set contentType to one of:\n"
+    "- \"math-heavy\" — the main goal is solving problems with formulas, proofs, calculations, "
+    "or derivations. Examples: mathematics, physics calculations, mechanics, statistics, "
+    "electrical circuits, thermodynamics, control theory.\n"
+    "- \"concept-light-math\" — mostly conceptual, but small calculations, tables, values, "
+    "ratios, or technical parameters may appear. Examples: Fertigungstechnik, materials science, "
+    "manufacturing processes, chemistry theory, economics concepts, business analytics basics, "
+    "biology with occasional equations.\n"
+    "- \"no-math\" — purely conceptual, no formulas. Student needs to understand, remember, "
+    "compare, argue, or explain. Examples: history, law, political science, literature, ethics, "
+    "philosophy, language learning, sociology, management theory, marketing.\n"
+    "- \"balanced\" — both conceptual theory AND formulas/calculations are central. "
+    "Examples: physics theory + calculations, economics, chemistry, engineering science, "
+    "computer science theory, data science, finance, materials testing.\n\n"
+    "STEP 2 — Follow the engine's block structure:\n\n"
+    "═══ ENGINE 1: math-heavy ═══\n"
+    "Use keyFormulas with full formula cards (only source-supported and directly relevant). "
+    "Use methodGuide to help students pick the right formula/theorem for each situation. "
+    "Use workedExamples with complete numeric/symbolic solutions — at least one basic and "
+    "one exam-style. Verify every calculation step before returning (CRITICAL: a wrong "
+    "example destroys trust). stepByStepMethod must be topic-specific: identify givens, "
+    "identify unknowns, choose formula, check assumptions, substitute, solve, check units "
+    "and plausibility. Use adaptiveBlocks only if needed. selfCheck should include a mini "
+    "calculation. practiceTasks at easy/medium/exam levels.\n\n"
+    "═══ ENGINE 2: concept-light-math ═══\n"
+    "keyFormulas = [] unless formulas are genuinely central to the topic. Focus on:\n"
+    "- adaptiveBlocks with: \"Definition\", \"Classification\", \"Comparison Table\" "
+    "(use body field with markdown table — columns like Type|Principle|Application|"
+    "Advantage|Disadvantage|Exam clue), \"Selection Criteria\", \"Key Statements\" "
+    "(title: \"Prüfungsrelevante Kernaussagen\" or equivalent in lesson language), "
+    "\"Process Map\", \"Mechanism\", \"Variants\", \"Conditions\", \"Applications\".\n"
+    "- Classification completeness: for classification topics (e.g. DIN 8580), include ALL "
+    "groups — do not omit groups because evidence is thin.\n"
+    "- Only list specific examples under a group if the source clearly supports it.\n"
+    "- Prefer overview sources for classification topics.\n"
+    "- Comparison tables are the most exam-valuable block — always include one.\n"
+    "- Optional formula/parameter cards only if numeric criteria are truly central.\n"
+    "- workedExamples should be application cases (\"Mini-Fallbeispiel\"), not calculations.\n"
+    "- stepByStepMethod framed as exam method: define → classify → explain principle → "
+    "compare with alternatives → state advantages/disadvantages → justify for the given case.\n"
+    "- selfCheck: concept question + classification question + application question.\n\n"
+    "═══ ENGINE 3: no-math ═══\n"
+    "keyFormulas = [] (always empty). Focus on:\n"
+    "- adaptiveBlocks with: \"Key Terms\" (term + definition pairs), \"Context\" "
+    "(historical/legal/social/theoretical background), a structure map chosen from: "
+    "\"Timeline\", \"Argument Map\", \"Cause-Effect\", \"Rule-Exception\", "
+    "\"Concept Hierarchy\", \"Theory Comparison\", \"Process Explanation\". "
+    "Also: \"Main Ideas\" (3-6 most important ideas), \"Comparison\" (related concepts, "
+    "theories, authors, rules, cases), \"Key Statements\".\n"
+    "- Add an adaptiveBlock \"Exam Answer Structure\" showing how to write an exam answer: "
+    "1. Define key term, 2. Give context, 3. Explain main idea, 4. Add example/evidence, "
+    "5. Compare or evaluate, 6. Conclude clearly.\n"
+    "- workedExamples should be short written-answer tasks with model structure.\n"
+    "- stepByStepMethod = how to structure a written exam answer for this topic.\n"
+    "- selfCheck: definition + comparison + application/argument question.\n\n"
+    "═══ ENGINE 4: balanced ═══\n"
+    "Combine concept explanation AND formula cards. Focus on:\n"
+    "- adaptiveBlocks with: \"Concept Map\" (show how ideas connect, e.g. Concept A → "
+    "measured by Formula B → used when Condition C), \"Core Theory\" (definitions, "
+    "principles, conditions, assumptions), \"Key Statements\".\n"
+    "- keyFormulas: include central formulas with full cards.\n"
+    "- methodGuide: when to use concept explanation vs formula calculation vs comparison.\n"
+    "- workedExamples: one conceptual, one calculation, one mixed (explain + calculate + "
+    "interpret). All exam-style.\n"
+    "- stepByStepMethod: 1. Identify question type (explanation/comparison/calculation), "
+    "2. If conceptual: define, explain, compare, apply. 3. If calculation: choose formula, "
+    "check assumptions, solve. 4. If mixed: explain concept first, then calculate. "
+    "5. End with interpretation of result.\n"
+    "- selfCheck: concept + formula choice + calculation + interpretation.\n"
+    "- practiceTasks: one conceptual, one calculation, one mixed.\n\n"
+    "═══ RULES FOR ALL ENGINES ═══\n"
+    "CRITICAL: If a topic does not need formulas, do NOT include keyFormulas and do NOT "
+    "return text like \"No formula was strongly supported\". Return keyFormulas as [] and "
+    "fill adaptiveBlocks with the right subject-specific blocks instead.\n\n"
+    "Write like a tutor coaching the student for the exam, not like an encyclopedia. "
+    "After explaining a concept, connect it to the exam with inline notes like "
+    "\"Merksatz für die Prüfung: ...\" or \"Prüfungsfalle: ...\" in coreExplanation "
+    "and keyDetails. This makes the lesson feel like real exam coaching.\n\n"
+    "Add an adaptiveBlock \"Exam Questions\" (title in lesson language, e.g. \"Typische "
+    "Prüfungsfragen\") with 3-5 professor-style questions, each followed by a model "
+    "answer (Musterantwort).\n\n"
+    "selfCheck: 2-3 questions with hint, answer, explanation, stepByStep. At least one "
+    "applied question (classify, calculate, argue, apply — not just definitional).\n\n"
+    "stepByStepMethod must ALWAYS be topic-specific. NEVER return generic steps like "
+    "\"Identify the system\", \"Choose the right theorem\", \"List assumptions\".\n\n"
+    "Source relevance: only cite sources that directly support the lesson content. Do NOT "
+    "cite chapter files about unrelated topics. Only include a source in groundedSources "
+    "if the lesson actually references information from it.\n\n"
+    "Content type label: write in lesson language. German: \"Formeln & Rechnung\", "
+    "\"Konzept & leichte Formeln\", \"Rein konzeptuell\", \"Konzept & Rechnung\". "
+    "English: \"Math-heavy\", \"Concept + light math\", \"Conceptual\", \"Balanced\".\n"
+    "Lesson mode label: write in lesson language. German: \"Prüfungsvorbereitung\", "
     "\"Einfache Erklärung\", \"Professorstil\", \"Praktische Anwendung\", "
-    "\"Schnelle Wiederholung\". English: keep as-is.\n\n"
+    "\"Schnelle Wiederholung\".\n\n"
     "Formula card rules (calculation topics only):\n"
     "Before returning a formula card, check that the formula is copied correctly, the "
     "meaning explains the formula correctly, the source page supports it, and the formula "
@@ -736,119 +678,86 @@ def _is_incomplete_final_answer(text: str) -> bool:
 
 
 def _fallback_method(topic: str, language: str, content_type: str = "") -> list[str]:
-    ct = (content_type or "").lower().replace(" ", "-")
-    if ct in ("process-detail",):
-        if language == "en":
+    ct = (content_type or "").lower().replace(" ", "-").replace("&", "").replace("+", "")
+    is_de = language != "en"
+    if "math-heavy" in ct or "formeln" in ct:
+        if is_de:
             return [
-                "Define the process and its place in the manufacturing classification.",
-                "Explain the working principle (what happens physically/chemically).",
-                "Identify the key conditions and parameters.",
-                "Name the variants of this process.",
-                "Compare with alternative processes for the same purpose.",
-                "State advantages, disadvantages, and typical applications.",
+                "Identifiziere die gegebenen Größen und die gesuchte Unbekannte.",
+                "Wähle die passende Formel oder den richtigen Satz.",
+                "Prüfe die Voraussetzungen und Annahmen.",
+                "Setze die Werte ein und löse Schritt für Schritt.",
+                "Prüfe Einheiten und Plausibilität des Ergebnisses.",
             ]
         return [
-            "Definiere das Verfahren und ordne es in die Fertigungsklassifikation ein.",
-            "Erkläre das Wirkprinzip (was passiert physikalisch/chemisch).",
-            "Identifiziere die wichtigsten Bedingungen und Parameter.",
-            "Nenne die Varianten dieses Verfahrens.",
-            "Vergleiche mit alternativen Verfahren für denselben Zweck.",
-            "Nenne Vorteile, Nachteile und typische Anwendungen.",
+            "Identify the given quantities and the unknown to solve for.",
+            "Choose the correct formula or theorem.",
+            "Check the assumptions and prerequisites.",
+            "Substitute the values and solve step by step.",
+            "Check units and plausibility of the result.",
         ]
-    if ct in ("process-classification",):
-        if language == "en":
+    if "concept-light-math" in ct or "konzept  leichte" in ct or "concept  light" in ct:
+        if is_de:
             return [
-                "Define the manufacturing group and its DIN classification.",
-                "Explain what happens to the material or substance cohesion.",
-                "Name typical procedures in this group.",
-                "Compare procedures by material suitability, cost, accuracy, and application.",
-                "Justify which procedure fits a given part or scenario.",
+                "Definiere den Begriff und ordne ihn in die Klassifikation ein.",
+                "Erkläre das Grundprinzip oder den Mechanismus.",
+                "Vergleiche mit verwandten Verfahren oder Konzepten.",
+                "Nenne Vorteile, Nachteile und typische Anwendungen.",
+                "Begründe die Wahl für ein konkretes Szenario (Prüfungsantwort).",
             ]
         return [
-            "Definiere die Fertigungshauptgruppe und ihre DIN-Einordnung.",
-            "Erkläre, was mit dem Werkstoff oder Stoffzusammenhalt passiert.",
-            "Nenne typische Verfahren dieser Gruppe.",
-            "Vergleiche Verfahren nach Werkstoffeignung, Kosten, Genauigkeit und Anwendung.",
-            "Begründe, welches Verfahren für ein konkretes Bauteil oder Szenario passt.",
+            "Define the term and classify it within its system.",
+            "Explain the underlying principle or mechanism.",
+            "Compare with related processes or concepts.",
+            "State advantages, disadvantages, and typical applications.",
+            "Justify the choice for a concrete scenario (exam answer).",
         ]
-    if ct in ("conceptual",):
-        if language == "en":
+    if "no-math" in ct or "rein konzept" in ct or "conceptual" in ct:
+        if is_de:
             return [
-                "Identify the core definition or principle.",
-                "State the conditions under which it applies.",
-                "Apply the principle to a concrete case or scenario.",
-                "Identify exceptions or edge cases.",
-                "Formulate an exam-ready summary.",
+                "Definiere den Schlüsselbegriff.",
+                "Gib den Kontext (historisch, rechtlich, theoretisch).",
+                "Erkläre die Hauptidee oder das zentrale Argument.",
+                "Belege mit einem Beispiel oder einer Quelle.",
+                "Vergleiche oder bewerte und formuliere ein Fazit.",
             ]
         return [
-            "Identifiziere die zentrale Definition oder das Prinzip.",
-            "Nenne die Bedingungen, unter denen es gilt.",
-            "Wende das Prinzip auf einen konkreten Fall an.",
-            "Identifiziere Ausnahmen oder Sonderfälle.",
-            "Formuliere eine prüfungstaugliche Zusammenfassung.",
+            "Define the key term.",
+            "Give the context (historical, legal, theoretical).",
+            "Explain the main idea or central argument.",
+            "Support with an example or source.",
+            "Compare or evaluate and formulate a conclusion.",
         ]
-    if ct in ("narrative",):
-        if language == "en":
+    if "balanced" in ct or "konzept  rechnung" in ct:
+        if is_de:
             return [
-                "Place the topic in its historical or thematic context.",
-                "Identify causes and contributing factors.",
-                "Trace the key consequences or developments.",
-                "Compare different perspectives or interpretations.",
-                "Summarize the significance for the course.",
+                "Bestimme den Fragetyp: Erklärung, Vergleich oder Berechnung.",
+                "Falls konzeptuell: definiere, erkläre, vergleiche, wende an.",
+                "Falls Berechnung: wähle Formel, prüfe Annahmen, löse.",
+                "Falls gemischt: erkläre das Konzept, dann rechne.",
+                "Interpretiere das Ergebnis im Kontext der Aufgabe.",
             ]
         return [
-            "Ordne das Thema in seinen historischen oder thematischen Kontext ein.",
-            "Identifiziere Ursachen und Einflussfaktoren.",
-            "Verfolge die wichtigsten Folgen oder Entwicklungen.",
-            "Vergleiche verschiedene Perspektiven oder Interpretationen.",
-            "Fasse die Bedeutung für den Kurs zusammen.",
+            "Determine the question type: explanation, comparison, or calculation.",
+            "If conceptual: define, explain, compare, apply.",
+            "If calculation: choose formula, check assumptions, solve.",
+            "If mixed: explain the concept first, then calculate.",
+            "Interpret the result in the context of the task.",
         ]
-    if ct in ("descriptive-science",):
-        if language == "en":
-            return [
-                "Describe the structure or components involved.",
-                "Explain the function or mechanism.",
-                "Trace the cause-effect chain.",
-                "Compare with related structures or processes.",
-                "Identify clinically or exam-relevant details.",
-            ]
+    if is_de:
         return [
-            "Beschreibe die beteiligten Strukturen oder Komponenten.",
-            "Erkläre die Funktion oder den Mechanismus.",
-            "Verfolge die Ursache-Wirkungs-Kette.",
-            "Vergleiche mit verwandten Strukturen oder Prozessen.",
-            "Identifiziere klinisch oder prüfungsrelevante Details.",
-        ]
-    if ct in ("language",):
-        if language == "en":
-            return [
-                "Identify the grammar rule or pattern.",
-                "Study the examples from the course material.",
-                "Note the exceptions and common mistakes.",
-                "Practice with example sentences.",
-                "Check your understanding with a self-test.",
-            ]
-        return [
-            "Identifiziere die Grammatikregel oder das Muster.",
-            "Studiere die Beispiele aus dem Kursmaterial.",
-            "Notiere Ausnahmen und häufige Fehler.",
-            "Übe mit Beispielsätzen.",
-            "Prüfe dein Verständnis mit einem Selbsttest.",
-        ]
-    if language == "en":
-        return [
-            "Identify the core concept and its definition from the sources.",
-            "Understand the conditions or context where it applies.",
-            "Work through an example or application step by step.",
-            "Check for common mistakes or edge cases.",
-            "Verify your understanding against the original " + topic + " question.",
+            "Identifiziere das Kernkonzept und seine Definition aus den Quellen.",
+            "Verstehe die Bedingungen oder den Kontext, in dem es gilt.",
+            "Arbeite ein Beispiel oder eine Anwendung Schritt für Schritt durch.",
+            "Prüfe auf häufige Fehler oder Sonderfälle.",
+            "Überprüfe dein Verständnis anhand der ursprünglichen Fragestellung zu " + topic + ".",
         ]
     return [
-        "Identifiziere das Kernkonzept und seine Definition aus den Quellen.",
-        "Verstehe die Bedingungen oder den Kontext, in dem es gilt.",
-        "Arbeite ein Beispiel oder eine Anwendung Schritt für Schritt durch.",
-        "Prüfe auf häufige Fehler oder Sonderfälle.",
-        "Überprüfe dein Verständnis anhand der ursprünglichen Fragestellung zu " + topic + ".",
+        "Identify the core concept and its definition from the sources.",
+        "Understand the conditions or context where it applies.",
+        "Work through an example or application step by step.",
+        "Check for common mistakes or edge cases.",
+        "Verify your understanding against the original " + topic + " question.",
     ]
 
 
