@@ -208,16 +208,9 @@ let askAI = function (question, skipUserBubble) {
         _curRawText = '';
         _curAnswWrap = null;
         var _keyToSave = _myChatKey || (typeof _prevChatKey !== 'undefined' ? _prevChatKey : null);
-        console.log(
-          '[AI] _finishRender key=',
-          _keyToSave,
-          'msgs in DOM=',
-          typeof aiMsgs !== 'undefined' ? aiMsgs.querySelectorAll('.ai-msg-wrap').length : 'N/A'
-        );
         if (typeof saveChatForFile === 'function' && _keyToSave) {
           try {
             saveChatForFile(_keyToSave);
-            console.log('[AI] saveChatForFile called for', _keyToSave);
           } catch (e) {
             console.warn('chat save failed', e);
           }
@@ -917,11 +910,3 @@ function _captureSnipRegion(x1, y1, x2, y2) {
   });
 })();
 
-console.log(
-  '\u2713 js/ai.js loaded — model: ' +
-    AI_MODEL +
-    ', max_tokens: ' +
-    AI_MAX_TOK +
-    ', pdf_cap: ' +
-    AI_PDF_CAP
-);

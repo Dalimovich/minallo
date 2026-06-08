@@ -72,7 +72,6 @@
       if (!fileKey) return;
       try {
         var msgs = serializeChatDOM();
-        console.log('[Chat] saveChatForFile key=', fileKey, 'msgs=', msgs.length);
         if (msgs.length === 0) {
           localStorage.removeItem(CHAT_PREFIX + fileKey);
         } else {

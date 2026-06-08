@@ -238,12 +238,6 @@
 
       // Seed activeCourseId/activeCourseRef if not yet set, then load DB tools.
       var _glCourseForSkill = _glEnsurePracticeCourse();
-      console.log('[practice course]', {
-        activeCourseId: window.activeCourseId,
-        activeCourseRefId: window.activeCourseRef && window.activeCourseRef.id,
-        storageCourse: _glStorageCourse(),
-        ragCourse: _glCourse()
-      });
       if (_glCourseForSkill) {
         _glLoadDbTools(_glCourseForSkill.id);
       }
@@ -431,7 +425,6 @@
       var sc = _glStorageCourse();
       window.activeCourseId = sc.id;
       window.activeCourseRef = sc;
-      console.log('[practice course] seeded from storage course', sc.id);
       return _glCourse(); // will now return sc
     }
 
@@ -907,8 +900,6 @@
             count: data.items.length,
             created_at: new Date().toISOString()
           };
-          console.log('[practice] generated', tool, meta);
-
           if (tool === 'quiz') {
             _glQuizItems = data.items;
             _glQuizIndex = 0;

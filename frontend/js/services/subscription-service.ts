@@ -9,6 +9,12 @@ function _authHeaders(): Record<string, string> {
   };
 }
 
+function _billingError(payload: BillingErrorBody, fallback: string): string {
+  if (typeof payload.error === 'object' && payload.error?.message) return payload.error.message;
+  if (typeof payload.error === 'string') return payload.error;
+  return fallback;
+}
+
 export interface CheckoutConsent {
   consentWiderrufVerzicht: boolean;
   consentTimestamp: string;
@@ -51,15 +57,7 @@ export async function pauseSubscription(
     body: JSON.stringify({ resumeAt, reason: reason || 'Vacation pause' }),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'object' && payload.error?.message
-        ? payload.error.message
-        : typeof payload.error === 'string'
-          ? payload.error
-          : 'Could not pause subscription';
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(_billingError(payload, 'Could not pause subscription'));
   return payload;
 }
 
@@ -70,15 +68,7 @@ export async function resumeSubscription(): Promise<Record<string, unknown>> {
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'object' && payload.error?.message
-        ? payload.error.message
-        : typeof payload.error === 'string'
-          ? payload.error
-          : 'Could not resume subscription';
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(_billingError(payload, 'Could not resume subscription'));
   return payload;
 }
 
@@ -89,15 +79,7 @@ export async function cancelSubscription(): Promise<Record<string, unknown>> {
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'object' && payload.error?.message
-        ? payload.error.message
-        : typeof payload.error === 'string'
-          ? payload.error
-          : 'Could not cancel subscription';
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(_billingError(payload, 'Could not cancel subscription'));
   return payload;
 }
 
@@ -108,15 +90,7 @@ export async function reactivateSubscription(): Promise<Record<string, unknown>>
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'object' && payload.error?.message
-        ? payload.error.message
-        : typeof payload.error === 'string'
-          ? payload.error
-          : 'Could not reactivate subscription';
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(_billingError(payload, 'Could not reactivate subscription'));
   return payload;
 }
 
@@ -127,15 +101,7 @@ export async function applyRetentionDiscount(): Promise<Record<string, unknown>>
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'object' && payload.error?.message
-        ? payload.error.message
-        : typeof payload.error === 'string'
-          ? payload.error
-          : 'Could not apply discount';
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(_billingError(payload, 'Could not apply discount'));
   return payload;
 }
 
@@ -181,12 +147,6 @@ export async function activatePayPalSubscription(
 export async function loadBillingConfig(): Promise<unknown> {
   const res = await fetch('/api/public-billing-config');
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody;
-  if (!res.ok) {
-    const message =
-      typeof payload.error === 'object' && payload.error?.message
-        ? payload.error.message
-        : 'Could not load billing config';
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(_billingError(payload, 'Could not load billing config'));
   return payload;
 }

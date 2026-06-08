@@ -22,6 +22,16 @@ log = logging.getLogger(__name__)
 
 _ACTIVE_STATUSES = {"active", "trialing"}
 
+
+def _log_security_event(user_id: str, event_type: str, metadata: dict | None = None) -> None:
+    row: dict[str, Any] = {"user_id": user_id, "event_type": event_type}
+    if metadata:
+        row["metadata"] = metadata
+    try:
+        get_supabase().table("security_events").insert(row).execute()
+    except Exception:  # noqa: BLE001
+        log.exception("failed to log security event %s", event_type)
+
 # Two independent buckets, mirroring backend/lib/rate-limit.ts. Interactive
 # (chat / RAG / writing-coach / stream asks) is cheap per call and gets a
 # large allowance; generation (notes / quiz / flashcards) is heavier per
@@ -68,14 +78,7 @@ def require_active_subscription(user_id: str, reason: str) -> None:
     if not ok:
         # Log to the same security_events table the Netlify gate uses so we
         # have one feed of subscription_gate_blocked events.
-        try:
-            sb.table("security_events").insert({
-                "user_id": user_id,
-                "event_type": "subscription_gate_blocked",
-                "metadata": {"reason": reason, "status": status_value or "none"},
-            }).execute()
-        except Exception:  # noqa: BLE001
-            log.exception("failed to log subscription_gate_blocked")
+        _log_security_event(user_id, "subscription_gate_blocked", {"reason": reason, "status": status_value or "none"})
         raise HTTPException(
             status_code=402,
             detail="Active subscription required.",
@@ -114,28 +117,14 @@ def enforce_rate_limit(
 
     count = resp.count or len(resp.data or [])
     if count >= max_events:
-        try:
-            sb.table("security_events").insert({
-                "user_id": user_id,
-                "event_type": event_type + "_rate_limited",
-                "metadata": {"count": count, "window_seconds": window_seconds},
-            }).execute()
-        except Exception:  # noqa: BLE001
-            log.exception("failed to log rate-limit event")
+        _log_security_event(user_id, event_type + "_rate_limited", {"count": count, "window_seconds": window_seconds})
         raise HTTPException(
             status_code=429,
             detail=message,
             headers={"Retry-After": str(window_seconds)},
         )
 
-    # Record this hit so the next request in the window sees it.
-    try:
-        sb.table("security_events").insert({
-            "user_id": user_id,
-            "event_type": event_type,
-        }).execute()
-    except Exception:  # noqa: BLE001
-        log.exception("failed to log rate-limit hit")
+    _log_security_event(user_id, event_type)
 
 
 def _enforce_bucket_cap(
@@ -165,14 +154,7 @@ def _enforce_bucket_cap(
     if count < max_events:
         return
 
-    try:
-        sb.table("security_events").insert({
-            "user_id": user_id,
-            "event_type": "ai_monthly_cap_blocked",
-            "metadata": {"bucket": bucket, "count": count, "cap": max_events},
-        }).execute()
-    except Exception:  # noqa: BLE001
-        log.exception("failed to log ai_monthly_cap_blocked")
+    _log_security_event(user_id, "ai_monthly_cap_blocked", {"bucket": bucket, "count": count, "cap": max_events})
 
     if now.month == 12:
         next_reset = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
