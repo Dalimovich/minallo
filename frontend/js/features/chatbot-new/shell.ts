@@ -1113,31 +1113,47 @@ async function handleIntentRoute(
     genThinking?.set('Opening paper view');
     await finishIntentSkillLoading(skillStatus, genThinking);
 
-    // 4. Open the paper view using the existing cheatsheet page infrastructure
-    const openPaper = (window as unknown as {
-      openCheatsheetPaper?: (opts: Record<string, unknown>) => void
-    }).openCheatsheetPaper;
+    // 4. Build paper opts once — reused for both initial open and the reopen button
+    const paperOpts: Record<string, unknown> | null = result && result.text ? {
+      course: route.target.courseId,
+      title: result.title || 'Cheatsheet',
+      scope: result.title || 'Course cheatsheet',
+      meta: '',
+      markdown: result.text,
+      settings: {
+        columns: chatSettings.columns,
+        font: fontCsMap[chatSettings.fontSize] || 'sm',
+        pad: padMap[chatSettings.padding] || '10mm',
+        style: (result.settings && result.settings.style) || 'academic',
+      },
+    } : null;
 
-    if (openPaper && result && result.text) {
-      openPaper({
-        course: route.target.courseId,
-        title: result.title || 'Cheatsheet',
-        scope: result.title || 'Course cheatsheet',
-        meta: '',
-        markdown: result.text,
-        settings: {
-          columns: chatSettings.columns,
-          font: fontCsMap[chatSettings.fontSize] || 'sm',
-          pad: padMap[chatSettings.padding] || '10mm',
-          style: (result.settings && result.settings.style) || 'academic',
-        },
-      });
-    }
+    const callOpenPaper = (): void => {
+      const fn = (window as unknown as {
+        openCheatsheetPaper?: (opts: Record<string, unknown>) => void
+      }).openCheatsheetPaper;
+      if (fn && paperOpts) fn(paperOpts);
+    };
 
-    const text = result && result.text
-      ? 'Your cheatsheet is ready. The PDF viewer is open — adjust the layout if needed, then click **⤓ Download PDF**.'
+    if (paperOpts) callOpenPaper();
+
+    const text = paperOpts
+      ? 'Your cheatsheet is ready. Use the button below to open the PDF viewer and download it.'
       : 'No cheatsheet content was returned. Please try again.';
     if (bubble) renderRichBubble(bubble, text);
+
+    // Add a persistent "Open PDF viewer" button so the user can reopen after closing
+    if (bubble && paperOpts) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ncb-cs-reopen-btn';
+      btn.textContent = '⤓ Open PDF viewer';
+      btn.addEventListener('click', () => {
+        ensureCheatsheetScripts().then(callOpenPaper).catch(() => callOpenPaper());
+      });
+      bubble.appendChild(btn);
+    }
+
     return { text };
   }
 
