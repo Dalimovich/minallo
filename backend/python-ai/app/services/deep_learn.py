@@ -84,8 +84,16 @@ _SYSTEM = (
     "timeline, or framework comes from evidence, say which source supports it. If evidence "
     "is thin, stay honest and use a helpful source note rather than sounding weak.\n\n"
     "Deep Learn must work for any course, not only STEM. First infer the subject area and "
-    "content type from the evidence, then choose the right teaching blocks. Do not include "
-    "Formula Cards unless formulas or equations are actually supported by the evidence. "
+    "content type from the evidence, then choose the right teaching blocks.\n\n"
+    "Subject adaptation rules:\n"
+    "- For non-formula subjects (manufacturing, law, history, biology, business, etc.), do NOT "
+    "include keyFormulas at all — return an empty array. Instead, use adaptiveBlocks with types "
+    "like Comparison Table, Process Map, Timeline, Case Reasoning, Framework, or Vocabulary "
+    "to present the core knowledge. For example, a manufacturing lesson should use a Comparison "
+    "Table of processes, a Process Map of steps, and a list of exam-relevant key statements.\n"
+    "- For STEM/calculation subjects, include keyFormulas only when formulas are actually "
+    "supported by the evidence.\n\n"
+    "Formula card rules (STEM subjects only):\n"
     "Before returning a formula card, check that the formula is copied correctly, the "
     "meaning explains the formula correctly, the source page supports it, and the formula "
     "is DIRECTLY AND CENTRALLY relevant to the selected topic — not merely from the same "
@@ -102,10 +110,13 @@ _SYSTEM = (
     "- Every formula/adaptive block must include a source string copied from one of the source labels.\n"
     "- Every important claim should be grounded in a source label where possible.\n"
     "- Never cite a source label that is not in COURSE EVIDENCE.\n"
-    "- If citation coverage is weak, include a helpful citationWarning, e.g. "
-    "\"Diese Lektion basiert auf den verfügbaren Kursquellen. Falls bestimmte "
+    "- If citation coverage is weak, include a helpful citationWarning IN THE LESSON LANGUAGE. "
+    "German example: \"Diese Lektion basiert auf den verfügbaren Kursquellen. Falls bestimmte "
     "Beispiele, Übungen oder Details fehlen, lade zusätzliche Materialien hoch, "
-    "um die Erklärung genauer zu machen.\"\n\n"
+    "um die Erklärung genauer zu machen.\" "
+    "English example: \"This lesson is based on the available course sources. If specific "
+    "examples, exercises, or details are missing, upload additional materials to make the "
+    "explanation more precise.\"\n\n"
     "Quality rules:\n"
     "- Keep the ENTIRE lesson in the requested lesson language — including all text, "
     "explanations, labels in meaning/variables/conditions fields, commonMistake text, "
@@ -113,9 +124,15 @@ _SYSTEM = (
     "- Do not write dead sections like \"No strong course evidence for this section\". "
     "If evidence is incomplete, provide a cautious method inferred from examples and say so.\n"
     "- stepByStepMethod must be TOPIC-SPECIFIC, not a generic problem-solving template. "
-    "Write concrete steps a student would follow for this particular topic. For example, "
-    "for dynamics: \"Draw the free-body diagram\", \"Decompose forces\", \"Apply Newton's 2nd law\". "
-    "Never return generic steps like \"Identify the system\" or \"Choose the right theorem\".\n\n"
+    "Write concrete steps a student would follow for THIS PARTICULAR topic. Examples:\n"
+    "  * Energy conservation: \"Choose initial and final states\", \"Write E_kin and E_pot at both states\", "
+    "\"Check for non-conservative forces\", \"Set up energy balance\", \"Solve for unknown\".\n"
+    "  * Manufacturing (Urformen): \"Identify the material state\", \"Classify process per DIN 8580\", "
+    "\"Compare suitable procedures\", \"Evaluate by cost, accuracy, geometry\".\n"
+    "  * Legal topic: \"Identify the legal norm\", \"Check applicability conditions\", "
+    "\"Apply subsumption\", \"State legal consequence\".\n"
+    "  NEVER return generic steps like \"Identify the system\", \"Choose the right theorem\", "
+    "or \"List the relevant assumptions\". These are useless to students.\n\n"
     "Worked example rules (CRITICAL — a wrong example destroys student trust):\n"
     "- Before returning a worked example, RECALCULATE every step yourself. Verify that each "
     "equation follows from the previous one, that force decompositions use the correct "
@@ -601,6 +618,20 @@ def _fallback_method(topic: str, language: str) -> list[str]:
     ]
 
 
+def _citation_warning(language: str) -> str:
+    if language == "en":
+        return (
+            "This lesson is based on the available course sources. If specific examples, "
+            "exercises, or details are missing, upload additional materials to make the "
+            "explanation more precise."
+        )
+    return (
+        "Diese Lektion basiert auf den verfügbaren Kursquellen. Falls bestimmte "
+        "Beispiele, Übungen oder Details fehlen, lade zusätzliche Materialien hoch, "
+        "um die Erklärung genauer zu machen."
+    )
+
+
 def _formula_warning(language: str) -> str:
     if language == "en":
         return (
@@ -885,6 +916,9 @@ def generate_deep_learn(
         topic=topic,
         document_ids=document_ids,
     )
+    all_chunks = [c for chunks in buckets.values() for c in chunks]
+    effective_language = _effective_language(language, topic, all_chunks)
+
     if not _topic_coverage_ok(topic, buckets):
         return {
             "topic": topic,
@@ -893,7 +927,7 @@ def generate_deep_learn(
             "workedExample": "",
             "check": None,
             "structuredLesson": None,
-            "warning": "Diese Lektion basiert auf den verfügbaren Kursquellen. Falls bestimmte Beispiele, Übungen oder Details fehlen, lade zusätzliche Materialien hoch, um die Erklärung genauer zu machen.",
+            "warning": _citation_warning(effective_language),
             "groundedSources": [],
             "evidenceSummary": {k: len(v) for k, v in buckets.items()},
         }
@@ -902,7 +936,6 @@ def generate_deep_learn(
     merged_names = _backfill_doc_names(merged, dict(doc_names or {}))
     sources = _sources(merged, merged_names)
     evidence = _format_evidence_by_bucket(buckets, merged, merged_names)
-    effective_language = _effective_language(language, topic, merged)
 
     user = (
         "TOPIC TO TEACH: " + topic + "\n\n"
@@ -929,11 +962,7 @@ def generate_deep_learn(
     )
     citation_issues = _citation_issues(structured, sources)
     if citation_issues and not structured.get("citationWarning"):
-        structured["citationWarning"] = (
-            "Diese Lektion basiert auf den verfügbaren Kursquellen. Falls bestimmte "
-            "Beispiele, Übungen oder Details fehlen, lade zusätzliche Materialien hoch, "
-            "um die Erklärung genauer zu machen."
-        )
+        structured["citationWarning"] = _citation_warning(effective_language)
 
     lesson_md, worked_md, check = _lesson_to_legacy_markdown(structured)
     note_id: str | None = None
