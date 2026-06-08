@@ -453,6 +453,7 @@
             console.log('app.js + modules loaded');
             return loadScript('js/router.js', 'router-script');
         })
+            .then(() => loadScript('js/services/progress-sync.js', 'progress-sync-script', { type: 'module' }))
             .then(() => {
             // Feature scripts load AFTER app.js so _init() can safely call app globals.
             // Track all loads so ss-ready only fires after every feature script is done.
