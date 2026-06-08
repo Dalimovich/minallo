@@ -81,8 +81,16 @@ export function renderTaskCardHtml(task: DailyMissionTask): string {
 
   const actions: string[] = [];
   if (canAct) {
-    if (task.status === 'todo') actions.push('<button type="button" class="dm-task-btn" data-dm-action="start" data-dm-task="' + escapeHtml(task.id) + '">Start</button>');
-    if (task.status === 'in_progress' || task.status === 'todo') {
+    if (task.status === 'todo') {
+      // Primary start action — label and behaviour depend on task type
+      const isStudyTask = task.task_type === 'learn' || task.task_type === 'review';
+      const isQuizTask = task.task_type === 'quiz';
+      const isPracticeTask = task.task_type === 'practice';
+      const startLabel = isStudyTask ? 'Open File' : isQuizTask ? 'Start Quiz' : isPracticeTask ? 'Open Exercises' : 'Start';
+      const startAction = isStudyTask ? 'start-study' : isQuizTask ? 'start-quiz' : isPracticeTask ? 'start-practice' : 'start';
+      actions.push('<button type="button" class="dm-task-btn dm-task-btn--primary" data-dm-action="' + startAction + '" data-dm-task="' + escapeHtml(task.id) + '">' + startLabel + '</button>');
+    }
+    if (task.status === 'in_progress') {
       actions.push('<button type="button" class="dm-task-btn dm-task-btn--primary" data-dm-action="done" data-dm-task="' + escapeHtml(task.id) + '">Done</button>');
     }
     actions.push('<button type="button" class="dm-task-btn" data-dm-action="skip" data-dm-task="' + escapeHtml(task.id) + '">Skip</button>');
@@ -98,13 +106,10 @@ export function renderTaskCardHtml(task: DailyMissionTask): string {
     actions.push('<button type="button" class="dm-task-btn dm-task-btn--ghost" data-dm-action="why" data-dm-task="' + escapeHtml(task.id) + '">Why?</button>');
   }
   if (canAct || isDone) {
-    if (task.task_type === 'quiz' || task.task_type === 'practice' || task.task_type === 'review') {
-      actions.push('<button type="button" class="dm-task-btn dm-task-btn--ghost" data-dm-action="gen-quiz" data-dm-task="' + escapeHtml(task.id) + '">Generate Quiz</button>');
-    }
     if (task.task_type === 'flashcards' || task.task_type === 'review') {
       actions.push('<button type="button" class="dm-task-btn dm-task-btn--ghost" data-dm-action="gen-flashcards" data-dm-task="' + escapeHtml(task.id) + '">Create Flashcards</button>');
     }
-    if (task.task_type === 'deeplearn' || task.task_type === 'learn') {
+    if (task.task_type === 'deeplearn') {
       actions.push('<button type="button" class="dm-task-btn dm-task-btn--ghost" data-dm-action="open-deeplearn" data-dm-task="' + escapeHtml(task.id) + '">Open DeepLearn</button>');
     }
     if (task.task_type === 'examforge') {
@@ -266,6 +271,18 @@ export async function mountDailyMissionPanel(host: HTMLElement, courseId: string
         if (!task) return;
         switch (action) {
           case 'start': void setTaskStatus(task.id, 'in_progress', btn); break;
+          case 'start-study':
+            handlers.onOpenSource?.(task);
+            void setTaskStatus(task.id, 'in_progress', btn);
+            break;
+          case 'start-quiz':
+            handlers.onGenerateQuiz?.(task);
+            void setTaskStatus(task.id, 'in_progress', btn);
+            break;
+          case 'start-practice':
+            handlers.onOpenSource?.(task);
+            void setTaskStatus(task.id, 'in_progress', btn);
+            break;
           case 'done': void setTaskStatus(task.id, 'completed', btn); break;
           case 'skip': void setTaskStatus(task.id, 'skipped', btn); break;
           case 'undo': void setTaskStatus(task.id, 'todo', btn); break;

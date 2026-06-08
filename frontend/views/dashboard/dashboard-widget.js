@@ -976,6 +976,7 @@
                   prompt: prompt
                 }));
               } catch (e) { /* ignore */ }
+              if (typeof window.setNavActive === 'function') window.setNavActive('psbAIPage');
               if (typeof window.showPortalSection === 'function') {
                 window.showPortalSection('aipage');
               }
@@ -1132,6 +1133,7 @@
         }
         function _openAi() {
           try { sessionStorage.setItem('ss_daily_mission_seed', 'to-do'); } catch (e) {}
+          if (typeof window.setNavActive === 'function') window.setNavActive('psbAIPage');
           if (typeof window.showPortalSection === 'function') {
             window.showPortalSection('aipage');
           }

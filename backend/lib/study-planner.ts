@@ -43,6 +43,11 @@ const STATE_RANK: Record<string, number> = {
 
 const IMPORTANCE_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
+// Learn first, then review, then reinforce — keeps study before quiz in every plan
+const TASK_TYPE_RANK: Record<string, number> = {
+  learn: 0, review: 1, practice: 2, quiz: 3, flashcards: 4, deeplearn: 5, examforge: 6
+};
+
 interface PlanRow {
   id: string;
   user_id: string;
@@ -218,9 +223,13 @@ export async function generateDailyPlan(
     ? candidatesRes.body.filter((c) => c.documents?.processing_status === 'ready')
     : [];
 
-  // Auto-seed valid_task_candidates from course_topics when the table has no
-  // rows for this user+course yet (first-time generation flow).
-  if (!candidates.length) {
+  // Auto-seed valid_task_candidates from course_topics. Runs when the table is
+  // empty OR when no learn/practice tasks exist (handles first run and migration
+  // from the old review-only seeding — seedCandidatesFromTopics deletes stale
+  // auto-seeded rows first so the re-seed always uses the latest source_type logic).
+  const needsSeed = !candidates.length ||
+    !candidates.some((c) => c.task_type === 'learn' || c.task_type === 'practice');
+  if (needsSeed) {
     const seeded = await seedCandidatesFromTopics(serviceKey, userId, courseId);
     if (seeded > 0) {
       const refetchRes = await supaRequest<CandidateRow[]>(
@@ -333,7 +342,7 @@ export async function generateDailyPlan(
       task_type: c.task_type,
       priority_group: group,
       title: taskTitle(c.task_type, topicName),
-      description: 'Use ' + fileName + pageLabel(c.page_start, c.page_end) + '.',
+      description: taskDescription(c.task_type, fileName, pageLabel(c.page_start, c.page_end)),
       reason: templateReason(group, stateByTopic.get(c.topic_id)),
       reason_code: group === 'must_do' ? 'next_in_course_map' : 'source_grounded_candidate',
       reason_metadata: {
@@ -414,7 +423,10 @@ function rankCandidates(candidates: CandidateRow[], stateByTopic: Map<string, st
     const impA = IMPORTANCE_RANK[a.course_topics?.importance || 'medium'] ?? 1;
     const impB = IMPORTANCE_RANK[b.course_topics?.importance || 'medium'] ?? 1;
     if (impA !== impB) return impA - impB;
-    return 0;
+    // Within same topic priority: study before quiz/practice
+    const typeA = TASK_TYPE_RANK[a.task_type] ?? 99;
+    const typeB = TASK_TYPE_RANK[b.task_type] ?? 99;
+    return typeA - typeB;
   });
 }
 
@@ -437,13 +449,21 @@ function selectCandidates(candidates: CandidateRow[], minutes: number): Candidat
 }
 
 function taskTitle(taskType: string, topicName: string): string {
-  if (taskType === 'quiz') return 'Quiz yourself on ' + topicName;
-  if (taskType === 'flashcards') return 'Review flashcards for ' + topicName;
-  if (taskType === 'practice') return 'Practice ' + topicName;
+  if (taskType === 'learn') return 'Study: ' + topicName;
+  if (taskType === 'review') return 'Review: ' + topicName;
+  if (taskType === 'practice') return 'Practice: ' + topicName + ' (exercises)';
+  if (taskType === 'quiz') return 'Quiz: ' + topicName;
+  if (taskType === 'flashcards') return 'Flashcards: ' + topicName;
   if (taskType === 'deeplearn') return 'Deep Learn: ' + topicName;
-  if (taskType === 'examforge') return 'Mini ExamForge drill: ' + topicName;
-  if (taskType === 'review') return 'Review ' + topicName;
-  return 'Learn ' + topicName;
+  if (taskType === 'examforge') return 'ExamForge drill: ' + topicName;
+  return 'Study: ' + topicName;
+}
+
+function taskDescription(taskType: string, fileName: string, pageStr: string): string {
+  if (taskType === 'learn') return 'Read through ' + fileName + pageStr + '.';
+  if (taskType === 'practice') return 'Work through the exercises in ' + fileName + pageStr + '.';
+  if (taskType === 'quiz') return 'Test yourself using ' + fileName + pageStr + '.';
+  return 'Use ' + fileName + pageStr + '.';
 }
 
 function pageLabel(start: number | null, end: number | null): string {
@@ -466,6 +486,18 @@ interface TopicSeedRow {
   id: string;
   importance: string;
   source_document_ids: string[] | null;
+}
+
+interface DocSeedRow {
+  id: string;
+  source_type: string | null;
+}
+
+function sourceTypeToTaskType(sourceType: string | null | undefined): string {
+  if (sourceType === 'lecture') return 'learn';
+  if (sourceType === 'exercise' || sourceType === 'solution') return 'practice';
+  if (sourceType === 'exam') return 'quiz';
+  return 'review';
 }
 
 async function seedCandidatesFromTopics(
@@ -492,43 +524,53 @@ async function seedCandidatesFromTopics(
   }
   if (!allDocIds.size) return 0;
 
-  // Fetch only ready documents (cap to 100 IDs to stay within URL limits)
+  // Fetch ready documents with their source_type to map lecture→learn, exercise→practice
   const docIdList = [...allDocIds].slice(0, 100);
-  const docRes = await supaRequest<Array<{ id: string }>>(
+  const docRes = await supaRequest<DocSeedRow[]>(
     'GET',
     'documents?id=in.(' + docIdList.map(encodeURIComponent).join(',') + ')' +
       '&processing_status=eq.ready' +
-      '&select=id' +
+      '&select=id,source_type' +
       '&limit=100',
     null,
     serviceKey
   );
-  const readyDocIds = new Set(
-    Array.isArray(docRes.body) ? docRes.body.map((d) => d.id) : []
+  const readyDocs = new Map<string, string | null>(
+    Array.isArray(docRes.body) ? docRes.body.map((d) => [d.id, d.source_type]) : []
   );
-  if (!readyDocIds.size) return 0;
+  if (!readyDocs.size) return 0;
+
+  // Delete stale auto-seeded candidates so re-seeds always use the latest logic
+  await supaRequest(
+    'DELETE',
+    'valid_task_candidates?user_id=eq.' + encodeURIComponent(userId) +
+      '&course_id=eq.' + encodeURIComponent(courseId) +
+      '&candidate_reason=eq.auto_seeded_from_topic_map',
+    null,
+    serviceKey
+  );
 
   const rows: Record<string, unknown>[] = [];
   for (const topic of topics) {
     const docIds = Array.isArray(topic.source_document_ids) ? topic.source_document_ids : [];
     for (const docId of docIds) {
-      if (!readyDocIds.has(docId)) continue;
-      const types: string[] = topic.importance === 'high' ? ['review', 'quiz'] : ['review'];
-      for (const taskType of types) {
-        rows.push({
-          user_id: userId,
-          course_id: courseId,
-          topic_id: topic.id,
-          task_type: taskType,
-          source_file_id: docId,
-          page_start: null,
-          page_end: null,
-          estimated_minutes: taskType === 'quiz' ? 15 : 20,
-          source_confidence: 'high',
-          is_valid: true,
-          candidate_reason: 'auto_seeded_from_topic_map'
-        });
-      }
+      if (!readyDocs.has(docId)) continue;
+      const sourceType = readyDocs.get(docId);
+      const taskType = sourceTypeToTaskType(sourceType);
+      const minutes = taskType === 'learn' ? 25 : taskType === 'practice' ? 20 : taskType === 'quiz' ? 15 : 20;
+      rows.push({
+        user_id: userId,
+        course_id: courseId,
+        topic_id: topic.id,
+        task_type: taskType,
+        source_file_id: docId,
+        page_start: null,
+        page_end: null,
+        estimated_minutes: minutes,
+        source_confidence: 'high',
+        is_valid: true,
+        candidate_reason: 'auto_seeded_from_topic_map'
+      });
     }
   }
   if (!rows.length) return 0;
