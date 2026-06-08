@@ -1205,7 +1205,12 @@
       }
       els.gen.disabled = true;
       _aiService()
-        .then(function (svc) { return svc.listCourseDocuments(courseId); })
+        .then(function (svc) {
+          return svc.listCourseDocuments(courseId).then(function (docs) {
+            return typeof svc.filterDocsByCourseFiles === 'function'
+              ? svc.filterDocsByCourseFiles(docs, courseId) : docs;
+          });
+        })
         .then(function (docs) {
           els.gen.disabled = false;
           var ready = (docs || []).filter(function (d) { return d.processing_status === 'ready'; });

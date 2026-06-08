@@ -149,6 +149,7 @@ export function uploadCourseDocument(
 export interface CourseDocument {
   id: string;
   file_name: string;
+  fileName?: string;
   file_type?: string;
   source_type?: string;
   processing_status?: string;
@@ -178,6 +179,30 @@ export async function listCourseDocuments(courseId: string): Promise<CourseDocum
   );
   const data = (await response.json()) as { documents?: CourseDocument[] };
   return data.documents || [];
+}
+
+export function filterDocsByCourseFiles(
+  docs: CourseDocument[],
+  courseId: string
+): CourseDocument[] {
+  const course = window.activeCourseRef;
+  if (!course || course.id !== courseId) return docs;
+  const names = new Set<string>();
+  ((course.files || []) as Array<{ name?: string }>).forEach((f) => {
+    const name = String(f.name || '').trim().toLowerCase();
+    if (name) names.add(name);
+  });
+  ((course.userFolders || []) as Array<{ files: Array<{ name?: string }> }>).forEach((fd) => {
+    (fd.files || []).forEach((f) => {
+      const name = String(f.name || '').trim().toLowerCase();
+      if (name) names.add(name);
+    });
+  });
+  if (!names.size) return docs;
+  return docs.filter((d) => {
+    const name = String(d.file_name || d.fileName || '').trim().toLowerCase();
+    return !!name && names.has(name);
+  });
 }
 
 export interface DocumentMeta {

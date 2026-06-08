@@ -723,7 +723,10 @@
     function loadInitial() {
       loadTopicMap();
       _service().then(function (svc) {
-        return svc.listCourseDocuments(courseId);
+        return svc.listCourseDocuments(courseId).then(function (docs) {
+          return typeof svc.filterDocsByCourseFiles === 'function'
+            ? svc.filterDocsByCourseFiles(docs, courseId) : docs;
+        });
       }).then(function (docs) {
         st.docs = docs || [];
         renderDocs();
