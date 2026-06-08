@@ -19,8 +19,14 @@ import {
   findPrimaryCourseId,
   generateDailyMission,
   getDailyMission,
+  todayLocalDate as _studyServiceToday,
   type DailyMissionResponse
 } from '../../services/study-service.js';
+
+/** Returns today's date as YYYY-MM-DD in the local timezone. */
+function todayLocalDateStr(): string {
+  return _studyServiceToday();
+}
 
 /** Tiny i18n wrapper: delegates to window._t (set up by language.ts) and
  * falls back to the English string when the language store isn't ready yet
@@ -524,6 +530,12 @@ interface PendingFile {
   size?: number;
 }
 
+interface MissionMarker {
+  type: 'daily_mission';
+  courseId: string;
+  date: string; // YYYY-MM-DD local date at creation time
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
@@ -534,6 +546,9 @@ interface ChatMessage {
   sourceLabel?: string;
   courseFileScope?: CourseFileScope;
   sources?: SrcItem[];
+  /** Lightweight marker stored instead of the serialised mission HTML.
+   *  On history replay the mission panel is re-fetched and re-rendered fresh. */
+  missionMarker?: MissionMarker;
 }
 
 interface ConversationState {
@@ -766,11 +781,13 @@ async function streamAiReply(
     // back to /api/ai for free-form chat + image/file handling.
     const routed = await handleIntentRoute(state, bubble, thinking);
     if (routed) {
-      state.messages.push({ role: 'assistant', text: routed });
+      const msg: ChatMessage = { role: 'assistant', text: routed.text };
+      if (routed.missionMarker) msg.missionMarker = routed.missionMarker;
+      state.messages.push(msg);
       setBubbleSubtitle(aiRow, 'course_files');
       touchActiveChat();
       saveChatStore();
-      appendBubbleActions(aiRow, routed);
+      appendBubbleActions(aiRow, routed.text);
       return;
     }
 
@@ -861,11 +878,13 @@ async function streamAiReply(
   }
 }
 
+type IntentRouteResult = { text: string; missionMarker?: MissionMarker };
+
 async function handleIntentRoute(
   state: ConversationState,
   bubble: HTMLElement | null,
   thinking: AIThinkingStatus | null
-): Promise<string | null> {
+): Promise<IntentRouteResult | null> {
   const last = state.messages[state.messages.length - 1];
   if (!last || last.role !== 'user' || !last.text) return null;
   if ((last.images && last.images.length) || (last.files && last.files.length)) return null;
@@ -879,7 +898,7 @@ async function handleIntentRoute(
     thinking?.remove(true);
     const text = 'Which course should I create this for? Open a course first, then ask again.';
     if (bubble) renderRichBubble(bubble, text);
-    return text;
+    return { text };
   }
 
   if (route.intent === 'daily_mission') {
@@ -896,7 +915,14 @@ async function handleIntentRoute(
         handlers: buildDailyMissionHandlers(targetCourseId)
       });
     }
-    return text;
+    // Store a lightweight marker instead of the serialised card HTML so that
+    // when history is replayed the panel is re-fetched and re-rendered fresh.
+    const marker: MissionMarker = {
+      type: 'daily_mission',
+      courseId: targetCourseId,
+      date: todayLocalDateStr(),
+    };
+    return { text, missionMarker: marker };
   }
 
   if (route.intent === 'summary') {
@@ -906,7 +932,7 @@ async function handleIntentRoute(
     const text = 'Summary created from your current course sources.\n\n' + ((result && result.text) || 'No summary was returned.');
     await finishIntentSkillLoading(skillStatus, thinking);
     if (bubble) renderRichBubble(bubble, text);
-    return text;
+    return { text };
   }
 
   if (route.intent === 'cheatsheet') {
@@ -916,11 +942,12 @@ async function handleIntentRoute(
     const text = 'Cheatsheet created from your current course sources.\n\n' + ((result && result.text) || 'No cheatsheet was returned.');
     await finishIntentSkillLoading(skillStatus, thinking);
     if (bubble) renderRichBubble(bubble, text);
-    return text;
+    return { text };
   }
 
   if (route.intent === 'notes') {
-    return handleNotesIntent(route.target.courseId, bubble);
+    const text = await handleNotesIntent(route.target.courseId, bubble);
+    return { text };
   }
 
   return null;
@@ -973,12 +1000,6 @@ function showIntentSkillLoading(
   el.className = 'ncb-skill-loading';
   el.setAttribute('aria-live', 'polite');
   el.style.setProperty('--ncb-skill-progress', '12%');
-  const stepHtml = copy.steps.map((step, index) => (
-    '<li class="ncb-skill-step' + (index === 0 ? ' is-active' : '') + '" data-step-index="' + index + '">' +
-      '<span class="ncb-skill-step-dot" aria-hidden="true"></span>' +
-      '<span>' + escapeHtml(step) + '</span>' +
-    '</li>'
-  )).join('');
   el.innerHTML =
     '<div class="ncb-skill-loading-line">' +
       '<span class="ncb-skill-loading-word">Loading</span>' +
@@ -1008,23 +1029,18 @@ function showIntentSkillLoading(
       '<strong>' + escapeHtml(copy.title) + '</strong>' +
       '<span>I am preparing the right course tool and checking the available context before showing the result.</span>' +
     '</div>' +
-    '<ol class="ncb-skill-steps">' + stepHtml + '</ol>';
+    '<div class="ncb-skill-live-note">Live AI thinking appears below this tool.</div>';
 
   const chip = el.querySelector<HTMLButtonElement>('.ncb-skill-chip');
-  const steps = Array.from(el.querySelectorAll<HTMLElement>('.ncb-skill-step'));
   let activeStep = 0;
   chip?.addEventListener('click', () => {
     const collapsed = el.classList.toggle('ncb-skill-loading--collapsed');
     chip.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   });
   el._skillLoadingTimer = window.setInterval(() => {
-    activeStep = Math.min(activeStep + 1, steps.length - 1);
-    const pct = Math.min(92, 12 + ((activeStep + 1) / Math.max(steps.length, 1)) * 72);
+    activeStep = Math.min(activeStep + 1, copy.steps.length - 1);
+    const pct = Math.min(92, 12 + ((activeStep + 1) / Math.max(copy.steps.length, 1)) * 72);
     el.style.setProperty('--ncb-skill-progress', pct.toFixed(0) + '%');
-    steps.forEach((step, index) => {
-      step.classList.toggle('is-complete', index < activeStep);
-      step.classList.toggle('is-active', index === activeStep);
-    });
     const stepText = copy.steps[activeStep];
     if (stepText) thinking?.set(stepText);
   }, 760);
@@ -1049,10 +1065,6 @@ async function finishIntentSkillLoading(
       liveSkillStatus._skillLoadingTimer = undefined;
     }
     skillStatus.style.setProperty('--ncb-skill-progress', '100%');
-    skillStatus.querySelectorAll('.ncb-skill-step').forEach((step) => {
-      step.classList.add('is-complete');
-      step.classList.remove('is-active');
-    });
     skillStatus.classList.add('ncb-skill-loading--done');
     await new Promise((resolve) => window.setTimeout(resolve, 260));
     skillStatus.remove();
@@ -3051,6 +3063,9 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     compact.sourceLabel = m.sourceLabel;
     compact.courseFileScope = m.courseFileScope;
     compact.sources = m.sources;
+    // Preserve the mission marker verbatim — it's tiny and must survive
+    // the storage round-trip so appendStoredMessage can re-fetch the cards.
+    if (m.missionMarker) compact.missionMarker = m.missionMarker;
   }
   return compact;
 }
@@ -3417,6 +3432,56 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   }
   const row = appendAiBubble(msgs);
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
+
+  // Daily Mission marker: re-fetch and re-render the live card UI instead of
+  // replaying the serialised plain-text fallback, which has no CSS or listeners.
+  if (m.missionMarker && m.missionMarker.type === 'daily_mission' && bubble) {
+    const marker = m.missionMarker;
+    const today = todayLocalDateStr();
+    if (marker.date === today) {
+      // Same day — reload today's mission fresh.
+      bubble.innerHTML = '<div class="dm-loading">Loading your daily mission…</div>';
+      import('../daily-mission/daily-mission-ui.js')
+        .then((mod) => {
+          bubble.innerHTML = '';
+          void mod.mountDailyMissionPanel(bubble, marker.courseId, {
+            handlers: buildDailyMissionHandlers(marker.courseId)
+          });
+          scrollMsgsToBottom(msgs);
+        })
+        .catch(() => {
+          bubble.innerHTML = '';
+          renderRichBubble(bubble, m.text);
+        });
+    } else {
+      // Past day — show an expired notice with a button to load today's mission.
+      bubble.innerHTML =
+        '<div class="dm-state dm-state--expired">' +
+          '<div class="dm-state-title">This mission has expired</div>' +
+          '<p class="dm-state-text">This was your study plan from ' + escapeHtml(marker.date) + '.</p>' +
+          '<button type="button" class="dm-cta dm-btn-load-today">Load today’s mission</button>' +
+        '</div>';
+      const btn = bubble.querySelector<HTMLButtonElement>('.dm-btn-load-today');
+      btn?.addEventListener('click', () => {
+        bubble.innerHTML = '<div class="dm-loading">Loading your daily mission…</div>';
+        import('../daily-mission/daily-mission-ui.js')
+          .then((mod) => {
+            bubble.innerHTML = '';
+            void mod.mountDailyMissionPanel(bubble, marker.courseId, {
+              handlers: buildDailyMissionHandlers(marker.courseId)
+            });
+            scrollMsgsToBottom(msgs);
+          })
+          .catch(() => {
+            bubble.innerHTML = '';
+            renderRichBubble(bubble, m.text);
+          });
+      });
+    }
+    appendBubbleActions(row, m.text);
+    return;
+  }
+
   if (bubble) renderRichBubble(bubble, m.text);
   if (bubble && (m.sourceLabel || m.sources?.length)) {
     appendAskStreamMeta(bubble, {
