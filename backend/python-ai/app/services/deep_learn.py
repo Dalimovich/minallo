@@ -87,8 +87,13 @@ _SYSTEM = (
     "KNOWLEDGE TYPE of the topic from the evidence, then choose teaching blocks that fit.\n\n"
     "STEP 1 — Detect knowledge type. Set contentType to one of:\n"
     "- \"calculation\" — physics, math, engineering mechanics, statistics (needs formulas + worked examples)\n"
-    "- \"process-classification\" — manufacturing (Fertigungstechnik), chemistry labs, biology processes "
-    "(needs definitions, classifications, process groups, comparison tables)\n"
+    "- \"process-classification\" — broad classification/overview topics in manufacturing etc. "
+    "(e.g. \"Einteilung der Fertigungsverfahren\", \"Fertigungshauptgruppen nach DIN 8580\", "
+    "\"Urformen vs. Umformen\"). Needs: full group listing, comparison tables, classification exercises.\n"
+    "- \"process-detail\" — a SPECIFIC process or technique within manufacturing, chemistry, etc. "
+    "(e.g. \"Löten\", \"Schweißen\", \"Sintern\", \"MIG-Schweißen\", \"Walzen\"). "
+    "Needs: mechanism/principle, conditions, variants, comparison with alternatives, applications. "
+    "Do NOT use process-classification for a single specific process.\n"
     "- \"conceptual\" — law, business, economics, political science "
     "(needs definitions, frameworks, case reasoning, decision criteria)\n"
     "- \"narrative\" — history, literature, social science "
@@ -150,6 +155,35 @@ _SYSTEM = (
     "  3. State advantages and limitations of each\n"
     "  4. Give typical applications\n"
     "  5. Formulate an exam-ready mnemonic or summary\n\n"
+    "For \"process-detail\" topics (a specific process like Löten, Schweißen, Walzen, Sintern, "
+    "MIG-Schweißen, Spanen, etc.):\n"
+    "- keyFormulas = [] (empty unless the process has central equations)\n"
+    "- Use adaptiveBlocks with these types:\n"
+    "  * \"Definition\" — what the process is, where it belongs (Hauptgruppe)\n"
+    "  * \"Mechanism\" — working principle, what happens physically/chemically\n"
+    "  * \"Variants\" — subtypes of this process (e.g. Weichlöten, Hartlöten, "
+    "Diffusionslöten, MIG-Löten)\n"
+    "  * \"Conditions\" — prerequisites, parameters (temperature, materials, surface prep, "
+    "flux, gap size, wetting, etc.)\n"
+    "  * \"Comparison Table\" — compare this process with its alternatives. For joining: "
+    "compare with other Fügeverfahren (e.g. Löten vs. Schweißen vs. Kleben). Columns: "
+    "Verfahren, Grundwerkstoff schmilzt?, Zusatzwerkstoff, Verbindungsart, Vorteile, "
+    "Nachteile, typische Anwendung.\n"
+    "  * \"Key Statements\" — exam-relevant core facts\n"
+    "  * \"Applications\" — where this process is used in practice\n"
+    "- stepByStepMethod must be PROCESS-SPECIFIC. Example for Löten:\n"
+    "  1. Identify the base materials to be joined\n"
+    "  2. Confirm the base material must NOT melt (→ Löten, not Schweißen)\n"
+    "  3. Choose a filler (Lot) with melting temp below the solidus of the base material\n"
+    "  4. Check wetting, solder gap, surface preparation, and flux requirements\n"
+    "  5. Select the suitable soldering method (Weich-/Hart-/Diffusions-/MIG-Löten)\n"
+    "  6. Explain why the connection is stoffschlüssig\n"
+    "  7. Compare with Schweißen and Kleben for the exam\n\n"
+    "Source relevance for process-detail topics:\n"
+    "- Only cite sources that directly discuss this specific process. Do NOT cite chapter files "
+    "about unrelated processes (e.g. do not cite Umformtechnik or Zeitspanungsvolumen sources "
+    "for a lesson about Löten). Only include a source in groundedSources if the lesson actually "
+    "references information from it.\n\n"
     "For \"conceptual\" topics (law, business, economics):\n"
     "- keyFormulas = [] (empty)\n"
     "- Use adaptiveBlocks: \"Definition\", \"Framework\", \"Case Reasoning\", "
@@ -688,7 +722,25 @@ def _is_incomplete_final_answer(text: str) -> bool:
 
 
 def _fallback_method(topic: str, language: str, content_type: str = "") -> list[str]:
-    ct = (content_type or "").lower()
+    ct = (content_type or "").lower().replace(" ", "-")
+    if ct in ("process-detail",):
+        if language == "en":
+            return [
+                "Define the process and its place in the manufacturing classification.",
+                "Explain the working principle (what happens physically/chemically).",
+                "Identify the key conditions and parameters.",
+                "Name the variants of this process.",
+                "Compare with alternative processes for the same purpose.",
+                "State advantages, disadvantages, and typical applications.",
+            ]
+        return [
+            "Definiere das Verfahren und ordne es in die Fertigungsklassifikation ein.",
+            "Erkläre das Wirkprinzip (was passiert physikalisch/chemisch).",
+            "Identifiziere die wichtigsten Bedingungen und Parameter.",
+            "Nenne die Varianten dieses Verfahrens.",
+            "Vergleiche mit alternativen Verfahren für denselben Zweck.",
+            "Nenne Vorteile, Nachteile und typische Anwendungen.",
+        ]
     if ct in ("process-classification",):
         if language == "en":
             return [
@@ -784,6 +836,17 @@ def _fallback_method(topic: str, language: str, content_type: str = "") -> list[
         "Prüfe auf häufige Fehler oder Sonderfälle.",
         "Überprüfe dein Verständnis anhand der ursprünglichen Fragestellung zu " + topic + ".",
     ]
+
+
+def _filter_cited_sources(lesson: dict[str, Any], sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    lesson_text = json.dumps(lesson, ensure_ascii=False).lower()
+    cited: list[dict[str, Any]] = []
+    for s in sources:
+        label = str(s.get("label") or "")
+        short = "source " + str(s.get("index", ""))
+        if label.lower() in lesson_text or short.lower() in lesson_text:
+            cited.append(s)
+    return cited if cited else sources[:6]
 
 
 def _citation_warning(language: str) -> str:
@@ -1132,6 +1195,7 @@ def generate_deep_learn(
     if citation_issues and not structured.get("citationWarning"):
         structured["citationWarning"] = _citation_warning(effective_language)
 
+    sources = _filter_cited_sources(structured, sources)
     lesson_md, worked_md, check = _lesson_to_legacy_markdown(structured)
     note_id: str | None = None
     if save and (structured.get("learningGoal") or structured.get("coreExplanation")):
