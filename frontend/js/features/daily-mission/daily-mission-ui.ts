@@ -133,15 +133,6 @@ function _startButtonLabel(taskType: string): string {
   return labels[taskType] || 'Open';
 }
 
-function _priorityGroup(task: DailyMissionTask): DailyMissionGroup {
-  if (task.priority_group) return task.priority_group;
-  // Fallback via estimated minutes heuristic if no group set
-  const mins = task.estimated_minutes || 0;
-  if (mins >= 30) return 'must_do';
-  if (mins >= 15) return 'should_do';
-  return 'optional';
-}
-
 function _courseName(courseId: string): string {
   const w = window as unknown as {
     SEMS?: Record<string, { courses?: Array<{ id?: string; name?: string }> }>;
