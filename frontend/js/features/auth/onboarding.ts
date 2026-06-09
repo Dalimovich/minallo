@@ -507,11 +507,20 @@ function setupVertOnboardingAutocomplete(): void {
     const mapped = isTuBraunschweig ? VERTIEFUNG_MAP[major] : undefined;
     // TU Braunschweig keeps the built-in Vertiefung catalog. Other universities
     // only show approved crowd suggestions, while still allowing free typing.
+    // Filter static catalog names out of non-TU crowd results too, because old
+    // submissions may have approved values from the previous static dropdown.
     const crowd = major ? (_obVertSuggestions[major] || []) : [];
     const baseList = isTuBraunschweig ? (mapped && mapped.length ? mapped : VERTIEFUNG_LIST) : [];
+    const staticValues = new Set([
+      ...VERTIEFUNG_LIST,
+      ...(VERTIEFUNG_MAP[major] || [])
+    ].map((v) => v.toLowerCase()));
+    const crowdList = isTuBraunschweig
+      ? crowd
+      : crowd.filter((v) => !staticValues.has(v.toLowerCase()));
     const seen = new Set<string>();
     const base: string[] = [];
-    [...baseList, ...crowd].forEach((v) => {
+    [...baseList, ...crowdList].forEach((v) => {
       const key = v.toLowerCase();
       if (!seen.has(key)) { seen.add(key); base.push(v); }
     });
