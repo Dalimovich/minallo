@@ -161,26 +161,24 @@ function _courseName(courseId: string): string {
 
 // Watch for widget element being recreated/resized and re-render
 function _watchWidgetElement(): void {
-  let lastRenderedState = '';
+  let lastHadTasks = false;
   const checkAndRender = () => {
     const host = document.getElementById('daily-mission-widget');
     if (host && _state.tasks.length > 0) {
       const hasWidget = host.querySelector('.dm-widget');
-      const hasContent = hasWidget && host.textContent && host.textContent.trim().length > 20;
+      // Check for actual task elements or a button to generate plan
+      const hasTasks = host.querySelector('.dm-task') || host.querySelector('.dm-btn-generate');
+      const isEmpty = !hasTasks && host.querySelector('.dmw-status');
 
-      // Track if we have actual rendered content
-      const currentState = hasContent ? 'rendered' : 'empty';
-
-      // If content was rendered before but is now empty, re-render
-      if (lastRenderedState === 'rendered' && currentState === 'empty') {
-        _renderWidget();
-      } else if (currentState === 'rendered') {
-        lastRenderedState = 'rendered';
-      } else if (currentState === 'empty' && lastRenderedState !== 'empty') {
+      // If we had tasks rendering before but they disappeared, re-render
+      if (lastHadTasks && isEmpty) {
         _renderWidget();
       }
+
+      // Update state for next check
+      lastHadTasks = !!hasTasks && !!hasWidget;
     }
-    setTimeout(checkAndRender, 250);
+    setTimeout(checkAndRender, 200);
   };
   checkAndRender();
 }
