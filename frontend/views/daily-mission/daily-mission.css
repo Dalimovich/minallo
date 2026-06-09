@@ -435,3 +435,128 @@ body:not(.night) .dm-course-picker {
   opacity: 0.6;
   cursor: default;
 }
+
+/* Tasks modal */
+.dm-tasks-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.dm-tasks-modal {
+  background: var(--card, rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.dm-tasks-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.dm-tasks-modal-header h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.dm-modal-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 24px;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+
+.dm-modal-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dm-tasks-modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-right: -8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.dm-modal-empty {
+  padding: 24px;
+  text-align: center;
+  opacity: 0.7;
+  font-size: 0.95rem;
+}
+
+.dm-modal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dm-modal-group-title {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+body:not(.night) .dm-tasks-modal {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #1e293b;
+}
+
+body:not(.night) .dm-modal-close {
+  background: rgba(15, 23, 42, 0.08);
+  color: #1e293b;
+}
+
+body:not(.night) .dm-modal-close:hover {
+  background: rgba(15, 23, 42, 0.14);
+}

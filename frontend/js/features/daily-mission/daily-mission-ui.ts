@@ -599,6 +599,72 @@ function _bindWidgetActions(host: HTMLElement): void {
 
 // ─── My Courses preview card ───────────────────────────────────────────────────
 
+function _showTasksModal(): void {
+  const modal = document.createElement('div');
+  modal.className = 'dm-tasks-modal-overlay';
+  modal.innerHTML = '<div class="dm-tasks-modal">' +
+    '<div class="dm-tasks-modal-header">' +
+      '<h3>Today\'s Tasks</h3>' +
+      '<button type="button" class="dm-modal-close" aria-label="Close">×</button>' +
+    '</div>' +
+    '<div class="dm-tasks-modal-content">';
+
+  const active = _state.tasks.filter((t) => t.status !== 'completed' && t.status !== 'skipped' && t.status !== 'replaced');
+
+  if (active.length === 0) {
+    modal.innerHTML += '<div class="dm-modal-empty">No active tasks for today</div>';
+  } else {
+    GROUP_ORDER.forEach((group) => {
+      const groupTasks = active.filter((t) => (t as any).priority_group === group || (!((t as any).priority_group) && group === 'should_do'));
+      if (groupTasks.length > 0) {
+        modal.innerHTML += '<div class="dm-modal-group">' +
+          '<div class="dm-modal-group-title">' + GROUP_LABEL[group] + '</div>';
+        groupTasks.forEach((t) => {
+          modal.innerHTML += _buildTaskRowHtml(t as DailyMissionTask & { _courseId?: string });
+        });
+        modal.innerHTML += '</div>';
+      }
+    });
+  }
+
+  modal.innerHTML += '</div></div>';
+  document.body.appendChild(modal);
+
+  const closeBtn = modal.querySelector('.dm-modal-close') as HTMLButtonElement;
+  const close = () => { modal.remove(); };
+
+  closeBtn.addEventListener('click', close);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) close();
+  });
+
+  // Bind task actions within modal
+  modal.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
+    const action = btn.getAttribute('data-action');
+    const taskId = btn.getAttribute('data-task-id');
+    if (!action || !taskId) return;
+    btn.addEventListener('click', () => {
+      switch (action) {
+        case 'start':
+          void updateTaskStatus(taskId, 'in_progress');
+          _openInAi();
+          close();
+          break;
+        case 'done':
+          void updateTaskStatus(taskId, 'completed');
+          _renderPreviewCard();
+          break;
+        case 'skip':
+          void updateTaskStatus(taskId, 'skipped');
+          _renderPreviewCard();
+          break;
+        default:
+          break;
+      }
+    });
+  });
+}
+
 function _renderPreviewCard(): void {
   const cards = document.querySelectorAll<HTMLElement>('.dm-preview-card');
   if (!cards.length) return;
@@ -632,7 +698,7 @@ function _renderPreviewCard(): void {
           '<div class="dm-preview-stat">Today: <strong>' + active.length + ' tasks</strong> across <strong>' + courseIds.length + ' subject' + (courseIds.length !== 1 ? 's' : '') + '</strong> &middot; ' + minRemaining + 'min remaining</div>' +
           '<div class="dm-progress-track" style="height:4px;margin:6px 0"><div class="dm-progress-fill" style="width:' + pct + '%"></div></div>' +
         '</div>' +
-        '<button type="button" class="dm-preview-cta dm-task-btn dm-task-btn--primary" data-dm-preview-action="open-ai">View Mission →</button>';
+        '<button type="button" class="dm-preview-cta dm-task-btn dm-task-btn--primary" data-dm-preview-action="view-tasks">View Tasks →</button>';
     }
 
     card.innerHTML = html;
@@ -640,8 +706,8 @@ function _renderPreviewCard(): void {
     const genBtn = card.querySelector<HTMLButtonElement>('[data-dm-preview-action="generate"]');
     if (genBtn) genBtn.addEventListener('click', () => { void generatePlan(); });
 
-    const aiBtn = card.querySelector<HTMLButtonElement>('[data-dm-preview-action="open-ai"]');
-    if (aiBtn) aiBtn.addEventListener('click', _openInAi);
+    const tasksBtn = card.querySelector<HTMLButtonElement>('[data-dm-preview-action="view-tasks"]');
+    if (tasksBtn) tasksBtn.addEventListener('click', _showTasksModal);
   });
 }
 
