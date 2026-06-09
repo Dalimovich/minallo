@@ -125,7 +125,14 @@ export async function updateDailyMissionTask(taskId: string, status: DailyMissio
     headers: authHeaders(),
     body: JSON.stringify({ status })
   });
-  if (!res.ok) throw new Error('Task update failed');
+  if (!res.ok) {
+    try {
+      const errBody = await res.json() as { message?: string };
+      throw new Error(errBody.message || 'Task update failed (HTTP ' + res.status + ')');
+    } catch {
+      throw new Error('Task update failed (HTTP ' + res.status + ')');
+    }
+  }
 }
 
 export function findPrimaryCourseId(): string | null {
