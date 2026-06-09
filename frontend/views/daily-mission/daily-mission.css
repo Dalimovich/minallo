@@ -205,6 +205,78 @@ body:not(.night) .dm-course-picker {
   color: #1e293b;
 }
 
+/* Urgency alerts */
+.dm-widget-alert {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.dm-widget-alert--warning {
+  background: rgba(248, 113, 113, 0.15);
+  border-left: 3px solid #ef4444;
+  color: #fca5a5;
+}
+
+/* Study progress display */
+.dm-widget-urgency {
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dm-urgency-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+.dm-urgency-label { font-weight: 600; }
+.dm-urgency-time { opacity: 0.75; }
+.dm-urgency-bar {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.dm-urgency-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* Widget action buttons */
+.dm-widget-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.dm-btn-generate-exam,
+.dm-btn-generate-cheatsheet {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.dm-btn-generate-exam {
+  background: linear-gradient(120deg, #ef4444, #f97316);
+  color: #fff;
+}
+.dm-btn-generate-exam:hover {
+  filter: brightness(1.1);
+}
+.dm-btn-generate-cheatsheet {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.dm-btn-generate-cheatsheet:hover {
+  background: rgba(99, 102, 241, 0.3);
+}
+
 /* Widget scrollable task list */
 .dm-widget-tasks--scrollable {
   max-height: 500px;

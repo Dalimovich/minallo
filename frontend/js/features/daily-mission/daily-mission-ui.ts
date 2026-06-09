@@ -56,7 +56,15 @@ interface DailyMissionState {
   error: string | null;
   lastLoaded: number;
   todayDate: string;
-  selectedCourseId: string | null; // Currently selected course for filtering
+  selectedCourseId: string | null;
+  examDates: Record<string, string>; // courseId → exam date (YYYY-MM-DD)
+  urgencyMeta?: {
+    message: string;
+    recommendExamGeneration: boolean;
+    recommendCheatsheet: boolean;
+    daysUntilExam?: number;
+    studiedPercentage?: number;
+  };
 }
 
 const _state: DailyMissionState = {
@@ -67,6 +75,8 @@ const _state: DailyMissionState = {
   lastLoaded: 0,
   todayDate: '',
   selectedCourseId: null,
+  examDates: {},
+  urgencyMeta: undefined,
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,6 +189,10 @@ async function loadTodaysTasks(force = false): Promise<void> {
     results.forEach((r) => {
       if (r.status === 'fulfilled') {
         _state.byId[r.value.id] = r.value.data;
+        // Capture urgency metadata if present
+        if ((r.value.data as any).meta) {
+          _state.urgencyMeta = (r.value.data as any).meta;
+        }
       }
     });
 
@@ -329,6 +343,27 @@ function _renderWidget(): void {
   }
   inner += '</div>';
 
+  // Urgency alert
+  if (_state.urgencyMeta?.message) {
+    inner += '<div class="dm-widget-alert dm-widget-alert--warning">' + escapeHtml(_state.urgencyMeta.message) + '</div>';
+  }
+
+  // Study progress & exam countdown
+  if (_state.urgencyMeta?.daysUntilExam !== undefined) {
+    const studied = _state.urgencyMeta.studiedPercentage ?? 0;
+    const remaining = 100 - studied;
+    const daysLeft = _state.urgencyMeta.daysUntilExam;
+    inner += '<div class="dm-widget-urgency">';
+    inner += '<div class="dm-urgency-row">';
+    inner += '<span class="dm-urgency-label">Progress: ' + studied + '%</span>';
+    inner += '<span class="dm-urgency-time">' + daysLeft + ' days left</span>';
+    inner += '</div>';
+    inner += '<div class="dm-urgency-bar" style="background: rgba(255,255,255,0.1)">';
+    inner += '<div class="dm-urgency-fill" style="width:' + studied + '%; background:' + (studied >= 70 ? '#22c55e' : studied >= 50 ? '#f59e0b' : '#ef4444') + '"></div>';
+    inner += '</div>';
+    inner += '</div>';
+  }
+
   // Progress bar
   if (total > 0) {
     const pct = Math.round((done / total) * 100);
@@ -355,6 +390,16 @@ function _renderWidget(): void {
       inner += _buildTaskRowHtml(t as DailyMissionTask & { _courseId?: string });
     });
     inner += '</div>';
+
+    // Action buttons for crisis/final week
+    inner += '<div class="dm-widget-actions">';
+    if (_state.urgencyMeta?.recommendExamGeneration) {
+      inner += '<button type="button" class="dm-btn-generate-exam dm-task-btn dm-task-btn--primary" title="Generate practice exam from course materials">📋 Generate Exam</button>';
+    }
+    if (_state.urgencyMeta?.recommendCheatsheet) {
+      inner += '<button type="button" class="dm-btn-generate-cheatsheet dm-task-btn" title="Generate study cheatsheet">📄 Generate Cheatsheet</button>';
+    }
+    inner += '</div>';
   }
 
   host.innerHTML = '<div class="dm-widget">' + inner + '</div>';
@@ -374,6 +419,30 @@ function _bindWidgetActions(host: HTMLElement): void {
       _state.selectedCourseId = (e.target as HTMLSelectElement).value || null;
       _renderWidget();
       _bindWidgetActions(host);
+    });
+  }
+
+  // Generate exam button
+  const genExamBtn = host.querySelector('.dm-btn-generate-exam');
+  if (genExamBtn) {
+    genExamBtn.addEventListener('click', () => {
+      // Trigger exam generation in AI
+      try {
+        sessionStorage.setItem('ss_daily_mission_seed', 'generate_exam');
+      } catch {}
+      _openInAi();
+    });
+  }
+
+  // Generate cheatsheet button
+  const genCheatBtn = host.querySelector('.dm-btn-generate-cheatsheet');
+  if (genCheatBtn) {
+    genCheatBtn.addEventListener('click', () => {
+      // Trigger cheatsheet generation in AI
+      try {
+        sessionStorage.setItem('ss_daily_mission_seed', 'generate_cheatsheet');
+      } catch {}
+      _openInAi();
     });
   }
 
