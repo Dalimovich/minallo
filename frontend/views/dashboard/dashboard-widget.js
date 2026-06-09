@@ -1103,12 +1103,16 @@
         // default, so the browser/CDN can serve a stale copy without render().
         var _dmV = (window.MinalloConfig && window.MinalloConfig.assetVersion) || '';
         import('js/features/daily-mission/daily-mission-ui.js?v=' + _dmV)
-          .then(function () {
-            if (window._dailyMission && typeof window._dailyMission.render === 'function') {
+          .then(function (mod) {
+            // Call the export off the module namespace directly — robust against
+            // window._dailyMission being clobbered by another module instance.
+            if (mod && typeof mod.renderDashboardWidget === 'function') {
+              mod.renderDashboardWidget();
+            } else if (window._dailyMission && typeof window._dailyMission.render === 'function') {
               window._dailyMission.render();
             }
           })
-          .catch(function () {});
+          .catch(function (e) { console.error('[DailyMission] dashboard import failed:', e); });
       });
       updateCards();
     }

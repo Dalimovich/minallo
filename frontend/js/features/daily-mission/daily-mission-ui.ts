@@ -776,6 +776,26 @@ function _renderPreviewCard(): void {
   });
 }
 
+// ─── Dashboard widget entry point ────────────────────────────────────────────
+
+/** Paints the Daily Mission dashboard widget into #daily-mission-widget.
+ *  Called by dashboard-widget.js every time it (re)creates the widget element
+ *  on resize/move. Always repaints immediately so the dashboard's stale
+ *  "Loading…" placeholder is replaced with our UI (tasks from memory, or the
+ *  empty/loading state). Repaints from memory — no API call — when tasks are
+ *  already loaded, so the list never disappears on resize.
+ *
+ *  Exported (not just on window._dailyMission) so the dashboard can call it
+ *  straight off the imported module namespace. That avoids the global being
+ *  clobbered by a second module instance (e.g. the chatbot's import). */
+export function renderDashboardWidget(): void {
+  _renderWidget();
+  _watchWidgetElement();
+  if (_state.tasks.length === 0 && !_state.isLoading) {
+    void _loadSequential();
+  }
+}
+
 // ─── Global API ────────────────────────────────────────────────────────────────
 
 (window as unknown as {
@@ -790,19 +810,7 @@ function _renderPreviewCard(): void {
   // must NOT exist outside the chat thread.
   reload: () => loadTodaysTasks(true),
   generatePlan,
-  // Paint the widget into the (possibly freshly recreated) host element.
-  // Always repaints immediately so the dashboard's stale "Loading…" placeholder
-  // is replaced with our UI (tasks from memory, or the empty/loading state).
-  // Resize/move never wipes the list because this paints from memory — no API
-  // call needed when tasks are already loaded.
-  render: () => {
-    _renderWidget();
-    _watchWidgetElement();
-    // If we have nothing yet, kick off a load (this also repaints when done).
-    if (_state.tasks.length === 0 && !_state.isLoading) {
-      void _loadSequential();
-    }
-  },
+  render: renderDashboardWidget,
 };
 
 // Start loading after a short delay to let SEMS/courses data settle
