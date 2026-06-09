@@ -45,6 +45,7 @@
   font-family: var(--font-main);
   background: var(--na-bg);
   -webkit-font-smoothing: antialiased;
+  contain: layout paint style;
 }
 
 #authModal ::selection {
@@ -58,54 +59,43 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at top left, #075985 0, transparent 34%),
-    radial-gradient(circle at 80% 10%, #0284c7 0, transparent 28%),
-    linear-gradient(135deg, #020617 0%, #082f49 55%, #031323 100%);
+  background: linear-gradient(135deg, #020617 0%, #082f49 58%, #031323 100%);
 }
 
 .na-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.55;
+  opacity: 0.22;
   background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(circle at center, black, transparent 72%);
-          mask-image: radial-gradient(circle at center, black, transparent 72%);
 }
 
 .na-orb {
   position: absolute;
   border-radius: 9999px;
-  filter: blur(60px);
+  filter: blur(36px);
   pointer-events: none;
-  animation: na-float 7s ease-in-out infinite;
+  will-change: transform;
 }
 .na-orb-1 {
   top: 5rem;
   left: -8rem;
-  width: 20rem;
-  height: 20rem;
-  background: rgba(56, 189, 248, 0.25);
+  width: 16rem;
+  height: 16rem;
+  background: rgba(56, 189, 248, 0.14);
 }
 .na-orb-2 {
   top: 6rem;
   right: -10rem;
-  width: 24rem;
-  height: 24rem;
-  background: rgba(59, 130, 246, 0.25);
-  animation-delay: -1.2s;
+  width: 18rem;
+  height: 18rem;
+  background: rgba(59, 130, 246, 0.14);
 }
 .na-orb-3 {
-  bottom: -8rem;
-  left: 33%;
-  width: 24rem;
-  height: 24rem;
-  background: rgba(103, 232, 249, 0.12);
-  animation-delay: -2.3s;
+  display: none;
 }
 
 @keyframes na-float {
@@ -140,11 +130,10 @@
   border-radius: 1.75rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 35px 100px rgba(2, 6, 23, 0.55);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 24px 64px rgba(2, 6, 23, 0.42);
   overflow: hidden;
-  animation: na-card-in 0.75s ease-out both;
+  animation: na-card-in 0.22s ease-out both;
+  contain: layout paint;
 }
 
 @keyframes na-card-in {
@@ -171,15 +160,7 @@
 @media (min-width: 900px) { .na-form-col { padding: 2rem 2.25rem; } }
 
 .na-form-glow {
-  position: absolute;
-  left: -5rem;
-  top: 6rem;
-  width: 14rem;
-  height: 14rem;
-  border-radius: 9999px;
-  background: rgba(56, 189, 248, 0.10);
-  filter: blur(60px);
-  pointer-events: none;
+  display: none;
 }
 
 .na-form-inner {
@@ -252,7 +233,6 @@
   text-transform: uppercase;
   letter-spacing: 0.22em;
   color: var(--na-sky-100);
-  backdrop-filter: blur(16px);
 }
 .na-badge svg { display: block; }
 
@@ -342,7 +322,6 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
   box-shadow: inset 0 1px 0 rgba(2, 6, 23, 0.20);
-  backdrop-filter: blur(16px);
   transition: border-color 0.2s, background 0.2s;
 }
 .na-input-wrap:focus-within {
@@ -539,7 +518,6 @@
   font-weight: 900;
   border-radius: 0.85rem;
   cursor: pointer;
-  backdrop-filter: blur(16px);
   transition: border-color 0.2s, background 0.2s;
 }
 .na-google:hover {
@@ -586,20 +564,17 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 20%, rgba(125, 211, 252, 0.36), transparent 28%),
-    linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(37, 99, 235, 0.42), rgba(2, 6, 23, 0.25));
+    linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(37, 99, 235, 0.26), rgba(2, 6, 23, 0.20));
 }
 .na-buddy-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.5;
+  opacity: 0.18;
   background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 52px 52px;
-  -webkit-mask-image: radial-gradient(circle at center, black, transparent 70%);
-          mask-image: radial-gradient(circle at center, black, transparent 70%);
 }
 
 .na-buddy-inner {
@@ -626,7 +601,6 @@
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--na-sky-100);
-  backdrop-filter: blur(16px);
 }
 .na-buddy-sparkle {
   display: inline-flex;
@@ -637,7 +611,6 @@
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.10);
   color: var(--na-sky-100);
-  backdrop-filter: blur(16px);
 }
 
 .na-buddy-hero {
@@ -652,18 +625,13 @@
 .na-owl-wrap {
   position: relative;
   margin-bottom: 1rem;
-  animation: na-owl-float 5s ease-in-out infinite;
 }
 @keyframes na-owl-float {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-10px); }
 }
 .na-owl-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: rgba(125, 211, 252, 0.30);
-  filter: blur(60px);
+  display: none;
 }
 .na-owl-circle {
   position: relative;
@@ -673,8 +641,7 @@
   border-radius: 9999px;
   border: 1px solid rgba(186, 230, 253, 0.25);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 80px rgba(56, 189, 248, 0.20);
-  backdrop-filter: blur(16px);
+  box-shadow: 0 0 42px rgba(56, 189, 248, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -721,8 +688,7 @@
   border-radius: 1.1rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.20);
-  backdrop-filter: blur(24px);
+  box-shadow: 0 14px 32px rgba(2, 6, 23, 0.16);
 }
 .na-mini-icon {
   display: inline-flex;
@@ -757,4 +723,11 @@
   .na-form-col { padding: 1.5rem 1.25rem; }
   .na-brand { margin-bottom: 1.5rem; }
   .na-hero { margin-bottom: 1.5rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .na-orb {
+    animation: na-float 10s ease-in-out infinite;
+  }
+  .na-orb-2 { animation-delay: -1.2s; }
 }
