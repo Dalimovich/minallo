@@ -1101,8 +1101,12 @@
         // (no API call) and keeps the list from disappearing.
         // Cache-bust with assetVersion: dynamic module imports have no ?v= by
         // default, so the browser/CDN can serve a stale copy without render().
+        // NOTE: dashboard-widget.js is a CLASSIC script, so import() resolves
+        // against the document base URL (site root). A bare specifier like
+        // 'js/…' is treated as a module name and throws "Failed to resolve
+        // module specifier". Use an absolute '/js/…' path so it resolves.
         var _dmV = (window.MinalloConfig && window.MinalloConfig.assetVersion) || '';
-        import('js/features/daily-mission/daily-mission-ui.js?v=' + _dmV)
+        import('/js/features/daily-mission/daily-mission-ui.js?v=' + _dmV)
           .then(function (mod) {
             // Call the export off the module namespace directly — robust against
             // window._dailyMission being clobbered by another module instance.
