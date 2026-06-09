@@ -423,26 +423,40 @@ function _bindWidgetActions(host: HTMLElement): void {
   }
 
   // Generate exam button
-  const genExamBtn = host.querySelector('.dm-btn-generate-exam');
+  const genExamBtn = host.querySelector<HTMLButtonElement>('.dm-btn-generate-exam');
   if (genExamBtn) {
-    genExamBtn.addEventListener('click', () => {
-      // Trigger exam generation in AI
+    genExamBtn.addEventListener('click', async () => {
+      const courseId = _state.selectedCourseId || findPrimaryCourseId();
+      if (!courseId) return;
+      genExamBtn.disabled = true;
+      genExamBtn.textContent = '⏳ Generating...';
       try {
-        sessionStorage.setItem('ss_daily_mission_seed', 'generate_exam');
-      } catch {}
-      _openInAi();
+        // Store generation request and navigate to chatbot
+        try { sessionStorage.setItem('ss_daily_mission_seed', 'generate_exam'); } catch {}
+        _openInAi();
+      } finally {
+        genExamBtn.disabled = false;
+        genExamBtn.textContent = '📋 Generate Exam';
+      }
     });
   }
 
   // Generate cheatsheet button
-  const genCheatBtn = host.querySelector('.dm-btn-generate-cheatsheet');
+  const genCheatBtn = host.querySelector<HTMLButtonElement>('.dm-btn-generate-cheatsheet');
   if (genCheatBtn) {
-    genCheatBtn.addEventListener('click', () => {
-      // Trigger cheatsheet generation in AI
+    genCheatBtn.addEventListener('click', async () => {
+      const courseId = _state.selectedCourseId || findPrimaryCourseId();
+      if (!courseId) return;
+      genCheatBtn.disabled = true;
+      genCheatBtn.textContent = '⏳ Generating...';
       try {
-        sessionStorage.setItem('ss_daily_mission_seed', 'generate_cheatsheet');
-      } catch {}
-      _openInAi();
+        // Store generation request and navigate to chatbot
+        try { sessionStorage.setItem('ss_daily_mission_seed', 'generate_cheatsheet'); } catch {}
+        _openInAi();
+      } finally {
+        genCheatBtn.disabled = false;
+        genCheatBtn.textContent = '📄 Generate Cheatsheet';
+      }
     });
   }
 

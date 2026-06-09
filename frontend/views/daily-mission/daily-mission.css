@@ -161,8 +161,12 @@ body:not(.night) .dm-progress-track { background: rgba(15, 23, 42, 0.08); }
 /* Widget — resizable and responsive */
 .dm-widget {
   resize: vertical;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 200px;
 }
 
 /* Widget header with course picker */
@@ -278,15 +282,17 @@ body:not(.night) .dm-course-picker {
 }
 
 /* Widget scrollable task list */
+.dm-widget-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .dm-widget-tasks--scrollable {
-  max-height: 500px;
+  max-height: 400px;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px;
   margin-right: -8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .dm-widget-tasks--scrollable::-webkit-scrollbar {
