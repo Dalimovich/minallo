@@ -456,12 +456,71 @@ function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLEle
     }, 350);
   };
 
+  const showTasksModal = async (): Promise<void> => {
+    if (!courseId) return;
+    try {
+      const { getDailyMission } = await import('../../services/study-service.js');
+      const data = await getDailyMission(courseId);
+      if (!data.hasPlan || !data.tasks.length) return;
+
+      const modal = document.createElement('div');
+      modal.className = 'dm-tasks-modal-overlay';
+      modal.innerHTML = '<div class="dm-tasks-modal">' +
+        '<div class="dm-tasks-modal-header">' +
+          '<h3>Today\'s Tasks</h3>' +
+          '<button type="button" class="dm-modal-close" aria-label="Close">×</button>' +
+        '</div>' +
+        '<div class="dm-tasks-modal-content">';
+
+      const tasks = data.tasks.filter((t) => t.status !== 'completed' && t.status !== 'skipped' && t.status !== 'replaced');
+      if (tasks.length === 0) {
+        modal.innerHTML += '<div class="dm-modal-empty">No active tasks for today</div>';
+      } else {
+        const groups = ['must_do', 'should_do', 'optional'];
+        const groupLabels: Record<string, string> = { must_do: 'Must Do', should_do: 'Should Do', optional: 'Optional' };
+        groups.forEach((group) => {
+          const groupTasks = tasks.filter((t) => (t as any).priority_group === group);
+          if (groupTasks.length > 0) {
+            modal.innerHTML += '<div class="dm-modal-group"><div class="dm-modal-group-title">' + groupLabels[group] + '</div>';
+            groupTasks.forEach((task) => {
+              const isDone = task.status === 'completed';
+              const typeLabel = (labels: Record<string, string>, taskType: string) => labels[taskType] || 'Study';
+              const labels: Record<string, string> = {
+                study_topic: 'Study', read_pages: 'Read', solve_exercise_sheet: 'Exercises',
+                practice_problem_set: 'Practice', generate_quiz_if_no_exercises: 'Quiz',
+                review_weak_topic: 'Review', review_topic: 'Review', exam_style_practice: 'Exam prep',
+                create_flashcards: 'Flashcards'
+              };
+              modal.innerHTML += '<div class="dm-task dm-task--' + task.status + '">' +
+                '<div class="dm-task-title' + (isDone ? ' is-done' : '') + '">' + task.title + '</div>' +
+                '<div class="dm-task-meta">' + typeLabel(labels, task.task_type) + ' &middot; ' + task.estimated_minutes + 'min</div>' +
+              '</div>';
+            });
+            modal.innerHTML += '</div>';
+          }
+        });
+      }
+
+      modal.innerHTML += '</div></div>';
+      document.body.appendChild(modal);
+
+      const closeBtn = modal.querySelector('.dm-modal-close') as HTMLButtonElement;
+      const close = () => { modal.remove(); };
+      closeBtn.addEventListener('click', close);
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+      });
+    } catch (err) {
+      console.error('[DailyMission] showTasksModal error:', err);
+    }
+  };
+
   const paint = (
     title: string,
     text: string,
     cta: string,
     active: boolean,
-    meta?: { tasks?: number; minutes?: number; focus?: string; state?: string }
+    meta?: { tasks?: number; minutes?: number; focus?: string; state?: string; hasActiveTasks?: boolean }
   ): void => {
     if (!host) return;
     const focus = meta?.focus || courseName;
@@ -491,7 +550,14 @@ function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLEle
         '<span>' + cta + '</span>' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>' +
       '</button>';
-    host.querySelector<HTMLButtonElement>('.sd-dm-cta')?.addEventListener('click', openAi);
+    const ctaBtn = host.querySelector<HTMLButtonElement>('.sd-dm-cta');
+    if (ctaBtn) {
+      if (meta?.hasActiveTasks) {
+        ctaBtn.addEventListener('click', showTasksModal);
+      } else {
+        ctaBtn.addEventListener('click', openAi);
+      }
+    }
   };
 
   if (!courseId) {
@@ -552,9 +618,9 @@ function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLEle
       paint(
         'Daily Study Mission',
         'Today\'s trusted plan is ready from your real course sources.',
-        'Open in AI',
+        'View Tasks →',
         true,
-        { tasks: summary.totalTasks, minutes: summary.minutesRemaining, focus: courseName, state: 'Active today' }
+        { tasks: summary.totalTasks, minutes: summary.minutesRemaining, focus: courseName, state: 'Active today', hasActiveTasks: true }
       );
     })
     .catch(() => {
