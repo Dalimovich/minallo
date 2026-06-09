@@ -209,6 +209,13 @@ async function loadTodaysTasks(force = false): Promise<void> {
 
     _state.tasks = merged;
     _state.lastLoaded = now;
+
+    // Show exam date modal if first time (tasks exist but no exam dates)
+    const courseIds = [...new Set(merged.map((t) => (t as DailyMissionTask & { _courseId?: string })._courseId).filter(Boolean))];
+    const missingDates = courseIds.filter((id) => !_state.examDates[id]);
+    if (merged.length > 0 && missingDates.length > 0) {
+      setTimeout(() => { void showExamDateModal(); }, 500);
+    }
   } catch (err) {
     _state.error = 'Could not load today\'s mission.';
     console.error('[DailyMission] loadTodaysTasks error:', err);
