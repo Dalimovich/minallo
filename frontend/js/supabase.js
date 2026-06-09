@@ -147,6 +147,7 @@ var _sb = {
       var d = await r.json();
       if (d.access_token) {
         _sbToken = d.access_token;
+        window._sbToken = _sbToken;
         _currentUser = d.user;
         _ssAuth('signed-in', { source: 'password', user: _currentUser });
         // Always persist — user stays logged in across browser restarts until explicit sign-out
@@ -167,6 +168,7 @@ var _sb = {
       // carries the user's bearer token.
       var logoutHeaders = _sbHeaders();
       _sbToken = null;
+      window._sbToken = null;
       _currentUser = null;
       _ssAuth('signed-out', { source: 'signOut' });
       _sbClearStoredSession();
@@ -436,12 +438,6 @@ var _sb = {
   }
 };
 
-// Expose token getter to window for frontend API clients
-Object.defineProperty(window, '_sbToken', {
-  get: function () { return _sbToken; },
-  configurable: true
-});
-
 console.log('Supabase REST client ready ✓');
 // Quick connectivity test
 fetch(SUPA_URL + '/auth/v1/health', { headers: { apikey: SUPA_KEY } })
@@ -636,6 +632,7 @@ function _enterApp(user) {
 
 function _showModal() {
   _sbToken = null;
+  window._sbToken = null;
   _currentUser = null;
   _ssAuth('signed-out', { source: 'showModal' });
 
@@ -694,6 +691,7 @@ function _sbRefreshAccessToken() {
     .then(function (d) {
       if (d && d.access_token) {
         _sbToken = d.access_token;
+        window._sbToken = _sbToken;
         _sbStoreSession(d.access_token, d.refresh_token || ref);
         return d.access_token;
       }
@@ -710,6 +708,7 @@ function _verifyAndEnter(tok) {
   _ssAuth('checking', { source: 'verifyAndEnter' });
   _ssEmit('auth:verify:start', { hasToken: !!tok });
   _sbToken = tok;
+  window._sbToken = tok;
 
   function _giveUp() {
     _ssAuth('failed', { source: 'verifyAndEnter' });
@@ -777,6 +776,7 @@ window.addEventListener('ss-ready', function () {
 
   function _clearSavedAuth() {
     _sbToken = null;
+    window._sbToken = null;
     _currentUser = null;
     _ssAuth('signed-out', { source: 'clearSavedAuth' });
 
