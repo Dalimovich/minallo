@@ -78,7 +78,14 @@ export async function generateDailyMission(courseId: string, availableMinutes?: 
       regenerate: !!regenerate
     })
   });
-  if (!res.ok) throw new Error('Daily Mission could not be generated');
+  if (!res.ok) {
+    try {
+      const errBody = await res.json() as { message?: string };
+      throw new Error(errBody.message || 'Daily Mission could not be generated');
+    } catch {
+      throw new Error('Daily Mission could not be generated (HTTP ' + res.status + ')');
+    }
+  }
   return res.json() as Promise<DailyMissionResponse>;
 }
 
