@@ -85,6 +85,36 @@ async function _loadVertSuggestions(major: string): Promise<void> {
   }
 }
 
+function _obIsTuBraunschweig(hs: Hochschule | null = _obSelectedHochschule): boolean {
+  if (!hs) return false;
+  return hs.short === 'TU Braunschweig';
+}
+
+function _obCurrentProgramme(): string {
+  const inp = document.getElementById('obProg') as HTMLInputElement | null;
+  return inp ? inp.value.trim() : '';
+}
+
+function _obApplyVertiefungVisibility(major: string): void {
+  const row = document.getElementById('obVertiefungRow');
+  const vInp = document.getElementById('obVertiefung') as HTMLInputElement | null;
+  const drop = document.getElementById('obVertDrop');
+  if (!row) return;
+
+  row.style.display = 'flex';
+  if (drop) drop.style.display = 'none';
+  const VERTIEFUNG_MAP = window.VERTIEFUNG_MAP || {};
+  const list = VERTIEFUNG_MAP[major];
+  const hasVertiefung = _obIsTuBraunschweig() && !!(list && list.length);
+  if (vInp) {
+    _obSetPlaceholder(
+      vInp,
+      hasVertiefung ? 'ob_vertiefung_ph' : 'ob_vertiefung_optional_ph'
+    );
+  }
+  if (major) void _loadVertSuggestions(major);
+}
+
 const _obTestLevels: Record<string, string[]> = {
   TestDaF: ['TDN 3', 'TDN 4', 'TDN 5'],
   DSH: ['DSH-1', 'DSH-2', 'DSH-3'],
@@ -290,6 +320,7 @@ function setupStateSelect(): void {
     // State changed → previously chosen uni is no longer valid.
     uniInp.value = '';
     _obSelectedHochschule = null;
+    _obApplyVertiefungVisibility(_obCurrentProgramme());
     if (sel.value) {
       uniInp.disabled = false;
       _obSetPlaceholder(uniInp, 'ob_uni_ph_after');
@@ -347,6 +378,7 @@ function setupUniAutocomplete(): void {
         inp.value = h.short;
         _obSelectedHochschule = h;
         drop.style.display = 'none';
+        _obApplyVertiefungVisibility(_obCurrentProgramme());
       });
       drop.appendChild(opt);
     });
@@ -359,6 +391,7 @@ function setupUniAutocomplete(): void {
   inp.addEventListener('input', () => {
     // Free-text edits invalidate the previously-selected university.
     _obSelectedHochschule = null;
+    _obApplyVertiefungVisibility(_obCurrentProgramme());
     _showUniDrop(inp.value.trim());
   });
   inp.addEventListener('blur', () => {
@@ -407,23 +440,7 @@ function setupProgAutocomplete(): void {
   }
 
   function _obToggleVertiefung(major: string): void {
-    const row = document.getElementById('obVertiefungRow');
-    const vInp = document.getElementById('obVertiefung') as HTMLInputElement | null;
-    if (!row) return;
-    // Always show the Vertiefung field — even when the major has no entries
-    // in VERTIEFUNG_MAP. Users can free-type, and those values feed the
-    // crowd-suggestions pipeline so the dropdown grows over time.
-    row.style.display = 'flex';
-    const VERTIEFUNG_MAP = window.VERTIEFUNG_MAP || {};
-    const list = VERTIEFUNG_MAP[major];
-    const hasVertiefung = !!(list && list.length);
-    if (vInp) {
-      _obSetPlaceholder(
-        vInp,
-        hasVertiefung ? 'ob_vertiefung_ph' : 'ob_vertiefung_optional_ph'
-      );
-    }
-    if (major) void _loadVertSuggestions(major);
+    _obApplyVertiefungVisibility(major);
   }
 
   inp.addEventListener('focus', () => {
@@ -452,12 +469,12 @@ function setupVertOnboardingAutocomplete(): void {
     const major = majorInp ? majorInp.value.trim() : '';
     const VERTIEFUNG_MAP = window.VERTIEFUNG_MAP || {};
     const VERTIEFUNG_LIST = window.VERTIEFUNG_LIST || [];
-    const mapped = VERTIEFUNG_MAP[major];
-    // Combine static map + crowd-approved suggestions (per-major). Use a Set
-    // for case-insensitive dedupe so a manually-promoted suggestion that
-    // also exists in the static map doesn't appear twice.
+    const isTuBraunschweig = _obIsTuBraunschweig();
+    const mapped = isTuBraunschweig ? VERTIEFUNG_MAP[major] : undefined;
+    // TU Braunschweig keeps the built-in Vertiefung catalog. Other universities
+    // only show approved crowd suggestions, while still allowing free typing.
     const crowd = major ? (_obVertSuggestions[major] || []) : [];
-    const baseList = mapped && mapped.length ? mapped : VERTIEFUNG_LIST;
+    const baseList = isTuBraunschweig ? (mapped && mapped.length ? mapped : VERTIEFUNG_LIST) : [];
     const seen = new Set<string>();
     const base: string[] = [];
     [...baseList, ...crowd].forEach((v) => {
@@ -753,10 +770,10 @@ export function initOnboarding(): void {
 
     // Crowd-source the Vertiefung dropdown: each submission increments the
     // counter; entries with ≥ 5 submissions auto-approve. Skip values that
-    // are already part of the static VERTIEFUNG_MAP for this major (they're
-    // already in everyone's dropdown).
+    // are already part of TU Braunschweig's static VERTIEFUNG_MAP for this
+    // major (they're already in that dropdown).
     if (vertiefung) {
-      const staticList = (window.VERTIEFUNG_MAP || {})[prog] || [];
+      const staticList = _obIsTuBraunschweig() ? ((window.VERTIEFUNG_MAP || {})[prog] || []) : [];
       const inStatic = staticList.some((v) => v.toLowerCase() === vertiefung.toLowerCase());
       if (!inStatic) void submitSuggestion('vertiefung', prog, vertiefung);
     }
