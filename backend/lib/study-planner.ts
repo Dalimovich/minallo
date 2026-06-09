@@ -722,6 +722,7 @@ export async function generateWeeklyPlan(
         generation_params: {
           daily_study_minutes: prefs.daily_study_minutes,
           study_days: prefs.study_days,
+          gen_version: 'filekey-v3',
         },
       },
       serviceKey,
