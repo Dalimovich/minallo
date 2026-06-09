@@ -94,7 +94,9 @@ function _allCourseIds(): string[] {
     (sem.courses || []).forEach((c) => { if (c.id) ids.push(c.id); });
   });
   // Deduplicate
-  return ids.filter((v, i, a) => a.indexOf(v) === i);
+  const deduped = ids.filter((v, i, a) => a.indexOf(v) === i);
+  console.log('[DailyMission] _allCourseIds from SEMS:', deduped);
+  return deduped;
 }
 
 function _formatDate(d: Date): string {
