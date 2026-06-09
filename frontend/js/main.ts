@@ -92,7 +92,13 @@ function lazyImportEncoded(encodedPath: string): Promise<Record<string, unknown>
 runIdle(() => lazyImportEncoded('Li9jb3JlL3B1bGwtdG8tcmVmcmVzaC5qcw==').then((m) => (m.initPullToRefresh as () => void)()));
 runIdle(() => lazyImportEncoded('Li9jb3JlL2NvbnNvbGUtZmlsdGVyLmpz').then((m) => (m.initConsoleFilter as () => void)()));
 runDelayed(() => lazyImportEncoded('Li9mZWF0dXJlcy9hZG1pbi9hZG1pbi1wYW5lbC5qcw==').then((m) => (m.initAdminPanel as () => void)()));
-runDelayed(() => lazyImportEncoded('Li9mZWF0dXJlcy9hdXRoL29uYm9hcmRpbmcuanM=').then((m) => (m.initOnboarding as () => void)()));
+// Onboarding can appear immediately after signup/login. Do not defer this:
+// visible buttons must be wired before the user can click them.
+lazyImportEncoded('Li9mZWF0dXJlcy9hdXRoL29uYm9hcmRpbmcuanM=')
+  .then((m) => (m.initOnboarding as () => void)())
+  .catch((err: unknown) => {
+    console.warn('[Minallo] onboarding failed to load:', err);
+  });
 // AI Fair-Use banner — checks usage on portal load and renders the banner
 // once the user crosses 80% of the monthly cap. Cheap: one GET request,
 // no further work unless the response triggers the banner.

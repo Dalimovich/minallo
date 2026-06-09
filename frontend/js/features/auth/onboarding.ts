@@ -693,14 +693,12 @@ export function initOnboarding(): void {
     });
     const card = document.getElementById(path === 'enrolled' ? 'obPathEnrolled' : 'obPathLearner');
     if (card) card.classList.add('selected');
-    setTimeout(() => {
-      _obShowStep(path === 'enrolled' ? '3a' : '3b');
-      _obSetHeader(
-        path === 'enrolled' ? 'ob_almost_there' : 'ob_de_journey',
-        'ob_step3',
-        path === 'enrolled' ? '🎓' : '🇩🇪'
-      );
-    }, 200);
+    _obShowStep(path === 'enrolled' ? '3a' : '3b');
+    _obSetHeader(
+      path === 'enrolled' ? 'ob_almost_there' : 'ob_de_journey',
+      'ob_step3',
+      path === 'enrolled' ? '🎓' : '🇩🇪'
+    );
   };
 
   window._obBack = function (fromStep?: number) {
