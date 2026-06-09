@@ -17,10 +17,22 @@ export interface DailyMissionTask {
   page_range?: string | null;
 }
 
+export interface PossibleMatch {
+  courseId: string;
+  exerciseFileId: string;
+  exerciseFileName: string;
+  possibleLectureFileId: string;
+  possibleLectureFileName: string;
+  confidence: 'medium' | 'low';
+  reason: string;
+}
+
 export interface DailyMissionResponse {
   hasPlan: boolean;
+  planId?: string | null;
   plan: { id: string; course_id: string; plan_date: string; generated_reason?: string | null } | null;
   tasks: DailyMissionTask[];
+  possibleMatches?: PossibleMatch[];
   summary: {
     completedTasks: number;
     totalTasks: number;
@@ -151,4 +163,27 @@ export function findPrimaryCourseId(): string | null {
   const sem = w.SEMS?.[w.sdActiveSemId || ''];
   const first = sem?.courses?.find((c) => c.id);
   return first?.id || null;
+}
+
+export async function confirmPossibleMatch(
+  planId: string,
+  exerciseFileId: string,
+  possibleLectureFileId: string,
+  action: 'confirm' | 'dismiss',
+  planDate?: string
+): Promise<{ ok: boolean; remaining: number }> {
+  const res = await fetch('/api/study/possible-match', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ planId, exerciseFileId, possibleLectureFileId, action, planDate }),
+  });
+  if (!res.ok) {
+    try {
+      const errBody = await res.json() as { message?: string };
+      throw new Error(errBody.message || 'Possible match action failed (HTTP ' + res.status + ')');
+    } catch {
+      throw new Error('Possible match action failed (HTTP ' + res.status + ')');
+    }
+  }
+  return res.json() as Promise<{ ok: boolean; remaining: number }>;
 }

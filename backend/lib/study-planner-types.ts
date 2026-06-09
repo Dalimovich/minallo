@@ -100,6 +100,17 @@ export interface SequencedTask {
   priorityScore: number;
 }
 
+// Validated shape of a single possible-match entry stored in weekly_study_plans.possible_matches.
+export interface PossibleMatch {
+  courseId: string;
+  exerciseFileId: string;
+  exerciseFileName: string;
+  possibleLectureFileId: string;
+  possibleLectureFileName: string;
+  confidence: 'medium' | 'low';
+  reason: string;
+}
+
 export interface WeeklyStudyTask {
   id: string;
   plan_id: string;
@@ -114,6 +125,7 @@ export interface WeeklyStudyTask {
   task_type: string;
   task_title: string;
   task_description: string | null;
+  reason: string | null;
   estimated_minutes: number;
   priority_score: number;
   study_state_required: string;
@@ -141,5 +153,6 @@ export interface WeeklyStudyPlan {
   generated_at: string;
   regenerated_at: string | null;
   generation_params: Record<string, unknown>;
+  possible_matches: PossibleMatch[];
   created_at: string;
 }

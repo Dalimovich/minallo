@@ -14,10 +14,12 @@
 
 import { escapeHtml } from '../../utils/escape-html.js';
 import {
+  confirmPossibleMatch,
   DailyMissionResponse,
   DailyMissionTask,
   generateDailyMission,
   getDailyMission,
+  PossibleMatch,
   regenerateDailyMission,
   updateDailyMissionTask,
   findPrimaryCourseId,
@@ -52,6 +54,10 @@ interface DailyMissionState {
   byId: Record<string, DailyMissionResponse>;
   // Flat merged task list (populated after load)
   tasks: DailyMissionTask[];
+  // Merged possible-match suggestions across all loaded plans
+  possibleMatches: PossibleMatch[];
+  // planId keyed by courseId (for the confirm/dismiss endpoint)
+  planIdByCourse: Record<string, string>;
   isLoading: boolean;
   error: string | null;
   lastLoaded: number;
@@ -70,6 +76,8 @@ interface DailyMissionState {
 const _state: DailyMissionState = {
   byId: {},
   tasks: [],
+  possibleMatches: [],
+  planIdByCourse: {},
   isLoading: false,
   error: null,
   lastLoaded: 0,
@@ -105,6 +113,10 @@ function _taskTypeLabel(taskType: string): string {
   const labels: Record<string, string> = {
     study_topic: 'Study',
     read_pages: 'Read',
+    // AI-planner task types
+    study_lecture: 'Study',
+    continue_lecture: 'Continue',
+    repeat_lecture: 'Repeat',
     solve_exercise_sheet: 'Exercises',
     practice_problem_set: 'Practice',
     generate_quiz_if_no_exercises: 'Quiz',
@@ -131,6 +143,9 @@ function _startButtonLabel(taskType: string): string {
   const labels: Record<string, string> = {
     study_topic: 'Open File',
     read_pages: 'Open File',
+    study_lecture: 'Open File',
+    continue_lecture: 'Open File',
+    repeat_lecture: 'Open File',
     review_topic: 'Open File',
     review_weak_topic: 'Open File',
     solve_exercise_sheet: 'Open Exercises',
@@ -230,6 +245,8 @@ async function loadTodaysTasks(force = false): Promise<void> {
 
     // Merge tasks, annotating each with courseId (not present in the API response)
     const merged: DailyMissionTask[] = [];
+    const mergedMatches: PossibleMatch[] = [];
+    const planIdByCourse: Record<string, string> = {};
     Object.entries(_state.byId).forEach(([cid, resp]) => {
       if (resp.hasPlan && resp.tasks.length) {
         resp.tasks.forEach((t) => {
@@ -237,9 +254,21 @@ async function loadTodaysTasks(force = false): Promise<void> {
           merged.push(t);
         });
       }
+      if (resp.planId) planIdByCourse[cid] = resp.planId;
+      if (resp.possibleMatches && resp.possibleMatches.length) {
+        resp.possibleMatches.forEach((m) => {
+          // Avoid duplicates (same exercise+lecture pair from multiple course responses)
+          const isDup = mergedMatches.some(
+            (x) => x.exerciseFileId === m.exerciseFileId && x.possibleLectureFileId === m.possibleLectureFileId
+          );
+          if (!isDup) mergedMatches.push(m);
+        });
+      }
     });
 
     _state.tasks = merged;
+    _state.possibleMatches = mergedMatches;
+    _state.planIdByCourse = planIdByCourse;
     _state.lastLoaded = now;
 
     // Show exam date modal if tasks exist but no exam dates
@@ -567,6 +596,46 @@ function _renderWidget(): void {
         inner += '<button type="button" class="dm-btn-generate-cheatsheet dm-task-btn" title="Generate study cheatsheet">📄 Generate Cheatsheet</button>';
       }
       inner += '</div>';
+
+      // Possible match suggestions
+      const visibleMatches = _state.possibleMatches.filter((m) => {
+        if (!_state.selectedCourseId) return true;
+        return m.courseId === _state.selectedCourseId;
+      });
+      if (visibleMatches.length > 0) {
+        inner += '<div class="dm-widget-matches">';
+        inner += '<div class="dm-widget-matches-heading">Suggested pairings</div>';
+        visibleMatches.forEach((m) => {
+          const planId = _state.planIdByCourse[m.courseId] ?? '';
+          inner += '<div class="dm-widget-match-card">';
+          inner += '<div class="dm-widget-match-pair">' +
+            escapeHtml(m.exerciseFileName) +
+            ' <span class="dm-widget-match-arrow">&#8596;</span> ' +
+            escapeHtml(m.possibleLectureFileName) +
+            '</div>';
+          if (m.reason) {
+            inner += '<div class="dm-widget-match-reason">' + escapeHtml(m.reason) + '</div>';
+          }
+          inner += '<div class="dm-widget-match-actions">';
+          inner += '<button type="button"' +
+            ' class="dm-task-btn dm-task-btn--primary dm-btn-match"' +
+            ' data-dm-match-action="confirm"' +
+            ' data-exercise-file-id="' + escapeHtml(m.exerciseFileId) + '"' +
+            ' data-lecture-file-id="' + escapeHtml(m.possibleLectureFileId) + '"' +
+            ' data-plan-id="' + escapeHtml(planId) + '"' +
+            '>Confirm</button>';
+          inner += '<button type="button"' +
+            ' class="dm-task-btn dm-task-btn--ghost dm-btn-match"' +
+            ' data-dm-match-action="dismiss"' +
+            ' data-exercise-file-id="' + escapeHtml(m.exerciseFileId) + '"' +
+            ' data-lecture-file-id="' + escapeHtml(m.possibleLectureFileId) + '"' +
+            ' data-plan-id="' + escapeHtml(planId) + '"' +
+            '>Dismiss</button>';
+          inner += '</div>';
+          inner += '</div>';
+        });
+        inner += '</div>';
+      }
     }
   }
 
@@ -662,6 +731,36 @@ function _bindWidgetActions(host: HTMLElement): void {
         default:
           break;
       }
+    });
+  });
+
+  // Possible match confirm / dismiss buttons
+  host.querySelectorAll<HTMLButtonElement>('.dm-btn-match[data-dm-match-action]').forEach((btn) => {
+    const matchAction = btn.getAttribute('data-dm-match-action') as 'confirm' | 'dismiss' | null;
+    const exerciseFileId = btn.getAttribute('data-exercise-file-id');
+    const lectureFileId = btn.getAttribute('data-lecture-file-id');
+    const planId = btn.getAttribute('data-plan-id');
+    if (!matchAction || !exerciseFileId || !lectureFileId || !planId) return;
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      confirmPossibleMatch(planId, exerciseFileId, lectureFileId, matchAction, _state.todayDate)
+        .then(() => {
+          // Remove the entry from local state immediately for instant feedback.
+          _state.possibleMatches = _state.possibleMatches.filter(
+            (m) =>
+              !(m.exerciseFileId === exerciseFileId && m.possibleLectureFileId === lectureFileId)
+          );
+          // If confirming, reload tasks so the new task appears.
+          if (matchAction === 'confirm') {
+            void loadTodaysTasks(true);
+          } else {
+            _renderWidget();
+          }
+        })
+        .catch((err: unknown) => {
+          btn.disabled = false;
+          console.error('[DailyMission] match action error:', err);
+        });
     });
   });
 }

@@ -2,7 +2,7 @@
 
 import { fail, handleOptions, jsonResponse } from '../lib/responses';
 import {
-  getDailyTasks,
+  getDailyTasksWithPlan,
   localPlanDate,
   requireStudyAuth,
   validateCourseId,
@@ -22,7 +22,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const { planDate } = localPlanDate(qs.date, qs.timezone);
 
   try {
-    const tasks = await getDailyTasks(auth.user.id, new Date(planDate + 'T00:00:00Z'), auth.serviceKey, courseId);
+    const { planId, tasks, possibleMatches } = await getDailyTasksWithPlan(
+      auth.user.id,
+      new Date(planDate + 'T00:00:00Z'),
+      auth.serviceKey,
+      courseId
+    );
 
     // Transform WeeklyStudyTask → DailyMissionTask (rename fields, add priority_group)
     const formattedTasks = tasks.map((t) => ({
@@ -35,9 +40,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       estimated_minutes: t.estimated_minutes,
       page_start: undefined,
       page_end: undefined,
-      // The synthesized description doubles as the "why this task" explanation;
-      // surface it as reason so the UI's "Why?" affordance has content.
-      reason: t.invalidation_reason || t.task_description || undefined,
+      // Prefer the stored reason from the AI planner; fall back to the synthesized description.
+      reason: t.invalidation_reason || t.reason || t.task_description || undefined,
       reason_code: t.invalidation_reason ? 'unavailable' : undefined,
       source_file_id: t.source_file_id,
       source_file_name: t.source_file_name ?? undefined,
@@ -53,7 +57,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
     return jsonResponse(200, {
       hasPlan: formattedTasks.length > 0,
+      planId,
       tasks: formattedTasks,
+      possibleMatches,
       summary: {
         completedTasks: completed,
         totalTasks: formattedTasks.length,

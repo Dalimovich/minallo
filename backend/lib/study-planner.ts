@@ -11,6 +11,7 @@ import type { LambdaResponse, NetlifyEvent, SupabaseUser } from './types';
 import type {
   DayAllocation,
   PlanScope,
+  PossibleMatch,
   ProgressState,
   ScoredSubject,
   SequencedTask,
@@ -24,7 +25,7 @@ import type {
 } from './study-planner-types';
 
 // Re-export types that external modules need.
-export type { WeeklyStudyTask };
+export type { PossibleMatch, WeeklyStudyTask };
 
 // ── AI planner feature flag ────────────────────────────────────────────────────
 
@@ -532,6 +533,42 @@ async function findOrCreateWeeklyPlan(
   return { planId: racePlan.id, isNew: false, raceHandled: true };
 }
 
+// ── AI: validate possible-matches from the Python response ───────────────────
+
+function validatePossibleMatches(raw: unknown): PossibleMatch[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PossibleMatch[] = [];
+  for (const item of raw) {
+    if (
+      item == null ||
+      typeof item !== 'object' ||
+      typeof (item as Record<string, unknown>).courseId !== 'string' ||
+      !(item as Record<string, unknown>).courseId ||
+      typeof (item as Record<string, unknown>).exerciseFileId !== 'string' ||
+      !(item as Record<string, unknown>).exerciseFileId ||
+      typeof (item as Record<string, unknown>).possibleLectureFileId !== 'string' ||
+      !(item as Record<string, unknown>).possibleLectureFileId
+    ) {
+      continue;
+    }
+    const i = item as Record<string, unknown>;
+    const confidence: 'medium' | 'low' =
+      i.confidence === 'medium' ? 'medium' : 'low';
+    out.push({
+      courseId: String(i.courseId),
+      exerciseFileId: String(i.exerciseFileId),
+      exerciseFileName: typeof i.exerciseFileName === 'string' ? i.exerciseFileName : '',
+      possibleLectureFileId: String(i.possibleLectureFileId),
+      possibleLectureFileName:
+        typeof i.possibleLectureFileName === 'string' ? i.possibleLectureFileName : '',
+      confidence,
+      reason: typeof i.reason === 'string' ? i.reason : '',
+    });
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
 // ── AI: generate weekly plan via Python AI proxy ──────────────────────────────
 
 async function generateWeeklyPlanViaAI(
@@ -598,6 +635,20 @@ async function generateWeeklyPlanViaAI(
   }
 
   await persistAiTasks(planId, userId, serviceKey, mappedRows);
+
+  // Persist possible_matches — best-effort; a failure must not break plan generation.
+  try {
+    const possibleMatches = validatePossibleMatches(response.possibleMatches);
+    await supaRequest(
+      'PATCH',
+      'weekly_study_plans?id=eq.' + encodeURIComponent(planId),
+      { possible_matches: possibleMatches },
+      serviceKey,
+      { Prefer: 'return=minimal' }
+    );
+  } catch (pmErr) {
+    console.error('[study-planner] Failed to persist possible_matches:', pmErr);
+  }
 
   const subjectsSeen = [...new Set(mappedRows.map((r) => r.course_id))];
 
@@ -1454,12 +1505,27 @@ export async function generateWeeklyPlan(
 
 // ── F. Daily task slice ───────────────────────────────────────────────────────
 
+export interface DailyTasksResult {
+  planId: string;
+  tasks: WeeklyStudyTask[];
+  possibleMatches: PossibleMatch[];
+}
+
 export async function getDailyTasks(
   userId: string,
   date: Date,
   serviceKey: string,
   courseId?: string
 ): Promise<WeeklyStudyTask[]> {
+  return (await getDailyTasksWithPlan(userId, date, serviceKey, courseId)).tasks;
+}
+
+export async function getDailyTasksWithPlan(
+  userId: string,
+  date: Date,
+  serviceKey: string,
+  courseId?: string
+): Promise<DailyTasksResult> {
   const dateStr = dateToString(date);
   const weekStart = dateToString(getWeekStart(date));
 
@@ -1469,12 +1535,19 @@ export async function getDailyTasks(
     encodeURIComponent(userId) +
     '&week_start_date=eq.' +
     encodeURIComponent(weekStart) +
-    '&status=eq.active&select=id&limit=1';
+    '&status=eq.active&select=id,possible_matches&limit=1';
   if (courseId) planUrl += '&course_id=eq.' + encodeURIComponent(courseId);
   else planUrl += '&course_id=is.null';
 
-  const planRes = await supaRequest<{ id: string }[]>('GET', planUrl, null, serviceKey);
-  let planId = Array.isArray(planRes.body) ? planRes.body[0]?.id ?? null : null;
+  const planRes = await supaRequest<{ id: string; possible_matches: unknown }[]>(
+    'GET',
+    planUrl,
+    null,
+    serviceKey
+  );
+  const planRow = Array.isArray(planRes.body) ? planRes.body[0] ?? null : null;
+  let planId: string | null = planRow?.id ?? null;
+  let possibleMatches: PossibleMatch[] = validatePossibleMatches(planRow?.possible_matches ?? []);
 
   if (!planId) {
     // Generate a new plan on the fly. regenerateExisting=false: if a concurrent
@@ -1490,6 +1563,19 @@ export async function getDailyTasks(
       false
     );
     planId = result.planId;
+    // Fetch possible_matches for the newly generated plan.
+    try {
+      const newPlanRes = await supaRequest<{ possible_matches: unknown }[]>(
+        'GET',
+        'weekly_study_plans?id=eq.' + encodeURIComponent(planId) + '&select=possible_matches&limit=1',
+        null,
+        serviceKey
+      );
+      const newPlanRow = Array.isArray(newPlanRes.body) ? newPlanRes.body[0] ?? null : null;
+      possibleMatches = validatePossibleMatches(newPlanRow?.possible_matches ?? []);
+    } catch {
+      possibleMatches = [];
+    }
   }
 
   // Return tasks for the specific date.
@@ -1504,7 +1590,7 @@ export async function getDailyTasks(
   const taskRes = await supaRequest<WeeklyStudyTask[]>('GET', taskUrl, null, serviceKey);
   const tasks = Array.isArray(taskRes.body) ? taskRes.body : [];
   await enrichTasksWithFileNames(tasks, serviceKey);
-  return tasks;
+  return { planId, tasks, possibleMatches };
 }
 
 // Attach real document file names to tasks and reconcile against deletes/renames.
