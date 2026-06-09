@@ -462,6 +462,7 @@ function _renderWidget(): void {
 
   // Course picker
   const courseIds = [...new Set(_state.tasks.map((t) => (t as DailyMissionTask & { _courseId?: string })._courseId || '').filter(Boolean))];
+  console.log('[DailyMission] courseIds:', courseIds, 'length:', courseIds.length);
   if (courseIds.length > 1) {
     inner += '<select class="dm-course-picker">';
     inner += '<option value="">All Courses</option>';
@@ -510,29 +511,34 @@ function _renderWidget(): void {
     inner += '<p>' + escapeHtml(_state.error) + '</p>';
     inner += '<button type="button" class="dm-btn-generate dm-cta">Retry</button>';
     inner += '</div>';
-  } else if (!total) {
-    inner += '<div class="dm-widget-empty">';
-    inner += '<p>No mission yet for today.</p>';
-    inner += '<button type="button" class="dm-btn-generate dm-cta">Plan My Week</button>';
-    inner += '</div>';
   } else {
     // Show all tasks in scrollable container (filtered by course)
     const visible = displayTasks.filter((t) => t.status !== 'skipped');
-    inner += '<div class="dm-widget-tasks dm-widget-tasks--scrollable">';
-    visible.forEach((t) => {
-      inner += _buildTaskRowHtml(t as DailyMissionTask & { _courseId?: string });
-    });
-    inner += '</div>';
+    console.log('[DailyMission] visible tasks:', visible.length, 'total:', total, 'displayTasks:', displayTasks.length);
 
-    // Action buttons for crisis/final week
-    inner += '<div class="dm-widget-actions">';
-    if (_state.urgencyMeta?.recommendExamGeneration) {
-      inner += '<button type="button" class="dm-btn-generate-exam dm-task-btn dm-task-btn--primary" title="Generate practice exam from course materials">📋 Generate Exam</button>';
+    if (visible.length === 0) {
+      // No visible tasks (either none exist or all are skipped)
+      inner += '<div class="dm-widget-empty">';
+      inner += '<p>' + (total === 0 ? 'No mission yet for today.' : 'All tasks skipped for now.') + '</p>';
+      inner += '<button type="button" class="dm-btn-generate dm-cta">' + (total === 0 ? 'Plan My Week' : 'Regenerate') + '</button>';
+      inner += '</div>';
+    } else {
+      inner += '<div class="dm-widget-tasks dm-widget-tasks--scrollable">';
+      visible.forEach((t) => {
+        inner += _buildTaskRowHtml(t as DailyMissionTask & { _courseId?: string });
+      });
+      inner += '</div>';
+
+      // Action buttons for crisis/final week
+      inner += '<div class="dm-widget-actions">';
+      if (_state.urgencyMeta?.recommendExamGeneration) {
+        inner += '<button type="button" class="dm-btn-generate-exam dm-task-btn dm-task-btn--primary" title="Generate practice exam from course materials">📋 Generate Exam</button>';
+      }
+      if (_state.urgencyMeta?.recommendCheatsheet) {
+        inner += '<button type="button" class="dm-btn-generate-cheatsheet dm-task-btn" title="Generate study cheatsheet">📄 Generate Cheatsheet</button>';
+      }
+      inner += '</div>';
     }
-    if (_state.urgencyMeta?.recommendCheatsheet) {
-      inner += '<button type="button" class="dm-btn-generate-cheatsheet dm-task-btn" title="Generate study cheatsheet">📄 Generate Cheatsheet</button>';
-    }
-    inner += '</div>';
   }
 
   host.innerHTML = '<div class="dm-widget">' + inner + '</div>';
