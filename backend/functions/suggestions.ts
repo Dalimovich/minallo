@@ -111,7 +111,14 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       '&order=count.desc,value.asc' +
       '&limit=100';
     const res = await supaRequest<SuggestionRow[]>('GET', path, null, serviceKey);
-    if (res.status < 200 || res.status >= 300) return fail(500, 'Could not load suggestions');
+    if (res.status < 200 || res.status >= 300) {
+      await logSecurityEvent(serviceKey, user.id, 'suggestion_list_unavailable', {
+        kind,
+        parent,
+        status: res.status,
+      });
+      return jsonResponse(200, { items: [] });
+    }
     const items = (Array.isArray(res.body) ? res.body : []).map((r) => ({
       value: r.value,
       count: r.count,
@@ -172,7 +179,19 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     { p_kind: kind, p_parent: parent, p_value: validation.normalized || value, p_threshold: 5 },
     serviceKey
   );
-  if (rpcRes.status < 200 || rpcRes.status >= 300) return fail(500, 'Could not submit suggestion');
+  if (rpcRes.status < 200 || rpcRes.status >= 300) {
+    await logSecurityEvent(serviceKey, user.id, 'suggestion_store_unavailable', {
+      kind,
+      parent,
+      status: rpcRes.status,
+    });
+    return jsonResponse(200, {
+      count: 0,
+      approved: false,
+      accepted: false,
+      reason: 'suggestion_store_unavailable',
+    });
+  }
   const row = Array.isArray(rpcRes.body) ? rpcRes.body[0] : null;
   return jsonResponse(200, {
     count: row?.count ?? 1,
