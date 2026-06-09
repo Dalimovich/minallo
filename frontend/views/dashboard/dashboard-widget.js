@@ -1358,6 +1358,61 @@
     overlay.addEventListener('click', closePanel);
     document.getElementById('wpClose').addEventListener('click', closePanel);
 
+    // ── Daily Mission: size its tile to content ───────────────────────────────
+    // The Daily Mission widget's logic is "show the whole list; scroll only if
+    // it's taller than fits". A fixed grid-row span fights that — it leaves dead
+    // space under a short list and clips/forces an internal scroll on a long one.
+    // So after the Daily Mission UI paints (it calls this via window), we measure
+    // the tile's NATURAL content height and set its row span to match: grow to
+    // show every task, capped at the viewport so a very long list still scrolls
+    // internally instead of running off-screen.
+    var _dmFitting = false;
+    window._dwFitDailyMission = function () {
+      if (_dmFitting) return;
+      var host = document.getElementById('daily-mission-widget');
+      if (!host) return;
+      var el = host.closest('.dash-widget');
+      if (!el) return;
+      if (!host.querySelector('.dm-widget')) return; // not painted yet
+      var u = +el.dataset.uid;
+      var w = state.find(function (x) {
+        return x.uid === u;
+      });
+      if (!w) return;
+
+      // Measure natural height by briefly releasing the grid stretch: a grid
+      // item is stretched to its row track by default, which hides a short
+      // list's true height and clamps a long list to the scroll viewport.
+      // align-self:start + height:auto lets the tile report its real content.
+      var prevAlign = el.style.alignSelf;
+      var prevHeight = el.style.height;
+      el.style.alignSelf = 'start';
+      el.style.height = 'auto';
+      var naturalTotal = el.getBoundingClientRect().height;
+      el.style.alignSelf = prevAlign;
+      el.style.height = prevHeight;
+      if (!naturalTotal) return;
+
+      var cell = ROW_H + GAP;
+      // Cap at the viewport so the tile never runs off-screen; past this the
+      // task list scrolls internally (its container is overflow-y:auto).
+      var canvasTop = canvas.getBoundingClientRect().top;
+      var avail = window.innerHeight - canvasTop - 24;
+      var maxRows = Math.max(2, Math.floor((avail + GAP) / cell));
+      // tileHeight(rs) = rs*ROW_H + (rs-1)*GAP = rs*cell - GAP; solve for rs.
+      var wantRs = Math.max(2, Math.ceil((naturalTotal + GAP) / cell));
+      if (wantRs > maxRows) wantRs = maxRows;
+
+      if (wantRs === w.rs) return; // already fits — no relayout
+      w.rs = wantRs;
+      _dmFitting = true;
+      renderAnimated();
+      _dwSave();
+      setTimeout(function () {
+        _dmFitting = false;
+      }, 0);
+    };
+
     window._dwRenderOnly = function () {
       render();
       setTimeout(function () {

@@ -572,6 +572,15 @@ function _renderWidget(): void {
 
   host.innerHTML = '<div class="dm-widget">' + inner + '</div>';
   _bindWidgetActions(host);
+
+  // Content-height sizing: ask the dashboard to grow/shrink this widget's tile
+  // to fit the full task list, scrolling only once it would exceed the screen.
+  // The dashboard owns the grid track height, so it exposes this hook; it is a
+  // no-op on the chatbot/preview surfaces (which don't define it).
+  const dash = window as unknown as { _dwFitDailyMission?: () => void };
+  if (typeof dash._dwFitDailyMission === 'function') {
+    requestAnimationFrame(() => dash._dwFitDailyMission!());
+  }
 }
 
 function _bindWidgetActions(host: HTMLElement): void {
