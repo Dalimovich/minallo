@@ -1099,7 +1099,10 @@
         // full task list. On resize/move the dashboard recreates this element,
         // so we re-trigger its render() — which repaints instantly from memory
         // (no API call) and keeps the list from disappearing.
-        import('js/features/daily-mission/daily-mission-ui.js')
+        // Cache-bust with assetVersion: dynamic module imports have no ?v= by
+        // default, so the browser/CDN can serve a stale copy without render().
+        var _dmV = (window.MinalloConfig && window.MinalloConfig.assetVersion) || '';
+        import('js/features/daily-mission/daily-mission-ui.js?v=' + _dmV)
           .then(function () {
             if (window._dailyMission && typeof window._dailyMission.render === 'function') {
               window._dailyMission.render();
