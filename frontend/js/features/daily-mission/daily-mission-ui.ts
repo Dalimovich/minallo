@@ -433,6 +433,7 @@ function _buildTaskRowHtml(task: DailyMissionTask & { _courseId?: string }): str
 
 function _renderWidget(): void {
   const host = document.getElementById('daily-mission-widget');
+  console.log('[DailyMission] _renderWidget called, host element:', host ? 'found' : 'NOT FOUND');
   if (!host) return;
 
   const d = new Date();
