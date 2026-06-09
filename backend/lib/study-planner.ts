@@ -555,6 +555,9 @@ export async function generateWeeklyPlan(
       .map((s) => s.course_id),
   ]);
 
+  // Distribute across the week (needed early for urgency calculation).
+  const weekStartObj = new Date(weekStart + 'T00:00:00Z');
+
   // Calculate study urgency for task filtering
   let urgency: StudyUrgency | null = null;
   if (courseId) {
@@ -646,7 +649,6 @@ export async function generateWeeklyPlan(
   }
 
   // Distribute across the week.
-  const weekStartObj = new Date(weekStart + 'T00:00:00Z');
   const dayAllocations = distributeAcrossWeek(scoredSubjects, prefs, weekStartObj);
 
   // Find or create the weekly plan record.
