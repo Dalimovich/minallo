@@ -7,7 +7,7 @@
     "lint:fix": "eslint --fix frontend/js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "tsx --test --test-reporter=spec \"tests/backend/validation.test.mjs\" \"tests/backend/env.test.mjs\" \"tests/backend/stripe-webhook.test.mjs\" \"tests/backend/create-checkout.test.mjs\" \"tests/backend/payment-flow.test.mjs\" \"tests/backend/admin-stats.test.mjs\" \"tests/backend/study-done-files.test.mjs\" \"tests/backend/flashcard-sr.test.mjs\" \"tests/frontend/escape-html.test.mjs\" \"tests/frontend/auth-storage-contract.test.mjs\" \"tests/frontend/ai-input-render.test.mjs\" \"tests/frontend/notes-math.test.mjs\"",
+    "test": "tsx --test --test-reporter=spec \"tests/backend/validation.test.mjs\" \"tests/backend/env.test.mjs\" \"tests/backend/stripe-webhook.test.mjs\" \"tests/backend/create-checkout.test.mjs\" \"tests/backend/payment-flow.test.mjs\" \"tests/backend/admin-stats.test.mjs\" \"tests/backend/study-done-files.test.mjs\" \"tests/backend/flashcard-sr.test.mjs\" \"tests/frontend/escape-html.test.mjs\" \"tests/frontend/auth-storage-contract.test.mjs\" \"tests/frontend/ai-input-render.test.mjs\" \"tests/frontend/notes-math.test.mjs\" \"tests/frontend/document-type-badge.test.mjs\"",
     "typecheck": "tsc -p backend/tsconfig.json && tsc -p frontend/tsconfig.json && tsc -p functions/tsconfig.json",
     "typecheck:backend": "tsc -p backend/tsconfig.json",
     "typecheck:frontend": "tsc -p frontend/tsconfig.json",

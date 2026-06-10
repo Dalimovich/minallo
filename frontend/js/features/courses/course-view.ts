@@ -602,6 +602,23 @@ function _refreshFilesPanel(co: HTMLElement, course: LegacyCourse): void {
     filesList.innerHTML = _buildFilesListHtml(course);
     bindFileEvents(co, course);
     bindFolderEvents(co, course);
+    // Document Understanding Layer: decorate ready file rows with the detected
+    // source-type badge + low-confidence correction selector. Additive + async
+    // so it never blocks or breaks the list render.
+    if (course.id) {
+      void (async () => {
+        try {
+          const [{ listCourseDocuments }, { decorateFileTypeBadges }] = await Promise.all([
+            import('../../services/ai-service'),
+            import('./document-type-badge'),
+          ]);
+          const docs = await listCourseDocuments(course.id);
+          decorateFileTypeBadges(filesList, docs);
+        } catch {
+          /* badges are optional — ignore */
+        }
+      })();
+    }
     co.querySelectorAll<HTMLButtonElement>('.co-folder-more-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();

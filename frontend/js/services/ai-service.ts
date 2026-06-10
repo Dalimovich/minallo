@@ -163,6 +163,16 @@ export interface CourseDocument {
     pagesAlmostNoText?: number;
     [key: string]: unknown;
   } | null;
+  // Document Understanding Layer (Stage 2 /api/documents/list).
+  document_type?: string | null;
+  document_type_confidence?: number | null;
+  document_type_signals?: string[] | null;
+  detected_language?: string | null;
+  subject_name?: string | null;
+  topic_area?: string | null;
+  content_flags?: Record<string, boolean> | null;
+  user_document_type_override?: string | null;
+  effective_document_type?: string | null;
   created_at?: string;
   updated_at?: string;
 }
