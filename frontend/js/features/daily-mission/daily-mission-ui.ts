@@ -183,32 +183,44 @@ function _courseName(courseId: string): string {
 
 interface CourseFileLite { id: string; name: string }
 
-// All files for a course (top-level + folders), de-duped by id. Used by the
-// "Mark completed files" picker. Mirrors the shape the PDF source resolver reads.
-function _courseFiles(courseId: string): CourseFileLite[] {
+// All documents for a course, de-duped by document id. Used by the "Mark
+// completed files" picker. Primary source is the backend documents list (the
+// same document_ids the planner and done-files endpoint operate on) — the client
+// SEMS file list is often empty on the dashboard because files aren't loaded
+// until a course is opened. Any SEMS files present are unioned in as a fallback.
+async function _courseDocuments(courseId: string): Promise<CourseFileLite[]> {
+  const byId = new Map<string, string>();
+
+  try {
+    const { listCourseDocuments } = await import('../../services/ai-service.js');
+    const docs = await listCourseDocuments(courseId);
+    docs.forEach((d) => {
+      const id = String(d.id || '');
+      if (id) byId.set(id, String(d.file_name || d.fileName || id));
+    });
+  } catch { /* fall back to SEMS below */ }
+
   const w = window as unknown as {
     SEMS?: Record<string, { courses?: Array<{ id?: string; files?: Array<Record<string, unknown>>; userFolders?: Array<{ files?: Array<Record<string, unknown>> }> }> }>;
   };
-  let course: { files?: Array<Record<string, unknown>>; userFolders?: Array<{ files?: Array<Record<string, unknown>> }> } | undefined;
   for (const sem of Object.values(w.SEMS || {})) {
-    const found = (sem.courses || []).find((c) => c.id === courseId);
-    if (found) { course = found; break; }
+    const course = (sem.courses || []).find((c) => c.id === courseId);
+    if (!course) continue;
+    const push = (arr?: Array<Record<string, unknown>>): void => {
+      (arr || []).forEach((f) => {
+        const id = String(f.id || '');
+        if (!id || byId.has(id)) return;
+        byId.set(id, String(f.name || f._storageName || id));
+      });
+    };
+    push(course.files);
+    (course.userFolders || []).forEach((fd) => push(fd.files));
+    break;
   }
-  if (!course) return [];
-  const out: CourseFileLite[] = [];
-  const seen = new Set<string>();
-  const push = (arr?: Array<Record<string, unknown>>): void => {
-    (arr || []).forEach((f) => {
-      const id = String(f.id || '');
-      const name = String(f.name || f._storageName || '');
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      out.push({ id, name: name || id });
-    });
-  };
-  push(course.files);
-  (course.userFolders || []).forEach((fd) => push(fd.files));
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+
+  return [...byId.entries()]
+    .map(([id, name]) => ({ id, name: name || id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── Data loading ──────────────────────────────────────────────────────────────
@@ -522,7 +534,6 @@ function _showEditMenu(anchor: HTMLElement): void {
 }
 
 async function _showDoneFilesModal(courseId: string): Promise<void> {
-  const files = _courseFiles(courseId);
   const overlay = document.createElement('div');
   overlay.className = 'dm-done-modal-overlay';
   overlay.innerHTML = '<div class="dm-done-modal">' +
@@ -545,14 +556,24 @@ async function _showDoneFilesModal(courseId: string): Promise<void> {
   cancelBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
+  // Load the course's documents (backend list) and the current done set together.
+  let files: CourseFileLite[] = [];
+  let done: string[] = [];
+  try {
+    [files, done] = await Promise.all([
+      _courseDocuments(courseId),
+      getDoneFiles(courseId).catch(() => [] as string[]),
+    ]);
+  } catch (err) {
+    console.error('[DailyMission] completed-files load failed:', err);
+  }
+  if (!overlay.isConnected) return;
+
   if (!files.length) {
     listEl.innerHTML = '<div class="dm-done-empty">No files found for this course.</div>';
     return;
   }
 
-  let done: string[] = [];
-  try { done = await getDoneFiles(courseId); } catch { /* default to none */ }
-  if (!overlay.isConnected) return;
   const doneSet = new Set(done);
   listEl.innerHTML = files.map((f) =>
     '<label class="dm-done-row">' +
