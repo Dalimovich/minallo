@@ -62,11 +62,14 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const newlyDone = documentIds.filter((id) => !current.has(id));
   const removed = [...current].filter((id) => !next.has(id));
 
-  // Upsert the new done set.
+  // Upsert the new done set. on_conflict targets the (user_id, document_id)
+  // unique key — without it PostgREST resolves on the PK (id, which defaults to
+  // a fresh uuid), so re-saving an already-marked file hits a duplicate-key error
+  // instead of merging.
   if (documentIds.length > 0) {
     await supaRequest(
       'POST',
-      'student_document_state',
+      'student_document_state?on_conflict=user_id,document_id',
       documentIds.map((document_id) => ({
         user_id: auth.user.id,
         course_id: courseId,
@@ -96,29 +99,48 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   // For newly-marked files, flip their covered topics to 'studied' so the planner
   // treats them as known material (spaced repetition), not new lectures.
   let topicsMarked = 0;
+  let topicWriteOk = true;
+  let filesWithoutTopics: string[] = [];
   if (newlyDone.length > 0) {
-    topicsMarked = await markFileTopicsStudied(auth.user.id, courseId, newlyDone, now, auth.serviceKey);
+    const res = await markFileTopicsStudied(auth.user.id, courseId, newlyDone, now, auth.serviceKey);
+    topicsMarked = res.topicsMarked;
+    topicWriteOk = res.ok;
+    filesWithoutTopics = res.filesWithoutTopics;
     await writeStudyEvent(auth.serviceKey, {
       user_id: auth.user.id,
       course_id: courseId,
       event_type: 'files_marked_done',
-      metadata: { documentIds: newlyDone, topicsMarked },
+      metadata: { documentIds: newlyDone, topicsMarked, topicWriteOk, filesWithoutTopics },
     }).catch(() => undefined);
   }
 
-  return jsonResponse(200, { documentIds: [...next], topicsMarked });
+  // `topicWriteOk` lets the client know the planner-facing write actually landed —
+  // a file with no topic-map links (filesWithoutTopics) is saved but won't change
+  // planner behaviour until its course topic map is built.
+  return jsonResponse(200, { documentIds: [...next], topicsMarked, topicWriteOk, filesWithoutTopics });
 };
+
+interface TopicMarkResult {
+  topicsMarked: number;
+  ok: boolean;
+  filesWithoutTopics: string[];
+}
 
 // Map done documents → the topics they cover (via course_topics.source_document_ids)
 // → upsert student_topic_state(progress_state='studied'). Mirrors the topic-state
 // write study-task.ts performs when a learning task is completed.
+//
+// on_conflict targets the live (user_id, topic_id) unique key — required for the
+// merge to actually update an existing row instead of failing on duplicate key.
+// Unlike study-task.ts (which swallows this write's error), we surface failure so
+// the caller can tell the UI the planner-facing write didn't land.
 async function markFileTopicsStudied(
   userId: string,
   courseId: string,
   documentIds: string[],
   now: string,
   serviceKey: string
-): Promise<number> {
+): Promise<TopicMarkResult> {
   const topicsRes = await supaRequest<Array<{ id: string; source_document_ids: unknown }>>(
     'GET',
     'course_topics?user_id=eq.' + encodeURIComponent(userId) +
@@ -128,30 +150,45 @@ async function markFileTopicsStudied(
     serviceKey
   );
   const topics = Array.isArray(topicsRes.body) ? topicsRes.body : [];
-  const wanted = new Set(documentIds);
+
+  // Which of the done files actually map to at least one topic? Files with no
+  // topic-map link can't change planner behaviour — report them back.
+  const docsWithTopics = new Set<string>();
   const topicIds = new Set<string>();
   for (const t of topics) {
     const docs = Array.isArray(t.source_document_ids) ? t.source_document_ids : [];
-    if (docs.some((d) => wanted.has(String(d)))) topicIds.add(t.id);
+    const hit = docs.map((d) => String(d)).filter((d) => documentIds.includes(d));
+    if (hit.length) {
+      topicIds.add(t.id);
+      hit.forEach((d) => docsWithTopics.add(d));
+    }
   }
-  if (topicIds.size === 0) return 0;
+  const filesWithoutTopics = documentIds.filter((d) => !docsWithTopics.has(d));
 
-  await supaRequest(
-    'POST',
-    'student_topic_state',
-    [...topicIds].map((topic_id) => ({
-      user_id: userId,
-      course_id: courseId,
-      topic_id,
-      progress_state: 'studied',
-      last_studied_at: now,
-      study_sessions: 1,
-    })),
-    serviceKey,
-    { Prefer: 'resolution=merge-duplicates,return=minimal' }
-  ).catch(() => undefined);
+  if (topicIds.size === 0) {
+    return { topicsMarked: 0, ok: true, filesWithoutTopics };
+  }
 
-  return topicIds.size;
+  try {
+    await supaRequest(
+      'POST',
+      'student_topic_state?on_conflict=user_id,topic_id',
+      [...topicIds].map((topic_id) => ({
+        user_id: userId,
+        course_id: courseId,
+        topic_id,
+        progress_state: 'studied',
+        last_studied_at: now,
+        study_sessions: 1,
+      })),
+      serviceKey,
+      { Prefer: 'resolution=merge-duplicates,return=minimal' }
+    );
+    return { topicsMarked: topicIds.size, ok: true, filesWithoutTopics };
+  } catch (err) {
+    console.error('[study-done-files] topic-state upsert failed:', err);
+    return { topicsMarked: 0, ok: false, filesWithoutTopics };
+  }
 }
 
 function courseIdFromQuery(event: NetlifyEvent): string | null {

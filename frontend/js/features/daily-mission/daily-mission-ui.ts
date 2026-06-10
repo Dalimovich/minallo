@@ -567,7 +567,7 @@ async function _showDoneFilesModal(courseId: string): Promise<void> {
     saveBtn.textContent = 'Saving…';
     const checked = Array.from(listEl.querySelectorAll<HTMLInputElement>('.dm-done-check:checked')).map((c) => c.value);
     try {
-      await saveDoneFiles(courseId, checked);
+      const result = await saveDoneFiles(courseId, checked);
       // Marking files done flips their topics to 'studied', so regenerate the
       // plan: tasks covering now-known material are dropped (the planner only
       // keeps it for spaced repetition).
@@ -575,7 +575,14 @@ async function _showDoneFilesModal(courseId: string): Promise<void> {
       try { await regenerateDailyMission(courseId); } catch { /* keep prior plan on failure */ }
       await loadTodaysTasks(true);
       close();
-      (window as unknown as { showToast?: (t: string, m: string) => void }).showToast?.('Saved', 'Completed files updated and plan refreshed.');
+      const toast = (window as unknown as { showToast?: (t: string, m: string) => void }).showToast;
+      if (!result.topicWriteOk) {
+        toast?.('Saved with a warning', 'Files saved, but the study-state update failed — the planner may still treat them as new. Please try again.');
+      } else if (result.filesWithoutTopics.length > 0) {
+        toast?.('Saved', result.filesWithoutTopics.length + ' file(s) have no topic map yet, so they won’t change the plan until indexing builds their topics.');
+      } else {
+        toast?.('Saved', 'Completed files updated and plan refreshed.');
+      }
     } catch (err) {
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save';

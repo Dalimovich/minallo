@@ -160,18 +160,30 @@ export async function getDoneFiles(courseId: string): Promise<string[]> {
   return Array.isArray(data.documentIds) ? data.documentIds : [];
 }
 
+export interface SaveDoneFilesResult {
+  documentIds: string[];
+  topicsMarked: number;
+  topicWriteOk: boolean;
+  filesWithoutTopics: string[];
+}
+
 /** Replace the set of "already studied" files for a course. Newly-marked files
  *  have their covered topics flipped to 'studied' so the planner treats them as
  *  known material (spaced repetition) rather than new lectures. */
-export async function saveDoneFiles(courseId: string, documentIds: string[]): Promise<string[]> {
+export async function saveDoneFiles(courseId: string, documentIds: string[]): Promise<SaveDoneFilesResult> {
   const res = await fetch('/api/study/done-files', {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({ courseId, documentIds })
   });
   if (!res.ok) throw new Error('Could not save completed files (HTTP ' + res.status + ')');
-  const data = await res.json() as { documentIds?: string[] };
-  return Array.isArray(data.documentIds) ? data.documentIds : documentIds;
+  const data = await res.json() as Partial<SaveDoneFilesResult>;
+  return {
+    documentIds: Array.isArray(data.documentIds) ? data.documentIds : documentIds,
+    topicsMarked: typeof data.topicsMarked === 'number' ? data.topicsMarked : 0,
+    topicWriteOk: data.topicWriteOk !== false,
+    filesWithoutTopics: Array.isArray(data.filesWithoutTopics) ? data.filesWithoutTopics : [],
+  };
 }
 
 export function findPrimaryCourseId(): string | null {
