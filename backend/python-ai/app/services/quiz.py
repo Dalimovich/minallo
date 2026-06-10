@@ -406,6 +406,7 @@ def generate_quiz(
     question_types: list[str] | None,
     doc_names: dict[str, str],
     language: str | None = None,
+    seen_items: list[str] | None = None,
 ) -> dict[str, Any]:
     # Capped at 20. Parallelisation keeps the wall-clock under Netlify's 30s
     # function timeout even at the high end (3 parallel shards of 6-7 items
@@ -439,6 +440,14 @@ def generate_quiz(
     known_topics_set = set(known_topics_list) if known_topics_list else None
     collected: list[dict[str, Any]] = []
     seen_questions: set[str] = set()
+    # Question stems the learner already saw — feed the avoid-list so shards
+    # don't regenerate them, and pre-seed the dedupe set so any that slip
+    # through are dropped.
+    seen_avoid = [s.strip() for s in (seen_items or []) if isinstance(s, str) and s.strip()][:100]
+    for s in seen_avoid:
+        k = re.sub(r"\W+", " ", s.lower()).strip()
+        if k:
+            seen_questions.add(k)
     diagnostics: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
 
     # ── Round 1: fan-out parallel shards ─────────────────────────────────────
@@ -464,7 +473,7 @@ def generate_quiz(
                 diff=diff,
                 types=types,
                 context=context,
-                already_taken=[],   # round 1: no avoid list — diversity hints carry the load
+                already_taken=seen_avoid,   # avoid already-seen stems; diversity hints carry the rest
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
                 known_topics=known_topics_list,
                 language=lang,
@@ -501,7 +510,7 @@ def generate_quiz(
         backfill = _run_one_quiz_shard(
             shard_count=requested - len(collected) + 2,
             diff=diff, types=types, context=context,
-            already_taken=[it.get("question") or "" for it in collected],
+            already_taken=seen_avoid + [it.get("question") or "" for it in collected],
             diversity_hint=f"new high-value concepts not yet asked about; backfill round {round_idx + 1}",
             known_topics=known_topics_list,
             language=lang,

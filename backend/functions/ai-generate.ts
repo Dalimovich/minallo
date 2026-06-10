@@ -80,6 +80,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const topic = body.topic;
   const count = body.count;
   const difficulty = body.difficulty;
+  const language = typeof body.language === 'string' ? body.language : undefined;
+  // Items the learner has already seen, so generation avoids repeats. Strip
+  // non-strings and cap the list so a runaway client can't bloat the prompt.
+  const seenItems = Array.isArray(body.seenItems)
+    ? (body.seenItems as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 200)
+    : undefined;
   const rawDocumentIds = (body.documentIds ?? body.docIds) as unknown;
   if (!courseId || typeof courseId !== 'string') return fail(400, 'courseId is required');
   if (typeof tool !== 'string' || !['flashcards', 'quiz', 'summary'].includes(tool)) {
@@ -111,13 +117,19 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       // The quiz UI only renders MCQ (4-option buttons). Backend defaults to
       // mixing mcq + true_false + short_answer, which produced items with
       // no options field — the frontend then rendered 4 blank buttons. Lock
-      // generation to MCQ until we add UIs for the other types.
+      // generation to MCQ until Stage 2 adds UIs for the other types.
       questionTypes: ['mcq'],
+      seenItems, language,
       save: false
     };
   } else if (tool === 'flashcards') {
     endpoint = 'generate-flashcards';
-    pyPayload = { userId: user.id, courseId, documentIds: docIds, requestedCount, save: false };
+    pyPayload = {
+      userId: user.id, courseId, documentIds: docIds, requestedCount,
+      difficulty: (typeof difficulty === 'string' ? difficulty : 'medium'),
+      seenItems, language,
+      save: false
+    };
   } else {
     endpoint = 'generate-notes';
     pyPayload = { userId: user.id, courseId, documentIds: docIds, topic: topic ?? null, save: false };

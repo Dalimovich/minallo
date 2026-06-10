@@ -48,6 +48,54 @@ def _verify_user_owns_documents(user_id: str, course_id: str, document_ids: list
     return {row["id"]: row["file_name"] for row in rows}
 
 
+# Cap on how many docs "all files" expands to, so a huge course can't blow up
+# retrieval. Selecting an explicit subset is never capped here (Cloudflare caps it).
+_MAX_RESOLVED_DOCS = 50
+
+
+def _resolve_ready_document_ids(
+    user_id: str, course_id: str, document_ids: list[str] | None
+) -> tuple[list[str], dict[str, str]]:
+    """Resolve the set of READY documents to ground on (backend-authoritative).
+
+    - Explicit ids: keep only those owned by the user in this course AND
+      processing_status == 'ready'. Not-owned / wrong-course ids are a hard 404
+      (security); ids that merely aren't indexed yet are dropped (with no error)
+      so a selected-but-still-processing file can't poison the output.
+    - null/empty ("all files"): return every ready doc in the course, capped, so
+      "all" never silently pulls in half-indexed material.
+
+    Returns (ready_ids, {id: file_name}).
+    """
+    sb = get_supabase()
+    if document_ids:
+        resp = (
+            sb.table("documents")
+            .select("id, user_id, course_id, file_name, processing_status")
+            .in_("id", document_ids)
+            .execute()
+        )
+        by_id = {r["id"]: r for r in (resp.data or [])}
+        for did in document_ids:
+            row = by_id.get(did)
+            if row is None or row["user_id"] != user_id or row["course_id"] != course_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
+        ready = [r for r in by_id.values() if r.get("processing_status") == "ready"]
+        return [r["id"] for r in ready], {r["id"]: r["file_name"] for r in ready}
+
+    resp = (
+        sb.table("documents")
+        .select("id, file_name")
+        .eq("user_id", user_id)
+        .eq("course_id", course_id)
+        .eq("processing_status", "ready")
+        .limit(_MAX_RESOLVED_DOCS)
+        .execute()
+    )
+    rows = resp.data or []
+    return [r["id"] for r in rows], {r["id"]: r["file_name"] for r in rows}
+
+
 # ── /generate-quiz ───────────────────────────────────────────────────────────
 
 
@@ -60,6 +108,7 @@ class GenerateQuizRequest(BaseModel):
     difficulty: str = "medium"             # easy | medium | hard | mixed
     questionTypes: list[str] | None = None  # subset of ['mcq','true_false','short_answer']
     language: str | None = None
+    seenItems: list[str] | None = None      # already-seen question stems to avoid repeating
     save: bool = True
     name: str | None = None
 
@@ -204,6 +253,7 @@ def generate_quiz_endpoint(payload: GenerateQuizRequest) -> GenerateQuizResponse
         question_types=payload.questionTypes,
         doc_names=doc_names,
         language=payload.language,
+        seen_items=payload.seenItems,
     )
 
     set_id: str | None = None
@@ -291,12 +341,25 @@ def generate_cheatsheet_endpoint(payload: GenerateCheatsheetRequest) -> Generate
     if payload.documentIds:
         for did in payload.documentIds:
             _require_uuid(did, "documentId")
-    doc_names = _verify_user_owns_documents(payload.userId, payload.courseId, payload.documentIds)
+    # Explicit selection → restrict to the ready subset (owned, same course).
+    # "All files" (None) stays None so the whole-course topic-map sheet runs
+    # rather than flipping into the per-PDF layout that a multi-id list triggers.
+    if payload.documentIds:
+        doc_ids, doc_names = _resolve_ready_document_ids(
+            payload.userId, payload.courseId, payload.documentIds
+        )
+        if not doc_ids:
+            return GenerateCheatsheetResponse(
+                text="",
+                warning="None of the selected files are indexed yet. Wait for indexing to finish, or pick ready files.",
+            )
+    else:
+        doc_ids, doc_names = None, {}
 
     out = generate_cheatsheet(
         user_id=payload.userId,
         course_id=payload.courseId,
-        document_ids=payload.documentIds,
+        document_ids=doc_ids,
         topic=payload.topic,
         doc_names=doc_names,
         save=payload.save,
@@ -329,13 +392,22 @@ def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> GenerateD
     if payload.documentIds:
         for did in payload.documentIds:
             _require_uuid(did, "documentId")
-    doc_names = _verify_user_owns_documents(payload.userId, payload.courseId, payload.documentIds)
+    # Restrict to ready docs (explicit subset filtered; "all" → every ready doc).
+    doc_ids, doc_names = _resolve_ready_document_ids(
+        payload.userId, payload.courseId, payload.documentIds
+    )
+    if payload.documentIds and not doc_ids:
+        return GenerateDeepLearnResponse(
+            topic=payload.topic,
+            title=payload.topic,
+            warning="None of the selected files are indexed yet. Wait for indexing to finish, or pick ready files.",
+        )
 
     out = generate_deep_learn(
         user_id=payload.userId,
         course_id=payload.courseId,
         topic=payload.topic,
-        document_ids=payload.documentIds,
+        document_ids=doc_ids or None,
         doc_names=doc_names,
         lesson_mode=payload.lessonMode,
         lesson_language=payload.lessonLanguage,
@@ -370,6 +442,9 @@ class GenerateFlashcardsRequest(BaseModel):
     documentIds: list[str] | None = None
     # Parallelised in flashcards.py — 24 fits comfortably under Netlify's 30s.
     requestedCount: int = Field(10, ge=1, le=24)
+    difficulty: str = "medium"              # easy | medium | hard | mixed
+    language: str | None = None
+    seenItems: list[str] | None = None      # already-seen card fronts to avoid repeating
     save: bool = True
     name: str | None = None
 
@@ -400,6 +475,9 @@ def generate_flashcards_endpoint(payload: GenerateFlashcardsRequest) -> Generate
         document_ids=payload.documentIds,
         requested_count=payload.requestedCount,
         doc_names=doc_names,
+        difficulty=payload.difficulty,
+        language=payload.language,
+        seen_items=payload.seenItems,
     )
 
     set_id: str | None = None
