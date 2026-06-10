@@ -9,6 +9,8 @@ to match the existing `vector(1536)` column in document_chunks.
 from __future__ import annotations
 
 import logging
+import os
+from functools import lru_cache
 from typing import Sequence
 
 from openai import APIError, OpenAI, RateLimitError
@@ -21,6 +23,16 @@ log = logging.getLogger(__name__)
 # OpenAI accepts up to ~8k tokens per item and up to 2048 items per request.
 # We batch on item count; tiktoken-bounded chunks are already well under the per-item cap.
 _BATCH_SIZE = 100
+
+
+def _query_cache_size() -> int:
+    try:
+        return max(1, int(os.environ.get("EMBED_QUERY_CACHE_SIZE", "")))
+    except ValueError:
+        return 2048
+
+
+_QUERY_CACHE_SIZE = _query_cache_size()
 
 
 class EmbeddingServiceUnavailable(RuntimeError):
@@ -62,3 +74,21 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
         out.extend(item.embedding for item in resp.data)
 
     return out
+
+
+@lru_cache(maxsize=_QUERY_CACHE_SIZE)
+def _embed_query_cached(text: str) -> tuple[float, ...]:
+    return tuple(embed_texts([text])[0])
+
+
+def embed_query(text: str) -> list[float]:
+    """Embed a single retrieval query, cached per process.
+
+    Query embeddings are deterministic for a given input + model, so repeated
+    or popular questions (and double-clicks) shouldn't each pay an OpenAI call
+    in the request path. Cached as an immutable tuple; returned as a fresh list
+    so callers can mutate safely. Whitespace-normalised so trivially-different
+    phrasings share a cache slot.
+    """
+    key = " ".join(text.split())
+    return list(_embed_query_cached(key))
