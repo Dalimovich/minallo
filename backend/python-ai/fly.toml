@@ -24,7 +24,12 @@ primary_region = 'fra'
   processes = ['app']
 
 [[vm]]
+  # shared (not performance) CPUs: the AI workload is mostly I/O-bound (waiting
+  # on OpenAI/Supabase), so dedicated cores aren't needed yet — 2 shared cpus
+  # run the 2 gunicorn workers + threadpool fine. 2 GB is the OCR-OOM guard
+  # (vision OCR rasterizes PDF pages to PNG). NB: performance cpus would force a
+  # 4 GB minimum (2 GB/core); revisit if load tests show CPU throttling.
   memory = '2gb'
-  cpu_kind = 'performance'
+  cpu_kind = 'shared'
   cpus = 2
   memory_mb = 2048
