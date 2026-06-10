@@ -1122,13 +1122,25 @@ export function sequenceTasksForSubject(
         continue;
       }
 
+      if (tt === 'check_solution_sheet' || tt === 'review_completed_exercise') {
+        // Checking solutions / re-reviewing only makes sense AFTER practising —
+        // scheduling them on not-yet-studied topics is what flooded the day with
+        // premature "Check solutions" tasks.
+        if (state === 'practiced' || state === 'mastered') eligible.push(c);
+        continue;
+      }
+
       // Default — include unless mastered.
       if (state !== 'mastered') eligible.push(c);
     }
   }
 
-  // Add no-topic candidates.
-  for (const c of noTopic) eligible.push(c);
+  // Add no-topic candidates — but never premature solution-check / re-review
+  // tasks: with no topic signal there's no evidence the exercise was done.
+  for (const c of noTopic) {
+    if (c.task_type === 'check_solution_sheet' || c.task_type === 'review_completed_exercise') continue;
+    eligible.push(c);
+  }
 
   // Sort eligible tasks: by topic state urgency, then task type plan rank.
   eligible.sort((a, b) => {
@@ -1144,6 +1156,12 @@ export function sequenceTasksForSubject(
     const rankA = TASK_TYPE_PLAN_RANK[a.task_type] ?? 5;
     const rankB = TASK_TYPE_PLAN_RANK[b.task_type] ?? 5;
     if (rankA !== rankB) return rankA - rankB;
+
+    // Keep a course's files in natural sequence — Lecture/Exercise 3 before 10,
+    // not "3 then 10". Only applies when both files carry a numeric suffix.
+    const fnA = fileNumericSuffix(a.documents?.file_name ?? '');
+    const fnB = fileNumericSuffix(b.documents?.file_name ?? '');
+    if (fnA !== null && fnB !== null && fnA !== fnB) return fnA - fnB;
 
     // Higher priority score wins.
     return (b.priority_score ?? 0.5) - (a.priority_score ?? 0.5);
