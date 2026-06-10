@@ -13,12 +13,15 @@
 // renderTaskCardHtml etc.) is kept so shell.ts keeps working unchanged.
 
 import { escapeHtml } from '../../utils/escape-html.js';
+import { handleSourceClick } from '../pdf-viewer/source-link.js';
 import {
   confirmPossibleMatch,
   DailyMissionResponse,
   DailyMissionTask,
   generateDailyMission,
   getDailyMission,
+  getDoneFiles,
+  saveDoneFiles,
   PossibleMatch,
   regenerateDailyMission,
   updateDailyMissionTask,
@@ -176,6 +179,36 @@ function _courseName(courseId: string): string {
     if (course?.name) return course.name;
   }
   return courseId;
+}
+
+interface CourseFileLite { id: string; name: string }
+
+// All files for a course (top-level + folders), de-duped by id. Used by the
+// "Mark completed files" picker. Mirrors the shape the PDF source resolver reads.
+function _courseFiles(courseId: string): CourseFileLite[] {
+  const w = window as unknown as {
+    SEMS?: Record<string, { courses?: Array<{ id?: string; files?: Array<Record<string, unknown>>; userFolders?: Array<{ files?: Array<Record<string, unknown>> }> }> }>;
+  };
+  let course: { files?: Array<Record<string, unknown>>; userFolders?: Array<{ files?: Array<Record<string, unknown>> }> } | undefined;
+  for (const sem of Object.values(w.SEMS || {})) {
+    const found = (sem.courses || []).find((c) => c.id === courseId);
+    if (found) { course = found; break; }
+  }
+  if (!course) return [];
+  const out: CourseFileLite[] = [];
+  const seen = new Set<string>();
+  const push = (arr?: Array<Record<string, unknown>>): void => {
+    (arr || []).forEach((f) => {
+      const id = String(f.id || '');
+      const name = String(f.name || f._storageName || '');
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      out.push({ id, name: name || id });
+    });
+  };
+  push(course.files);
+  (course.userFolders || []).forEach((fd) => push(fd.files));
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── Data loading ──────────────────────────────────────────────────────────────
@@ -442,7 +475,150 @@ function showExamDateModal(forceShowCourseIds?: string[]): Promise<Record<string
   });
 }
 
+// ─── Edit menu: exam date + completed files ──────────────────────────────────
+
+function _editTargetCourseId(): string | null {
+  return _state.selectedCourseId || findPrimaryCourseId() || _allCourseIds()[0] || null;
+}
+
+function _showEditMenu(anchor: HTMLElement): void {
+  document.querySelector('.dm-edit-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'dm-edit-menu';
+  menu.innerHTML =
+    '<button type="button" class="dm-edit-menu-item" data-edit-action="exam-date">Change exam date</button>' +
+    '<button type="button" class="dm-edit-menu-item" data-edit-action="done-files">Mark completed files</button>';
+  document.body.appendChild(menu);
+
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = (r.bottom + 6) + 'px';
+  menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+
+  const close = (): void => {
+    menu.remove();
+    document.removeEventListener('click', onDoc, true);
+  };
+  const onDoc = (ev: MouseEvent): void => {
+    if (!menu.contains(ev.target as Node)) close();
+  };
+  setTimeout(() => document.addEventListener('click', onDoc, true), 0);
+
+  menu.querySelectorAll<HTMLButtonElement>('[data-edit-action]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const action = b.getAttribute('data-edit-action');
+      close();
+      if (action === 'exam-date') {
+        // When a single course is selected, edit just that one; otherwise show all.
+        if (_state.selectedCourseId) void showExamDateModal([_state.selectedCourseId]);
+        else void showExamDateModal();
+        return;
+      }
+      if (action === 'done-files') {
+        const cid = _editTargetCourseId();
+        if (cid) void _showDoneFilesModal(cid);
+      }
+    });
+  });
+}
+
+async function _showDoneFilesModal(courseId: string): Promise<void> {
+  const files = _courseFiles(courseId);
+  const overlay = document.createElement('div');
+  overlay.className = 'dm-done-modal-overlay';
+  overlay.innerHTML = '<div class="dm-done-modal">' +
+    '<div class="dm-done-modal-header">' +
+      '<h3>Completed files</h3>' +
+      '<p>' + escapeHtml(_courseName(courseId)) + ' — check files you’ve already studied. The planner treats them as known material for spaced repetition instead of introducing them as new lectures.</p>' +
+    '</div>' +
+    '<div class="dm-done-modal-list"><div class="dm-done-loading">Loading…</div></div>' +
+    '<div class="dm-done-modal-actions">' +
+      '<button type="button" class="dm-btn-done-cancel">Cancel</button>' +
+      '<button type="button" class="dm-btn-done-save dm-task-btn--primary" disabled>Save</button>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(overlay);
+
+  const listEl = overlay.querySelector('.dm-done-modal-list') as HTMLElement;
+  const saveBtn = overlay.querySelector('.dm-btn-done-save') as HTMLButtonElement;
+  const cancelBtn = overlay.querySelector('.dm-btn-done-cancel') as HTMLButtonElement;
+  const close = (): void => { overlay.remove(); };
+  cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  if (!files.length) {
+    listEl.innerHTML = '<div class="dm-done-empty">No files found for this course.</div>';
+    return;
+  }
+
+  let done: string[] = [];
+  try { done = await getDoneFiles(courseId); } catch { /* default to none */ }
+  if (!overlay.isConnected) return;
+  const doneSet = new Set(done);
+  listEl.innerHTML = files.map((f) =>
+    '<label class="dm-done-row">' +
+      '<input type="checkbox" class="dm-done-check" value="' + escapeHtml(f.id) + '"' + (doneSet.has(f.id) ? ' checked' : '') + '>' +
+      '<span class="dm-done-name">' + escapeHtml(f.name) + '</span>' +
+    '</label>'
+  ).join('');
+  saveBtn.disabled = false;
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    const checked = Array.from(listEl.querySelectorAll<HTMLInputElement>('.dm-done-check:checked')).map((c) => c.value);
+    try {
+      await saveDoneFiles(courseId, checked);
+      // Marking files done flips their topics to 'studied', so regenerate the
+      // plan: tasks covering now-known material are dropped (the planner only
+      // keeps it for spaced repetition).
+      saveBtn.textContent = 'Updating plan…';
+      try { await regenerateDailyMission(courseId); } catch { /* keep prior plan on failure */ }
+      await loadTodaysTasks(true);
+      close();
+      (window as unknown as { showToast?: (t: string, m: string) => void }).showToast?.('Saved', 'Completed files updated and plan refreshed.');
+    } catch (err) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+      console.error('[DailyMission] saveDoneFiles error:', err);
+    }
+  });
+}
+
 // ─── Navigation helper ─────────────────────────────────────────────────────────
+
+// Task types whose relevant document is the exercise sheet, not the lecture.
+const _EXERCISE_TASK_TYPES = new Set<string>([
+  'solve_exercise_sheet',
+  'practice_problem_set',
+  'review_completed_exercise',
+  'exam_style_practice',
+  'practice',
+]);
+
+// Open the PDF a task points at in the source popup viewer. For exercise/practice
+// tasks the exercise sheet is the relevant file; otherwise the lecture/source
+// file. Returns false when the task carries no resolvable file so the caller can
+// fall back to opening the AI chat.
+function _openTaskSource(task: DailyMissionTask): boolean {
+  const preferExercise = _EXERCISE_TASK_TYPES.has(task.task_type);
+  const fileId = preferExercise
+    ? (task.exercise_file_id || task.source_file_id)
+    : (task.source_file_id || task.exercise_file_id);
+  const fileName = preferExercise
+    ? (task.exercise_file_name || task.source_file_name)
+    : (task.source_file_name || task.exercise_file_name);
+  if (!fileId && !fileName) return false;
+  const rangeFirst = task.page_range ? parseInt(task.page_range.match(/\d+/)?.[0] || '', 10) : NaN;
+  const page = Number.isFinite(rangeFirst) ? rangeFirst : (task.page_start ?? null);
+  // 'sidebar' opens the file in the full PDF viewer page (and highlights Courses
+  // in the nav). It falls back to an in-place popup when the file can't be
+  // resolved to an open viewer.
+  handleSourceClick(
+    { fileName: fileName || null, documentId: fileId || null, page },
+    'sidebar'
+  );
+  return true;
+}
 
 function _openInAi(): void {
   try { sessionStorage.setItem('ss_daily_mission_seed', 'open'); } catch { /* noop */ }
@@ -458,7 +634,7 @@ function _openInAi(): void {
 
 // ─── Widget render ──────────────────────────────────────────────────────────────
 
-function _buildTaskRowHtml(task: DailyMissionTask & { _courseId?: string }): string {
+function _buildTaskRowHtml(task: DailyMissionTask & { _courseId?: string }, withCheckbox = false): string {
   const isDone = task.status === 'completed';
   const isSkipped = task.status === 'skipped';
   const isMoved = task.status === 'moved';
@@ -481,10 +657,21 @@ function _buildTaskRowHtml(task: DailyMissionTask & { _courseId?: string }): str
     }
   }
 
+  // A leading tick square that marks the task done (used in the Today's Tasks
+  // modal). Checking it completes the task; unchecking reverts it to todo —
+  // both flow through updateTaskStatus, so the AI planner sees the change.
+  const titleHtml = '<div class="dm-task-title' + (isDone ? ' is-done' : '') + '">' + escapeHtml(task.title) + '</div>';
+  const titleBlock = withCheckbox && !isUnavailable && !isMoved
+    ? '<div class="dm-task-titlewrap">' +
+        '<input type="checkbox" class="dm-task-check-toggle" data-action="toggle-done" data-task-id="' + escapeHtml(task.id) + '"' + (isDone ? ' checked' : '') + ' aria-label="Mark task done">' +
+        titleHtml +
+      '</div>'
+    : titleHtml;
+
   return (
     '<div class="dm-task dm-task--' + escapeHtml(task.status) + statusCls + '" data-task-id="' + escapeHtml(task.id) + '">' +
       (courseName ? '<div class="dm-task-subject">' + escapeHtml(courseName) + '</div>' : '') +
-      '<div class="dm-task-title' + (isDone ? ' is-done' : '') + '">' + escapeHtml(task.title) + '</div>' +
+      titleBlock +
       taskFileLabel(task) +
       '<div class="dm-task-meta">' + escapeHtml(typeLabel) + ' &middot; ' + task.estimated_minutes + 'min' + pageLabel(task) + '</div>' +
       (actions ? '<div class="dm-task-actions">' + actions + '</div>' : '') +
@@ -521,6 +708,7 @@ function _renderWidget(): void {
   const taskCourseIds = [...new Set(_state.tasks.map((t) => (t as DailyMissionTask & { _courseId?: string })._courseId || '').filter(Boolean))];
   const allSystemCourseIds = _allCourseIds();
 
+  inner += '<div class="dm-picker-row">';
   if (allSystemCourseIds.length > 1) {
     inner += '<select class="dm-course-picker">';
     inner += '<option value="">All Courses</option>';
@@ -531,6 +719,10 @@ function _renderWidget(): void {
     });
     inner += '</select>';
   }
+  inner += '<button type="button" class="dm-edit-btn" title="Edit study settings" aria-label="Edit study settings">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+    '</button>';
+  inner += '</div>';
 
   if (total > 0) {
     inner += '<span class="dm-widget-progress">' + done + ' / ' + total + ' done</span>';
@@ -674,6 +866,15 @@ function _bindWidgetActions(host: HTMLElement): void {
     });
   }
 
+  // Edit (study settings) button → small menu: exam date / completed files
+  const editBtn = host.querySelector<HTMLButtonElement>('.dm-edit-btn');
+  if (editBtn) {
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _showEditMenu(editBtn);
+    });
+  }
+
   // Generate exam button
   const genExamBtn = host.querySelector<HTMLButtonElement>('.dm-btn-generate-exam');
   if (genExamBtn) {
@@ -718,10 +919,12 @@ function _bindWidgetActions(host: HTMLElement): void {
     if (!action || !taskId) return;
     btn.addEventListener('click', () => {
       switch (action) {
-        case 'start':
+        case 'start': {
           void updateTaskStatus(taskId, 'in_progress');
-          _openInAi();
+          const task = _state.tasks.find((t) => t.id === taskId);
+          if (!task || !_openTaskSource(task)) _openInAi();
           break;
+        }
         case 'done':
           void updateTaskStatus(taskId, 'completed');
           break;
@@ -788,7 +991,7 @@ function _showTasksModal(): void {
         modal.innerHTML += '<div class="dm-modal-group">' +
           '<div class="dm-modal-group-title">' + GROUP_LABEL[group] + '</div>';
         groupTasks.forEach((t) => {
-          modal.innerHTML += _buildTaskRowHtml(t as DailyMissionTask & { _courseId?: string });
+          modal.innerHTML += _buildTaskRowHtml(t as DailyMissionTask & { _courseId?: string }, true);
         });
         modal.innerHTML += '</div>';
       }
@@ -813,11 +1016,13 @@ function _showTasksModal(): void {
     if (!action || !taskId) return;
     btn.addEventListener('click', () => {
       switch (action) {
-        case 'start':
+        case 'start': {
           void updateTaskStatus(taskId, 'in_progress');
-          _openInAi();
+          const task = _state.tasks.find((t) => t.id === taskId);
+          if (!task || !_openTaskSource(task)) _openInAi();
           close();
           break;
+        }
         case 'done':
           void updateTaskStatus(taskId, 'completed');
           _renderPreviewCard();
@@ -826,6 +1031,16 @@ function _showTasksModal(): void {
           void updateTaskStatus(taskId, 'skipped');
           _renderPreviewCard();
           break;
+        case 'toggle-done': {
+          const checked = (btn as unknown as HTMLInputElement).checked;
+          void updateTaskStatus(taskId, checked ? 'completed' : 'todo');
+          // Reflect completion on the row immediately (it stays visible in the modal).
+          const row = modal.querySelector('.dm-task[data-task-id="' + taskId + '"]');
+          row?.classList.toggle('dm-task--completed', checked);
+          row?.querySelector('.dm-task-title')?.classList.toggle('is-done', checked);
+          _renderPreviewCard();
+          break;
+        }
         default:
           break;
       }

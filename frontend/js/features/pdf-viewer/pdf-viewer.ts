@@ -1,5 +1,6 @@
 import { fetchPdfBytes } from '../../services/pdf-service.js';
 import { panelShow, panelHide, selectTopLevelView } from '../../core/panels.js';
+import { setNavActive } from '../../core/navigation.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { notePdfTabOpen } from './pdf-tabs.js';
 import { setActivePane, snapshotWindowInto, type PaneId, isPaneOpen } from './pdf-panes.js';
@@ -106,6 +107,10 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
   // Top-level switch first — guarantees portal sections and studip view are
   // hidden so no ghost page lingers under the PDF.
   selectTopLevelView('file', { stRunning: !!(window as unknown as { _stRunning?: boolean })._stRunning });
+  // The PDF viewer lives under the Courses route — reflect that in the sidebar so
+  // whichever section the user opened the file from (e.g. Dashboard) doesn't stay
+  // highlighted.
+  setNavActive('pcStudip');
   panelHide(document.getElementById('welcomeState'));
   panelHide(document.getElementById('courseOverview'));
   const pv = document.getElementById('pdfView');

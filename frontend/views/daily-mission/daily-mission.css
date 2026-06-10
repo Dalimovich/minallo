@@ -627,3 +627,185 @@ body:not(.night) .dm-widget-match-card {
   background: rgba(99, 102, 241, 0.04);
   color: #1e293b;
 }
+
+/* Picker row + edit (study settings) button */
+.dm-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dm-picker-row .dm-course-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dm-edit-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e2e8f0);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.dm-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+body:not(.night) .dm-edit-btn {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: #1e293b;
+}
+
+/* Edit menu (floating) */
+.dm-edit-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1e293b;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+body:not(.night) .dm-edit-menu {
+  background: #fff;
+  border-color: rgba(15, 23, 42, 0.12);
+}
+.dm-edit-menu-item {
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.dm-edit-menu-item:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+body:not(.night) .dm-edit-menu-item {
+  color: #1e293b;
+}
+
+/* Completed-files modal */
+.dm-done-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.dm-done-modal {
+  background: var(--card, #1e293b);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 560px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.dm-done-modal-header { margin-bottom: 16px; }
+.dm-done-modal-header h3 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.dm-done-modal-header p {
+  margin: 0;
+  opacity: 0.75;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.dm-done-modal-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 60px;
+}
+.dm-done-loading, .dm-done-empty {
+  opacity: 0.7;
+  font-size: 0.9rem;
+  padding: 12px 4px;
+}
+.dm-done-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.dm-done-row:hover { background: rgba(255, 255, 255, 0.05); }
+body:not(.night) .dm-done-row:hover { background: rgba(15, 23, 42, 0.05); }
+.dm-done-check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+.dm-done-name {
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+.dm-done-modal-actions {
+  display: flex;
+  gap: 12px;
+}
+.dm-btn-done-cancel, .dm-btn-done-save {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.dm-btn-done-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+.dm-btn-done-cancel:hover { background: rgba(255, 255, 255, 0.12); }
+body:not(.night) .dm-btn-done-cancel { background: rgba(15, 23, 42, 0.06); color: #1e293b; }
+.dm-btn-done-save {
+  background: linear-gradient(120deg, #6366f1, #38bdf8);
+  color: #fff;
+}
+.dm-btn-done-save:hover { filter: brightness(1.08); }
+.dm-btn-done-save:disabled { opacity: 0.6; cursor: default; }
+
+/* Done checkbox inside the Today's Tasks modal rows */
+.dm-task-titlewrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.dm-task-check-toggle {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  accent-color: #22c55e;
+  cursor: pointer;
+  margin-top: 1px;
+}

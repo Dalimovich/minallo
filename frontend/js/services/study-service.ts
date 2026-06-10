@@ -151,6 +151,29 @@ export async function updateDailyMissionTask(taskId: string, status: DailyMissio
   }
 }
 
+/** Document ids the user has marked as already studied for a course. */
+export async function getDoneFiles(courseId: string): Promise<string[]> {
+  const qs = new URLSearchParams({ courseId });
+  const res = await fetch('/api/study/done-files?' + qs.toString(), { headers: authHeaders() });
+  if (!res.ok) throw new Error('Could not load completed files');
+  const data = await res.json() as { documentIds?: string[] };
+  return Array.isArray(data.documentIds) ? data.documentIds : [];
+}
+
+/** Replace the set of "already studied" files for a course. Newly-marked files
+ *  have their covered topics flipped to 'studied' so the planner treats them as
+ *  known material (spaced repetition) rather than new lectures. */
+export async function saveDoneFiles(courseId: string, documentIds: string[]): Promise<string[]> {
+  const res = await fetch('/api/study/done-files', {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ courseId, documentIds })
+  });
+  if (!res.ok) throw new Error('Could not save completed files (HTTP ' + res.status + ')');
+  const data = await res.json() as { documentIds?: string[] };
+  return Array.isArray(data.documentIds) ? data.documentIds : documentIds;
+}
+
 export function findPrimaryCourseId(): string | null {
   const w = window as unknown as {
     activeCourseId?: string | null;
