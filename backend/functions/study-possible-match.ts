@@ -75,6 +75,39 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(409, 'That pairing is not a pending suggestion for this plan');
   }
 
+  // Role integrity on confirm: the pairing target must be a real lecture, and the
+  // exercise side must not itself be a solution/lecture. Even though the planner
+  // only proposes role-valid matches, a stale possible_matches blob (written
+  // before a file was re-typed) could let an invalid pair through. Confirming such
+  // a pair would schedule a bogus task, so reject it. Roles are read from the
+  // stored source_type (explicit, non-'lecture' tags are trusted).
+  if (action === 'confirm') {
+    const roleRes = await supaRequest<Array<{ id: string; source_type: string | null }>>(
+      'GET',
+      'documents?id=in.(' +
+        [exerciseFileId, possibleLectureFileId].map(encodeURIComponent).join(',') +
+        ')&select=id,source_type',
+      null,
+      auth.serviceKey
+    );
+    const roleById = new Map<string, string>(
+      (Array.isArray(roleRes.body) ? roleRes.body : []).map((d) => [
+        d.id,
+        (d.source_type ?? '').trim().toLowerCase(),
+      ])
+    );
+    const lectureRole = roleById.get(possibleLectureFileId);
+    const exerciseRole = roleById.get(exerciseFileId);
+    // Only reject on a KNOWN conflicting role (explicit, non-default tag), so an
+    // untyped/legacy file still confirms — same best-effort stance as the planner.
+    if (lectureRole === 'exercise' || lectureRole === 'solution') {
+      return fail(422, 'The pairing target is not a lecture');
+    }
+    if (exerciseRole === 'solution' || exerciseRole === 'lecture') {
+      return fail(422, 'The exercise side is not an exercise file');
+    }
+  }
+
   // On "confirm": insert a task row.
   if (action === 'confirm' && matchEntry) {
     const courseId = matchEntry.courseId ?? plan.course_id ?? '';

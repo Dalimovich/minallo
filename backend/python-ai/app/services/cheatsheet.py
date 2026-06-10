@@ -2439,7 +2439,13 @@ def _run_one_section_shard(
     ``corrective`` is the quality-gate feedback appended on a regeneration pass.
     """
     topics = [label for label, _ in group]
-    system = _shard_system_prompt(cfg, topics, with_method_picker=with_method_picker) + corrective
+    # ``qualityRepair`` is the Stage-5 whole-document repair instruction; it rides
+    # on cfg so it is appended to EVERY shard on the single document-repair pass.
+    system = (
+        _shard_system_prompt(cfg, topics, with_method_picker=with_method_picker)
+        + str(cfg.get("qualityRepair") or "")
+        + corrective
+    )
     # The formula/trap banks are mechanics-specific; they only help (and only
     # match) formula-driven courses. For reference subjects they no-op anyway,
     # so skip them to keep the prompt clean.
@@ -2999,6 +3005,281 @@ def _generate_sections_parallel(
     return "\n\n".join(texts), diag
 
 
+# ── Stage 5: document-level quality hardening ────────────────────────────────
+#
+# The per-shard gate above catches per-shard defects a SHARD retry can fix, and
+# the deterministic cleanup (sanitize/dedup/grounding/bank) repairs mechanical
+# breakage. What was still missing was a WHOLE-DOCUMENT verdict: after all the
+# shards are stitched and cleaned, is the assembled sheet actually good enough to
+# ship — did the requested topics survive, are formulas present where the subject
+# demands them, is anything truncated, are the formulas traceable to the source?
+# This block answers that with a structured assessment, and if the sheet is below
+# threshold it regenerates the WHOLE document exactly once with a repair prompt
+# describing what was deficient, then keeps the better of the two. Thresholds are
+# deliberately lenient (we already drop weak sections upstream) so a genuinely
+# good sheet always passes clean and the costly retry only fires on real defects.
+
+# Overall pass threshold (0-100). Below this the sheet is regenerated once.
+_QUALITY_PASS_THRESHOLD = 70
+# Source-support (grounding) ratio below which formulas read as poorly traceable
+# to the student's own text. Only judged once there are enough display formulas
+# to be statistically meaningful (matches the existing citationWarning gate).
+_MIN_SOURCE_SUPPORT = 0.6
+_GROUNDING_MIN_FORMULAS = 3
+# Topic coverage: fraction of the requested/known section labels that must appear
+# as a `##` heading in the final sheet. Upstream legitimately DROPS ungrounded
+# topics, so this is lenient — it only fires when most of the plan vanished.
+_MIN_TOPIC_COVERAGE = 0.5
+# A formula-driven sheet with topic sections but (almost) no formulas is broken.
+_MIN_FORMULA_SECTION_RATIO = 0.5
+
+# A printed citation in the RAW model output, e.g. "(lecture.pdf, p.4)" or
+# "[lecture.pdf p. 12]" — measured before sanitize strips on-page citations.
+_RAW_CITATION_RE = re.compile(
+    r"\b[\w\-]+\.(?:pdf|pptx?|docx?|txt|md)\b[^)\]\n]{0,40}?\bp\.?\s*\d+",
+    re.I,
+)
+
+
+def _heading_titles(text: str) -> list[str]:
+    return [t.strip() for t in re.findall(r"(?im)^#{1,6}[ \t]+(.+?)\s*$", text or "")]
+
+
+def _section_is_empty(body: str) -> bool:
+    """True if a section body has no real content (only blank lines / a bare
+    label with nothing after it / a leftover dedup marker)."""
+    stripped = re.sub(r"\*\(see above\)\*", "", body or "").strip()
+    if not stripped:
+        return True
+    # Strip bullets and bold lead-in labels; if nothing substantive remains it is
+    # an empty shell (e.g. "- **Vorteile:**" with no body).
+    leftover = re.sub(r"(?m)^[ \t]*[-*][ \t]*", "", stripped)
+    leftover = re.sub(r"\*\*[^*\n]+\*\*[ \t]*:?", "", leftover)
+    return len(leftover.strip()) < 3
+
+
+def assess_cheatsheet_quality(
+    *,
+    text: str,
+    raw_text: str,
+    topics: list[str | None],
+    grounding: dict[str, Any],
+    cfg: dict[str, Any],
+    dropped_formulas: int,
+) -> dict[str, Any]:
+    """Whole-document quality verdict over the final, cleaned cheatsheet.
+
+    Returns a structured dict ``{passed, score, flags, checks}`` covering topic
+    coverage, source-support (citation/grounding), empty sections, formula or
+    definition coverage (per subject type) and malformed/truncated content. This
+    is the Stage-5 gate that stops silently shipping a weak sheet: ``passed`` is
+    False when ``score`` falls below ``_QUALITY_PASS_THRESHOLD``.
+    """
+    flags: list[str] = []
+    checks: dict[str, Any] = {}
+    formula_driven = bool(cfg.get("formulaDriven", True))
+
+    sections = [(h, b) for h, b in _iter_sections(text) if h]
+    n_sections = len(sections)
+
+    # 1) Topic coverage — did the requested/known section labels survive? Upstream
+    # legitimately omits ungrounded topics, so we only flag when MOST vanished.
+    wanted = [t for t in topics if t]
+    titles_low = [t.lower() for t in _heading_titles(text)]
+    if wanted:
+        covered = sum(
+            1 for w in wanted
+            if any(w.lower() in t or t in w.lower() for t in titles_low)
+        )
+        coverage = covered / len(wanted)
+    else:
+        coverage = 1.0 if n_sections else 0.0
+        covered = n_sections
+    checks["topicCoverage"] = round(coverage, 3)
+    if wanted and coverage < _MIN_TOPIC_COVERAGE:
+        flags.append("low-topic-coverage")
+
+    # 2) Empty sections — a `##` heading with no real body.
+    empty = sum(1 for _h, b in sections if _section_is_empty(b))
+    checks["emptySections"] = empty
+    if n_sections and empty / n_sections > 0.34:
+        flags.append("empty-sections")
+
+    # 3) Source support / citation traceability. On-page citations are stripped by
+    # design (Hyperknow style), so the SHIPPED-sheet signal is the mechanical
+    # grounding ratio; we ALSO record whether the RAW model output cited sources at
+    # all (e.g. "file.pdf, p.N") as a softer diagnostic.
+    ratio = grounding.get("ratio")
+    total_f = grounding.get("total") or 0
+    checks["sourceSupport"] = None if ratio is None else round(float(ratio), 3)
+    checks["rawCitationCount"] = len(_RAW_CITATION_RE.findall(raw_text or ""))
+    low_support = (
+        ratio is not None
+        and total_f >= _GROUNDING_MIN_FORMULAS
+        and float(ratio) < _MIN_SOURCE_SUPPORT
+    )
+    if low_support:
+        flags.append("low-source-support")
+
+    # 4) Formula / definition coverage. Formula/mechanics subjects must carry real
+    # formulas in their sections; reference subjects must instead carry structured
+    # definitions (a label, table or definition line) — never be forced to formulas.
+    formula_count = _formula_count(text)
+    checks["formulaCount"] = formula_count
+    if formula_driven:
+        sections_with_formula = sum(
+            1 for _h, b in sections if _formula_count(b) > 0
+        )
+        ratio_fs = (sections_with_formula / n_sections) if n_sections else 1.0
+        checks["formulaSectionRatio"] = round(ratio_fs, 3)
+        if n_sections and formula_count == 0:
+            flags.append("no-formulas")
+        elif n_sections >= 3 and ratio_fs < _MIN_FORMULA_SECTION_RATIO:
+            flags.append("low-formula-coverage")
+    else:
+        sections_with_def = sum(
+            1 for _h, b in sections
+            if re.search(r"(?m)\*\*[^*\n]+\*\*|^\s*\|.+\||^\s*\d+[.)]\s+\S", b)
+        )
+        ratio_ds = (sections_with_def / n_sections) if n_sections else 1.0
+        checks["definitionSectionRatio"] = round(ratio_ds, 3)
+        if n_sections >= 3 and ratio_ds < _MIN_FORMULA_SECTION_RATIO:
+            flags.append("low-definition-coverage")
+
+    # 5) Malformed content — broken markdown/LaTeX or a truncated tail. A high
+    # sanitize-drop count means the model emitted a lot of unrenderable formulas.
+    broken = _broken_formula_reasons(text)
+    checks["brokenFormulaReasons"] = broken
+    if broken:
+        flags.append("broken-content")
+    # Truncation: an unterminated display delimiter, or a body that ends mid-token
+    # — a dangling math operator (`=`, `+`, `\frac` …) right after an alphanumeric,
+    # i.e. a formula or equation cut off by the token cap. Excludes a trailing `*`
+    # / `_` (markdown emphasis) and sheet-ending punctuation, which are not breaks.
+    body = (text or "").rstrip()
+    truncated = (body.count("$$") % 2 == 1) or (
+        len(body) > 80 and bool(re.search(r"(?:\w[=+]|\\[a-zA-Z]+)\s*$", body))
+    )
+    checks["truncated"] = truncated
+    if truncated:
+        flags.append("truncated")
+    if dropped_formulas >= 3:
+        flags.append("many-dropped-formulas")
+
+    # Score: start at 100, subtract per defect class (weighted by severity).
+    penalties = {
+        "low-topic-coverage": 25,
+        "empty-sections": 20,
+        "low-source-support": 20,
+        "no-formulas": 40,
+        "low-formula-coverage": 20,
+        "low-definition-coverage": 20,
+        "broken-content": 25,
+        "truncated": 30,
+        "many-dropped-formulas": 12,
+    }
+    score = 100 - sum(penalties.get(f, 10) for f in flags)
+    score = max(0, min(100, score))
+    return {
+        "passed": score >= _QUALITY_PASS_THRESHOLD,
+        "score": score,
+        "threshold": _QUALITY_PASS_THRESHOLD,
+        "flags": flags,
+        "checks": checks,
+    }
+
+
+def _quality_repair_guidance(assessment: dict[str, Any]) -> str:
+    """Turn a failing assessment into a corrective instruction appended to every
+    shard's system prompt on the single whole-document repair pass."""
+    flags = assessment.get("flags", [])
+    fixes: list[str] = []
+    if "low-topic-coverage" in flags:
+        fixes.append(
+            "write a `## ` section for EVERY topic you are given that the evidence "
+            "supports — do not silently drop most of the requested topics"
+        )
+    if "empty-sections" in flags:
+        fixes.append(
+            "never emit a heading with an empty body or a bare label with nothing "
+            "after it — either fill the section with grounded content or omit it"
+        )
+    if "no-formulas" in flags or "low-formula-coverage" in flags:
+        fixes.append(
+            "each section MUST carry its grounded formulas in $...$ — mine the "
+            "evidence for every formula it supports; no prose-only sections"
+        )
+    if "low-definition-coverage" in flags:
+        fixes.append(
+            "give each section real structure — a definition line, bold lead-in "
+            "labels (**Kurzdefinition:** …) or a comparison table — not loose prose"
+        )
+    if "low-source-support" in flags:
+        fixes.append(
+            "use ONLY formulas the COURSE CONTEXT actually states — drop any formula "
+            "you cannot trace to the provided evidence; never invent or guess"
+        )
+    if "broken-content" in flags:
+        fixes.append(
+            "write EVERY formula as valid KaTeX inside $...$ (\\sum, \\int, \\theta, "
+            "\\vec) — never an operator word, a glued accent, or bare LaTeX in prose"
+        )
+    if "truncated" in flags or "many-dropped-formulas" in flags:
+        fixes.append(
+            "keep each item to ONE tight line and finish every formula and sentence — "
+            "prefer fewer well-formed items over a long, cut-off block"
+        )
+    if not fixes:
+        return ""
+    return (
+        "\n\nQUALITY REPAIR — the previous draft FAILED these checks: "
+        + ", ".join(flags) + ". Fix ALL of them: " + "; ".join(fixes)
+        + ". Use ONLY the COURSE CONTEXT; never invent."
+    )
+
+
+def _clean_and_enforce(
+    raw_text: str,
+    *,
+    cfg: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    covered_labels: list[str],
+    topics: list[str | None],
+) -> dict[str, Any]:
+    """Run the deterministic cleanup + enforcement pipeline on raw section text.
+
+    Factored out of ``generate_cheatsheet`` so the Stage-5 repair retry can reuse
+    EXACTLY the same post-processing (sanitize → leak strip → filler → dedup →
+    source gate → bank/method-picker enforcement → localize → grounding). Returns
+    a bundle of the cleaned text plus every counter the final dict reports.
+    """
+    text, dropped_formulas = sanitize_cheatsheet_markdown(raw_text)
+    if not cfg.get("formulaDriven", True):
+        text = strip_reference_template_leaks(text)
+    text, filler_notes = remove_generic_filler_notes(text)
+    text, deduped = dedup_display_formulas(text)
+    text, unsupported_formulas = drop_unsupported_display_formulas(text, evidence)
+    bank_repairs = 0
+    method_picker_injected = 0
+    if cfg.get("formulaDriven", True) and cfg.get("mechanics", True):
+        text, bank_repairs = enforce_formula_bank(text, covered_labels)
+        text, method_picker_injected = ensure_method_picker_targets(text, topics, cfg)
+        text, _drehimpuls_added = ensure_drehimpuls_section(text, cfg)
+        method_picker_injected += _drehimpuls_added
+    text = localize_section_labels(text, cfg.get("language"))
+    grounding = formula_grounding(text, evidence)
+    return {
+        "text": text,
+        "dropped_formulas": dropped_formulas,
+        "filler_notes": filler_notes,
+        "deduped": deduped,
+        "unsupported_formulas": unsupported_formulas,
+        "bank_repairs": bank_repairs,
+        "method_picker_injected": method_picker_injected,
+        "grounding": grounding,
+    }
+
+
 def generate_cheatsheet(
     *,
     user_id: str,
@@ -3098,17 +3379,71 @@ def generate_cheatsheet(
     if not raw_text.strip():
         return {"text": "", "error": "Cheatsheet generation produced no sections.", "groundedSources": []}
 
-    text, dropped_formulas = sanitize_cheatsheet_markdown(raw_text)
-    # Reference subjects: deterministic backstop for the formula-template leaks
-    # the gate guards against (a forced "Formula cluster: N/A" line that slipped
-    # past regeneration), so they can never reach the rendered sheet.
-    if not cfg.get("formulaDriven", True):
-        text = strip_reference_template_leaks(text)
-    text, filler_notes = remove_generic_filler_notes(text)
-    # Deterministic backstop so a repeated formula is GUARANTEED removed, even if
-    # the model didn't dedup the per-PDF sections perfectly.
-    text, deduped = dedup_display_formulas(text)
-    text, unsupported_formulas = drop_unsupported_display_formulas(text, evidence)
+    # Deterministic cleanup + enforcement (sanitize → leak strip → filler → dedup
+    # → source gate → bank/method-picker → localize → grounding), factored out so
+    # the Stage-5 whole-document repair retry can reuse it verbatim.
+    bundle = _clean_and_enforce(
+        raw_text, cfg=cfg, evidence=evidence,
+        covered_labels=covered_labels, topics=topics,
+    )
+
+    # ── Stage 5: whole-document quality gate + single repair retry ────────────
+    # Assess the assembled, cleaned sheet. If it is below threshold, regenerate the
+    # WHOLE document ONCE with a repair prompt naming the deficiencies, re-clean it,
+    # and keep whichever scores higher. Capped at exactly one retry for cost/latency.
+    assessment = assess_cheatsheet_quality(
+        text=bundle["text"], raw_text=raw_text, topics=topics,
+        grounding=bundle["grounding"], cfg=cfg, dropped_formulas=bundle["dropped_formulas"],
+    )
+    repair_attempted = False
+    if not assessment["passed"]:
+        repair_attempted = True
+        log.info(
+            "cheatsheet quality below threshold (score=%d, flags=%s) — repairing once",
+            assessment["score"], assessment["flags"],
+        )
+        repair_cfg = dict(cfg)
+        repair_cfg["qualityRepair"] = _quality_repair_guidance(assessment)
+        try:
+            repair_raw, repair_diag = _generate_sections_parallel(
+                cfg=repair_cfg, groups=groups, doc_names=merged_names, per_pdf=per_pdf,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("cheatsheet quality repair pass failed")
+            repair_raw, repair_diag = "", {}
+        if repair_raw.strip():
+            repair_bundle = _clean_and_enforce(
+                repair_raw, cfg=cfg, evidence=evidence,
+                covered_labels=covered_labels, topics=topics,
+            )
+            repair_assessment = assess_cheatsheet_quality(
+                text=repair_bundle["text"], raw_text=repair_raw, topics=topics,
+                grounding=repair_bundle["grounding"], cfg=cfg,
+                dropped_formulas=repair_bundle["dropped_formulas"],
+            )
+            # The repair pass is real spend regardless of whether we keep it, so
+            # accumulate its token cost into the diagnostics either way.
+            diag["promptTokens"] = (diag.get("promptTokens") or 0) + (repair_diag.get("promptTokens") or 0)
+            diag["completionTokens"] = (diag.get("completionTokens") or 0) + (repair_diag.get("completionTokens") or 0)
+            diag["shardsRegenerated"] = (
+                diag.get("shardsRegenerated", 0) + repair_diag.get("shardsRegenerated", 0)
+            )
+            # Keep the repair only if it scores strictly higher.
+            if repair_assessment["score"] > assessment["score"]:
+                raw_text = repair_raw
+                bundle = repair_bundle
+                assessment = repair_assessment
+                if repair_diag.get("model"):
+                    diag["model"] = repair_diag["model"]
+
+    text = bundle["text"]
+    dropped_formulas = bundle["dropped_formulas"]
+    filler_notes = bundle["filler_notes"]
+    deduped = bundle["deduped"]
+    unsupported_formulas = bundle["unsupported_formulas"]
+    bank_repairs = bundle["bank_repairs"]
+    method_picker_injected = bundle["method_picker_injected"]
+    grounding = bundle["grounding"]
     if dropped_formulas:
         log.info("cheatsheet sanitizer dropped %d malformed formula(s)", dropped_formulas)
     if deduped:
@@ -3117,25 +3452,10 @@ def generate_cheatsheet(
         log.info("cheatsheet source gate removed %d unsupported formula(s)", unsupported_formulas)
     if filler_notes:
         log.info("cheatsheet filler filter removed %d generic note(s)", filler_notes)
-    # Enforce + gate (formula subjects): the gate above regenerates a shard whose
-    # formulas are broken; this is the deterministic backstop — for known mechanics
-    # topics, rewrite any broken/missing formula to the canonical bank version, and
-    # inject any Method-Picker target section the model dropped so the picker is
-    # never a dead end.
-    bank_repairs = 0
-    method_picker_injected = 0
-    if cfg.get("formulaDriven", True) and cfg.get("mechanics", True):
-        text, bank_repairs = enforce_formula_bank(text, covered_labels)
-        text, method_picker_injected = ensure_method_picker_targets(text, topics, cfg)
-        text, _drehimpuls_added = ensure_drehimpuls_section(text, cfg)
-        method_picker_injected += _drehimpuls_added
-        if bank_repairs:
-            log.info("cheatsheet bank enforcement rewrote %d section(s)", bank_repairs)
-        if method_picker_injected:
-            log.info("cheatsheet injected %d method-picker target section(s)", method_picker_injected)
-    # German output → German section labels (the preset formats hardcode English).
-    text = localize_section_labels(text, cfg.get("language"))
-    grounding = formula_grounding(text, evidence)
+    if bank_repairs:
+        log.info("cheatsheet bank enforcement rewrote %d section(s)", bank_repairs)
+    if method_picker_injected:
+        log.info("cheatsheet injected %d method-picker target section(s)", method_picker_injected)
     sources = [
         {
             "documentId": c.get("documentId"),
@@ -3187,6 +3507,8 @@ def generate_cheatsheet(
             "droppedUnsupportedFormulas": unsupported_formulas,
             "droppedGenericNotes": filler_notes,
             "metrics": metrics,
+            "assessment": assessment,
+            "repairAttempted": repair_attempted,
             "gate": {
                 "failuresBeforeRetry": diag.get("gateFailuresInitial", []),
                 "failuresAfterRetry": diag.get("gateFailuresFinal", []),
@@ -3226,6 +3548,28 @@ def generate_cheatsheet(
         )
     if warns:
         out["citationWarning"] = " ".join(warns)
+    # Stage 5: if the sheet is STILL below the quality threshold after the single
+    # repair retry, surface it honestly via `warning` instead of shipping it
+    # silently. Map the structured flags to short, student-facing phrases.
+    if not assessment["passed"]:
+        _phrase = {
+            "low-topic-coverage": "several requested topics are missing",
+            "empty-sections": "some sections came out empty",
+            "low-source-support": "some formulas could not be traced to your source text",
+            "no-formulas": "sections are missing their formulas",
+            "low-formula-coverage": "several sections are missing formulas",
+            "low-definition-coverage": "several sections lack clear definitions",
+            "broken-content": "some formulas may not render correctly",
+            "truncated": "the sheet may be cut off",
+            "many-dropped-formulas": "several unreadable formulas were dropped",
+        }
+        issues = [_phrase[f] for f in assessment["flags"] if f in _phrase]
+        if issues:
+            out["warning"] = (
+                "This cheatsheet may be below our quality bar ("
+                + "; ".join(issues)
+                + "). Review it carefully before relying on it."
+            )
     return out
 
 
@@ -3243,4 +3587,5 @@ __all__ = (
     "classify_subject_type",
     "normalize_settings",
     "formula_grounding",
+    "assess_cheatsheet_quality",
 )

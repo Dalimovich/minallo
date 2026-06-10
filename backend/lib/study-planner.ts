@@ -105,6 +105,18 @@ export interface PythonPlanResponse {
     confidence: 'medium' | 'low';
     reason: string;
   }>;
+  unmappedFiles?: UnmappedFile[];
+}
+
+// A document the planner could not schedule because it has no topic mappings
+// (so it can't participate in spaced repetition). Surfaced to the frontend so
+// the user can map it.
+export interface UnmappedFile {
+  courseId: string;
+  fileId: string;
+  fileName: string;
+  documentRole: string;
+  reason: string;
 }
 
 // ── AI task row shape ─────────────────────────────────────────────────────────
@@ -616,6 +628,28 @@ function validatePossibleMatches(raw: unknown): PossibleMatch[] {
   return out;
 }
 
+// ── AI: validate unmapped-files report from the Python response ──────────────
+
+function validateUnmappedFiles(raw: unknown): UnmappedFile[] {
+  if (!Array.isArray(raw)) return [];
+  const out: UnmappedFile[] = [];
+  for (const item of raw) {
+    if (item == null || typeof item !== 'object') continue;
+    const i = item as Record<string, unknown>;
+    const fileId = typeof i.fileId === 'string' ? i.fileId : '';
+    if (!fileId) continue;
+    out.push({
+      courseId: typeof i.courseId === 'string' ? i.courseId : '',
+      fileId,
+      fileName: typeof i.fileName === 'string' ? i.fileName : '',
+      documentRole: typeof i.documentRole === 'string' ? i.documentRole : '',
+      reason: typeof i.reason === 'string' ? i.reason : '',
+    });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+
 // ── AI: generate weekly plan via Python AI proxy ──────────────────────────────
 
 async function generateWeeklyPlanViaAI(
@@ -768,18 +802,25 @@ async function generateWeeklyPlanViaAI(
 
   await persistAiTasks(planId, userId, serviceKey, mappedRows);
 
-  // Persist possible_matches — best-effort; a failure must not break plan generation.
+  // Persist possible_matches + unmapped-files report — best-effort; a failure
+  // must not break plan generation. unmapped_files rides inside generation_params
+  // (JSONB, already free-form) so no schema migration is needed — the frontend
+  // reads it to show "these files aren't mapped to topics yet".
   try {
     const possibleMatches = validatePossibleMatches(response.possibleMatches);
+    const unmappedFiles = validateUnmappedFiles(response.unmappedFiles);
     await supaRequest(
       'PATCH',
       'weekly_study_plans?id=eq.' + encodeURIComponent(planId),
-      { possible_matches: possibleMatches },
+      {
+        possible_matches: possibleMatches,
+        generation_params: { gen_version: 'ai-planner-v1', unmapped_files: unmappedFiles },
+      },
       serviceKey,
       { Prefer: 'return=minimal' }
     );
   } catch (pmErr) {
-    console.error('[study-planner] Failed to persist possible_matches:', pmErr);
+    console.error('[study-planner] Failed to persist possible_matches/unmapped_files:', pmErr);
   }
 
   const subjectsSeen = [...new Set(mappedRows.map((r) => r.course_id))];
@@ -1671,6 +1712,7 @@ export interface DailyTasksResult {
   planId: string;
   tasks: WeeklyStudyTask[];
   possibleMatches: PossibleMatch[];
+  unmappedFiles: UnmappedFile[];
 }
 
 export async function getDailyTasks(
@@ -1697,19 +1739,19 @@ export async function getDailyTasksWithPlan(
     encodeURIComponent(userId) +
     '&week_start_date=eq.' +
     encodeURIComponent(weekStart) +
-    '&status=eq.active&select=id,possible_matches&limit=1';
+    '&status=eq.active&select=id,possible_matches,generation_params&limit=1';
   if (courseId) planUrl += '&course_id=eq.' + encodeURIComponent(courseId);
   else planUrl += '&course_id=is.null';
 
-  const planRes = await supaRequest<{ id: string; possible_matches: unknown }[]>(
-    'GET',
-    planUrl,
-    null,
-    serviceKey
-  );
+  const planRes = await supaRequest<
+    { id: string; possible_matches: unknown; generation_params: unknown }[]
+  >('GET', planUrl, null, serviceKey);
   const planRow = Array.isArray(planRes.body) ? planRes.body[0] ?? null : null;
   let planId: string | null = planRow?.id ?? null;
   let possibleMatches: PossibleMatch[] = validatePossibleMatches(planRow?.possible_matches ?? []);
+  let unmappedFiles: UnmappedFile[] = validateUnmappedFiles(
+    extractUnmappedFiles(planRow?.generation_params)
+  );
 
   if (!planId) {
     // Generate a new plan on the fly. regenerateExisting=false: if a concurrent
@@ -1725,18 +1767,23 @@ export async function getDailyTasksWithPlan(
       false
     );
     planId = result.planId;
-    // Fetch possible_matches for the newly generated plan.
+    // Fetch possible_matches + unmapped-files for the newly generated plan.
     try {
-      const newPlanRes = await supaRequest<{ possible_matches: unknown }[]>(
+      const newPlanRes = await supaRequest<
+        { possible_matches: unknown; generation_params: unknown }[]
+      >(
         'GET',
-        'weekly_study_plans?id=eq.' + encodeURIComponent(planId) + '&select=possible_matches&limit=1',
+        'weekly_study_plans?id=eq.' + encodeURIComponent(planId) +
+          '&select=possible_matches,generation_params&limit=1',
         null,
         serviceKey
       );
       const newPlanRow = Array.isArray(newPlanRes.body) ? newPlanRes.body[0] ?? null : null;
       possibleMatches = validatePossibleMatches(newPlanRow?.possible_matches ?? []);
+      unmappedFiles = validateUnmappedFiles(extractUnmappedFiles(newPlanRow?.generation_params));
     } catch {
       possibleMatches = [];
+      unmappedFiles = [];
     }
   }
 
@@ -1758,7 +1805,14 @@ export async function getDailyTasksWithPlan(
   // possible_matches, a previously confirmed/dismissed pair never reappears.
   possibleMatches = await filterDecidedMatches(userId, possibleMatches, serviceKey);
 
-  return { planId, tasks, possibleMatches };
+  return { planId, tasks, possibleMatches, unmappedFiles };
+}
+
+// Pull the unmapped-files report out of a plan's generation_params JSONB blob.
+function extractUnmappedFiles(generationParams: unknown): unknown {
+  if (generationParams == null || typeof generationParams !== 'object') return [];
+  const uf = (generationParams as Record<string, unknown>).unmapped_files;
+  return Array.isArray(uf) ? uf : [];
 }
 
 // Drop possible-match suggestions whose (exercise, lecture) pair already has a

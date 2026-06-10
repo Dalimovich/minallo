@@ -66,6 +66,71 @@
     }).catch(function() {});
   }
 
+  // ── Spaced-repetition review state (Stage 3) ────────────────────────────────
+  // Review state lives in flashcard_review_state, keyed by (deck_id, card_index)
+  // where card_index is the position within the deck's `cards` array. Cards with
+  // NO row are treated as "new, due now" — they keep natural deck order rather
+  // than all becoming simultaneously overdue. Persistence goes through the
+  // server-side SM-2 endpoint so interval/ease growth is computed in one place.
+  function _backendUrl() { return (window.BACKEND_URL || ''); }
+  function _authHeaders() { return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') }; }
+
+  // Fetch the rated cards for a deck. Returns a map: cardIndex -> reviewRow.
+  function _dbLoadReviews(dbDeckId) {
+    if (!dbDeckId) return Promise.resolve({});
+    return fetch(_backendUrl() + '/api/study/flashcard-review?deckId=' + encodeURIComponent(dbDeckId), {
+      headers: _authHeaders()
+    })
+      .then(function(r) { return r.ok ? r.json() : { reviews: [] }; })
+      .then(function(data) {
+        var map = {};
+        (data && data.reviews || []).forEach(function(row) {
+          if (row && typeof row.card_index === 'number') map[row.card_index] = row;
+        });
+        return map;
+      })
+      .catch(function() { return {}; });
+  }
+
+  // Persist a single rating. Returns the updated review row (or null).
+  function _dbSaveReview(dbDeckId, cardIndex, rating) {
+    if (!dbDeckId) return Promise.resolve(null);
+    return fetch(_backendUrl() + '/api/study/flashcard-review', {
+      method: 'POST',
+      headers: _authHeaders(),
+      body: JSON.stringify({ deckId: dbDeckId, cardIndex: cardIndex, rating: rating })
+    })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { return data && data.review ? data.review : null; })
+      .catch(function() { return null; });
+  }
+
+  // Build the study order for a deck from its review map.
+  //   1. Due reviewed cards (have a row, due_at <= now), earliest due first.
+  //   2. New cards (no row) in natural deck order.
+  // Reviewed-but-not-yet-due cards are dropped from this session (nothing to do).
+  // If nothing is due and nothing is new, fall back to the whole deck in order so
+  // the learner can always study (e.g. re-review ahead of schedule).
+  function _buildStudyOrder(deck) {
+    var reviews = deck._reviews || {};
+    var now = Date.now();
+    var due = [];
+    var fresh = [];
+    for (var i = 0; i < deck.cards.length; i++) {
+      var row = reviews[i];
+      if (!row) { fresh.push(i); continue; }
+      var dueAt = row.due_at ? new Date(row.due_at).getTime() : 0;
+      if (dueAt <= now) due.push({ idx: i, due: dueAt });
+    }
+    due.sort(function(a, b) { return a.due - b.due; });
+    var order = due.map(function(d) { return d.idx; }).concat(fresh);
+    if (!order.length) {
+      // Everything is reviewed and not yet due — let the user study the full deck.
+      for (var j = 0; j < deck.cards.length; j++) order.push(j);
+    }
+    return order;
+  }
+
   function _docStatusSummary(docs) {
     var summary = { ready: [], pending: 0, failed: 0, total: docs.length };
     docs.forEach(function (d) {
@@ -337,8 +402,25 @@
       if (d) {
         d.flipped = false;
         if (typeof d.progress !== 'number') d.progress = 0;
+        d.pos = 0;             // position within the spaced-repetition study order
+        d.studyOrder = null;   // rebuilt once reviews load
+        // Load review state, then build the due-first / new-after order.
+        _dbLoadReviews(d._dbId).then(function(map) {
+          d._reviews = map;
+          d.studyOrder = _buildStudyOrder(d);
+          d.pos = 0;
+          if (state.activeId === id) renderStudy();
+        });
       }
       renderAll();
+    }
+
+    // Original card index currently shown, derived from the study order.
+    function _currentCardIndex(d) {
+      var order = (d && d.studyOrder) || null;
+      if (!order || !order.length) return Math.max(0, Math.min(d.progress || 0, d.cards.length - 1));
+      var pos = Math.max(0, Math.min(d.pos || 0, order.length - 1));
+      return order[pos];
     }
 
     function renderStudy() {
@@ -360,29 +442,82 @@
       if (els.studyName) els.studyName.textContent = d.name;
       if (els.studyCount) els.studyCount.textContent = d.cards.length + ' cards';
 
-      var idx = Math.max(0, Math.min(d.progress || 0, d.cards.length - 1));
+      // Spaced-repetition order: due-first then new. Until reviews load, the
+      // order is null and we fall back to natural deck order via progress.
+      var order = d.studyOrder && d.studyOrder.length ? d.studyOrder : null;
+      var sessionLen = order ? order.length : d.cards.length;
+      var pos = order
+        ? Math.max(0, Math.min(d.pos || 0, order.length - 1))
+        : Math.max(0, Math.min(d.progress || 0, d.cards.length - 1));
+      var idx = _currentCardIndex(d);
       var card = d.cards[idx];
       var face = d.flipped ? 'back' : 'front';
       var content = card[face] || '';
       var source = card.source || ((course && course.name) || 'Course');
 
+      // Rating buttons only after the card is flipped (the learner has seen the
+      // answer). Hidden on the front so they don't rate blindly.
+      var ratingHtml = '';
+      if (d.flipped) {
+        ratingHtml =
+          '<div class="fc-rating-row" id="fcRatingRow">' +
+            '<button class="fc-rating-btn fc-rate-again" data-rate="again" type="button">Again</button>' +
+            '<button class="fc-rating-btn fc-rate-hard" data-rate="hard" type="button">Hard</button>' +
+            '<button class="fc-rating-btn fc-rate-good" data-rate="good" type="button">Good</button>' +
+            '<button class="fc-rating-btn fc-rate-easy" data-rate="easy" type="button">Easy</button>' +
+          '</div>';
+      }
+
       if (els.cardStage) {
         els.cardStage.classList.add('has-card');
         els.cardStage.innerHTML =
-          '<div class="fc-card-progress-pill">Card ' + (idx + 1) + ' / ' + d.cards.length + '</div>' +
+          '<div class="fc-card-progress-pill">Card ' + (pos + 1) + ' / ' + sessionLen + '</div>' +
           '<div class="fc-card-source">' + _esc(source) + '</div>' +
-          '<div class="fc-card-content">' + _esc(content) + '</div>';
+          '<div class="fc-card-content">' + _esc(content) + '</div>' +
+          ratingHtml;
         var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false };
         var _doMath = function() { if (window.renderMathInElement) try { renderMathInElement(els.cardStage, _katexOpts); } catch(e) {} };
         if (window.renderMathInElement) { _doMath(); }
         else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doMath).catch(function(){}); }
+        // Wire rating buttons (stopPropagation so they don't trigger the
+        // card-stage flip handler).
+        els.cardStage.querySelectorAll('[data-rate]').forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            rateCard(d, btn.getAttribute('data-rate'));
+          });
+        });
       }
-      var pct = ((idx + 1) / d.cards.length) * 100;
+      var pct = ((pos + 1) / sessionLen) * 100;
       if (els.progressBar) els.progressBar.style.width = pct + '%';
-      if (els.progressLabel) els.progressLabel.textContent = (idx + 1) + ' / ' + d.cards.length;
-      if (els.prev) els.prev.disabled = idx === 0;
-      if (els.next) els.next.disabled = idx >= d.cards.length - 1;
+      if (els.progressLabel) els.progressLabel.textContent = (pos + 1) + ' / ' + sessionLen;
+      if (els.prev) els.prev.disabled = pos === 0;
+      if (els.next) els.next.disabled = pos >= sessionLen - 1;
       if (els.flip) els.flip.disabled = false;
+    }
+
+    // Record a rating, schedule the card via the server SM-2 endpoint, and
+    // advance to the next card in the session.
+    function rateCard(d, rating) {
+      if (!d || !d.cards.length) return;
+      var cardIndex = _currentCardIndex(d);
+      // Optimistically persist; update local review map so re-ordering on a
+      // later visit reflects the new schedule.
+      _dbSaveReview(d._dbId, cardIndex, rating).then(function(row) {
+        if (row && d._reviews) d._reviews[cardIndex] = row;
+      });
+      bumpStudied(d);
+      // Advance within the session order.
+      var order = d.studyOrder && d.studyOrder.length ? d.studyOrder : null;
+      var sessionLen = order ? order.length : d.cards.length;
+      if (order) {
+        d.pos = Math.min((d.pos || 0) + 1, sessionLen - 1);
+        // If we just rated the last card, stay put; the bar shows complete.
+      } else {
+        d.progress = Math.min((d.progress || 0) + 1, sessionLen - 1);
+      }
+      d.flipped = false;
+      renderStudy();
     }
 
     function renderAll() { renderDeckGrid(); renderStudy(); }
@@ -744,18 +879,20 @@
     if (els.prev) els.prev.addEventListener('click', function () {
       var d = state.decks.find(function (x) { return x.id === state.activeId; });
       if (!d) return;
-      d.progress = Math.max(0, (d.progress || 0) - 1);
+      if (d.studyOrder && d.studyOrder.length) d.pos = Math.max(0, (d.pos || 0) - 1);
+      else d.progress = Math.max(0, (d.progress || 0) - 1);
       d.flipped = false;
       bumpStudied(d);
-      renderAll();
+      renderStudy();
     });
     if (els.next) els.next.addEventListener('click', function () {
       var d = state.decks.find(function (x) { return x.id === state.activeId; });
       if (!d) return;
-      d.progress = Math.min(d.cards.length - 1, (d.progress || 0) + 1);
+      if (d.studyOrder && d.studyOrder.length) d.pos = Math.min(d.studyOrder.length - 1, (d.pos || 0) + 1);
+      else d.progress = Math.min(d.cards.length - 1, (d.progress || 0) + 1);
       d.flipped = false;
       bumpStudied(d);
-      renderAll();
+      renderStudy();
     });
 
     if (els.generate) els.generate.addEventListener('click', function() {

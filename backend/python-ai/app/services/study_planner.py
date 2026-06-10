@@ -726,7 +726,29 @@ _EMPTY_WEEK_PLAN = {
     "subjectAllocation": [],
     "tasks": [],
     "possibleMatches": [],
+    "unmappedFiles": [],
 }
+
+
+def _pairing_key(exercise_file_id: str, lecture_file_id: str) -> str:
+    """Stable identity for an exercise↔lecture pairing decision."""
+    return f"{exercise_file_id}|{lecture_file_id}"
+
+
+def _decided_pairing_keys(pairings: Any) -> set[str]:
+    """Build a set of '<exerciseFileId>|<lectureFileId>' keys from a list of
+    pairing dicts. Tolerates missing/garbage entries (returns what it can)."""
+    out: set[str] = set()
+    if not isinstance(pairings, list):
+        return out
+    for p in pairings:
+        if not isinstance(p, dict):
+            continue
+        ex = str(p.get("exerciseFileId") or "").strip()
+        lec = str(p.get("lectureFileId") or "").strip()
+        if ex and lec:
+            out.add(_pairing_key(ex, lec))
+    return out
 
 
 def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -750,6 +772,14 @@ def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
     plan_scope = str(payload.get("planScope") or "global_week")
     course_id_filter: str | None = payload.get("courseId") or None
     daily_availability: dict[str, int] = payload.get("dailyAvailabilityMinutes") or {}
+
+    # Durable user pairing decisions. These are AUTHORITATIVE and enforced here
+    # deterministically — not merely passed to the LLM as advice:
+    #   - dismissed pairs must NEVER reappear as possibleMatches.
+    #   - confirmed pairs are already scheduled tasks; never re-suggest them.
+    confirmed_pairing_keys = _decided_pairing_keys(payload.get("confirmedPairings"))
+    dismissed_pairing_keys = _decided_pairing_keys(payload.get("dismissedPairings"))
+    decided_pairing_keys = confirmed_pairing_keys | dismissed_pairing_keys
 
     # Determine which days have availability.
     day_name_to_index = {
@@ -938,17 +968,34 @@ def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
         # courses, for task role checks and exercise↔lecture overlap verification.
         doc_roles: dict[str, str] = {}
         doc_topics: dict[str, set[str]] = {}
+        # Files with NO topic mapping cannot participate in spaced repetition (the
+        # planner has nothing to schedule them against). Collect them so the
+        # frontend can prompt the user to map them. Keyed by document id, first
+        # profile wins.
+        unmapped_files: list[dict[str, Any]] = []
+        seen_unmapped: set[str] = set()
         for cd in course_data:
             for p in cd.get("profiles", []):
                 did = str(p.get("documentId") or "").strip()
                 if not did:
                     continue
                 doc_roles[did] = str(p.get("documentRole") or "").strip().lower()
-                doc_topics[did] = {
+                topic_names = {
                     str(t.get("name") or "").strip().lower()
                     for t in (p.get("topicsCovered") or [])
                     if str(t.get("name") or "").strip()
                 }
+                doc_topics[did] = topic_names
+                if not topic_names and did not in seen_unmapped:
+                    seen_unmapped.add(did)
+                    unmapped_files.append({
+                        "courseId": str(cd.get("courseId") or ""),
+                        "fileId": did,
+                        "fileName": str(p.get("fileName") or ""),
+                        "documentRole": doc_roles[did],
+                        "reason": "No topics mapped to this file yet — it can't be "
+                                  "scheduled for spaced repetition until it's mapped.",
+                    })
 
         # Tasks
         raw_tasks = raw_plan.get("tasks")
@@ -974,7 +1021,24 @@ def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
                 # through; _coerce_task strips the bad link and the exercise can
                 # still schedule standalone.
                 rel_is_bad_lecture = doc_roles.get(rel_lec_id, "") in _NON_LECTURE_ROLES
-                if task_type == "solve_exercise_sheet" and ex_id and rel_lec_id and not rel_is_bad_lecture:
+                # A user-CONFIRMED pair is authoritative — schedule it directly and
+                # never demote it to a possibleMatch, regardless of the AI's own
+                # confidence. A DISMISSED pair must never resurface anywhere.
+                pair_key = _pairing_key(ex_id, rel_lec_id) if ex_id and rel_lec_id else ""
+                if pair_key and pair_key in dismissed_pairing_keys:
+                    # User said no to this pairing — drop the link entirely. The
+                    # exercise can still stand on its own (handled by _coerce_task).
+                    rel_lec_id = ""
+                    raw_task = {**raw_task, "relatedLectureFileId": None, "relatedLectureFileName": None}
+                    rel_is_bad_lecture = False
+                is_confirmed_pair = bool(pair_key) and pair_key in confirmed_pairing_keys
+                if (
+                    task_type == "solve_exercise_sheet"
+                    and ex_id
+                    and rel_lec_id
+                    and not rel_is_bad_lecture
+                    and not is_confirmed_pair
+                ):
                     uncertain = src_conf in ("medium", "low")
                     no_shared_topics = False
                     if not uncertain:
@@ -1006,20 +1070,51 @@ def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
 
         tasks = _dedup_best_lecture_per_topic(tasks)
 
-        # possibleMatches from LLM + those demoted from tasks
+        # possibleMatches from LLM + those demoted from tasks. Then enforce the
+        # authoritative pairing decisions and basic validity:
+        #   - a pair the user already decided (confirmed OR dismissed) is never
+        #     re-suggested — student_exercise_pairings is the source of truth.
+        #   - an exercise matched to a non-lecture file (another exercise or a
+        #     solution) is an invalid pairing and is dropped, not surfaced.
+        #   - a self-pair (exercise == lecture) is nonsense and is dropped.
         raw_matches = raw_plan.get("possibleMatches")
-        possible_matches: list[dict[str, Any]] = list(possible_matches_from_tasks)
+        candidate_matches: list[dict[str, Any]] = list(possible_matches_from_tasks)
         if isinstance(raw_matches, list):
             for rm in raw_matches:
                 pm = _coerce_possible_match(rm)
                 if pm:
-                    possible_matches.append(pm)
+                    candidate_matches.append(pm)
+
+        possible_matches: list[dict[str, Any]] = []
+        seen_match_keys: set[str] = set()
+        for pm in candidate_matches:
+            ex_id = pm["exerciseFileId"]
+            lec_id = pm["possibleLectureFileId"]
+            if ex_id == lec_id:
+                continue  # self-pair
+            key = _pairing_key(ex_id, lec_id)
+            if key in decided_pairing_keys:
+                continue  # already confirmed/dismissed by the user
+            if key in seen_match_keys:
+                continue  # de-dup
+            # The proposed lecture target must not be a known non-lecture.
+            if doc_roles.get(lec_id, "") in _NON_LECTURE_ROLES:
+                continue
+            # The exercise side must not be a known non-exercise (e.g. a solution
+            # sheet the AI mislabeled as an exercise).
+            if doc_roles.get(ex_id, "") in _NON_EXERCISE_ROLES:
+                continue
+            seen_match_keys.add(key)
+            possible_matches.append(pm)
+            if len(possible_matches) >= 50:
+                break
 
         return {
             "weekStartDate": week_start,
             "subjectAllocation": subject_allocation,
             "tasks": tasks,
             "possibleMatches": possible_matches,
+            "unmappedFiles": unmapped_files,
         }
 
     except Exception:  # noqa: BLE001

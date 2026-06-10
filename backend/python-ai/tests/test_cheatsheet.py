@@ -1126,3 +1126,167 @@ def test_generate_cheatsheet_topic_focus_titles(monkeypatch):
     # course, so the focus topic keeps its given name rather than being aliased to
     # the German mechanics canonical "Arbeit, Energie und Leistung".
     assert out["topicsCovered"] == ["Energy"]
+
+
+# ── Stage 5: document-level quality hardening ────────────────────────────────
+
+
+def test_assess_quality_good_sheet_passes_clean():
+    """A formula sheet whose sections all carry grounded, well-formed formulas and
+    cover the requested topics passes with no flags."""
+    text = (
+        "## Kinematik eines Punktes\n"
+        "Lead idea.\n$$v = \\frac{dx}{dt}$$\n$$a = \\frac{dv}{dt}$$\n"
+        "## Geradlinige Bewegung\n"
+        "Lead idea.\n$$x = x_0 + v_0 t$$\n$$v^2 = v_0^2 + 2 a x$$\n"
+    )
+    a = cs.assess_cheatsheet_quality(
+        text=text, raw_text=text,
+        topics=["Kinematik eines Punktes", "Geradlinige Bewegung"],
+        grounding={"total": 4, "grounded": 4, "ratio": 1.0},
+        cfg=cs.normalize_settings({}), dropped_formulas=0,
+    )
+    assert a["passed"] is True
+    assert a["flags"] == []
+    assert a["score"] == 100
+    assert a["checks"]["topicCoverage"] == 1.0
+
+
+def test_assess_quality_missing_topics_and_low_grounding_flag_and_fail():
+    """A sheet that lost most requested topics and whose formulas don't trace to
+    the source is flagged and fails the threshold."""
+    text = "## Kinematik eines Punktes\n$$v = x$$\n"
+    a = cs.assess_cheatsheet_quality(
+        text=text, raw_text=text,
+        topics=[
+            "Kinematik eines Punktes", "Geradlinige Bewegung",
+            "Polarkoordinaten", "Impuls und Stoß",
+        ],
+        grounding={"total": 5, "grounded": 1, "ratio": 0.2},
+        cfg=cs.normalize_settings({}), dropped_formulas=0,
+    )
+    assert a["passed"] is False
+    assert "low-topic-coverage" in a["flags"]
+    assert "low-source-support" in a["flags"]
+    assert a["score"] < a["threshold"]
+
+
+def test_assess_quality_formula_subject_without_formulas_fails():
+    text = "## Kinematik\nJust prose, no math here.\n## Dynamik\nMore prose only.\n"
+    a = cs.assess_cheatsheet_quality(
+        text=text, raw_text=text, topics=["Kinematik", "Dynamik"],
+        grounding={"total": 0, "grounded": 0, "ratio": None},
+        cfg=cs.normalize_settings({}), dropped_formulas=0,
+    )
+    assert "no-formulas" in a["flags"]
+    assert a["passed"] is False
+
+
+def test_assess_quality_reference_subject_uses_definition_not_formula():
+    """Reference (non-formula) subjects must NOT be failed for lacking formulas —
+    they pass on structured definitions/labels instead."""
+    text = (
+        "## Druckguss\n- **Kurzdefinition:** Gießverfahren für Großserien.\n"
+        "- **Vorteile:** kurze Zykluszeiten.\n"
+        "## Sandguss\n- **Kurzdefinition:** flexibel und günstig.\n"
+        "- **Nachteile:** geringe Maßgenauigkeit.\n"
+        "## Urformen\n- **Einordnung:** schafft Stoffzusammenhalt.\n"
+    )
+    cfg = cs.normalize_settings({"subjectType": "vocabulary_memorization"})
+    assert cfg["formulaDriven"] is False
+    a = cs.assess_cheatsheet_quality(
+        text=text, raw_text=text, topics=["Druckguss", "Sandguss", "Urformen"],
+        grounding={"total": 0, "grounded": 0, "ratio": None},
+        cfg=cfg, dropped_formulas=0,
+    )
+    assert "no-formulas" not in a["flags"]
+    assert "low-definition-coverage" not in a["flags"]
+    assert a["passed"] is True
+
+
+# Formula-dense, NON-mechanics evidence → classifies as ``formula_heavy`` but
+# ``mechanics`` is False, so the mechanics formula-bank enforcement does NOT run
+# and a prose-only draft genuinely reaches the document quality gate (the bank
+# would otherwise inject canonical formulas and mask the deficiency).
+_EE_EVIDENCE = [
+    {"text": (
+        "I = \\int x\\, dx\nV = R \\cdot I\nP = U I\nZ = R + j X\n"
+        "f = 1/T\n\\sum I = 0\nU = L \\frac{di}{dt}"
+    )},
+]
+_EE_TM = [
+    {"name": "Ohmsches Gesetz"}, {"name": "Wechselstrom"},
+    {"name": "Leistung"}, {"name": "Filter"},
+]
+
+
+def test_generate_cheatsheet_repairs_once_and_is_capped(monkeypatch):
+    """A first draft below the quality bar triggers EXACTLY one whole-document
+    repair pass; the better second draft is kept and the assessment passes."""
+    monkeypatch.setattr(cs, "get_course_topic_map", lambda u, c: _EE_TM)
+    monkeypatch.setattr(cs, "retrieve_learning_context", lambda **k: _EE_EVIDENCE)
+
+    def _fake_chat(**k):
+        import re as _re
+        topics = _re.findall(r"### TOPIC: (.+)", k["user"])
+        if "QUALITY REPAIR" in k["system"]:
+            # Repaired draft: every section carries a DISTINCT grounded formula.
+            body = "\n".join(
+                f"## {t}\n$$V_{{{i}}} = R \\cdot I$$" for i, t in enumerate(topics)
+            )
+        else:
+            body = "\n".join(f"## {t}\nplain prose only here" for t in topics)
+        return _FakeChatResult({"text": body})
+
+    monkeypatch.setattr(cs, "chat_json", _fake_chat)
+    monkeypatch.setattr(cs, "save_note", lambda **k: "n1")
+
+    out = cs.generate_cheatsheet(
+        user_id="u", course_id="c", document_ids=None, topic=None,
+        doc_names={"d1": "a.pdf"}, save=True,
+    )
+
+    q = out["quality"]
+    assert q["repairAttempted"] is True
+    # The kept (repaired) draft has formulas and passes — and no warning is set.
+    assert q["assessment"]["passed"] is True
+    assert "= R \\cdot I$$" in out["text"]
+    assert out.get("warning") is None
+
+
+def test_generate_cheatsheet_warns_when_still_below_bar(monkeypatch):
+    """If even the single repair pass cannot lift the sheet above the bar, the
+    weak sheet is surfaced with a `warning` rather than shipped silently."""
+    monkeypatch.setattr(cs, "get_course_topic_map", lambda u, c: _EE_TM)
+    monkeypatch.setattr(cs, "retrieve_learning_context", lambda **k: _EE_EVIDENCE)
+
+    def _fake_chat(**k):
+        import re as _re
+        topics = _re.findall(r"### TOPIC: (.+)", k["user"])
+        # Always prose-only, both draft and repair → never reaches the bar.
+        body = "\n".join(f"## {t}\nplain prose only" for t in topics)
+        return _FakeChatResult({"text": body})
+
+    monkeypatch.setattr(cs, "chat_json", _fake_chat)
+    monkeypatch.setattr(cs, "save_note", lambda **k: "n1")
+
+    # Spy on the section generator: it must run twice total — the initial draft
+    # plus EXACTLY ONE whole-document repair pass (the Stage-5 cap), never more.
+    real_parallel = cs._generate_sections_parallel
+    passes = {"n": 0}
+
+    def _spy(**k):
+        passes["n"] += 1
+        return real_parallel(**k)
+
+    monkeypatch.setattr(cs, "_generate_sections_parallel", _spy)
+
+    out = cs.generate_cheatsheet(
+        user_id="u", course_id="c", document_ids=None, topic=None,
+        doc_names={"d1": "a.pdf"}, save=True,
+    )
+    assert out["quality"]["repairAttempted"] is True
+    assert out["quality"]["assessment"]["passed"] is False
+    assert passes["n"] == 2  # initial draft + exactly one repair pass (capped)
+    assert out.get("warning")
+    assert "quality bar" in out["warning"]

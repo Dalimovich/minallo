@@ -22,7 +22,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const { planDate } = localPlanDate(qs.date, qs.timezone);
 
   try {
-    const { planId, tasks, possibleMatches } = await getDailyTasksWithPlan(
+    const { planId, tasks, possibleMatches, unmappedFiles } = await getDailyTasksWithPlan(
       auth.user.id,
       new Date(planDate + 'T00:00:00Z'),
       auth.serviceKey,
@@ -60,6 +60,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       planId,
       tasks: formattedTasks,
       possibleMatches,
+      unmappedFiles,
       summary: {
         completedTasks: completed,
         totalTasks: formattedTasks.length,
