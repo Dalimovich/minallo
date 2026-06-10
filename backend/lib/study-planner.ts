@@ -656,10 +656,30 @@ async function generateWeeklyPlanViaAI(
   const availPrefs = Array.isArray(availPrefRes.body) ? availPrefRes.body[0] : undefined;
   const studyDays = availPrefs?.study_days && availPrefs.study_days.length ? availPrefs.study_days : [1, 2, 3, 4, 5];
   const dailyMinutes = Math.max(15, availPrefs?.daily_study_minutes ?? 120);
+  // Anchor scheduling at today. The plan spans a Monday-start week, but a task
+  // written onto a day that has already passed is invisible — the daily mission
+  // only ever shows "today". So drop any study day earlier than today from the
+  // availability map; the planner refuses to schedule on days it isn't given
+  // (_coerce_task), so the AI never wastes tasks on the dead part of the week.
+  const weekStartDateObj = getWeekStart(weekStartDate);
+  const realTodayStr = dateToString(new Date());
   const dailyAvailabilityMinutes: Record<string, number> = {};
   for (const jsDow of studyDays) {
     const pyIdx = ((Number(jsDow) % 7) + 6) % 7;
+    const dayStr = dateToString(addDays(weekStartDateObj, pyIdx));
+    if (dayStr < realTodayStr) continue; // day already in the past → unreachable
     dailyAvailabilityMinutes[String(pyIdx)] = dailyMinutes;
+  }
+  // Safety net: if the whole study week is already behind us (e.g. it's the
+  // weekend and study_days are Mon–Fri), still let the AI plan for the viewed
+  // day so "today's mission" isn't silently empty.
+  if (Object.keys(dailyAvailabilityMinutes).length === 0) {
+    const viewedPyIdx = Math.round(
+      (Date.parse(dateToString(weekStartDate) + 'T00:00:00Z') - weekStartDateObj.getTime()) / 86400000
+    );
+    if (viewedPyIdx >= 0 && viewedPyIdx <= 6) {
+      dailyAvailabilityMinutes[String(viewedPyIdx)] = dailyMinutes;
+    }
   }
 
   // Durable user pairing decisions so the AI uses confirmed exercise↔lecture
@@ -717,6 +737,21 @@ async function generateWeeklyPlanViaAI(
   // Race-handled: another request created the plan and is filling it; return early.
   if (raceHandled) {
     return { planId, taskCount: 0, subjects: [], urgency: null };
+  }
+
+  // Explicit regen of an existing plan: wipe the stale slate first. Without this
+  // the merge in persistAiTasks only ever marks tasks 'replaced', so junk from
+  // every prior generation accretes (we saw a single plan reach 41 tasks) and
+  // past-day todos linger forever. Delete everything except the user's own
+  // decisions — completed and skipped tasks are preserved as history.
+  if (regenerateExisting && !isNew) {
+    await supaRequest(
+      'DELETE',
+      'weekly_study_tasks?plan_id=eq.' + encodeURIComponent(planId) +
+        '&status=in.(todo,replaced)',
+      null,
+      serviceKey
+    );
   }
 
   // Validate and map
