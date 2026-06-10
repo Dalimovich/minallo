@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .llm_json import LlmResult, chat_json
 from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
@@ -385,6 +386,7 @@ def _run_one_quiz_shard(
     already_taken: list[str], diversity_hint: str | None = None,
     known_topics: list[str] | None = None,
     language: str = "auto",
+    understanding: str = "",
 ) -> LlmResult | None:
     """Single LLM call for one shard's worth of items. Thread-safe."""
     avoid_block = ""
@@ -402,7 +404,7 @@ def _run_one_quiz_shard(
     try:
         return chat_json(
             system=system,
-            user="COURSE CONTEXT:\n\n" + context,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_completion,
         )
     except Exception:
@@ -450,6 +452,7 @@ def generate_quiz(
         }
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
     known_topics_list = _fetch_course_topics(course_id, document_ids)
     known_topics_set = set(known_topics_list) if known_topics_list else None
     collected: list[dict[str, Any]] = []
@@ -491,6 +494,7 @@ def generate_quiz(
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
                 known_topics=known_topics_list,
                 language=lang,
+                understanding=understanding,
             )
             for i in range(shard_count)
         ]
@@ -528,6 +532,7 @@ def generate_quiz(
             diversity_hint=f"new high-value concepts not yet asked about; backfill round {round_idx + 1}",
             known_topics=known_topics_list,
             language=lang,
+            understanding=understanding,
         )
         if backfill is not None:
             diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0

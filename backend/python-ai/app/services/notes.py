@@ -19,6 +19,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .llm_json import chat_json
 from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
@@ -303,11 +304,12 @@ def generate_notes(
     max_tokens, length_cue = _length_target(len(chunks), total_pages)
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
 
     try:
         res = chat_json(
             system=_system_prompt(length_cue),
-            user="COURSE CONTEXT:\n\n" + context,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_tokens,
         )
     except Exception as e:  # noqa: BLE001

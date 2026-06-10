@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .llm_json import LlmResult, chat_json
 from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
@@ -133,6 +134,7 @@ def _run_one_flashcard_shard(
     *, shard_count: int, context: str, already_taken: list[str],
     diversity_hint: str | None = None,
     difficulty: str = "medium", language: str = "auto",
+    understanding: str = "",
 ) -> LlmResult | None:
     avoid = ""
     if already_taken:
@@ -147,7 +149,7 @@ def _run_one_flashcard_shard(
     try:
         return chat_json(
             system=_system_prompt(shard_count, difficulty, language) + avoid + diversity,
-            user="COURSE CONTEXT:\n\n" + context,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_completion,
         )
     except Exception:
@@ -196,6 +198,7 @@ def generate_flashcards(
         }
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
     collected: list[dict[str, Any]] = []
     seen_fronts: set[str] = set()
     for s in seen_avoid:
@@ -225,6 +228,7 @@ def generate_flashcards(
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
                 difficulty=diff,
                 language=lang,
+                understanding=understanding,
             )
             for i in range(shard_count)
         ]
@@ -260,6 +264,7 @@ def generate_flashcards(
             diversity_hint="anything important not yet covered",
             difficulty=diff,
             language=lang,
+            understanding=understanding,
         )
         if backfill is not None:
             diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0

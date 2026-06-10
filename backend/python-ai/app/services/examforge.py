@@ -9,6 +9,7 @@ from typing import Any
 
 from . import mastery
 from .learning_agent import get_course_topic_map, retrieve_learning_context
+from .document_context import understanding_block_for_ids
 from .llm_json import chat_json
 from .quiz import _fetch_course_topics, generate_quiz
 from ..supabase_client import get_supabase
@@ -280,6 +281,7 @@ def _grounded_questions(
     evidence: list[dict[str, Any]],
     doc_names: dict[str, str],
     diff: str,
+    understanding: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """One grounded generation call. Returns (normalised questions, meta).
 
@@ -299,7 +301,8 @@ def _grounded_questions(
         for i, b in enumerate(blueprint)
     )
     user = (
-        "COURSE CONTEXT (each block tagged [chunk:<id> | <doc> p.<page>]):\n\n"
+        (understanding + "\n\n" if understanding else "")
+        + "COURSE CONTEXT (each block tagged [chunk:<id> | <doc> p.<page>]):\n\n"
         + _format_evidence(evidence, doc_names)
         + "\n\nGENERATE these questions:\n"
         + plan
@@ -390,8 +393,10 @@ def generate_examforge(
     )
     questions: list[dict[str, Any]] = []
     if evidence:
+        understanding = understanding_block_for_ids(document_ids, user_id=user_id)
         questions, meta = _grounded_questions(
             blueprint=blueprint, evidence=evidence, doc_names=doc_names, diff=diff,
+            understanding=understanding,
         )
         grounded_used = bool(questions)
         if grounded_used:

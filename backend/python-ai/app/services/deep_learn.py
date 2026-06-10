@@ -14,6 +14,7 @@ import logging
 import re
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .learning_agent import retrieve_learning_context
 from .llm_json import chat_json
 from .notes import save_note
@@ -1416,10 +1417,14 @@ def generate_deep_learn(
     facts_text = _format_extracted_facts(extracted_facts)
 
     student_ctx = _student_context_prompt(course_name, student_major)
+    # Document Understanding Layer: adapt behaviour to the selected source types
+    # (exam → understanding mode, solution sheet → explain reasoning, …).
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
     user = (
         "TOPIC TO TEACH: " + topic + "\n\n"
         + _mode_prompt(mode) + "\n\n"
         + _language_prompt(language) + "\n\n"
+        + (understanding + "\n\n" if understanding else "")
         + (student_ctx + "\n\n" if student_ctx else "")
     )
     if facts_text:

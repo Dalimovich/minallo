@@ -26,6 +26,7 @@ from typing import Any
 
 from ..config import get_settings
 from .openai_client import get_openai_client
+from .document_context import understanding_block_for_ids
 from .answer_intent import (
     AcademicIntent,
     classify_academic_intent,
@@ -1228,6 +1229,15 @@ def generate_answer(
 
     user_message = "QUESTION:\n" + question.strip()
     if context_block:
+        # Document Understanding Layer: tell the model what the retrieved sources
+        # actually are (exam vs lecture vs solution sheet …) so it reasons about
+        # them correctly instead of assuming every source is an exercise.
+        doc_ids = {
+            c.document_id for c in used_chunks if getattr(c, "document_id", None)
+        }
+        understanding = understanding_block_for_ids(doc_ids) if doc_ids else ""
+        if understanding:
+            user_message += "\n\n" + understanding
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
 
     # Worked math/exercise solutions in KaTeX overrun the small default budget
