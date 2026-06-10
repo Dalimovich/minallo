@@ -406,8 +406,20 @@ _WEEK_PLAN_SYSTEM = (
     "7. As exam_date approaches, ramp up exam_style_practice and pre_exam_review. "
     "Balance theory/practice/review proportions intelligently.\n"
     "8. subjectAllocation percentages must sum to 100.\n"
-    "9. Do not exceed dailyAvailabilityMinutes per day.\n"
-    "10. estimatedMinutes must be 5-180 per task."
+    "9. Do not exceed dailyAvailabilityMinutes per day. Spread tasks across the "
+    "available days — never pile many tasks onto a single day.\n"
+    "10. estimatedMinutes must be 5-180 per task.\n"
+    "11. check_solution_sheet is a FOLLOW-UP, not a standalone task. Schedule it "
+    "ONLY directly after the matching solve_exercise_sheet for the SAME sheet "
+    "(same number), and only when that exercise is studied/practised. NEVER emit a "
+    "check_solution_sheet for a solution file on its own, and NEVER one per "
+    "solution file — a day full of 'Check solutions' tasks is wrong.\n"
+    "12. Process a course's numbered lecture/exercise/solution files in natural "
+    "order (sheet 1, then 2, then 3 …). Do NOT jump ahead to a later sheet (e.g. "
+    "10) before earlier ones are done.\n"
+    "13. Prefer studying lectures and solving exercises over checking solutions; a "
+    "balanced day is mostly study + practice, with review/solution-checks only "
+    "where they follow real prior work."
 )
 
 

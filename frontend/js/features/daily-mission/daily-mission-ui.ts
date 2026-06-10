@@ -544,15 +544,14 @@ function _showEditMenu(anchor: HTMLElement): void {
 async function _regeneratePlan(courseId: string): Promise<void> {
   const toast = (window as unknown as { showToast?: (t: string, m: string) => void }).showToast;
   toast?.('Regenerating…', 'Building a fresh plan for this course.');
-  _state.isLoading = true;
-  _renderWidget();
+  // NOTE: do NOT set _state.isLoading here — loadTodaysTasks() early-returns when
+  // isLoading is already true, which would leave the widget stuck on "Loading…"
+  // and never show the new plan. loadTodaysTasks manages the loading flag itself.
   try {
     await regenerateDailyMission(courseId);
     await loadTodaysTasks(true);
     toast?.('Plan updated', 'Today’s plan was regenerated.');
   } catch (err) {
-    _state.isLoading = false;
-    _renderWidget();
     console.error('[DailyMission] regenerate failed:', err);
     toast?.('Could not regenerate', 'Please try again in a moment.');
   }
