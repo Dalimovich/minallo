@@ -173,13 +173,17 @@ body:not(.night) .dm-progress-track { background: rgba(15, 23, 42, 0.08); }
    resize handle (same corner) and set an explicit short height that cut the
    list and got wiped on every re-render. Height is driven by the tile only. */
 .dm-widget {
-  flex: 0 0 auto;
-  min-height: auto;
-  overflow: visible;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
 }
 
 /* Widget header with course picker */
@@ -302,7 +306,7 @@ body:not(.night) .dm-course-picker {
 }
 .dm-widget-tasks--scrollable {
   flex: 0 0 auto;
-  min-height: auto;
+  min-height: 0;
   max-height: var(--dm-widget-list-max-height, none);
   overflow-y: auto;
   overflow-x: hidden;
@@ -565,6 +569,7 @@ body:not(.night) .dm-modal-close:hover {
 
 /* Possible-match suggestion section */
 .dm-widget-matches {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;

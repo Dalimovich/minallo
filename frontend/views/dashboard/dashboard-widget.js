@@ -340,6 +340,9 @@
         b.row + b.rs <= a.row
       );
     }
+    function horizontalOverlap(a, b) {
+      return !(a.col + a.cs <= b.col || b.col + b.cs <= a.col);
+    }
     function isFree(col, row, cs, rs) {
       var t = { col: col, row: row, cs: cs, rs: rs };
       return !state.some(function (w) {
@@ -372,11 +375,44 @@
       });
     }
 
+    function packDownFrom(anchorUid) {
+      var anchor = state.find(function (x) {
+        return x.uid === anchorUid;
+      });
+      var changed = true;
+      var guard = 0;
+      while (changed && guard++ < 120) {
+        changed = false;
+        state
+          .slice()
+          .sort(function (a, b) {
+            if (a.uid === anchorUid) return -1;
+            if (b.uid === anchorUid) return 1;
+            return a.row !== b.row ? a.row - b.row : a.col - b.col;
+          })
+          .forEach(function (top) {
+            state.forEach(function (candidate) {
+              if (top.uid === candidate.uid) return;
+              if (candidate.uid === anchorUid) return;
+              if (!horizontalOverlap(top, candidate)) return;
+              if (!overlap(top, candidate)) return;
+              var nextRow = top.row + top.rs;
+              if (anchor && candidate.row < anchor.row) return;
+              if (candidate.row !== nextRow) {
+                candidate.row = nextRow;
+                changed = true;
+              }
+            });
+          });
+      }
+    }
+
     function renderAnimated() {
       var snap = {};
       canvas.querySelectorAll('.dash-widget').forEach(function (el) {
         snap[el.dataset.uid] = el.getBoundingClientRect();
       });
+      resolveVerticalOverlaps();
       compact();
       render();
       canvas.querySelectorAll('.dash-widget').forEach(function (el) {
@@ -448,6 +484,53 @@
         tempUsed.push({ col: dest.col, row: dest.row, cs: d.cs, rs: d.rs });
       });
       return moves;
+    }
+
+    function updateWidgetGridPositions() {
+      canvas.querySelectorAll('.dash-widget').forEach(function (el) {
+        var u = +el.dataset.uid;
+        var w = state.find(function (x) {
+          return x.uid === u;
+        });
+        if (!w) return;
+        var mCols = window.innerWidth <= 768 ? 2 : COLS;
+        var mCs = Math.min(w.cs, mCols),
+          mCol = Math.min(w.col, mCols - mCs + 1);
+        el.style.gridColumn = mCol + ' / span ' + mCs;
+        el.style.gridRow = w.row + ' / span ' + w.rs;
+      });
+    }
+
+    function resolveVerticalOverlaps(anchorUid) {
+      if (anchorUid) packDownFrom(anchorUid);
+      else {
+        var changed = true;
+        var guard = 0;
+        while (changed && guard++ < 120) {
+          changed = false;
+          state
+            .slice()
+            .sort(function (a, b) {
+              return a.row !== b.row ? a.row - b.row : a.col - b.col;
+            })
+            .forEach(function (top) {
+              state.forEach(function (below) {
+                if (top.uid === below.uid) return;
+                if (!horizontalOverlap(top, below)) return;
+                if (!overlap(top, below)) return;
+                if (below.row < top.row) return;
+                below.row = top.row + top.rs;
+                changed = true;
+              });
+            });
+        }
+      }
+      if (anchorUid) {
+        var anchor = state.find(function (x) {
+          return x.uid === anchorUid;
+        });
+        if (anchor) anchor.col = Math.max(1, Math.min(anchor.col, COLS - anchor.cs + 1));
+      }
     }
 
     function render() {
@@ -1249,40 +1332,18 @@
       handle.addEventListener('pointermove', function (e) {
         if (!resizing) return;
         var r = canvas.getBoundingClientRect(),
-          cw = (r.width + GAP) / COLS,
           ch = ROW_H + GAP;
         var w = state.find(function (x) {
           return x.uid === resizing.uid;
         });
         if (!w) return;
-        var wantCs = Math.max(
-          1,
-          Math.min(resizing.sc + Math.round((e.clientX - resizing.sx) / cw), COLS - w.col + 1)
-        );
+        var wantCs = resizing.sc;
         var wantRs = Math.max(1, resizing.sr + Math.round((e.clientY - resizing.sy) / ch));
-        var others = state.filter(function (x) {
-          return x.uid !== w.uid;
-        });
-        while (wantCs > 1 || wantRs > 1) {
-          var cand = { col: w.col, row: w.row, cs: wantCs, rs: wantRs };
-          if (
-            !others.some(function (x) {
-              return overlap(x, cand);
-            })
-          )
-            break;
-          if (wantCs - resizing.sc >= wantRs - resizing.sr && wantCs > 1) wantCs--;
-          else if (wantRs > 1) wantRs--;
-          else if (wantCs > 1) wantCs--;
-          else break;
-        }
+        if (wantRs === w.rs) return;
         w.cs = wantCs;
         w.rs = wantRs;
-        var elW = canvas.querySelector('[data-uid="' + w.uid + '"]');
-        if (elW) {
-          elW.style.gridColumn = w.col + ' / span ' + w.cs;
-          elW.style.gridRow = w.row + ' / span ' + w.rs;
-        }
+        resolveVerticalOverlaps(w.uid);
+        updateWidgetGridPositions();
       });
       handle.addEventListener('pointerup', function () {
         if (resizing) {
@@ -1419,8 +1480,13 @@
         el.style.removeProperty('--dm-widget-list-max-height');
       }
 
-      if (wantRs === w.rs) return; // already fits — no relayout
+      if (wantRs === w.rs) {
+        resolveVerticalOverlaps(w.uid);
+        updateWidgetGridPositions();
+        return; // already fits — no relayout
+      }
       w.rs = wantRs;
+      resolveVerticalOverlaps(w.uid);
       _dmFitting = true;
       renderAnimated();
       _dwSave();

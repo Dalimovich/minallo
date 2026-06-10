@@ -348,17 +348,18 @@
   display: flex;
   flex-direction: column;
   padding: 0 12px 10px;
-  overflow: hidden;
+  overflow: auto;
   min-height: 0;
   font-size: 0.78rem;
 }
 .dw-resize {
   position: absolute;
   bottom: 4px;
-  right: 4px;
-  width: 18px;
-  height: 18px;
-  cursor: se-resize;
+  left: 50%;
+  width: 46px;
+  height: 14px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -367,25 +368,25 @@
 }
 
 .dash-widget--daily-mission {
-  align-self: start;
-  overflow: visible;
+  overflow: hidden;
 }
 .dash-widget--daily-mission .dw-body,
 .dash-widget--daily-mission .dmw-root {
-  flex: 0 0 auto;
-  min-height: auto;
-  overflow: visible;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .dw-resize::after {
   content: '';
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid var(--on-glass-muted);
-  border-bottom: 2px solid var(--on-glass-muted);
+  left: 50%;
+  bottom: 3px;
+  width: 26px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: var(--on-glass-muted);
 }
 #dragGhost {
   position: fixed;
