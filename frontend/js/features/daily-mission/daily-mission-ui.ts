@@ -624,11 +624,33 @@ const _EXERCISE_TASK_TYPES = new Set<string>([
   'practice',
 ]);
 
-// Open the PDF a task points at in the source popup viewer. For exercise/practice
-// tasks the exercise sheet is the relevant file; otherwise the lecture/source
-// file. Returns false when the task carries no resolvable file so the caller can
-// fall back to opening the AI chat.
-function _openTaskSource(task: DailyMissionTask): boolean {
+// Lazily load a course's files via the app's `_ufMerge` so a task's file can be
+// resolved and opened. On the dashboard the SEMS course objects exist but their
+// `files` arrays are empty until the course is opened — without this, opening a
+// task shows "Source unavailable". Best-effort and idempotent.
+async function _ensureCourseFilesLoaded(courseId: string): Promise<void> {
+  if (!courseId) return;
+  const w = window as unknown as {
+    SEMS?: Record<string, { courses?: Array<{ id?: string; files?: unknown[] }> }>;
+    _SEMS?: Record<string, { courses?: Array<{ id?: string; files?: unknown[] }> }>;
+    _ufMerge?: (course: unknown) => Promise<unknown>;
+  };
+  const sems = w.SEMS || w._SEMS;
+  if (!sems || typeof w._ufMerge !== 'function') return;
+  let course: { id?: string; files?: unknown[] } | undefined;
+  for (const sem of Object.values(sems)) {
+    course = (sem.courses || []).find((c) => c.id === courseId);
+    if (course) break;
+  }
+  if (course && !(Array.isArray(course.files) && course.files.length)) {
+    try { await w._ufMerge(course); } catch { /* best effort — resolution just falls back */ }
+  }
+}
+
+// Open the PDF a task points at. For exercise/practice tasks the exercise sheet is
+// the relevant file; otherwise the lecture/source file. Returns false when the
+// task carries no resolvable file so the caller can fall back to the AI chat.
+async function _openTaskSource(task: DailyMissionTask & { _courseId?: string }): Promise<boolean> {
   const preferExercise = _EXERCISE_TASK_TYPES.has(task.task_type);
   const fileId = preferExercise
     ? (task.exercise_file_id || task.source_file_id)
@@ -637,6 +659,8 @@ function _openTaskSource(task: DailyMissionTask): boolean {
     ? (task.exercise_file_name || task.source_file_name)
     : (task.source_file_name || task.exercise_file_name);
   if (!fileId && !fileName) return false;
+  // Make sure the course's files are loaded so the id/name resolves.
+  if (task._courseId) await _ensureCourseFilesLoaded(task._courseId);
   const rangeFirst = task.page_range ? parseInt(task.page_range.match(/\d+/)?.[0] || '', 10) : NaN;
   const page = Number.isFinite(rangeFirst) ? rangeFirst : (task.page_start ?? null);
   // 'sidebar' opens the file in the full PDF viewer page (and highlights Courses
@@ -647,6 +671,28 @@ function _openTaskSource(task: DailyMissionTask): boolean {
     'sidebar'
   );
   return true;
+}
+
+// Start a task: mark it in_progress (only a valid todo→in_progress transition,
+// to avoid the 409 a re-click otherwise triggers) and open its file, falling
+// back to the AI chat when there's no resolvable file.
+async function _startTask(task: DailyMissionTask & { _courseId?: string }): Promise<void> {
+  if (task.status === 'todo') void updateTaskStatus(task.id, 'in_progress');
+  const opened = await _openTaskSource(task);
+  if (!opened) _openInAi();
+}
+
+// A consistent, file-name-based title. The planner sometimes titles study tasks
+// with a topic name (e.g. "Study: Widerstands-/Zugkräfte") when the lecture file
+// name wasn't resolved at generation time; show the actual file the task opens so
+// titles are uniform and match the Open button.
+function _taskDisplayTitle(task: DailyMissionTask): string {
+  const preferExercise = _EXERCISE_TASK_TYPES.has(task.task_type);
+  const file = preferExercise
+    ? (task.exercise_file_name || task.source_file_name)
+    : (task.source_file_name || task.exercise_file_name);
+  if (file) return _taskTypeLabel(task.task_type) + ': ' + file;
+  return task.title || _taskTypeLabel(task.task_type);
 }
 
 function _openInAi(): void {
@@ -689,7 +735,7 @@ function _buildTaskRowHtml(task: DailyMissionTask & { _courseId?: string }, with
   // A leading tick square that marks the task done (used in the Today's Tasks
   // modal). Checking it completes the task; unchecking reverts it to todo —
   // both flow through updateTaskStatus, so the AI planner sees the change.
-  const titleHtml = '<div class="dm-task-title' + (isDone ? ' is-done' : '') + '">' + escapeHtml(task.title) + '</div>';
+  const titleHtml = '<div class="dm-task-title' + (isDone ? ' is-done' : '') + '">' + escapeHtml(_taskDisplayTitle(task)) + '</div>';
   const titleBlock = withCheckbox && !isUnavailable && !isMoved
     ? '<div class="dm-task-titlewrap">' +
         '<input type="checkbox" class="dm-task-check-toggle" data-action="toggle-done" data-task-id="' + escapeHtml(task.id) + '"' + (isDone ? ' checked' : '') + ' aria-label="Mark task done">' +
@@ -949,9 +995,9 @@ function _bindWidgetActions(host: HTMLElement): void {
     btn.addEventListener('click', () => {
       switch (action) {
         case 'start': {
-          void updateTaskStatus(taskId, 'in_progress');
           const task = _state.tasks.find((t) => t.id === taskId);
-          if (!task || !_openTaskSource(task)) _openInAi();
+          if (task) void _startTask(task as DailyMissionTask & { _courseId?: string });
+          else _openInAi();
           break;
         }
         case 'done':
@@ -1046,9 +1092,9 @@ function _showTasksModal(): void {
     btn.addEventListener('click', () => {
       switch (action) {
         case 'start': {
-          void updateTaskStatus(taskId, 'in_progress');
           const task = _state.tasks.find((t) => t.id === taskId);
-          if (!task || !_openTaskSource(task)) _openInAi();
+          if (task) void _startTask(task as DailyMissionTask & { _courseId?: string });
+          else _openInAi();
           close();
           break;
         }
