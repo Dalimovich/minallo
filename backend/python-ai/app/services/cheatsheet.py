@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from .learning_agent import get_course_topic_map, retrieve_learning_context
+from .document_context import understanding_block_for_ids
 from .llm_json import LlmResult, chat_json
 from .notes import save_note
 from .cheatsheet_quality import (
@@ -2455,7 +2456,11 @@ def _run_one_section_shard(
             _formula_bank_guidance([str(t) for t in topics])
             + _trap_guidance([str(t) for t in topics])
         )
-    user = "COURSE CONTEXT:\n\n" + _format_section_evidence(group, doc_names) + banks
+    understanding = str(cfg.get("understanding") or "")
+    user = (
+        (understanding + "\n\n" if understanding else "")
+        + "COURSE CONTEXT:\n\n" + _format_section_evidence(group, doc_names) + banks
+    )
     try:
         return chat_json(
             system=system, user=user,
@@ -3307,6 +3312,9 @@ def generate_cheatsheet(
     if topic_query:
         raw_topic_names.append(topic_query)
     cfg["mechanics"] = _course_is_mechanics(raw_topic_names)
+    # Document Understanding Layer: ride the source-type guidance on cfg so every
+    # section shard sees it (cheat sheets from an exam vs lecture differ in tone).
+    cfg["understanding"] = understanding_block_for_ids(document_ids, user_id=user_id)
     topics = _topic_names(
         topic_map, topic_query, limit=cfg["maxTopics"], mechanics=cfg["mechanics"]
     )

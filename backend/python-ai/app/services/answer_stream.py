@@ -41,6 +41,7 @@ from .answer import (
     normalise_tutor_mode,
     pick_system_prompt,
 )
+from .document_context import understanding_block_for_ids
 from .retrieval import RetrievedChunk
 from .storage import download_document_bytes
 
@@ -1063,6 +1064,14 @@ def stream_answer(
     if problem_mode and problem_solver:
         user_message += _problem_solver_user_block(problem_solver)
     if context_block:
+        # Document Understanding Layer: name the retrieved source types so the
+        # tutor reasons about them correctly (exam vs lecture vs solution sheet).
+        doc_ids = {
+            c.document_id for c in used_chunks if getattr(c, "document_id", None)
+        }
+        understanding = understanding_block_for_ids(doc_ids) if doc_ids else ""
+        if understanding:
+            user_message += "\n\n" + understanding
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
 
     # Auto-attach the exercise/figure page bitmap on math/exercise questions so
