@@ -45,7 +45,7 @@ class _FakeClient:
 
 def _run(monkeypatch, payload):
     rec: dict = {}
-    monkeypatch.setattr(ch, "OpenAI", lambda **_: _FakeClient(rec))
+    monkeypatch.setattr(ch, "get_openai_client", lambda: _FakeClient(rec))
     ch.run_chat(payload)
     return rec["model"]
 

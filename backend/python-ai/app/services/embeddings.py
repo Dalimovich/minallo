@@ -14,6 +14,7 @@ from typing import Sequence
 from openai import APIError, OpenAI, RateLimitError
 
 from ..config import get_settings
+from .openai_client import get_openai_client
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class EmbeddingServiceUnavailable(RuntimeError):
 
 
 def _client() -> OpenAI:
-    return OpenAI(api_key=get_settings().openai_api_key)
+    return get_openai_client()
 
 
 def embed_texts(texts: Sequence[str]) -> list[list[float]]:

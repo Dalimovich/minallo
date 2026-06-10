@@ -13,9 +13,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
+from .openai_client import get_openai_client
 
 
 _FENCE_OPEN = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
@@ -188,7 +187,7 @@ def chat_json(
 ) -> LlmResult:
     settings = get_settings()
     chosen = model or settings.openai_generate_model
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
     token_param = _token_limit_param(chosen, max_tokens)
     resp = client.chat.completions.create(
         model=chosen,

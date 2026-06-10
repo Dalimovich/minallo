@@ -21,7 +21,7 @@ import os
 import re
 from typing import Any, Generator
 
-from openai import OpenAI
+from .openai_client import get_openai_client
 
 from ..config import get_settings
 from ..supabase_client import get_supabase
@@ -1153,7 +1153,7 @@ def stream_answer(
     # session.
     history_messages = _trim_previous_turns(previous_turns)
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
     prompt_tokens = None
     completion_tokens = None
     try:

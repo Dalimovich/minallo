@@ -14,9 +14,8 @@ import logging
 import re
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
+from .openai_client import get_openai_client
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +153,7 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     messages = _build_openai_messages(payload)
     max_tokens = _normalise_max_tokens(payload.get("max_tokens"))
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
 
     # Diagram-intent detection on the last user turn. When the student
     # asks for a diagram on the generic /chat path (no course selected),

@@ -461,11 +461,11 @@ def pages_via_vision_results(
             log.debug("handwriting OCR mode disabled by flag; using standard OpenAI OCR")
             provider = "openai"
             mode = "standard"
-        OpenAI = _try_import_openai()
-        if OpenAI is None:
+        if _try_import_openai() is None:
             log.warning("vision OCR requested but openai SDK is not installed")
             return {}
-        openai_client = OpenAI(api_key=settings.openai_api_key)
+        from .openai_client import get_openai_client
+        openai_client = get_openai_client()
         extract = lambda png: _vision_extract(  # noqa: E731
             openai_client, settings.vision_ocr_model, png, mode=mode
         )

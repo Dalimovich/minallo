@@ -24,9 +24,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
+from .openai_client import get_openai_client
 from .answer_intent import (
     AcademicIntent,
     classify_academic_intent,
@@ -1235,7 +1234,7 @@ def generate_answer(
     # and truncate mid-calculation; give the math path room to finish.
     effective_max_tokens = max(max_tokens, 4500) if (answer_mode == "math" or wants_diagram) else max_tokens
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
     completion = client.chat.completions.create(
         model=target_model,
         messages=[

@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
+from .openai_client import get_openai_client
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ def generate_web_answer(question: str, *, query: str, max_tokens: int = 1400) ->
     settings = get_settings()
     if not settings.web_search_enabled:
         return _unavailable()
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
     try:
         response = client.responses.create(
             model=settings.web_search_model,

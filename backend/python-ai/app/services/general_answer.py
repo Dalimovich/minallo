@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
 from .answer import chat_completion_params
+from .openai_client import get_openai_client
 
 
 _SYSTEM_PROMPT = """You are Minallo AI, a helpful university study assistant.
@@ -21,7 +20,7 @@ checked course documents or the web."""
 def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int = 1200) -> dict[str, Any]:
     settings = get_settings()
     target_model = settings.openai_generate_model
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
     completion = client.chat.completions.create(
         model=target_model,
         messages=[
