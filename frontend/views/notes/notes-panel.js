@@ -365,32 +365,49 @@
 
   // ── Load notes from DB ────────────────────────────────────────────────────
   async function _loadNotes() {
-    if (!_ctx.documentId || !_ctx.courseId) return;
+    if (!_ctx.courseId) return;
     try {
-      var r = await fetch(
-        (window.BACKEND_URL || '') + '/api/notes?courseId=' + encodeURIComponent(_ctx.courseId) +
-        '&documentId=' + encodeURIComponent(_ctx.documentId),
-        { headers: _apiHeaders() }
-      );
-      var data = r.ok ? await r.json() : {};
-      var notes = data.notes || [];
-      _savedNotes = notes;
+      // Editor tabs (Notes / Summary) stay scoped to the OPEN document so the
+      // tab shows the note for the PDF in front of you.
+      if (_ctx.documentId) {
+        var r = await fetch(
+          (window.BACKEND_URL || '') + '/api/notes?courseId=' + encodeURIComponent(_ctx.courseId) +
+          '&documentId=' + encodeURIComponent(_ctx.documentId),
+          { headers: _apiHeaders() }
+        );
+        var data = r.ok ? await r.json() : {};
+        var notes = data.notes || [];
 
-      // Pick most recent note per type for the editor tabs
-      ['notes', 'summary'].forEach(function (t) {
-        var match = notes.find(function (n) { return n.type === t; });
-        if (match && !_notesByType[t]) {
-          _notesByType[t] = { id: match.id, title: match.title, type: match.type, content_markdown: '',
-            source_page_start: match.source_page_start, source_page_end: match.source_page_end,
-            created_at: match.created_at };
-        }
-      });
+        // Pick most recent note per type for the editor tabs
+        ['notes', 'summary'].forEach(function (t) {
+          var match = notes.find(function (n) { return n.type === t; });
+          if (match && !_notesByType[t]) {
+            _notesByType[t] = { id: match.id, title: match.title, type: match.type, content_markdown: '',
+              source_page_start: match.source_page_start, source_page_end: match.source_page_end,
+              created_at: match.created_at };
+          }
+        });
 
-      for (var t of ['notes', 'summary']) {
-        if (_notesByType[t] && _notesByType[t].id && !_notesByType[t].content_markdown) {
-          await _loadNoteContent(_notesByType[t]);
+        for (var t of ['notes', 'summary']) {
+          if (_notesByType[t] && _notesByType[t].id && !_notesByType[t].content_markdown) {
+            await _loadNoteContent(_notesByType[t]);
+          }
         }
       }
+
+      // Saved tab lists ALL of the course's notes/summaries — NOT just the open
+      // document's. A note is tied to the document_id it was generated on, so a
+      // document-scoped list went empty whenever you opened a different file or
+      // re-uploaded one (new document_id orphans the old notes). Course-scoped
+      // here means saved notes never silently disappear; opening one loads by id.
+      var rc = await fetch(
+        (window.BACKEND_URL || '') + '/api/notes?courseId=' + encodeURIComponent(_ctx.courseId),
+        { headers: _apiHeaders() }
+      );
+      var dc = rc.ok ? await rc.json() : {};
+      _savedNotes = (dc.notes || []).filter(function (n) {
+        return n.type === 'notes' || n.type === 'summary';
+      });
     } catch (e) { console.warn('[notes-panel] load error:', e); }
     _currentNote = _notesByType[_activeTab] || null;
     if (_panelOpen) _renderCurrentTab();
