@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..supabase_client import get_supabase
-from .embeddings import embed_texts
+from .embeddings import embed_query
 
 log = logging.getLogger(__name__)
 
@@ -535,7 +535,7 @@ def retrieve_chunks(
     if not query.strip():
         return []
 
-    embedding = embed_texts([query])[0]
+    embedding = embed_query(query)
     sb = get_supabase()
 
     # Phase 7: expand the BM25 side for math questions (exercise refs,

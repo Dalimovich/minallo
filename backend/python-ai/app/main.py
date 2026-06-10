@@ -6,6 +6,7 @@ phases.
 """
 
 import logging
+import os
 from typing import Any
 
 import anyio
@@ -113,6 +114,29 @@ async def health() -> dict[str, Any]:
         "service": "minallo-ai",
         "version": app.version,
         "environment": settings.environment,
+    }
+
+
+@app.get("/internal/metrics", dependencies=[Depends(require_internal_token)])
+async def metrics() -> dict[str, Any]:
+    """Cheap runtime concurrency snapshot for tuning under load.
+
+    No external Prometheus stack — just the numbers needed to see whether the
+    anyio threadpool or the generation fan-out is the live bottleneck:
+      - threadpool: total vs borrowed tokens (saturation = borrowed→total).
+      - llmFanout: how many generation LLM slots are held vs the cap.
+    Per gunicorn worker, so scrape/observe both PIDs over a load test.
+    """
+    from .services.concurrency import fanout_stats
+
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    return {
+        "pid": os.getpid(),
+        "threadpool": {
+            "total": limiter.total_tokens,
+            "borrowed": limiter.borrowed_tokens,
+        },
+        "llmFanout": fanout_stats(),
     }
 
 

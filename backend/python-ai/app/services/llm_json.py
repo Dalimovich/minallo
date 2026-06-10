@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import get_settings
+from .concurrency import llm_fanout_slot
 from .openai_client import get_openai_client
 
 
@@ -189,15 +190,19 @@ def chat_json(
     chosen = model or settings.openai_generate_model
     client = get_openai_client()
     token_param = _token_limit_param(chosen, max_tokens)
-    resp = client.chat.completions.create(
-        model=chosen,
-        **token_param,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": user},
-        ],
-    )
+    # Bound total concurrent generation LLM calls per worker so fan-out shards
+    # (cheatsheet/quiz/flashcards/…) can't saturate the OpenAI quota or the box.
+    # The interactive stream path doesn't use chat_json, so it's never blocked.
+    with llm_fanout_slot():
+        resp = client.chat.completions.create(
+            model=chosen,
+            **token_param,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": user},
+            ],
+        )
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""
     try:

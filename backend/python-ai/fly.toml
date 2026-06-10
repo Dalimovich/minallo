@@ -29,6 +29,19 @@ primary_region = 'fra'
   min_machines_running = 1
   processes = ['app']
 
+  # Edge admission control + horizontal-scale readiness. Fly load-balances on
+  # these per-machine limits and (once >1 machine is provisioned) auto-starts
+  # stopped machines past the soft limit. hard_limit is the shed point: beyond
+  # it the proxy returns 503 instead of letting requests pile into the
+  # threadpool and die on the 120s Cloudflare cap. Sized against the per-machine
+  # threadpool (2 workers × 64). NB: true horizontal autoscale still needs more
+  # machines provisioned (`fly scale count N`) — a cost decision left to the
+  # operator; this block just makes the box shed gracefully and be ready for it.
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 100
+    hard_limit = 140
+
 [[vm]]
   # shared (not performance) CPUs: the AI workload is mostly I/O-bound (waiting
   # on OpenAI/Supabase), so dedicated cores aren't needed yet — 2 shared cpus
