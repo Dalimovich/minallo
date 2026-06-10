@@ -358,6 +358,23 @@ _VALID_TASK_TYPES = {
 # not a solution sheet). Any solution file assigned here is a planner bug.
 _EXERCISE_EXECUTION_TYPES = {"solve_exercise_sheet"}
 
+# Task types whose primary file (lectureFileId) must be lecture-like material.
+_LECTURE_STUDY_TYPES = {
+    "study_lecture",
+    "continue_lecture",
+    "repeat_lecture",
+    "pre_exam_review",
+}
+
+# Document roles that clearly are NOT an exercise sheet. If the LLM assigns a file
+# with one of these roles as a solve_exercise_sheet's exerciseFileId, drop the task
+# (the classic "solution sheet scheduled as an exercise" bug, plus lecture/exam
+# mix-ups). Unknown/empty/"other" roles are allowed — we only act on confident
+# role signals so a sparse topic map can't empty the plan.
+_NON_EXERCISE_ROLES = {"lecture", "solution", "exam", "summary", "formula"}
+# Roles that are clearly not a lecture, used to reject lecture-slot mismatches.
+_NON_LECTURE_ROLES = {"exercise", "solution"}
+
 _WEEK_PLAN_SYSTEM = (
     "You are an AI study planner. Given course document profiles, student "
     "progress data, exam dates, and available study time, produce a STRICT JSON "
@@ -400,14 +417,25 @@ def _parse_week_date(week_start: str, day_index: int) -> str:
     return (base + timedelta(days=day_index)).isoformat()
 
 
-def _coerce_task(raw: Any, week_start: str, available_days: set[int]) -> dict[str, Any] | None:
+def _coerce_task(
+    raw: Any,
+    week_start: str,
+    available_days: set[int],
+    roles: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
     """Validate and normalize a single raw LLM task dict.
 
     Returns None if the task must be dropped (invalid type, no valid day, etc.)
     Never raises.
+
+    ``roles`` maps documentId → documentRole (from the study profiles). When
+    provided, it enforces that an exercise task points at an actual exercise file
+    and a lecture-study task points at an actual lecture — best-effort: only known,
+    conflicting roles cause a drop.
     """
     if not isinstance(raw, dict):
         return None
+    roles = roles or {}
 
     task_type = str(raw.get("taskType") or "").strip().lower()
     if task_type not in _VALID_TASK_TYPES:
@@ -435,6 +463,20 @@ def _coerce_task(raw: Any, week_start: str, available_days: set[int]) -> dict[st
     if task_type in _EXERCISE_EXECUTION_TYPES and not exercise_file_id:
         # solve_exercise_sheet without an exercise file is a planner error — drop.
         return None
+
+    # Role enforcement against the document study profiles. Only act on a KNOWN
+    # conflicting role so an unindexed / unprofiled file (role unknown) still
+    # passes through.
+    if task_type in _EXERCISE_EXECUTION_TYPES and exercise_file_id:
+        ex_role = roles.get(exercise_file_id, "")
+        if ex_role in _NON_EXERCISE_ROLES:
+            # e.g. a solution sheet or lecture scheduled as an exercise — drop.
+            return None
+    if task_type in _LECTURE_STUDY_TYPES and lecture_file_id:
+        lec_role = roles.get(lecture_file_id, "")
+        if lec_role in _NON_LECTURE_ROLES:
+            # e.g. an exercise/solution scheduled as a lecture to study — drop.
+            return None
 
     try:
         est = int(raw.get("estimatedMinutes"))
@@ -848,6 +890,22 @@ def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
                 if coerced_alloc:
                     subject_allocation.append(coerced_alloc)
 
+        # documentId → role and documentId → topic-name set across all planned
+        # courses, for task role checks and exercise↔lecture overlap verification.
+        doc_roles: dict[str, str] = {}
+        doc_topics: dict[str, set[str]] = {}
+        for cd in course_data:
+            for p in cd.get("profiles", []):
+                did = str(p.get("documentId") or "").strip()
+                if not did:
+                    continue
+                doc_roles[did] = str(p.get("documentRole") or "").strip().lower()
+                doc_topics[did] = {
+                    str(t.get("name") or "").strip().lower()
+                    for t in (p.get("topicsCovered") or [])
+                    if str(t.get("name") or "").strip()
+                }
+
         # Tasks
         raw_tasks = raw_plan.get("tasks")
         tasks: list[dict[str, Any]] = []
@@ -858,31 +916,42 @@ def generate_week_plan(payload: dict[str, Any]) -> dict[str, Any]:
                 if not isinstance(raw_task, dict):
                     continue
 
-                # Before full coercion: demote medium/low exercise↔lecture
-                # matches to possibleMatches rather than scheduled tasks.
+                # Before full coercion: demote uncertain exercise↔lecture matches
+                # to possibleMatches rather than scheduling them directly. A match
+                # is uncertain when the AI flagged it medium/low, OR when it claims
+                # high confidence but the exercise and its paired lecture share no
+                # topics in their profiles (a likely mis-pairing the AI over-trusted).
                 task_type = str(raw_task.get("taskType") or "").strip().lower()
                 src_conf = str(raw_task.get("sourceConfidence") or "high").strip().lower()
-                if (
-                    task_type == "solve_exercise_sheet"
-                    and src_conf in ("medium", "low")
-                    and raw_task.get("exerciseFileId")
-                    and raw_task.get("relatedLectureFileId")
-                ):
-                    pm = _coerce_possible_match({
-                        "courseId": raw_task.get("courseId"),
-                        "exerciseFileId": raw_task.get("exerciseFileId"),
-                        "exerciseFileName": raw_task.get("exerciseFileName"),
-                        "possibleLectureFileId": raw_task.get("relatedLectureFileId"),
-                        "possibleLectureFileName": raw_task.get("relatedLectureFileName"),
-                        "confidence": src_conf,
-                        "reason": raw_task.get("reason"),
-                    })
-                    if pm:
-                        possible_matches_from_tasks.append(pm)
-                    # Do NOT add this task to the scheduled list.
-                    continue
+                ex_id = str(raw_task.get("exerciseFileId") or "").strip()
+                rel_lec_id = str(raw_task.get("relatedLectureFileId") or "").strip()
+                if task_type == "solve_exercise_sheet" and ex_id and rel_lec_id:
+                    uncertain = src_conf in ("medium", "low")
+                    no_shared_topics = False
+                    if not uncertain:
+                        ex_topics = doc_topics.get(ex_id, set())
+                        lec_topics = doc_topics.get(rel_lec_id, set())
+                        # Only act when we actually know both sides' topics.
+                        if ex_topics and lec_topics and ex_topics.isdisjoint(lec_topics):
+                            no_shared_topics = True
+                    if uncertain or no_shared_topics:
+                        pm = _coerce_possible_match({
+                            "courseId": raw_task.get("courseId"),
+                            "exerciseFileId": ex_id,
+                            "exerciseFileName": raw_task.get("exerciseFileName"),
+                            "possibleLectureFileId": rel_lec_id,
+                            "possibleLectureFileName": raw_task.get("relatedLectureFileName"),
+                            # An overlap failure is low confidence regardless of the
+                            # AI's self-rating.
+                            "confidence": "low" if no_shared_topics else src_conf,
+                            "reason": raw_task.get("reason"),
+                        })
+                        if pm:
+                            possible_matches_from_tasks.append(pm)
+                        # Do NOT add this task to the scheduled list.
+                        continue
 
-                coerced_task = _coerce_task(raw_task, week_start, available_day_indices)
+                coerced_task = _coerce_task(raw_task, week_start, available_day_indices, doc_roles)
                 if coerced_task:
                     tasks.append(coerced_task)
 

@@ -67,10 +67,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     (m) => m.exerciseFileId === exerciseFileId && m.possibleLectureFileId === possibleLectureFileId
   );
 
+  // Confirmation integrity: only a pair the planner actually proposed (and that is
+  // still pending) may be turned into a task. Without this check the endpoint
+  // would trust arbitrary client-submitted ids and schedule an unvetted exercise↔
+  // lecture pairing. Dismiss is idempotent, so a missing entry there is harmless.
+  if (action === 'confirm' && !matchEntry) {
+    return fail(409, 'That pairing is not a pending suggestion for this plan');
+  }
+
   // On "confirm": insert a task row.
-  if (action === 'confirm') {
-    const courseId = matchEntry?.courseId ?? plan.course_id ?? '';
-    const exerciseFileName = matchEntry?.exerciseFileName ?? 'Exercise';
+  if (action === 'confirm' && matchEntry) {
+    const courseId = matchEntry.courseId ?? plan.course_id ?? '';
+    const exerciseFileName = matchEntry.exerciseFileName ?? 'Exercise';
 
     const canonicalKey = buildCanonicalTaskKey(
       plan.plan_scope,

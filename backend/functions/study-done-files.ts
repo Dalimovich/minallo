@@ -94,6 +94,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       auth.serviceKey,
       { Prefer: 'return=minimal' }
     );
+    // Unchecking should make the planner see the file as new material again, so
+    // revert its covered topics from 'studied' → 'not_started'. Conservative: a
+    // topic is only reverted when NO still-done file covers it and it's merely
+    // 'studied' (never 'practiced'/'mastered', which reflect deeper progress the
+    // user actually earned via quizzes/practice, not a file mark).
+    await revertUnmarkedFileTopics(auth.user.id, courseId, removed, [...next], auth.serviceKey)
+      .catch((err) => console.error('[study-done-files] topic revert failed:', err));
   }
 
   // For newly-marked files, flip their covered topics to 'studied' so the planner
@@ -189,6 +196,49 @@ async function markFileTopicsStudied(
     console.error('[study-done-files] topic-state upsert failed:', err);
     return { topicsMarked: 0, ok: false, filesWithoutTopics };
   }
+}
+
+// Revert topics covered ONLY by now-unchecked files back to 'not_started', so the
+// planner reintroduces that material as new. Topics still covered by another
+// done file, or already advanced past 'studied', are left untouched.
+async function revertUnmarkedFileTopics(
+  userId: string,
+  courseId: string,
+  removedDocs: string[],
+  stillDoneDocs: string[],
+  serviceKey: string
+): Promise<void> {
+  const topicsRes = await supaRequest<Array<{ id: string; source_document_ids: unknown }>>(
+    'GET',
+    'course_topics?user_id=eq.' + encodeURIComponent(userId) +
+      '&course_id=eq.' + encodeURIComponent(courseId) +
+      '&select=id,source_document_ids',
+    null,
+    serviceKey
+  );
+  const topics = Array.isArray(topicsRes.body) ? topicsRes.body : [];
+  const removedSet = new Set(removedDocs);
+  const stillDoneSet = new Set(stillDoneDocs);
+
+  const toRevert: string[] = [];
+  for (const t of topics) {
+    const docs = Array.isArray(t.source_document_ids) ? t.source_document_ids.map((d) => String(d)) : [];
+    const coveredByRemoved = docs.some((d) => removedSet.has(d));
+    if (!coveredByRemoved) continue;
+    const coveredByStillDone = docs.some((d) => stillDoneSet.has(d));
+    if (!coveredByStillDone) toRevert.push(t.id);
+  }
+  if (toRevert.length === 0) return;
+
+  await supaRequest(
+    'PATCH',
+    'student_topic_state?user_id=eq.' + encodeURIComponent(userId) +
+      '&progress_state=eq.studied' +
+      '&topic_id=in.(' + toRevert.map((id) => encodeURIComponent(id)).join(',') + ')',
+    { progress_state: 'not_started', last_studied_at: null },
+    serviceKey,
+    { Prefer: 'return=minimal' }
+  );
 }
 
 function courseIdFromQuery(event: NetlifyEvent): string | null {
