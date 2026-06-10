@@ -12,11 +12,14 @@ import { bodyJson, requireStudyAuth, validateCourseId, writeStudyEvent } from '.
 import { supaRequest } from '../lib/supabase-admin';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
-// Topic progress states a file-mark may write 'studied' onto. A topic already at
-// 'studied' is left untouched (re-writing would flatten its last_studied_at /
-// study_sessions); anything more advanced (practiced / mastered / weak / …) must
-// never be downgraded.
-const _MARKABLE_STATES = new Set(['', 'not_started']);
+// Topic progress states a file-mark may write 'studied' onto. Marking a file done
+// means "I finished it", so a topic still 'not_started' or 'in_progress' (both
+// rank below 'studied') is promoted. A topic already at 'studied' is left
+// untouched (re-writing would flatten its last_studied_at / study_sessions).
+// 'weak' is deliberately NOT promoted — it carries a distinct "studied but
+// struggling" signal worth keeping — and practiced/mastered must never be
+// downgraded.
+const _MARKABLE_STATES = new Set(['', 'not_started', 'in_progress']);
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();
