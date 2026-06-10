@@ -31,7 +31,7 @@ from .block_detection import (
 )
 from .chunking import Chunk, chunk_pages
 from .document_intelligence import (
-    classify_document,
+    analyze_document,
     measure_ocr_need,
     prefer_ocr_text,
     rollup_extraction_quality,
@@ -411,12 +411,24 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         # Phase 4: classify the document and roll up per-page extraction
         # quality. Best-effort — failure here must not block indexing.
         doc_type: str | None = None
+        doc_type_confidence: float | None = None
+        understanding_json: dict[str, Any] | None = None
         rollup_quality: str | None = None
         ocr_assessment_json: dict[str, Any] | None = None
         try:
             file_name = doc.get("file_name") or ""
             sample_text = "\n\n".join((p or "")[:1500] for p in pages[:6])
-            doc_type = classify_document(file_name, sample_text)
+            # Document Understanding Layer: full deterministic payload (type +
+            # confidence + signals + language + subject/topic + content flags).
+            understanding = analyze_document(
+                file_name,
+                sample_text,
+                fallback_language=doc.get("language"),
+                course_topics=doc_topics or None,
+            )
+            doc_type = understanding.document_type
+            doc_type_confidence = understanding.document_type_confidence
+            understanding_json = understanding.to_json()
             rollup = rollup_extraction_quality(p.quality for p in page_md)
             rollup_quality = rollup.quality
             # Phase 11: OCR-need measurement based on the raw page text.
@@ -485,11 +497,27 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         }
         if doc_type:
             update_payload["document_type"] = doc_type
+        if doc_type_confidence is not None:
+            update_payload["document_type_confidence"] = doc_type_confidence
+        if understanding_json:
+            update_payload["document_understanding"] = understanding_json
         if rollup_quality:
             update_payload["extraction_quality"] = rollup_quality
         if ocr_assessment_json:
             update_payload["ocr_assessment"] = ocr_assessment_json
-        sb.table("documents").update(update_payload).eq("id", document_id).execute()
+        try:
+            sb.table("documents").update(update_payload).eq("id", document_id).execute()
+        except Exception:  # noqa: BLE001
+            # The understanding columns may not exist yet (migration 20260610_000004
+            # not applied). Strip them and retry so indexing NEVER breaks on a
+            # missing column — understanding just won't persist until the migration
+            # + a backfill/reindex run.
+            log.exception(
+                "documents.update failed — retrying without document-understanding fields"
+            )
+            for _k in ("document_type_confidence", "document_understanding"):
+                update_payload.pop(_k, None)
+            sb.table("documents").update(update_payload).eq("id", document_id).execute()
 
         return {
             "documentId": document_id,
