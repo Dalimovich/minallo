@@ -21,15 +21,16 @@
     </nav>
 
     <main class="legal-shell">
-      <p class="legal-kicker">Datenschutz</p>
+      <p class="legal-kicker">Datenschutz und Transparenz</p>
       <h1>Datenschutzerklärung</h1>
-      <p class="legal-updated">Stand: 25. Mai 2026</p>
+      <p class="legal-updated">Stand: 10. Juni 2026</p>
 
       <section class="legal-card">
         <p>
-          Minallo ist ein KI-gestützter Lernbereich für Studierende. Wir verarbeiten nur Daten,
-          die für Konto, Uploads, KI-Funktionen, Zahlungen, Sicherheit und Support erforderlich
-          sind. Wir verkaufen keine personenbezogenen Daten.
+          Minallo ist eine KI-gestützte Lernanwendung für Studierende. Wir verarbeiten Daten, die
+          für Konto, Uploads, Lernfunktionen, KI-Ausgaben, Zahlungen, Sicherheit und Support
+          erforderlich sind. Wir verkaufen keine personenbezogenen Daten und verwenden keine
+          werblichen Tracking-Cookies.
         </p>
       </section>
 
@@ -46,106 +47,117 @@
           <a href="mailto:legal@minallo.de?subject=Datenschutzanfrage">legal@minallo.de</a>).
         </p>
         <p>
-          Anfragen nach Art. 15 bis 22 DSGVO (Auskunft, Berichtigung, Löschung,
-          Einschränkung, Datenübertragbarkeit, Widerspruch) beantworten wir
-          unverzüglich, spätestens innerhalb eines Monats nach Eingang. Verlängerungen
-          gemäß Art. 12 Abs. 3 DSGVO werden dir vorab mitgeteilt.
+          Anfragen nach Art. 15 bis 22 DSGVO beantworten wir unverzüglich, spätestens innerhalb
+          eines Monats nach Eingang. Eine Verlängerung nach Art. 12 Abs. 3 DSGVO teilen wir dir
+          vorab mit.
         </p>
 
         <h2>2. Hosting, App-Betrieb und Sicherheit</h2>
         <p>
-          Die Website und serverseitige Funktionen werden über Netlify bereitgestellt. Teile der
-          KI-Infrastruktur laufen über einen Backend-Dienst auf Fly.io. Datenbank,
-          Authentifizierung und Dateispeicher werden über Supabase genutzt. Soweit möglich werden
-          EU-Regionen eingesetzt.
+          Die Website und die serverseitigen API-Funktionen werden über Cloudflare Pages und
+          Cloudflare Pages Functions bereitgestellt. Die KI- und Dokumentenverarbeitung läuft über
+          einen FastAPI-Dienst auf Fly.io, bevorzugt in der Region Frankfurt. Datenbank,
+          Authentifizierung, Realtime-Funktionen und Dateispeicher werden über Supabase genutzt.
         </p>
         <p>
-          Beim Aufruf der Website werden technisch notwendige Zugriffsdaten verarbeitet, zum Beispiel
-          IP-Adresse, Zeitpunkt, angeforderte URL, Referrer, User-Agent und Statuscodes. Rechtsgrund
-          ist Art. 6 Abs. 1 lit. f DSGVO: sicherer, stabiler und missbrauchsgeschützter Betrieb.
+          Beim Aufruf der Website werden technisch notwendige Zugriffsdaten verarbeitet, zum
+          Beispiel IP-Adresse, Zeitpunkt, angeforderte URL, Referrer, User-Agent, Statuscodes und
+          Sicherheitsereignisse. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO: sicherer,
+          stabiler und missbrauchsgeschützter Betrieb.
         </p>
 
         <h2>3. Konto und Anmeldung</h2>
         <p>
-          Für die Anmeldung nutzt Minallo Supabase Auth und Google Sign-In. Dabei können Name,
-          E-Mail-Adresse, Konto-ID, Profilbild, Authentifizierungs-Tokens und Login-Zeitpunkte
-          verarbeitet werden. Rechtsgrund ist Art. 6 Abs. 1 lit. b DSGVO, soweit die Verarbeitung
-          für die Bereitstellung des Nutzerkontos erforderlich ist.
-          Wenn du Google Sign-In nutzt oder der Login-Dienst geladen wird, können außerdem
-          technische Verbindungsdaten an Google übermittelt werden.
+          Für die Anmeldung nutzt Minallo Supabase Auth und optional Google Sign-In. Dabei können
+          Name, E-Mail-Adresse, Konto-ID, Profilbild, Authentifizierungs-Tokens und Login-Zeitpunkte
+          verarbeitet werden. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO, soweit die
+          Verarbeitung für dein Nutzerkonto erforderlich ist. Wenn du Google Sign-In verwendest,
+          werden außerdem technische Verbindungsdaten an Google übermittelt.
         </p>
 
         <h2>4. Lerninhalte, Uploads und App-Daten</h2>
         <p>Wenn du Minallo nutzt, können insbesondere folgende Daten verarbeitet werden:</p>
         <ul>
-          <li>hochgeladene PDFs, Dokumente, Notizen und Kursmaterialien,</li>
-          <li>KI-Fragen, Antworten, Zusammenfassungen, Karteikarten und Quiz-Inhalte,</li>
-          <li>Kursstruktur, Lernfortschritt, Einstellungen, Favoriten und Nutzungsstatus,</li>
-          <li>Chat- und Community-Funktionen, sofern du sie nutzt,</li>
+          <li>hochgeladene PDFs, Dokumente, Notizen, Kursmaterialien und daraus extrahierter Text,</li>
+          <li>KI-Fragen, Antworten, Zusammenfassungen, Karteikarten, Quizze, Cheatsheets und Lernpläne,</li>
+          <li>Kursstruktur, Lernfortschritt, Spaced-Repetition-Status, Favoriten und Einstellungen,</li>
+          <li>Chat- und Community-Inhalte, sofern du diese Funktionen nutzt,</li>
           <li>Abrechnungsstatus und Abo-Metadaten bei kostenpflichtigen Funktionen.</li>
         </ul>
         <p>
-          Rechtsgrund ist Art. 6 Abs. 1 lit. b DSGVO für die Vertragserfüllung und Art. 6 Abs. 1
-          lit. f DSGVO für Sicherheit, Fehleranalyse und Missbrauchsvermeidung.
+          Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO für die Vertragserfüllung und Art. 6
+          Abs. 1 lit. f DSGVO für Sicherheit, Fehleranalyse und Missbrauchsvermeidung.
         </p>
 
-        <h2>5. KI-Funktionen</h2>
+        <h2>5. KI-Funktionen und Dokumententransparenz</h2>
         <p>
-          Für KI-Antworten, Zusammenfassungen, Erklärungen, Karteikarten, Quizfragen, Embeddings,
-          den Deutsch-Schreibtrainer und die Dokumentenverarbeitung übermitteln wir an OpenAI
-          (OpenAI, L.L.C., USA) insbesondere:
+          Für KI-Antworten, RAG-Chat, Zusammenfassungen, Notizen, DeepLearn, Karteikarten,
+          Quizfragen, ExamForge, Cheatsheets, Schreibtrainer, OCR, Embeddings und
+          Dokumentenverständnis übermitteln wir an OpenAI insbesondere:
         </p>
         <ul>
-          <li>von dir eingegebene Prompts, Fragen und Texte (z.&nbsp;B. deutsche Aufsätze),</li>
-          <li>vollständige Textausschnitte aus deinen hochgeladenen PDFs und Dokumenten,
-            soweit für die jeweilige KI-Funktion erforderlich,</li>
-          <li>Embeddings (Vektorrepräsentationen) deiner Dokumentenausschnitte,</li>
-          <li>technische Metadaten wie Modellname, Tokenanzahl und Sprache.</li>
+          <li>von dir eingegebene Prompts, Fragen und Texte,</li>
+          <li>Textauszüge aus hochgeladenen PDFs und Dokumenten, soweit für die jeweilige Funktion erforderlich,</li>
+          <li>Dokument-Metadaten wie Dateiname, Kurs, erkannter Dokumenttyp, Sprache, Themen und Konfidenz,</li>
+          <li>Embeddings deiner Dokumentenausschnitte für Suche und Retrieval,</li>
+          <li>technische Metadaten wie Modellname, Tokenanzahl, Fehlerstatus und Sprache.</li>
         </ul>
         <p>
-          Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung) bzw. Art. 6 Abs. 1
-          lit. f DSGVO (Bereitstellung der KI-Funktionen). Die Übermittlung erfolgt nur, wenn
-          du eine KI-Funktion aktiv verwendest. Auf Grundlage der derzeit geltenden OpenAI
-          API-Nutzungsbedingungen werden API-Eingaben standardmäßig nicht zum Training der
-          OpenAI-Modelle verwendet. Näheres zur Drittlandsübermittlung siehe Abschnitt 12.
+          Die Übermittlung erfolgt nur, wenn du eine KI- oder Dokumentfunktion aktiv verwendest
+          oder ein Dokument zur Verarbeitung hochlädst. KI-Ausgaben können automatisch gespeichert
+          werden, damit du Notizen, Karteikarten, Quizze, Chats und Lernverläufe später wieder
+          nutzen kannst. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO bzw. Art. 6 Abs. 1 lit. f
+          DSGVO für Betrieb, Qualitätssicherung und Missbrauchsschutz.
+        </p>
+        <p>
+          Auf Grundlage der derzeit genutzten OpenAI-API werden API-Eingaben standardmäßig nicht
+          zum Training öffentlicher OpenAI-Modelle verwendet. Wenn optionale Formel- oder OCR-Routen
+          aktiviert sind, kann Minallo für bestimmte mathematische Dokumentseiten zusätzlich Mathpix
+          einsetzen. Näheres zu Drittlandsübermittlungen steht in Abschnitt 12.
         </p>
 
         <h2>6. Zahlungen und Abonnements</h2>
         <p>
-          Für kostenpflichtige Funktionen nutzt Minallo Zahlungsdienstleister wie Stripe und PayPal.
-          Zahlungsdaten werden direkt von diesen Dienstleistern verarbeitet. Minallo speichert in der
-          Regel nur technische IDs, Zahlungsstatus, Abo-Status und Berechtigungen, nicht deine
-          vollständigen Zahlungsdaten.
+          Für kostenpflichtige Funktionen nutzt Minallo Stripe und PayPal. Zahlungsdaten werden
+          direkt von diesen Dienstleistern verarbeitet. Minallo speichert in der Regel nur
+          technische IDs, Zahlungsstatus, Abo-Status, Periodenende, Kündigungsstatus und
+          Berechtigungen, nicht deine vollständigen Karten- oder Kontodaten.
         </p>
 
-        <h2>7. Browser-Erweiterung</h2>
+        <h2>7. Browser-Erweiterung und Integrationen</h2>
         <p>
           Falls du die Minallo Browser-Erweiterung nutzt, kann sie auf unterstützten Lernseiten
           sichtbare Inhalte wie Transkripte oder Untertitel auslesen, wenn du eine entsprechende
-          Funktion aktivierst. Diese Inhalte werden an Minallo übertragen, um Zusammenfassungen oder
-          Lernnotizen zu erzeugen. Die Erweiterung zeichnet nicht dauerhaft dein Surfverhalten auf.
+          Funktion aktivierst. Diese Inhalte werden an Minallo übertragen, um Zusammenfassungen,
+          Notizen oder Lernmaterial zu erzeugen. Die Erweiterung zeichnet nicht dauerhaft dein
+          Surfverhalten auf.
+        </p>
+        <p>
+          Spotify- und YouTube-Funktionen werden nur genutzt, wenn du sie aktiv verwendest. Dabei
+          können je nach Funktion Verbindungsdaten und Inhaltsdaten an die jeweiligen Anbieter
+          übermittelt werden.
         </p>
 
         <h2>8. Cookies, Local Storage und TDDDG</h2>
         <p>
-          Minallo verwendet derzeit keine werblichen Tracking-Cookies und kein Analytics-Tracking wie
-          Google Analytics oder Meta Pixel. Für Login, Sicherheit, Spracheinstellungen, App-Zustand
-          und Funktionsfähigkeit werden technisch notwendige Informationen im Browser gespeichert,
-          etwa in Local Storage, Session Storage oder technisch notwendigen Cookies. Rechtsgrund für
-          den Zugriff auf technisch notwendige Informationen ist § 25 Abs. 2 TDDDG.
+          Minallo verwendet derzeit keine werblichen Tracking-Cookies und kein Analytics-Tracking
+          wie Google Analytics oder Meta Pixel. Für Login, Sicherheit, Spracheinstellungen,
+          App-Zustand und Funktionsfähigkeit werden technisch notwendige Informationen im Browser
+          gespeichert, etwa in Local Storage, Session Storage oder technisch notwendigen Cookies.
+          Rechtsgrundlage für den Zugriff auf technisch notwendige Informationen ist § 25 Abs. 2
+          TDDDG.
         </p>
         <p>
-          Sollten später Analyse-, Marketing- oder nicht notwendige Drittanbieter-Cookies aktiviert
-          werden, wird vorab eine Einwilligung eingeholt.
+          Sollten später Analyse-, Marketing- oder andere nicht notwendige Drittanbieter-Cookies
+          aktiviert werden, holen wir vorab eine Einwilligung ein.
         </p>
 
         <h2>9. Empfänger und Drittanbieter</h2>
         <p>
-          Wir setzen sorgfältig ausgewählte Dienstleister ein. Soweit diese als
-          Auftragsverarbeiter für uns tätig werden, bestehen Auftragsverarbeitungsverträge
-          (AVV) gemäß Art. 28 DSGVO. Zahlungsdienstleister können je nach Verarbeitung
-          auch eigenständig Verantwortliche sein; die nachfolgende Übersicht beschreibt
-          die wichtigsten Empfänger und Zwecke.
+          Wir setzen Dienstleister ein, soweit dies für Betrieb, Sicherheit, Zahlung,
+          KI-Verarbeitung und Support erforderlich ist. Soweit sie als Auftragsverarbeiter tätig
+          werden, schließen wir Verträge nach Art. 28 DSGVO. Zahlungsdienstleister können teilweise
+          eigenständig Verantwortliche sein.
         </p>
         <table class="legal-table">
           <thead>
@@ -158,41 +170,44 @@
           </thead>
           <tbody>
             <tr>
+              <th>Cloudflare</th>
+              <td>Hosting, CDN, Pages Functions, Sicherheits- und Zugriffsschutz</td>
+              <td>USA / globales Netzwerk</td>
+              <td>Art. 6 Abs. 1 lit. b / f DSGVO; AVV nach Art. 28 DSGVO</td>
+            </tr>
+            <tr>
               <th>Supabase</th>
               <td>Authentifizierung, Datenbank, Storage, Realtime-Funktionen</td>
               <td>EU-Region, Konzernsitz USA</td>
-              <td>Art. 6 Abs. 1 lit. b DSGVO; AVV nach Art. 28 DSGVO</td>
-            </tr>
-            <tr>
-              <th>Netlify</th>
-              <td>Hosting, Auslieferung der Website, serverlose Funktionen</td>
-              <td>USA (CDN global)</td>
               <td>Art. 6 Abs. 1 lit. b / f DSGVO; AVV nach Art. 28 DSGVO</td>
             </tr>
             <tr>
               <th>Fly.io</th>
-              <td>Backend für KI- und Dokumentenverarbeitung</td>
-              <td>EU-Region (Frankfurt)</td>
-              <td>Art. 6 Abs. 1 lit. b DSGVO; AVV nach Art. 28 DSGVO</td>
+              <td>Backend für KI-, Streaming- und Dokumentenverarbeitung</td>
+              <td>EU-Region, Konzernsitz USA</td>
+              <td>Art. 6 Abs. 1 lit. b / f DSGVO; AVV nach Art. 28 DSGVO</td>
             </tr>
             <tr>
               <th>OpenAI</th>
-              <td>KI-Antworten, Embeddings, Zusammenfassungen und Generierung</td>
+              <td>KI-Antworten, OCR, Embeddings, Zusammenfassungen und Generierung</td>
               <td>USA</td>
               <td>Art. 6 Abs. 1 lit. b / f DSGVO; AVV nach Art. 28 DSGVO</td>
             </tr>
             <tr>
-              <th>Google</th>
-              <td>Google Sign-In (Single-Sign-On bei der Anmeldung)</td>
-              <td>USA / Irland</td>
-              <td>Art. 6 Abs. 1 lit. b DSGVO bei aktiver Login-Wahl</td>
+              <th>Mathpix</th>
+              <td>Optionale OCR-Erkennung für mathematische/formelreiche Dokumentseiten</td>
+              <td>USA</td>
+              <td>Art. 6 Abs. 1 lit. b / f DSGVO, nur wenn technisch aktiviert</td>
             </tr>
             <tr>
-              <th>Bunny.net (BunnyWay d.o.o.)</th>
-              <td>
-                Bereitstellung der Schriftarten Inter und JetBrains Mono über
-                fonts.bunny.net. Keine IP-Speicherung.
-              </td>
+              <th>Google</th>
+              <td>Google Sign-In bei aktiver Login-Wahl</td>
+              <td>USA / Irland</td>
+              <td>Art. 6 Abs. 1 lit. b DSGVO</td>
+            </tr>
+            <tr>
+              <th>Bunny.net</th>
+              <td>Bereitstellung von Schriftarten über fonts.bunny.net</td>
               <td>Slowenien (EU)</td>
               <td>Art. 6 Abs. 1 lit. f DSGVO</td>
             </tr>
@@ -200,67 +215,54 @@
               <th>Stripe</th>
               <td>Zahlungsabwicklung, Abonnement-Management, Betrugsprävention</td>
               <td>Irland / USA</td>
-              <td>Art. 6 Abs. 1 lit. b DSGVO; Stripe verarbeitet Zahlungsdaten teilweise als eigenständig Verantwortlicher</td>
+              <td>Art. 6 Abs. 1 lit. b DSGVO; teilweise eigenständig Verantwortlicher</td>
             </tr>
             <tr>
               <th>PayPal</th>
               <td>Zahlungsabwicklung, Rechnungs- und Käuferschutz</td>
               <td>Luxemburg / USA</td>
-              <td>Art. 6 Abs. 1 lit. b DSGVO; PayPal verarbeitet Zahlungsdaten teilweise als eigenständig Verantwortlicher</td>
+              <td>Art. 6 Abs. 1 lit. b DSGVO; teilweise eigenständig Verantwortlicher</td>
             </tr>
             <tr>
-              <th>YouTube / Spotify (Embeds)</th>
-              <td>
-                Eingebettete Video- bzw. Musikinhalte. Eine Datenübertragung an
-                YouTube oder Spotify findet ausschließlich dann statt, wenn du
-                den jeweiligen Embed aktiv aufrufst bzw. abspielst, nicht
-                automatisch im Hintergrund.
-              </td>
+              <th>YouTube / Spotify</th>
+              <td>Eingebettete oder verbundene Video- und Musikfunktionen bei aktiver Nutzung</td>
               <td>USA / Schweden</td>
-              <td>
-                Art. 6 Abs. 1 lit. a DSGVO (Einwilligung durch aktive Interaktion)
-                bzw. Art. 6 Abs. 1 lit. f DSGVO
-              </td>
+              <td>Art. 6 Abs. 1 lit. a oder f DSGVO, je nach Funktion und Interaktion</td>
             </tr>
           </tbody>
         </table>
 
         <h2>10. Speicherdauer</h2>
-        <p>Wir speichern personenbezogene Daten nur so lange, wie es für den jeweiligen Zweck
-          erforderlich ist. Konkret gelten folgende Regelfristen:</p>
+        <p>Wir speichern personenbezogene Daten nur so lange, wie es für den jeweiligen Zweck erforderlich ist.</p>
         <table class="legal-table">
           <tbody>
             <tr>
               <th>Konto- und Profildaten</th>
-              <td>für die Dauer der Kontonutzung; nach Konto-Löschung gelten kurze technische
-                Nachlaufzeiten (bis zu 30 Tage) für Backups und Sicherheitslogs.</td>
+              <td>für die Dauer der Kontonutzung; nach Konto-Löschung kurze technische Nachlaufzeiten für Backups und Sicherheitslogs.</td>
             </tr>
             <tr>
-              <th>Hochgeladene Dokumente, Notizen, Karteikarten, Quizze</th>
-              <td>solange du sie nicht selbst löschst und dein Konto besteht; bei Konto-Löschung
-                spätestens 30 Tage danach.</td>
+              <th>Hochgeladene Dokumente und Lernartefakte</th>
+              <td>solange dein Konto besteht und du sie nicht löschst; bei Konto-Löschung regelmäßig spätestens nach 30 Tagen.</td>
             </tr>
             <tr>
-              <th>KI-Antworten und Caches</th>
-              <td>technisch begrenzt, in der Regel maximal 90 Tage, danach automatische
-                Bereinigung.</td>
+              <th>KI-Antworten, Caches und Retrieval-Daten</th>
+              <td>solange sie für App-Funktionen, Verlauf oder Qualitätssicherung erforderlich sind; temporäre Caches regelmäßig maximal 90 Tage.</td>
             </tr>
             <tr>
-              <th>Server- und Sicherheits-Logs</th>
-              <td>in der Regel 14 Tage, in begründeten Fällen (Missbrauchsverdacht) länger.</td>
+              <th>Server-, Sicherheits- und Missbrauchslogs</th>
+              <td>regelmäßig 14 bis 30 Tage, bei Sicherheitsvorfällen oder Missbrauchsverdacht länger.</td>
             </tr>
             <tr>
               <th>Zahlungs- und Rechnungsdaten</th>
-              <td>aufgrund handels- und steuerrechtlicher Pflichten (insbesondere § 257 HGB
-                und § 147 AO) bis zu zehn Jahre.</td>
+              <td>aufgrund handels- und steuerrechtlicher Pflichten insbesondere nach § 257 HGB und § 147 AO bis zu zehn Jahre.</td>
             </tr>
           </tbody>
         </table>
         <p>
-          Du kannst viele Inhalte (Dokumente, Notizen, Karteikarten, Chats) direkt in der App
-          löschen. Eine vollständige Konto-Löschung kannst du jederzeit per E-Mail
-          an <a href="mailto:privacy@minallo.de?subject=Konto-L%C3%B6schung%20Minallo">privacy@minallo.de</a>
-          anstoßen; wir bestätigen den Abschluss innerhalb von 30 Tagen.
+          Du kannst viele Inhalte direkt in der App löschen. Eine vollständige Konto-Löschung kannst
+          du per E-Mail an
+          <a href="mailto:privacy@minallo.de?subject=Konto-L%C3%B6schung%20Minallo">privacy@minallo.de</a>
+          anstoßen.
         </p>
 
         <h2>11. Deine Rechte</h2>
@@ -276,64 +278,36 @@
         </ul>
         <p>
           Zur Ausübung deiner Rechte schreibe an
-          <a href="mailto:privacy@minallo.de?subject=Aus%C3%BCbung%20meiner%20Rechte%20nach%20Art.%2015-22%20DSGVO&amp;body=Hiermit%20mache%20ich%20folgende%20Rechte%20nach%20Art.%2015-22%20DSGVO%20geltend%3A%0A%0A%5B%20%5D%20Auskunft%20(Art.%2015)%0A%5B%20%5D%20Berichtigung%20(Art.%2016)%0A%5B%20%5D%20L%C3%B6schung%20(Art.%2017)%0A%5B%20%5D%20Einschr%C3%A4nkung%20(Art.%2018)%0A%5B%20%5D%20Daten%C3%BCbertragbarkeit%20(Art.%2020)%0A%5B%20%5D%20Widerspruch%20(Art.%2021)%0A%0AKonto-E-Mail%3A%20%0ADatum%3A%20">privacy@minallo.de</a>.
+          <a href="mailto:privacy@minallo.de?subject=Aus%C3%BCbung%20meiner%20Rechte%20nach%20Art.%2015-22%20DSGVO">privacy@minallo.de</a>.
         </p>
         <p>
-          Du hast außerdem das Recht, dich bei einer Datenschutzaufsichtsbehörde zu
-          beschweren. Für Niedersachsen ist dies insbesondere: Die Landesbeauftragte
-          für den Datenschutz Niedersachsen, Prinzenstraße 5, 30159 Hannover,
+          Du hast außerdem das Recht, dich bei einer Datenschutzaufsichtsbehörde zu beschweren. Für
+          Niedersachsen ist dies insbesondere: Die Landesbeauftragte für den Datenschutz
+          Niedersachsen, Prinzenstraße 5, 30159 Hannover,
           <a href="mailto:poststelle@lfd.niedersachsen.de">poststelle@lfd.niedersachsen.de</a>.
         </p>
 
         <h2>12. Übermittlung in Drittländer</h2>
         <p>
-          Einige der von uns eingesetzten Dienstleister verarbeiten Daten in Drittländern
-          außerhalb des Europäischen Wirtschaftsraums, insbesondere in den USA. Für diese
-          Übermittlungen stützen wir uns auf:
+          Einige Dienstleister verarbeiten Daten in Drittländern außerhalb des Europäischen
+          Wirtschaftsraums, insbesondere in den USA. Wir stützen solche Übermittlungen auf
+          Angemessenheitsbeschlüsse wie das EU-US Data Privacy Framework, Standardvertragsklauseln
+          der EU-Kommission und zusätzliche technische oder organisatorische Schutzmaßnahmen, soweit
+          erforderlich.
         </p>
-        <ul>
-          <li>
-            <strong>OpenAI (USA)</strong> &mdash; KI-Modelle und Embeddings. OpenAI LLC ist nach
-            dem EU-US Data Privacy Framework (DPF) zertifiziert. Zusätzlich kommen
-            Standardvertragsklauseln der EU-Kommission (Art. 46 Abs. 2 lit. c DSGVO) sowie das
-            OpenAI Data Processing Addendum zur Anwendung.
-          </li>
-          <li>
-            <strong>Stripe Payments Europe (Irland) und Stripe, Inc. (USA)</strong> &mdash;
-            Zahlungsabwicklung. Stripe ist DPF-zertifiziert; ergänzend gelten
-            Standardvertragsklauseln.
-          </li>
-          <li>
-            <strong>PayPal (Europe) S.à&nbsp;r.l. (Luxemburg) und PayPal, Inc. (USA)</strong>
-            &mdash; Zahlungsabwicklung. PayPal ist DPF-zertifiziert; ergänzend gelten
-            Standardvertragsklauseln.
-          </li>
-          <li>
-            <strong>Google LLC (USA)</strong> &mdash; Google Sign-In. Google LLC ist
-            DPF-zertifiziert; ergänzend gelten Standardvertragsklauseln.
-          </li>
-          <li>
-            <strong>Fly.io, Inc. (USA)</strong> &mdash; Hosting des KI-Backends. Wir setzen
-            ausschließlich EU-Regionen ein und stützen die Übermittlung auf
-            Standardvertragsklauseln.
-          </li>
-          <li>
-            <strong>YouTube und Spotify</strong> &mdash; werden nur geladen, wenn du
-            entsprechende Funktionen aktiv nutzt; siehe Abschnitt 9.
-          </li>
-        </ul>
         <p>
-          Trotz dieser Garantien können in Drittländern unter Umständen Behördenzugriffe
-          erfolgen, gegen die kein vergleichbarer Rechtsschutz wie in der EU besteht. Eine
-          Kopie der Standardvertragsklauseln oder weitere Informationen zu den Garantien stellen
-          wir auf Anfrage per E-Mail zur Verfügung.
+          Betroffen sein können insbesondere Cloudflare, Supabase, Fly.io, OpenAI, Mathpix, Google,
+          Stripe, PayPal, YouTube und Spotify. Trotz dieser Garantien können in Drittländern unter
+          Umständen Behördenzugriffe erfolgen, gegen die kein vergleichbarer Rechtsschutz wie in
+          der EU besteht. Weitere Informationen zu den Garantien stellen wir auf Anfrage zur
+          Verfügung.
         </p>
 
         <h2>13. Minderjährige</h2>
         <p>
           Minallo richtet sich primär an Studierende und Nutzerinnen und Nutzer ab 16 Jahren. Wenn
-          wir erfahren, dass personenbezogene Daten von jüngeren Kindern ohne erforderliche
-          Einwilligung verarbeitet wurden, löschen wir diese Daten.
+          wir erfahren, dass personenbezogene Daten jüngerer Kinder ohne erforderliche Einwilligung
+          verarbeitet wurden, löschen wir diese Daten.
         </p>
 
         <h2>14. Änderungen</h2>
