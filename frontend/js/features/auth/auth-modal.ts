@@ -15,6 +15,11 @@ interface SignAuthResult {
   refresh_token?: string;
   error?: string;
   error_description?: string;
+  // GoTrue v2 error shape ({ code: 429, error_code: 'over_email_send_rate_limit',
+  // msg: '…' }) — it does NOT set error/error_description, so checks that only
+  // look at those fields fall through to a generic failure message.
+  error_code?: string;
+  code?: number | string;
   msg?: string;
   id?: string;
   user?: { id?: string };
@@ -82,6 +87,8 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
   function setAuthMode(mode: 'signin' | 'signup'): void {
     authMode = mode;
     const isSignup = mode === 'signup';
+    authModal?.classList.toggle('na-mode-signup', isSignup);
+    authModal?.classList.toggle('na-mode-signin', !isSignup);
     // task-04 new-landing: toggle visibility of mode-dependent elements
     // (welcome badge, big heading, body, submit-text, google label,
     // signin-only row). Both copies live in the DOM with data-mode.
@@ -202,8 +209,26 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
         }
 
         const signUpResult = await sb.auth.signUp(email, password, 'https://minallo.de/');
-        if (signUpResult.error || signUpResult.error_description) {
-          throw new Error(signUpResult.error_description || signUpResult.error || t('auth_signup_failed'));
+        // Supabase throttles confirmation emails; when the limit is hit the
+        // signup itself is rejected with 429/over_email_send_rate_limit. Tell
+        // the user what actually happened instead of "please try again" (which
+        // makes them retry instantly and stay rate-limited).
+        const rateLimited =
+          signUpResult.error_code === 'over_email_send_rate_limit' ||
+          String(signUpResult.code ?? '') === '429' ||
+          /rate ?limit/i.test(String(signUpResult.msg || signUpResult.error_description || ''));
+        if (rateLimited) {
+          throw new Error(t('err_signup_rate_limited'));
+        }
+        const signUpError =
+          signUpResult.error_description ||
+          signUpResult.error ||
+          // msg is only an error when the signup returned neither a session nor a user.
+          (!signUpResult.access_token && !signUpResult.id && !signUpResult.user
+            ? signUpResult.msg
+            : '');
+        if (signUpError) {
+          throw new Error(signUpError || t('auth_signup_failed'));
         }
         sessionStorage.setItem('pendingConfirm', email);
 

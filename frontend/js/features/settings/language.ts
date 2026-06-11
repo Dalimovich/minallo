@@ -630,6 +630,8 @@ export const translations: Record<string, TranslationMap> = {
     auth_forgot_failed: 'Could not send reset email — please try again.',
     auth_signup_failed: 'Signup failed',
     auth_signup_failed_retry: 'Signup failed — please try again.',
+    err_signup_rate_limited:
+      '⚠️ Too many signups right now — our confirmation-email limit was reached. Please try again in about an hour.',
     user_preparation: 'preparation',
     aip_new_chat: 'New chat',
     aip_chats_label: 'Chats',
@@ -1513,6 +1515,8 @@ export const translations: Record<string, TranslationMap> = {
     auth_forgot_failed: 'Reset-E-Mail konnte nicht gesendet werden — bitte erneut versuchen.',
     auth_signup_failed: 'Registrierung fehlgeschlagen',
     auth_signup_failed_retry: 'Registrierung fehlgeschlagen — bitte erneut versuchen.',
+    err_signup_rate_limited:
+      '⚠️ Zu viele Registrierungen — unser E-Mail-Limit ist gerade erreicht. Bitte versuche es in etwa einer Stunde erneut.',
     user_preparation: 'Vorbereitung',
     aip_new_chat: 'Neuer Chat',
     aip_chats_label: 'Chats',
