@@ -1141,24 +1141,18 @@ async function handleIntentRoute(
     }
 
     // 2. Generate
-    const genThinkingSum = bubble
-      ? createAIThinkingStatus({ context: 'general', host: bubble, surface: 'chatbot', compact: true, append: true })
-      : null;
-    const skillStatusSum = showIntentSkillLoading(bubble, genThinkingSum, 'summary');
-    genThinkingSum?.set('Finding source context');
+    const builderSum = showStudyBuilderLoading(bubble, 'summary');
 
     const [modSum] = await Promise.all([
       import('../../services/ai-service.js'),
       ensureCheatsheetScripts(),
     ]);
-    genThinkingSum?.set('Reading course sources');
 
     const sumResult = await modSum.generateStudyTool(
       route.target.courseId, 'summary'
     ) as { text?: string; title?: string };
 
-    genThinkingSum?.set('Opening paper view');
-    await finishIntentSkillLoading(skillStatusSum, genThinkingSum);
+    await finishStudyBuilderLoading(builderSum);
 
     // 3. Build opts; persist full markdown to localStorage (no noteId for summary)
     const sumLayout = buildLayoutSettings(chatSettings);
@@ -1180,11 +1174,10 @@ async function handleIntentRoute(
           settings: sumLayout,
         }));
       } catch { /* storage full — non-fatal */ }
-      getOpenPaper()(sumPaperOpts);
     }
 
     const sumText = sumPaperOpts
-      ? 'Your summary is ready. The PDF viewer is open — click **⤓ Download PDF** to save it.'
+      ? 'Your summary is ready. Click **⤓ Open PDF viewer** below to view and download it.'
       : 'No summary could be generated from your course sources. Please try again.';
     if (bubble) renderRichBubble(bubble, sumText);
 
@@ -1241,17 +1234,12 @@ async function handleIntentRoute(
     };
 
     // 3. Generate
-    const genThinking = bubble
-      ? createAIThinkingStatus({ context: 'general', host: bubble, surface: 'chatbot', compact: true, append: true })
-      : null;
-    const skillStatus = showIntentSkillLoading(bubble, genThinking, 'cheatsheet');
-    genThinking?.set('Finding formulas and facts');
+    const builderCs = showStudyBuilderLoading(bubble, 'cheatsheet');
 
     const [mod] = await Promise.all([
       import('../../services/ai-service.js'),
       ensureCheatsheetScripts(),
     ]);
-    genThinking?.set('Reading course sources');
 
     const result = await mod.generateCheatsheet(route.target.courseId, {
       settings: {
@@ -1262,8 +1250,7 @@ async function handleIntentRoute(
       }
     });
 
-    genThinking?.set('Opening paper view');
-    await finishIntentSkillLoading(skillStatus, genThinking);
+    await finishStudyBuilderLoading(builderCs);
 
     // 4. Build opts and persist
     const csLayoutSettings = buildLayoutSettings(chatSettings, (result.settings && result.settings.style as string) || 'academic');
@@ -1287,11 +1274,9 @@ async function handleIntentRoute(
       } catch { /* storage full — non-fatal */ }
     }
 
-    if (paperOpts) getOpenPaper()(paperOpts);
-
     const savedNote = !!result.noteId;
     const text = paperOpts
-      ? 'Your cheatsheet is ready.' +
+      ? 'Your cheatsheet is ready. Click **⤓ Open PDF viewer** below to view and download it.' +
         (savedNote ? ' It\'s also **saved to your notes** — you can find it in the Cheatsheet tab of this course.' : '')
       : 'No cheatsheet content was returned. Please try again.';
     if (bubble) renderRichBubble(bubble, text);
@@ -1449,6 +1434,175 @@ async function finishIntentSkillLoading(
     skillStatus.remove();
   }
   thinking?.remove(true);
+}
+
+// ── Minallo Study Builder Canvas ──────────────────────────────────────────────
+// A Minallo-specific loading animation for cheatsheet/summary generation. Instead
+// of exposing raw tool names ("loading skills", "live AI thinking"), it shows a
+// small A4 study sheet filling itself section by section — communicating that
+// Minallo is *building a real study document*, not running an AI skill.
+
+type StudyBuilderIntent = 'summary' | 'cheatsheet';
+
+type StudyBuilderElement = HTMLElement & {
+  _skillLoadingTimer?: number;
+  _builderStart?: number;
+};
+
+type StudyBuilderCopy = {
+  title: string;
+  subtitle: string;
+  steps: string[];
+  chips: string[];
+};
+
+const STUDY_BUILDER_UI: Record<StudyBuilderIntent, StudyBuilderCopy> = {
+  cheatsheet: {
+    title: 'Building your cheatsheet',
+    subtitle: 'Minallo is turning your uploaded course material into a compact, exam-ready study sheet.',
+    steps: [
+      'Reading your uploaded course',
+      'Extracting formulas and definitions',
+      'Selecting exam-relevant concepts',
+      'Organizing everything into sections',
+      'Finalizing the cheatsheet layout'
+    ],
+    chips: ['Formulas', 'Definitions', 'Key ideas', 'Exam traps']
+  },
+  summary: {
+    title: 'Building your summary',
+    subtitle: 'Minallo is turning your uploaded course material into a clear, exam-ready study summary.',
+    steps: [
+      'Reading your uploaded course',
+      'Pulling out the key points',
+      'Selecting what matters most',
+      'Organizing everything into sections',
+      'Finalizing the summary layout'
+    ],
+    chips: ['Key ideas', 'Definitions', 'Summary', 'Exam tips']
+  }
+};
+
+/**
+ * Render the Minallo Study Builder Canvas inside a chat bubble while a
+ * cheatsheet/summary is generating. Self-contained: it animates its own steps,
+ * blocks and progress bar, and loops smoothly until finishStudyBuilderLoading()
+ * is called with the real result. Reuses `_skillLoadingTimer` so the existing
+ * finish/cleanup contract still applies.
+ */
+function showStudyBuilderLoading(
+  bubble: HTMLElement | null,
+  intent: StudyBuilderIntent
+): HTMLElement | null {
+  if (!bubble) return null;
+  const copy = STUDY_BUILDER_UI[intent];
+  const blockKinds = ['formula', 'definition', 'concept', 'trap'];
+
+  const el = document.createElement('div') as StudyBuilderElement;
+  el.className = 'ncb-builder ncb-builder--' + intent;
+  el.setAttribute('aria-live', 'polite');
+  el.style.setProperty('--ncb-builder-progress', '8%');
+  el._builderStart = Date.now();
+
+  const stepsHtml = copy.steps
+    .map((s, i) =>
+      '<li class="ncb-builder-step" data-step="' + i + '">' +
+        '<span class="ncb-builder-step-mark" aria-hidden="true"></span>' +
+        '<span class="ncb-builder-step-text">' + escapeHtml(s) + '</span>' +
+      '</li>')
+    .join('');
+
+  const chipsHtml = copy.chips
+    .map((c, i) =>
+      '<span class="ncb-builder-chip ncb-builder-chip--' + (i + 1) + '">' + escapeHtml(c) + '</span>')
+    .join('');
+
+  const blocksHtml = blockKinds
+    .map((kind, i) =>
+      '<div class="ncb-builder-block ncb-builder-block--' + kind + '" data-block="' + i + '">' +
+        '<span class="ncb-builder-block-tag"></span>' +
+        '<span class="ncb-builder-block-line"></span>' +
+        '<span class="ncb-builder-block-line short"></span>' +
+      '</div>')
+    .join('');
+
+  el.innerHTML =
+    '<div class="ncb-builder-glow" aria-hidden="true"></div>' +
+    '<div class="ncb-builder-head">' +
+      '<span class="ncb-builder-spark" aria-hidden="true">&#10022;</span>' +
+      '<span class="ncb-builder-brand">' +
+        '<strong>Minallo AI</strong>' +
+        '<span>Creating your study sheet from course context</span>' +
+      '</span>' +
+    '</div>' +
+    '<div class="ncb-builder-body">' +
+      '<div class="ncb-builder-left">' +
+        '<div class="ncb-builder-title">' + escapeHtml(copy.title) + '</div>' +
+        '<div class="ncb-builder-sub">' + escapeHtml(copy.subtitle) + '</div>' +
+        '<ul class="ncb-builder-steps">' + stepsHtml + '</ul>' +
+      '</div>' +
+      '<div class="ncb-builder-canvas" aria-hidden="true">' +
+        '<div class="ncb-builder-sheet">' +
+          '<div class="ncb-builder-sheet-title"></div>' +
+          '<div class="ncb-builder-blocks">' + blocksHtml + '</div>' +
+        '</div>' +
+        chipsHtml +
+      '</div>' +
+    '</div>' +
+    '<div class="ncb-builder-progress" aria-hidden="true"><span></span></div>';
+
+  const stepEls = Array.from(el.querySelectorAll<HTMLElement>('.ncb-builder-step'));
+  const blockEls = Array.from(el.querySelectorAll<HTMLElement>('.ncb-builder-block'));
+  let activeStep = 0;
+
+  const paint = (): void => {
+    stepEls.forEach((s, i) => {
+      s.classList.toggle('is-done', i < activeStep);
+      s.classList.toggle('is-active', i === activeStep);
+    });
+    // Reveal blocks progressively as the steps advance.
+    const revealCount = Math.min(blockEls.length, Math.round((activeStep / Math.max(copy.steps.length - 1, 1)) * blockEls.length));
+    blockEls.forEach((b, i) => b.classList.toggle('is-in', i < revealCount));
+    const pct = Math.min(94, 8 + ((activeStep + 1) / copy.steps.length) * 80);
+    el.style.setProperty('--ncb-builder-progress', pct.toFixed(0) + '%');
+  };
+  paint();
+
+  el._skillLoadingTimer = window.setInterval(() => {
+    // Loop smoothly: advance through steps, then idle on the last step until done.
+    activeStep = Math.min(activeStep + 1, copy.steps.length - 1);
+    paint();
+  }, 900);
+
+  bubble.prepend(el);
+  return el;
+}
+
+/**
+ * Complete and remove the Study Builder Canvas once the real result is ready.
+ * Holds a short minimum on-screen time so the animation never flashes, fills the
+ * progress bar to 100% and ticks every step done before fading out.
+ */
+async function finishStudyBuilderLoading(builder: HTMLElement | null): Promise<void> {
+  if (!builder) return;
+  const el = builder as StudyBuilderElement;
+  const MIN_MS = 1400;
+  const elapsed = Date.now() - (el._builderStart ?? Date.now());
+  if (elapsed < MIN_MS) await new Promise((r) => window.setTimeout(r, MIN_MS - elapsed));
+
+  if (el._skillLoadingTimer) {
+    window.clearInterval(el._skillLoadingTimer);
+    el._skillLoadingTimer = undefined;
+  }
+  el.querySelectorAll('.ncb-builder-step').forEach((s) => {
+    s.classList.add('is-done');
+    s.classList.remove('is-active');
+  });
+  el.querySelectorAll('.ncb-builder-block').forEach((b) => b.classList.add('is-in'));
+  el.style.setProperty('--ncb-builder-progress', '100%');
+  el.classList.add('ncb-builder--done');
+  await new Promise((r) => window.setTimeout(r, 320));
+  el.remove();
 }
 
 /** Notes need a single, concrete source — unlike summary/cheatsheet which can
