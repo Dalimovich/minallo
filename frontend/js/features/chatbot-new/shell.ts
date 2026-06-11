@@ -3526,9 +3526,27 @@ interface SourceLibraryItem {
   importedAt: number;
 }
 
-const NCB_STORE_KEY = 'ss_ncb_chats_v1';
-const NCB_ACTIVE_KEY = 'ss_ncb_active_v1';
-const NCB_SOURCES_KEY = 'ss_ncb_sources_v1';
+// Chat transcripts and imported source text are private user data, so the
+// storage keys are namespaced per user id — same pattern as the
+// ss_user_courses:<uid> fix in app-data.js — and an account signing in on
+// this browser can never read another account's chats. The legacy unscoped
+// keys are migrated once into the current user's namespace, then deleted.
+const NCB_STORE_KEY_BASE = 'ss_ncb_chats_v1';
+const NCB_ACTIVE_KEY_BASE = 'ss_ncb_active_v1';
+const NCB_SOURCES_KEY_BASE = 'ss_ncb_sources_v1';
+
+function ncbCurrentUid(): string {
+  const u = (window as unknown as { _currentUser?: { id?: string; sub?: string } })._currentUser;
+  if (u && (u.id || u.sub)) return u.id || u.sub || '';
+  // Cold start: auth may not have resolved yet, but ss_last_uid was persisted
+  // by the session that is being restored.
+  try { return localStorage.getItem('ss_last_uid') || ''; } catch { return ''; }
+}
+
+function ncbScopedKey(base: string): string {
+  const uid = ncbCurrentUid();
+  return uid ? base + ':' + uid : base;
+}
 const NCB_MAX_STORED_CHATS = 200;
 const NCB_MAX_STORED_MESSAGES_PER_CHAT = 120;
 const NCB_MAX_STORED_MESSAGE_CHARS = 80000;
@@ -3693,14 +3711,47 @@ function selectedSourceIdsFromChats(chats: SavedChat[]): Set<string> {
   return ids;
 }
 
+let _ncbLoadedUid: string | null = null;
+
 function loadChatStore(): void {
+  const uid = ncbCurrentUid();
+  // Account changed within one page session. SIGNED_OUT normally reloads the
+  // page, so this is belt-and-braces — but never let one account's in-memory
+  // chats survive into (or be saved under) another account's namespace.
+  if (_ncbLoadedUid !== null && _ncbLoadedUid !== uid) {
+    chatStore.chats = [];
+    chatStore.activeId = '';
+    sourceLibrary.items = [];
+    liveState = null;
+  }
+  _ncbLoadedUid = uid;
+
+  // One-time migration: clients before the per-uid scoping wrote chats to the
+  // unscoped keys, which leaked across accounts sharing a browser. Adopt that
+  // data for the current user, then delete it so it can never resurface in a
+  // different account.
   try {
-    const raw = localStorage.getItem(NCB_STORE_KEY);
+    if (uid) {
+      [NCB_STORE_KEY_BASE, NCB_ACTIVE_KEY_BASE, NCB_SOURCES_KEY_BASE].forEach((base) => {
+        const legacy = localStorage.getItem(base);
+        if (legacy === null) return;
+        if (localStorage.getItem(base + ':' + uid) === null) {
+          localStorage.setItem(base + ':' + uid, legacy);
+        }
+        localStorage.removeItem(base);
+      });
+    }
+  } catch {
+    /* private mode — nothing to migrate */
+  }
+
+  try {
+    const raw = localStorage.getItem(ncbScopedKey(NCB_STORE_KEY_BASE));
     if (raw) {
       const parsed = JSON.parse(raw) as unknown;
       if (Array.isArray(parsed)) chatStore.chats = parsed as SavedChat[];
     }
-    const activeRaw = localStorage.getItem(NCB_ACTIVE_KEY);
+    const activeRaw = localStorage.getItem(ncbScopedKey(NCB_ACTIVE_KEY_BASE));
     if (typeof activeRaw === 'string' && activeRaw) chatStore.activeId = activeRaw;
   } catch {
     // private mode / corrupt storage — start fresh
@@ -3709,7 +3760,7 @@ function loadChatStore(): void {
   // Load the global source library first so the migration below can hoist
   // legacy per-chat attachedFolders into it.
   try {
-    const rawLib = localStorage.getItem(NCB_SOURCES_KEY);
+    const rawLib = localStorage.getItem(ncbScopedKey(NCB_SOURCES_KEY_BASE));
     if (rawLib) {
       const parsedLib = JSON.parse(rawLib) as unknown;
       if (Array.isArray(parsedLib)) sourceLibrary.items = parsedLib as SourceLibraryItem[];
@@ -3765,9 +3816,9 @@ function loadChatStore(): void {
     selectedSourceIdsFromChats(chatStore.chats)
   );
   try {
-    localStorage.setItem(NCB_STORE_KEY, JSON.stringify(chatStore.chats));
-    localStorage.setItem(NCB_ACTIVE_KEY, chatStore.activeId);
-    localStorage.setItem(NCB_SOURCES_KEY, JSON.stringify(sourceLibrary.items));
+    localStorage.setItem(ncbScopedKey(NCB_STORE_KEY_BASE), JSON.stringify(chatStore.chats));
+    localStorage.setItem(ncbScopedKey(NCB_ACTIVE_KEY_BASE), chatStore.activeId);
+    localStorage.setItem(ncbScopedKey(NCB_SOURCES_KEY_BASE), JSON.stringify(sourceLibrary.items));
   } catch {
     // The regular debounced save path will show the user-facing quota warning.
   }
@@ -3776,7 +3827,7 @@ function loadChatStore(): void {
 function saveSourceLibrary(): void {
   try {
     localStorage.setItem(
-      NCB_SOURCES_KEY,
+      ncbScopedKey(NCB_SOURCES_KEY_BASE),
       JSON.stringify(compactSourcesForStorage(sourceLibrary.items, selectedSourceIdsFromChats(chatStore.chats)))
     );
   } catch {
@@ -3791,10 +3842,10 @@ function saveChatStore(): void {
   _saveTimer = window.setTimeout(() => {
     try {
       localStorage.setItem(
-        NCB_STORE_KEY,
+        ncbScopedKey(NCB_STORE_KEY_BASE),
         JSON.stringify(compactChatsForStorage(chatStore.chats, chatStore.activeId))
       );
-      localStorage.setItem(NCB_ACTIVE_KEY, chatStore.activeId);
+      localStorage.setItem(ncbScopedKey(NCB_ACTIVE_KEY_BASE), chatStore.activeId);
     } catch (err) {
       // Quota exceeded or private-mode write block. Tell the user once per
       // page load so they know their chats may not persist — but don't spam

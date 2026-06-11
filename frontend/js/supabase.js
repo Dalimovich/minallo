@@ -175,18 +175,58 @@ var _sb = {
       _sbClearStoredSession();
       localStorage.removeItem('ss_state');
       sessionStorage.removeItem('ss_last_active');
-      // Per-course chat history can contain private RAG questions/answers.
-      // Wipe so a different user signing into the same browser doesn't see it.
+      // Chat history, AI-generated study material, drafts and connected-account
+      // tokens are private user data. Wipe so a different user signing into the
+      // same browser can never see (or use) any of it.
       try {
+        var _wipePrefixes = [
+          // Per-course AI chat history (course rail).
+          'ss_course_qa_',
+          // Legacy per-file chat transcripts (storage-service loadChat/saveChat).
+          'ss_chat_',
+          // Generated summary markdown / cheatsheet pointers per course.
+          'minallo_sum_last_',
+          'minallo_cs_last_',
+          // Per-course file-list caches, counters and progress.
+          'ss_uf_cache_',
+          'ss_fc_',
+          'ss_progress_total_',
+          'ss_opened_',
+          'ss_lastopen_'
+        ];
+        var _wipeExact = [
+          'ss_stats',
+          // Legacy unscoped chatbot store (pre per-uid scoping). The scoped
+          // ss_ncb_*:<uid> keys stay — they're namespaced per user id, so a
+          // different account can't read them and chats survive a re-login.
+          'ss_ncb_chats_v1',
+          'ss_ncb_active_v1',
+          'ss_ncb_sources_v1',
+          'ncb_tutor_mode',
+          // Writing-coach drafts are private user text.
+          'ss_writing_coach_draft',
+          'ss_writing_coach_task',
+          'ss_focus_timer_v1',
+          'ss_last_section',
+          'ss_university',
+          'ss_pdfed_recents',
+          // Connected music accounts: never leave OAuth tokens behind, or the
+          // next account on this browser could control the previous user's
+          // Spotify / see their playlists.
+          'ss_sp_token',
+          'ss_sp_refresh',
+          'ss_sp_verifier',
+          'ss_yt_playlists'
+        ];
         var _qaKeys = [];
         for (var _i = 0; _i < localStorage.length; _i++) {
           var _k = localStorage.key(_i);
-          if (_k && (
-            _k.indexOf('ss_course_qa_') === 0 ||
-            _k.indexOf('ss_opened_') === 0 ||
-            _k.indexOf('ss_lastopen_') === 0 ||
-            _k === 'ss_stats'
-          )) _qaKeys.push(_k);
+          if (!_k) continue;
+          var _hit = _wipeExact.indexOf(_k) !== -1;
+          for (var _wp = 0; !_hit && _wp < _wipePrefixes.length; _wp++) {
+            if (_k.indexOf(_wipePrefixes[_wp]) === 0) _hit = true;
+          }
+          if (_hit) _qaKeys.push(_k);
         }
         _qaKeys.forEach(function (k) { localStorage.removeItem(k); });
       } catch (e) {}
