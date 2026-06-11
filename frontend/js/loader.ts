@@ -451,6 +451,10 @@ interface LandingTranslation {
     // On timeout we resolve (not reject) so the chain continues — downstream
     // code may run degraded, but the splash hides and the user can recover.
     const SCRIPT_TIMEOUT_MS = 10000;
+    // Scripts whose last load attempt errored/timed out. loadScript resolves
+    // either way (boot must not hang), so this set is how lazy-feature loading
+    // knows a "completed" chain actually has holes and must not be cached.
+    const failedScripts = new Set<string>();
     function loadScript(src: string, readyKey: string, options?: LoadScriptOptions): Promise<void> {
       return new Promise<void>((resolve) => {
         const opts = options || {};
@@ -463,8 +467,12 @@ interface LandingTranslation {
           settled = true;
           clearTimeout(timer);
           if (reason === 'load') {
+            failedScripts.delete(src);
             if (SS && readyKey) SS.markReady(readyKey, { file: src });
           } else {
+            // Drop the dead tag so a retry appends a fresh one that refetches.
+            failedScripts.add(src);
+            if (script.parentNode) script.parentNode.removeChild(script);
             console.error('[loader] ' + reason + ': ' + src, err || '');
             if (SS) SS.emit('loader:script:' + reason, { file: src });
           }
@@ -646,6 +654,9 @@ interface LandingTranslation {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
             link.href = hrefWithVersion;
+            // A failed link left in the DOM passes the `exists` check above
+            // forever, so the feature's CSS would never be retried. Drop it.
+            link.onerror = () => { link.remove(); };
             document.head.appendChild(link);
           }
           function keepLightModeLast(): void {
@@ -663,10 +674,17 @@ interface LandingTranslation {
             if (lazyPromises[name]) return lazyPromises[name];
             css.forEach(ensureStylesheet);
             keepLightModeLast();
-            lazyPromises[name] = srcs.reduce<Promise<void>>(
-              (p, src) => p.then(() => loadScript(src, 'lazy-' + name)),
-              Promise.resolve()
-            );
+            lazyPromises[name] = srcs
+              .reduce<Promise<void>>(
+                (p, src) => p.then(() => loadScript(src, 'lazy-' + name)),
+                Promise.resolve()
+              )
+              .then(() => {
+                // loadScript resolves even on error/timeout; if any script in
+                // this feature failed, evict the cache so the next visit
+                // retries instead of running the feature half-loaded forever.
+                if (srcs.some((src) => failedScripts.has(src))) delete lazyPromises[name];
+              });
             return lazyPromises[name];
           };
 

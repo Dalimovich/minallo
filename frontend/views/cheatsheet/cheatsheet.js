@@ -252,7 +252,13 @@
       var s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js';
       s.onload = function () { resolve(window.Sortable); };
-      s.onerror = function () { reject(new Error('sortable lib failed to load')); };
+      s.onerror = function () {
+        // Evict cache + dead tag so the next open retries (a cached rejection
+        // disabled drag-to-reorder for the whole session after one CDN blip).
+        window._ssSortableP = null;
+        s.remove();
+        reject(new Error('sortable lib failed to load'));
+      };
       document.head.appendChild(s);
     });
     return window._ssSortableP;
@@ -879,7 +885,13 @@
       var s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js';
       s.onload = function () { resolve(window.html2pdf); };
-      s.onerror = function () { reject(new Error('pdf lib failed to load')); };
+      s.onerror = function () {
+        // Evict cache + dead tag so the next download retries instead of
+        // failing for the rest of the session.
+        window._ssHtml2PdfP = null;
+        s.remove();
+        reject(new Error('pdf lib failed to load'));
+      };
       document.head.appendChild(s);
     });
     return window._ssHtml2PdfP;

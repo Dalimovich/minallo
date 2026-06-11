@@ -1025,7 +1025,12 @@ function ensureCheatsheetScripts(): Promise<void> {
       const s = document.createElement('script');
       s.src = versioned(src);
       s.onload = () => resolve();
-      s.onerror = () => reject(new Error('Failed to load: ' + src));
+      s.onerror = () => {
+        // Remove the dead tag: the querySelector dedupe above would otherwise
+        // see it on the retry and resolve instantly without the library.
+        s.remove();
+        reject(new Error('Failed to load: ' + src));
+      };
       document.head.appendChild(s);
     });
 
@@ -1034,13 +1039,21 @@ function ensureCheatsheetScripts(): Promise<void> {
     const l = document.createElement('link');
     l.rel = 'stylesheet';
     l.href = versioned(href);
+    l.onerror = () => { l.remove(); };
     document.head.appendChild(l);
   };
 
-  w._csScriptsLoading = loadScript('/js/utils/db-helpers.js').then(() => {
-    loadStyle('/views/cheatsheet/cheatsheet.css');
-    return loadScript('/views/cheatsheet/cheatsheet.js');
-  });
+  w._csScriptsLoading = loadScript('/js/utils/db-helpers.js')
+    .then(() => {
+      loadStyle('/views/cheatsheet/cheatsheet.css');
+      return loadScript('/views/cheatsheet/cheatsheet.js');
+    })
+    .catch((err: unknown) => {
+      // Never cache a failed load — with the rejection cached, "Open PDF
+      // viewer" stayed dead for the whole session after one network blip.
+      w._csScriptsLoading = undefined;
+      throw err;
+    });
   return w._csScriptsLoading;
 }
 

@@ -18,6 +18,16 @@
   function loadScriptOnce(src, attrs) {
     if (!src) return Promise.reject(new Error('Missing script URL'));
     if (scriptPromises[src]) return scriptPromises[src];
+    // On failure: evict the cached promise AND remove the dead element.
+    // Both are required for a retry to work — a cached rejection means a CDN/
+    // DNS blip permanently disables the dependency (KaTeX, jsPDF, PayPal…)
+    // for the whole session, and a dead tag left in the DOM would make the
+    // next call attach listeners to an element that never fires again.
+    function failScript(el, reject) {
+      delete scriptPromises[src];
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      reject(new Error('Failed to load ' + src));
+    }
     scriptPromises[src] = new Promise(function (resolve, reject) {
       var existing = document.querySelector('script[src="' + src.replace(/"/g, '\\"') + '"]');
       if (existing) {
@@ -35,7 +45,7 @@
         existing.addEventListener(
           'error',
           function () {
-            reject(new Error('Failed to load ' + src));
+            failScript(existing, reject);
           },
           { once: true }
         );
@@ -51,7 +61,7 @@
         resolve();
       };
       s.onerror = function () {
-        reject(new Error('Failed to load ' + src));
+        failScript(s, reject);
       };
       document.head.appendChild(s);
     });
@@ -61,6 +71,12 @@
   function loadStyleOnce(href, attrs) {
     if (!href) return Promise.reject(new Error('Missing stylesheet URL'));
     if (stylePromises[href]) return stylePromises[href];
+    // Mirror of failScript above: a failed stylesheet must be retryable.
+    function failStyle(el, reject) {
+      delete stylePromises[href];
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      reject(new Error('Failed to load ' + href));
+    }
     stylePromises[href] = new Promise(function (resolve, reject) {
       var existing = document.querySelector('link[href="' + href.replace(/"/g, '\\"') + '"]');
       if (existing) {
@@ -78,7 +94,7 @@
         existing.addEventListener(
           'error',
           function () {
-            reject(new Error('Failed to load ' + href));
+            failStyle(existing, reject);
           },
           { once: true }
         );
@@ -95,7 +111,7 @@
         resolve();
       };
       l.onerror = function () {
-        reject(new Error('Failed to load ' + href));
+        failStyle(l, reject);
       };
       document.head.appendChild(l);
     });

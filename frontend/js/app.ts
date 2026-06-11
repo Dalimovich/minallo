@@ -654,7 +654,13 @@ let _aiRenderBridgePromise: Promise<unknown> | null = null;
 function _ensureAiRenderBridge(): Promise<unknown> {
   if (_aiRenderBridgePromise) return _aiRenderBridgePromise;
   _aiRenderBridgePromise = _versionedImport('Li9mZWF0dXJlcy9haS1jaGF0L2FpLXJlbmRlci1icmlkZ2UuanM=')
-    .then((mod) => (mod.initAiRenderBridge as () => unknown)());
+    .then((mod) => (mod.initAiRenderBridge as () => unknown)())
+    .catch((err: unknown) => {
+      // Never cache the failed import — markdown/KaTeX rendering would stay
+      // broken for the whole session after one network blip.
+      _aiRenderBridgePromise = null;
+      throw err;
+    });
   return _aiRenderBridgePromise;
 }
 (window as unknown as { _ensureAiRenderBridge?: () => Promise<unknown> })._ensureAiRenderBridge =

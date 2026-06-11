@@ -671,7 +671,13 @@
       var s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js';
       s.onload = function () { resolve(window.html2pdf); };
-      s.onerror = function () { reject(new Error('pdf lib failed to load')); };
+      s.onerror = function () {
+        // Evict cache + dead tag so the next download retries instead of
+        // failing for the rest of the session.
+        window._ssHtml2PdfP = null;
+        s.remove();
+        reject(new Error('pdf lib failed to load'));
+      };
       document.head.appendChild(s);
     });
     return window._ssHtml2PdfP;
