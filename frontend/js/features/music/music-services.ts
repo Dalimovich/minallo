@@ -442,8 +442,20 @@ export function initMusicServices(options: InitMusicServicesOptions): void {
 
   window._ytApplyFromDB = function (playlists: unknown): void {
     if (!Array.isArray(playlists)) return;
-    ytPlaylistsCache = playlists as YtPlaylist[];
-    localStorage.setItem('ss_yt_playlists', JSON.stringify(playlists));
+    const incoming = playlists as YtPlaylist[];
+    // Guard against silent data loss. This runs on every login with the DB's
+    // copy of the playlist list, overwriting localStorage. If the DB copy is
+    // empty — a save that never synced, or another partial settings write that
+    // reset this column — applying it would wipe playlists the user still has
+    // locally. Never let an empty DB value clobber a populated local list;
+    // instead keep local and push it back so the DB self-heals.
+    const local = ytGetPlaylists();
+    if (incoming.length === 0 && local.length > 0) {
+      void ytSavePlaylists(local);
+      return;
+    }
+    ytPlaylistsCache = incoming;
+    localStorage.setItem('ss_yt_playlists', JSON.stringify(incoming));
     ytRenderList();
     ytRenderSelect();
   };
