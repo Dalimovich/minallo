@@ -161,15 +161,25 @@ function bindSettingsControls() {
   if (dangerBtn) {
     dangerBtn.addEventListener('click', function () {
       if (!confirm(_t('settings_clear_confirm'))) return;
+      // Clear BOTH chat stores: the legacy per-PDF history (ss_chat_*) AND the
+      // current AI chatbot, which keeps its conversations under ss_ncb_* keys
+      // (ss_ncb_chats_v1 / _active_v1 / _sources_v1). The old filter only matched
+      // ss_chat_, so the chatbot's history was never cleared — the reported bug.
       Object.keys(localStorage)
         .filter(function (k) {
-          return k.startsWith('ss_chat_');
+          return k.indexOf('ss_chat_') === 0 || k.indexOf('ss_ncb_') === 0;
         })
         .forEach(function (k) {
           localStorage.removeItem(k);
         });
       if (typeof aiMsgs !== 'undefined') aiMsgs.innerHTML = '';
       showToast(_t('toast_chat_cleared'), _t('toast_chat_cleared_sub'));
+      // The chatbot caches its conversations in memory after first load, so a
+      // storage wipe alone won't update an already-open chatbot. Reload so it
+      // re-initialises from the now-empty store.
+      setTimeout(function () {
+        location.reload();
+      }, 700);
     });
   }
 

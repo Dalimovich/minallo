@@ -98,6 +98,64 @@ function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
 }
 
+// ── Typo-tolerant fallback ──────────────────────────────────────────────────
+// A user who types just the skill word but misspells it ("cheactsheet",
+// "summry", "noets") clearly still wants that skill. We only fuzzy-match SHORT,
+// command-like inputs (≤ 3 words, ≤ 24 chars) so a real question is never
+// reinterpreted as a command.
+const FUZZY_INTENT_WORDS: { intent: ChatIntent; word: string }[] = [
+  { intent: 'cheatsheet', word: 'cheatsheet' },
+  { intent: 'cheatsheet', word: 'cheat sheet' },
+  { intent: 'cheatsheet', word: 'formula sheet' },
+  { intent: 'summary', word: 'summary' },
+  { intent: 'summary', word: 'summarize' },
+  // 'notes' is intentionally excluded from fuzzy matching: at 5 chars it
+  // collides with real words ("nodes", "noted", "votes"). Exact "notes" still
+  // routes via NOTES_PATTERNS.
+  { intent: 'daily_mission', word: 'daily mission' },
+  { intent: 'weekly_mission', word: 'weekly mission' }
+];
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp: number[] = [];
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0] as number;
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j] as number;
+      const sub = prev + (a[i - 1] === b[j - 1] ? 0 : 1);
+      dp[j] = Math.min(tmp + 1, (dp[j - 1] as number) + 1, sub);
+      prev = tmp;
+    }
+  }
+  return dp[n] as number;
+}
+
+function fuzzyIntent(message: string): ChatIntent | null {
+  const norm = message
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!norm) return null;
+  // Command-like inputs only — never reinterpret a full sentence as a command.
+  if (norm.split(' ').length > 3 || norm.length > 24) return null;
+  let best: { intent: ChatIntent; dist: number } | null = null;
+  for (const { intent, word } of FUZZY_INTENT_WORDS) {
+    const dist = levenshtein(norm, word);
+    // ~1 edit per 5 chars (clamped 1–2): catches "cheactsheet"/"summry"
+    // without matching unrelated short words.
+    const threshold = Math.min(2, Math.max(1, Math.floor(word.length / 5)));
+    if (dist <= threshold && (!best || dist < best.dist)) best = { intent, dist };
+  }
+  return best ? best.intent : null;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export function detectIntent(
@@ -189,6 +247,25 @@ export function detectIntent(
       target: courseTitle,
       needsClarification: false
     };
+  }
+
+  // ── typo-tolerant fallback ─────────────────────────────────────────────────
+  // No exact pattern matched — but a short, misspelled command word should
+  // still route to its skill (e.g. "cheactsheet" → cheatsheet).
+  const fuzzy = fuzzyIntent(trimmed);
+  if (fuzzy === 'daily_mission' || fuzzy === 'weekly_mission') {
+    return { intent: fuzzy, confidence: 'medium', scope: 'global', needsClarification: false };
+  }
+  if (fuzzy === 'summary' || fuzzy === 'notes' || fuzzy === 'cheatsheet') {
+    if (!hasCourse) {
+      return {
+        intent: fuzzy,
+        confidence: 'medium',
+        needsClarification: true,
+        clarificationQuestion: 'Which course or file should I use?'
+      };
+    }
+    return { intent: fuzzy, confidence: 'medium', target: courseTitle, needsClarification: false };
   }
 
   // ── fallthrough ──────────────────────────────────────────────────────────

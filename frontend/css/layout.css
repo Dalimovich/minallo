@@ -667,7 +667,7 @@ body.night .sb-night-thumb {
   overflow-x: hidden;
   padding: 28px;
   scrollbar-width: thin;
-  scrollbar-color: var(--glass-border) transparent;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
 /* When the editor is active the main-scroll must not add padding or scroll */
 #portal .main .main-scroll.editor-active {
@@ -675,14 +675,23 @@ body.night .sb-night-thumb {
   padding: 0;
 }
 #portal .main .main-scroll::-webkit-scrollbar {
-  width: 5px;
+  width: 10px;
 }
 #portal .main .main-scroll::-webkit-scrollbar-track {
   background: transparent;
+  margin: 4px 0;
 }
+/* Rounded "pill" thumb with breathing room (transparent border + padding-box
+   clip) so it matches the site's glass UI instead of the flat default bar. */
 #portal .main .main-scroll::-webkit-scrollbar-thumb {
-  background: var(--glass-border);
-  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+#portal .main .main-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+  background-clip: padding-box;
 }
 
 /* Portal sections */
