@@ -396,6 +396,9 @@
 .na-signin-row[hidden] {
   display: none !important;
 }
+#authModal.na-mode-signup .na-signin-row {
+  display: none !important;
+}
 
 .na-stay {
   display: inline-flex;

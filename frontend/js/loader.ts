@@ -269,7 +269,7 @@ interface LandingTranslation {
         document.head.appendChild(link);
       }
       ensureStylesheet('css/new-landing.css?v=17');
-      ensureStylesheet('css/auth.css?v=4');
+      ensureStylesheet('css/auth.css?v=5');
     })();
 
     _fetchTimeout('pages/new_landing.html', 10000)
@@ -410,7 +410,7 @@ interface LandingTranslation {
       'css/app-design-system.css?v=5',
       'css/layout.css?v=10',
       'css/document-rail.css?v=28',
-      'css/auth.css?v=4',
+      'css/auth.css?v=5',
       'css/onboarding.css?v=1',
       'views/toast/toast.css',
       'views/games/games.css',
