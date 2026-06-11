@@ -605,15 +605,21 @@ function _refreshFilesPanel(co: HTMLElement, course: LegacyCourse): void {
     // Document Understanding Layer: decorate ready file rows with the detected
     // source-type badge + low-confidence correction selector. Additive + async
     // so it never blocks or breaks the list render.
-    if (course.id) {
+    if (course.id && window._sbToken) {
       void (async () => {
         try {
-          const [{ listCourseDocuments }, { decorateFileTypeBadges }] = await Promise.all([
-            import('../../services/ai-service.js'),
-            import('./document-type-badge.js'),
-          ]);
-          const docs = await listCourseDocuments(course.id);
-          decorateFileTypeBadges(filesList, docs);
+          // Silent direct fetch on purpose: do NOT go through listCourseDocuments,
+          // which dispatches a `session-expired` event on 401. Badges are cosmetic
+          // and must never log the user out or add auth noise — swallow any error.
+          const res = await fetch(
+            (window.BACKEND_URL || '') + '/api/documents/list?courseId=' + encodeURIComponent(course.id),
+            { headers: { Authorization: 'Bearer ' + (window._sbToken || '') } }
+          );
+          if (!res.ok) return;
+          const data = (await res.json()) as { documents?: unknown[] };
+          if (!data.documents || !data.documents.length) return;
+          const { decorateFileTypeBadges } = await import('./document-type-badge.js');
+          decorateFileTypeBadges(filesList, data.documents as Parameters<typeof decorateFileTypeBadges>[1]);
         } catch {
           /* badges are optional — ignore */
         }

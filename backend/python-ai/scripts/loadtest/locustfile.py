@@ -29,8 +29,16 @@ absent, so the file is runnable as a pure liveness probe with no secrets.
 from __future__ import annotations
 
 import os
+import time
+import uuid
 
 from locust import HttpUser, between, task
+
+# Asking the SAME question makes every request after the first a cache hit
+# (answer cache keyed on question + version hash) — that measures the replay
+# path, not generation. Set LOADTEST_CACHE_BUST=1 to append a unique nonce so
+# each request misses the cache and forces real retrieval + LLM generation.
+_CACHE_BUST = os.environ.get("LOADTEST_CACHE_BUST", "").strip().lower() in ("1", "true", "yes")
 
 _INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")
 _JWT = os.environ.get("SUPA_JWT", "")
@@ -61,21 +69,38 @@ class AiUser(HttpUser):
         thread for its full duration, so this is what saturates first."""
         if not (_JWT and _COURSE_ID):
             return
+        question = "Give me a one-paragraph summary of the key concepts."
+        if _CACHE_BUST:
+            # Unique suffix → distinct cache key → real generation every call.
+            question = f"{question} (variation {uuid.uuid4().hex[:8]})"
+        # With stream=True, locust records time-to-headers (TTFB) — which for an
+        # SSE response arrives BEFORE generation. Time the full stream ourselves
+        # and overwrite the recorded response_time so the percentiles reflect
+        # real end-to-end answer latency, not TTFB.
+        start = time.perf_counter()
         with self.client.post(
             "/ask-stream",
             headers={"Authorization": f"Bearer {_JWT}", "Accept": "text/event-stream"},
             json={
                 "courseId": _COURSE_ID,
-                "question": "Give me a one-paragraph summary of the key concepts.",
+                "question": question,
             },
             name="POST /ask-stream",
             stream=True,
             catch_response=True,
         ) as resp:
-            # Drain the SSE body so we measure full stream duration, not just TTFB.
             try:
-                for _ in resp.iter_lines():
-                    pass
-                resp.success()
+                saw_error = False
+                for raw in resp.iter_lines():
+                    if raw and b'"error"' in raw:
+                        saw_error = True
+                resp.request_meta["response_time"] = (time.perf_counter() - start) * 1000
+                if resp.status_code != 200:
+                    resp.failure(f"HTTP {resp.status_code}")
+                elif saw_error:
+                    resp.failure("stream returned error frame")
+                else:
+                    resp.success()
             except Exception as exc:  # noqa: BLE001
+                resp.request_meta["response_time"] = (time.perf_counter() - start) * 1000
                 resp.failure(str(exc))

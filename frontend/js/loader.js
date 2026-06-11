@@ -549,7 +549,7 @@
                     examforge: ['js/utils/db-helpers.js', 'views/examforge/examforge.js'],
                     cheatsheet: ['js/utils/db-helpers.js', 'views/cheatsheet/cheatsheet.js'],
                     deeplearn: ['js/utils/db-helpers.js', 'views/deep-learn/deep-learn.js'],
-                    notesPanel: ['views/notes/notes-panel.js'],
+                    notesPanel: ['views/notes/notes-math.js', 'views/notes/notes-panel.js'],
                     // writer/merger register listeners for ss-editor-ready, so load
                     // them before editor.js fetches markup and dispatches the event.
                     editor: [
