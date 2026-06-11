@@ -85,12 +85,17 @@ export async function loadUserData(uid: string): Promise<void> {
     // return in <300ms, so 2s is plenty of slack but cuts the worst-case
     // fallback wait by 60%. Resolving null on timeout lets downstream code
     // use cached/default state instead of blocking the UI.
+    // Distinguish "query answered: no row" from "query never answered". The
+    // paywall decision must only ever act on a POSITIVE answer — a timed-out
+    // subscriptions query is not proof the user has no subscription.
+    const timedOut: Record<string, boolean> = {};
     const withTimeout = <T,>(p: Promise<T>, label: string): Promise<T | null> =>
       Promise.race<T | null>([
         p,
         new Promise<null>((resolve) =>
           setTimeout(() => {
             console.warn('[loadUserData] ' + label + ' timed out');
+            timedOut[label] = true;
             resolve(null);
           }, 2000)
         ),
@@ -157,6 +162,28 @@ export async function loadUserData(uid: string): Promise<void> {
     }
     if (window.applySubscription) window.applySubscription(sub || {});
 
+    // The trial paywall is a conversion surface, not the enforcement layer
+    // (the backend 402s AI usage regardless). Showing it requires a POSITIVE
+    // "this user has no subscription": a timed-out subscriptions query or a
+    // failed admin check is an unknown, and flashing the trial screen at a
+    // paying user on every flaky reload is worse than skipping it once for a
+    // free user. ss_pro_seen_<uid> remembers the last confirmed pro state so
+    // even a known-stale boot doesn't flash the gate; it's cleared the next
+    // time the subscription is positively absent/expired.
+    const subStatusKnown = !timedOut['subscriptions'];
+    const proSeenKey = 'ss_pro_seen_' + uid;
+    const decidePaywall = (isAdmin: boolean, adminKnown: boolean): void => {
+      let cachedPro = false;
+      try { cachedPro = localStorage.getItem(proSeenKey) === '1'; } catch { /* ignore */ }
+      try {
+        if (window._userIsPro || isAdmin) localStorage.setItem(proSeenKey, '1');
+        else if (subStatusKnown && adminKnown) localStorage.removeItem(proSeenKey);
+      } catch { /* ignore */ }
+      if (!window._userIsPro && !isAdmin && subStatusKnown && adminKnown && !cachedPro && window._showPaywall) {
+        setTimeout(window._showPaywall, 800);
+      }
+    };
+
     // Admin accounts bypass the subscription gate.
     checkAdminStatus()
       .then((data: unknown) => {
@@ -179,12 +206,12 @@ export async function loadUserData(uid: string): Promise<void> {
             });
           }
         }
-        if (!window._userIsPro && !isAdmin && window._showPaywall) {
-          setTimeout(window._showPaywall, 800);
-        }
+        // checkAdminStatus resolves null for non-admins (403) — that IS a
+        // known answer. Only a thrown fetch (network) lands in catch below.
+        decidePaywall(isAdmin, true);
       })
       .catch(() => {
-        if (!window._userIsPro && window._showPaywall) setTimeout(window._showPaywall, 800);
+        decidePaywall(false, false);
       });
 
     if (typeof window._dwLoadAndRender === 'function') window._dwLoadAndRender();
