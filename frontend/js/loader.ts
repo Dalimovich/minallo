@@ -556,16 +556,17 @@ interface LandingTranslation {
           function loadGames(): void {
             if (loaded) return;
             loaded = true;
-            GAMES_SCRIPTS.reduce<Promise<void>>(
-              (p, src) => p.then(() => new Promise<void>((res) => {
-                const s = document.createElement('script');
-                s.src = versioned(src);
-                s.onload = (): void => res();
-                s.onerror = (): void => { console.error('lazy-games failed:', src); res(); };
-                document.body.appendChild(s);
-              })),
-              Promise.resolve()
-            );
+            // async=false scripts download in PARALLEL but execute in
+            // insertion order, so games.js (the hub) still runs after every
+            // sub-module — readiness drops from 13 sequential round trips
+            // (the old promise chain) to roughly one.
+            GAMES_SCRIPTS.forEach((src) => {
+              const s = document.createElement('script');
+              s.src = versioned(src);
+              s.async = false;
+              s.onerror = (): void => { console.error('lazy-games failed:', src); };
+              document.body.appendChild(s);
+            });
           }
           function bindTrigger(): boolean {
             const btn = document.getElementById('psbGames');
@@ -582,6 +583,20 @@ interface LandingTranslation {
             });
             obs.observe(document.body, { childList: true, subtree: true });
           }
+
+          // The hub injects its markup into the empty #psec-games div only
+          // after every script has run, so a cold click stared at a blank
+          // page. Prewarm the bundle once the app is idle — by the time a
+          // user reaches for Games it's already executed and the page
+          // renders instantly.
+          function scheduleGamesIdlePrewarm(): void {
+            const schedule = window.requestIdleCallback
+              ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 9000 })
+              : (cb: () => void) => window.setTimeout(cb, 3500);
+            window.setTimeout(() => schedule(loadGames), 2600);
+          }
+          if (document.body.getAttribute('data-ss-ready') === '1') scheduleGamesIdlePrewarm();
+          else window.addEventListener('ss-ready', scheduleGamesIdlePrewarm, { once: true });
         })();
 
         (function setupPortalFeatureLazyLoad(): void {
@@ -768,6 +783,14 @@ interface LandingTranslation {
               void Promise.all([loadFeature('aipage'), loadFeature('chat')]).catch((err) => {
                 console.warn('[loader] chat prewarm failed', err);
               });
+              // Settings is html + js + css fetched on demand, so a cold
+              // click showed an empty section while the network round trips
+              // ran. Prewarm the whole route (same path the nav hover uses)
+              // so it renders instantly.
+              const prewarmRoute = (window as unknown as {
+                _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+              })._ssPrewarmPortalFeature;
+              if (typeof prewarmRoute === 'function') void prewarmRoute('settings');
             };
             const schedule = window.requestIdleCallback
               ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 4500 })
