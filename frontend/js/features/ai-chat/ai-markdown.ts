@@ -361,6 +361,86 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
   else document.addEventListener('DOMContentLoaded', start, { once: true });
 }
 
+// Memoised katex.renderToString results. The streaming panel re-renders the
+// whole in-progress answer every ~60ms; without this every formula above the
+// cursor would be re-typeset on every paint, which is the main CPU cost of
+// repainting long math-heavy answers. renderToString is pure, so a simple
+// bounded map is safe.
+const _katexHtmlCache = new Map<string, string>();
+const _KATEX_CACHE_MAX = 600;
+
+/**
+ * Split streamed markdown into a `stable` prefix that is safe to render and
+ * an unstable `tail` that still has an open math delimiter (`$$…`, `\[…`,
+ * `\(…`, single-`$` on the current line). Rendering the tail would flash raw
+ * LaTeX, so the streaming renderer holds it back until the delimiter closes.
+ *
+ * Code (fenced and inline) is skipped — `$` inside code is literal. A lone
+ * trailing `\` or `$` is also held back: it may be the first half of a
+ * delimiter split across two tokens.
+ */
+export function splitStableStreamText(input: string): { stable: string; tail: string } {
+  const n = input.length;
+  let inFence = false;
+  let inInlineCode = false;
+  let mathOpen: { idx: number; close: string } | null = null;
+  let lineStart = 0;
+  let i = 0;
+
+  while (i < n) {
+    const ch = input[i]!;
+    if (ch === '\n') {
+      inInlineCode = false;
+      // Single-$ inline math cannot span lines — an unclosed one is literal text.
+      if (mathOpen && mathOpen.close === '$') mathOpen = null;
+      lineStart = i + 1;
+      i++;
+      continue;
+    }
+    // ``` fence toggle (only at line start, outside math).
+    if (!inInlineCode && !mathOpen && input.startsWith('```', i) && /^\s*$/.test(input.slice(lineStart, i))) {
+      inFence = !inFence;
+      i += 3;
+      continue;
+    }
+    if (inFence) { i++; continue; }
+    if (!mathOpen && ch === '`') { inInlineCode = !inInlineCode; i++; continue; }
+    if (inInlineCode) { i++; continue; }
+
+    if (mathOpen) {
+      if (input.startsWith(mathOpen.close, i)) {
+        i += mathOpen.close.length;
+        mathOpen = null;
+      } else {
+        i++;
+      }
+      continue;
+    }
+
+    if (input.startsWith('$$', i)) { mathOpen = { idx: i, close: '$$' }; i += 2; continue; }
+    if (input.startsWith('\\[', i)) { mathOpen = { idx: i, close: '\\]' }; i += 2; continue; }
+    if (input.startsWith('\\(', i)) { mathOpen = { idx: i, close: '\\)' }; i += 2; continue; }
+    if (ch === '$') {
+      // Mirror the inline-math opener the renderer uses: `$` followed by a
+      // non-space. "$ 5" or "5 $" never opens math, so prices stay stable.
+      const next = input[i + 1];
+      if (next && next !== '$' && !/\s/.test(next)) mathOpen = { idx: i, close: '$' };
+      i++;
+      continue;
+    }
+    i++;
+  }
+
+  if (mathOpen) {
+    return { stable: input.slice(0, mathOpen.idx), tail: input.slice(mathOpen.idx) };
+  }
+  const last = input[n - 1];
+  if (last === '\\' || last === '$') {
+    return { stable: input.slice(0, n - 1), tail: last };
+  }
+  return { stable: input, tail: '' };
+}
+
 export function renderMarkdown(text: string): string {
   const lines = text.split('\n');
   const out: string[] = [];
@@ -379,8 +459,14 @@ export function renderMarkdown(text: string): string {
       scheduleKatex();
       return display ? '\\[' + src + '\\]' : '\\(' + src + '\\)';
     }
+    const cacheKey = (display ? 'D:' : 'I:') + src;
+    const cached = _katexHtmlCache.get(cacheKey);
+    if (cached !== undefined) return cached;
     try {
-      return window.katex.renderToString(src, { displayMode: display, throwOnError: false });
+      const html = window.katex.renderToString(src, { displayMode: display, throwOnError: false });
+      if (_katexHtmlCache.size >= _KATEX_CACHE_MAX) _katexHtmlCache.clear();
+      _katexHtmlCache.set(cacheKey, html);
+      return html;
     } catch {
       return display ? '\\[' + src + '\\]' : '\\(' + src + '\\)';
     }
@@ -1089,7 +1175,7 @@ export function renderMarkdown(text: string): string {
     // protects everything else from injecting raw HTML.
     const placeholders: string[] = [];
     const stash = (html: string): string => {
-      const key = ' PH' + placeholders.length + ' ';
+      const key = '@@MINALLO_PH_' + placeholders.length + '@@';
       placeholders.push(html);
       return key;
     };
@@ -1115,7 +1201,7 @@ export function renderMarkdown(text: string): string {
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
     // Restore the stashed math/code HTML.
-    s = s.replace(/ PH(\d+) /g, (_, idx: string) => placeholders[Number(idx)] ?? '');
+    s = s.replace(/@@MINALLO_PH_(\d+)@@/g, (_, idx: string) => placeholders[Number(idx)] ?? '');
     return s;
   }
 

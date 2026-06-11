@@ -124,15 +124,6 @@ function stripSourceMarkersLive(text: string): string {
     .replace(/\s+,/g, ',');
 }
 
-function takeSoftStreamChunk(text: string, target: number): string {
-  if (text.length <= target) return text;
-  const searchEnd = Math.min(text.length, target + 12);
-  for (let i = target; i < searchEnd; i++) {
-    if (/\s/.test(text[i] || '')) return text.slice(0, i + 1);
-  }
-  return text.slice(0, target);
-}
-
 function _sourceLine(s: SourceItem): string {
   let line = s.file_name || 'Unknown';
   if (s.pages) {
@@ -243,6 +234,17 @@ function _autoScroll(el: HTMLElement | null): void {
   if (!el) return;
   if (_userScrolledUp) return;
   el.scrollTop = el.scrollHeight;
+}
+
+// rAF-throttled variant for streaming paints: at most one scroll per frame,
+// and (via _autoScroll) never against a user who scrolled up.
+let _autoScrollRaf: number | null = null;
+function _scheduleAutoScroll(el: HTMLElement | null): void {
+  if (_autoScrollRaf != null) return;
+  _autoScrollRaf = window.requestAnimationFrame(() => {
+    _autoScrollRaf = null;
+    _autoScroll(el);
+  });
 }
 
 const MINALLO_APP_CONTEXT =
@@ -614,7 +616,6 @@ export function initAskAI(
     }
 
     const aiMsgs = document.getElementById('aiMsgs')!;
-    const aiPanel = document.getElementById('aiPanel');
     _ensureScrollTracker();
     _userScrolledUp = false;
     const _isProblemSolver = !!opts?.problemSolver;
@@ -910,21 +911,87 @@ export function initAskAI(
             let bubble: HTMLElement | null = null;
             let rawText = '';
             const metaPattern = /<!--META-->[\s\S]*?<!--\/META-->/g;
-            const _tokenQueue: string[] = [];
-            let _streamTextBuffer = '';
             let _renderTimer: number | null = null;
-            let _visibleStreamText = '';
+            let _lastPaintedStable: string | null = null;
             let _pendingMeta: SseDoneEvent | null | undefined = undefined;
-            const CFG = window.AI_TYPING || ({} as Partial<NonNullable<Window['AI_TYPING']>>);
-            const STREAM_CHARS_PER_FRAME = CFG.streamCharsPerFrame || 18;
+            // ChatGPT-style batching: paint at most once per interval instead
+            // of per token, and paint RENDERED markdown+math — never raw text.
+            const STREAM_RENDER_INTERVAL = 60;
 
             // Both `evt.done` and the reader's `result.done` can race to call
             // finalize() — guard so history/feedback bar aren't doubled.
             let _finalized = false;
             let _finalizeWaitingForThinking = false;
 
-            function updateBlockRender(): void {
+            // Load KaTeX from the FIRST token, not at finalize. renderMarkdown
+            // falls back to raw `\(...\)` delimiters while window.katex is
+            // missing — that fallback is exactly the raw-LaTeX flash + visible
+            // repaint this pipeline removes, so the first paint waits for KaTeX
+            // (capped, so a dead CDN can't hold the answer hostage).
+            let _katexSettled = !!window.katex;
+            let _katexResolve: (() => void) | null = null;
+            const _katexReady: Promise<void> = _katexSettled
+              ? Promise.resolve()
+              : new Promise((res) => { _katexResolve = res; });
+            if (!_katexSettled) {
+              const settleKatex = (): void => {
+                if (_katexSettled) return;
+                _katexSettled = true;
+                if (_katexResolve) _katexResolve();
+              };
+              const ensure = window._ssEnsureKatex ? window._ssEnsureKatex() : null;
+              if (ensure) {
+                ensure.then(settleKatex).catch(settleKatex);
+                window.setTimeout(settleKatex, 4000);
+              } else {
+                settleKatex();
+              }
+            }
+
+            /** Stable/tail splitter: prefer the versioned ai-markdown module's
+             *  implementation; fall back to a conservative display-math-only
+             *  check so an old cached bridge can't crash the stream. */
+            function splitStable(display: string): { stable: string; tail: string } {
+              if (typeof window._ssSplitStableStream === 'function') {
+                return window._ssSplitStableStream(display);
+              }
+              // Conservative fallback (bridge not ready): hold back from the
+              // last display-math opener that has no closer yet.
+              if ((display.split('$$').length - 1) % 2 === 1) {
+                const idx = display.lastIndexOf('$$');
+                return { stable: display.slice(0, idx), tail: display.slice(idx) };
+              }
+              const lastOpen = Math.max(display.lastIndexOf('\\['), display.lastIndexOf('\\('));
+              if (lastOpen !== -1) {
+                const closer = display.charAt(lastOpen + 1) === '[' ? '\\]' : '\\)';
+                if (display.indexOf(closer, lastOpen) === -1) {
+                  return { stable: display.slice(0, lastOpen), tail: display.slice(lastOpen) };
+                }
+              }
+              return { stable: display, tail: '' };
+            }
+
+            function updateWritingTail(tail: string): void {
               if (!bubble) return;
+              const existing = bubble.querySelector<HTMLElement>('.ai-writing-tail');
+              // Only show the indicator while actual math is in flight; a
+              // couple of held-back chars don't deserve a placeholder.
+              if (/\$\$|\\\[|\\\(|\$/.test(tail)) {
+                if (existing) {
+                  bubble.appendChild(existing); // keep it after the newest content
+                  return;
+                }
+                const el = document.createElement('span');
+                el.className = 'ai-writing-tail';
+                el.textContent = 'Writing equation…';
+                bubble.appendChild(el);
+              } else if (existing) {
+                existing.remove();
+              }
+            }
+
+            function paintStreaming(): void {
+              if (_finalized || !bubble) return;
               // Keep data-raw current with the accumulated stream so serializers
               // (per-file save in chat.js, per-course in ai-message-actions.ts)
               // can persist the in-progress text properly. Without this, if a
@@ -934,27 +1001,20 @@ export function initAskAI(
               // answer on reload.
               bubble.setAttribute('data-raw', rawText);
               const display = stripSourceMarkersLive(rawText.replace(metaPattern, '').trimEnd());
-
-              let streamSpan = bubble.querySelector<HTMLElement>('.ss-stream-live');
-              if (!streamSpan) {
-                streamSpan = document.createElement('span');
-                streamSpan.className = 'ss-stream-live';
-                streamSpan.style.whiteSpace = 'pre-wrap';
-                bubble.appendChild(streamSpan);
+              if (!display) return;
+              const split = splitStable(display);
+              if (split.stable !== _lastPaintedStable && split.stable) {
+                _lastPaintedStable = split.stable;
+                let renderSrc = split.stable;
+                // Auto-close an in-progress code fence so the partial block
+                // renders as code instead of swallowing the rest of the text.
+                if (((renderSrc.match(/```/g) || []).length) % 2 === 1) renderSrc += '\n```';
+                bubble.innerHTML = window.renderMarkdown
+                  ? window.renderMarkdown(renderSrc)
+                  : escapeHtml(renderSrc);
               }
-              if (!display.startsWith(_visibleStreamText)) {
-                streamSpan.textContent = '';
-                _visibleStreamText = '';
-              }
-              const delta = display.slice(_visibleStreamText.length);
-              if (delta) {
-                const chunk = document.createElement('span');
-                chunk.className = 'ss-stream-chunk';
-                chunk.textContent = delta;
-                streamSpan.appendChild(chunk);
-                _visibleStreamText = display;
-              }
-              _autoScroll(aiMsgs);
+              updateWritingTail(split.tail);
+              _scheduleAutoScroll(aiMsgs);
             }
 
             function fullRender(text: string, opts?: { keepMarkers?: boolean; sources?: SourceItem[] }): void {
@@ -977,48 +1037,23 @@ export function initAskAI(
               }
             }
 
-            function pullQueuedTokens(): void {
-              while (_tokenQueue.length) _streamTextBuffer += _tokenQueue.shift()!;
-            }
-
-            function scheduleDrain(): void {
-              if (_renderTimer == null) _renderTimer = window.requestAnimationFrame(drainQueue);
-            }
-
-            function drainQueue(): void {
-              _renderTimer = null;
-              pullQueuedTokens();
-              if (!_streamTextBuffer.length) {
+            function schedulePaint(): void {
+              if (_renderTimer != null || _finalized) return;
+              _renderTimer = window.setTimeout(() => {
                 _renderTimer = null;
-                if (_pendingMeta !== undefined) finalize(_pendingMeta);
-                return;
-              }
-              const frameBudget = document.hidden ? _streamTextBuffer.length : STREAM_CHARS_PER_FRAME;
-              const added = takeSoftStreamChunk(_streamTextBuffer, frameBudget);
-              _streamTextBuffer = _streamTextBuffer.slice(added.length);
-              rawText += added;
-              if (bubble) updateBlockRender();
-              if (_streamTextBuffer.length || _tokenQueue.length) {
-                scheduleDrain();
-              } else if (_pendingMeta !== undefined) {
-                finalize(_pendingMeta);
-              }
+                paintStreaming();
+              }, STREAM_RENDER_INTERVAL);
             }
 
             function queueToken(tok: string): void {
-              _tokenQueue.push(tok);
-              if (ansWrap) scheduleDrain();
+              rawText += tok;
+              if (ansWrap) schedulePaint();
               else beginStreamingWhenReady();
             }
 
             window._activeStreamRender = function (): void {
-              if (_renderTimer != null) { cancelAnimationFrame(_renderTimer); _renderTimer = null; }
-              while (_tokenQueue.length) rawText += _tokenQueue.shift()!;
-              if (_streamTextBuffer) {
-                rawText += _streamTextBuffer;
-                _streamTextBuffer = '';
-              }
-              _visibleStreamText = '';
+              if (_renderTimer != null) { window.clearTimeout(_renderTimer); _renderTimer = null; }
+              _lastPaintedStable = null;
               fullRender(rawText);
             };
 
@@ -1030,7 +1065,7 @@ export function initAskAI(
               ansWrap.className = 'ai-msg-wrap';
               ansWrap.innerHTML =
                 '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-                '<div class="msg-body"><div class="ai-bubble bot" style="min-height:20px"></div></div>';
+                '<div class="msg-body"><div class="ai-bubble bot ai-bubble-streaming" style="min-height:20px"></div></div>';
               aiMsgs.appendChild(ansWrap);
               _autoScroll(aiMsgs);
               bubble = ansWrap.querySelector<HTMLElement>('.ai-bubble.bot');
@@ -1044,13 +1079,19 @@ export function initAskAI(
             function beginStreamingWhenReady(): void {
               if (ansWrap || _streamStartScheduled) return;
               _streamStartScheduled = true;
-              const ready = thinking ? thinking.waitMinimum() : Promise.resolve();
+              // Hold the thinking dots until BOTH the minimum dwell time and
+              // KaTeX are ready — the first visible paint must already contain
+              // rendered math, never raw LaTeX that gets repainted later.
+              const ready = Promise.all([
+                thinking ? thinking.waitMinimum() : Promise.resolve(),
+                _katexReady,
+              ]);
               ready.then(() => {
                 _streamStartScheduled = false;
                 if (ansWrap || _finalized) return;
-                if (!_tokenQueue.length && !_streamTextBuffer.length) return;
+                if (!rawText) return;
                 ensureBubble();
-                scheduleDrain();
+                paintStreaming();
               }).catch(() => {
                 _streamStartScheduled = false;
               });
@@ -1166,7 +1207,7 @@ export function initAskAI(
                         }
                         if (evt.done) {
                           _pendingMeta = evt as SseDoneEvent;
-                          if (!_renderTimer && !_tokenQueue.length && !_streamTextBuffer.length) finalize(_pendingMeta);
+                          finalize(_pendingMeta);
                         }
                         if (evt.error) fallbackToRag();
                       } catch { /* ignore malformed line */ }
@@ -1235,26 +1276,17 @@ export function initAskAI(
               if (!ansWrap && thinking && !_finalizeWaitingForThinking) {
                 _finalizeWaitingForThinking = true;
                 thinking.waitMinimum().then(() => {
-                  if (_tokenQueue.length || _streamTextBuffer.length) ensureBubble();
+                  if (rawText) ensureBubble();
                   finalize(meta);
                 }).catch(() => finalize(meta));
                 return;
               }
               _finalized = true;
-              // Flush anything the throttled reveal (STREAM_CHARS_PER_FRAME)
-              // hasn't drained into rawText yet. On a fast stream the body
-              // closes and read() calls finalize() while most tokens are still
-              // sitting in _tokenQueue/_streamTextBuffer — without this flush
-              // we'd persist only the slowly-revealed prefix (data-raw + saved
-              // history get truncated mid-answer) even though the bubble keeps
-              // revealing the rest afterward and LOOKS complete on screen.
-              pullQueuedTokens();
-              if (_streamTextBuffer) {
-                rawText += _streamTextBuffer;
-                _streamTextBuffer = '';
-              }
+              // rawText always holds the FULL raw markdown received (tokens are
+              // appended on arrival, the 60ms timer only controls painting), so
+              // there is nothing to flush — just stop any pending paint.
               if (_renderTimer != null) {
-                cancelAnimationFrame(_renderTimer);
+                window.clearTimeout(_renderTimer);
                 _renderTimer = null;
               }
               window._activeStreamRender = null;
@@ -1295,6 +1327,7 @@ export function initAskAI(
               if (bubble) {
                 bubble.setAttribute('data-raw', fullAnswer);
                 bubble.removeAttribute('data-streaming');
+                bubble.classList.remove('ai-bubble-streaming');
               }
 
               fullRender(displayText, { keepMarkers: true, sources });
@@ -1354,16 +1387,12 @@ export function initAskAI(
           };
           let _controlsDeferred = false;
           if (streamBubble) {
-            const _typingSpan = streamBubble.querySelector('.ss-stream-live, .ss-typing-span');
+            const _typingSpan = streamBubble.querySelector('.ai-writing-tail, .ss-stream-live, .ss-typing-span');
             if (_typingSpan) _typingSpan.remove();
             if (window._ssEnsureKatex) {
               _controlsDeferred = true;
               window._ssEnsureKatex().then(() => {
-                if (window._renderMath && streamBubble) window._renderMath(streamBubble);
                 if (window._renderCode && streamBubble) window._renderCode(streamBubble);
-                streamBubble.querySelectorAll<HTMLElement>('.ss-rendered-block').forEach((sd) => {
-                  sd.style.opacity = '1';
-                });
                 _finishStreamControls();
               }).catch(() => { _finishStreamControls(); });
             }
@@ -1428,67 +1457,42 @@ export function initAskAI(
           const bubble = ansWrap.querySelector<HTMLElement>('.ai-bubble.bot');
           const meta = ansWrap.querySelector<HTMLElement>('.msg-meta');
           if (!bubble || !meta) return;
-          const tokens = displayTextLocal.match(/\S+\s*/g) || [];
-          let idx = 0;
-          let displayed = '';
-          const _fbCfg = window.AI_TYPING || ({} as Partial<NonNullable<Window['AI_TYPING']>>);
-          const WORDS_PER_FRAME = _fbCfg.fallbackWordsPerFrame || 1;
-          const FRAME_INTERVAL = _fbCfg.fallbackFrameInterval || 38;
 
-          function frame(): void {
-            if (state.generationStopped || myGenId !== state.currentGenId) {
-              bubble!.innerHTML = window.renderMarkdown
-                ? window.renderMarkdown(displayed)
-                : displayed;
-              meta!.style.display = 'flex';
-              const eb = ansWrap.querySelector('.ai-action-bar');
-              if (!eb && displayed.trim() && window._aiResponseActions) {
-                const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
-                const actions = window._aiResponseActions(displayed, 'panel') as Node | null;
-                if (mb && actions) mb.appendChild(actions);
-              }
-              return;
+          // One stable paint after KaTeX is ready: markdown + math render
+          // together — no raw-text pass, no per-word typewriter, no visible
+          // repaint. (The old word-by-word loop re-rendered the whole bubble
+          // every 24ms AND left LaTeX raw until a final _renderMath pass.)
+          const finishFallbackRender = (): void => {
+            bubble.innerHTML = window.renderMarkdown
+              ? window.renderMarkdown(displayTextLocal)
+              : escapeHtml(displayTextLocal);
+            bubble.classList.add('ai-bubble-soft-in');
+            appendSourcesDropdown(bubble, (d._ragData as RagAskResponse | undefined)?.sources);
+            if (window._renderMath) window._renderMath(bubble); // mops up only if KaTeX never loaded
+            if (window._renderCode) window._renderCode(bubble);
+            meta.style.display = 'flex';
+            if (!ansWrap.querySelector('.ai-action-bar') && window._aiResponseActions) {
+              const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
+              const actions = window._aiResponseActions(displayTextLocal, 'panel') as Node | null;
+              if (mb && actions) mb.appendChild(actions);
             }
-            if (idx >= tokens.length) {
-              bubble!.innerHTML = window.renderMarkdown ? window.renderMarkdown(displayTextLocal) : escapeHtml(displayTextLocal);
-              appendSourcesDropdown(bubble, (d._ragData as RagAskResponse | undefined)?.sources);
-              if (window._renderMath) window._renderMath(bubble);
-              if (window._renderCode) window._renderCode(bubble);
-              meta!.style.display = 'flex';
-              if (!ansWrap.querySelector('.ai-action-bar') && window._aiResponseActions) {
-                const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
-                const actions = window._aiResponseActions(displayTextLocal, 'panel') as Node | null;
-                if (mb && actions) mb.appendChild(actions);
-              }
-              if (_ragMeta && !ansWrap.querySelector('.rag-feedback-bar')) {
-                const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
-                if (mb) mb.appendChild(_buildRagFeedbackBar(_ragMeta));
-              }
-              const _sb1 = document.getElementById('aiSend') as HTMLButtonElement | null;
-              if (_sb1) _sb1.disabled = false;
-              const _st1 = document.getElementById('stopBtn');
-              if (_st1) _st1.style.display = 'none';
-              if (window.spawnConfetti) window.spawnConfetti();
-              state.activeTypeTimer = null;
-              return;
+            if (_ragMeta && !ansWrap.querySelector('.rag-feedback-bar')) {
+              const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
+              if (mb) mb.appendChild(_buildRagFeedbackBar(_ragMeta));
             }
-            const appEl = document.getElementById('app');
-            const panelHidden =
-              document.hidden ||
-              !!(appEl && appEl.style.display === 'none') ||
-              !aiPanel!.classList.contains('visible');
-            const batch = panelHidden ? tokens.length : WORDS_PER_FRAME;
-            for (let w = 0; w < batch && idx < tokens.length; w++) displayed += tokens[idx++];
-            bubble!.innerHTML =
-              (window.renderMarkdown ? window.renderMarkdown(displayed) : escapeHtml(displayed)) +
-              (idx < tokens.length ? '<span class="stream-cursor">▋</span>' : '');
-            if (!panelHidden && aiMsgs.scrollHeight - aiMsgs.scrollTop - aiMsgs.clientHeight < 80) {
-              aiMsgs.scrollTop = aiMsgs.scrollHeight;
-            }
-            state.activeTypeTimer = setTimeout(frame, panelHidden ? 0 : FRAME_INTERVAL);
+            const _sb1 = document.getElementById('aiSend') as HTMLButtonElement | null;
+            if (_sb1) _sb1.disabled = false;
+            const _st1 = document.getElementById('stopBtn');
+            if (_st1) _st1.style.display = 'none';
+            if (window.spawnConfetti) window.spawnConfetti();
+            state.activeTypeTimer = null;
+            _autoScroll(aiMsgs);
+          };
+          if (window._ssEnsureKatex) {
+            window._ssEnsureKatex().then(finishFallbackRender).catch(finishFallbackRender);
+          } else {
+            finishFallbackRender();
           }
-
-          state.activeTypeTimer = setTimeout(frame, FRAME_INTERVAL);
         }, 60);
       })
       .catch((e: unknown) => {

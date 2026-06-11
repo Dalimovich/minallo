@@ -98,6 +98,17 @@ function thinkingHtml(text: string, surface: 'panel' | 'chatbot', compact: boole
     'ai-thinking-card' +
     (surface === 'chatbot' ? ' ai-thinking-card--chatbot' : '') +
     (compact ? ' ai-thinking-card--compact' : '');
+  if (surface === 'panel') {
+    // Side panel: subtle ChatGPT-style dots only — no status copy, no orb,
+    // no tool names. Status text still lands in a screen-reader-only span
+    // so assistive tech keeps getting the progress updates.
+    return (
+      '<div class="' + classes + ' ai-thinking-card--dots" aria-live="polite" role="status">' +
+      '<span class="ai-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+      '<span class="ai-thinking-sr">' + escapeHtml(displayThinkingText(text)) + '</span>' +
+      '</div>'
+    );
+  }
   return (
     '<div class="' + classes + '" aria-live="polite">' +
     '<span class="ai-thinking-orb" aria-hidden="true">' +
@@ -153,7 +164,7 @@ export function createAIThinkingStatus(options: CreateThinkingStatusOptions): AI
     if (removed) return;
     if (Date.now() < manualUntil) return;
     index = (index + 1) % messages.length;
-    const text = wrap.querySelector<HTMLElement>('.ai-thinking-text');
+    const text = wrap.querySelector<HTMLElement>('.ai-thinking-text, .ai-thinking-sr');
     if (text) text.textContent = messages[index] || FIRST_THINKING_MESSAGE;
   }, rotateMs);
 
@@ -166,7 +177,7 @@ export function createAIThinkingStatus(options: CreateThinkingStatusOptions): AI
   return {
     el: wrap,
     set(text: string): void {
-      const node = wrap.querySelector<HTMLElement>('.ai-thinking-text');
+      const node = wrap.querySelector<HTMLElement>('.ai-thinking-text, .ai-thinking-sr');
       if (node && text) {
         node.textContent = displayThinkingText(text);
         manualUntil = Date.now() + Math.max(rotateMs + 450, 1200);

@@ -18,8 +18,9 @@ export async function initAiRenderBridge(options?: RenderBridgeOptions): Promise
   // only way the deployed fixes actually reach them.
   const _v = window.MinalloConfig?.assetVersion;
   const _mdUrl = './ai-markdown.js' + (_v ? '?v=' + encodeURIComponent(String(_v)) : '');
-  const { renderMarkdown } = (await import(/* @vite-ignore */ _mdUrl)) as {
+  const { renderMarkdown, splitStableStreamText } = (await import(/* @vite-ignore */ _mdUrl)) as {
     renderMarkdown: RenderMarkdownFn;
+    splitStableStreamText?: (input: string) => { stable: string; tail: string };
   };
 
   function renderMathIn(el: Element): void {
@@ -130,6 +131,9 @@ export async function initAiRenderBridge(options?: RenderBridgeOptions): Promise
 
   window._ssScheduleKatexRender = scheduleKatexRender;
   window.renderMarkdown = renderMarkdown;
+  if (typeof splitStableStreamText === 'function') {
+    window._ssSplitStableStream = splitStableStreamText;
+  }
   window._renderMath = renderMath;
   window._renderCode = highlightCode;
   (window as unknown as { _minalloRenderMarkdownReady?: boolean })._minalloRenderMarkdownReady = true;

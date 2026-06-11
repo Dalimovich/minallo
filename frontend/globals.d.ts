@@ -204,6 +204,9 @@ declare global {
     _ssEnsureKatex?: () => Promise<unknown>;
     _ssScheduleKatexRender?: () => void;
     renderMarkdown?: (text: string) => string;
+    /** Streaming-safe splitter (set by ai-render-bridge from the versioned
+     *  ai-markdown module): stable markdown prefix vs unclosed-math tail. */
+    _ssSplitStableStream?: (input: string) => { stable: string; tail: string };
     _renderMath?: (el: Element | null) => void;
     _renderCode?: (el: Element | null) => void;
     _ensureAiRenderBridge?: () => Promise<unknown>;
