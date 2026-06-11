@@ -1207,12 +1207,19 @@ async function handleIntentRoute(
   }
 
   if (route.intent === 'daily_mission') {
-    const skillStatus = showIntentSkillLoading(bubble, thinking, 'daily_mission');
+    thinking?.remove(true);
+    const missionLoading = showTodoMissionPlannerLoading(bubble);
     const targetCourseId = route.target.courseId;
-    let data = await getDailyMission(targetCourseId);
-    if (!data.hasPlan) data = await generateDailyMission(targetCourseId);
+    let data: Awaited<ReturnType<typeof getDailyMission>>;
+    try {
+      data = await getDailyMission(targetCourseId);
+      if (!data.hasPlan) data = await generateDailyMission(targetCourseId);
+    } catch (err) {
+      cancelTodoMissionPlannerLoading(missionLoading);
+      throw err;
+    }
     const text = renderDailyMissionText(data);
-    await finishIntentSkillLoading(skillStatus, thinking);
+    await finishTodoMissionPlannerLoading(missionLoading);
     if (bubble) {
       bubble.innerHTML = '';
       const mod = await import('../daily-mission/daily-mission-ui.js');
@@ -1509,122 +1516,108 @@ async function handleIntentRoute(
   return null;
 }
 
-type RoutedSkillIntent = 'daily_mission' | 'summary' | 'cheatsheet';
-
-type RoutedSkillCopy = {
-  title: string;
-  chip: string;
-  thinking: string;
-  steps: string[];
-};
-
-type SkillLoadingElement = HTMLElement & {
-  _skillLoadingTimer?: number;
-};
-
-const ROUTED_SKILL_UI: Record<RoutedSkillIntent, RoutedSkillCopy> = {
-  daily_mission: {
-    title: 'Planning Today',
-    chip: 'dailyMissionPlanning',
-    thinking: 'Building your Daily Mission',
-    steps: ['Reading course context', 'Checking valid tasks', 'Ranking today\'s mission', 'Preparing actions']
-  },
-  summary: {
-    title: 'Generating a Summary',
-    chip: 'summaryGeneration',
-    thinking: 'Generating a summary',
-    steps: ['Finding source context', 'Extracting key points', 'Grouping ideas', 'Writing summary']
-  },
-  cheatsheet: {
-    title: 'Generating a Cheatsheet',
-    chip: 'cheatsheetGeneration',
-    thinking: 'Generating a cheatsheet',
-    steps: ['Finding formulas and facts', 'Compressing concepts', 'Ordering sections', 'Building cheatsheet']
-  }
-};
-
-function showIntentSkillLoading(
-  bubble: HTMLElement | null,
-  thinking: AIThinkingStatus | null,
-  intent: RoutedSkillIntent
-): HTMLElement | null {
+function showTodoMissionPlannerLoading(bubble: HTMLElement | null): HTMLElement | null {
   if (!bubble) return null;
-  const copy = ROUTED_SKILL_UI[intent];
-  thinking?.set(copy.thinking);
-
-  const el = document.createElement('div') as SkillLoadingElement;
-  el.className = 'ncb-skill-loading';
+  const el = document.createElement('section');
+  el.className = 'todoMissionLoading';
   el.setAttribute('aria-live', 'polite');
-  el.style.setProperty('--ncb-skill-progress', '12%');
   el.innerHTML =
-    '<div class="ncb-skill-loading-line">' +
-      '<span class="ncb-skill-loading-word">Loading</span>' +
-      '<span class="ncb-skill-loading-skill">skills</span>' +
-      '<span class="ncb-skill-loading-check" aria-hidden="true">✓</span>' +
-    '</div>' +
-    '<div class="ncb-skill-chip">' + escapeHtml(copy.chip) + '</div>' +
-    '<div class="ncb-skill-thinking-note">' +
-      '<strong>' + escapeHtml(copy.title) + '</strong>' +
-      '<span>I am preparing the right course tool and checking the available context before showing the result.</span>' +
-    '</div>';
-
-  el.innerHTML =
-    '<div class="ncb-skill-loading-top">' +
-      '<div class="ncb-skill-loading-copy">' +
-        '<div class="ncb-skill-loading-line">' +
-          '<span class="ncb-skill-loading-word">Loading</span>' +
-          '<span class="ncb-skill-loading-skill">skills</span>' +
-          '<span class="ncb-skill-loading-check" aria-hidden="true">&#10003;</span>' +
+    '<header class="todoMissionHeader">' +
+      '<div class="todoMissionLogo" aria-hidden="true">' +
+        '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M9.5 4.5 4 7.2l5.5 2.7L15 7.2 9.5 4.5Z"/>' +
+          '<path d="M4 11.2l5.5 2.7 5.5-2.7"/>' +
+          '<path d="M4 15.2l5.5 2.7 5.5-2.7"/>' +
+          '<path d="M17 7.5h3"/><path d="M18.5 6v3"/>' +
+        '</svg>' +
+      '</div>' +
+      '<div>' +
+        '<div class="todoMissionBrand">Minallo AI</div>' +
+        '<div class="todoMissionContext">Building a focused study plan from your course context</div>' +
+      '</div>' +
+    '</header>' +
+    '<div class="todoMissionContent">' +
+      '<div class="todoMissionLeft">' +
+        '<div class="todoMissionBadge"><span></span>Daily mission planner</div>' +
+        '<h2>Planning your study day</h2>' +
+        '<p>Minallo is turning your open tasks, course deadlines, and study goals into a clear to-do mission for today.</p>' +
+        '<div class="todoMissionSteps">' +
+          todoMissionStepHtml('📚', 'Reading your study context', 'Courses, folders, deadlines, and unfinished work', 'SCAN') +
+          todoMissionStepHtml('🎯', 'Choosing today’s priorities', 'Important tasks move to the top of the plan', 'SORT') +
+          todoMissionStepHtml('⏱', 'Sequencing focus blocks', 'Tasks are arranged into realistic study sessions', 'PLAN') +
+          todoMissionStepHtml('✅', 'Preparing your checklist', 'Your daily mission is almost ready to start', 'READY') +
         '</div>' +
-        '<button type="button" class="ncb-skill-chip" aria-expanded="true">' + escapeHtml(copy.chip) + '</button>' +
+      '</div>' +
+      '<div class="todoMissionBoardWrap" aria-hidden="true">' +
+        '<div class="todoMissionOrbit"></div>' +
+        '<span class="todoMissionChip chipDeadline">Deadline</span>' +
+        '<span class="todoMissionChip chipFocus">Focus block</span>' +
+        '<span class="todoMissionChip chipQuick">Quick win</span>' +
+        '<span class="todoMissionChip chipDeep">Deep work</span>' +
+        '<div class="todoMissionBoard">' +
+          '<div class="todoMissionBoardHead">' +
+            '<div class="todoMissionBoardTitle">' +
+              '<div class="todoMissionCalendar">11</div>' +
+              '<div><strong>Today’s Mission</strong><span>4 tasks planned</span></div>' +
+            '</div>' +
+            '<div class="todoMissionSortedPill">AI sorted</div>' +
+          '</div>' +
+          '<div class="todoMissionTimeline">' +
+            todoMissionTaskHtml('1', 'Review lecture notes', '25 min · Mechanics', 'High', true) +
+            todoMissionTaskHtml('2', 'Generate quiz practice', '15 min · Exam prep', 'Mid', false) +
+            todoMissionTaskHtml('3', 'Fix weak concepts', '35 min · Deep focus', 'High', true) +
+            todoMissionTaskHtml('✓', 'Save final checklist', 'Ready in Study Lounge', 'Done', false) +
+          '</div>' +
+        '</div>' +
       '</div>' +
     '</div>' +
-    '<div class="ncb-skill-progress" aria-hidden="true"><span></span></div>' +
-    '<div class="ncb-skill-thinking-note">' +
-      '<strong>' + escapeHtml(copy.title) + '</strong>' +
-      '<span>I am preparing the right course tool and checking the available context before showing the result.</span>' +
-    '</div>' +
-    '<div class="ncb-skill-live-note">Live AI thinking appears below this tool.</div>';
+    '<div class="todoMissionProgress" aria-hidden="true"><span></span></div>';
 
-  const chip = el.querySelector<HTMLButtonElement>('.ncb-skill-chip');
-  let activeStep = 0;
-  chip?.addEventListener('click', () => {
-    const collapsed = el.classList.toggle('ncb-skill-loading--collapsed');
-    chip.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-  });
-  el._skillLoadingTimer = window.setInterval(() => {
-    activeStep = Math.min(activeStep + 1, copy.steps.length - 1);
-    const pct = Math.min(92, 12 + ((activeStep + 1) / Math.max(copy.steps.length, 1)) * 72);
-    el.style.setProperty('--ncb-skill-progress', pct.toFixed(0) + '%');
-    const stepText = copy.steps[activeStep];
-    if (stepText) thinking?.set(stepText);
-  }, 760);
-
-  if (thinking?.el && thinking.el.parentElement === bubble) {
-    bubble.insertBefore(el, thinking.el);
-  } else {
-    bubble.prepend(el);
-  }
+  bubble.prepend(el);
   return el;
 }
 
-async function finishIntentSkillLoading(
-  skillStatus: HTMLElement | null,
-  thinking: AIThinkingStatus | null
-): Promise<void> {
-  if (thinking) await thinking.waitMinimum();
-  if (skillStatus) {
-    const liveSkillStatus = skillStatus as SkillLoadingElement;
-    if (liveSkillStatus._skillLoadingTimer) {
-      window.clearInterval(liveSkillStatus._skillLoadingTimer);
-      liveSkillStatus._skillLoadingTimer = undefined;
-    }
-    skillStatus.style.setProperty('--ncb-skill-progress', '100%');
-    skillStatus.classList.add('ncb-skill-loading--done');
-    await new Promise((resolve) => window.setTimeout(resolve, 260));
-    skillStatus.remove();
-  }
-  thinking?.remove(true);
+function todoMissionStepHtml(icon: string, title: string, description: string, status: string): string {
+  return (
+    '<div class="todoMissionStep">' +
+      '<div class="todoMissionStepIcon" aria-hidden="true">' + icon + '</div>' +
+      '<div class="todoMissionStepCopy">' +
+        '<strong>' + escapeHtml(title) + '</strong>' +
+        '<span>' + escapeHtml(description) + '</span>' +
+      '</div>' +
+      '<em>' + escapeHtml(status) + '</em>' +
+    '</div>'
+  );
+}
+
+function todoMissionTaskHtml(
+  number: string,
+  title: string,
+  meta: string,
+  priority: string,
+  high: boolean
+): string {
+  return (
+    '<div class="todoMissionTask">' +
+      '<div class="todoMissionTaskNo">' + escapeHtml(number) + '</div>' +
+      '<div class="todoMissionTaskCopy">' +
+        '<strong>' + escapeHtml(title) + '</strong>' +
+        '<span>' + escapeHtml(meta) + '</span>' +
+      '</div>' +
+      '<em class="' + (high ? 'isHigh' : '') + '">' + escapeHtml(priority) + '</em>' +
+    '</div>'
+  );
+}
+
+async function finishTodoMissionPlannerLoading(loader: HTMLElement | null): Promise<void> {
+  if (!loader) return;
+  loader.classList.add('todoMissionLoading--done');
+  await new Promise((resolve) => window.setTimeout(resolve, 220));
+  loader.remove();
+}
+
+function cancelTodoMissionPlannerLoading(loader: HTMLElement | null): void {
+  if (loader) loader.remove();
 }
 
 // ── Minallo Study Builder Canvas ──────────────────────────────────────────────

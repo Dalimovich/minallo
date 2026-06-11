@@ -1561,6 +1561,592 @@ body:not(.night) .ncb-bubble-body .ai-thinking-card {
   color: rgba(71, 85, 105, 0.84);
 }
 
+/* Daily Mission Planner loading state: purpose-built To-do animation. */
+.todoMissionLoading {
+  --todo-bg: #081222;
+  --todo-panel: #0e1a2d;
+  --todo-panel-soft: #12223a;
+  --todo-text: #f4f8ff;
+  --todo-muted: #a9b7cb;
+  --todo-soft: #7f8ca2;
+  --todo-blue: #65a8ff;
+  --todo-cyan: #42d7e7;
+  --todo-green: #59e6b5;
+  --todo-yellow: #ffd166;
+  --todo-red: #ff8da1;
+  --todo-border: rgba(126, 172, 255, 0.18);
+
+  position: relative;
+  overflow: hidden;
+  width: min(760px, 100%);
+  margin: 4px 0 14px;
+  padding: 18px;
+  border: 1px solid var(--todo-border);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 82% 12%, rgba(66, 215, 231, 0.15), transparent 31%),
+    radial-gradient(circle at 10% 92%, rgba(89, 230, 181, 0.10), transparent 36%),
+    linear-gradient(145deg, rgba(8, 18, 34, 0.98), rgba(14, 26, 45, 0.96));
+  box-shadow:
+    0 24px 70px rgba(2, 8, 23, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: var(--todo-text);
+  animation: ncb-stream-reveal 180ms ease-out both;
+}
+
+.todoMissionLoading::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgba(126, 172, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(126, 172, 255, 0.04) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(135deg, rgba(0, 0, 0, 0.85), transparent 68%);
+}
+
+.todoMissionHeader,
+.todoMissionContent,
+.todoMissionProgress {
+  position: relative;
+  z-index: 1;
+}
+
+.todoMissionHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.todoMissionLogo {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(101, 168, 255, 0.34);
+  background: linear-gradient(145deg, rgba(101, 168, 255, 0.22), rgba(66, 215, 231, 0.12));
+  color: var(--todo-cyan);
+  box-shadow: 0 12px 28px rgba(66, 215, 231, 0.13);
+}
+
+.todoMissionBrand {
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: var(--todo-text);
+}
+
+.todoMissionContext {
+  margin-top: 2px;
+  color: var(--todo-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.todoMissionContent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.todoMissionLeft {
+  min-width: 0;
+}
+
+.todoMissionBadge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(66, 215, 231, 0.22);
+  background: rgba(66, 215, 231, 0.075);
+  color: #bdf9ff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.todoMissionBadge span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--todo-green);
+  box-shadow: 0 0 14px rgba(89, 230, 181, 0.72);
+}
+
+.todoMissionLeft h2 {
+  margin: 0;
+  color: var(--todo-text);
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.todoMissionLeft p {
+  margin: 10px 0 16px;
+  max-width: 34rem;
+  color: var(--todo-muted);
+  font-size: 0.91rem;
+  line-height: 1.58;
+}
+
+.todoMissionSteps {
+  display: grid;
+  gap: 9px;
+}
+
+.todoMissionStep {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(126, 172, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  opacity: 0.48;
+  transform: translateY(6px);
+  animation: todoStepActive 9s infinite;
+}
+
+.todoMissionStep:nth-child(2) {
+  animation-delay: 1.6s;
+}
+
+.todoMissionStep:nth-child(3) {
+  animation-delay: 3.2s;
+}
+
+.todoMissionStep:nth-child(4) {
+  animation-delay: 4.8s;
+}
+
+.todoMissionStepIcon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(101, 168, 255, 0.13);
+  font-size: 0.95rem;
+}
+
+.todoMissionStepCopy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.todoMissionStepCopy strong {
+  color: var(--todo-text);
+  font-size: 0.83rem;
+  font-weight: 900;
+}
+
+.todoMissionStepCopy span {
+  color: var(--todo-soft);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.todoMissionStep em {
+  color: var(--todo-cyan);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.todoMissionBoardWrap {
+  position: relative;
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+}
+
+.todoMissionOrbit {
+  position: absolute;
+  width: 248px;
+  height: 248px;
+  border-radius: 50%;
+  border: 1px dashed rgba(66, 215, 231, 0.2);
+  animation: todoSpin 9s linear infinite;
+}
+
+.todoMissionOrbit::after {
+  content: "";
+  position: absolute;
+  top: 24px;
+  right: 32px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--todo-green);
+  box-shadow: 0 0 16px rgba(89, 230, 181, 0.75);
+}
+
+.todoMissionChip {
+  position: absolute;
+  z-index: 3;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 172, 255, 0.18);
+  background: rgba(18, 34, 58, 0.86);
+  color: var(--todo-muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(2, 8, 23, 0.18);
+  animation: todoChipPulse 7s ease-in-out infinite;
+}
+
+.chipDeadline {
+  top: 18px;
+  left: 8px;
+  color: var(--todo-yellow);
+}
+
+.chipFocus {
+  top: 34px;
+  right: 0;
+  animation-delay: 1.4s;
+}
+
+.chipQuick {
+  bottom: 42px;
+  left: 0;
+  color: var(--todo-green);
+  animation-delay: 2.8s;
+}
+
+.chipDeep {
+  right: 12px;
+  bottom: 20px;
+  color: var(--todo-cyan);
+  animation-delay: 4.2s;
+}
+
+.todoMissionBoard {
+  position: relative;
+  z-index: 2;
+  width: min(330px, 100%);
+  padding: 14px;
+  border: 1px solid rgba(126, 172, 255, 0.24);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(18, 34, 58, 0.94), rgba(8, 18, 34, 0.96)),
+    rgba(14, 26, 45, 0.92);
+  box-shadow:
+    0 28px 70px rgba(2, 8, 23, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: todoBoardFloat 4.3s ease-in-out infinite;
+}
+
+.todoMissionBoardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.todoMissionBoardTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.todoMissionCalendar {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(101, 168, 255, 0.2), rgba(66, 215, 231, 0.11));
+  color: var(--todo-text);
+  font-size: 1rem;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(126, 172, 255, 0.18);
+}
+
+.todoMissionBoardTitle strong,
+.todoMissionBoardTitle span {
+  display: block;
+}
+
+.todoMissionBoardTitle strong {
+  color: var(--todo-text);
+  font-size: 0.95rem;
+}
+
+.todoMissionBoardTitle span {
+  margin-top: 2px;
+  color: var(--todo-muted);
+  font-size: 0.74rem;
+}
+
+.todoMissionSortedPill {
+  flex: none;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(89, 230, 181, 0.10);
+  color: var(--todo-green);
+  font-size: 0.66rem;
+  font-weight: 900;
+}
+
+.todoMissionTimeline {
+  display: grid;
+  gap: 9px;
+}
+
+.todoMissionTask {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(126, 172, 255, 0.13);
+  background: rgba(255, 255, 255, 0.045);
+  opacity: 0;
+  transform: translateX(34px) scale(0.96);
+  animation: todoTaskIn 9s infinite;
+}
+
+.todoMissionTask:nth-child(1) {
+  animation-delay: 0.6s;
+}
+
+.todoMissionTask:nth-child(2) {
+  animation-delay: 2s;
+}
+
+.todoMissionTask:nth-child(3) {
+  animation-delay: 3.4s;
+}
+
+.todoMissionTask:nth-child(4) {
+  animation-delay: 4.8s;
+}
+
+.todoMissionTaskNo {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(101, 168, 255, 0.14);
+  color: var(--todo-cyan);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.todoMissionTaskCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.todoMissionTaskCopy strong {
+  overflow: hidden;
+  color: var(--todo-text);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todoMissionTaskCopy span {
+  overflow: hidden;
+  color: var(--todo-muted);
+  font-size: 0.71rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todoMissionTask em {
+  justify-self: end;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(101, 168, 255, 0.10);
+  color: var(--todo-blue);
+  font-style: normal;
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.todoMissionTask em.isHigh {
+  background: rgba(255, 209, 102, 0.10);
+  color: var(--todo-yellow);
+}
+
+.todoMissionProgress {
+  height: 7px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(126, 172, 255, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(126, 172, 255, 0.09);
+}
+
+.todoMissionProgress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--todo-blue), var(--todo-cyan), var(--todo-green));
+  transform: scaleX(0.04);
+  transform-origin: left;
+  animation: todoProgress 9s ease-in-out infinite;
+  box-shadow: 0 0 18px rgba(66, 215, 231, 0.34);
+}
+
+.todoMissionLoading--done {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+@media (max-width: 760px) {
+  .todoMissionLoading {
+    padding: 15px;
+    border-radius: 18px;
+  }
+
+  .todoMissionContent {
+    grid-template-columns: 1fr;
+  }
+
+  .todoMissionBoardWrap {
+    min-height: 330px;
+  }
+
+  .todoMissionBoard {
+    width: min(300px, 100%);
+  }
+
+  .todoMissionChip {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todoMissionLoading *,
+  .todoMissionLoading *::before,
+  .todoMissionLoading *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .todoMissionStep,
+  .todoMissionTask {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes todoStepActive {
+  0%, 7% {
+    opacity: 0.48;
+    transform: translateY(6px);
+  }
+
+  13%, 48% {
+    opacity: 1;
+    transform: translateY(0);
+    border-color: rgba(66, 215, 231, 0.2);
+    background: rgba(66, 215, 231, 0.055);
+  }
+
+  68%, 100% {
+    opacity: 0.48;
+    transform: translateY(0);
+  }
+}
+
+@keyframes todoTaskIn {
+  0%, 8% {
+    opacity: 0;
+    transform: translateX(34px) scale(0.96);
+  }
+
+  15%, 74% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+
+  88%, 100% {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.985);
+  }
+}
+
+@keyframes todoBoardFloat {
+  0%, 100% {
+    transform: translateY(0) rotate(-1.2deg);
+  }
+
+  50% {
+    transform: translateY(-8px) rotate(0.8deg);
+  }
+}
+
+@keyframes todoSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes todoProgress {
+  0% {
+    transform: scaleX(0.04);
+  }
+
+  22% {
+    transform: scaleX(0.28);
+  }
+
+  42% {
+    transform: scaleX(0.52);
+  }
+
+  62% {
+    transform: scaleX(0.76);
+  }
+
+  82% {
+    transform: scaleX(1);
+  }
+
+  100% {
+    transform: scaleX(0.04);
+  }
+}
+
+@keyframes todoChipPulse {
+  0%, 100% {
+    opacity: 0.48;
+    transform: translateY(0);
+  }
+
+  45%, 65% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
 .ncb-skill-loading {
   display: grid;
   gap: 10px;
