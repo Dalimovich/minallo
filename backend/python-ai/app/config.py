@@ -73,6 +73,17 @@ class Settings(BaseSettings):
         False, alias="WRITING_COACH_PERSISTENCE_ENABLED"
     )
 
+    # --- Transactional email (welcome mail on first login). Same Zoho account
+    # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho
+    # rejects account passwords on SMTP). Endpoint 503s while these are unset.
+    smtp_host: str = Field("smtp.zoho.eu", alias="SMTP_HOST")
+    smtp_port: int = Field(465, alias="SMTP_PORT")
+    smtp_username: str | None = Field(None, alias="SMTP_USERNAME")
+    smtp_password: str | None = Field(None, alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field("noreply@minallo.de", alias="SMTP_FROM_EMAIL")
+    smtp_from_name: str = Field("Minallo", alias="SMTP_FROM_NAME")
+    welcome_email_enabled: bool = Field(True, alias="WELCOME_EMAIL_ENABLED")
+
     # --- Misc
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     environment: str = Field("development", alias="ENVIRONMENT")

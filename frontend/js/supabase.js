@@ -461,6 +461,43 @@ function _resetActivityTimer() {
   document.addEventListener(ev, _resetActivityTimer, { passive: true });
 });
 
+// ── Welcome email (first successful login) ─────────────────────────────────
+// Fire-and-forget call to the python-ai service, which sends a one-time
+// welcome email over Zoho SMTP. Sent-once truth lives in the auth user's
+// app_metadata (welcome_email_sent_at), set server-side; the localStorage key
+// only avoids repeating the network call on every app entry.
+function _maybeSendWelcomeEmail(user) {
+  if (!user || !user.id || !user.email) return;
+  var key = 'ss_welcome_mail_' + user.id;
+  try {
+    if (localStorage.getItem(key)) return;
+  } catch (e) {}
+  if (user.app_metadata && user.app_metadata.welcome_email_sent_at) {
+    try { localStorage.setItem(key, '1'); } catch (e) {}
+    return;
+  }
+  var base = window.AI_SERVICE_URL || '';
+  if (!base || !_sbToken) return;
+  // Defer so this never competes with app boot for bandwidth.
+  setTimeout(function () {
+    fetch(base + '/welcome-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _sbToken },
+      body: JSON.stringify({
+        language: window._lang || localStorage.getItem('ss_lang') || 'en'
+      })
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        // "sent" and "already_sent" both mean: never ask again on this device.
+        if (d && (d.sent || d.reason === 'already_sent')) {
+          try { localStorage.setItem(key, '1'); } catch (e) {}
+        }
+      })
+      .catch(function () { /* retried on a later login */ });
+  }, 4000);
+}
+
 // Global auth helpers
 function _enterApp(user) {
   _currentUser = user;
@@ -488,6 +525,11 @@ function _enterApp(user) {
     }
   }
   // ───────────────────────────────────────────────────────────────────────
+
+  // First-login welcome email. After the routing guard on purpose: the
+  // first-ever _enterApp reloads the page immediately (above), which would
+  // cancel the deferred request — the post-reload _enterApp lands here.
+  _maybeSendWelcomeEmail(user);
 
   // Sync nightBtn safely — nightOn may not be defined yet if app.js hasn't run
   var _nb = document.getElementById('nightBtn');
