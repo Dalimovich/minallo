@@ -272,7 +272,7 @@ interface LandingTranslation {
       ensureStylesheet('css/auth.css?v=5');
     })();
 
-    _fetchTimeout('pages/new_landing.html?v=23', 10000)
+    _fetchTimeout('pages/new_landing.html?v=24', 10000)
       .then((r) => {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' loading new_landing.html');
         return r.text();
@@ -284,7 +284,7 @@ interface LandingTranslation {
         // can find its #/data-* hooks on first query.
         (function () {
           const script = document.createElement('script');
-          script.src = 'js/pages/new-landing.js?v=20';
+          script.src = 'js/pages/new-landing.js?v=21';
           script.defer = true;
           document.body.appendChild(script);
         })();

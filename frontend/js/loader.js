@@ -242,7 +242,7 @@
             ensureStylesheet('css/new-landing.css?v=22');
             ensureStylesheet('css/auth.css?v=5');
         })();
-        _fetchTimeout('pages/new_landing.html?v=23', 10000)
+        _fetchTimeout('pages/new_landing.html?v=24', 10000)
             .then((r) => {
             if (!r.ok)
                 throw new Error('HTTP ' + r.status + ' loading new_landing.html');
@@ -255,7 +255,7 @@
             // can find its #/data-* hooks on first query.
             (function () {
                 const script = document.createElement('script');
-                script.src = 'js/pages/new-landing.js?v=20';
+                script.src = 'js/pages/new-landing.js?v=21';
                 script.defer = true;
                 document.body.appendChild(script);
             })();

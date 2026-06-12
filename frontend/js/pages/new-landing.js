@@ -42,8 +42,8 @@
       },
       hero: {
         badge: 'Exam prep from your real course files',
-        title: 'Upload Your Lecture PDFs. Get Exam Prep in Minutes.',
-        subtitle: 'Minallo turns messy course material into clear study steps, summaries, quizzes, flashcards, explanations, and exam practice based on the documents your professor actually gave you.',
+        title: 'Upload Your Course. Let Minallo Build Your Exam Prep.',
+        subtitle: 'Upload lecture PDFs, scripts, formula sheets, and exercises. Minallo turns your real course material into summaries, quizzes, flashcards, explanations, cheatsheets, and exam-style practice.',
         buildCta: 'Start your 7-day free trial',
         watchCta: 'See how it works',
         trialNote: 'Try Pro free for 7 days. Then \u20ac11.99/month. Cancel anytime.',
@@ -195,7 +195,7 @@
           today: '\u20ac0 today',
           per: 'Then \u20ac11.99/month after the trial',
           items: ['AI Tutor', 'Course Workspace', 'Files', 'Cheatsheet', 'Deep Learn', 'Flashcards', 'Quiz', 'ExamForge', 'Summaries', 'Course-based study help'],
-          cta: 'Start your 1-week free trial'
+          cta: 'Start your 7-day free trial'
         },
         legal: {
           title: 'Small billing details',
@@ -236,7 +236,7 @@
         title: 'Ready to turn your course files into exam prep?',
         text: 'Upload your lecture notes, create a Cheatsheet, revise with Flashcards, test yourself with Quiz, practice with ExamForge, and learn difficult topics with Deep Learn.',
         line: 'Your course. Your study tools. Your exam-prep workspace.',
-        cta: 'Start your 1-week free trial',
+        cta: 'Start your 7-day free trial',
         secondary: 'Explore study features'
       },
       footer: {
@@ -323,8 +323,8 @@
       },
       hero: {
         badge: 'Pruefungsvorbereitung aus deinen echten Kursdateien',
-        title: 'Lade deine Vorlesungs-PDFs hoch. Bekomme Pruefungsvorbereitung in Minuten.',
-        subtitle: 'Minallo verwandelt chaotisches Kursmaterial in klare Lernschritte, Zusammenfassungen, Quizze, Karteikarten, Erklaerungen und Pruefungsuebung auf Basis der Unterlagen, die dein Professor wirklich gegeben hat.',
+        title: 'Lade deinen Kurs hoch. Minallo baut deine Pruefungsvorbereitung.',
+        subtitle: 'Lade Vorlesungs-PDFs, Skripte, Formelsammlungen und Uebungen hoch. Minallo verwandelt dein echtes Kursmaterial in Zusammenfassungen, Quizze, Karteikarten, Erklaerungen, Cheatsheets und pruefungsnahe Uebung.',
         buildCta: '7 Tage kostenlos testen',
         watchCta: 'So funktioniert es',
         trialNote: 'Teste Pro 7 Tage kostenlos. Danach \u20ac11.99/Monat. Jederzeit kuendbar.',
@@ -476,7 +476,7 @@
           today: '0 \u20ac heute',
           per: 'Danach 11,99 \u20ac/Monat nach der Testphase',
           items: ['AI Tutor', 'Course Workspace', 'Files', 'Cheatsheet', 'Deep Learn', 'Flashcards', 'Quiz', 'ExamForge', 'Summaries', 'Kursbasierte Lernhilfe'],
-          cta: '1 Woche kostenlos testen'
+          cta: '7 Tage kostenlos testen'
         },
         legal: {
           title: 'Kurze Zahlungsdetails',
@@ -517,7 +517,7 @@
         title: 'Bereit, deine Kursdateien in Pruefungsvorbereitung zu verwandeln?',
         text: 'Lade Vorlesungsnotizen hoch, erstelle ein Cheatsheet, wiederhole mit Flashcards, teste dich mit Quiz, uebe mit ExamForge und lerne schwierige Themen mit Deep Learn.',
         line: 'Dein Kurs. Deine Lerntools. Dein Pruefungs-Workspace.',
-        cta: '1 Woche kostenlos testen',
+        cta: '7 Tage kostenlos testen',
         secondary: 'Lernfeatures ansehen'
       },
       footer: {
