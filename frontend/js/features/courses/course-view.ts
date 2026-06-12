@@ -703,8 +703,14 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
   const sec = ['files', 'quiz', 'flashcards', 'examforge', 'cheatsheet', 'deeplearn'].includes(section) ? section : 'files';
 
   const co = document.getElementById('courseOverview');
+  // "Already rendered" must compare against the course whose DOM is actually
+  // on screen (stamped at full-render time below), NOT window.activeCourseId —
+  // openCourse() updates that global to the NEW course before delegating here,
+  // so comparing against it made every open of a different course look like a
+  // same-course refresh: the files panel updated but the header kept the first
+  // course's name.
   const alreadyRendered = co && co.style.display === 'block' &&
-      window.activeCourseId === course.id &&
+      co.getAttribute('data-rendered-course') === String(course.id) &&
       !window.activeFileName &&
       co.querySelector('.co-inner-v2');
 
@@ -782,6 +788,9 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
     _liveCount || _cachedCount || parseInt(localStorage.getItem('ss_fc_' + course.id) || '0', 10);
   const _progress = computeCourseProgress(course.id, _fileCount);
 
+  // Stamp which course this DOM belongs to — the alreadyRendered fast paths
+  // above key off this attribute.
+  co.setAttribute('data-rendered-course', String(course.id));
   co.innerHTML =
     '<div class="co-inner co-inner-v2" style="--co-hero-accent:' + _semColor + '">' +
     // ── Top nav strip: Back · title chip · Study ────────────────────────
