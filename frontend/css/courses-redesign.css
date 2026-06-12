@@ -2619,6 +2619,13 @@ body.minallo-in-course .welcome-state {
   color: #fff;
 }
 .co-inner-v2 .co-folder-more-item.co-folder-del-btn {
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
   color: rgba(252, 165, 165, 0.92);
 }
 .co-inner-v2 .co-folder-more-item.co-folder-del-btn:hover {
