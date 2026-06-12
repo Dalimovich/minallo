@@ -688,6 +688,19 @@ if (aiPanel && aiMsgs) {
     messageSelector: '.ai-msg-wrap.user',
     isUser: () => true,
     snippetSource: (row) => row.querySelector<HTMLElement>('.ai-bubble') || row,
+    // The document-rail's fixed button rail (z-index 9500) overlaps the
+    // drawer's right edge in rail-hosted/maximized modes; measure the real
+    // overlap each layout pass so the track shifts left of the buttons
+    // instead of disappearing behind them.
+    rightInset: () => {
+      const rail = document.querySelector<HTMLElement>('.dr-rail');
+      if (!rail) return 0;
+      const r = rail.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return 0;
+      const s = aiMsgs.getBoundingClientRect();
+      if (r.bottom < s.top || r.top > s.bottom) return 0;
+      return Math.max(0, s.right - r.left);
+    },
     compact: true,
     minMessages: 3,
   });

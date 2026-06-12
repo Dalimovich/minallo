@@ -35,6 +35,9 @@ export interface MessageNavigatorOptions {
   snippetSource?: (row: HTMLElement) => HTMLElement | null;
   /** Element overlapping the bottom of the scroller (e.g. a sticky composer). */
   bottomGuard?: () => HTMLElement | null;
+  /** Extra px to keep clear of the scroller's right edge, measured per layout
+   *  pass — for fixed overlays that cover it (e.g. the document-rail buttons). */
+  rightInset?: () => number;
   /** Smaller track + preview panel for narrow surfaces. */
   compact?: boolean;
   /** Navigator stays hidden below this many messages. Default 4. */
@@ -346,10 +349,11 @@ export function attachMessageNavigator(opts: MessageNavigatorOptions): MessageNa
     // Delta-correct against the live rect instead of assuming which ancestor
     // is the containing block (it changes when #aiPanel is hosted in the
     // document-rail drawer with position:static forced inline).
+    const inset = rightGap + Math.max(0, opts.rightInset ? opts.rightInset() : 0);
     const nRect = nav.getBoundingClientRect();
     const curLeft = parseFloat(nav.style.left) || 0;
     const curTop = parseFloat(nav.style.top) || 0;
-    nav.style.left = Math.round(curLeft + (sRect.right - rightGap - navWidth) - nRect.left) + 'px';
+    nav.style.left = Math.round(curLeft + (sRect.right - inset - navWidth) - nRect.left) + 'px';
     nav.style.top = Math.round(curTop + (sRect.top + gap) - nRect.top) + 'px';
   }
 
