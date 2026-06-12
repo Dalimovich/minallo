@@ -384,12 +384,37 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   // ── Financial: revenue / cost / profit overview ───────────────────────────
   if (action === 'financials') {
-    const cfg = await loadCostConfig(serviceKey);
+    const since = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+    const INTERACTIVE_TYPES = ['ai_ask', 'ai_chat', 'writing_coach_analyse', 'ask_stream'];
+    const GENERATION_TYPES = ['ai_generate', 'notes_generate'];
+    const allTypes = [...INTERACTIVE_TYPES, ...GENERATION_TYPES].map(encodeURIComponent).join(',');
 
-    // Paid users (pro + active) from the subscriptions table.
-    const subRes = await supaRequest<Array<{ user_id?: string; plan?: string; status?: string }>>(
-      'GET', 'subscriptions?select=user_id,plan,status', null, serviceKey
-    );
+    // This is the slowest dashboard card — fetch the four independent inputs
+    // in one parallel wave instead of four sequential edge→DB round trips.
+    const [cfg, subRes, evRes, meterRes] = await Promise.all([
+      loadCostConfig(serviceKey),
+      // Paid users (pro + active) from the subscriptions table.
+      supaRequest<Array<{ user_id?: string; plan?: string; status?: string }>>(
+        'GET', 'subscriptions?select=user_id,plan,status', null, serviceKey
+      ),
+      // This month's AI usage from security_events.
+      supaRequest<Array<{ user_id?: string; event_type?: string }>>(
+        'GET',
+        'security_events?event_type=in.(' + allTypes + ')&created_at=gte.' + encodeURIComponent(since) +
+          '&select=user_id,event_type&limit=200000',
+        null, serviceKey
+      ),
+      // Cost source 1 (best): the usage_events meter — every OpenAI call, all
+      // features, per-model pricing. Absent/empty (migration not applied yet,
+      // or a window before the meter shipped) → degrade to source 2.
+      supaRequest<UsageEventRow[]>(
+        'GET',
+        'usage_events?created_at=gte.' + encodeURIComponent(since) +
+          '&select=user_id,feature,model,prompt_tokens,completion_tokens,cached_tokens&limit=300000',
+        null, serviceKey
+      )
+    ]);
+
     const subRows = Array.isArray(subRes.body) ? subRes.body : [];
     const paidSet = new Set<string>();
     for (const r of subRows) {
@@ -398,19 +423,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       }
     }
 
-    // This month's AI usage from security_events.
-    const since = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
-    const INTERACTIVE_TYPES = ['ai_ask', 'ai_chat', 'writing_coach_analyse', 'ask_stream'];
-    const GENERATION_TYPES = ['ai_generate', 'notes_generate'];
-    const allTypes = [...INTERACTIVE_TYPES, ...GENERATION_TYPES].map(encodeURIComponent).join(',');
-    const evRes = await supaRequest<Array<{ user_id?: string; event_type?: string }>>(
-      'GET',
-      'security_events?event_type=in.(' + allTypes + ')&created_at=gte.' + encodeURIComponent(since) +
-        '&select=user_id,event_type&limit=200000',
-      null, serviceKey
-    );
     const evRows = Array.isArray(evRes.body) ? evRes.body : [];
-
     const usageMap = new Map<string, { interactive: number; generation: number }>();
     for (const e of evRows) {
       const uid = e.user_id ? String(e.user_id) : '';
@@ -421,15 +434,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       usageMap.set(uid, u);
     }
 
-    // Cost source 1 (best): the usage_events meter — every OpenAI call, all
-    // features, per-model pricing. Absent/empty (migration not applied yet, or
-    // a window before the meter shipped) → degrade to source 2.
-    const meterRes = await supaRequest<UsageEventRow[]>(
-      'GET',
-      'usage_events?created_at=gte.' + encodeURIComponent(since) +
-        '&select=user_id,feature,model,prompt_tokens,completion_tokens,cached_tokens&limit=300000',
-      null, serviceKey
-    );
     const meterRows = Array.isArray(meterRes.body) ? meterRes.body : [];
     const meter = meterRows.length ? computeAiUsage(meterRows, cfg) : null;
 
@@ -506,17 +510,19 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   // ── Financial: AI usage meter breakdown (per feature × model) ─────────────
   if (action === 'aiusage') {
-    const cfg = await loadCostConfig(serviceKey);
     let d = typeof days === 'number' ? Math.floor(days) : parseInt(String(days || ''), 10);
     if (!Number.isFinite(d) || d < 1) d = 30;
     if (d > 365) d = 365;
     const since = new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
-    const res = await supaRequest<UsageEventRow[]>(
-      'GET',
-      'usage_events?created_at=gte.' + encodeURIComponent(since) +
-        '&select=user_id,feature,model,prompt_tokens,completion_tokens,cached_tokens&limit=300000',
-      null, serviceKey
-    );
+    const [cfg, res] = await Promise.all([
+      loadCostConfig(serviceKey),
+      supaRequest<UsageEventRow[]>(
+        'GET',
+        'usage_events?created_at=gte.' + encodeURIComponent(since) +
+          '&select=user_id,feature,model,prompt_tokens,completion_tokens,cached_tokens&limit=300000',
+        null, serviceKey
+      )
+    ]);
     // Table missing (migration not applied) → tell the UI instead of 500ing.
     if (!Array.isArray(res.body)) {
       return jsonResponse(200, {
@@ -553,7 +559,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   // ── Financial: monthly revenue / cost / profit trend ──────────────────────
   if (action === 'financeseries') {
-    const cfg = await loadCostConfig(serviceKey);
     let m = typeof months === 'number' ? Math.floor(months) : parseInt(String(months || ''), 10);
     if (!Number.isFinite(m) || m < 1) m = 6;
     if (m > 24) m = 24;
@@ -563,7 +568,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
     // Active paid per month from subscription_events history (if available).
     const retSinceMs = Date.now() - (m + 1) * 31 * 24 * 60 * 60 * 1000;
-    const [evRetRes, aiRes, subRes] = await Promise.all([
+    const [cfg, evRetRes, aiRes, subRes] = await Promise.all([
+      loadCostConfig(serviceKey),
       supaRequest<SubEvent[]>(
         'GET',
         'subscription_events?created_at=gte.' + encodeURIComponent(new Date(retSinceMs).toISOString()) +
