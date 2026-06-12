@@ -4589,6 +4589,9 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
     return;
   }
   const row = appendAiBubble(msgs);
+  // Restored history must not re-pop interactive minallo-input modals (see
+  // promoteAiInputToModal's [data-restored] guard) — forms stay inline.
+  row.setAttribute('data-restored', 'true');
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
 
   // Daily Mission marker: re-fetch and re-render the live card UI instead of

@@ -7,7 +7,16 @@ import assert from 'node:assert/strict';
 // they no-op here — the submit/dispatch behaviour is covered by live testing.
 globalThis.window = globalThis.window || {};
 
-const { renderMarkdown, normalizeDecimalValue } = await import(
+// In-memory localStorage shim so the answered-forms persistence
+// (markAiInputDone / aiInputDoneSummary) is testable in Node.
+const _store = new Map();
+globalThis.localStorage = globalThis.localStorage || {
+  getItem: (k) => (_store.has(k) ? _store.get(k) : null),
+  setItem: (k, v) => { _store.set(k, String(v)); },
+  removeItem: (k) => { _store.delete(k); },
+};
+
+const { renderMarkdown, normalizeDecimalValue, aiInputIdentity, markAiInputDone } = await import(
   '../../frontend/js/features/ai-chat/ai-markdown.ts'
 );
 
@@ -68,6 +77,41 @@ test('HTML/script in label and prompt is escaped (no injection)', () => {
   assert.ok(!html.includes('<script>'));
   assert.ok(!html.includes('<img src=x'));
   assert.ok(html.includes('&lt;script&gt;'));
+});
+
+test('an answered form (by requestId) re-renders as a submitted note, not a form', () => {
+  markAiInputDone(aiInputIdentity('done-1', 'irrelevant', []), 'l_K = 5.5 mm');
+  const html = renderInput({
+    requestId: 'done-1',
+    prompt: 'Enter the clamping length:',
+    fields: [{ symbol: 'l_K', label: 'Clamping length', unit: 'mm' }],
+  });
+  assert.ok(!html.includes('<form'), 'must not render a fillable form again');
+  assert.ok(html.includes('md-ai-input-placeholder'));
+  assert.ok(html.includes('✓ Submitted: l_K = 5.5 mm'));
+});
+
+test('an answered form without requestId is recognised via the content hash', () => {
+  const spec = {
+    prompt: 'Enter the nut length:',
+    fields: [{ symbol: 'l_M', label: 'Nut length', unit: 'mm' }],
+  };
+  // First render: a normal fillable form.
+  assert.ok(renderInput(spec).includes('<form'));
+  // Submit-time identity uses the rendered prompt + sliced symbols.
+  markAiInputDone(aiInputIdentity('', spec.prompt, ['l_M']), 'l_M = 12 mm');
+  const html = renderInput(spec);
+  assert.ok(!html.includes('<form'));
+  assert.ok(html.includes('✓ Submitted: l_M = 12 mm'));
+});
+
+test('a different unanswered form still renders a fillable form', () => {
+  const html = renderInput({
+    requestId: 'fresh-9',
+    prompt: 'Enter the diameter:',
+    fields: [{ symbol: 'd', label: 'Diameter', unit: 'mm' }],
+  });
+  assert.ok(html.includes('<form class="md-ai-input"'));
 });
 
 test('decimal comma normalizes to a dot between digits', () => {

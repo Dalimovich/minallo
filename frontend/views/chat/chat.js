@@ -125,6 +125,9 @@
             // Rebuild user bubble
             var wrap = document.createElement('div');
             wrap.className = 'ai-msg-wrap user';
+            // Restored history must not re-pop interactive forms (see
+            // promoteAiInputToModal's [data-restored] guard in ai-markdown.ts).
+            wrap.setAttribute('data-restored', 'true');
             var safe = (m.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             wrap.setAttribute('data-q', m.text || '');
             wrap.innerHTML =
@@ -158,6 +161,9 @@
             // Rebuild bot bubble — render from raw text, never inject stored HTML
             var wrap = document.createElement('div');
             wrap.className = 'ai-msg-wrap';
+            // Keep restored minallo-input forms inline in the side panel
+            // instead of re-popping the modal on every file open.
+            wrap.setAttribute('data-restored', 'true');
             wrap.innerHTML =
               '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
               '<div class="msg-body">' +

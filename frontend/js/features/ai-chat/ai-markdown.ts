@@ -234,6 +234,59 @@ export function normalizeDecimalValue(raw: string): string {
   return raw.replace(/(\d),(\d)/g, '$1.$2');
 }
 
+// ── Completed minallo-input forms — persisted so they never re-ask ──────────
+//
+// Chat history is saved as raw markdown and re-rendered on restore, so a
+// minallo-input block the student already answered used to come back as a
+// fresh fillable form (and re-pop the modal) every time the file was reopened.
+// On submit we record the form's identity + a values summary in localStorage;
+// renderInputForm() then renders answered forms as a locked "✓ Submitted: …"
+// note instead of an active form. Identity is the model-provided requestId
+// when present, else a stable hash of prompt+symbols so the same re-rendered
+// block is still recognised.
+const AI_INPUT_DONE_KEY = 'ss_ai_input_done_v1';
+const AI_INPUT_DONE_MAX = 120;
+
+function _aiInputDoneMap(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(AI_INPUT_DONE_KEY);
+    const obj: unknown = raw ? JSON.parse(raw) : null;
+    return obj && typeof obj === 'object' && !Array.isArray(obj)
+      ? (obj as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function markAiInputDone(id: string, summary: string): void {
+  if (!id) return;
+  try {
+    const map = _aiInputDoneMap();
+    map[id] = (summary || '').slice(0, 200);
+    // Bounded: drop the oldest entries (insertion order) past the cap.
+    const keys = Object.keys(map);
+    for (const k of keys.slice(0, Math.max(0, keys.length - AI_INPUT_DONE_MAX))) delete map[k];
+    localStorage.setItem(AI_INPUT_DONE_KEY, JSON.stringify(map));
+  } catch {
+    /* storage unavailable (private mode / SSR) — popup-once degrades gracefully */
+  }
+}
+
+export function aiInputDoneSummary(id: string): string | undefined {
+  if (!id) return undefined;
+  const map = _aiInputDoneMap();
+  return Object.prototype.hasOwnProperty.call(map, id) ? map[id] : undefined;
+}
+
+export function aiInputIdentity(reqId: string, promptText: string, symbols: string[]): string {
+  if (reqId) return reqId;
+  const s = (promptText || '') + '|' + symbols.join(',');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return 'h:' + (h >>> 0).toString(36);
+}
+
 // One-time delegated submit handler for `minallo-input` forms (the AI asking
 // the student for a missing value). Idempotent across re-imports. On submit it
 // validates that all fields are filled, normalises a decimal comma (5,5→5.5),
@@ -280,6 +333,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
     const surface =
       form.dataset.surface || (form.closest('.ncb-root') ? 'chatbot' : 'pdf-panel');
     const reqId = form.dataset.requestId || '';
+    // Remember this form as answered so restored history renders it as a
+    // submitted summary instead of re-asking (and re-popping the modal).
+    const promptText = form.querySelector('.md-ai-input-prompt')?.textContent || '';
+    markAiInputDone(
+      aiInputIdentity(reqId, promptText, inputs.map((i) => i.dataset.symbol || '')),
+      parts.join(', ')
+    );
     form.dispatchEvent(
       new CustomEvent('minallo-ai-input-submit', {
         bubbles: true,
@@ -1219,6 +1279,20 @@ export function renderMarkdown(text: string): string {
         typeof spec.prompt === 'string' && spec.prompt.trim()
           ? spec.prompt
           : 'Enter the missing value to continue:';
+      // Already answered (this session or a previous one) → locked summary,
+      // never a second fillable form / popup.
+      // Symbols are sliced to 40 chars exactly like the rendered data-symbol
+      // attribute, so render-time and submit-time identities always agree.
+      const doneSummary = aiInputDoneSummary(
+        aiInputIdentity(reqId, promptText, fields.map((f) => String(f.symbol).slice(0, 40)))
+      );
+      if (doneSummary !== undefined) {
+        return (
+          '<div class="md-ai-input-placeholder">✓ Submitted' +
+          (doneSummary ? ': ' + esc(doneSummary) : '') +
+          '</div>'
+        );
+      }
       const rows = fields
         .map((f) => {
           const sym = String(f.symbol).slice(0, 40);
