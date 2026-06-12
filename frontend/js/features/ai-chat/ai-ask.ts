@@ -34,11 +34,22 @@ function _subscriptionMsg(): string {
 function isInternalTechnicalQuestion(text: string): boolean {
   const q = (text || '').toLowerCase();
   if (!q.trim()) return false;
-  const modelProbe = /\b(what|which|whose|who|tell|show|reveal|name|using|powered)\b[\s\S]{0,80}\b(model|llm|ai model|gpt|openai|claude|gemini|mistral|llama)\b|\b(model|llm|ai model|gpt|openai|claude|gemini|mistral|llama)\b[\s\S]{0,80}\b(what|which|whose|who|tell|show|reveal|name|using|powered)\b/i;
-  if (modelProbe.test(q)) return true;
-  const internalTerms = /\b(api|backend|database|db|schema|sql|supabase|stripe|paypal|cloudflare|server|endpoint|token|jwt|secret|key|rag|embedding|vector|prompt|system prompt|architecture|implementation|source code|codebase|repository|migration|rls|security rules|auth flow|webhook|deno|netlify|worker|function|model|llm|gpt|openai|claude|gemini|mistral|llama)\b/i;
-  const probing = /\b(how|what|where|why|show|tell|explain|describe|list|give|share|reveal|access|debug|bypass|inspect|build|implemented|stored|connected|works?|configured)\b/i;
-  return internalTerms.test(q) && probing.test(q);
+  const probing = /\b(how|what|which|where|why|who|whose|is|are|was|were|does|did|show|tell|explain|describe|list|give|share|reveal|access|debug|bypass|inspect|built?|implemented|stored|connected|works?|configured|using|use[sd]?|powered|runs?|running|made)\b/i;
+  if (!probing.test(q)) return false;
+  // Tier A — vendor/infra names that are never course subjects: probing
+  // about them is always about Minallo's internals.
+  const vendorTerms = /\b(gpt[-\w.]*|openai|claude|anthropic|gemini|mistral|llama|supabase|stripe|paypal|cloudflare|netlify|fly\.io|system\s+prompts?|source\s+code|codebase|repositor(y|ies)|repo|tech\s+stack|rls|jwt|api\s+keys?|service\s+role)\b/i;
+  if (vendorTerms.test(q)) return true;
+  // Tier B — terms that ARE course subjects (databases, SQL, APIs, servers,
+  // models… students study these). Internal only when explicitly bound to
+  // Minallo itself — bare "explain this function", "what is a vector",
+  // "how do SQL joins work" are STUDY questions and must reach the tutor.
+  const self = "(minallo(?:'s)?|this\\s+(site|app|website|platform|chatbot|assistant|ai)|the\\s+(site|app|website|platform)|are\\s+you|do\\s+you\\s+(use|run)|you\\s+(use|run|built|made)|built\\s+(on|with)|powered\\s+by)";
+  const tech = '(apis?|backend|database|db|schemas?|sql|servers?|endpoints?|secrets?|rag|embeddings?|prompts?|architecture|implementation|migrations?|auth(entication)?|webhooks?|infrastructure|hosting|llms?|(ai|language)\\s+models?|models?|workers?)';
+  const bound = new RegExp(
+    '\\b' + self + '\\b[\\s\\S]{0,48}\\b' + tech + '\\b|\\b' + tech + '\\b[\\s\\S]{0,48}\\b' + self + '\\b', 'i'
+  );
+  return bound.test(q);
 }
 
 function _technicalRefusalMsg(): string {

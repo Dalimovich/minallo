@@ -30,6 +30,7 @@ from .answer import (
     DEFAULT_TUTOR_MODE,
     EQUATION_READABILITY_RULE,
     FIGURE_CHUNK_TYPES,
+    INTERNAL_CONFIDENTIALITY_RULE,
     MAX_PROMPT_CHUNKS,
     MINALLO_APP_CONTEXT,
     _APP_ONLY_SYSTEM_PROMPT,
@@ -1085,6 +1086,8 @@ def stream_answer(
     # request: app questions answer with real numbers, content questions can
     # point at the right tab, and the actions contract lets the model offer
     # clickable next steps.
+    if INTERNAL_CONFIDENTIALITY_RULE not in system_prompt:
+        system_prompt += INTERNAL_CONFIDENTIALITY_RULE
     if workspace_block:
         system_prompt += "\n" + workspace_block
         if not problem_solver:

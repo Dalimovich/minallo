@@ -155,6 +155,19 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     max_tokens = _normalise_max_tokens(payload.get("max_tokens"))
     client = get_openai_client()
 
+    # Server-side confidentiality guard: the client's system prompt (and its
+    # pre-filter regex) can be bypassed by calling the API directly, so the
+    # internals rule is appended here regardless of what the client sent.
+    from .answer import INTERNAL_CONFIDENTIALITY_RULE  # noqa: WPS433
+    if messages and messages[0].get("role") == "system":
+        if INTERNAL_CONFIDENTIALITY_RULE not in str(messages[0].get("content") or ""):
+            messages[0] = {
+                "role": "system",
+                "content": str(messages[0].get("content") or "") + INTERNAL_CONFIDENTIALITY_RULE,
+            }
+    else:
+        messages = [{"role": "system", "content": INTERNAL_CONFIDENTIALITY_RULE.strip()}] + messages
+
     # Account workspace awareness: the generic chatbot knows the student's
     # real course list (names + file counts, server-fetched and cached) so
     # "which courses do I have" / "where do I ask about X" answer from real

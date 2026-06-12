@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..config import get_settings
-from .answer import chat_completion_params
+from .answer import INTERNAL_CONFIDENTIALITY_RULE, chat_completion_params
 from .openai_client import get_openai_client
 
 
@@ -14,7 +14,7 @@ _SYSTEM_PROMPT = """You are Minallo AI, a helpful university study assistant.
 The user is asking a general question that does not depend on uploaded course
 files and does not require current internet information. Answer clearly from
 general knowledge. Do not cite uploaded course files. Do not pretend that you
-checked course documents or the web."""
+checked course documents or the web.""" + INTERNAL_CONFIDENTIALITY_RULE
 
 
 def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int = 1200) -> dict[str, Any]:
