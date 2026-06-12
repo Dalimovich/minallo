@@ -225,17 +225,24 @@ const CSS = `
   justify-self: end;
 }
 
-/* Inline variant: mounted as a flex child inside a button rail instead of
-   overlaying the chat edge. The rail centers it horizontally; height comes
-   from the track itself. */
+/* Inline variant: mounted inside a button rail, in a lane LEFT of the
+   buttons rather than stacked below them. The host pill is widened via
+   .msgnav-rail-host so the buttons keep their column; the track sits
+   vertically centered in the new lane, capped to the pill height. */
 .message-navigator--inline {
-  position: relative;
-  left: auto !important;
-  top: auto !important;
+  position: absolute;
+  left: 9px !important;
+  top: 50% !important;
+  transform: translateY(-50%);
   width: auto !important;
   height: auto !important;
-  flex: 0 0 auto;
-  margin-top: 2px;
+}
+/* Widen the document-rail pill to the left to make room for the track.
+   Original: 64px wide, 8px padding → 48px button column. Widened: +24px
+   with padding-left 32px keeps the button column at 48px, unmoved. */
+.dr-rail.msgnav-rail-host {
+  width: calc(var(--dr-rail-w, 64px) + 24px);
+  padding-left: 32px;
 }
 .message-navigator--inline .message-navigator-track {
   background: rgba(255, 255, 255, 0.05);
@@ -374,6 +381,7 @@ export function attachMessageNavigator(opts: MessageNavigatorOptions): MessageNa
   let closeTimer = 0;
   let inline = false;
   let availH = 0;
+  let lastMount: HTMLElement | null = null;
 
   const isOpen = (): boolean => nav.dataset.open === '1';
 
@@ -392,6 +400,8 @@ export function attachMessageNavigator(opts: MessageNavigatorOptions): MessageNa
     // available, otherwise as an overlay on the host.
     const mount = opts.inlineMount ? opts.inlineMount() : null;
     inline = !!mount;
+    if (lastMount && lastMount !== mount) lastMount.classList.remove('msgnav-rail-host');
+    lastMount = mount;
     if (mount && nav.parentElement !== mount) mount.appendChild(nav);
     if (!mount && nav.parentElement !== opts.host) opts.host.appendChild(nav);
     nav.classList.toggle('message-navigator--inline', inline);
@@ -405,19 +415,23 @@ export function attachMessageNavigator(opts: MessageNavigatorOptions): MessageNa
     if (rows.length < minMessages || usable < 110 || sRect.width < 300) {
       nav.dataset.hidden = '1';
       delete nav.dataset.open;
+      // Give the rail its normal width back while the track is hidden.
+      mount?.classList.remove('msgnav-rail-host');
       return;
     }
     delete nav.dataset.hidden;
 
-    if (inline) {
-      // Flex child of the rail: no manual positioning. The track may grow
-      // taller than the rail's button stack but is capped so the rail never
-      // outgrows the viewport; beyond the cap it scrolls internally.
+    if (inline && mount) {
+      // Absolutely positioned in the rail's left lane (CSS handles x/y); the
+      // widened-pill class makes room without moving the buttons. Track is
+      // capped to the pill height and scrolls internally past it.
+      mount.classList.add('msgnav-rail-host');
       nav.style.left = '';
       nav.style.top = '';
       nav.style.width = '';
       nav.style.height = '';
-      availH = Math.max(120, Math.min(Math.round(window.innerHeight * 0.38), usable));
+      const mRect = mount.getBoundingClientRect();
+      availH = Math.max(120, Math.min(Math.round(mRect.height) - 20, usable));
       return;
     }
 
@@ -644,6 +658,7 @@ export function attachMessageNavigator(opts: MessageNavigatorOptions): MessageNa
     refresh: schedule,
     destroy(): void {
       destroyed = true;
+      lastMount?.classList.remove('msgnav-rail-host');
       mo.disconnect();
       ro.disconnect();
       window.removeEventListener('resize', schedule);
