@@ -232,6 +232,8 @@ export interface CostConfig {
 // `interactiveTokenCostCents`, when provided, is the REAL token-metered cost of
 // this user's interactive (ask/stream) calls — it overrides the per-call
 // estimate for that portion. Generation calls stay estimate-based.
+// `meteredCostCents`, when provided, is the FULLY metered total AI cost for
+// this user (all features, from usage_events) and overrides BOTH estimates.
 export interface UserUsage {
   userId: string;
   email?: string;
@@ -239,6 +241,109 @@ export interface UserUsage {
   generation: number;
   paid: boolean;
   interactiveTokenCostCents?: number;
+  meteredCostCents?: number;
+}
+
+// ── Per-model OpenAI pricing (cents per 1M tokens) ───────────────────────────
+// Prefix-matched against the model string from usage_events (model ids carry
+// date suffixes like gpt-4o-2024-08-06). `cached` is the discounted price for
+// prompt tokens served from OpenAI's prompt cache. Unknown models fall back
+// to the editable config rates so a new model never silently costs 0.
+export interface ModelPrice { input: number; cached: number; output: number }
+export const MODEL_PRICES_CENTS_PER_M: Array<{ prefix: string; price: ModelPrice }> = [
+  // Order matters: longer/more specific prefixes first.
+  { prefix: 'gpt-4o-mini',            price: { input: 15,  cached: 7.5,  output: 60 } },
+  { prefix: 'gpt-4o',                 price: { input: 250, cached: 125,  output: 1000 } },
+  { prefix: 'gpt-4.1-mini',           price: { input: 40,  cached: 10,   output: 160 } },
+  { prefix: 'gpt-4.1-nano',           price: { input: 10,  cached: 2.5,  output: 40 } },
+  { prefix: 'gpt-4.1',                price: { input: 200, cached: 50,   output: 800 } },
+  { prefix: 'o4-mini',                price: { input: 110, cached: 27.5, output: 440 } },
+  { prefix: 'o3-mini',                price: { input: 110, cached: 55,   output: 440 } },
+  { prefix: 'text-embedding-3-small', price: { input: 2,   cached: 2,    output: 0 } },
+  { prefix: 'text-embedding-3-large', price: { input: 13,  cached: 13,   output: 0 } }
+];
+
+export function modelPrice(model: string, cfg: CostConfig): ModelPrice {
+  const m = (model || '').toLowerCase();
+  for (const entry of MODEL_PRICES_CENTS_PER_M) {
+    if (m.startsWith(entry.prefix)) return entry.price;
+  }
+  return { input: cfg.aiInputCostCentsPerM, cached: cfg.aiInputCostCentsPerM, output: cfg.aiOutputCostCentsPerM };
+}
+
+// One usage_events row (token counts only — cost derived here at read time).
+export interface UsageEventRow {
+  user_id?: string | null;
+  feature?: string | null;
+  model?: string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  cached_tokens?: number | null;
+}
+
+export function usageEventCostCents(row: UsageEventRow, cfg: CostConfig): number {
+  const price = modelPrice(String(row.model || ''), cfg);
+  const prompt = Number(row.prompt_tokens) || 0;
+  const cached = Math.min(Number(row.cached_tokens) || 0, prompt);
+  const output = Number(row.completion_tokens) || 0;
+  // Cached tokens are part of prompt_tokens but billed at the cached rate.
+  return ((prompt - cached) * price.input + cached * price.cached + output * price.output) / 1_000_000;
+}
+
+export interface AiUsageLine {
+  feature: string;
+  model: string;
+  requests: number;
+  promptTokens: number;
+  cachedTokens: number;
+  completionTokens: number;
+  costCents: number;        // rounded to 2 decimals (sub-cent features matter)
+}
+
+export interface AiUsageSummary {
+  lines: AiUsageLine[];               // sorted by cost, highest first
+  totalCostCents: number;
+  totalRequests: number;
+  unattributedCostCents: number;      // rows with no user_id (indexing, embeddings…)
+  perUserCostCents: Map<string, number>;
+}
+
+// Aggregate raw usage_events rows into the admin "AI Usage" breakdown.
+export function computeAiUsage(rows: UsageEventRow[], cfg: CostConfig): AiUsageSummary {
+  const byKey = new Map<string, AiUsageLine>();
+  const perUser = new Map<string, number>();
+  let totalCost = 0;
+  let unattributed = 0;
+  for (const r of rows) {
+    const feature = String(r.feature || 'unknown');
+    const model = String(r.model || 'unknown');
+    const cost = usageEventCostCents(r, cfg);
+    totalCost += cost;
+    const uid = r.user_id ? String(r.user_id) : '';
+    if (uid) perUser.set(uid, (perUser.get(uid) || 0) + cost);
+    else unattributed += cost;
+    const key = feature + ' ' + model;
+    const line = byKey.get(key) || {
+      feature, model, requests: 0, promptTokens: 0, cachedTokens: 0, completionTokens: 0, costCents: 0
+    };
+    line.requests += 1;
+    line.promptTokens += Number(r.prompt_tokens) || 0;
+    line.cachedTokens += Number(r.cached_tokens) || 0;
+    line.completionTokens += Number(r.completion_tokens) || 0;
+    line.costCents += cost;
+    byKey.set(key, line);
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const lines = Array.from(byKey.values())
+    .map((l) => ({ ...l, costCents: round2(l.costCents) }))
+    .sort((a, b) => b.costCents - a.costCents);
+  return {
+    lines,
+    totalCostCents: round2(totalCost),
+    totalRequests: rows.length,
+    unattributedCostCents: round2(unattributed),
+    perUserCostCents: perUser
+  };
 }
 
 // Compute the measured token cost (in cents) from raw token counts + config.
@@ -311,16 +416,25 @@ export function computeFinancials(
     if (u.paid) activePaid++;
     interactiveCalls += u.interactive;
     generationCalls += u.generation;
-    // Interactive (ask/stream) cost: real token metering when we have it,
-    // otherwise the per-call estimate. Generation stays estimate-based.
+    // Cost precedence: fully metered (usage_events, all features) > interactive
+    // token metering (retrieval_debug_log) + generation estimate > per-call
+    // estimates for everything.
+    const fullyMetered = typeof u.meteredCostCents === 'number';
     const measured = typeof u.interactiveTokenCostCents === 'number';
-    const interactiveCost = measured
-      ? (u.interactiveTokenCostCents as number)
-      : u.interactive * cfg.aiInteractiveCostCents;
-    const generationCost = u.generation * cfg.aiGenerationCostCents;
-    const userAiCost = interactiveCost + generationCost;
-    if (measured) { measuredAiCostCents += interactiveCost; estimatedAiCostCents += generationCost; }
-    else { estimatedAiCostCents += userAiCost; }
+    let userAiCost: number;
+    if (fullyMetered) {
+      userAiCost = u.meteredCostCents as number;
+      measuredAiCostCents += userAiCost;
+    } else if (measured) {
+      const interactiveCost = u.interactiveTokenCostCents as number;
+      const generationCost = u.generation * cfg.aiGenerationCostCents;
+      userAiCost = interactiveCost + generationCost;
+      measuredAiCostCents += interactiveCost;
+      estimatedAiCostCents += generationCost;
+    } else {
+      userAiCost = u.interactive * cfg.aiInteractiveCostCents + u.generation * cfg.aiGenerationCostCents;
+      estimatedAiCostCents += userAiCost;
+    }
     aiCostCents += userAiCost;
 
     const revenueCents = u.paid ? price : 0;
@@ -356,6 +470,7 @@ export function computeFinancials(
   const paidAiCost = users
     .filter((u) => u.paid)
     .reduce((s, u) => {
+      if (typeof u.meteredCostCents === 'number') return s + u.meteredCostCents;
       const interactiveCost = typeof u.interactiveTokenCostCents === 'number'
         ? u.interactiveTokenCostCents
         : u.interactive * cfg.aiInteractiveCostCents;

@@ -889,6 +889,21 @@
                   <section class="adm-card">
                     <div class="adm-card-head">
                       <div>
+                        <h2 class="adm-card-title" data-i18n="admin_aiusage_title">AI usage meter</h2>
+                        <p class="adm-card-desc" data-i18n="admin_aiusage_desc">Real OpenAI spend per feature and model, from token metering.</p>
+                      </div>
+                      <select id="adminAiUsageDays" class="adm-select">
+                        <option value="7">Last 7 days</option>
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                      </select>
+                    </div>
+                    <div class="adm-card-body" id="adminAiUsage"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
                         <h2 class="adm-card-title" data-i18n="admin_retention_title">Monthly retention</h2>
                         <p class="adm-card-desc" data-i18n="admin_retention_desc">Active paid, new, renewed and cancelled per month.</p>
                       </div>

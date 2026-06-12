@@ -207,3 +207,51 @@ test('computeFinanceSeries computes revenue/cost/profit per month', () => {
   assert.equal(series[1].profitCents, 1570);
   assert.equal(series[1].aiCalls, 14);
 });
+
+// ── AI usage meter (usage_events) ────────────────────────────────────────────
+
+test('modelPrice prefix-matches and falls back to config rates', async () => {
+  const { modelPrice } = await import('../../backend/lib/admin-stats.ts');
+  assert.equal(modelPrice('gpt-4o-mini-2024-07-18', CFG).input, 15);
+  assert.equal(modelPrice('gpt-4o-2024-08-06', CFG).input, 250);
+  assert.equal(modelPrice('o4-mini-2025-04-16', CFG).output, 440);
+  // Unknown model -> config rates, never 0.
+  const fb = modelPrice('some-future-model', CFG);
+  assert.equal(fb.input, CFG.aiInputCostCentsPerM);
+  assert.equal(fb.output, CFG.aiOutputCostCentsPerM);
+});
+
+test('computeAiUsage aggregates per feature x model with cached pricing', async () => {
+  const { computeAiUsage } = await import('../../backend/lib/admin-stats.ts');
+  const rows = [
+    // 1M uncached input + 0.1M output on mini: 15 + 6 = 21 cents
+    { user_id: 'u1', feature: 'ask_stream', model: 'gpt-4o-mini-2024-07-18',
+      prompt_tokens: 1_000_000, completion_tokens: 100_000, cached_tokens: 0 },
+    // 1M input fully cached on mini: 7.5 cents
+    { user_id: 'u1', feature: 'ask_stream', model: 'gpt-4o-mini-2024-07-18',
+      prompt_tokens: 1_000_000, completion_tokens: 0, cached_tokens: 1_000_000 },
+    // unattributed embeddings: 1M x 2 cents
+    { user_id: null, feature: 'embeddings', model: 'text-embedding-3-small',
+      prompt_tokens: 1_000_000, completion_tokens: 0, cached_tokens: 0 },
+  ];
+  const out = computeAiUsage(rows, CFG);
+  assert.equal(out.totalRequests, 3);
+  assert.equal(out.lines.length, 2);
+  const ask = out.lines.find((l) => l.feature === 'ask_stream');
+  assert.equal(ask.requests, 2);
+  assert.equal(ask.costCents, 28.5);
+  assert.equal(out.unattributedCostCents, 2);
+  assert.equal(out.totalCostCents, 30.5);
+  assert.equal(out.perUserCostCents.get('u1'), 28.5);
+});
+
+test('computeFinancials: meteredCostCents overrides both estimates', () => {
+  const users = [
+    { userId: 'a', interactive: 100, generation: 10, paid: true, meteredCostCents: 42 },
+  ];
+  const r = computeFinancials(users, CFG);
+  // Without metering this would be 100x10 + 10x50 = 1500 cents.
+  assert.equal(r.aiCostCents, 42);
+  assert.equal(r.measuredAiCostCents, 42);
+  assert.equal(r.estimatedAiCostCents, 0);
+});

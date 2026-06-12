@@ -6,9 +6,9 @@ import { logSecurityEvent } from '../lib/logger';
 import { isUuid } from '../lib/validation';
 import {
   bucketSignups, selectNewUsers, summarizeSubscriptions, computeRetention, computeFinancials, computeUsage,
-  buildMonthList, bucketAiByMonth, computeFinanceSeries,
+  buildMonthList, bucketAiByMonth, computeFinanceSeries, computeAiUsage,
   isBucket, isRange, RANGE_DAYS, type Bucket, type Range, type SubRow, type SubEvent,
-  type CostConfig, type UserUsage, type UsageEvent
+  type CostConfig, type UserUsage, type UsageEvent, type UsageEventRow
 } from '../lib/admin-stats';
 import type { LambdaResponse, NetlifyEvent, SupabaseUser } from '../lib/types';
 
@@ -62,7 +62,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   let action: unknown, query = '', userId: unknown, plan: unknown,
       reportId: unknown, status: unknown, resolutionNote = '',
-      range: unknown, bucket: unknown, months: unknown, config: unknown;
+      range: unknown, bucket: unknown, months: unknown, config: unknown, days: unknown;
   try {
     const b = JSON.parse(event.body || '{}') as Record<string, unknown>;
     if (!b || typeof b !== 'object' || Array.isArray(b)) return fail(400, 'Invalid body');
@@ -77,6 +77,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     bucket = b.bucket;
     months = b.months;
     config = b.config;
+    days = b.days;
   } catch { return fail(400, 'Invalid body'); }
 
   const callerToken = extractBearerToken(event.headers);
@@ -420,37 +421,67 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       usageMap.set(uid, u);
     }
 
-    // Real token metering for interactive (ask/stream) calls this month, from
-    // retrieval_debug_log. Degrades to per-call estimates if the table is empty.
-    const tokenMap = new Map<string, { prompt: number; completion: number }>();
-    const tokRes = await supaRequest<Array<{ user_id?: string; prompt_tokens?: number; completion_tokens?: number }>>(
+    // Cost source 1 (best): the usage_events meter — every OpenAI call, all
+    // features, per-model pricing. Absent/empty (migration not applied yet, or
+    // a window before the meter shipped) → degrade to source 2.
+    const meterRes = await supaRequest<UsageEventRow[]>(
       'GET',
-      'retrieval_debug_log?created_at=gte.' + encodeURIComponent(since) +
-        '&select=user_id,prompt_tokens,completion_tokens&limit=300000',
+      'usage_events?created_at=gte.' + encodeURIComponent(since) +
+        '&select=user_id,feature,model,prompt_tokens,completion_tokens,cached_tokens&limit=300000',
       null, serviceKey
     );
-    const tokRows = Array.isArray(tokRes.body) ? tokRes.body : [];
-    for (const t of tokRows) {
-      const uid = t.user_id ? String(t.user_id) : '';
-      if (!uid) continue;
-      const e = tokenMap.get(uid) || { prompt: 0, completion: 0 };
-      e.prompt += Number(t.prompt_tokens) || 0;
-      e.completion += Number(t.completion_tokens) || 0;
-      tokenMap.set(uid, e);
+    const meterRows = Array.isArray(meterRes.body) ? meterRes.body : [];
+    const meter = meterRows.length ? computeAiUsage(meterRows, cfg) : null;
+
+    // Cost source 2: interactive (ask/stream) tokens from retrieval_debug_log.
+    // Degrades further to per-call estimates if that table is empty too.
+    const tokenMap = new Map<string, { prompt: number; completion: number }>();
+    if (!meter) {
+      const tokRes = await supaRequest<Array<{ user_id?: string; prompt_tokens?: number; completion_tokens?: number }>>(
+        'GET',
+        'retrieval_debug_log?created_at=gte.' + encodeURIComponent(since) +
+          '&select=user_id,prompt_tokens,completion_tokens&limit=300000',
+        null, serviceKey
+      );
+      const tokRows = Array.isArray(tokRes.body) ? tokRes.body : [];
+      for (const t of tokRows) {
+        const uid = t.user_id ? String(t.user_id) : '';
+        if (!uid) continue;
+        const e = tokenMap.get(uid) || { prompt: 0, completion: 0 };
+        e.prompt += Number(t.prompt_tokens) || 0;
+        e.completion += Number(t.completion_tokens) || 0;
+        tokenMap.set(uid, e);
+      }
     }
 
     // Union of paid users and users with usage.
-    const userIds = new Set<string>([...paidSet, ...usageMap.keys(), ...tokenMap.keys()]);
+    const userIds = new Set<string>([
+      ...paidSet, ...usageMap.keys(), ...tokenMap.keys(),
+      ...(meter ? meter.perUserCostCents.keys() : [])
+    ]);
     const users: UserUsage[] = Array.from(userIds).map((uid) => {
       const u = usageMap.get(uid) || { interactive: 0, generation: 0 };
-      const tok = tokenMap.get(uid);
       const usr: UserUsage = { userId: uid, interactive: u.interactive, generation: u.generation, paid: paidSet.has(uid) };
+      if (meter) {
+        usr.meteredCostCents = meter.perUserCostCents.get(uid) || 0;
+        return usr;
+      }
+      const tok = tokenMap.get(uid);
       if (tok && (tok.prompt > 0 || tok.completion > 0)) {
         usr.interactiveTokenCostCents =
           (tok.prompt * cfg.aiInputCostCentsPerM + tok.completion * cfg.aiOutputCostCentsPerM) / 1_000_000;
       }
       return usr;
     });
+    // Service-level spend with no request user (indexing OCR, embeddings…)
+    // still must count toward total AI cost — carried by a synthetic row.
+    if (meter && meter.unattributedCostCents > 0) {
+      users.push({
+        userId: '(service: indexing/embeddings)',
+        interactive: 0, generation: 0, paid: false,
+        meteredCostCents: meter.unattributedCostCents
+      });
+    }
 
     const result = computeFinancials(users, cfg);
 
@@ -466,7 +497,58 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     await logSecurityEvent(serviceKey, callerUser.id, 'admin_stats_financials', {
       active_paid: result.activePaid, auth_method: adminCheck.method
     });
-    return jsonResponse(200, { ...result, metadata: { generatedAt: new Date().toISOString() } });
+    return jsonResponse(200, {
+      ...result,
+      costSource: meter ? 'usage_events' : (tokenMap.size ? 'retrieval_debug_log' : 'estimates'),
+      metadata: { generatedAt: new Date().toISOString() }
+    });
+  }
+
+  // ── Financial: AI usage meter breakdown (per feature × model) ─────────────
+  if (action === 'aiusage') {
+    const cfg = await loadCostConfig(serviceKey);
+    let d = typeof days === 'number' ? Math.floor(days) : parseInt(String(days || ''), 10);
+    if (!Number.isFinite(d) || d < 1) d = 30;
+    if (d > 365) d = 365;
+    const since = new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
+    const res = await supaRequest<UsageEventRow[]>(
+      'GET',
+      'usage_events?created_at=gte.' + encodeURIComponent(since) +
+        '&select=user_id,feature,model,prompt_tokens,completion_tokens,cached_tokens&limit=300000',
+      null, serviceKey
+    );
+    // Table missing (migration not applied) → tell the UI instead of 500ing.
+    if (!Array.isArray(res.body)) {
+      return jsonResponse(200, {
+        available: false, days: d, lines: [], topUsers: [],
+        totalCostCents: 0, totalRequests: 0, unattributedCostCents: 0,
+        metadata: { generatedAt: new Date().toISOString() }
+      });
+    }
+    const usage = computeAiUsage(res.body, cfg);
+    const topUsers = Array.from(usage.perUserCostCents.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([userId, costCents]) => ({ userId, costCents: Math.round(costCents * 100) / 100, email: undefined as string | undefined }));
+    await Promise.all(topUsers.map(async (t) => {
+      try {
+        const uRes = await supaAuthAdminRequest<{ email?: string }>('GET', 'users/' + t.userId, serviceKey);
+        if (uRes.status >= 200 && uRes.status < 300 && uRes.body && uRes.body.email) t.email = uRes.body.email;
+      } catch { /* best-effort */ }
+    }));
+    await logSecurityEvent(serviceKey, callerUser.id, 'admin_stats_aiusage', {
+      days: d, rows: res.body.length, auth_method: adminCheck.method
+    });
+    return jsonResponse(200, {
+      available: true,
+      days: d,
+      lines: usage.lines,
+      totalCostCents: usage.totalCostCents,
+      totalRequests: usage.totalRequests,
+      unattributedCostCents: usage.unattributedCostCents,
+      topUsers,
+      metadata: { generatedAt: new Date().toISOString() }
+    });
   }
 
   // ── Financial: monthly revenue / cost / profit trend ──────────────────────

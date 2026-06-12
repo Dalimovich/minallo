@@ -155,13 +155,18 @@ async function loadAdminStats(): Promise<void> {
   if (body) body.style.display = '';
   ['adminFinanceCards', 'adminFinanceChart', 'adminGrowthCards', 'adminDangerUsers',
    'adminActivityCards', 'adminSubCards', 'adminFunnel', 'adminRetention',
-   'adminNewUsers'].forEach(_sectionLoading);
+   'adminNewUsers', 'adminAiUsage'].forEach(_sectionLoading);
 
   // Fire independently; a slow/failed section never blocks the others.
   const guard = (p: Promise<void>): Promise<void> => p.catch(() => { /* section shows its own empty state */ });
   void guard(loadNewUsers());
   void guard(loadFinancials());
   void guard(loadUsage());
+  void guard(loadAiUsage());
+  document.getElementById('adminAiUsageDays')?.addEventListener('change', () => {
+    _sectionLoading('adminAiUsage');
+    void guard(loadAiUsage());
+  });
   void guard(loadFinanceSeries());
   void guard(loadSubscriptionCards());
   void guard(loadRetention());
@@ -540,6 +545,65 @@ function _renderFinanceBreakdown(data: FinancialStats): void {
           _eur(data.estimatedAiCostCents) + ' estimated'
         : ' · AI cost estimated (no token data yet)') +
     '</div>';
+}
+
+// ── AI usage meter (usage_events breakdown) ─────────────────────────────────
+
+function _tok(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+async function loadAiUsage(): Promise<void> {
+  const host = document.getElementById('adminAiUsage');
+  if (!host) return;
+  const daysSel = document.getElementById('adminAiUsageDays') as HTMLSelectElement | null;
+  const days = parseInt(daysSel?.value || '30', 10) || 30;
+  const data = adminSvc.getAiUsage ? await adminSvc.getAiUsage(days) : null;
+  if (!data) {
+    host.innerHTML = '<div class="adm-empty">AI usage unavailable (stale admin service or request failed).</div>';
+    return;
+  }
+  if (!data.available) {
+    host.innerHTML =
+      '<div class="adm-empty">No meter data. Apply the <code>20260612_000001_usage_events</code> migration ' +
+      'in the Supabase SQL editor — the backend is already reporting.</div>';
+    return;
+  }
+  if (!data.lines.length) {
+    host.innerHTML = '<div class="adm-empty">No AI calls recorded in the last ' + days + ' days.</div>';
+    return;
+  }
+  const rows = data.lines.map((l) => {
+    const cachedPct = l.promptTokens > 0 ? Math.round((l.cachedTokens / l.promptTokens) * 100) : 0;
+    return (
+      '<tr>' +
+      '<td class="lead">' + escapeHtml(l.feature) + '</td>' +
+      '<td>' + escapeHtml(l.model) + '</td>' +
+      '<td>' + String(l.requests) + '</td>' +
+      '<td>' + _tok(l.promptTokens) + (cachedPct > 0 ? ' <span class="adm-tag green">' + cachedPct + '% cached</span>' : '') + '</td>' +
+      '<td>' + _tok(l.completionTokens) + '</td>' +
+      '<td style="font-weight:700">' + (l.costCents / 100).toFixed(3) + ' €</td>' +
+      '</tr>'
+    );
+  }).join('');
+  const top = data.topUsers
+    .filter((t) => t.costCents > 0)
+    .slice(0, 5)
+    .map((t) => escapeHtml(t.email || t.userId.slice(0, 8) + '…') + ' (' + (t.costCents / 100).toFixed(2) + ' €)')
+    .join(' · ');
+  host.innerHTML =
+    '<div class="adm-mini-grid" style="margin-bottom:12px">' +
+      _kpiCard('Total AI spend', (data.totalCostCents / 100).toFixed(2) + ' €', 'last ' + data.days + ' days', 'warn').outerHTML +
+      _kpiCard('OpenAI requests', data.totalRequests).outerHTML +
+      _kpiCard('Service (no user)', (data.unattributedCostCents / 100).toFixed(2) + ' €', 'indexing · OCR · embeddings').outerHTML +
+    '</div>' +
+    '<table class="adm-table"><thead><tr>' +
+    ['Feature', 'Model', 'Calls', 'Input tok', 'Output tok', 'Cost']
+      .map((h) => '<th>' + h + '</th>').join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table>' +
+    (top ? '<div class="adm-note" style="margin-top:10px">Top users: ' + top + '</div>' : '');
 }
 
 function _renderDangerUsers(users: DangerUser[]): void {

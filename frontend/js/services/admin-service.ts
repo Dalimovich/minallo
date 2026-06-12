@@ -2,7 +2,7 @@ interface AdminFetchBody {
   action:
     | 'status' | 'search' | 'setplan' | 'reports' | 'resolvereport' | 'deleteself'
     | 'signups' | 'newusers' | 'subscriptions' | 'retention'
-    | 'financials' | 'financeseries' | 'getcostconfig' | 'savecostconfig' | 'usage';
+    | 'financials' | 'financeseries' | 'getcostconfig' | 'savecostconfig' | 'usage' | 'aiusage';
   [k: string]: unknown;
 }
 
@@ -212,6 +212,34 @@ export async function saveCostConfig(config: CostConfig): Promise<FinancialStats
   if (!res.ok) return null;
   const data = await res.json().catch(() => null);
   return data && typeof data === 'object' && 'config' in data ? (data as { config: CostConfig }).config : null;
+}
+
+// ── AI usage meter (usage_events) ────────────────────────────────────────────
+
+export interface AiUsageLine {
+  feature: string;
+  model: string;
+  requests: number;
+  promptTokens: number;
+  cachedTokens: number;
+  completionTokens: number;
+  costCents: number;
+}
+
+export interface AiUsageStats {
+  available: boolean;          // false until the usage_events migration is applied
+  days: number;
+  lines: AiUsageLine[];
+  totalCostCents: number;
+  totalRequests: number;
+  unattributedCostCents: number;
+  topUsers: Array<{ userId: string; costCents: number; email?: string }>;
+}
+
+export async function getAiUsage(days = 30): Promise<AiUsageStats | null> {
+  const res = await _adminFetch({ action: 'aiusage', days });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
 }
 
 export interface ReindexCourseResult {
