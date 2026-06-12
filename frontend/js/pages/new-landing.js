@@ -41,148 +41,148 @@
         startFree: 'Start free trial'
       },
       hero: {
-        badge: 'Course workspace, AI tutor, and exam prep in one app',
-        title: 'Study from the files your course actually uses.',
-        subtitle: 'Upload lecture PDFs, exercise sheets, solutions, notes, and formula collections. Minallo organizes them by course, opens them in a PDF workspace, answers with cited sources, and turns the same material into quizzes, flashcards, cheatsheets, Deep Learn lessons, and ExamForge mock exams.',
-        buildCta: 'Start studying with Minallo',
+        badge: 'AI study platform for exam season',
+        title: 'Upload Your Course. Let Minallo Build Your Exam Prep.',
+        subtitle: 'Turn your lecture notes, PDFs, and exercises into quizzes, flashcards, cheatsheets, exam-style practice, and step-by-step explanations with your 24/7 AI tutor.',
+        buildCta: 'Start your 1-week free trial',
         watchCta: 'Watch preview',
         stats: {
-          pdf: 'Course files, folders, document types, PDF tabs, notes, and summaries',
-          ai: 'AI, Problem, Notes, and Summary rails grounded in uploaded PDFs',
-          focusLabel: 'Focus',
-          focus: 'Daily Mission, Pomodoro, Study Lounge, games, and progress tracking'
+          pdf: 'Upload PDFs, lecture notes, exercises, and course materials',
+          ai: 'Generate Quiz, Flashcards, Cheatsheet, Deep Learn, and ExamForge',
+          focusLabel: 'Exam prep',
+          focus: 'Study smarter, save time, and walk into exams with more confidence'
         }
       },
       tutorPreview: {
         workspace: 'Course workspace',
         courseMaterials: 'Files in this course',
         synced: 'Synced',
-        tabs: { lecture: 'Lecture', exercise: 'Exercise sheet', formula: 'Formula sheet' },
-        smartRetrieval: 'Document understanding',
-        tutorName: 'Minallo AI Tutor',
-        mode: 'Answering from course sources',
-        userMsg: 'Solve exercise 6 with my lecture method and show the source pages.',
-        aiMsg: 'I found the matching lecture method, the exercise values, and the formula sheet entry. Start with the equilibrium equations, substitute the given values, then verify the final reaction against the worked example style from your course.',
-        cite1: 'Source: Mechanics_lecture_03.pdf - page 12',
-        cite2: 'Source: Formula_collection.pdf - page 2',
-        miniSources: 'Sources',
-        miniVerified: 'Verified',
-        miniGuessing: 'Unsupported'
+        tabs: { lecture: 'Lecture notes', exercise: 'Exercises', formula: 'Exam topics' },
+        smartRetrieval: 'Exam prep tools',
+        tutorName: '24/7 AI Tutor',
+        mode: 'Step-by-step study help',
+        userMsg: 'My exam is in 5 days. Help me study this topic.',
+        aiMsg: 'Start with the core idea, review the key formulas, then test yourself. I can turn this material into a cheatsheet, flashcards, a quiz, or an ExamForge practice run.',
+        cite1: 'Cheatsheet: key points for revision',
+        cite2: 'ExamForge: exam-style practice ready',
+        miniSources: 'Study tools',
+        miniVerified: 'Ready',
+        miniGuessing: 'Stress'
       },
       features: {
-        eyebrow: 'What is actually inside',
-        title: 'Built around the way the app works today.',
-        lead: 'Minallo is not just a chat box. It is a course dashboard, PDF workspace, AI tutor, practice generator, exam-prep area, editor, German practice space, and focus system tied together around your uploaded materials.',
+        eyebrow: 'Exam prep tools',
+        title: 'Turn passive course files into active study.',
+        lead: 'Do not just reread PDFs. Minallo helps you transform uploaded course materials into the tools students actually use before exams: quizzes, flashcards, cheatsheets, exam-style practice, and guided explanations.',
         cards: [
-          { title: 'Course workspaces', text: 'Create subjects by semester, upload PDFs into folders, track read and unread files, and open Quiz, Flashcards, ExamForge, Cheatsheet, and Deep Learn from the same course page.' },
-          { title: 'PDF workspace with AI rail', text: 'Open course PDFs with tabs and use the right rail for AI, Problem, Notes, and Summary without leaving the document you are reading.' },
-          { title: 'Source-aware answers', text: 'Ask about lectures, exercises, solutions, and formula sheets. Minallo searches the course, cites pages, and tells you when the uploaded material is not enough.' },
-          { title: 'ExamForge mock exams', text: 'Generate source-grounded practice exams, answer them in exam or practice mode, grade written answers, and delete old runs when you no longer need them.' },
-          { title: 'Cheatsheet and Deep Learn', text: 'Create dense exam-ready cheatsheets or longer guided lessons from selected course files, then save and reopen them later.' },
-          { title: 'Quizzes and flashcards', text: 'Generate scored quizzes and review cards from the same indexed PDFs instead of manually copying definitions, formulas, and concepts.' },
-          { title: 'Daily Mission and progress', text: 'Turn uploaded files into a daily study plan, review what is due, and see progress across reading, notes, practice, and AI activity.' },
-          { title: 'Editor tools', text: 'Use the Writer for rich-text documents, the PDF Editor for highlighting, signing, and text, and the PDF Merger to combine and reorder PDFs.' },
-          { title: 'German, games, and Study Lounge', text: 'Practice German vocabulary, grammar, sentences, and writing; take quick game breaks; and use Study Lounge music services while you work.' }
+          { title: 'Files', text: 'Upload your PDFs, lecture notes, exercises, and course materials in one place so your exam prep starts from what you already have.' },
+          { title: 'Quiz', text: 'Test yourself with AI-generated quizzes based on your course materials, not random internet examples.' },
+          { title: 'Flashcards', text: 'Turn important definitions, formulas, and concepts into flashcards for active recall.' },
+          { title: 'ExamForge', text: 'Practice with exam-style questions generated from your own course content.' },
+          { title: 'Cheatsheet', text: 'Create compact revision notes with the most important points from your material.' },
+          { title: 'Deep Learn', text: 'Understand difficult topics step by step with guided AI explanations.' },
+          { title: '24/7 AI Tutor', text: 'Ask questions anytime and get study help based on your uploaded course materials.' },
+          { title: 'Study organization', text: 'Keep each course, file, and study tool in one place so you know where to start.' },
+          { title: 'Less exam stress', text: 'Move from scattered files to a clear study flow when deadlines are close.' }
         ]
       },
       paths: {
-        eyebrow: 'Choose your workspace',
-        title: 'Start where the work actually happens.',
-        lead: 'Most students begin in Courses, then move into PDFs, AI help, exam practice, notes, and the daily plan. German practice, games, chat, and editor tools are separate when you need them.',
+        eyebrow: 'Study flow',
+        title: 'From course files to exam confidence.',
+        lead: 'Upload your material once, then move through the study tools that help you understand, revise, test yourself, and practice before the exam.',
         studentCard: {
-          eyebrow: 'Courses',
-          title: "I'm studying a course",
-          desc: 'For lecture PDFs, exercise sheets, source-grounded answers, mock exams, cheatsheets, Deep Learn lessons, notes, summaries, and daily study plans.',
+          eyebrow: 'Exam preparation',
+          title: 'I need to prepare for an exam',
+          desc: 'For students with lecture notes, PDFs, exercises, and too much material to review manually.',
           items: [
-            'Files, folders, document types, and PDF tabs',
-            'AI, Problem, Notes, and Summary inside the PDF workspace',
-            'Quiz, Flashcards, ExamForge, Cheatsheet, and Deep Learn'
+            'Upload your course files',
+            'Generate Cheatsheet, Flashcards, Quiz, and ExamForge',
+            'Ask your 24/7 AI Tutor when a topic does not make sense'
           ]
         },
         germanCard: {
-          eyebrow: 'Language',
-          title: "I'm learning German",
-          desc: 'For vocabulary, grammar, sentence practice, daily word work, writing feedback, and playful revision outside your course folders.',
+          eyebrow: 'Active study',
+          title: 'I want to stop rereading PDFs',
+          desc: 'For students who want to turn passive reading into active recall, practice, and step-by-step learning.',
           items: [
-            'Vocabulary, grammar, and everyday sentences',
-            'Writing Coach feedback adapted to your level',
-            'Practice games and daily language routines'
+            'Turn notes into quizzes and flashcards',
+            'Use Deep Learn for difficult topics',
+            'Practice exam-style questions before the real exam'
           ]
         }
       },
       lifestyle: {
-        eyebrow: 'Momentum',
-        title: 'The app supports the routine around the studying too.',
-        lead: 'Minallo keeps the practical pieces close: dashboard widgets, Daily Mission tasks, Pomodoro focus, Study Lounge music, games, notifications, chat, and account-level progress.',
+        eyebrow: 'Why students use it',
+        title: 'Built for the moments before exams.',
+        lead: 'Minallo is designed for the questions students actually ask: what should I study, how do I understand it, and how can I check if I am ready?',
         cards: [
-          { title: 'Study Lounge music', text: 'Keep focus music and playlists nearby while you read, solve exercises, or review cards.' },
-          { title: 'Games for breaks', text: 'Open quick games from the sidebar when you need a reset without leaving the study app.' },
-          { title: 'Daily Mission', text: 'Use today\'s plan to decide what to read, review, practice, or generate next from your course files.' }
+          { title: 'Exam coming soon?', text: 'Upload the material and start with a clearer plan instead of staring at a long PDF.' },
+          { title: 'Too many lecture slides?', text: 'Create a cheatsheet, build flashcards, and test yourself with Quiz.' },
+          { title: 'Stuck on a topic?', text: 'Ask your 24/7 AI tutor or use Deep Learn for a guided explanation.' }
         ]
       },
       tutor: {
-        eyebrow: 'AI Tutor',
-        title: 'Ask the AI from the exact place you are studying.',
-        lead: 'Use the side rail while a PDF is open, or the full Chatbot page for longer conversations. Both can use course context, source links, and document understanding from your uploaded files.',
+        eyebrow: '24/7 AI Tutor',
+        title: 'Study help whenever you get stuck.',
+        lead: 'Your Minallo tutor helps you understand difficult topics, solve study questions step by step, and turn your uploaded course materials into revision tools.',
         items: [
-          'Ask from the current PDF, a selected course, or the full chatbot',
-          'Open cited sources back to the right file and page',
-          'Use tutor modes for explanations, guided solving, notes, summaries, and study tasks',
-          'Generate Cheatsheet or Daily Mission actions from AI when the course context supports it'
+          'Ask questions about your lectures, PDFs, notes, and exercises',
+          'Get step-by-step explanations when a topic feels confusing',
+          'Use Deep Learn for guided understanding before you memorize',
+          'Turn the same material into Quiz, Flashcards, Cheatsheet, and ExamForge'
         ]
       },
       pipeline: {
-        eyebrow: 'How the course AI works',
-        title: 'From uploaded file to study action',
+        eyebrow: 'How it works',
+        title: 'Upload, generate, practice, repeat.',
         steps: [
-          { title: 'Upload and classify', text: 'Add lectures, exercises, solutions, notes, summaries, exams, or formula sheets. Minallo keeps the course file list organized and detects document types.' },
-          { title: 'Index the content', text: 'PDF text, pages, formulas, exercises, and topic signals become searchable for AI, quizzes, flashcards, cheatsheets, and Deep Learn.' },
-          { title: 'Retrieve the right context', text: 'For each question or generated tool, Minallo chooses relevant documents and pages instead of dumping the whole course into the answer.' },
-          { title: 'Create the study output', text: 'You get an answer, note, summary, quiz, flashcard deck, ExamForge run, Cheatsheet, Deep Learn lesson, or Daily Mission task tied back to your files.' }
+          { title: 'Upload your course files', text: 'Add lecture notes, PDFs, exercises, slides, and course materials.' },
+          { title: 'Generate a Cheatsheet', text: 'Create compact revision notes from the most important material.' },
+          { title: 'Learn with Deep Learn', text: 'Break difficult topics into clear, guided explanations.' },
+          { title: 'Practice for the exam', text: 'Revise with Flashcards, test yourself with Quiz, and train with ExamForge.' }
         ]
       },
       workflow: {
-        eyebrow: 'Workspace',
-        title: 'Everything important stays in one study flow.',
-        lead: 'Move between the surfaces students actually use inside Minallo: Courses, PDF rail tools, Chatbot, Editor, German practice, Games, Study Lounge, Dashboard, and Subscription.',
+        eyebrow: 'One course. One study system.',
+        title: 'Everything you need to study one course in one place.',
+        lead: 'Files, Quiz, Flashcards, ExamForge, Cheatsheet, Deep Learn, and your 24/7 AI Tutor stay together so exam prep feels less scattered.',
         cards: [
-          { title: 'Courses', text: 'Create a subject, upload files, organize folders, open PDFs, and launch Quiz, Flashcards, ExamForge, Cheatsheet, or Deep Learn from the course tabs.' },
-          { title: 'PDF rail', text: 'While reading a PDF, switch between AI, Problem, Notes, and Summary so the answer stays connected to the document.' },
-          { title: 'Chatbot and chat', text: 'Use the full chatbot for broader course conversations, and use Chat for rooms and messages outside the tutor.' },
-          { title: 'Editor and practice', text: 'Write documents, annotate PDFs, merge files, practice German, play games, and keep moving with Daily Mission and focus tools.' }
+          { title: 'Upload Files', text: 'Bring your lecture notes, PDFs, exercises, and course material into Minallo.' },
+          { title: 'Get a Cheatsheet', text: 'Condense long material into focused revision notes.' },
+          { title: 'Revise and test', text: 'Use Flashcards for active recall and Quiz to check what you know.' },
+          { title: 'Practice with ExamForge', text: 'Train with exam-style questions before the real exam.' }
         ]
       },
       quote: {
-        title: '"The answer points back to the exact file I was studying."',
-        text: 'That is the point of Minallo: course files first, source pages visible, and the next study action only one click away.'
+        title: '"Stop rereading PDFs for hours. Turn them into exam prep."',
+        text: 'Minallo helps students study from the exact materials they already have, with tools built for understanding, revision, and practice.'
       },
       pricing: {
         eyebrow: 'Pricing',
-        title: 'Try the real workspace before you commit.',
-        lead: 'Start with a 7-day free trial. Continue with one subscription for course uploads, AI tutor, PDF workspace, Chatbot, quizzes, flashcards, ExamForge, Cheatsheet, Deep Learn, editor tools, German practice, games, and focus features.',
+        title: 'Try Minallo free for 1 week.',
+        lead: 'Upload your course and start preparing for exams with quizzes, flashcards, cheatsheets, ExamForge, Deep Learn, and your 24/7 AI tutor.',
         pro: {
-          popular: '7-day free trial',
+          popular: '1-week free trial',
           name: 'Student Pro',
-          sub: 'The full Minallo study app, not a limited demo.',
+          sub: 'Your exam prep system for uploaded course materials.',
           per: '/month after trial',
           items: [
-            'Courses, folders, uploads, PDF tabs, and source links',
-            'AI rail, Chatbot, notes, summaries, and problem solving',
-            'Quiz, Flashcards, ExamForge, Cheatsheet, and Deep Learn',
-            'Writer, PDF Editor, PDF Merger, and saved documents',
-            'German practice, Writing Coach, Games, Study Lounge, and Daily Mission'
+            'Upload course materials and organize study files',
+            'Generate Quiz and Flashcards for active recall',
+            'Create Cheatsheets for fast revision',
+            'Practice exam-style questions with ExamForge',
+            'Ask your 24/7 AI Tutor and learn with Deep Learn'
           ],
-          cta: 'Start 7-day free trial'
+          cta: 'Start your 1-week free trial'
         }
       },
       ctaBanner: {
-        title: 'Open a course, upload the files, and let the rest of the workspace connect.',
-        text: 'Read PDFs, ask with sources, generate practice, create cheatsheets and lessons, plan today\'s mission, edit documents, and keep your study routine in one place.',
-        cta: 'Start studying now'
+        title: 'Upload your course and start studying smarter today.',
+        text: 'Turn lecture notes, PDFs, and exercises into quizzes, flashcards, cheatsheets, exam-style practice, and step-by-step explanations.',
+        cta: 'Start your 1-week free trial'
       },
       footer: {
         copyPre: '© ',
-        copyPost: ' Minallo. Built for clearer studying and better routines.',
+        copyPost: ' Minallo. Your 24/7 AI tutor for exam prep.',
         tutor: 'AI Tutor',
         imprint: 'Impressum',
         privacy: 'Privacy',
@@ -191,7 +191,7 @@
       },
       preview: {
         title: 'Minallo · Product preview',
-        closingLine: 'Minallo reads your course files, finds the right source pages, and explains the answer the way your material teaches it.',
+        closingLine: 'Minallo turns your course files into quizzes, flashcards, cheatsheets, exam practice, and step-by-step study help.',
         controls: {
           next: 'Next', back: 'Back', replay: 'Replay',
           start: 'Start studying with Minallo',
@@ -201,7 +201,7 @@
           title: 'What do you want to see?',
           sub: 'Pick a track — the preview plays a short, interactive walkthrough.',
           course: 'Studying a course',
-          courseSub: 'Lectures, exercises, AI answers with sources, and focus tools.',
+          courseSub: 'Lectures, exercises, quizzes, flashcards, and exam practice.',
           german: 'Learning German',
           germanSub: 'Vocabulary, grammar, everyday sentences, and practice games.'
         },
@@ -212,7 +212,7 @@
           annotate: 'Annotate', annotateSub: 'Highlight & sign PDFs',
           flashcards: 'Flashcards', flashcardsSub: 'Auto-built from your files',
           quiz: 'Quiz', quizSub: 'Practice with scoring',
-          examforge: 'ExamForge', examforgeSub: 'Generate source-based mock exams',
+          examforge: 'ExamForge', examforgeSub: 'Generate exam-style practice',
           summary: 'Summary', summarySub: 'Key points from lectures',
           focus: 'Focus', streak: 'Streak', dayStreak: '7-day streak',
           askPlaceholder: 'Ask about your course…', tapToFlip: 'Tap to flip'
@@ -234,10 +234,10 @@
           shell: { chapter: 'Shell', eyebrow: 'Step 1 · App shell', headline: 'Start from the real Minallo sidebar.', body: 'The preview opens on an empty dashboard and uses the same sidebar order and icons students see in the app.' },
           setup: { chapter: 'Course', eyebrow: 'Step 2 · Course setup', headline: 'Create the course first.', body: 'Open Courses, type the subject name, add it, and Minallo places the new course card in front of you.' },
           upload: { chapter: 'Upload', eyebrow: 'Step 3 · Upload files', headline: 'Open the course and add a file.', body: 'Inside the Files tab, click Upload files, choose the material you need, and Minallo shows the upload progress modal.' },
-          ask: { chapter: 'Ask', eyebrow: 'Step 4 · Ask AI', headline: 'Ask in your own words.', body: 'Type a normal course question. Minallo sends it like the real chat, shows the thinking state, then streams a grounded answer with sources.' },
-          sources: { chapter: 'Sources', eyebrow: 'Step 5 · Retrieve', headline: 'It finds the exact pages.', body: 'Minallo searches your files and pulls the passages that actually answer the question.' },
-          answer: { chapter: 'Answer', eyebrow: 'Step 6 · Explain', headline: 'A structured answer you can trust.', body: 'Worked the way your course teaches it — with page citations you can open and verify.' },
-          tools: { chapter: 'Tools', eyebrow: 'Step 7 · Practice', headline: 'Turn material into exam practice.', body: 'Annotate PDFs, generate flashcards and quizzes, and use ExamForge to create source-based mock exams from the same course files.' },
+          ask: { chapter: 'Ask', eyebrow: 'Step 4 - Ask AI', headline: 'Ask in your own words.', body: 'Type a normal course question and get step-by-step study help from your 24/7 AI tutor.' },
+          sources: { chapter: 'Plan', eyebrow: 'Step 5 - Focus', headline: 'Know what to study next.', body: 'Minallo helps you move from too many files to the topics, exercises, and study tools that matter for revision.' },
+          answer: { chapter: 'Learn', eyebrow: 'Step 6 - Explain', headline: 'A structured answer you can use.', body: 'Get step-by-step explanations that help difficult topics feel easier to review.' },
+          tools: { chapter: 'Practice', eyebrow: 'Step 7 - Exam prep', headline: 'Turn material into exam practice.', body: 'Generate flashcards and quizzes, create a cheatsheet, and use ExamForge for exam-style practice from the same course files.' },
           focus: { chapter: 'Focus', eyebrow: 'Step 8 · Momentum', headline: 'Then keep your momentum.', body: 'Run a Pomodoro, play a focus playlist, and watch your study streak grow.' }
         },
         german: {
@@ -252,10 +252,10 @@
       }
     },
     de: {
-      logo: { tag: 'Klarer studieren' },
+      logo: { tag: 'Klarer fuer die Pruefung lernen' },
       nav: {
         features: 'Funktionen',
-        paths: 'Bereiche',
+        paths: 'Lernfluss',
         tutor: 'Tutor',
         workflow: 'Workspace',
         pricing: 'Preise',
@@ -263,148 +263,148 @@
         startFree: 'Kostenlos testen'
       },
       hero: {
-        badge: 'KI-Lernworkspace für echte Kursmaterialien',
-        title: 'Lerne mit deinen eigenen Vorlesungen, nicht mit generischen Antworten.',
-        subtitle: 'Lade PDFs, Vorlesungsnotizen, Übungen und Formelsammlungen hoch. Minallo hilft dir, Inhalte zu verstehen, Aufgaben Schritt für Schritt zu lösen, Quellen zu prüfen und deinen Lernalltag zu organisieren.',
-        buildCta: 'Mit Minallo lernen',
+        badge: 'KI-Lernplattform fuer die Pruefungsphase',
+        title: 'Lade deinen Kurs hoch. Minallo baut deine Pruefungsvorbereitung.',
+        subtitle: 'Verwandle Vorlesungsnotizen, PDFs und Uebungen in Quizze, Karteikarten, Cheatsheets, pruefungsnahe Aufgaben und Schritt-fuer-Schritt-Erklaerungen mit deinem 24/7 KI-Tutor.',
+        buildCta: '1 Woche kostenlos testen',
         watchCta: 'Vorschau ansehen',
         stats: {
-          pdf: 'Kurs-PDFs hochladen, markieren, zusammenfassen und organisieren',
-          ai: 'KI-Antworten auf Basis deiner hochgeladenen Materialien',
-          focusLabel: 'Fokus',
-          focus: 'Pomodoro, Playlists, Spiele und Lernserien für mehr Momentum'
+          pdf: 'PDFs, Vorlesungsnotizen, Uebungen und Kursmaterialien hochladen',
+          ai: 'Quiz, Karteikarten, Cheatsheet, Deep Learn und ExamForge erstellen',
+          focusLabel: 'Pruefungsvorbereitung',
+          focus: 'Smarter lernen, Zeit sparen und mit mehr Sicherheit in die Pruefung gehen'
         }
       },
       tutorPreview: {
-        workspace: 'Arbeitsbereich',
-        courseMaterials: 'Kursmaterialien',
-        synced: 'Synchronisiert',
-        tabs: { lecture: 'Vorlesungs-PDF', exercise: 'Übung', formula: 'Formelsammlung' },
-        smartRetrieval: 'Intelligente Suche',
-        tutorName: 'Minallo KI-Tutor',
-        mode: 'Kursbasierte Antwort',
-        userMsg: 'Löse Übung 6 mit der Methode aus meiner Vorlesung und zitiere die Formel.',
-        aiMsg: 'Die Aufgabe nutzt die Gleichgewichtsmethode aus deiner Vorlesung. Beginne mit der Kräftebilanz und setze dann die Werte aus dem Übungsblatt ein. Die Formel ist in deiner Formelsammlung bestätigt.',
-        cite1: 'Quellenangabe: Vorlesung 03 · Seite 12',
-        cite2: 'Quellenangabe: Formelsammlung · Seite 2',
-        miniSources: 'Quellen',
-        miniVerified: 'Geprüft',
-        miniGuessing: 'Unbelegte Aussagen'
+        workspace: 'Kurs-Workspace',
+        courseMaterials: 'Dateien in diesem Kurs',
+        synced: 'Bereit',
+        tabs: { lecture: 'Vorlesungsnotizen', exercise: 'Uebungen', formula: 'Pruefungsthemen' },
+        smartRetrieval: 'Lernwerkzeuge',
+        tutorName: '24/7 KI-Tutor',
+        mode: 'Schritt-fuer-Schritt-Lernhilfe',
+        userMsg: 'Meine Pruefung ist in 5 Tagen. Hilf mir, dieses Thema zu lernen.',
+        aiMsg: 'Starte mit der Grundidee, wiederhole die wichtigsten Formeln und teste dich danach. Ich kann daraus ein Cheatsheet, Karteikarten, ein Quiz oder eine ExamForge-Uebung machen.',
+        cite1: 'Cheatsheet: wichtigste Punkte fuer die Wiederholung',
+        cite2: 'ExamForge: pruefungsnahe Uebung bereit',
+        miniSources: 'Lernwerkzeuge',
+        miniVerified: 'Bereit',
+        miniGuessing: 'Stress'
       },
       features: {
-        eyebrow: 'Funktionen',
-        title: 'Kursdateien lernen sich leichter, wenn alles an einem Ort ist.',
-        lead: 'Minallo verwandelt verstreute PDFs, Übungen, Notizen und Wiederholungstools in einen klaren Workspace für Verstehen, Üben und Prüfungsvorbereitung.',
+        eyebrow: 'Pruefungstools',
+        title: 'Mach aus passiven Kursdateien aktives Lernen.',
+        lead: 'Lies PDFs nicht nur immer wieder durch. Minallo hilft dir, hochgeladene Kursmaterialien in Quizze, Karteikarten, Cheatsheets, pruefungsnahe Aufgaben und gefuehrte Erklaerungen zu verwandeln.',
         cards: [
-          { title: 'KI-Tutor für deinen Kurs', text: 'Stelle Fragen zu hochgeladenen Vorlesungen, Übungen und Formelsammlungen und erhalte Antworten, die zu deinem Kursmaterial passen.' },
-          { title: 'Quellen, die du überprüfen kannst', text: 'Wichtige Antworten enthalten Dokument- und Seitenangaben, damit du direkt im Original-PDF nachsehen kannst.' },
-          { title: 'Fokus-Werkzeuge eingebaut', text: 'Pomodoro-Sitzungen, Lernserien und Fortschrittssignale helfen dir, wirklich weiterzuarbeiten statt nur Dateien zu sammeln.' },
-          { title: 'Ehrlich, wenn Kontext fehlt', text: 'Wenn hochgeladenes Material unvollständig ist, erklärt Minallo, welche Datei, Seite oder Aufgabennummer fehlt.' },
-          { title: 'Vorlesungen, Aufgaben und Formeln verbinden', text: 'Minallo kombiniert Aufgabenstellung, Vorlesungsmethode und Formelsammlung zu einer strukturierten Erklärung.' },
-          { title: 'Schnellere Hilfe bei wiederholten Fragen', text: 'Wenn dieselbe Kursfrage erneut auftaucht, kann Minallo eine geprüfte Antwort wiederverwenden.' },
-          { title: 'Deutsch-Lernmodus', text: 'Übe Vokabeln, Grammatik, Beispiele und Wiederholungsspiele in einem eigenen Sprachbereich.' },
-          { title: 'Playlists beim Lernen', text: 'Behalte deine Lieblings-Playlists in Reichweite, damit lange Lernsessions persönlicher und leichter durchzuhalten sind.' },
-          { title: 'Lernspiele für Momentum', text: 'Nutze kurze Challenges und Wiederholungsspiele für Pausen, die dich trotzdem im Lernmodus halten.' }
+          { title: 'Files', text: 'Lade PDFs, Vorlesungsnotizen, Uebungen und Kursmaterialien an einem Ort hoch.' },
+          { title: 'Quiz', text: 'Teste dich mit KI-generierten Quizzen auf Basis deiner Kursmaterialien.' },
+          { title: 'Flashcards', text: 'Verwandle wichtige Definitionen, Formeln und Konzepte in Karteikarten fuer Active Recall.' },
+          { title: 'ExamForge', text: 'Uebe mit pruefungsnahen Fragen aus deinem eigenen Kursinhalt.' },
+          { title: 'Cheatsheet', text: 'Erstelle kompakte Wiederholungsnotizen mit den wichtigsten Punkten aus deinem Material.' },
+          { title: 'Deep Learn', text: 'Verstehe schwierige Themen Schritt fuer Schritt mit gefuehrten KI-Erklaerungen.' },
+          { title: '24/7 KI-Tutor', text: 'Stelle jederzeit Fragen und erhalte Lernhilfe auf Basis deiner hochgeladenen Kursmaterialien.' },
+          { title: 'Lernorganisation', text: 'Behalte Kurs, Dateien und Lernwerkzeuge an einem Ort, damit du weisst, wo du anfangen sollst.' },
+          { title: 'Weniger Pruefungsstress', text: 'Mach aus verstreuten Dateien einen klaren Lernfluss, wenn die Deadline naht.' }
         ]
       },
       paths: {
-        eyebrow: 'Wähle deinen Bereich',
-        title: 'Starte mit dem Bereich, der zu deinem Ziel passt.',
-        lead: 'Minallo passt sich deinem Lernweg an: Kursarbeit für Vorlesungen und Prüfungen oder ein separater Deutschbereich für tägliche Übung.',
+        eyebrow: 'Lernfluss',
+        title: 'Von Kursdateien zu Pruefungssicherheit.',
+        lead: 'Lade dein Material einmal hoch und nutze danach die Werkzeuge, die dir beim Verstehen, Wiederholen, Testen und Ueben helfen.',
         studentCard: {
-          eyebrow: 'Kurse',
-          title: 'Ich studiere',
-          desc: 'Für Studierende, die einen Ort für Vorlesungsdateien, Übungen, PDF-Arbeit, Fokus-Sessions und kursbasierte KI-Hilfe möchten.',
+          eyebrow: 'Pruefungsvorbereitung',
+          title: 'Ich muss fuer eine Pruefung lernen',
+          desc: 'Fuer Studierende mit Vorlesungsnotizen, PDFs, Uebungen und zu viel Material zum manuellen Wiederholen.',
           items: [
-            'Jeden Kurs, jede Datei und jede Lernnotiz organisieren',
-            'KI-Hilfe mit Quellenangaben aus deinen Materialien erhalten',
-            'PDFs bearbeiten, Notizen schreiben und fokussiert bleiben'
+            'Kursdateien hochladen',
+            'Cheatsheet, Karteikarten, Quiz und ExamForge erstellen',
+            'Den 24/7 KI-Tutor fragen, wenn ein Thema nicht sitzt'
           ]
         },
         germanCard: {
-          eyebrow: 'Sprache',
-          title: 'Ich lerne Deutsch',
-          desc: 'Für Lernende, die Vokabeln, Grammatikerklärungen, Beispiele und spielerische Wiederholung getrennt von Kursarbeit nutzen möchten.',
+          eyebrow: 'Aktiv lernen',
+          title: 'Ich will PDFs nicht nur wieder lesen',
+          desc: 'Fuer Studierende, die aus passivem Lesen aktives Erinnern, Ueben und Verstehen machen wollen.',
           items: [
-            'Vokabel- und Grammatikübungen',
-            'Einfache Beispiele und Satzübungen',
-            'Mini-Spiele zur Wiederholung und Motivation'
+            'Notizen in Quizze und Karteikarten verwandeln',
+            'Deep Learn fuer schwierige Themen nutzen',
+            'Pruefungsnahe Fragen vor der echten Pruefung ueben'
           ]
         }
       },
       lifestyle: {
-        eyebrow: 'Lernstimmung',
-        title: 'Ein Lernraum, zu dem du gern zurückkommst.',
-        lead: 'Minallo kombiniert ernsthafte Lernwerkzeuge mit kleinen Motivationsmomenten, damit dein Workspace nützlich, persönlich und langfristig angenehm bleibt.',
+        eyebrow: 'Warum Studierende es nutzen',
+        title: 'Gebaut fuer die Momente vor der Pruefung.',
+        lead: 'Minallo beantwortet die Fragen, die in der Pruefungsphase zaehlen: Was soll ich lernen, wie verstehe ich es und bin ich wirklich bereit?',
         cards: [
-          { title: 'Lieblings-Playlists', text: 'Lerne, wiederhole oder übe Deutsch mit Musik, die dir beim Konzentrieren hilft.' },
-          { title: 'Lernspiele', text: 'Nutze kurze Spiele für Vokabeln, Wiederholungspausen und Motivation zwischen Fokus-Sessions.' },
-          { title: 'Lernserien-Belohnungen', text: 'Mache regelmäßiges Lernen sichtbar: mit Fortschritt, kleinen Erfolgen und einem Grund weiterzumachen.' }
+          { title: 'Pruefung bald?', text: 'Lade dein Material hoch und starte mit einem klareren Plan statt mit einem langen PDF.' },
+          { title: 'Zu viele Folien?', text: 'Erstelle ein Cheatsheet, baue Karteikarten und teste dich mit Quiz.' },
+          { title: 'Thema unklar?', text: 'Frag deinen 24/7 KI-Tutor oder nutze Deep Learn fuer eine gefuehrte Erklaerung.' }
         ]
       },
       tutor: {
-        eyebrow: 'KI-Tutor',
-        title: 'Ein KI-Tutor, der mit deinem Material lernt.',
-        lead: 'Minallo beginnt mit dem PDF vor dir, durchsucht bei Bedarf den gesamten Kurs und erklärt Antworten anhand deiner hochgeladenen Vorlesungen, Übungen und Formelsammlungen.',
+        eyebrow: '24/7 KI-Tutor',
+        title: 'Lernhilfe, sobald du festhaengst.',
+        lead: 'Dein Minallo Tutor hilft dir, schwierige Themen zu verstehen, Lernfragen Schritt fuer Schritt zu loesen und aus hochgeladenem Kursmaterial Wiederholungswerkzeuge zu machen.',
         items: [
-          'Über Vorlesungen, Übungen, Notizen und Formelsammlungen suchen',
-          'Wichtige Antworten mit Seitenquellen anzeigen',
-          'Mit dem geöffneten PDF beginnen und dann auf den Kurs erweitern',
-          'Fehlenden Kontext markieren statt zu raten'
+          'Fragen zu Vorlesungen, PDFs, Notizen und Uebungen stellen',
+          'Schritt-fuer-Schritt-Erklaerungen bekommen, wenn ein Thema verwirrend ist',
+          'Deep Learn nutzen, bevor du nur auswendig lernst',
+          'Dasselbe Material in Quiz, Karteikarten, Cheatsheet und ExamForge verwandeln'
         ]
       },
       pipeline: {
         eyebrow: 'So funktioniert es',
-        title: 'Vom hochgeladenen PDF zur belegten Antwort',
+        title: 'Hochladen, erstellen, ueben, wiederholen.',
         steps: [
-          { title: 'Hochladen', text: 'Füge Vorlesungs-PDFs, Übungsblätter, Notizen und Formelsammlungen zu deinem Workspace hinzu.' },
-          { title: 'Verstehen', text: 'Minallo macht Dateien als Seiten, Formeln, Aufgaben und nützliche Metadaten durchsuchbar.' },
-          { title: 'Abrufen', text: 'Für jede Frage wählt Minallo den relevantesten Kurskontext, statt jede Datei gleich zu behandeln.' },
-          { title: 'Antworten', text: 'Du bekommst eine klare Erklärung mit Quellen und ehrlichen Hinweisen, wenn Material fehlt.' }
+          { title: 'Kursdateien hochladen', text: 'Fuege Vorlesungsnotizen, PDFs, Uebungen, Folien und Kursmaterialien hinzu.' },
+          { title: 'Cheatsheet erstellen', text: 'Erstelle kompakte Wiederholungsnotizen aus den wichtigsten Inhalten.' },
+          { title: 'Mit Deep Learn verstehen', text: 'Zerlege schwierige Themen in klare, gefuehrte Erklaerungen.' },
+          { title: 'Fuer die Pruefung ueben', text: 'Wiederhole mit Flashcards, teste dich mit Quiz und trainiere mit ExamForge.' }
         ]
       },
       workflow: {
-        eyebrow: 'Workspace',
-        title: 'Alles Wichtige bleibt in einem Fluss.',
-        lead: 'Wechsle von Kursdateien zu Erklärungen, Notizen, Fokusarbeit, Deutschübungen und Wiederholung, ohne zwischen getrennten Tools zu springen.',
+        eyebrow: 'Ein Kurs. Ein Lernsystem.',
+        title: 'Alles, was du fuer einen Kurs brauchst, an einem Ort.',
+        lead: 'Files, Quiz, Flashcards, ExamForge, Cheatsheet, Deep Learn und dein 24/7 KI-Tutor bleiben zusammen, damit Pruefungsvorbereitung weniger chaotisch wird.',
         cards: [
-          { title: 'Fragen', text: 'Frage in natürlicher Sprache, auch wenn du nur Seite, Thema oder Aufgabe kennst.' },
-          { title: 'Lösen', text: 'Verwandle schwierige Übungen in strukturierte Schritte, die du nachvollziehen kannst.' },
-          { title: 'Lernen', text: 'Übe deutsche Vokabeln, Grammatik, Beispiele und Wiederholungsspiele in einem separaten Bereich.' },
-          { title: 'Dranbleiben', text: 'Nutze Fokus-Sessions, Playlists, Spiele und Lernserien, damit Lernen leichter weitergeht.' }
+          { title: 'Files hochladen', text: 'Bringe Vorlesungsnotizen, PDFs, Uebungen und Kursmaterial in Minallo.' },
+          { title: 'Cheatsheet bekommen', text: 'Verdichte langes Material zu fokussierten Wiederholungsnotizen.' },
+          { title: 'Wiederholen und testen', text: 'Nutze Flashcards fuer Active Recall und Quiz, um dein Wissen zu pruefen.' },
+          { title: 'Mit ExamForge ueben', text: 'Trainiere mit pruefungsnahen Fragen vor der echten Pruefung.' }
         ]
       },
       quote: {
-        title: '„Die Antwort passt endlich zu der Art, wie mein Kurs es erklärt."',
-        text: 'Genau darum geht es bei Minallo: kursbasierte Erklärungen, klare Quellen und ein Workspace, der Studierende beim Weitermachen unterstützt.'
+        title: '"Hoer auf, PDFs stundenlang neu zu lesen. Mach daraus Pruefungsvorbereitung."',
+        text: 'Minallo hilft Studierenden, mit den Materialien zu lernen, die sie schon haben: zum Verstehen, Wiederholen und Ueben.'
       },
       pricing: {
         eyebrow: 'Preise',
-        title: 'Teste den ganzen Workspace, bevor du dich festlegst.',
-        lead: 'Starte mit 7 Tagen kostenloser Testphase. Danach nutzt du ein einfaches Abo für KI-Tutor, Dokumentwerkzeuge, Deutschübungen, Fokusfunktionen, Playlists und Lernspiele.',
+        title: 'Teste Minallo 1 Woche kostenlos.',
+        lead: 'Lade deinen Kurs hoch und bereite dich mit Quizzen, Karteikarten, Cheatsheets, ExamForge, Deep Learn und deinem 24/7 KI-Tutor auf Pruefungen vor.',
         pro: {
-          popular: '7 Tage kostenlos testen',
+          popular: '1 Woche kostenlos testen',
           name: 'Student Pro',
-          sub: 'Alles, was du für eine klare Lernroutine brauchst.',
+          sub: 'Dein Pruefungsvorbereitungssystem fuer hochgeladene Kursmaterialien.',
           per: '/Monat nach der Testphase',
           items: [
-            'Kursbasierter KI-Tutor mit Quellenangaben',
-            'Uploads, Notizen, Zusammenfassungen, Quizze und Karteikarten',
-            'PDF-Editor und Lernworkspace',
-            'Deutsch-Lernmodus und Wiederholungsspiele',
-            'Pomodoro, Playlists, Lernserien und Fokus-Dashboard'
+            'Kursmaterialien hochladen und Lernmaterial organisieren',
+            'Quiz und Flashcards fuer Active Recall erstellen',
+            'Cheatsheets fuer schnelle Wiederholung generieren',
+            'Mit ExamForge pruefungsnahe Fragen ueben',
+            'Den 24/7 KI-Tutor fragen und mit Deep Learn verstehen'
           ],
-          cta: '7 Tage kostenlos starten'
+          cta: '1 Woche kostenlos starten'
         }
       },
       ctaBanner: {
-        title: 'Baue einen Lernraum, der dein Material versteht.',
-        text: 'Lade deine Kursdateien hoch, stelle bessere Fragen, löse Aufgaben mit Quellen und halte deine Routine mit Fokuswerkzeugen und Wiederholungsfeatures in Bewegung.',
-        cta: 'Jetzt mit Minallo lernen'
+        title: 'Lade deinen Kurs hoch und lerne ab heute smarter.',
+        text: 'Verwandle Vorlesungsnotizen, PDFs und Uebungen in Quizze, Karteikarten, Cheatsheets, pruefungsnahe Aufgaben und Schritt-fuer-Schritt-Erklaerungen.',
+        cta: '1 Woche kostenlos testen'
       },
       footer: {
-        copyPre: '© ',
-        copyPost: ' Minallo. Gebaut für klareres Lernen und bessere Routinen.',
+        copyPre: '? ',
+        copyPost: ' Minallo. Dein 24/7 KI-Tutor fuer Pruefungsvorbereitung.',
         tutor: 'KI-Tutor',
         imprint: 'Impressum',
         privacy: 'Datenschutz',
@@ -413,7 +413,7 @@
       },
       preview: {
         title: 'Minallo · Produktvorschau',
-        closingLine: 'Minallo liest deine Kursdateien, findet die richtigen Quellenseiten und erklärt die Antwort so, wie dein Material es lehrt.',
+        closingLine: 'Minallo verwandelt deine Kursdateien in Quizze, Karteikarten, Cheatsheets, Pruefungspraxis und Schritt-fuer-Schritt-Lernhilfe.',
         controls: {
           next: 'Weiter', back: 'Zurück', replay: 'Erneut abspielen',
           start: 'Mit Minallo lernen',
@@ -423,18 +423,18 @@
           title: 'Was möchtest du sehen?',
           sub: 'Wähle einen Bereich — die Vorschau spielt eine kurze, interaktive Tour.',
           course: 'Kurs lernen',
-          courseSub: 'Vorlesungen, Übungen, KI-Antworten mit Quellen und Fokuswerkzeuge.',
+          courseSub: 'Vorlesungen, Uebungen, Quizze, Karteikarten und Pruefungspraxis.',
           german: 'Deutsch lernen',
           germanSub: 'Vokabeln, Grammatik, Alltagssätze und Übungsspiele.'
         },
         labels: {
-          synced: 'Synchronisiert', sources: 'Quellen', verified: 'Geprüft',
+          synced: 'Bereit', sources: 'Lernwerkzeuge', verified: 'Geprueft',
           given: 'Gegeben', required: 'Gesucht', formula: 'Formel',
           steps: 'Schritte', finalAnswer: 'Endergebnis',
           annotate: 'Markieren', annotateSub: 'PDFs markieren & signieren',
           flashcards: 'Karteikarten', flashcardsSub: 'Automatisch aus deinen Dateien',
           quiz: 'Quiz', quizSub: 'Üben mit Bewertung',
-          examforge: 'ExamForge', examforgeSub: 'Quellenbasierte Probeprüfungen',
+          examforge: 'ExamForge', examforgeSub: 'Pruefungsnahe Uebung erstellen',
           summary: 'Zusammenfassung', summarySub: 'Kernpunkte aus Vorlesungen',
           focus: 'Fokus', streak: 'Serie', dayStreak: '7-Tage-Serie',
           askPlaceholder: 'Frag zu deinem Kurs…', tapToFlip: 'Zum Umdrehen tippen'
@@ -456,10 +456,10 @@
           shell: { chapter: 'Shell', eyebrow: 'Schritt 1 · App-Shell', headline: 'Starte mit der echten Minallo-Seitenleiste.', body: 'Die Vorschau öffnet ein leeres Dashboard und nutzt dieselbe Reihenfolge und dieselben Icons wie die App.' },
           setup: { chapter: 'Kurs', eyebrow: 'Schritt 2 · Kurs einrichten', headline: 'Erstelle zuerst den Kurs.', body: 'Öffne Kurse, tippe den Fachnamen ein, füge ihn hinzu und Minallo zeigt dir direkt die neue Kurskarte.' },
           upload: { chapter: 'Upload', eyebrow: 'Schritt 3 · Dateien hochladen', headline: 'Öffne den Kurs und füge eine Datei hinzu.', body: 'Im Dateien-Tab klickst du auf Upload files, wählst dein Material aus und Minallo zeigt den Upload-Fortschritt.' },
-          ask: { chapter: 'Fragen', eyebrow: 'Schritt 4 · KI fragen', headline: 'Frag in deinen eigenen Worten.', body: 'Tippe eine normale Kursfrage. Minallo sendet sie wie im echten Chat, zeigt den Denkzustand und schreibt dann eine Antwort mit Quellen.' },
-          sources: { chapter: 'Quellen', eyebrow: 'Schritt 5 · Finden', headline: 'Es findet die genauen Seiten.', body: 'Minallo durchsucht deine Dateien und zieht die Stellen heraus, die die Frage wirklich beantworten.' },
-          answer: { chapter: 'Antwort', eyebrow: 'Schritt 6 · Erklären', headline: 'Eine strukturierte Antwort, der du vertrauen kannst.', body: 'Gelöst, wie es dein Kurs lehrt — mit Seitenquellen, die du öffnen und prüfen kannst.' },
-          tools: { chapter: 'Werkzeuge', eyebrow: 'Schritt 7 · Prüfung üben', headline: 'Mach aus Material echte Prüfungsvorbereitung.', body: 'Markiere PDFs, erstelle Karteikarten und Quizze und nutze ExamForge für quellenbasierte Probeprüfungen aus denselben Kursdateien.' },
+          ask: { chapter: 'Fragen', eyebrow: 'Schritt 4 - KI fragen', headline: 'Frag in deinen eigenen Worten.', body: 'Stelle eine normale Kursfrage und bekomme Schritt-fuer-Schritt-Hilfe von deinem 24/7 KI-Tutor.' },
+          sources: { chapter: 'Plan', eyebrow: 'Schritt 5 - Fokus', headline: 'Wisse, was du als Naechstes lernen solltest.', body: 'Minallo hilft dir, aus zu vielen Dateien die Themen, Uebungen und Lernwerkzeuge fuer die Wiederholung zu machen.' },
+          answer: { chapter: 'Lernen', eyebrow: 'Schritt 6 - Erklaeren', headline: 'Eine strukturierte Antwort, die du nutzen kannst.', body: 'Bekomme Schritt-fuer-Schritt-Erklaerungen, damit schwierige Themen leichter zu wiederholen sind.' },
+          tools: { chapter: 'Ueben', eyebrow: 'Schritt 7 - Pruefungsvorbereitung', headline: 'Mach aus Material echte Pruefungsvorbereitung.', body: 'Erstelle Karteikarten und Quizze, generiere ein Cheatsheet und nutze ExamForge fuer pruefungsnahe Uebung.' },
           focus: { chapter: 'Fokus', eyebrow: 'Schritt 8 · Schwung', headline: 'Und halte deinen Schwung.', body: 'Starte eine Pomodoro-Sitzung, spiele eine Fokus-Playlist und sieh deine Lernserie wachsen.' }
         },
         german: {
@@ -480,37 +480,37 @@
   var PATH_CONTENT = {
     en: {
       student: {
-        title: 'Course workspace',
-        subtitle: 'Files, PDF rail, AI, and exam prep',
-        description: 'Create a course, upload files into folders, open PDFs with AI, Problem, Notes, and Summary, and generate Quiz, Flashcards, ExamForge, Cheatsheet, Deep Learn, notes, summaries, and Daily Mission tasks from the same material.',
+        title: 'Exam prep workspace',
+        subtitle: 'Upload files, generate study tools, prepare faster',
+        description: 'Upload lecture notes, PDFs, exercises, and course materials, then turn them into Quiz, Flashcards, ExamForge, Cheatsheet, Deep Learn, and 24/7 AI tutor help.',
         icon: 'layout-dashboard',
         items: [
-          'Course tabs for Files, Quiz, Flashcards, ExamForge, Cheatsheet, and Deep Learn',
-          'PDF workspace with source-linked AI answers, problem solving, notes, and summaries',
-          'Daily Mission and progress across reading, notes, practice, and AI activity',
-          'Editor tools for writing documents, annotating PDFs, and merging PDFs'
+          'Files, Quiz, Flashcards, ExamForge, Cheatsheet, and Deep Learn',
+          'Step-by-step explanations from your 24/7 AI Tutor',
+          'Active recall instead of passive rereading',
+          'A clearer plan when exam week feels messy'
         ],
         preview: [
-          ['file-text', 'Course files', 'Upload lectures, exercises, solutions, notes, exams, and formula sheets.'],
-          ['brain-circuit', 'Grounded AI', 'Ask from the PDF rail or full Chatbot and open cited pages.'],
-          ['trophy', 'Exam prep', 'Generate quizzes, flashcards, mock exams, cheatsheets, and lessons.']
+          ['file-text', 'Upload files', 'Add lecture notes, PDFs, slides, exercises, and course materials.'],
+          ['brain-circuit', 'AI tutor', 'Ask questions anytime and get step-by-step study help.'],
+          ['trophy', 'Exam prep', 'Generate quizzes, flashcards, cheatsheets, lessons, and ExamForge practice.']
         ]
       },
       german: {
-        title: 'German practice space',
-        subtitle: 'Vocabulary, writing, grammar, and games',
-        description: 'A dedicated German-learning area with vocabulary, grammar, sentence practice, daily word work, Writing Coach feedback, and small practice games away from your course folders.',
+        title: 'Active study mode',
+        subtitle: 'Stop rereading and start practicing',
+        description: 'Use Minallo to move from long course files to active study: learn difficult topics, revise important concepts, and check your readiness before the exam.',
         icon: 'languages',
         items: [
-          'Vocabulary, grammar, and everyday sentence practice',
-          'Writing Coach feedback adapted to your profile level',
-          'Daily word and language routines from the dashboard',
-          'Games and revision challenges for lighter practice sessions'
+          'Deep Learn for difficult topics',
+          'Flashcards for definitions, formulas, and concepts',
+          'Quiz for quick knowledge checks',
+          'ExamForge for exam-style practice'
         ],
         preview: [
-          ['languages', 'German coach', 'Build vocabulary, grammar, sentences, and everyday phrases.'],
-          ['book-open', 'Writing feedback', 'Write a paragraph and get AI feedback for your level.'],
-          ['gamepad-2', 'Practice games', 'Review with quick challenges when you need a lighter session.']
+          ['languages', 'Understand', 'Break confusing topics into simpler steps.'],
+          ['book-open', 'Revise', 'Turn long material into cheatsheets and flashcards.'],
+          ['gamepad-2', 'Practice', 'Use Quiz and ExamForge before the real exam.']
         ]
       }
     },
@@ -528,7 +528,7 @@
         ],
         preview: [
           ['file-text', 'Kursbibliothek', 'Behalte jedes Fach, jede Datei und jede Notiz an einem klaren Ort.'],
-          ['brain-circuit', 'Kursbasierte KI', 'Stelle Fragen und erhalte Antworten mit Seitenquellen.'],
+          ['brain-circuit', 'KI-Tutor', 'Stelle Fragen und bekomme Schritt-fuer-Schritt-Lernhilfe.'],
           ['timer', 'Fokus-Modus', 'Lerne mit Pomodoro-Sitzungen, Fortschritt und sichtbaren Lernserien.']
         ]
       },
@@ -1967,10 +1967,10 @@
       },
       {
         key: 'rail', ms: 7600, icon: 'sparkles', cursor: 'tour-cursor-rail',
-        eyebrow: 'Step 3 · AI side rail',
-        title: 'Open the AI rail without leaving the PDF.',
-        body: 'The preview shows the right rail sections: AI, Problem, Notes, and Summary. The answer preview includes the source pages used from the course files.',
-        calls: [['Open AI', 93.5, 24, 0], ['Problem Solver', 93.5, 30.7, 1400], ['Notes', 93.5, 37.2, 2800], ['Summary', 93.5, 43.7, 4200], ['Cited answer', 79, 61, 5400]],
+        eyebrow: 'Step 3 - 24/7 AI Tutor',
+        title: 'Ask for help while you study.',
+        body: 'The preview shows how Minallo can explain a topic, help with a problem, create notes, or summarize material while you keep preparing for the exam.',
+        calls: [['Ask AI', 93.5, 24, 0], ['Problem help', 93.5, 30.7, 1400], ['Notes', 93.5, 37.2, 2800], ['Summary', 93.5, 43.7, 4200], ['Study answer', 79, 61, 5400]],
         build: buildAiSideRail
       },
       {
@@ -1983,10 +1983,10 @@
       },
       {
         key: 'chatbot', ms: 7200, icon: 'message-circle', cursor: 'tour-cursor-chatbot',
-        eyebrow: 'Step 5 · Chatbot page',
-        title: 'Use the full chatbot when you need a wider study conversation.',
-        body: 'The final chapter shows the standalone chatbot page selecting course context, answering a broad study question, and citing course sources when documents are involved.',
-        calls: [['Select course context', 22, 19, 0], ['Ask a study question', 63, 75, 1800], ['Answer with sources', 57, 45, 3400], ['Start free trial', 76, 18, 5200]],
+        eyebrow: 'Step 5 - AI tutor',
+        title: 'Use your 24/7 AI tutor for bigger study questions.',
+        body: 'The final chapter shows a longer study conversation where Minallo helps you plan, understand, revise, and prepare for the next exam.',
+        calls: [['Choose a course', 22, 19, 0], ['Ask a study question', 63, 75, 1800], ['Get study help', 57, 45, 3400], ['Start free trial', 76, 18, 5200]],
         build: buildChatbotPage
       }
     ];
