@@ -351,6 +351,24 @@ def _sse(event: dict[str, Any]) -> bytes:
     return ("data: " + json.dumps(event, ensure_ascii=False) + "\n\n").encode("utf-8")
 
 
+def _meter_text_len(content: Any) -> int:
+    """Char count of the TEXT in an OpenAI message content (str or parts list).
+
+    Image parts are excluded on purpose: they are billed per tile, and counting
+    their base64 payload would inflate an abort-metering estimate by orders of
+    magnitude.
+    """
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        return sum(
+            len(p.get("text") or "")
+            for p in content
+            if isinstance(p, dict) and p.get("type") == "text"
+        )
+    return 0
+
+
 from .diagram_overlay import diagram_overlay as _diagram_overlay
 from .diagram_overlay import wants_diagram as _wants_diagram
 from .diagram_overlay import wants_plot as _wants_plot
@@ -1223,6 +1241,21 @@ def stream_answer(
     prompt_tokens = None
     completion_tokens = None
     cached_tokens = None
+
+    # Usage checkpoint for the router's abort metering. OpenAI's real usage
+    # numbers only arrive in the final stream chunk — a client that aborts
+    # mid-answer never delivers them, so those tokens used to vanish from the
+    # meter entirely (the prompt is billed in full the moment the request
+    # lands). chars/4 over the TEXT parts is the estimate; image parts are
+    # billed per tile, not per base64 char, so they are skipped rather than
+    # wildly overcounted. stream.py consumes this event without forwarding it.
+    est_prompt_tokens = (
+        len(system_prompt)
+        + _meter_text_len(user_content)
+        + sum(_meter_text_len(m.get("content")) for m in history_messages)
+    ) // 4
+    yield _sse({"usageEst": True, "model": target_model, "estPromptTokens": est_prompt_tokens})
+
     try:
         stream = client.chat.completions.create(
             model=target_model,
@@ -1269,6 +1302,11 @@ def stream_answer(
                 yield _sse({"t": token})
     except Exception as e:  # noqa: BLE001
         log.exception("stream_answer failed")
+        if not answer_buf and not intro_buf:
+            # Failed before any token arrived (connect/4xx on create): nothing
+            # was billed — retract the abort-metering checkpoint. Mid-stream
+            # failures keep it: the prompt and partial completion were billed.
+            yield _sse({"usageEst": True, "cancel": True})
         yield _sse({"error": f"{type(e).__name__}: {e}"})
         return
 

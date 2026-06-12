@@ -803,6 +803,10 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     # ── Stream + save to cache on finish ─────────────────────────────────────
     full_text_buf: list[str] = []
     captured_meta: dict[str, Any] = {}
+    # Usage checkpoint captured from the generator's internal usageEst event
+    # (model + estimated prompt tokens, emitted just before the OpenAI call).
+    # Consulted by gen_with_abort_meter when the stream dies early.
+    abort_meter: dict[str, Any] = {}
 
     # weak_topics was fetched above (it feeds the workspace block + cache
     # fingerprint as well as the per-student coaching note in the prompt).
@@ -832,6 +836,16 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 yield chunk_bytes
                 continue
             if isinstance(evt, dict):
+                if evt.get("usageEst"):
+                    # Internal abort-metering checkpoint — capture, never
+                    # forward to the client. "cancel" retracts it (the OpenAI
+                    # call failed before any token, so nothing was billed).
+                    if evt.get("cancel"):
+                        abort_meter.clear()
+                    else:
+                        abort_meter["model"] = evt.get("model")
+                        abort_meter["promptTokens"] = int(evt.get("estPromptTokens") or 0)
+                    continue
                 if evt.get("meta"):
                     evt.update(_source_meta(source_decision, cache_hit=False))
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
@@ -975,4 +989,23 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             doc_names=doc_name_map,
         ))
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    def gen_with_abort_meter():
+        try:
+            yield from gen()
+        finally:
+            # The done frame never arrived: the client aborted mid-answer (or
+            # the stream died after generation started). OpenAI billed the
+            # full prompt the moment the request landed plus whatever
+            # completion streamed — record the estimate so real spend doesn't
+            # vanish from the meter. ~chars/4; tagged ask_stream_aborted so
+            # estimated rows are distinguishable from exact ones.
+            if abort_meter.get("model") and not captured_meta.get("done"):
+                record_usage(
+                    feature="ask_stream_aborted",
+                    model=abort_meter.get("model"),
+                    prompt_tokens=abort_meter.get("promptTokens"),
+                    completion_tokens=len("".join(full_text_buf)) // 4,
+                    user_id=user_id,
+                )
+
+    return StreamingResponse(gen_with_abort_meter(), media_type="text/event-stream")
