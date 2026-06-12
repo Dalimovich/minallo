@@ -1120,6 +1120,81 @@ img, svg {
   gap: 1rem;
 }
 
+/* Trust */
+.nl-trust {
+  padding-top: 2rem;
+}
+
+.nl-trust__wrap {
+  display: grid;
+  gap: 2rem;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 1.75rem;
+  background:
+    linear-gradient(135deg, rgba(2, 6, 23, 0.68), rgba(8, 47, 73, 0.38)),
+    rgba(255, 255, 255, 0.045);
+  padding: 1.25rem;
+  box-shadow: var(--nl-shadow-card);
+}
+
+.nl-trust__intro {
+  max-width: 34rem;
+}
+
+.nl-trust__title {
+  font-size: clamp(2rem, 4vw, 3.1rem);
+  line-height: 1.06;
+  color: #fff;
+}
+
+.nl-trust__lead {
+  margin-top: 1rem;
+  color: var(--nl-slate-300);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.nl-trust__privacy {
+  margin-top: 1rem;
+  border: 1px solid rgba(110, 231, 183, 0.18);
+  border-radius: 1rem;
+  background: rgba(16, 185, 129, 0.10);
+  color: var(--nl-emerald-200);
+  padding: 0.95rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.nl-trust__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+.nl-trust-card {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 1.1rem;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.nl-trust-card h3 {
+  color: #fff;
+  font-family: var(--nl-font-display);
+  font-size: 1rem;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.nl-trust-card p {
+  margin-top: 0.55rem;
+  color: var(--nl-slate-300);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
 /* Paths */
 .nl-paths__intro {
   display: grid;
@@ -2083,7 +2158,7 @@ img, svg {
     grid-template-columns: 1fr 1fr;
   }
   .nl-study-flow__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .nl-lifestyle__cards {
     grid-template-columns: repeat(3, 1fr);
@@ -2149,7 +2224,15 @@ img, svg {
     grid-template-columns: repeat(3, 1fr);
   }
   .nl-study-flow__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .nl-trust__wrap {
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: center;
+    padding: 2rem;
+  }
+  .nl-trust__grid {
+    grid-template-columns: 1fr 1fr;
   }
   .nl-paths__intro {
     grid-template-columns: 0.9fr 1.1fr;
