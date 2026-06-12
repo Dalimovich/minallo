@@ -17,6 +17,7 @@ from openai import APIError, OpenAI, RateLimitError
 
 from ..config import get_settings
 from .openai_client import get_openai_client
+from .usage_meter import record_usage, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,11 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
             raise EmbeddingServiceUnavailable(
                 "AI retrieval is temporarily unavailable because the embedding provider failed."
             ) from exc
+        record_usage(
+            feature="embeddings",
+            model=settings.openai_embedding_model,
+            **usage_from_response(resp),
+        )
         # OpenAI returns embeddings in input order.
         out.extend(item.embedding for item in resp.data)
 

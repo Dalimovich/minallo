@@ -31,6 +31,7 @@ from ..services.retrieval import (
 )
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
+from ..services.usage_meter import record_usage
 from ..services.source_router import (
     CourseFileScope,
     SourceDecision,
@@ -304,6 +305,18 @@ def _with_source_meta(answer: dict[str, Any], decision: SourceDecision) -> dict[
     return answer
 
 
+def _meter(feature: str, answer: dict[str, Any], user_id: str | None) -> None:
+    """Report one /ask answer's token usage. Token-free answers (cache hits,
+    clarifications) are skipped inside record_usage."""
+    record_usage(
+        feature=feature,
+        model=answer.get("model"),
+        prompt_tokens=answer.get("promptTokens"),
+        completion_tokens=answer.get("completionTokens"),
+        user_id=user_id,
+    )
+
+
 def _web_sources_to_payload(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -384,6 +397,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         except Exception as e:  # noqa: BLE001
             log.exception("app-support answer generation failed")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"answer generation failed: {e}")
+        _meter("ask_app", answer, payload.userId)
         return AskResponse(
             answer=answer["answer"],
             retrievalMode=answer["retrievalMode"],
@@ -431,6 +445,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         )
         source_decision = replace(source_decision, web_search_used=bool(web_answer.get("webSources")))
         answer = _with_source_meta(web_answer, source_decision)
+        _meter("ask_web", answer, payload.userId)
         return AskResponse(
             answer=answer["answer"],
             retrievalMode=answer["retrievalMode"],
@@ -452,6 +467,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
         answer = _with_source_meta(generate_general_answer(question, prefix=prefix), source_decision)
+        _meter("ask_general", answer, payload.userId)
         return AskResponse(
             answer=answer["answer"],
             retrievalMode=answer["retrievalMode"],
@@ -655,6 +671,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                 generate_general_answer(question, prefix=auto_general_prefix()),
                 general_decision,
             )
+        _meter("ask_general", answer, payload.userId)
         return AskResponse(
             answer=answer["answer"],
             retrievalMode=answer["retrievalMode"],
@@ -690,6 +707,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     except Exception as e:  # noqa: BLE001
         log.exception("answer generation failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"answer generation failed: {e}")
+    _meter("ask", answer, payload.userId)
 
     # ── 4. Save to cache for next time ───────────────────────────────────────
     if version_hash and not payload.bypassCache and cacheable:

@@ -869,6 +869,12 @@ def _call_openai(system_prompt: str, user_message: str, max_tokens: int = 4000) 
             {"role": "user",   "content": user_message},
         ],
     )
+    from ..services.usage_meter import record_usage, usage_from_response  # noqa: WPS433
+    record_usage(
+        feature="notes_full",
+        model=settings.openai_generate_model_strong,
+        **usage_from_response(resp),
+    )
     text = (resp.choices[0].message.content if resp.choices and resp.choices[0].message else "") or ""
     return text.strip()
 

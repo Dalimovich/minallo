@@ -30,6 +30,7 @@ from .answer import (
     DEFAULT_TUTOR_MODE,
     EQUATION_READABILITY_RULE,
     FIGURE_CHUNK_TYPES,
+    MAX_PROMPT_CHUNKS,
     MINALLO_APP_CONTEXT,
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
@@ -44,6 +45,7 @@ from .answer import (
 from .document_context import understanding_block_for_ids
 from .retrieval import RetrievedChunk
 from .storage import download_document_bytes
+from .usage_meter import record_usage, usage_from_response
 from .workspace_context import ACTIONS_CONTRACT, EXAM_COACH_OVERLAY, TUTOR_STRUCTURE_OVERLAY
 
 log = logging.getLogger(__name__)
@@ -458,6 +460,7 @@ def _force_render_diagram(
                 {"role": "user", "content": user},
             ],
         )
+        record_usage(feature="ask_stream_diagram", model=model, **usage_from_response(completion))
         raw = (completion.choices[0].message.content or "").strip()
         log.debug("[DIAGRAM_DEBUG] structured call returned raw_len=%d", len(raw))
         if not raw:
@@ -590,6 +593,7 @@ def _force_render_plot(
                 {"role": "user", "content": user},
             ],
         )
+        record_usage(feature="ask_stream_plot", model=model, **usage_from_response(completion))
         raw = (completion.choices[0].message.content or "").strip()
         log.debug("[PLOT_DEBUG] structured call returned raw_len=%d", len(raw))
         if not raw:
@@ -850,11 +854,11 @@ def stream_answer(
 
     strength = _context_strength(chunks)
     # Review fix #3 — partial retrieval mode. Mirrors answer.py's logic:
-    #   strong → all chunks    weak → top 3 (with PARTIAL prompt)    none → []
+    #   strong → top MAX_PROMPT_CHUNKS    weak → top 3 (PARTIAL prompt)    none → []
     if app_question:
         used_chunks = []
     elif strength == "strong":
-        used_chunks = chunks
+        used_chunks = chunks[:MAX_PROMPT_CHUNKS]
     elif strength == "weak":
         used_chunks = chunks[:3]
     else:
@@ -889,6 +893,12 @@ def stream_answer(
     # requests whose structured problem text is the task. Broad questions
     # still need retrieval strength to earn a confident answer.
     deictic = _is_deictic_question(question)
+    # A non-deictic question with no Problem Solver isn't ABOUT the visible
+    # page. When the open-PDF slice still rides along (strong retrieval
+    # includes it as Source 0), 20k chars of whatever happens to be on screen
+    # is mostly dead weight — keep a slim slice for incidental grounding.
+    if open_ctx and not deictic and problem_mode is None:
+        open_ctx = open_ctx[:6000]
     effective_strength = _effective_strength_with_open_context(
         strength,
         (has_problem_source and bool(used_chunks))
@@ -1189,6 +1199,7 @@ def stream_answer(
     client = get_openai_client()
     prompt_tokens = None
     completion_tokens = None
+    cached_tokens = None
     try:
         stream = client.chat.completions.create(
             model=target_model,
@@ -1211,6 +1222,8 @@ def stream_answer(
                 if chunk.usage:
                     prompt_tokens = chunk.usage.prompt_tokens
                     completion_tokens = chunk.usage.completion_tokens
+                    details = getattr(chunk.usage, "prompt_tokens_details", None)
+                    cached_tokens = getattr(details, "cached_tokens", None)
                 continue
             choices = chunk.choices or []
             if not choices:
@@ -1348,4 +1361,5 @@ def stream_answer(
         "model": target_model,
         "promptTokens": prompt_tokens,
         "completionTokens": completion_tokens,
+        "cachedTokens": cached_tokens,
     })

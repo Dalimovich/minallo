@@ -207,6 +207,8 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
         max_completion_tokens=max_tokens,
         messages=messages,
     )
+    from .usage_meter import record_usage, usage_from_response  # noqa: WPS433
+    record_usage(feature="chat", model=chat_model, user_id=user_id, **usage_from_response(resp))
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""
 

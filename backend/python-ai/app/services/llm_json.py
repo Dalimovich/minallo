@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from typing import Any
 
 from ..config import get_settings
 from .concurrency import llm_fanout_slot
 from .openai_client import get_openai_client
+from .usage_meter import record_usage, usage_from_response
 
 
 _FENCE_OPEN = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
@@ -178,6 +180,17 @@ class LlmResult:
     completion_tokens: int | None
 
 
+def _caller_feature() -> str:
+    """Usage-meter feature label from the calling module's name, so every
+    chat_json user (cheatsheet, quiz, flashcards, deep_learn, planner, …) is
+    attributed without threading a label through each call site."""
+    try:
+        name = sys._getframe(2).f_globals.get("__name__", "") or ""
+        return name.rsplit(".", 1)[-1] or "llm_json"
+    except Exception:  # noqa: BLE001
+        return "llm_json"
+
+
 def chat_json(
     *,
     system: str,
@@ -203,6 +216,7 @@ def chat_json(
                 {"role": "user",   "content": user},
             ],
         )
+    record_usage(feature=_caller_feature(), model=chosen, **usage_from_response(resp))
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""
     try:

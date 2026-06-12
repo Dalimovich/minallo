@@ -44,6 +44,7 @@ from ..services.source_router import (
     effective_document_ids,
 )
 from ..services.web_answer import generate_web_answer
+from ..services.usage_meter import record_usage
 from ..services.workspace_context import (
     detect_assistant_mode,
     fetch_account_snapshot,
@@ -434,6 +435,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             lambda: generate_web_answer(question, query=source_decision.sanitized_web_query or question)
         )
         source_decision = replace(source_decision, web_search_used=bool(web_answer.get("webSources")))
+        record_usage(
+            feature="ask_stream_web", model=web_answer.get("model"),
+            prompt_tokens=web_answer.get("promptTokens"),
+            completion_tokens=web_answer.get("completionTokens"), user_id=user_id,
+        )
         return _stream_static_answer(
             text=web_answer["answer"],
             decision=source_decision,
@@ -447,6 +453,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE and not app_or_workspace:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
         general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=prefix))
+        record_usage(
+            feature="ask_stream_general", model=general.get("model"),
+            prompt_tokens=general.get("promptTokens"),
+            completion_tokens=general.get("completionTokens"), user_id=user_id,
+        )
         return _stream_static_answer(
             text=general["answer"],
             decision=source_decision,
@@ -775,6 +786,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             source_label="Using: General knowledge",
         )
         general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=auto_general_prefix()))
+        record_usage(
+            feature="ask_stream_general", model=general.get("model"),
+            prompt_tokens=general.get("promptTokens"),
+            completion_tokens=general.get("completionTokens"), user_id=user_id,
+        )
         return _stream_static_answer(
             text=general["answer"],
             decision=general_decision,
@@ -822,6 +838,14 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     full_text_buf.append(evt["t"])
                 if evt.get("done"):
                     captured_meta.update(evt)
+                    record_usage(
+                        feature="ask_stream",
+                        model=evt.get("model"),
+                        prompt_tokens=evt.get("promptTokens"),
+                        completion_tokens=evt.get("completionTokens"),
+                        cached_tokens=evt.get("cachedTokens"),
+                        user_id=user_id,
+                    )
                     # Translate sources for the JS frontend shape (mirrors
                     # the cached-stream branch above).
                     sources_js = []

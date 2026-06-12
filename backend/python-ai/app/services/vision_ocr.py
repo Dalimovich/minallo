@@ -259,6 +259,8 @@ def _vision_extract(client, model: str, image_bytes: bytes, *, mode: str = "stan
                 },
             ],
         )
+        from .usage_meter import record_usage, usage_from_response  # noqa: WPS433
+        record_usage(feature="vision_ocr", model=model, **usage_from_response(response))
         choice = response.choices[0] if response.choices else None
         msg = choice.message if choice else None
         raw = (msg.content if msg else "") or ""

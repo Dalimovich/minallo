@@ -100,6 +100,15 @@ def chat_completion_params(
     return params
 
 
+# Cap on retrieved chunks woven into the prompt. Retrieval returns up to 18
+# (a wide pool for ranking and the exercise/formula exact-match prepends, which
+# sit at the FRONT of the list and therefore always survive this cap), but
+# after ranking chunks 11+ are noise the model must ignore — they roughly
+# double prompt size for no answer-quality gain. (2026-06: chunk tokens are
+# ~85% of total input spend.)
+MAX_PROMPT_CHUNKS = 10
+
+
 _SYSTEM_PROMPT_STRONG = """You are Minallo's exam-prep tutor for a university student.
 
 IDENTITY. The product / platform / app you are part of is called **Minallo** (minallo.de). If the student asks "what platform is this", "what is your name", "what is this app", "who built you", or any similar identity question, answer with "Minallo" / "Minallo AI" — this is product-level general knowledge and does NOT need a `[Source N]` citation. The "use ONLY the context" rule below applies to *academic* claims, not to your own identity.
@@ -1211,7 +1220,7 @@ def generate_answer(
     if app_question:
         used_chunks = []
     elif strength == "strong":
-        used_chunks = chunks
+        used_chunks = chunks[:MAX_PROMPT_CHUNKS]
     elif strength == "weak":
         used_chunks = chunks[:3]
     else:
