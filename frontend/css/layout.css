@@ -628,6 +628,9 @@ body.night .sb-night-thumb {
   border-bottom: 1px solid var(--glass-border);
   flex-shrink: 0;
 }
+body.minallo-notifications-page #portal .main .topbar {
+  display: none !important;
+}
 .tb-title {
   font-family: var(--font-main);
   font-size: 1.1rem;

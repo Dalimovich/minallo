@@ -49,11 +49,14 @@ interface AddNotifInput {
 
 const MAX_NOTIFS = 100;
 const MAX_PINNED = 4;
+const PREVIEW_NOTIFICATION_EMAIL = 'medalimariam@gmail.com';
+const PREVIEW_NOTIFICATION_DEDUPE_KEY = 'preview-notification-medalimariam-20260613';
 type Tab = 'all' | 'unread' | 'projects' | 'files';
 let _tab: Tab = 'all';
 let _search = '';
 let _selectedId: string | null = null;
 let _pinEditorOpen = false;
+let _previewNotificationBound = false;
 
 function _uid(): string {
   try {
@@ -278,6 +281,33 @@ export function addNotification(input: AddNotifInput): void {
   list.unshift(item);
   _save(list);
   renderNotifications();
+}
+
+function seedPreviewNotificationForOwner(): void {
+  const email = (window._currentUser?.email || '').trim().toLowerCase();
+  if (email !== PREVIEW_NOTIFICATION_EMAIL) return;
+  addNotification({
+    dedupeKey: PREVIEW_NOTIFICATION_DEDUPE_KEY,
+    title: 'Preview notification',
+    body: 'This is how a new unread Minallo notification appears in your inbox.',
+    icon: '🔔',
+    type: 'system',
+    context: 'Minallo Inbox',
+    actionLabel: 'Review notification preview'
+  });
+}
+
+function bindPreviewNotificationSeed(): void {
+  if (_previewNotificationBound) return;
+  _previewNotificationBound = true;
+  seedPreviewNotificationForOwner();
+  window.addEventListener('ss-ready', seedPreviewNotificationForOwner, { once: true });
+  document.addEventListener('minallo:auth:signed-in', seedPreviewNotificationForOwner);
+  document.addEventListener('minallo:auth:entered', seedPreviewNotificationForOwner);
+  if (window.Minallo) {
+    window.Minallo.on('auth:signed-in', seedPreviewNotificationForOwner);
+    window.Minallo.on('auth:entered', seedPreviewNotificationForOwner);
+  }
 }
 
 function markAllRead(): void {
@@ -535,6 +565,7 @@ export function initNotifications(): void {
   w.addNotification = addNotification;
   w.renderNotifications = renderNotifications;
 
+  bindPreviewNotificationSeed();
   renderNotifications();
   renderPinnedCourses();
 }

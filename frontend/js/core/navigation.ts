@@ -39,6 +39,7 @@ function _sectionTitle(sec: string): string {
 export function showPortalSection(sec: string): void {
   const gamesItem = document.getElementById('psbGames');
   if (sec === 'games' && gamesItem && gamesItem.classList.contains('st-locked')) return;
+  document.body.classList.toggle('minallo-notifications-page', sec === 'notifications');
 
   // Make sure portal is the visible top-level view — kills file/studip ghosts
   // that would otherwise sit on top of (or under) the section we're about to show.
