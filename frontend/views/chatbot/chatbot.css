@@ -743,7 +743,7 @@ body.ncb-fullbleed .ncb-main {
 .ncb-input-textarea {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 36px;
+  min-height: 44px;
   max-height: 160px;
   resize: none;
   overflow-y: auto;
@@ -752,9 +752,9 @@ body.ncb-fullbleed .ncb-main {
   outline: none;
   color: #e5edff;
   font-size: 16px;
-  line-height: 20px;
+  line-height: 22px;
   font-family: inherit;
-  padding: 8px 4px;
+  padding: 11px 4px;
   box-sizing: border-box;
 }
 .ncb-input-textarea::placeholder {
@@ -1298,6 +1298,7 @@ body.ncb-fullbleed .ncb-main {
   padding-bottom: 0;
 }
 .ncb-card:has(.ncb-empty[data-state="active"]) .ncb-center {
+  padding-top: 0;
   padding-bottom: 0;
 }
 
@@ -1310,8 +1311,8 @@ body.ncb-fullbleed .ncb-main {
   position: sticky;
   bottom: max(22px, env(safe-area-inset-bottom, 0px));
   z-index: 20;
-  width: calc(100% - 32px);
-  max-width: 720px;
+  width: 100%;
+  max-width: none;
   margin-left: auto;
   margin-right: auto;
   margin-bottom: 22px;
@@ -1379,6 +1380,14 @@ body.ncb-fullbleed .ncb-main {
   background: rgba(255, 255, 255, 0.045);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+}
+
+.ncb-empty[data-state="active"] .ncb-chat-header {
+  position: sticky;
+  top: 0;
+  z-index: 18;
+  flex-shrink: 0;
+  background: rgba(17, 27, 48, 0.98);
 }
 
 .ncb-chat-header-text {

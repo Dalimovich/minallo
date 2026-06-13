@@ -817,7 +817,7 @@ async function doSend(
   // back to its min height explicitly, clear overflow, then fire
   // input so any other listeners see an empty textarea.
   textarea.value = '';
-  textarea.style.height = '36px';
+  textarea.style.height = '44px';
   textarea.style.overflowY = 'hidden';
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
   state.pasted = [];
@@ -4753,7 +4753,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   if (sendBtn) setSendBtnMode(sendBtn, 'send');
   if (textarea) {
     textarea.value = '';
-    textarea.style.height = '36px';
+    textarea.style.height = '44px';
     textarea.style.overflowY = 'hidden';
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
