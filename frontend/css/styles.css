@@ -1981,6 +1981,9 @@ body.pdf-maximized #pdfMaximize {
   max-height: 220px;
   overflow-y: auto;
 }
+.notif-pin-editor[hidden] {
+  display: none !important;
+}
 .notif-pin-option {
   display: flex;
   align-items: center;
