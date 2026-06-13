@@ -567,7 +567,7 @@
                     ],
                     dashboardCalendar: ['views/dashboard/dashboard-calendar.js'],
                     chat: ['views/chat/chat.js'],
-                    aipage: ['views/chatbot/chatbot.js?v=7'],
+                    aipage: ['views/chatbot/chatbot.js?v=8'],
                     german: ['views/practice/practice.js'],
                     notes: ['views/lecturenotes/lecturenotes.js'],
                     profile: ['views/profile/profile.js'],

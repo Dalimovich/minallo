@@ -522,45 +522,44 @@ function _pdfScrollToPage(num: number): void {
   if (wrap) body.scrollTop = wrap.offsetTop;
 }
 
-document.getElementById('pdfZoomIn')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = Math.min(Math.round((pdfScale + 0.1) * 10) / 10, 3);
+// Zoom by scaling the already-rendered pages live via a CSS `zoom` multiplier
+// instead of re-rendering the canvases — so the document never reloads, blanks
+// or flashes; it just grows/shrinks smoothly. pdfScale stays the single source
+// of truth (the multiplier is pdfScale ÷ the scale we last rendered at), and
+// renderPages resets the multiplier so page-change/show-all re-renders stay
+// crisp. The viewport's top content is kept anchored as the page reflows.
+function _applyPdfZoom(targetScale: number): void {
+  const body = document.getElementById('pdfBody');
+  const rendered = window._pdfRenderedScale || 0.9;
+  const prevMul = pdfScale / rendered;
+  pdfScale = Math.min(4, Math.max(0.2, Math.round(targetScale * 100) / 100));
+  const newMul = pdfScale / rendered;
+  if (body) {
+    const prevTop = body.scrollTop;
+    body.style.setProperty('--pdf-wheel-zoom', String(newMul));
+    if (prevMul > 0) body.scrollTop = prevTop * (newMul / prevMul);
+  }
   updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+}
+
+document.getElementById('pdfZoomIn')?.addEventListener('click', () => {
+  _applyPdfZoom(Math.round((pdfScale + 0.1) * 10) / 10);
 });
 document.getElementById('pdfZoomOut')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = Math.max(Math.round((pdfScale - 0.1) * 10) / 10, 0.2);
-  updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+  _applyPdfZoom(Math.round((pdfScale - 0.1) * 10) / 10);
 });
 document.getElementById('pdfFit')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = 0.9;
-  updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+  _applyPdfZoom(0.9);
 });
 
-// Ctrl/Cmd + mouse wheel zoom, like a browser or native PDF reader. Unlike the
-// toolbar buttons (which re-render the canvases from scratch and momentarily
-// blank the page), this scales the already-rendered pages live via a CSS `zoom`
-// multiplier — the document never reloads or flashes, it just grows/shrinks
-// smoothly. pdfScale stays the single source of truth; the multiplier is just
-// pdfScale relative to the scale we last rendered at, and renderPages resets it.
+// Ctrl/Cmd + mouse wheel zoom, like a browser or native PDF reader.
+// preventDefault stops the browser's own page zoom.
 document.getElementById('pdfBody')?.addEventListener(
   'wheel',
   (e: WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-    pdfScale = Math.min(4, Math.max(0.25, Math.round(pdfScale * factor * 100) / 100));
-    const body = document.getElementById('pdfBody');
-    const rendered = (window as unknown as { _pdfRenderedScale?: number })._pdfRenderedScale || 0.9;
-    if (body) body.style.setProperty('--pdf-wheel-zoom', String(pdfScale / rendered));
-    updateZoomPct();
+    _applyPdfZoom(pdfScale * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
   },
   { passive: false }
 );
