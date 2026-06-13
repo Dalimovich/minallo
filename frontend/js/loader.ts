@@ -404,7 +404,7 @@ interface LandingTranslation {
     [
       'css/base.css?v=6',
       'css/theme.css?v=6',
-      'css/styles.css?v=39',
+      'css/styles.css?v=40',
       'css/courses-redesign.css?v=40',
       'views/daily-mission/daily-mission.css?v=11',
       'css/app-design-system.css?v=6',

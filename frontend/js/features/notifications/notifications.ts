@@ -323,8 +323,8 @@ function _courseFileCount(course: LegacyCourse): number {
 
 function renderPinnedCourses(): void {
   const grid = document.getElementById('notifPinnedGrid');
-  const emptyEl = document.getElementById('notifPinnedEmpty');
   if (!grid) return;
+  const panel = grid.closest<HTMLElement>('.notif-pinned');
 
   const courses = _allCourses();
   const byId = new Map(courses.map((c) => [c.id, c]));
@@ -334,11 +334,12 @@ function renderPinnedCourses(): void {
 
   if (pinned.length === 0) {
     grid.innerHTML = '';
-    if (emptyEl) grid.appendChild(emptyEl);
-    if (emptyEl) emptyEl.hidden = false;
+    grid.hidden = true;
+    panel?.classList.add('notif-pinned-empty-state');
     return;
   }
-  if (emptyEl) emptyEl.hidden = true;
+  grid.hidden = false;
+  panel?.classList.remove('notif-pinned-empty-state');
 
   grid.innerHTML = pinned
     .map((course) => {

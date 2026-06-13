@@ -1936,6 +1936,12 @@ body.pdf-maximized #pdfMaximize {
   gap: 12px;
   margin-bottom: 16px;
 }
+.notif-pinned.notif-pinned-empty-state .notif-pinned-header {
+  margin-bottom: 0;
+}
+.notif-pinned.notif-pinned-empty-state .notif-pin-editor:not([hidden]) {
+  margin-top: 16px;
+}
 .notif-pinned-title {
   font-size: 1rem;
   font-weight: 800;
