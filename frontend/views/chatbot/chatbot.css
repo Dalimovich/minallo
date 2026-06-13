@@ -270,6 +270,66 @@ body.ncb-fullbleed .ncb-main {
   min-height: 0;
 }
 
+/* Scroll-to-bottom button. The anchor is a zero-height sticky strip pinned to
+   the bottom of the scrollport (same trick the composer uses), so the button
+   floats over the chat at a fixed spot no matter how far the user scrolls. It
+   adds no layout height and ignores pointer events except on the button. */
+.ncb-scroll-anchor {
+  position: sticky;
+  bottom: 0;
+  z-index: 21;
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+  height: 0;
+  pointer-events: none;
+}
+.ncb-scroll-bottom-btn {
+  position: absolute;
+  right: 10px;
+  /* Sit clear above the sticky composer (composer bottom gap + its height). */
+  bottom: 7.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(8px) scale(0.92);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+/* Hidden by default; the shell adds .is-visible when the user scrolls up. */
+.ncb-scroll-anchor:not(.is-visible) .ncb-scroll-bottom-btn {
+  visibility: hidden;
+}
+.ncb-scroll-anchor.is-visible .ncb-scroll-bottom-btn {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.ncb-scroll-bottom-btn:hover {
+  background: rgba(30, 41, 59, 0.96);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+body:not(.night) .ncb-scroll-bottom-btn {
+  background: rgba(255, 255, 255, 0.96);
+  color: #1e293b;
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+body:not(.night) .ncb-scroll-bottom-btn:hover {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.2);
+}
+
 /* Empty state */
 
 .ncb-empty {

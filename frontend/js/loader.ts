@@ -628,7 +628,7 @@ interface LandingTranslation {
           const lazyCssMap: Record<string, string[]> = {
             dashboard: ['views/dashboard/dashboard.css?v=5'],
             chat: ['views/chat/chat.css'],
-            aipage: ['views/chatbot/chatbot.css?v=12'],
+            aipage: ['views/chatbot/chatbot.css?v=13'],
             german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
             notes: ['views/lecturenotes/lecturenotes.css'],
             profile: ['views/profile/profile.css'],

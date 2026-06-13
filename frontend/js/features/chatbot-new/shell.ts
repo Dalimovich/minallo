@@ -81,6 +81,7 @@ export function initNewChatbotShell(): void {
   initSidebar(newRoot);
   initConversation(newRoot);
   initMessageNavigator(newRoot);
+  initScrollToBottom(newRoot);
   initImportModal(newRoot);
   initContextTabs(newRoot);
   initContextCollapse(newRoot);
@@ -356,6 +357,11 @@ let messageRenderRun = 0;
 let sidebarRenderRun = 0;
 let activeChatLoadRaf: number | null = null;
 let suppressMessageAutoScroll = false;
+// Bumped on every chat (re)load; pending settle-scroll passes carry the token
+// they were scheduled with and bail if a newer load — or the user's own scroll
+// — has superseded them. Lets us land on the bottom even after async KaTeX /
+// image reflow grows the content past the initial scroll.
+let chatScrollSettleToken = 0;
 
 function _readStoredTutorMode(): TutorMode {
   try {
@@ -2902,6 +2908,74 @@ function scrollMsgsToBottom(msgs: HTMLElement): void {
   if (scroller) scroller.scrollTop = scroller.scrollHeight;
 }
 
+// Pin the chat scrollport to the latest message when a conversation is opened
+// or switched to. A single scroll isn't enough: the messages render in rAF
+// chunks and KaTeX / images reflow afterwards, each growing the content and
+// leaving an earlier scroll stranded above the bottom. So we re-assert the
+// bottom across a few frames and short timeouts, cancelling the moment a newer
+// load starts or the user scrolls up themselves.
+function forceChatScrollToBottom(root: HTMLElement): void {
+  const scroller = root.querySelector<HTMLElement>('.ncb-center');
+  if (!scroller) return;
+  const token = ++chatScrollSettleToken;
+
+  const jump = (): void => {
+    scroller.scrollTop = scroller.scrollHeight;
+  };
+
+  // Any deliberate scroll-up gesture during the settle window cancels the
+  // remaining passes so we never yank the user back down.
+  const cancel = (): void => {
+    if (chatScrollSettleToken === token) chatScrollSettleToken++;
+  };
+  const cancelOpts = { passive: true, once: true } as AddEventListenerOptions;
+  scroller.addEventListener('wheel', cancel, cancelOpts);
+  scroller.addEventListener('touchmove', cancel, cancelOpts);
+  scroller.addEventListener('keydown', cancel, cancelOpts);
+
+  jump();
+  const pass = (n: number): void => {
+    if (chatScrollSettleToken !== token) return;
+    jump();
+    if (n > 0) window.requestAnimationFrame(() => pass(n - 1));
+  };
+  window.requestAnimationFrame(() => pass(3));
+  window.setTimeout(() => { if (chatScrollSettleToken === token) jump(); }, 140);
+  window.setTimeout(() => { if (chatScrollSettleToken === token) jump(); }, 360);
+}
+
+// Floating scroll-to-bottom button. Visible only while the user is scrolled up
+// away from the latest message; clicking it smooth-scrolls back to the bottom.
+function initScrollToBottom(root: HTMLElement): void {
+  const scroller = root.querySelector<HTMLElement>('.ncb-center');
+  const anchor = root.querySelector<HTMLElement>('.ncb-scroll-anchor');
+  const btn = root.querySelector<HTMLButtonElement>('.ncb-scroll-bottom-btn');
+  const msgs = root.querySelector<HTMLElement>('.ncb-msgs');
+  if (!scroller || !anchor || !btn || !msgs) return;
+  if (scroller.dataset.scrollBtnBound === '1') return;
+  scroller.dataset.scrollBtnBound = '1';
+
+  const NEAR_BOTTOM_PX = 140;
+  const update = (): void => {
+    const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    // Only meaningful once the chat is scrollable and has content.
+    const show = distance > NEAR_BOTTOM_PX && msgs.children.length > 0;
+    anchor.classList.toggle('is-visible', show);
+  };
+
+  scroller.addEventListener('scroll', update, { passive: true });
+  btn.addEventListener('click', () => {
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+  });
+
+  // Re-evaluate as messages stream in / get cleared and on viewport resize.
+  new MutationObserver(update).observe(msgs, { childList: true, subtree: true });
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(update).observe(scroller);
+  }
+  update();
+}
+
 // Cost guards for the generic /chat route (no server-side history trim there,
 // unlike /ask-stream which hard-caps history at ~2k chars). The newest
 // messages keep full fidelity — the active exchange is what follow-ups
@@ -4777,6 +4851,10 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   if (count) count.textContent = String(chat.savedReplies.length);
   const notesCard = root.querySelector<HTMLElement>('.ncb-notes-card');
   if (notesCard && !notesCard.hidden) renderNotesTab(root);
+
+  // Land on the latest message when a chat is opened or switched to, holding
+  // the bottom through the async render/KaTeX reflow that follows.
+  if (chat.messages.length > 0) forceChatScrollToBottom(root);
 }
 
 function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
