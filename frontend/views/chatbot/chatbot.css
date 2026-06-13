@@ -270,25 +270,22 @@ body.ncb-fullbleed .ncb-main {
   min-height: 0;
 }
 
-/* Scroll-to-bottom button. The anchor is a zero-height sticky strip pinned to
-   the bottom of the scrollport (same trick the composer uses), so the button
-   floats over the chat at a fixed spot no matter how far the user scrolls. It
-   adds no layout height and ignores pointer events except on the button. */
-.ncb-scroll-anchor {
-  position: sticky;
-  bottom: 0;
-  z-index: 21;
-  width: 100%;
-  max-width: 64rem;
-  margin: 0 auto;
-  height: 0;
-  pointer-events: none;
-}
+/* Scroll-to-bottom button. It lives right above the composer inside .ncb-empty
+   and is itself sticky — the same mechanism the composer uses — so it stays
+   pinned in place as the chat scrolls instead of drifting up with the content.
+   Its sticky offset tracks the composer's live height (--ncb-composer-h, set by
+   the shell) so it always floats just above the text area; align-self centers
+   it over the chat column. margin-top:-40px cancels its own height so it adds
+   no layout space. Hidden until the shell adds .is-visible. */
 .ncb-scroll-bottom-btn {
-  position: absolute;
-  /* Horizontally centered over the chat column, just above the composer. */
-  left: 50%;
-  bottom: 7rem;
+  position: sticky;
+  z-index: 21;
+  bottom: calc(
+    var(--ncb-composer-h, 132px) + max(22px, env(safe-area-inset-bottom, 0px)) + 12px
+  );
+  align-self: center;
+  margin-top: -40px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -302,18 +299,16 @@ body.ncb-fullbleed .ncb-main {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   cursor: pointer;
-  pointer-events: auto;
   opacity: 0;
-  transform: translateX(-50%) translateY(8px) scale(0.92);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-/* Hidden by default; the shell adds .is-visible when the user scrolls up. */
-.ncb-scroll-anchor:not(.is-visible) .ncb-scroll-bottom-btn {
   visibility: hidden;
+  transform: translateY(8px) scale(0.92);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
 }
-.ncb-scroll-anchor.is-visible .ncb-scroll-bottom-btn {
+.ncb-scroll-bottom-btn.is-visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1);
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 .ncb-scroll-bottom-btn:hover {
   background: rgba(30, 41, 59, 0.96);
@@ -328,6 +323,10 @@ body:not(.night) .ncb-scroll-bottom-btn {
 body:not(.night) .ncb-scroll-bottom-btn:hover {
   background: #ffffff;
   border-color: rgba(15, 23, 42, 0.2);
+}
+/* Only relevant in an active chat — keep it out of the empty/greeting state. */
+.ncb-empty[data-state="empty"] .ncb-scroll-bottom-btn {
+  display: none;
 }
 
 /* Empty state */

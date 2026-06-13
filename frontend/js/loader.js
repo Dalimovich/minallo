@@ -589,7 +589,7 @@
                 const lazyCssMap = {
                     dashboard: ['views/dashboard/dashboard.css?v=5'],
                     chat: ['views/chat/chat.css'],
-                    aipage: ['views/chatbot/chatbot.css?v=14'],
+                    aipage: ['views/chatbot/chatbot.css?v=15'],
                     german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
                     notes: ['views/lecturenotes/lecturenotes.css'],
                     profile: ['views/profile/profile.css'],

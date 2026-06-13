@@ -2948,10 +2948,10 @@ function forceChatScrollToBottom(root: HTMLElement): void {
 // away from the latest message; clicking it smooth-scrolls back to the bottom.
 function initScrollToBottom(root: HTMLElement): void {
   const scroller = root.querySelector<HTMLElement>('.ncb-center');
-  const anchor = root.querySelector<HTMLElement>('.ncb-scroll-anchor');
   const btn = root.querySelector<HTMLButtonElement>('.ncb-scroll-bottom-btn');
   const msgs = root.querySelector<HTMLElement>('.ncb-msgs');
-  if (!scroller || !anchor || !btn || !msgs) return;
+  const composer = root.querySelector<HTMLElement>('.ncb-input');
+  if (!scroller || !btn || !msgs) return;
   if (scroller.dataset.scrollBtnBound === '1') return;
   scroller.dataset.scrollBtnBound = '1';
 
@@ -2960,7 +2960,7 @@ function initScrollToBottom(root: HTMLElement): void {
     const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
     // Only meaningful once the chat is scrollable and has content.
     const show = distance > NEAR_BOTTOM_PX && msgs.children.length > 0;
-    anchor.classList.toggle('is-visible', show);
+    btn.classList.toggle('is-visible', show);
   };
 
   scroller.addEventListener('scroll', update, { passive: true });
@@ -2972,6 +2972,16 @@ function initScrollToBottom(root: HTMLElement): void {
   new MutationObserver(update).observe(msgs, { childList: true, subtree: true });
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(update).observe(scroller);
+    // Keep the button floating just above the composer as its height changes
+    // (tutor-mode rows, attachments, multi-line input) by publishing the live
+    // composer height the CSS sticky offset reads from.
+    if (composer) {
+      const syncComposerH = (): void => {
+        root.style.setProperty('--ncb-composer-h', composer.offsetHeight + 'px');
+      };
+      new ResizeObserver(syncComposerH).observe(composer);
+      syncComposerH();
+    }
   }
   update();
 }

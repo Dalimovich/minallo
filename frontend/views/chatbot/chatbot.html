@@ -105,6 +105,18 @@
                 </p>
               </div>
 
+              <!-- Scroll-to-bottom button: sticky-pinned just above the
+                   composer (its offset tracks the composer's live height via
+                   --ncb-composer-h). Centered over the chat column. The shell
+                   adds .is-visible only when the user has scrolled up away
+                   from the latest message. -->
+              <button type="button" class="ncb-scroll-bottom-btn" data-testid="chatbot-scroll-bottom"
+                      data-i18n-aria="cb_scroll_bottom_aria" aria-label="Scroll to latest message" tabindex="-1">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>
+                </svg>
+              </button>
+
               <div class="ncb-input">
                 <!-- Tutor-mode pill row. Locale-aware labels (DE / EN) are
                      applied by the shell on init. Default is 'explain' so
@@ -277,18 +289,6 @@
                 </button>
               </div>
             </div>
-          </div>
-
-          <!-- Scroll-to-bottom button: sticky-pinned to the bottom-right of the
-               chat scrollport, above the composer. Shown by the shell only when
-               the user has scrolled up away from the latest message. -->
-          <div class="ncb-scroll-anchor" aria-hidden="true">
-            <button type="button" class="ncb-scroll-bottom-btn" data-testid="chatbot-scroll-bottom"
-                    data-i18n-aria="cb_scroll_bottom_aria" aria-label="Scroll to latest message" tabindex="-1">
-              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>
-              </svg>
-            </button>
           </div>
         </section>
 
