@@ -618,7 +618,7 @@ body.night .sb-night-thumb {
   background: transparent;
 }
 #portal .main .topbar {
-  display: flex;
+  display: none !important;
   align-items: center;
   gap: 12px;
   padding: 16px 28px;
@@ -627,9 +627,6 @@ body.night .sb-night-thumb {
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--glass-border);
   flex-shrink: 0;
-}
-body.minallo-notifications-page #portal .main .topbar {
-  display: none !important;
 }
 .tb-title {
   font-family: var(--font-main);

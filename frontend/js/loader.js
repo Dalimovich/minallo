@@ -367,7 +367,7 @@
             'css/courses-redesign.css?v=40',
             'views/daily-mission/daily-mission.css?v=11',
             'css/app-design-system.css?v=6',
-            'css/layout.css?v=13',
+            'css/layout.css?v=14',
             'css/document-rail.css?v=28',
             'css/auth.css?v=5',
             'css/onboarding.css?v=1',

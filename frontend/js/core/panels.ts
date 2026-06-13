@@ -21,7 +21,6 @@ export function panelHide(el: HTMLElement | null): void {
 }
 
 export function showFilesView(stRunning?: boolean): void {
-  document.body.classList.remove('minallo-notifications-page');
   const portal = document.getElementById('portal');
   if (portal) {
     portal.classList.add('show');
@@ -72,7 +71,6 @@ export function selectTopLevelView(which: TopLevelView, opts?: { stRunning?: boo
   }
 
   if (which === 'file') {
-    document.body.classList.remove('minallo-notifications-page');
     if (mainScroll) mainScroll.style.display = 'none';
     if (app) app.style.display = 'flex';
     _applyFileChrome(opts?.stRunning ?? false);
@@ -120,7 +118,6 @@ function _applyPortalChrome(): void {
 }
 
 export function hideFilesView(): void {
-  document.body.classList.remove('minallo-notifications-page');
   _notifyDocRail('other');
   const topbar = document.querySelector<HTMLElement>('.topbar');
   if (topbar) topbar.style.display = '';
