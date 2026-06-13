@@ -2224,7 +2224,7 @@ body.minallo-in-course .welcome-state {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   box-shadow: none;
-  transition: border-color 0.18s ease, background 0.18s ease;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
   margin-bottom: 10px;
   overflow: hidden;
 }
@@ -2249,14 +2249,42 @@ body.minallo-in-course .welcome-state {
 #coFilesPanel.co-drop-active:has(.co-folder-section.co-drop-target) {
   outline-color: rgba(96, 165, 250, 0.15);
 }
-.co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target {
-  border-color: color-mix(in srgb, var(--co-folder-accent) 75%, rgba(255, 255, 255, 0.15));
-  background: color-mix(in srgb, var(--co-folder-accent) 14%, rgba(255, 255, 255, 0.03));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--co-folder-accent) 40%, transparent);
-}
 .co-inner-v2 .co-folder-section.co-folder-v2:not(.collapsed) {
   border-color: color-mix(in srgb, var(--co-folder-accent) 24%, rgba(255, 255, 255, 0.1));
   background: rgba(255, 255, 255, 0.04);
+}
+.co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+.co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active {
+  border-color: color-mix(in srgb, var(--co-folder-accent, #60a5fa) 82%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--co-folder-accent, #60a5fa) 18%, rgba(255, 255, 255, 0.06));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--co-folder-accent, #60a5fa) 50%, transparent),
+    0 14px 34px rgba(37, 99, 235, 0.28);
+  transform: translateY(-1px);
+}
+body:not(.night) .co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+body:not(.night) .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active,
+[data-theme="light"] .co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+[data-theme="light"] .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active,
+.light .co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+.light .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active {
+  border-color: rgba(37, 99, 235, 0.78);
+  background: rgba(59, 130, 246, 0.12);
+  box-shadow:
+    0 0 0 2px rgba(37, 99, 235, 0.24),
+    0 10px 26px rgba(37, 99, 235, 0.16);
+}
+body.night .co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+body.night .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active,
+[data-theme="dark"] .co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+[data-theme="dark"] .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active,
+.dark .co-inner-v2 .co-folder-section.co-folder-v2.co-drop-target,
+.dark .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-active {
+  border-color: rgba(96, 165, 250, 0.88);
+  background: rgba(59, 130, 246, 0.18);
+  box-shadow:
+    0 0 0 2px rgba(96, 165, 250, 0.32),
+    0 14px 34px rgba(37, 99, 235, 0.3);
 }
 .co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-header {
   display: flex;

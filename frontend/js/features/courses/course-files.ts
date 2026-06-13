@@ -618,14 +618,26 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
     // dragenter/dragleave fire for every child crossed; track depth so the
     // highlight only clears when the drag truly leaves the panel.
     let dragDepth = 0;
+    let activeFolderDropTarget: HTMLElement | null = null;
+    const setFolderDropTarget = (target: HTMLElement | null): void => {
+      if (activeFolderDropTarget === target) return;
+      if (activeFolderDropTarget) {
+        activeFolderDropTarget.classList.remove('co-drop-target', 'folder-drop-target-active');
+      }
+      activeFolderDropTarget = target;
+      if (activeFolderDropTarget) {
+        activeFolderDropTarget.classList.add('co-drop-target', 'folder-drop-target-active');
+      }
+    };
     const clearDropUi = (): void => {
       dragDepth = 0;
+      setFolderDropTarget(null);
       filesPanel.classList.remove('co-drop-active');
-      filesPanel.querySelectorAll('.co-folder-section.co-drop-target')
-        .forEach((el) => el.classList.remove('co-drop-target'));
+      filesPanel.querySelectorAll('.co-folder-section.co-drop-target, .co-folder-section.folder-drop-target-active')
+        .forEach((el) => el.classList.remove('co-drop-target', 'folder-drop-target-active'));
     };
     const folderUnder = (e: DragEvent): HTMLElement | null =>
-      e.target instanceof Element ? e.target.closest<HTMLElement>('.co-folder-section') : null;
+      e.target instanceof Element ? e.target.closest<HTMLElement>('.co-folder-section[data-folder]') : null;
     const hasFiles = (e: DragEvent): boolean =>
       !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
 
@@ -634,19 +646,26 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
       e.preventDefault();
       dragDepth++;
       filesPanel.classList.add('co-drop-active');
+      setFolderDropTarget(folderUnder(e));
     });
     filesPanel.addEventListener('dragover', (e) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-      const target = folderUnder(e);
-      filesPanel.querySelectorAll('.co-folder-section.co-drop-target').forEach((el) => {
-        if (el !== target) el.classList.remove('co-drop-target');
-      });
-      target?.classList.add('co-drop-target');
+      setFolderDropTarget(folderUnder(e));
     });
     filesPanel.addEventListener('dragleave', (e) => {
       if (!hasFiles(e)) return;
+      if (activeFolderDropTarget) {
+        const related = e.relatedTarget instanceof Node ? e.relatedTarget : null;
+        if (
+          (!related || !activeFolderDropTarget.contains(related)) &&
+          e.target instanceof Node &&
+          activeFolderDropTarget.contains(e.target)
+        ) {
+          setFolderDropTarget(null);
+        }
+      }
       dragDepth = Math.max(0, dragDepth - 1);
       if (dragDepth === 0) clearDropUi();
     });
@@ -666,6 +685,7 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
       }
       startUpload(allowed, folderName);
     });
+    filesPanel.addEventListener('dragend', clearDropUi);
   }
 }
 

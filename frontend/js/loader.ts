@@ -402,13 +402,13 @@ interface LandingTranslation {
   // Inject feature CSS
   (function () {
     [
-      'css/base.css?v=5',
-      'css/theme.css?v=5',
-      'css/styles.css?v=37',
-      'css/courses-redesign.css?v=39',
+      'css/base.css?v=6',
+      'css/theme.css?v=6',
+      'css/styles.css?v=38',
+      'css/courses-redesign.css?v=40',
       'views/daily-mission/daily-mission.css?v=11',
       'css/app-design-system.css?v=5',
-      'css/layout.css?v=10',
+      'css/layout.css?v=11',
       'css/document-rail.css?v=28',
       'css/auth.css?v=5',
       'css/onboarding.css?v=1',
@@ -416,7 +416,7 @@ interface LandingTranslation {
       'views/games/games.css',
       // Light-mode polish loads LAST so it wins source-order ties
       // against feature CSS that still hard-codes greys.
-      'css/light-mode.css?v=51',
+      'css/light-mode.css?v=52',
     ].forEach((href) => {
       const link = document.createElement('link');
       link.rel = 'stylesheet';

@@ -27,6 +27,7 @@
 
 html,
 body {
+  min-height: 100%;
   font-family: var(--font-main);
   font-size: 16px;
   line-height: 1.5;
@@ -34,6 +35,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: contain;
+  background: var(--app-bg, var(--dp-bg));
 }
 
 button,
@@ -503,7 +505,8 @@ body:not(.night) .rag-fb-btn {
   overflow-y: auto;
   overflow-x: hidden;
   display: none;
-  background: var(--dp-bg);
+  min-height: 100dvh;
+  background: var(--app-bg, var(--dp-bg));
   background-attachment: fixed;
 }
 #portal.show {
@@ -960,7 +963,7 @@ body:not(.night) .pc-icon {
   display: none;
   flex-direction: column;
   z-index: 10;
-  background: var(--dp-solid);
+  background: var(--app-bg, var(--dp-bg));
   overflow-x: hidden;
 }
 .topbar {
@@ -1033,7 +1036,7 @@ body:not(.night) .pc-icon {
   display: flex;
   overflow: hidden;
   position: relative;
-  background: var(--dp-solid);
+  background: transparent;
 }
 
 /* SIDEBAR */
@@ -4056,7 +4059,7 @@ body.pdf-maximized .annotate-popover {
 }
 
 #courseOverview {
-  background: var(--dp-bg);
+  background: var(--app-bg, var(--dp-bg));
   background-attachment: fixed;
   position: relative;
   min-height: 100%;
@@ -8171,6 +8174,7 @@ input::-webkit-credentials-auto-fill-button {
 /* Color variables scoped to portal — dark (night) mode */
 body.night #portal {
   --dp-bg: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  --app-bg: var(--dp-bg);
   --glass-bg: rgba(30, 41, 59, 0.6);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-border-top: rgba(255, 255, 255, 0.12);
@@ -8180,11 +8184,12 @@ body.night #portal {
   --card-inner: rgba(255, 255, 255, 0.04);
   --card-inner-border: rgba(255, 255, 255, 0.08);
   --row-bg: rgba(255, 255, 255, 0.04);
-  background: var(--dp-bg);
+  background: var(--app-bg);
 }
 /* Color variables scoped to portal — light mode */
 body:not(.night) #portal {
   --dp-bg: linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f5f3ff 100%);
+  --app-bg: var(--dp-bg);
   --glass-bg: rgba(255, 255, 255, 0.7);
   --glass-border: rgba(0, 0, 0, 0.08);
   --glass-border-top: rgba(255, 255, 255, 0.9);
@@ -8194,7 +8199,7 @@ body:not(.night) #portal {
   --card-inner: rgba(0, 0, 0, 0.03);
   --card-inner-border: rgba(0, 0, 0, 0.07);
   --row-bg: rgba(0, 0, 0, 0.03);
-  background: var(--dp-bg);
+  background: var(--app-bg);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

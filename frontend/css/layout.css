@@ -1,16 +1,17 @@
 /* ── Shell ── */
 #portal {
-  overflow: hidden;
+  background: var(--app-bg, var(--dp-bg));
   min-height: 100vh;
   min-height: 100dvh;
 }
 #portal .shell {
   position: relative;
   z-index: 1;
-  height: 100vh;
-  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: stretch;
+  background: transparent;
 }
 
 /* ── Sidebar (premium dark glass, click-to-expand, floating panel) ── */
@@ -611,6 +612,7 @@ body.night .sb-night-thumb {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: transparent;
 }
 #portal .main .topbar {
   display: flex;
@@ -666,6 +668,10 @@ body.night .sb-night-thumb {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 28px;
+  background: transparent;
+  background-image: var(--app-bg, var(--dp-bg));
+  background-attachment: local;
+  background-size: 100% 100%;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
