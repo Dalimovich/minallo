@@ -83,10 +83,6 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
   // at every question). Reset first so a stale value from the previous file
   // never leaks into the new one if the lookup fails or runs slowly.
   (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId = null;
-  // Switching files: wipe the side panel's visible messages immediately so
-  // the previous file's chat never lingers while this file's document ID
-  // (and therefore its chat key) resolves.
-  if (typeof window.resetAiPanelChat === 'function') window.resetAiPanelChat();
   if (course.id) {
     void import('../../services/ai-service.js').then((mod) => {
       // Bail if the user opened a different file before the lookup resolved.
@@ -99,12 +95,6 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
         );
         if (match?.id) {
           (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId = match.id;
-          // The file's chat key is now resolvable — load its history (if any)
-          // into the panel. Still guarded by mySeq above, so a later file
-          // switch can't have this overwrite the new file's messages.
-          if (typeof window.restoreCourseHistory === 'function') {
-            window.restoreCourseHistory(course.id, match.id);
-          }
         }
       });
     }).catch(() => { /* best effort */ });
