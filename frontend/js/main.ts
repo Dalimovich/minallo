@@ -116,7 +116,39 @@ runDelayed(() => lazyImportEncoded('Li9mZWF0dXJlcy9tdXNpYy9tdXNpYy1zZXJ2aWNlcy5q
     if (typeof window.showToast === 'function') window.showToast(title, sub);
   },
 })));
-runDelayed(() => lazyImportEncoded('Li9mZWF0dXJlcy9zdHVkeS10aW1lci9zdHVkeS10aW1lci5qcw==').then((m) => (m.initStudyTimer as () => void)()));
+// Study / Focus Session timer. The trigger buttons (#studyTechBtn topbar,
+// #coStudyBtn course view, #pdfStudyBtn PDF header) are visible the moment the
+// portal renders, but all of their click handling lives inside initStudyTimer.
+// Loading that lazily on a 20s runDelayed meant the first clicks after a
+// refresh were silently dropped until the chunk finally arrived ("button takes
+// more than once to open the popup"). So: (1) an eager capture-phase bridge
+// loads the module on the FIRST click and opens the popup as soon as it's
+// ready, and (2) an idle fallback still initialises it without a click so a
+// session that was running before reload is restored promptly.
+let _stInitPromise: Promise<void> | null = null;
+let _stInitDone = false;
+function ensureStudyTimer(): Promise<void> {
+  if (!_stInitPromise) {
+    _stInitPromise = lazyImportEncoded('Li9mZWF0dXJlcy9zdHVkeS10aW1lci9zdHVkeS10aW1lci5qcw==')
+      .then((m) => { (m.initStudyTimer as () => void)(); _stInitDone = true; })
+      .catch((err: unknown) => { _stInitPromise = null; throw err; });
+  }
+  return _stInitPromise;
+}
+document.addEventListener('click', (e) => {
+  // Once the module is initialised its own delegated handler (and the course
+  // view's) take over — don't double-handle.
+  if (_stInitDone) return;
+  const t = e.target as HTMLElement | null;
+  if (!t || !t.closest('#studyTechBtn, #coStudyBtn, #pdfStudyBtn')) return;
+  ensureStudyTimer()
+    .then(() => {
+      const w = window as unknown as { openStudyPopup?: () => void };
+      if (typeof w.openStudyPopup === 'function') w.openStudyPopup();
+    })
+    .catch(() => { /* import failed; idle fallback will retry */ });
+}, true);
+runIdle(() => { void ensureStudyTimer(); });
 runDelayed(() => lazyImportEncoded('Li9mZWF0dXJlcy93cml0aW5nLWNvYWNoL3dyaXRpbmctY29hY2guanM=').then((m) => (m.initWritingCoach as () => void)()));
 
 // Notifications shell: the portal section #psec-notifications is scaffolded
