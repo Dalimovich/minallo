@@ -39,6 +39,7 @@ from .answer import (
     strip_answer_intro,
     _context_strength,
     chat_completion_params,
+    is_reasoning_model,
     is_app_question,
     normalise_tutor_mode,
     pick_system_prompt,
@@ -1043,6 +1044,21 @@ def stream_answer(
     ):
         effective_max_tokens = max(max_tokens, 4500)
 
+    # Reasoning effort: the global default (medium) is tuned for the deep
+    # multi-phase reasoning that actual exercise-SOLVING and diagram/figure
+    # reasoning need. Conceptual / formula / definition questions reach the
+    # strong model too (answer_mode == "math") but don't use that reasoning —
+    # they give the same answer at "low" effort for far fewer (billed) reasoning
+    # tokens. So only the genuine solving/figure paths keep the higher default.
+    reasoning_effort_override = None
+    if is_reasoning_model(target_model) and not (
+        problem_mode in {"setup", "check", "solve"}
+        or wants_diagram
+        or has_open_image
+        or will_attach_figure
+    ):
+        reasoning_effort_override = "low"
+
     # Compose the context block. Open-file text goes first as [Source 0] so
     # the model cites it preferentially for deictic ("this question /
     # this section / the exercise above") queries. RAG-retrieved chunks
@@ -1267,7 +1283,10 @@ def stream_answer(
             # reject a custom temperature; chat models keep max_tokens + a low
             # temperature (0.2) so a worked solution stays near-deterministic
             # instead of resampling a different structure each regeneration.
-            **chat_completion_params(target_model, effective_max_tokens, temperature=0.2),
+            **chat_completion_params(
+                target_model, effective_max_tokens, temperature=0.2,
+                reasoning_effort=reasoning_effort_override,
+            ),
         )
         for chunk in stream:
             # Usage chunk arrives at the end when include_usage=True.
