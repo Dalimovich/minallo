@@ -1,15 +1,32 @@
 (function () {
   var container = document.getElementById('psec-games');
   if (!container) return;
-  fetch('views/games/games.html')
-    .then(function (r) {
+  // Retry the markup fetch a couple of times: this dispatcher only runs once
+  // (the loader won't re-inject the script on re-navigation), so a single
+  // transient network failure here would leave the page blank until a full
+  // reload. Retrying self-heals the common flaky-connection case.
+  function _ssFetchText(url, tries) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
-    })
+    }).catch(function (err) {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
+          return _ssFetchText(url, tries - 1);
+        });
+      }
+      throw err;
+    });
+  }
+  _ssFetchText('views/games/games.html', 2)
     .then(function (html) {
       var tmp = document.createElement('div');
       tmp.innerHTML = html;
       while (tmp.firstChild) container.appendChild(tmp.firstChild);
       _init();
+    })
+    .catch(function (err) {
+      console.error('games.html load failed:', err);
     });
   function _init() {
     // ════════════════════════════════════════════════════════════════
@@ -23,8 +40,7 @@
           'gamesPlayTetris',
           'gamesPlaySolitaire',
           'gamesPlayBird',
-          'gamesPlayChess',
-          'gamesPlayGD'
+          'gamesPlayChess'
         ].forEach(function (id, i) {
           var el = document.getElementById(id);
           if (el) el.style.display = i === 0 ? '' : 'none';
@@ -55,19 +71,6 @@
         document.getElementById('gamesPlayChess').style.display = '';
         _chessInit();
       }
-      function showGD() {
-        document.getElementById('gamesHub').style.display = 'none';
-        document.getElementById('gamesPlayGD').style.display = '';
-        var frame = document.getElementById('gdGameFrame');
-        if (frame && !frame.dataset.loaded) {
-          frame.dataset.loaded = '1';
-          var ref = encodeURIComponent(window.location.origin + window.location.pathname);
-          frame.src =
-            'https://html5.gamedistribution.com/c6eb54e8432a480bab89a517bd1a897e/?gd_sdk_referrer_url=' +
-            ref;
-        }
-      }
-
       function buildLevelGrid() {
         var grid = document.getElementById('tetrisLevelGrid');
         if (!grid || grid.dataset.built) return;
@@ -166,7 +169,6 @@
       wire('gameCardSolitaire', trackAndRun(showSolitaire));
       wire('gameCardBird', trackAndRun(showBird));
       wire('gameCardChess', trackAndRun(showChess));
-      wire('gameCardGD', showGD);
       wire('tetrisLevelBack', showHub);
       wire('tetrisBack', function () {
         if (typeof _tetrisStop === 'function') _tetrisStop();
@@ -189,6 +191,27 @@
         showHub();
       });
       wire('gdBack', showHub);
+
+      // Solitaire dispatcher loaded its IIFE before this HTML was injected, so
+      // its picker/back/undo listeners couldn't attach to elements that didn't
+      // exist yet. Trigger the deferred wiring now.
+      if (typeof window._solInitUI === 'function') window._solInitUI();
+
+      // Reset to hub whenever the user enters Games via the sidebar, so we
+      // don't get stuck on whatever sub-view (solitaire picker, tetris, ...)
+      // was last visible.
+      var gamesNav = document.getElementById('psbGames');
+      if (gamesNav) {
+        gamesNav.addEventListener('click', function () {
+          // Stop any in-flight game and reset to the hub on the next tick,
+          // after the router has finished swapping sections.
+          if (typeof _tetrisStop === 'function') _tetrisStop();
+          if (typeof window._solStop === 'function') window._solStop();
+          if (typeof _birdStop === 'function') _birdStop();
+          if (typeof _chessStop === 'function') _chessStop();
+          setTimeout(showHub, 0);
+        });
+      }
     })();
   } // end _init
 })();

@@ -140,6 +140,37 @@ export function initPdfControls(options: PdfControlsOptions): {
     if (fileName) options.downloadFile(fileName);
   });
 
+  document.getElementById('pdfBack')?.addEventListener('click', () => {
+    const w = window as unknown as {
+      activeCourseRef?: { id?: string } & Record<string, unknown>;
+      activeFileName?: string | null;
+      pdfDoc?: unknown;
+      pdfFullText?: string;
+      _setAiChipsVisible?: (visible: boolean) => void;
+      showCourseSection?: (course: unknown, section: string) => void;
+      showPortalSection?: (section: string) => void;
+    };
+    if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+      // Clear file state BEFORE delegating to showCourseSection. Its
+      // router.js wrapper calls saveState() immediately after, which
+      // reads activeFileName/pdfDoc and persists them to ss_state. If
+      // we don't clear first, ss_state keeps pointing at the file and
+      // reload sends the user back into the PDF reader. The matching
+      // goPortal handler in router.js does the same cleanup.
+      w.activeFileName = null;
+      w.pdfDoc = null;
+      w.pdfFullText = '';
+      if (typeof w._setAiChipsVisible === 'function') w._setAiChipsVisible(false);
+      const pdfView = document.getElementById('pdfView');
+      const courseOverview = document.getElementById('courseOverview');
+      if (pdfView) pdfView.style.display = 'none';
+      if (courseOverview) courseOverview.style.display = 'block';
+      w.showCourseSection(w.activeCourseRef, 'files');
+      return;
+    }
+    if (typeof w.showPortalSection === 'function') w.showPortalSection('courses');
+  });
+
   document.getElementById('pdfAll')?.addEventListener('click', () => {
     options.setPdfShowAll(!options.getPdfShowAll());
     const btn = document.getElementById('pdfAll');

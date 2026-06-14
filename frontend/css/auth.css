@@ -42,9 +42,10 @@
   overflow-x: hidden;
   overflow-y: auto;
   color: var(--na-ink);
-  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-main);
   background: var(--na-bg);
   -webkit-font-smoothing: antialiased;
+  contain: layout paint style;
 }
 
 #authModal ::selection {
@@ -58,54 +59,32 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at top left, #075985 0, transparent 34%),
-    radial-gradient(circle at 80% 10%, #0284c7 0, transparent 28%),
-    linear-gradient(135deg, #020617 0%, #082f49 55%, #031323 100%);
+  background: linear-gradient(135deg, #020617 0%, #082f49 58%, #031323 100%);
 }
 
 .na-grid {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.55;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(circle at center, black, transparent 72%);
-          mask-image: radial-gradient(circle at center, black, transparent 72%);
+  display: none;
 }
 
 .na-orb {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(60px);
-  pointer-events: none;
-  animation: na-float 7s ease-in-out infinite;
+  display: none;
 }
 .na-orb-1 {
   top: 5rem;
   left: -8rem;
-  width: 20rem;
-  height: 20rem;
-  background: rgba(56, 189, 248, 0.25);
+  width: 16rem;
+  height: 16rem;
+  background: rgba(56, 189, 248, 0.14);
 }
 .na-orb-2 {
   top: 6rem;
   right: -10rem;
-  width: 24rem;
-  height: 24rem;
-  background: rgba(59, 130, 246, 0.25);
-  animation-delay: -1.2s;
+  width: 18rem;
+  height: 18rem;
+  background: rgba(59, 130, 246, 0.14);
 }
 .na-orb-3 {
-  bottom: -8rem;
-  left: 33%;
-  width: 24rem;
-  height: 24rem;
-  background: rgba(103, 232, 249, 0.12);
-  animation-delay: -2.3s;
+  display: none;
 }
 
 @keyframes na-float {
@@ -139,12 +118,10 @@
      modal so the user can reach the Google button + switch row. */
   border-radius: 1.75rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 35px 100px rgba(2, 6, 23, 0.55);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  background: #0b2033;
+  box-shadow: 0 14px 36px rgba(2, 6, 23, 0.34);
   overflow: hidden;
-  animation: na-card-in 0.75s ease-out both;
+  contain: layout paint;
 }
 
 @keyframes na-card-in {
@@ -171,15 +148,7 @@
 @media (min-width: 900px) { .na-form-col { padding: 2rem 2.25rem; } }
 
 .na-form-glow {
-  position: absolute;
-  left: -5rem;
-  top: 6rem;
-  width: 14rem;
-  height: 14rem;
-  border-radius: 9999px;
-  background: rgba(56, 189, 248, 0.10);
-  filter: blur(60px);
-  pointer-events: none;
+  display: none;
 }
 
 .na-form-inner {
@@ -207,7 +176,6 @@
   border-radius: 1rem;
   background: var(--na-sky-300);
   color: #0f172a;
-  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.30);
 }
 .na-brand-dot {
   position: absolute;
@@ -217,7 +185,6 @@
   height: 12px;
   border-radius: 9999px;
   background: var(--na-emerald-300);
-  box-shadow: 0 0 0 4px #020617;
 }
 .na-brand-name {
   margin: 0;
@@ -252,7 +219,6 @@
   text-transform: uppercase;
   letter-spacing: 0.22em;
   color: var(--na-sky-100);
-  backdrop-filter: blur(16px);
 }
 .na-badge svg { display: block; }
 
@@ -341,9 +307,7 @@
   border-radius: 0.85rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 1px 0 rgba(2, 6, 23, 0.20);
-  backdrop-filter: blur(16px);
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color 0.08s, background 0.08s;
 }
 .na-input-wrap:focus-within {
   border-color: rgba(125, 211, 252, 0.45);
@@ -353,7 +317,6 @@
 .na-input-icon {
   flex: none;
   color: var(--na-faint);
-  transition: color 0.2s;
 }
 .na-input-wrap:focus-within .na-input-icon {
   color: var(--na-sky-300);
@@ -383,7 +346,6 @@
   color: var(--na-faint);
   border-radius: 0.5rem;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
 }
 .na-eye-btn:hover {
   background: rgba(255, 255, 255, 0.10);
@@ -405,7 +367,6 @@
   height: 4px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.10);
-  transition: background 0.3s;
 }
 .na-strength-label {
   font-size: 0.68rem;
@@ -431,6 +392,12 @@
   justify-content: space-between;
   gap: 1rem;
   font-size: 0.875rem;
+}
+.na-signin-row[hidden] {
+  display: none !important;
+}
+#authModal.na-mode-signup .na-signin-row {
+  display: none !important;
 }
 
 .na-stay {
@@ -460,7 +427,6 @@
   border: 1px solid rgba(255, 255, 255, 0.20);
   background: rgba(255, 255, 255, 0.05);
   color: transparent;
-  transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 .na-stay-input:checked + .na-stay-box {
   background: var(--na-sky-300);
@@ -476,7 +442,6 @@
   font-weight: 700;
   color: var(--na-sky-200);
   text-decoration: none;
-  transition: color 0.2s;
 }
 .na-forgot:hover { color: #fff; }
 
@@ -497,14 +462,11 @@
   font-size: 1rem;
   font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
-  transition: background 0.2s, transform 0.05s;
+  transition: background 0.08s;
 }
 .na-submit:hover { background: var(--na-sky-300); }
-.na-submit:active { transform: translateY(1px); }
+.na-submit:active { background: var(--na-sky-300); }
 .na-submit:disabled { opacity: 0.7; cursor: progress; }
-.na-submit-arrow { transition: transform 0.2s; }
-.na-submit:hover .na-submit-arrow { transform: translateX(4px); }
 
 /* Divider */
 
@@ -539,8 +501,7 @@
   font-weight: 900;
   border-radius: 0.85rem;
   cursor: pointer;
-  backdrop-filter: blur(16px);
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color 0.08s, background 0.08s;
 }
 .na-google:hover {
   border-color: rgba(125, 211, 252, 0.35);
@@ -560,7 +521,6 @@
   font-weight: 900;
   color: var(--na-sky-200);
   cursor: pointer;
-  transition: color 0.2s;
 }
 .na-switch-link:hover { color: #fff; }
 
@@ -582,24 +542,10 @@
 }
 
 .na-buddy-glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 20%, rgba(125, 211, 252, 0.36), transparent 28%),
-    linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(37, 99, 235, 0.42), rgba(2, 6, 23, 0.25));
+  display: none;
 }
 .na-buddy-grid {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 52px 52px;
-  -webkit-mask-image: radial-gradient(circle at center, black, transparent 70%);
-          mask-image: radial-gradient(circle at center, black, transparent 70%);
+  display: none;
 }
 
 .na-buddy-inner {
@@ -626,7 +572,6 @@
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--na-sky-100);
-  backdrop-filter: blur(16px);
 }
 .na-buddy-sparkle {
   display: inline-flex;
@@ -637,7 +582,6 @@
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.10);
   color: var(--na-sky-100);
-  backdrop-filter: blur(16px);
 }
 
 .na-buddy-hero {
@@ -652,18 +596,13 @@
 .na-owl-wrap {
   position: relative;
   margin-bottom: 1rem;
-  animation: na-owl-float 5s ease-in-out infinite;
 }
 @keyframes na-owl-float {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-10px); }
 }
 .na-owl-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: rgba(125, 211, 252, 0.30);
-  filter: blur(60px);
+  display: none;
 }
 .na-owl-circle {
   position: relative;
@@ -673,8 +612,6 @@
   border-radius: 9999px;
   border: 1px solid rgba(186, 230, 253, 0.25);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 80px rgba(56, 189, 248, 0.20);
-  backdrop-filter: blur(16px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -684,9 +621,7 @@
   position: absolute;
   inset: 1rem;
   border-radius: 9999px;
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.28), transparent 28%),
-    linear-gradient(135deg, rgba(125, 211, 252, 0.22), rgba(37, 99, 235, 0.32));
+  background: rgba(125, 211, 252, 0.16);
 }
 .na-owl-emoji {
   position: relative;
@@ -721,8 +656,6 @@
   border-radius: 1.1rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.20);
-  backdrop-filter: blur(24px);
 }
 .na-mini-icon {
   display: inline-flex;
@@ -733,7 +666,6 @@
   margin-bottom: 0.5rem;
   border-radius: 0.75rem;
   background: rgba(125, 211, 252, 0.15);
-  box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.15);
   color: var(--na-sky-100);
 }
 .na-mini-title {
@@ -757,4 +689,119 @@
   .na-form-col { padding: 1.5rem 1.25rem; }
   .na-brand { margin-bottom: 1.5rem; }
   .na-hero { margin-bottom: 1.5rem; }
+}
+
+/* Signup has one extra field plus the password-strength meter. On laptop
+   height viewports, keep the whole two-column card inside the auth frame
+   instead of letting the card spill below the viewport. */
+@media (min-width: 900px) and (max-height: 960px) {
+  #authModal.na-mode-signup {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  #authModal.na-mode-signup .na-card {
+    max-height: calc(100dvh - 28px);
+  }
+
+  #authModal.na-mode-signup .na-form-col {
+    padding-top: 1.35rem;
+    padding-bottom: 1.35rem;
+  }
+
+  #authModal.na-mode-signup .na-brand {
+    display: none;
+  }
+
+  #authModal.na-mode-signup .na-hero {
+    margin-bottom: 0.9rem;
+  }
+
+  #authModal.na-mode-signup .na-badge {
+    margin-bottom: 0.55rem;
+    padding: 0.32rem 0.75rem;
+  }
+
+  #authModal.na-mode-signup .na-heading {
+    font-size: 1.65rem;
+  }
+
+  #authModal.na-mode-signup .na-body {
+    margin-top: 0.5rem;
+    line-height: 1.45;
+  }
+
+  #authModal.na-mode-signup .na-form {
+    gap: 0.62rem;
+  }
+
+  #authModal.na-mode-signup .na-field-label {
+    margin-bottom: 0.38rem;
+  }
+
+  #authModal.na-mode-signup .na-input-wrap {
+    padding: 0.58rem 0.85rem;
+  }
+
+  #authModal.na-mode-signup .na-strength {
+    margin-top: 0.4rem;
+  }
+
+  #authModal.na-mode-signup .na-confirm-hint {
+    margin-top: 0.25rem;
+    min-height: 0.8em;
+  }
+
+  #authModal.na-mode-signup .na-submit,
+  #authModal.na-mode-signup .na-google {
+    padding-top: 0.72rem;
+    padding-bottom: 0.72rem;
+  }
+
+  #authModal.na-mode-signup .na-divider {
+    margin: 0.7rem 0;
+  }
+
+  #authModal.na-mode-signup .na-switch-row {
+    margin-top: 0.7rem;
+  }
+
+  #authModal.na-mode-signup .na-buddy {
+    padding: 1.2rem;
+  }
+
+  #authModal.na-mode-signup .na-buddy-inner {
+    gap: 0.75rem;
+  }
+
+  #authModal.na-mode-signup .na-owl-wrap {
+    margin-bottom: 0.55rem;
+  }
+
+  #authModal.na-mode-signup .na-owl-circle {
+    width: clamp(7.5rem, 17vh, 10.5rem);
+    height: clamp(7.5rem, 17vh, 10.5rem);
+  }
+
+  #authModal.na-mode-signup .na-owl-emoji {
+    font-size: clamp(2.6rem, 7vh, 3.6rem);
+  }
+
+  #authModal.na-mode-signup .na-buddy-title {
+    font-size: clamp(1.35rem, 2.6vh, 1.75rem);
+  }
+
+  #authModal.na-mode-signup .na-buddy-body {
+    margin-top: 0.5rem;
+    line-height: 1.45;
+  }
+
+  #authModal.na-mode-signup .na-mini-grid {
+    gap: 0.7rem;
+  }
+
+  #authModal.na-mode-signup .na-mini-card {
+    padding: 0.62rem 0.75rem;
+    border-radius: 0.95rem;
+  }
 }

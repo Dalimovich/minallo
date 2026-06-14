@@ -70,6 +70,7 @@ body.night {
   --dp-bg: linear-gradient(135deg, #020617 0%, #0f172a 48%, #082f49 100%);
   --dp-solid: #020617;
   --dp-modal: linear-gradient(135deg, #0f172a, #082f49);
+  --app-bg: var(--dp-bg);
   /* adaptive semantic tokens — dark overrides */
   --glass-bg: rgba(255, 255, 255, 0.07);
   --glass-border: rgba(255, 255, 255, 0.14);
@@ -87,6 +88,10 @@ body.night {
   --badge-border: rgba(255, 255, 255, 0.12);
   --badge-color: rgba(255, 255, 255, 0.5);
   --slot-bg: rgba(255, 255, 255, 0.05);
+}
+html:has(body.night) {
+  --app-bg: linear-gradient(135deg, #020617 0%, #0f172a 48%, #082f49 100%);
+  background: var(--app-bg);
 }
 body.night .pdf-body {
   background: #1a1a2e;
@@ -494,8 +499,22 @@ body:not(.night) #authIndicator {
   border: 1px solid rgba(37, 99, 235, 0.2) !important;
   backdrop-filter: blur(12px);
 }
-body:not(.night) #authName {
-  color: rgba(30, 58, 138, 0.75) !important;
+body:not(.night) #authName,
+body:not(.night) #portal #authName {
+  color: var(--lm-text) !important;
+  font-weight: 700 !important;
+}
+body:not(.night) #sbUserSub,
+body:not(.night) #portal #sbUserSub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .sb-avatar {
+  background: linear-gradient(145deg, #2563eb, #6366f1) !important;
+  border: 1px solid rgba(37, 99, 235, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 4px 14px rgba(37, 99, 235, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
 }
 
 /* Portal: pc-name / pc-desc are already covered but ensure inline color override */
@@ -532,7 +551,7 @@ body:not(.night) .pdf-loading {
   background: #ede0ff;
 }
 body {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   background: var(--bg);
   color: var(--text);
   overflow: hidden;

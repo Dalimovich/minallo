@@ -416,3 +416,194 @@
 /* Controls */
 .qz-study-controls { display: flex; gap: 10px; align-items: center; }
 .qz-study-controls .qz-btn-ghost { flex: 1; justify-content: center; }
+
+/* Cheatsheet-aligned color pass. Keep the quiz layout, but remove the older
+   purple/orange card palette so the page belongs to the same app surface. */
+.qz-root {
+  --qz-accent: #6366f1;
+  --qz-accent-2: #0ea5e9;
+  --qz-surface: color-mix(in srgb, var(--card, #0f172a) 88%, transparent);
+  --qz-nested: var(--card-inner, rgba(255, 255, 255, 0.05));
+  --qz-line: var(--border, #1e293b);
+  --qz-muted: var(--muted, #94a3b8);
+  color: var(--text, #e2e8f0);
+}
+
+.qz-deck-pane,
+.qz-study-pane {
+  background: var(--qz-surface);
+  border-color: var(--qz-line);
+  border-radius: 12px;
+}
+
+.qz-search,
+.qz-sort,
+.qz-view-toggle,
+.qz-deck-card,
+.qz-view-all,
+.qz-explanation,
+.qz-btn-ghost,
+.qz-deck-btn,
+.qz-option {
+  background: var(--qz-nested);
+  border-color: var(--qz-line);
+  color: var(--text, #e2e8f0);
+}
+
+.qz-search input,
+.qz-sort {
+  color: var(--text, #e2e8f0);
+}
+
+.qz-search input::placeholder,
+.qz-deck-count,
+.qz-study-count,
+.qz-study-progress-label,
+.qz-empty,
+.qz-view-all-chev {
+  color: var(--qz-muted);
+  opacity: 1;
+}
+
+.qz-btn {
+  border-radius: 8px;
+  color: var(--text, #e2e8f0);
+}
+
+.qz-btn-primary,
+.qz-btn-submit,
+.qz-deck-btn.primary,
+.qz-view-btn.active {
+  background: linear-gradient(135deg, var(--qz-accent), var(--qz-accent-2));
+  border-color: transparent;
+  color: #fff;
+}
+
+.qz-btn-secondary,
+.qz-view-toggle,
+.qz-deck-icon,
+.qz-study-icon,
+.qz-option-letter,
+.qz-card-pill {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.34);
+  color: #a5b4fc;
+}
+
+.qz-btn-secondary:hover,
+.qz-btn-ghost:hover:not(:disabled),
+.qz-deck-btn:hover,
+.qz-view-all:hover,
+.qz-option:hover:not(:disabled),
+.qz-deck-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.qz-deck-card.active,
+.qz-option.selected {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.68);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.24);
+}
+
+.qz-option.selected .qz-option-letter {
+  background: linear-gradient(135deg, var(--qz-accent), var(--qz-accent-2));
+  color: #fff;
+}
+
+.qz-card-stage {
+  background: var(--qz-surface);
+  border: 1px solid var(--qz-line);
+  color: var(--text, #e2e8f0);
+  border-radius: 12px;
+}
+
+.qz-card-stage.empty {
+  background: var(--qz-nested);
+  border-color: var(--qz-line);
+  color: var(--qz-muted);
+}
+
+.qz-card-source {
+  color: #93c5fd;
+}
+
+.qz-card-question {
+  color: var(--text, #e2e8f0);
+}
+
+.qz-study-progress-track {
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.qz-study-progress-bar {
+  background: linear-gradient(90deg, var(--qz-accent), var(--qz-accent-2));
+}
+
+.qz-deck-status-dot.stale {
+  background: #818cf8;
+}
+
+.qz-deck-status-dot.never {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+body:not(.night) .qz-root {
+  --qz-accent: #2563eb;
+  --qz-accent-2: #0ea5e9;
+  --qz-surface: var(--lm-card-bg);
+  --qz-nested: var(--lm-nested-bg);
+  --qz-line: var(--lm-card-border);
+  --qz-muted: var(--lm-muted);
+  color: var(--lm-text);
+}
+
+body:not(.night) .qz-deck-pane,
+body:not(.night) .qz-study-pane,
+body:not(.night) .qz-card-stage {
+  background: var(--qz-surface) !important;
+  border-color: var(--qz-line) !important;
+  box-shadow: var(--lm-card-shadow);
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .qz-search,
+body:not(.night) .qz-sort,
+body:not(.night) .qz-view-toggle,
+body:not(.night) .qz-deck-card,
+body:not(.night) .qz-view-all,
+body:not(.night) .qz-explanation,
+body:not(.night) .qz-btn-ghost,
+body:not(.night) .qz-deck-btn,
+body:not(.night) .qz-option,
+body:not(.night) .qz-card-stage.empty {
+  background: var(--qz-nested) !important;
+  border-color: var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .qz-search input,
+body:not(.night) .qz-sort,
+body:not(.night) .qz-card-question,
+body:not(.night) .qz-deck-name,
+body:not(.night) .qz-study-name {
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .qz-search input::placeholder,
+body:not(.night) .qz-deck-count,
+body:not(.night) .qz-study-count,
+body:not(.night) .qz-study-progress-label,
+body:not(.night) .qz-empty,
+body:not(.night) .qz-view-all-chev {
+  color: var(--lm-muted) !important;
+}
+
+body:not(.night) .qz-btn-primary,
+body:not(.night) .qz-btn-submit,
+body:not(.night) .qz-deck-btn.primary,
+body:not(.night) .qz-view-btn.active {
+  background: linear-gradient(135deg, var(--qz-accent), var(--qz-accent-2)) !important;
+  color: #fff !important;
+}

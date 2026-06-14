@@ -9,8 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .llm_json import LlmResult, chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -22,10 +23,30 @@ _TARGET_SHARD_SIZE = 8
 _VALID_DIFFICULTIES = {"easy", "medium", "hard"}
 
 
-def _system_prompt(count: int) -> str:
+def _difficulty_guide(difficulty: str) -> str:
+    return {
+        "easy":   "Mostly definitions and single-fact recall.",
+        "medium": "Mix of definitions, formula use, and 1-step application.",
+        "hard":   "Multi-step reasoning, formula application, subtle conditions, and exam-style traps. Avoid trivial one-word recall.",
+        "mixed":  "Balanced spread across easy, medium, and hard.",
+    }.get(difficulty, "Balanced.")
+
+
+def _language_guide(language: str) -> str:
+    return {
+        "auto": "Match the language of the source material (German if the slides are German).",
+        "de": "Write every card front and back in German.",
+        "en": "Write every card front and back in English.",
+    }.get(language, "Match the language of the source material (German if the slides are German).")
+
+
+def _system_prompt(count: int, difficulty: str = "medium", language: str = "auto") -> str:
     return f"""You are an expert tutor preparing {count} exam-quality flashcards for a university student.
 
 Generate EXACTLY {count} cards from the COURSE CONTEXT below.
+
+Difficulty target: {difficulty} — {_difficulty_guide(difficulty)}
+Language: {_language_guide(language)}
 
 Card types (mix them):
 - definition: term → precise definition + notation
@@ -99,9 +120,21 @@ def _context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]) -> s
     return "\n\n---\n\n".join(parts)
 
 
+def _source_payload(c: RetrievedChunk, doc_names: dict[str, str]) -> dict[str, Any]:
+    return {
+        "fileName": doc_names.get(c.document_id, "Unknown"),
+        "pageStart": c.page_start,
+        "pageEnd": c.page_end,
+        "chunkId": c.chunk_id,
+        "sectionTitle": c.section_title,
+    }
+
+
 def _run_one_flashcard_shard(
     *, shard_count: int, context: str, already_taken: list[str],
     diversity_hint: str | None = None,
+    difficulty: str = "medium", language: str = "auto",
+    understanding: str = "",
 ) -> LlmResult | None:
     avoid = ""
     if already_taken:
@@ -115,8 +148,8 @@ def _run_one_flashcard_shard(
     max_completion = min(4000, 700 + shard_count * 350)
     try:
         return chat_json(
-            system=_system_prompt(shard_count) + avoid + diversity,
-            user="COURSE CONTEXT:\n\n" + context,
+            system=_system_prompt(shard_count, difficulty, language) + avoid + diversity,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_completion,
         )
     except Exception:
@@ -131,10 +164,20 @@ def generate_flashcards(
     document_ids: list[str] | None,
     requested_count: int,
     doc_names: dict[str, str],
+    difficulty: str = "medium",
+    language: str | None = None,
+    seen_items: list[str] | None = None,
 ) -> dict[str, Any]:
     # Capped at 24 thanks to parallel shards. Each shard runs in ~15-20s, all
     # three together wall-clock ~20-25s — comfortably under Netlify's 30s.
     requested = max(1, min(int(requested_count or 1), 24))
+    diff = difficulty if difficulty in ("easy", "medium", "hard", "mixed") else "medium"
+    lang = (language or "auto").strip().lower()
+    if lang not in ("auto", "de", "en"):
+        lang = "auto"
+    # Card fronts the learner already saw — feed the avoid-list and pre-seed
+    # the dedupe set so generation doesn't repeat them.
+    seen_avoid = [s.strip() for s in (seen_items or []) if isinstance(s, str) and s.strip()][:100]
 
     chunks = retrieve_chunks(
         user_id=user_id, course_id=course_id,
@@ -142,6 +185,10 @@ def generate_flashcards(
         document_ids=document_ids,
         top_k=max(20, requested * 2),
     )
+    # Review-2 finding #5: course-wide flashcards (no documentIds) had
+    # empty doc_names → every source labelled "Unknown". Backfill from
+    # the chunk set so source-of-truth filenames make it through.
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {
             "requestedCount": requested,
@@ -151,8 +198,13 @@ def generate_flashcards(
         }
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
     collected: list[dict[str, Any]] = []
     seen_fronts: set[str] = set()
+    for s in seen_avoid:
+        k = re.sub(r"\W+", " ", s.lower()).strip()
+        if k:
+            seen_fronts.add(k)
     diagnostics: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
 
     # ── Round 1: parallel shards with diversity hints ────────────────────────
@@ -172,8 +224,11 @@ def generate_flashcards(
                 _run_one_flashcard_shard,
                 shard_count=shard_sizes[i],
                 context=context,
-                already_taken=[],
+                already_taken=seen_avoid,
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
+                difficulty=diff,
+                language=lang,
+                understanding=understanding,
             )
             for i in range(shard_count)
         ]
@@ -205,8 +260,11 @@ def generate_flashcards(
         backfill = _run_one_flashcard_shard(
             shard_count=requested - len(collected) + 2,
             context=context,
-            already_taken=[c.get("front") or "" for c in collected],
+            already_taken=seen_avoid + [c.get("front") or "" for c in collected],
             diversity_hint="anything important not yet covered",
+            difficulty=diff,
+            language=lang,
+            understanding=understanding,
         )
         if backfill is not None:
             diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0
@@ -230,6 +288,7 @@ def generate_flashcards(
         "requestedCount": requested,
         "actualCount": len(collected),
         "cards": collected,
+        "groundedSources": [_source_payload(c, doc_names) for c in chunks[:8]],
         "model": diagnostics["model"],
         "promptTokens": diagnostics["prompt_tokens"],
         "completionTokens": diagnostics["completion_tokens"],

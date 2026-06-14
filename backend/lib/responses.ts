@@ -8,7 +8,10 @@ export function jsonResponse(
 ): LambdaResponse {
   return {
     statusCode,
-    headers: { ...getCorsHeaders(), ...(extraHeaders || {}) },
+    // API responses must never be cached by the browser — a stale daily-plan /
+    // mission response otherwise keeps showing deleted/old tasks after the DB
+    // changed. Callers can still override via extraHeaders if a route opts in.
+    headers: { 'Cache-Control': 'no-store', ...getCorsHeaders(), ...(extraHeaders || {}) },
     body: JSON.stringify(body)
   };
 }

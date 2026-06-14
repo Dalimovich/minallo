@@ -30,4 +30,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:8080/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --max-requests recycles each worker after ~N requests (+ jitter so the two
+# workers don't restart in lockstep) to shed slow memory growth / fragmentation
+# from PDF rasterization on the 2 GB box. Set high so a recycle rarely lands on
+# a long generation/stream; graceful-timeout lets in-flight requests finish, and
+# Phase-2a recovery re-queues any indexing a recycle interrupts.
+CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8080", "--timeout", "120", "--graceful-timeout", "30", "--max-requests", "2000", "--max-requests-jitter", "200"]

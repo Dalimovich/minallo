@@ -1,0 +1,383 @@
+/* ============================================================================
+ * Onboarding modal — matches the portal/courses-redesign visual language.
+ *
+ * Tokens borrowed from courses-redesign.css and theme.css:
+ *   - Inter for body, Fredoka One reserved for the single hero title
+ *   - Pure-blue accents (no cyan blend), weight cap at 700
+ *   - Pill buttons (border-radius: 999px), card chrome with soft white borders
+ *   - Background follows --dp-modal so the modal feels native to the portal
+ *
+ * Markup driven by frontend/pages/signup.html (#onboardModal) and the JS in
+ * frontend/js/features/auth/onboarding.ts. IDs are preserved; only the
+ * class/visual layer changed.
+ * ========================================================================== */
+
+#onboardModal.ob-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  background: rgba(2, 6, 23, 0.78);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
+  contain: layout paint style;
+}
+
+.ob-card {
+  background: #0b253b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  padding: 36px 32px;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  box-shadow:
+    0 16px 42px -20px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  contain: layout paint;
+}
+
+/* ── Progress bar (3 segments) ─────────────────────────────────────────── */
+.ob-progress {
+  display: flex;
+  gap: 6px;
+}
+.ob-progress-seg {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background-color 0.12s ease;
+}
+.ob-progress-seg.is-active {
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+.ob-header {
+  text-align: left;
+}
+.ob-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(96, 165, 250, 0.85);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-bottom: 6px;
+}
+.ob-title {
+  font-family: var(--font-main);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #e2e8f0;
+  margin: 0;
+}
+.ob-sub {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+}
+
+/* ── Step containers (one visible at a time) ───────────────────────────── */
+.ob-step {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+}
+.ob-step.is-active {
+  display: flex;
+}
+
+/* ── Form fields ───────────────────────────────────────────────────────── */
+.ob-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ob-row {
+  display: flex;
+  gap: 10px;
+}
+.ob-row > .ob-field {
+  flex: 1;
+}
+.ob-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ob-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #e2e8f0;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.ob-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+.ob-input:focus {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ob-prompt {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+  text-align: left;
+}
+
+/* ── Autocomplete dropdown ─────────────────────────────────────────────── */
+.ob-drop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #0b253b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 9600;
+  box-shadow: 0 10px 26px -12px rgba(0, 0, 0, 0.58);
+  contain: layout paint;
+}
+.ob-drop > div {
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: inherit;
+  font-weight: 500;
+}
+.ob-drop > div:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* ── Path cards (step 2: enrolled vs learner) ──────────────────────────── */
+.ob-path-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.ob-path-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+  text-align: left;
+  font-family: inherit;
+}
+.ob-path-card:hover {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(59, 130, 246, 0.05);
+}
+.ob-path-card.is-disabled,
+.ob-path-card:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+}
+.ob-path-card.is-disabled:hover,
+.ob-path-card:disabled:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+.ob-path-card.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+.ob-path-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: -0.01em;
+}
+.ob-path-sub {
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* ── Test cards (step 3b) ──────────────────────────────────────────────── */
+.ob-test-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ob-test-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 11px 13px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+  text-align: left;
+  font-family: inherit;
+}
+.ob-test-card:hover {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(59, 130, 246, 0.05);
+}
+.ob-test-card.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+.ob-test-name {
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: -0.01em;
+}
+.ob-test-sub {
+  font-size: 0.66rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* ── Level pill buttons ────────────────────────────────────────────────── */
+.ob-level-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ob-level-btn {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+}
+.ob-level-btn:hover {
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #e2e8f0;
+}
+.ob-level-btn.selected {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+}
+
+/* ── Buttons (pill, gradient blue primary / ghost) ─────────────────────── */
+.ob-btn-primary,
+.ob-btn-ghost {
+  padding: 12px 22px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease,
+    border-color 0.18s ease;
+  letter-spacing: -0.005em;
+}
+.ob-btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  color: #fff;
+  box-shadow: 0 8px 22px -8px rgba(37, 99, 235, 0.6);
+}
+.ob-btn-primary:hover {
+  box-shadow: 0 8px 20px -9px rgba(59, 130, 246, 0.65);
+}
+.ob-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+.ob-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(226, 232, 240, 0.85);
+}
+.ob-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.ob-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.ob-actions .ob-btn-primary { flex: 2; }
+.ob-actions .ob-btn-ghost { flex: 1; }
+
+/* Continue button — full width on step 1 */
+.ob-step .ob-btn-primary.ob-btn-block {
+  width: 100%;
+}
+
+/* ── Error line ────────────────────────────────────────────────────────── */
+.ob-err {
+  display: none;
+  color: #f87171;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* ── Logout (corner) ───────────────────────────────────────────────────── */
+.ob-logout-btn {
+  position: absolute;
+  bottom: 22px;
+  right: 22px;
+  padding: 9px 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+.ob-logout-btn:hover {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+/* Position helper for autocomplete inputs */
+.ob-field-with-drop {
+  position: relative;
+}

@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "notes": "RAG retrieval evaluation cases. Run with `python -m tests.scripts.eval_retrieval`. The script measures retrieval correctness (top-1 / top-3 page hit, mustContain coverage, exact-block firing) WITHOUT generating an answer — so a regression in ranking shows up immediately, decoupled from LLM noise. Replace TODO_* placeholders with real course/document IDs from the dev DB before running live.",
+  "cases": [
+    {
+      "id": "tm1-aufgabe-1-2",
+      "courseId": "TODO_COURSE_TM1",
+      "question": "Solve Aufgabe 1.2",
+      "expectedDocument": "HA_01.pdf",
+      "expectedPages": [2, 3],
+      "mustContain": ["Gleichgewichtsbedingung", "Moment"],
+      "expectExerciseHit": true,
+      "expectFormulaHit": false,
+      "notes": "Exercise-exact path should fire and prepend the statement chunk. Formula sheet shouldn't be needed."
+    },
+    {
+      "id": "analysis-satz-1-14",
+      "courseId": "TODO_COURSE_ANALYSIS",
+      "question": "Explain Satz 1.14",
+      "expectedDocument": "lecture_01.pdf",
+      "expectedPages": [12],
+      "mustContain": ["LBA", "kontextsensitiv"],
+      "expectExerciseHit": false,
+      "expectFormulaHit": false,
+      "notes": "Lecture-slide retrieval; vector path should find the theorem statement."
+    },
+    {
+      "id": "tm1-bending-moment-formula",
+      "courseId": "TODO_COURSE_TM1",
+      "question": "Which formula do I use for bending moment?",
+      "expectedDocument": "Formelsammlung.pdf",
+      "expectedPages": [4],
+      "mustContain": ["M", "I", "sigma"],
+      "expectExerciseHit": false,
+      "expectFormulaHit": true,
+      "notes": "Formula exact-match should prepend the canonical formula from the formula sheet, not a general lecture chunk."
+    },
+    {
+      "id": "tm1-taylor-formula",
+      "courseId": "TODO_COURSE_ANALYSIS",
+      "question": "What is the formula for the Taylor expansion?",
+      "expectedDocument": "Formelsammlung.pdf",
+      "expectedPages": [2],
+      "mustContain": ["f(x_0)", "n!"],
+      "expectExerciseHit": false,
+      "expectFormulaHit": true
+    },
+    {
+      "id": "tm1-aufgabe-2-mit-loesung",
+      "courseId": "TODO_COURSE_TM1",
+      "question": "Aufgabe 2 mit Lösung",
+      "expectedDocument": "HA_01.pdf",
+      "expectedPages": [4, 5],
+      "mustContain": ["Lösung", "Schnittgrößen"],
+      "expectExerciseHit": true,
+      "expectFormulaHit": false,
+      "notes": "Should retrieve BOTH the exercise statement AND the solution chunk on adjacent pages — checks neighbour boost + exercise-exact path together."
+    }
+  ]
+}

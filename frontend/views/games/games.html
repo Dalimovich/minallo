@@ -1,8 +1,8 @@
 <!-- -- HUB -- -->
 <div id="gamesHub" class="games-hub">
   <div class="games-hub-hero">
-    <div class="games-hub-hero-title">&#x1F3AE; Game Room</div>
-    <div class="games-hub-hero-sub">Take a break &amp; play</div>
+    <div class="games-hub-hero-title" data-i18n="games_hub_title">&#x1F3AE; Game Room</div>
+    <div class="games-hub-hero-sub" data-i18n="games_hub_sub">Take a break &amp; play</div>
   </div>
   <div class="games-hub-grid">
     <div class="gh-card" id="gameCardTetris">
@@ -18,12 +18,12 @@
       </div>
       <div class="gh-card-body">
         <div class="gh-card-name">Tetris</div>
-        <div class="gh-card-desc">Stack blocks &amp; clear lines. Choose your starting level.</div>
+        <div class="gh-card-desc" data-i18n="games_tetris_desc">Stack blocks &amp; clear lines. Choose your starting level.</div>
         <div class="gh-card-meta">
-          <span class="gh-badge">Puzzle</span><span class="gh-badge">10 Levels</span>
+          <span class="gh-badge" data-i18n="games_badge_puzzle">Puzzle</span><span class="gh-badge" data-i18n="games_badge_10_levels">10 Levels</span>
         </div>
       </div>
-      <div class="gh-card-play">Play &#x25B6;</div>
+      <div class="gh-card-play" data-i18n="games_play">Play &#x25B6;</div>
     </div>
     <div class="gh-card" id="gameCardBird">
       <div
@@ -72,12 +72,12 @@
       </div>
       <div class="gh-card-body">
         <div class="gh-card-name">Flappy Bird</div>
-        <div class="gh-card-desc">Tap to fly, dodge the pipes. How far can you go?</div>
+        <div class="gh-card-desc" data-i18n="games_bird_desc">Tap to fly, dodge the pipes. How far can you go?</div>
         <div class="gh-card-meta">
-          <span class="gh-badge">Arcade</span><span class="gh-badge">Endless</span>
+          <span class="gh-badge" data-i18n="games_badge_arcade">Arcade</span><span class="gh-badge" data-i18n="games_badge_endless">Endless</span>
         </div>
       </div>
-      <div class="gh-card-play">Play &#x25B6;</div>
+      <div class="gh-card-play" data-i18n="games_play">Play &#x25B6;</div>
     </div>
     <div class="gh-card" id="gameCardSolitaire">
       <div class="gh-card-preview gh-card-preview-solitaire">
@@ -169,12 +169,12 @@
       </div>
       <div class="gh-card-body">
         <div class="gh-card-name">Solitaire</div>
-        <div class="gh-card-desc">Classic Klondike. Sort all cards to the foundations.</div>
+        <div class="gh-card-desc" data-i18n="games_solitaire_desc">Classic Klondike. Sort all cards to the foundations.</div>
         <div class="gh-card-meta">
-          <span class="gh-badge">Cards</span><span class="gh-badge">Classic</span>
+          <span class="gh-badge" data-i18n="games_badge_cards">Cards</span><span class="gh-badge" data-i18n="games_badge_classic">Classic</span>
         </div>
       </div>
-      <div class="gh-card-play">Play &#x25B6;</div>
+      <div class="gh-card-play" data-i18n="games_play">Play &#x25B6;</div>
     </div>
     <!-- -- CHESS CARD -- -->
     <div class="gh-card" id="gameCardChess">
@@ -277,34 +277,14 @@
       </div>
       <div class="gh-card-body">
         <div class="gh-card-name">Chess</div>
-        <div class="gh-card-desc">
+        <div class="gh-card-desc" data-i18n="games_chess_desc">
           Classic chess vs AI. Outsmart the engine in a battle of wits.
         </div>
         <div class="gh-card-meta">
-          <span class="gh-badge">Strategy</span><span class="gh-badge">vs AI</span>
+          <span class="gh-badge" data-i18n="games_badge_strategy">Strategy</span><span class="gh-badge" data-i18n="games_badge_vs_ai">vs AI</span>
         </div>
       </div>
-      <div class="gh-card-play">Play &#x25B6;</div>
-    </div>
-    <div class="gh-card" id="gameCardGD">
-      <div
-        class="gh-card-preview"
-        style="
-          background: linear-gradient(135deg, #0a1628, #1a3a5c);
-          align-items: center;
-          justify-content: center;
-        "
-      >
-        <div style="font-size: 2.2rem">??</div>
-      </div>
-      <div class="gh-card-body">
-        <div class="gh-card-name">Arcade</div>
-        <div class="gh-card-desc">A fun arcade game to take a quick break and recharge.</div>
-        <div class="gh-card-meta">
-          <span class="gh-badge">Arcade</span><span class="gh-badge">Casual</span>
-        </div>
-      </div>
-      <div class="gh-card-play">Play &#x25B6;</div>
+      <div class="gh-card-play" data-i18n="games_play">Play &#x25B6;</div>
     </div>
   </div>
 </div>
@@ -312,18 +292,18 @@
 <!-- -- TETRIS LEVEL SELECT -- -->
 <div id="gamesTetrisLevels" style="display: none" class="games-level-screen">
   <div class="lvl-hero">
-    <button class="game-back-btn" id="tetrisLevelBack">&#x2190; Games</button>
+    <button class="game-back-btn" id="tetrisLevelBack" data-i18n="games_back_games">&#x2190; Games</button>
     <div class="lvl-hero-body">
-      <div class="lvl-hero-title">&#x1F3AE; Choose Your Challenge</div>
-      <div class="lvl-hero-sub">Higher levels start faster &amp; score more — can you survive?</div>
+      <div class="lvl-hero-title" data-i18n="games_choose_challenge">&#x1F3AE; Choose Your Challenge</div>
+      <div class="lvl-hero-sub" data-i18n="games_choose_sub">Higher levels start faster &amp; score more â€” can you survive?</div>
       <div class="lvl-hero-stats">
         <div class="lvl-hero-stat">
-          <span class="lvl-hero-stat-val" id="lvlBestScore">—</span
-          ><span class="lvl-hero-stat-label">Best Score</span>
+          <span class="lvl-hero-stat-val" id="lvlBestScore">â€”</span
+          ><span class="lvl-hero-stat-label" data-i18n="games_best_score">Best Score</span>
         </div>
         <div class="lvl-hero-stat">
-          <span class="lvl-hero-stat-val" id="lvlBestLevel">—</span
-          ><span class="lvl-hero-stat-label">Best Level</span>
+          <span class="lvl-hero-stat-val" id="lvlBestLevel">â€”</span
+          ><span class="lvl-hero-stat-label" data-i18n="games_best_level">Best Level</span>
         </div>
       </div>
     </div>
@@ -334,26 +314,26 @@
 <!-- -- TETRIS PLAY -- -->
 <div id="gamesPlayTetris" style="display: none" class="games-play-screen">
   <div class="game-play-hdr">
-    <button class="game-back-btn" id="tetrisBack">&#x2190; Levels</button>
+    <button class="game-back-btn" id="tetrisBack" data-i18n="games_back_levels">&#x2190; Levels</button>
     <span class="game-play-title">Tetris</span>
     <span class="game-play-level-badge" id="tetrisLevelBadge">Level 1</span>
   </div>
   <div class="tetris-layout">
     <div class="tetris-stats-col">
       <div class="tstat">
-        <div class="tstat-label">Score</div>
+        <div class="tstat-label" data-i18n="games_score">Score</div>
         <div class="tstat-val" id="tetrisScore">0</div>
       </div>
       <div class="tstat">
-        <div class="tstat-label">Level</div>
+        <div class="tstat-label" data-i18n="games_level">Level</div>
         <div class="tstat-val" id="tetrisLevel">1</div>
       </div>
       <div class="tstat">
-        <div class="tstat-label">Lines</div>
+        <div class="tstat-label" data-i18n="games_lines">Lines</div>
         <div class="tstat-val" id="tetrisLines">0</div>
       </div>
       <div class="tstat">
-        <div class="tstat-label">Best</div>
+        <div class="tstat-label" data-i18n="games_best">Best</div>
         <div class="tstat-val" id="tetrisBest">0</div>
       </div>
     </div>
@@ -361,16 +341,16 @@
       <div class="tetris-board-wrap">
         <canvas id="tetrisCanvas" width="220" height="440"></canvas>
         <div id="tetrisOverlay" class="tetris-overlay">
-          <div class="tetris-overlay-title" id="tetrisOverlayTitle">Ready?</div>
-          <div class="tetris-overlay-sub" id="tetrisOverlaySub">
+          <div class="tetris-overlay-title" id="tetrisOverlayTitle" data-i18n="games_ready">Ready?</div>
+          <div class="tetris-overlay-sub" id="tetrisOverlaySub" data-i18n="games_tetris_hint">
             Arrow keys to move &bull; Up to rotate &bull; Space to drop
           </div>
-          <button class="tetris-start-btn" id="tetrisStartBtn">Start</button>
+          <button class="tetris-start-btn" id="tetrisStartBtn" data-i18n="games_start">Start</button>
         </div>
       </div>
       <div class="tetris-controls">
         <div class="tetris-ctrl-row">
-          <button class="tetris-ctrl-btn" id="tCtrlUp">&#x1F504; Rotate</button>
+          <button class="tetris-ctrl-btn" id="tCtrlUp" data-i18n="games_rotate">&#x1F504; Rotate</button>
         </div>
         <div class="tetris-ctrl-row">
           <button class="tetris-ctrl-btn" id="tCtrlLeft">&#x2190;</button>
@@ -378,7 +358,7 @@
           <button class="tetris-ctrl-btn" id="tCtrlRight">&#x2192;</button>
         </div>
         <div class="tetris-ctrl-row">
-          <button class="tetris-ctrl-btn tetris-ctrl-drop" id="tCtrlDrop">
+          <button class="tetris-ctrl-btn tetris-ctrl-drop" id="tCtrlDrop" data-i18n="games_hard_drop">
             &#x23EC; Hard Drop
           </button>
         </div>
@@ -386,7 +366,7 @@
     </div>
     <div class="tetris-next-col">
       <div class="tstat">
-        <div class="tstat-label">Next</div>
+        <div class="tstat-label" data-i18n="games_next">Next</div>
         <canvas id="tetrisNext" width="88" height="88"></canvas>
       </div>
     </div>
@@ -398,34 +378,34 @@
   <!-- Variant picker -->
   <div id="solVariantPicker">
     <div class="game-play-hdr">
-      <button class="game-back-btn" id="solPickerBack">&#x2190; Games</button>
+      <button class="game-back-btn" id="solPickerBack" data-i18n="games_back_games">&#x2190; Games</button>
       <span class="game-play-title">Solitaire</span>
     </div>
     <div class="sol-variant-grid">
       <div class="sol-vc" data-variant="klondike">
         <div class="sol-vc-icon">&#x1F0A1;</div>
         <div class="sol-vc-name">Klondike</div>
-        <div class="sol-vc-desc">The classic</div>
+        <div class="sol-vc-desc" data-i18n="games_sol_klondike_desc">The classic</div>
       </div>
       <div class="sol-vc" id="solSpiderMenuBtn">
         <div class="sol-vc-icon">&#x1F577;&#xFE0F;</div>
         <div class="sol-vc-name">Spider</div>
-        <div class="sol-vc-desc">4 variants</div>
+        <div class="sol-vc-desc" data-i18n="games_sol_spider_desc">4 variants</div>
       </div>
       <div class="sol-vc" data-variant="freecell">
         <div class="sol-vc-icon">&#x1F513;</div>
         <div class="sol-vc-name">FreeCell</div>
-        <div class="sol-vc-desc">All cards face up</div>
+        <div class="sol-vc-desc" data-i18n="games_sol_freecell_desc">All cards face up</div>
       </div>
       <div class="sol-vc" data-variant="pyramid">
         <div class="sol-vc-icon">&#x1F53A;</div>
         <div class="sol-vc-name">Pyramid</div>
-        <div class="sol-vc-desc">Pairs summing to 13</div>
+        <div class="sol-vc-desc" data-i18n="games_sol_pyramid_desc">Pairs summing to 13</div>
       </div>
       <div class="sol-vc" data-variant="tripeaks">
         <div class="sol-vc-icon">&#x26F0;&#xFE0F;</div>
         <div class="sol-vc-name">Tri-Peaks</div>
-        <div class="sol-vc-desc">Three peaks &middot; sequential</div>
+        <div class="sol-vc-desc" data-i18n="games_sol_tripeaks_desc">Three peaks &middot; sequential</div>
       </div>
     </div>
   </div>
@@ -433,7 +413,7 @@
   <!-- Spider sub-picker -->
   <div id="solSpiderPicker" style="display: none">
     <div class="game-play-hdr">
-      <button class="game-back-btn" id="solSpiderPickerBack">&#x2190; Solitaire</button>
+      <button class="game-back-btn" id="solSpiderPickerBack" data-i18n="games_back_solitaire">&#x2190; Solitaire</button>
       <span class="game-play-title">Spider</span>
     </div>
     <div class="sol-spider-grid">
@@ -473,7 +453,7 @@
           </div>
         </div>
         <div class="sol-spc-name">Scorpion</div>
-        <div class="sol-spc-desc">1 deck &middot; 7 columns &middot; same suit</div>
+        <div class="sol-spc-desc" data-i18n="games_spider_scorpion_desc">1 deck &middot; 7 columns &middot; same suit</div>
       </div>
       <div class="sol-spc" data-variant="spider4">
         <div class="sol-spc-preview">
@@ -510,8 +490,8 @@
             </div>
           </div>
         </div>
-        <div class="sol-spc-name">Spider Four Suits</div>
-        <div class="sol-spc-desc">2 decks &middot; 10 columns &middot; expert</div>
+        <div class="sol-spc-name" data-i18n="games_spider_four">Spider Four Suits</div>
+        <div class="sol-spc-desc" data-i18n="games_spider_four_desc">2 decks &middot; 10 columns &middot; expert</div>
       </div>
       <div class="sol-spc" data-variant="spider1">
         <div class="sol-spc-preview">
@@ -548,8 +528,8 @@
             </div>
           </div>
         </div>
-        <div class="sol-spc-name">Spider One Suit</div>
-        <div class="sol-spc-desc">2 decks &middot; spades only &middot; easy</div>
+        <div class="sol-spc-name" data-i18n="games_spider_one">Spider One Suit</div>
+        <div class="sol-spc-desc" data-i18n="games_spider_one_desc">2 decks &middot; spades only &middot; easy</div>
       </div>
       <div class="sol-spc" data-variant="spider2">
         <div class="sol-spc-preview">
@@ -586,8 +566,8 @@
             </div>
           </div>
         </div>
-        <div class="sol-spc-name">Spider Two Suits</div>
-        <div class="sol-spc-desc">2 decks &middot; spades &amp; hearts &middot; medium</div>
+        <div class="sol-spc-name" data-i18n="games_spider_two">Spider Two Suits</div>
+        <div class="sol-spc-desc" data-i18n="games_spider_two_desc">2 decks &middot; spades &amp; hearts &middot; medium</div>
       </div>
     </div>
   </div>
@@ -601,13 +581,13 @@
         <span
           class="tstat"
           style="flex-direction: row; align-items: center; gap: 6px; padding: 6px 14px"
-          ><span class="tstat-label" style="margin: 0">Moves</span
+          ><span class="tstat-label" style="margin: 0" data-i18n="games_moves">Moves</span
           ><span class="tstat-val" style="font-size: 1rem" id="solMoves">0</span></span
         >
         <span
           class="tstat"
           style="flex-direction: row; align-items: center; gap: 6px; padding: 6px 14px"
-          ><span class="tstat-label" style="margin: 0">Time</span
+          ><span class="tstat-label" style="margin: 0" data-i18n="games_time">Time</span
           ><span class="tstat-val" style="font-size: 1rem" id="solTime">0:00</span></span
         >
         <button
@@ -620,7 +600,7 @@
             border: 1px solid rgba(255, 255, 255, 0.15);
           "
         >
-          &#x21A9; Undo
+          <span data-i18n="games_undo">&#x21A9; Undo</span>
         </button>
         <button
           class="tetris-start-btn sol-hint-btn"
@@ -631,14 +611,14 @@
             background: linear-gradient(135deg, #2563eb, #6366f1);
           "
         >
-          &#x1F4A1; Hint
+          <span data-i18n="games_hint">&#x1F4A1; Hint</span>
         </button>
         <button
           class="tetris-start-btn"
           id="solitaireNewGame"
           style="padding: 7px 18px; font-size: 0.78rem"
         >
-          New Game
+          <span data-i18n="games_new_game">New Game</span>
         </button>
       </div>
     </div>
@@ -659,13 +639,14 @@
         text-align: center;
       "
     >
-      <span style="color: #f87171; font-weight: 700; font-size: 0.95rem"
-        >No moves left — this deal is stuck.</span
+      <span style="color: #f87171; font-weight: 700; font-size: 0.95rem" data-i18n="games_no_moves"
+        >No moves left â€” this deal is stuck.</span
       >
       <button
         id="solNoMovesNewGame"
         class="tetris-start-btn"
         style="padding: 7px 20px; font-size: 0.82rem"
+        data-i18n="games_deal_new"
       >
         Deal New Game
       </button>
@@ -677,7 +658,7 @@
 <!-- -- CHESS -- -->
 <div id="gamesPlayChess" style="display: none" class="games-play-screen chess-screen">
   <div class="game-play-hdr">
-    <button class="game-back-btn" id="chessBack">&#x2190; Games</button>
+    <button class="game-back-btn" id="chessBack" data-i18n="games_back_games">&#x2190; Games</button>
     <span class="game-play-title">&#x265E; Chess</span>
     <div style="margin-left: auto; display: flex; gap: 8px; align-items: center">
       <span
@@ -696,7 +677,7 @@
           color: #f87171;
         "
       >
-        Resign
+        <span data-i18n="games_resign">Resign</span>
       </button>
     </div>
   </div>
@@ -707,7 +688,7 @@
       <div class="chess-player-bar" id="chessBarTop">
         <div class="chess-player-avatar" id="chessAvTop">?</div>
         <div class="chess-player-meta">
-          <div class="chess-player-name" id="chessNameTop">—</div>
+          <div class="chess-player-name" id="chessNameTop">â€”</div>
           <div class="chess-player-elo" id="chessEloTop"></div>
         </div>
         <div class="chess-caps-row" id="chessCapsTop"></div>
@@ -718,11 +699,12 @@
         <canvas id="chessBoard" width="480" height="480"></canvas>
         <div class="chess-board-overlay" id="chessBoardOverlay" style="display: none">
           <div class="chess-overlay-box">
-            <div class="chess-overlay-title" id="chessOverlayTitle">Game Over</div>
+            <div class="chess-overlay-title" id="chessOverlayTitle" data-i18n="games_game_over">Game Over</div>
             <div class="chess-overlay-sub" id="chessOverlaySub"></div>
             <button
               class="tetris-start-btn"
               id="chessOverlayNewGame"
+              data-i18n="games_play_again"
               style="margin-top: 12px; padding: 10px 28px"
             >
               Play Again
@@ -734,7 +716,7 @@
       <div class="chess-player-bar" id="chessBarBottom">
         <div class="chess-player-avatar" id="chessAvBottom">&#x265A;</div>
         <div class="chess-player-meta">
-          <div class="chess-player-name" id="chessNameBottom">You</div>
+          <div class="chess-player-name" id="chessNameBottom" data-i18n="games_you">You</div>
           <div class="chess-player-elo" id="chessEloBottom"></div>
         </div>
         <div class="chess-caps-row" id="chessCapsBottom"></div>
@@ -744,9 +726,9 @@
     <!-- RIGHT: panel -->
     <div class="chess-panel">
       <div class="chess-panel-tabs">
-        <button class="chess-ptab chess-ptab-active" id="chessTabPlay">Play</button>
-        <button class="chess-ptab" id="chessTabMoves">Moves</button>
-        <button class="chess-ptab" id="chessTabRatings">Ratings</button>
+        <button class="chess-ptab chess-ptab-active" id="chessTabPlay" data-i18n="games_chess_tab_play">Play</button>
+        <button class="chess-ptab" id="chessTabMoves" data-i18n="games_chess_tab_moves">Moves</button>
+        <button class="chess-ptab" id="chessTabRatings" data-i18n="games_chess_tab_ratings">Ratings</button>
       </div>
       <!-- PLAY TAB -->
       <div class="chess-tab-body" id="chessBodyPlay">
@@ -754,16 +736,16 @@
           <button class="chess-mode-btn" id="chessModeBot">
             <span class="chess-mode-icon">&#x1F916;</span>
             <div class="chess-mode-text">
-              <div class="chess-mode-name">Play vs Bot</div>
-              <div class="chess-mode-sub">Challenge the AI engine</div>
+              <div class="chess-mode-name" data-i18n="games_chess_vs_bot">Play vs Bot</div>
+              <div class="chess-mode-sub" data-i18n="games_chess_vs_bot_sub">Challenge the AI engine</div>
             </div>
             <span class="chess-mode-arrow">&#x203A;</span>
           </button>
           <button class="chess-mode-btn" id="chessModeOnline">
             <span class="chess-mode-icon">&#x1F30D;</span>
             <div class="chess-mode-text">
-              <div class="chess-mode-name">Play Online</div>
-              <div class="chess-mode-sub">vs another student</div>
+              <div class="chess-mode-name" data-i18n="games_chess_online">Play Online</div>
+              <div class="chess-mode-sub" data-i18n="games_chess_online_sub">vs another student</div>
             </div>
             <span class="chess-mode-arrow">&#x203A;</span>
           </button>
@@ -772,7 +754,7 @@
         <div id="chessBotPanel" style="display: none">
           <div class="chess-section-hdr">
             <button class="chess-back-sm" id="chessBotBack">&#x2190;</button>
-            <span>Choose Difficulty</span>
+            <span data-i18n="games_chess_choose_diff">Choose Difficulty</span>
           </div>
           <div class="chess-diff-grid" id="chessDiffGrid"></div>
         </div>
@@ -780,14 +762,15 @@
         <div id="chessOnlinePanel" style="display: none">
           <div class="chess-section-hdr">
             <button class="chess-back-sm" id="chessOnlineBack">&#x2190;</button>
-            <span>Play Online</span>
+            <span data-i18n="games_chess_online">Play Online</span>
           </div>
-          <button class="chess-big-btn" id="chessCreateBtn">&#x2795; Create Game</button>
-          <div class="chess-or-divider">— or —</div>
+          <button class="chess-big-btn" id="chessCreateBtn"><span data-i18n="games_chess_create">&#x2795; Create Game</span></button>
+          <div class="chess-or-divider" data-i18n="games_or_divider">â€” or â€”</div>
           <div style="display: flex; gap: 8px">
             <input
               id="chessJoinInput"
               class="chess-room-input"
+              data-i18n-ph="games_chess_room_ph"
               placeholder="Enter room code"
               maxlength="6"
               style="flex: 1"
@@ -795,6 +778,7 @@
             <button
               class="chess-big-btn"
               id="chessJoinBtn"
+              data-i18n="games_chess_join"
               style="flex: 0 0 auto; padding: 10px 16px"
             >
               Join
@@ -805,12 +789,12 @@
         <div id="chessWaitingPanel" style="display: none">
           <div class="chess-waiting-box">
             <div class="chess-waiting-spinner"></div>
-            <div class="chess-waiting-label">Waiting for opponent…</div>
+            <div class="chess-waiting-label" data-i18n="games_chess_waiting">Waiting for opponentâ€¦</div>
             <div class="chess-room-code-display" id="chessRoomCodeDisplay"></div>
-            <div style="font-size: 0.72rem; color: rgba(255, 255, 255, 0.4); margin-top: 4px">
+            <div style="font-size: 0.72rem; color: rgba(255, 255, 255, 0.4); margin-top: 4px" data-i18n="games_chess_share_code">
               Share this code with a friend
             </div>
-            <button class="chess-cancel-btn" id="chessCancelWait" style="margin-top: 12px">
+            <button class="chess-cancel-btn" id="chessCancelWait" data-i18n="games_cancel" style="margin-top: 12px">
               Cancel
             </button>
           </div>
@@ -833,65 +817,48 @@
               letter-spacing: 0.06em;
             "
           >
-            Your Rating
+            <span data-i18n="games_your_rating">Your Rating</span>
           </div>
         </div>
         <div class="chess-wld-row">
           <div class="chess-wld-box chess-wld-w">
             <div class="chess-wld-num" id="chessWins">0</div>
-            <div>Wins</div>
+            <div data-i18n="games_wins">Wins</div>
           </div>
           <div class="chess-wld-box chess-wld-d">
             <div class="chess-wld-num" id="chessDraws">0</div>
-            <div>Draws</div>
+            <div data-i18n="games_draws">Draws</div>
           </div>
           <div class="chess-wld-box chess-wld-l">
             <div class="chess-wld-num" id="chessLosses">0</div>
-            <div>Losses</div>
+            <div data-i18n="games_losses">Losses</div>
           </div>
         </div>
-        <div class="chess-section-label" style="margin-top: 14px">Bot Records</div>
+        <div class="chess-section-label" data-i18n="games_bot_records" style="margin-top: 14px">Bot Records</div>
         <div id="chessBotRecords"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- -- GD ARCADE GAME -- -->
-<div id="gamesPlayGD" style="display: none" class="games-play-screen">
-  <div class="game-play-hdr">
-    <button class="game-back-btn" id="gdBack">&#x2190; Games</button>
-    <span class="game-play-title">&#x1F3AE; Arcade Game</span>
-  </div>
-  <div class="gd-game-wrap">
-    <iframe
-      id="gdGameFrame"
-      scrolling="none"
-      frameborder="0"
-      allow="autoplay; fullscreen *; encrypted-media; picture-in-picture"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-orientation-lock allow-modals"
-    ></iframe>
-  </div>
-</div>
-
 <!-- -- FLAPPY BIRD -- -->
 <div id="gamesPlayBird" style="display: none" class="games-play-screen">
   <div class="game-play-hdr">
-    <button class="game-back-btn" id="birdBack">&#x2190; Games</button>
+    <button class="game-back-btn" id="birdBack" data-i18n="games_back_games">&#x2190; Games</button>
     <span class="game-play-title">Flappy Bird</span>
     <div style="display: flex; gap: 10px; margin-left: auto">
       <div
         class="tstat"
         style="flex-direction: row; align-items: center; gap: 8px; padding: 6px 14px"
       >
-        <span class="tstat-label" style="margin: 0">Score</span>
+        <span class="tstat-label" data-i18n="games_score" style="margin: 0">Score</span>
         <span class="tstat-val" style="font-size: 1rem" id="birdScore">0</span>
       </div>
       <div
         class="tstat"
         style="flex-direction: row; align-items: center; gap: 8px; padding: 6px 14px"
       >
-        <span class="tstat-label" style="margin: 0">Best</span>
+        <span class="tstat-label" data-i18n="games_best" style="margin: 0">Best</span>
         <span class="tstat-val" style="font-size: 1rem" id="birdBest">0</span>
       </div>
     </div>
@@ -908,7 +875,7 @@
       color: rgba(255, 255, 255, 0.3);
     "
   >
-    Press
+    <span data-i18n="games_bird_press">Press</span>
     <kbd
       style="
         background: rgba(255, 255, 255, 0.1);
@@ -918,6 +885,6 @@
       "
       >Space</kbd
     >
-    or tap the canvas to flap
+    <span data-i18n="games_bird_tap_hint">or tap the canvas to flap</span>
   </div>
 </div>

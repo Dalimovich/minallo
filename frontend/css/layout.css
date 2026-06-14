@@ -1,78 +1,188 @@
 /* ── Shell ── */
 #portal {
-  overflow: hidden;
+  background: var(--app-bg, var(--dp-bg));
   min-height: 100vh;
   min-height: 100dvh;
 }
 #portal .shell {
   position: relative;
   z-index: 1;
-  height: 100vh;
-  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: stretch;
+  background: transparent;
 }
 
-/* ── Sidebar ── */
+/* File / PDF view owns its internal scroll: the PDF canvas and the docked AI
+   panel each scroll independently inside #app. In portal (dashboard) mode the
+   shell intentionally grows past the viewport so the page scrolls as one for
+   the continuous background, but in file mode that same growth removes the
+   height cap #app → .ai-msgs / PDF scroller depend on, so the whole page
+   scrolls as a single block and the two panes move together. Pin the shell to
+   the viewport here so the inner scrollers reclaim their own overflow. */
+#portal[data-active-view="file"] {
+  overflow: hidden;
+}
+#portal[data-active-view="file"] .shell {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Sidebar (premium dark glass, click-to-expand, floating panel) ── */
 #portal .sidebar {
-  position: relative;
+  position: sticky;
+  top: 14px;
   transform: none;
   flex-shrink: 0;
   width: var(--sb-collapsed);
+  height: calc(100dvh - 28px);
+  max-height: calc(100dvh - 28px);
   margin: 14px 0 14px 14px;
+  padding: 14px 10px;
   display: flex;
   flex-direction: column;
-  background: var(--glass-bg);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border: 1px solid var(--glass-border);
-  border-radius: 20px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
-  overflow-x: hidden;
-  overflow-y: auto;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: visible;
+  transition: width 260ms cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 10;
 }
-#portal .sidebar:hover {
+#portal .sidebar.expanded {
   width: var(--sb-w);
 }
+/* Kill every transition while restoring saved state on load, so the rail
+ * snaps to its remembered size instead of animating open by itself. */
+#portal .sidebar.sb-no-anim,
+#portal .sidebar.sb-no-anim * {
+  transition: none !important;
+}
 
-/* User block */
+/* Expand / collapse toggle — the only way to open the sidebar now that
+ * hover-expand is gone. Centred chevron when collapsed; flips and shifts
+ * to the right edge when expanded so it reads as a "close" affordance. */
+.sb-toggle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition:
+    background 200ms ease,
+    color 200ms ease,
+    margin 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sb-toggle:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+.sb-toggle svg {
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+#portal .sidebar.expanded .sb-toggle {
+  margin: 0 auto 14px;
+}
+#portal .sidebar.expanded .sb-toggle svg {
+  transform: rotate(180deg);
+}
+body:not(.night) .sb-toggle {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.10);
+  color: #475569;
+}
+body:not(.night) .sb-toggle:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+/* Mobile uses the topbar hamburger + full-width drawer, so the in-rail
+ * toggle is redundant there. */
+@media (max-width: 768px) {
+  #portal .sidebar .sb-toggle {
+    display: none !important;
+  }
+}
+
+/* User / profile block */
 .sb-user {
-  margin: 14px 5px 12px;
-  padding: 6px;
-  background: var(--card-inner);
-  border: 1px solid var(--card-inner-border);
-  border-radius: 16px;
+  flex-shrink: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 24px;
   display: flex;
   align-items: center;
   gap: 0;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    padding 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 200ms ease,
+    border-color 200ms ease,
+    margin 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 260ms cubic-bezier(0.4, 0, 0.2, 1);
   justify-content: center;
+  height: 56px;
 }
-#portal .sidebar:hover .sb-user {
+#portal .sidebar.expanded .sb-user {
   justify-content: flex-start;
-  margin: 14px 12px 16px;
-  padding: 12px 14px;
+  padding: 10px 14px;
+  margin: 0 0 20px;
+  gap: 14px;
+  height: auto;
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  height: auto;
 }
 .sb-user:hover {
-  background: var(--row-bg);
-  transform: translateX(2px);
+  background: rgba(255, 255, 255, 0.06);
 }
 .sb-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: #252535;
-  border: 1px solid var(--glass-border);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.32), rgba(59, 130, 246, 0.14));
+  border: 1px solid rgba(147, 197, 253, 0.30);
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   font-weight: 800;
-  font-size: 0.9rem;
-  color: var(--on-glass);
+  font-size: 1.05rem;
+  /* Font's cap-height sits slightly below the geometric centre, so short
+   * all-caps placeholders ("M", "DE") look low even with flex centring.
+   * Nudge the glyph up by a hair. */
+  line-height: 1;
+  padding-bottom: 2px;
+  color: #fff;
   flex-shrink: 0;
+  box-shadow:
+    0 0 18px rgba(59, 130, 246, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  transition:
+    width 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+#portal .sidebar.expanded .sb-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
 }
 .sb-user-info {
   display: flex;
@@ -80,221 +190,289 @@
   min-width: 0;
 }
 .sb-user-name {
-  font-weight: 800;
-  font-size: 0.82rem;
-  color: var(--on-glass);
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #f1f5f9;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 .sb-user-uni {
-  font-size: 0.7rem;
-  color: var(--on-glass-muted);
+  font-size: 0.74rem;
+  color: rgba(148, 163, 184, 0.95);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: 2px;
 }
 
-/* Nav */
+/* Nav (scrollable middle area) */
 .sb-nav {
   flex: 1;
-  padding: 8px 4px;
+  min-height: 0;
+  padding: 0 0 4px 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: none;
-}
-#portal .sidebar:hover .sb-nav {
-  padding: 8px 12px;
+  -ms-overflow-style: none;
 }
 .sb-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
   display: none;
 }
+
+/* Group labels (hidden when collapsed) */
 .sb-section-label {
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--on-glass-faint);
-  max-height: 0;
-  overflow: hidden;
-  padding: 0;
-  opacity: 0;
-  transition:
-    max-height 0.3s,
-    padding 0.3s,
-    opacity 0.2s;
-}
-#portal .sidebar:hover .sb-section-label {
-  max-height: 30px;
-  padding: 12px 8px 4px;
-  opacity: 1;
-}
-.sb-divider {
-  height: 1px;
-  background: var(--glass-border);
-  margin: 6px 4px;
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+  height: 0;
+  width: 100%;
+  padding: 0 10px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #bfdbfe;
+  opacity: 0;
+  overflow: hidden;
+  align-self: stretch;
+  white-space: nowrap;
+  transition:
+    height 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 120ms ease;
 }
-#portal .sidebar:hover .sb-divider {
-  margin: 6px 8px;
+#portal .sidebar.expanded .sb-section-label {
+  height: 32px !important;
+  margin-top: 12px !important;
+  margin-bottom: 2px !important;
+  opacity: 1 !important;
+  transition:
+    height 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 160ms ease 140ms;
 }
 
-/* Nav items — override old .psb/.sidebar styles inside portal */
+/* Divider: visible in collapsed state, replaced by group label when expanded */
+.sb-divider {
+  height: 1px;
+  width: 56px;
+  background: rgba(255, 255, 255, 0.10);
+  margin: 4px 0;
+  flex-shrink: 0;
+  align-self: center;
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 160ms ease,
+    margin 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+#portal .sidebar.expanded .sb-divider {
+  width: 0;
+  height: 0;
+  margin: 0;
+  opacity: 0;
+}
+
+/* Nav items — slim 56×56 closed, full-width 68-tall expanded */
 #portal .sidebar .sb-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 9px 0;
-  border-radius: 12px;
+  height: 56px;
+  width: 56px;
+  padding: 0;
+  border-radius: 20px;
   cursor: pointer;
-  transition: all 0.18s;
-  color: var(--on-glass-muted);
-  font-weight: 700;
-  font-size: 0.82rem;
-  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(148, 163, 184, 1);
+  font-weight: 600;
+  font-size: 0.94rem;
+  letter-spacing: -0.01em;
   justify-content: center;
-  background: none;
-  border: none;
-  width: 100%;
+  flex-shrink: 0;
   overflow: visible;
   animation: none;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    width 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    padding 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    gap 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 180ms ease;
 }
-/* Suppress old psb shimmer inside sidebar */
 #portal .sidebar .sb-item::after {
   display: none !important;
 }
-#portal .sidebar:hover .sb-item {
+#portal .sidebar.expanded .sb-item {
+  height: 68px;
+  width: 100%;
   justify-content: flex-start;
-  padding: 10px 12px;
+  padding: 0 14px;
+  gap: 14px;
 }
 #portal .sidebar .sb-item:hover {
-  background: var(--row-bg);
-  color: var(--on-glass);
-  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(147, 197, 253, 0.20);
+  color: rgba(241, 245, 249, 1);
+  transform: none;
 }
 #portal .sidebar .sb-item.on,
 #portal .sidebar .sb-item.active {
-  background: rgba(37, 99, 235, 0.12);
-  color: var(--on-glass);
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(147, 197, 253, 0.35);
+  color: #fff;
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.22);
   animation: none;
-  box-shadow: none;
-  border-color: transparent;
 }
 body:not(.night) #portal .sidebar .sb-item.on,
 body:not(.night) #portal .sidebar .sb-item.active {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(147, 197, 253, 0.40);
+  color: #fff;
 }
-#portal .sidebar .sb-item.on::before {
+
+/* Active indicator bar (blue) — extends just past the button's left edge */
+#portal .sidebar .sb-item.on::before,
+#portal .sidebar .sb-item.active::before {
   content: '';
   position: absolute;
-  left: 0;
+  left: -7px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
-  height: 60%;
-  border-radius: 3px;
-  background: linear-gradient(#2563eb, #2563eb);
+  height: 24px;
+  border-radius: 999px;
+  background: #60a5fa;
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.7);
 }
+
 .sb-icon-img {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   display: block;
   pointer-events: none;
 }
 .sb-sprite {
-  display: block;
-  width: 42px;
-  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   flex-shrink: 0;
-  background-size: 80%;
-  background-repeat: no-repeat;
-  background-position: center center;
   pointer-events: none;
+  color: currentColor;
+}
+.sb-sprite svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: block;
 }
 .sb-item-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.25rem;
   flex-shrink: 0;
-  /* Dark mode: deep navy tile with subtle inner highlight */
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: rgba(203, 213, 225, 1);
   transition:
-    box-shadow 0.18s,
-    transform 0.18s;
+    width 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+#portal .sidebar.expanded .sb-item-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
 }
 #portal .sidebar .sb-item:hover .sb-item-icon {
-  transform: scale(1.08);
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(147, 197, 253, 0.20);
+  color: #fff;
 }
 #portal .sidebar .sb-item.on .sb-item-icon,
 #portal .sidebar .sb-item.active .sb-item-icon {
-  background: linear-gradient(145deg, rgba(124, 58, 237, 0.35), rgba(124, 58, 237, 0.18));
-  border-color: rgba(124, 58, 237, 0.4);
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(147, 197, 253, 0.40);
+  color: #fff;
   box-shadow:
-    0 2px 12px rgba(124, 58, 237, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    0 0 14px rgba(59, 130, 246, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
-/* Light mode: white tile with soft shadow */
+/* Light mode keeps dark glass sidebar for premium look — icons styled the same */
 body:not(.night) .sb-item-icon {
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.09),
-    0 1px 2px rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: rgba(203, 213, 225, 1);
 }
 body:not(.night) #portal .sidebar .sb-item:hover .sb-item-icon {
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.13),
-    0 1px 3px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(147, 197, 253, 0.20);
+  color: #fff;
 }
 body:not(.night) #portal .sidebar .sb-item.on .sb-item-icon,
 body:not(.night) #portal .sidebar .sb-item.active .sb-item-icon {
-  background: rgba(124, 58, 237, 0.08);
-  border-color: rgba(124, 58, 237, 0.2);
-  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.15);
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(147, 197, 253, 0.40);
+  color: #fff;
 }
 
 /* Badge */
 .sb-item-badge {
   margin-left: 0;
-  background: #2563eb;
+  background: #3b82f6;
   color: #fff;
-  font-size: 0.6rem;
-  font-weight: 900;
+  font-size: 0.62rem;
+  font-weight: 800;
   padding: 0;
   border-radius: 20px;
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-width: 0;
   opacity: 0;
   max-width: 0;
   overflow: hidden;
   transition:
     opacity 0.15s,
-    max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 0.3s ease,
     padding 0.3s;
 }
-#portal .sidebar:hover .sb-item-badge {
+#portal .sidebar.expanded .sb-item-badge {
   opacity: 1;
   max-width: 40px;
   margin-left: auto;
-  padding: 2px 7px;
+  padding: 2px 8px;
 }
 
-/* Text collapse — zero width when hidden so icons stay centered */
+/* Text collapse — fade in *after* the width transition so it doesn't smear */
 #portal .sidebar .sb-item > span:not(.sb-item-badge),
 #portal .sidebar .sb-user-info {
   opacity: 0;
@@ -303,102 +481,148 @@ body:not(.night) #portal .sidebar .sb-item.active .sb-item-icon {
   overflow: hidden;
   flex-shrink: 1;
   white-space: nowrap;
+  color: rgba(203, 213, 225, 1);
   transition:
-    opacity 0.15s,
-    max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity 120ms ease,
+    max-width 260ms cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
-#portal .sidebar:hover .sb-item > span:not(.sb-item-badge),
-#portal .sidebar:hover .sb-user-info {
+#portal .sidebar .sb-item.on > span:not(.sb-item-badge),
+#portal .sidebar .sb-item.active > span:not(.sb-item-badge) {
+  color: #fff;
+}
+#portal .sidebar.expanded .sb-item > span:not(.sb-item-badge),
+#portal .sidebar.expanded .sb-user-info {
   opacity: 1;
-  max-width: 200px;
+  max-width: 220px;
   pointer-events: auto;
-}
-/* Restore gaps on expand */
-#portal .sidebar:hover .sb-item {
-  gap: 12px;
-}
-#portal .sidebar:hover .sb-user {
-  gap: 12px;
+  transition:
+    opacity 160ms ease 140ms,
+    max-width 260ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Bottom / night btn */
+/* Bottom (pinned theme button) — margin-top:auto pins it to the bottom of
+ * the sidebar even when the nav doesn't fill the column height, so the dark-
+ * mode toggle is never below the viewport fold. */
 .sb-bottom {
-  padding: 12px;
-  border-top: 1px solid var(--glass-border);
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
 }
 .sb-night-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 8px;
+  gap: 14px;
+  height: 56px;
+  width: 56px;
+  padding: 0;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(203, 213, 225, 1);
   cursor: pointer;
-  background: none !important;
-  border: none;
-  width: 100%;
+  overflow: hidden;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    width 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    padding 260ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-/* pill track — compact when sidebar collapsed, full when expanded */
+.sb-night-btn:hover {
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(147, 197, 253, 0.20);
+}
+#portal .sidebar.expanded .sb-night-btn {
+  width: 100%;
+  height: 68px;
+  border-radius: 24px;
+  justify-content: flex-start;
+  padding: 0 14px;
+}
+/* Theme icon tile */
 .sb-night-track {
   position: relative;
-  height: 44px;
-  width: 44px;
-  border-radius: 999px;
+  height: 40px;
+  width: 40px;
+  border-radius: 12px;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #f97316, #fbbf24);
-  box-shadow: 0 2px 14px rgba(249, 115, 22, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition:
-    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    width 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 260ms cubic-bezier(0.4, 0, 0.2, 1),
     background 0.3s,
-    box-shadow 0.3s;
-  overflow: hidden;
+    border-color 0.3s;
+  overflow: visible;
+}
+#portal .sidebar.expanded .sb-night-track {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
 }
 body.night .sb-night-track {
-  background: linear-gradient(135deg, #1e1b4b, #3730a3);
-  box-shadow: 0 2px 14px rgba(55, 48, 163, 0.5);
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(147, 197, 253, 0.30);
 }
-#portal .sidebar:hover .sb-night-track {
-  width: 128px;
-}
-/* sliding thumb */
+/* Thumb (sun/moon icon) — fills the tile */
 .sb-night-thumb {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
+  font-size: 1.25rem;
+  transform: none !important;
+  background: transparent;
+  box-shadow: none;
+  color: #fbbf24;
+  border-radius: 14px;
 }
-/* night: thumb slides right */
-body.night #portal .sidebar:hover .sb-night-thumb {
-  transform: translateX(80px);
+.sb-night-thumb svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: block;
 }
-/* label */
+body.night .sb-night-thumb {
+  color: #93c5fd;
+}
+/* Label text — positioned to the right of the tile, visible only when expanded */
 .sb-night-track-label {
   position: absolute;
-  left: 12px;
+  left: calc(100% + 14px);
   top: 50%;
   transform: translateY(-50%);
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.95);
-  white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.15s;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--font-main);
+  font-weight: 600;
+  font-size: 0.94rem;
+  letter-spacing: -0.01em;
+  color: rgba(203, 213, 225, 1);
+  transition:
+    opacity 0.15s,
+    max-width 0.3s ease;
   pointer-events: none;
 }
-body.night #portal .sidebar:hover .sb-night-track-label {
+#portal .sidebar.expanded .sb-night-track-label {
   opacity: 1;
+  max-width: 220px;
 }
 
 /* ── Main ── */
@@ -408,9 +632,10 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: transparent;
 }
 #portal .main .topbar {
-  display: flex;
+  display: none !important;
   align-items: center;
   gap: 12px;
   padding: 16px 28px;
@@ -421,7 +646,7 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   flex-shrink: 0;
 }
 .tb-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: var(--on-glass);
 }
@@ -449,7 +674,7 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   font-size: 0.78rem;
   cursor: pointer;
   border: none;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   box-shadow: 0 4px 20px rgba(37, 99, 235, 0.35);
   transition: all 0.2s;
 }
@@ -463,8 +688,12 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 28px;
+  background: transparent;
+  background-image: var(--app-bg, var(--dp-bg));
+  background-attachment: local;
+  background-size: 100% 100%;
   scrollbar-width: thin;
-  scrollbar-color: var(--glass-border) transparent;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
 /* When the editor is active the main-scroll must not add padding or scroll */
 #portal .main .main-scroll.editor-active {
@@ -472,14 +701,23 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   padding: 0;
 }
 #portal .main .main-scroll::-webkit-scrollbar {
-  width: 5px;
+  width: 10px;
 }
 #portal .main .main-scroll::-webkit-scrollbar-track {
   background: transparent;
+  margin: 4px 0;
 }
+/* Rounded "pill" thumb with breathing room (transparent border + padding-box
+   clip) so it matches the site's glass UI instead of the flat default bar. */
 #portal .main .main-scroll::-webkit-scrollbar-thumb {
-  background: var(--glass-border);
-  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+#portal .main .main-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+  background-clip: padding-box;
 }
 
 /* Portal sections */
@@ -496,7 +734,7 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   background: var(--row-bg);
   border: 1px solid var(--glass-border);
   color: var(--on-glass);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   cursor: pointer;
@@ -559,9 +797,6 @@ body.night #portal .sidebar:hover .sb-night-track-label {
 }
 #portal #app .sidebar.visible {
   transform: translateX(0);
-}
-#portal #app .sidebar:hover {
-  width: var(--sb-w);
 }
 
 /* ── Files view: replace purple with blue ── */
@@ -710,9 +945,15 @@ body.night #portal .sidebar:hover .sb-night-track-label {
   border-left-color: #2563eb;
   background: rgba(37, 99, 235, 0.06);
 }
-#portal #app .ai-bubble .md-code-lang {
-  color: #2563eb;
+#portal #app .ai-bubble .md-code-header {
   background: rgba(37, 99, 235, 0.08);
+  border-bottom-color: rgba(37, 99, 235, 0.18);
+}
+#portal #app .ai-bubble .md-code-lang-tag { color: #2563eb; }
+#portal #app .ai-bubble .md-code-copy { color: rgba(30, 41, 59, 0.6); }
+#portal #app .ai-bubble .md-code-copy:hover {
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
 }
 #portal #app .typing-bubble span {
   background: #2563eb;
@@ -1037,11 +1278,15 @@ body:not(.night) #portal .blob {
 
 /* Auth indicator — override !important purple in light mode */
 #portal #authIndicator {
-  background: var(--card-inner) !important;
-  border-color: var(--card-inner-border) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+#portal .sidebar.expanded #authIndicator {
+  background: rgba(255, 255, 255, 0.055) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
 }
 #portal #authName {
-  color: var(--on-glass) !important;
+  color: #f1f5f9 !important;
 }
 
 /* Ext banner — override purple border */
@@ -1051,12 +1296,20 @@ body:not(.night) #portal .blob {
 
 /* Kill any remaining psb purple hover/active leaking into sidebar */
 #portal .sidebar .sb-item:hover {
-  color: var(--on-glass) !important;
-  background: var(--row-bg) !important;
+  color: rgba(241, 245, 249, 1) !important;
+  background: rgba(255, 255, 255, 0.075) !important;
+  border-color: rgba(147, 197, 253, 0.20) !important;
 }
 body:not(.night) #portal .sidebar .sb-item:hover {
-  color: var(--on-glass) !important;
-  background: var(--row-bg) !important;
+  color: rgba(241, 245, 249, 1) !important;
+  background: rgba(255, 255, 255, 0.075) !important;
+  border-color: rgba(147, 197, 253, 0.20) !important;
+}
+#portal .sidebar .sb-item.on:hover,
+#portal .sidebar .sb-item.active:hover {
+  background: rgba(59, 130, 246, 0.24) !important;
+  border-color: rgba(147, 197, 253, 0.45) !important;
+  color: #fff !important;
 }
 
 /* ── Responsive ── */

@@ -1,4 +1,4 @@
-// All AI endpoints flow through Netlify proxies (which forward to python-ai).
+// All AI endpoints flow through Cloudflare Pages Functions (which forward to python-ai).
 // See docs/python-ai-endpoints.md for shapes.
 
 function _backendUrl(): string {
@@ -16,12 +16,31 @@ function _authJsonHeaders(): Record<string, string> {
   };
 }
 
+function _markSessionExpired(): void {
+  try {
+    window.dispatchEvent(new CustomEvent('minallo:session-expired'));
+  } catch {
+    /* ignore */
+  }
+}
+
+function _throwSessionExpired(): never {
+  _markSessionExpired();
+  throw new Error('SESSION_EXPIRED');
+}
+
+async function _detectAiCapError(response: Response): Promise<boolean> {
+  const mod = await import(/* @vite-ignore */ atob('Li9haS11c2FnZS5qcw=='));
+  return mod.detectAiCapError(response);
+}
+
 export async function sendAiRequest(payload: unknown): Promise<unknown> {
   const response = await fetch(_backendUrl() + '/api/ai', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify(payload),
   });
+  await _detectAiCapError(response);
   return response.json();
 }
 
@@ -47,16 +66,21 @@ export async function sendRagRequest(
   courseId: string,
   question: string,
   mode?: string,
-  documentId?: string | null,
+  activeDocumentId?: string | null,
   activeFileName?: string | null,
-  openFileContext?: unknown
+  openFileContext?: unknown,
+  documentIds?: string[] | null,
 ): Promise<RagAskResponse> {
   const payload: Record<string, unknown> = {
     courseId,
     question,
     mode: mode || 'strict',
   };
-  if (documentId) payload.documentId = documentId;
+  // activeDocumentId = ranking hint (currently open PDF).
+  // documentIds = hard filter, set only when the user explicitly scopes
+  // the question to a chosen subset of documents.
+  if (activeDocumentId) payload.activeDocumentId = activeDocumentId;
+  if (documentIds && documentIds.length) payload.documentIds = documentIds;
   if (activeFileName) payload.activeFileName = activeFileName;
   if (openFileContext) payload.openFileContext = openFileContext;
 
@@ -65,7 +89,17 @@ export async function sendRagRequest(
     headers: _authJsonHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error('HTTP ' + response.status);
+  await _detectAiCapError(response);
+  if (!response.ok) {
+    let detail = 'HTTP ' + response.status;
+    try {
+      const data = (await response.json()) as { detail?: string; error?: { message?: string } };
+      detail = data.detail || data.error?.message || detail;
+    } catch {
+      /* keep status fallback */
+    }
+    throw new Error(detail);
+  }
   return response.json() as Promise<RagAskResponse>;
 }
 
@@ -80,6 +114,7 @@ export function uploadCourseDocument(
   courseId: string,
   sourceType?: string
 ): Promise<UploadResponse> {
+  clearCourseDocumentCache(courseId);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -114,6 +149,7 @@ export function uploadCourseDocument(
             new Error((data.error && data.error.message) || 'Upload failed (' + response.status + ')')
           );
         } else {
+          clearCourseDocumentCache(courseId);
           resolve(data);
         }
       } catch (err: unknown) {
@@ -128,27 +164,123 @@ export function uploadCourseDocument(
 export interface CourseDocument {
   id: string;
   file_name: string;
+  fileName?: string;
   file_type?: string;
   source_type?: string;
   processing_status?: string;
   processing_error?: string | null;
   page_count?: number;
+  extraction_quality?: 'good' | 'weak' | 'failed' | string | null;
+  ocr_assessment?: {
+    ocrRecommended?: boolean;
+    pagesLikelyScanned?: number;
+    pagesImageHeavy?: number;
+    pagesAlmostNoText?: number;
+    [key: string]: unknown;
+  } | null;
+  // Document Understanding Layer (Stage 2 /api/documents/list).
+  document_type?: string | null;
+  document_type_confidence?: number | null;
+  document_type_signals?: string[] | null;
+  detected_language?: string | null;
+  subject_name?: string | null;
+  topic_area?: string | null;
+  content_flags?: Record<string, boolean> | null;
+  user_document_type_override?: string | null;
+  effective_document_type?: string | null;
   created_at?: string;
   updated_at?: string;
 }
 
-export async function listCourseDocuments(courseId: string): Promise<CourseDocument[]> {
+interface CourseDocumentCacheEntry {
+  docs?: CourseDocument[];
+  promise?: Promise<CourseDocument[]>;
+  expiresAt: number;
+}
+
+const _courseDocumentCache = new Map<string, CourseDocumentCacheEntry>();
+const COURSE_DOCUMENT_CACHE_MS = 30000;
+
+function _cloneCourseDocuments(docs: CourseDocument[]): CourseDocument[] {
+  return docs.map((doc) => ({ ...doc }));
+}
+
+export function clearCourseDocumentCache(courseId?: string): void {
+  if (courseId) _courseDocumentCache.delete(courseId);
+  else _courseDocumentCache.clear();
+}
+
+export function prefetchCourseDocuments(courseId: string): Promise<CourseDocument[]> {
+  return listCourseDocuments(courseId).catch(() => []);
+}
+
+export async function listCourseDocuments(
+  courseId: string,
+  opts?: { force?: boolean }
+): Promise<CourseDocument[]> {
+  const key = String(courseId || '').trim();
+  if (!key) return [];
+
+  const now = Date.now();
+  const cached = _courseDocumentCache.get(key);
+  if (!opts?.force && cached) {
+    if (cached.docs && cached.expiresAt > now) return _cloneCourseDocuments(cached.docs);
+    if (cached.promise) return cached.promise.then(_cloneCourseDocuments);
+  }
+
   // Wait for session restore so the Authorization header isn't empty during
   // dashboard prewarm. Otherwise the proxy returns 401 and cards show no files
   // until the user manually reopens the course.
-  if (window._sbSessionReady) await window._sbSessionReady;
+  const promise = (async () => {
+    if (window._sbSessionReady) await window._sbSessionReady;
 
-  const response = await fetch(
-    _backendUrl() + '/api/documents/list?courseId=' + encodeURIComponent(courseId),
-    { headers: { Authorization: 'Bearer ' + _token() } }
-  );
-  const data = (await response.json()) as { documents?: CourseDocument[] };
-  return data.documents || [];
+    const response = await fetch(
+      _backendUrl() + '/api/documents/list?courseId=' + encodeURIComponent(key),
+      { headers: { Authorization: 'Bearer ' + _token() } }
+    );
+    if (response.status === 401) _throwSessionExpired();
+    if (!response.ok) return [];
+    const data = (await response.json()) as { documents?: CourseDocument[] };
+    return data.documents || [];
+  })();
+
+  _courseDocumentCache.set(key, { promise, expiresAt: now + COURSE_DOCUMENT_CACHE_MS });
+
+  try {
+    const docs = await promise;
+    _courseDocumentCache.set(key, {
+      docs: _cloneCourseDocuments(docs),
+      expiresAt: Date.now() + COURSE_DOCUMENT_CACHE_MS,
+    });
+    return _cloneCourseDocuments(docs);
+  } catch (err) {
+    _courseDocumentCache.delete(key);
+    throw err;
+  }
+}
+
+export function filterDocsByCourseFiles(
+  docs: CourseDocument[],
+  courseId: string
+): CourseDocument[] {
+  const course = window.activeCourseRef;
+  if (!course || course.id !== courseId) return docs;
+  const names = new Set<string>();
+  ((course.files || []) as Array<{ name?: string }>).forEach((f) => {
+    const name = String(f.name || '').trim().toLowerCase();
+    if (name) names.add(name);
+  });
+  ((course.userFolders || []) as Array<{ files: Array<{ name?: string }> }>).forEach((fd) => {
+    (fd.files || []).forEach((f) => {
+      const name = String(f.name || '').trim().toLowerCase();
+      if (name) names.add(name);
+    });
+  });
+  if (!names.size) return docs;
+  return docs.filter((d) => {
+    const name = String(d.file_name || d.fileName || '').trim().toLowerCase();
+    return !!name && names.has(name);
+  });
 }
 
 export interface DocumentMeta {
@@ -168,6 +300,7 @@ export async function indexExistingDocument(
   folder?: string | null,
   meta?: DocumentMeta
 ): Promise<unknown> {
+  clearCourseDocumentCache(courseId);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 12000);
   const payload: Record<string, unknown> = {
@@ -194,10 +327,12 @@ export async function indexExistingDocument(
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-    if (response.status === 401) throw new Error('SESSION_EXPIRED');
+    if (response.status === 401) _throwSessionExpired();
     const text = await response.text();
     try {
-      return JSON.parse(text);
+      const data = JSON.parse(text);
+      clearCourseDocumentCache(courseId);
+      return data;
     } catch {
       throw new Error('Index failed (' + response.status + ')');
     }
@@ -208,12 +343,113 @@ export async function indexExistingDocument(
 }
 
 export async function deleteRagDocument(documentId: string): Promise<unknown> {
+  clearCourseDocumentCache();
   const response = await fetch(_backendUrl() + '/api/documents/delete', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ documentId }),
   });
+  const data = await response.json();
+  clearCourseDocumentCache();
+  return data;
+}
+
+export interface OcrReviewPage {
+  pageNumber: number;
+  provider?: string | null;
+  mode?: string | null;
+  confidence?: number | null;
+  unclearCount?: number;
+  text: string;
+}
+
+/** Fetch the OCR'd pages of a document that were flagged for student review
+ *  (handwriting pages, or pages with [unclear] markers / low confidence). */
+export async function getDocumentReviewPages(
+  documentId: string
+): Promise<OcrReviewPage[]> {
+  const response = await fetch(_backendUrl() + '/api/documents/review-pages', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ documentId }),
+  });
+  if (response.status === 401) _throwSessionExpired();
+  if (!response.ok) throw new Error('Failed to load review pages (' + response.status + ')');
+  const data = (await response.json()) as { pages?: OcrReviewPage[] };
+  return data.pages || [];
+}
+
+/** Save a student's corrected transcription for one OCR'd page. The backend
+ *  updates the page text and re-embeds the document in the background. */
+export async function correctDocumentPage(
+  courseId: string,
+  documentId: string,
+  pageNumber: number,
+  correctedText: string
+): Promise<{ documentId: string; pageNumber: number; status: string }> {
+  const response = await fetch(_backendUrl() + '/api/documents/correct-page', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ courseId, documentId, pageNumber, correctedText }),
+  });
+  if (response.status === 401) _throwSessionExpired();
+  if (!response.ok) {
+    const text = await response.text();
+    let detail = 'Failed to save correction (' + response.status + ')';
+    try { detail = (JSON.parse(text) as { error?: string }).error || detail; } catch { /* keep */ }
+    throw new Error(detail);
+  }
   return response.json();
+}
+
+export interface CourseTopic {
+  name: string;
+  importance?: string;
+  difficulty?: string;
+  chunk_count?: number;
+  source_pages?: number[];
+  source_document_ids?: string[];
+  related_exercise_ids?: string[];
+}
+
+const _topicMapCache = new Map<string, { at: number; promise: Promise<CourseTopic[]> }>();
+const TOPIC_MAP_CACHE_MS = 60_000;
+
+/** Read the stored per-course Topic Map (Learning Agent Core).
+ *  Short-lived cache so switching to Deep Learn/Cheatsheet right after a
+ *  preload (or revisiting the tab) reuses the in-flight/recent result instead
+ *  of re-fetching and re-showing a "Loading topics…" flash. */
+export async function getCourseTopicMap(courseId: string): Promise<CourseTopic[]> {
+  const cached = _topicMapCache.get(courseId);
+  if (cached && Date.now() - cached.at < TOPIC_MAP_CACHE_MS) return cached.promise;
+  const promise = (async () => {
+    const response = await fetch(_backendUrl() + '/api/learning/topic-map', {
+      method: 'POST',
+      headers: _authJsonHeaders(),
+      body: JSON.stringify({ courseId }),
+    });
+    if (response.status === 401) _throwSessionExpired();
+    if (!response.ok) return [];
+    const data = (await response.json()) as { topics?: CourseTopic[] };
+    return data.topics || [];
+  })();
+  _topicMapCache.set(courseId, { at: Date.now(), promise });
+  promise.catch(() => _topicMapCache.delete(courseId));
+  return promise;
+}
+
+/** Trigger a (background) rebuild of the course Topic Map; returns the current
+ *  map immediately (callers should re-read shortly after to get the refresh). */
+export async function generateCourseTopicMap(courseId: string): Promise<CourseTopic[]> {
+  const response = await fetch(_backendUrl() + '/api/learning/topic-map-generate', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ courseId }),
+  });
+  if (response.status === 401) _throwSessionExpired();
+  if (!response.ok) return [];
+  const data = (await response.json()) as { topics?: CourseTopic[] };
+  return data.topics || [];
 }
 
 export interface GenerateOpts {
@@ -227,12 +463,318 @@ export interface GenerateOpts {
 export async function generateStudyTool(
   courseId: string,
   tool: 'flashcards' | 'quiz' | 'summary',
-  opts?: GenerateOpts
+  opts?: GenerateOpts,
+  signal?: AbortSignal
 ): Promise<unknown> {
   const response = await fetch(_backendUrl() + '/api/ai/generate', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ courseId, tool, ...(opts || {}) }),
+    signal,
+  });
+  return response.json();
+}
+
+export interface ExamForgeOpts extends GenerateOpts {
+  requestedCount?: number;
+}
+
+export async function generateExamForge(
+  courseId: string,
+  opts?: ExamForgeOpts
+): Promise<unknown> {
+  const response = await fetch(_backendUrl() + '/api/ai/examforge', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({
+      action: 'generate',
+      courseId,
+      ...(opts || {}),
+    }),
+  });
+  await _detectAiCapError(response);
+  return response.json();
+}
+
+export interface CheatsheetSettings {
+  preset?: 'exam_night' | 'open_book_exam' | 'formula_reference' | 'balanced' | 'deep_revision' | 'topic_mastery';
+  pages?: number;
+  columns?: 2 | 3 | 4;
+  style?: 'academic' | 'modern' | 'compact' | 'classic';
+  fontSize?: 'auto' | 'small' | 'medium' | 'large';
+  detailLevel?: 'general' | 'balanced' | 'specific' | 'very_thorough';
+  focusMode?: 'whole_course' | 'specific_topic' | 'selected_files' | 'selected_pages';
+  language?: 'source' | 'en' | 'de' | 'de_terms_en_explanations';
+  output?: 'web' | 'pdf' | 'both';
+}
+
+/** Normalized layout config the backend echoes back (drives the renderer). */
+export interface CheatsheetResolvedSettings extends CheatsheetSettings {
+  columns?: 2 | 3 | 4;
+  font?: 'xs' | 'sm' | 'md';
+  densityTarget?: string;
+  maxTopics?: number;
+  perTopicTopK?: number;
+  maxEvidence?: number;
+}
+
+export interface CheatsheetResult {
+  noteId?: string | null;
+  title?: string | null;
+  text: string;
+  topicsCovered?: string[];
+  groundedSources?: Array<{ fileName?: string; pageStart?: number | null }>;
+  settings?: CheatsheetResolvedSettings;
+  grounding?: { total: number; grounded: number; ratio: number | null };
+  quality?: {
+    evidenceNormalization?: {
+      chunks_in?: number;
+      chunks_out?: number;
+      repaired_chunks?: number;
+      dropped_chunks?: number;
+      dropped_formula_lines?: number;
+    };
+    droppedMalformedFormulas?: number;
+    droppedUnsupportedFormulas?: number;
+    droppedGenericNotes?: number;
+    metrics?: Record<string, number | boolean | null>;
+  };
+  warning?: string;
+  citationWarning?: string;
+  error?: string;
+}
+
+export async function generateCheatsheet(
+  courseId: string,
+  opts?: { topic?: string; documentIds?: string[]; settings?: CheatsheetSettings },
+  signal?: AbortSignal
+): Promise<CheatsheetResult> {
+  const response = await fetch(_backendUrl() + '/api/ai/cheatsheet', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ courseId, ...(opts || {}) }),
+    signal,
+  });
+  await _detectAiCapError(response);
+  return response.json();
+}
+
+export interface NotesResult {
+  note?: {
+    id: string;
+    title?: string | null;
+    content_markdown?: string;
+    type?: string;
+    source_page_start?: number | null;
+    source_page_end?: number | null;
+  };
+  error?: unknown;
+  indexing?: boolean;
+}
+
+/** Generates notes from a single document's extracted text — the same
+ *  single-shot `/api/notes/generate` call the Notes panel uses for short
+ *  documents (`mode: 'generate'`), grounded on `pdfText` so the chatbot
+ *  never invents content beyond what the student's file contains. */
+export async function generateNotes(
+  courseId: string,
+  opts: { fileName: string; pdfText: string; documentId?: string | null; language?: string },
+  signal?: AbortSignal
+): Promise<NotesResult> {
+  const response = await fetch(_backendUrl() + '/api/notes/generate', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    signal,
+    body: JSON.stringify({
+      tool: 'notes',
+      mode: 'generate',
+      scope: 'document',
+      courseId,
+      documentId: opts.documentId ?? null,
+      fileName: opts.fileName,
+      pdfText: opts.pdfText,
+      language: opts.language || 'same_as_source'
+    }),
+  });
+  await _detectAiCapError(response);
+  return response.json();
+}
+
+export interface DeepLearnResult {
+  noteId?: string | null;
+  topic: string;
+  title?: string | null;
+  lesson: string;
+  workedExample: string;
+  structuredLesson?: {
+    title?: string;
+    subjectArea?: string;
+    contentType?: string;
+    lessonMode?: string;
+    learningGoal?: string;
+    bigPicture?: string;
+    simpleExplanation?: string;
+    intuition?: string;
+    coreExplanation?: string;
+    keyDetails?: string[];
+    keyFormulas?: Array<{
+      formula?: string;
+      meaning?: string;
+      variables?: string;
+      conditions?: string;
+      source?: string;
+      commonMistake?: string;
+      relevance?: string;
+      confidence?: string;
+    }>;
+    methodGuide?: Array<{ method?: string; useWhen?: string; avoidWhen?: string; source?: string }>;
+    adaptiveBlocks?: Array<{ type?: string; title?: string; body?: string; items?: string[]; source?: string }>;
+    stepByStepMethod?: string[];
+    workedExamples?: Array<{
+      title?: string;
+      problem?: string;
+      solutionSteps?: string[];
+      finalAnswer?: string;
+      sourceOrBasis?: string;
+      difficulty?: string;
+      isMiniExample?: boolean;
+    }>;
+    workedExample?: {
+      problem?: string;
+      solutionSteps?: string[];
+      finalAnswer?: string;
+      sourceOrBasis?: string;
+      isMiniExample?: boolean;
+    };
+    commonMistakes?: string[];
+    examTraps?: string[];
+    selfCheck?: Array<{ question?: string; hint?: string; answer?: string; explanation?: string; stepByStep?: string[] }>;
+    practiceTasks?: Array<{ prompt?: string; goal?: string; source?: string }>;
+    nextStep?: string;
+    nextTopics?: string[];
+    groundedSources?: string[];
+    citationWarning?: string;
+  } | null;
+  check?: { question: string; answer: string; explanation: string } | null;
+  groundedSources?: Array<{ fileName?: string; pageStart?: number | null; documentId?: string | null; label?: string }>;
+  citationWarning?: string;
+  evidenceSummary?: Record<string, number>;
+  warning?: string;
+  error?: string;
+}
+
+export async function generateDeepLearn(
+  courseId: string,
+  topic: string,
+  opts?: { documentIds?: string[]; lessonMode?: string; lessonLanguage?: string }
+): Promise<DeepLearnResult> {
+  const response = await fetch(_backendUrl() + '/api/ai/deep-learn', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({ courseId, topic, ...(opts || {}) }),
+  });
+  await _detectAiCapError(response);
+  return response.json();
+}
+
+export interface SavedNote {
+  id: string;
+  title: string;
+  type: string;
+  preview?: string;
+  content_markdown?: string;
+  course_id?: string;
+  document_id?: string | null;
+  note_sources?: Array<{ fileName?: string; pageStart?: number | null; file_name?: string }>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** List the user's saved notes for a course (all types). */
+const _courseNotesCache = new Map<string, { at: number; promise: Promise<SavedNote[]> }>();
+const COURSE_NOTES_CACHE_MS = 30_000;
+
+/** List saved notes/lessons for a course. Cached briefly so a background
+ *  prefetch (course view preload) is reused by the Deep Learn / Notes panels
+ *  instead of triggering a second "Loading…" round-trip. */
+export async function listCourseNotes(courseId: string): Promise<SavedNote[]> {
+  const cached = _courseNotesCache.get(courseId);
+  if (cached && Date.now() - cached.at < COURSE_NOTES_CACHE_MS) return cached.promise;
+  const promise = (async () => {
+    const response = await fetch(
+      _backendUrl() + '/api/notes?courseId=' + encodeURIComponent(courseId),
+      { headers: _authJsonHeaders() }
+    );
+    if (response.status === 401) _throwSessionExpired();
+    if (!response.ok) return [];
+    const data = (await response.json()) as { notes?: SavedNote[] };
+    return data.notes || [];
+  })();
+  _courseNotesCache.set(courseId, { at: Date.now(), promise });
+  promise.catch(() => _courseNotesCache.delete(courseId));
+  return promise;
+}
+
+/** Drop the cached notes list for a course (call after creating/deleting a note). */
+export function invalidateCourseNotesCache(courseId: string): void {
+  _courseNotesCache.delete(courseId);
+}
+
+/** Fetch one saved note (with full content_markdown). */
+export async function getNoteById(
+  id: string
+): Promise<{ id: string; title: string; content_markdown: string; note_sources?: unknown[] } | null> {
+  const response = await fetch(
+    _backendUrl() + '/api/notes?id=' + encodeURIComponent(id),
+    { headers: _authJsonHeaders() }
+  );
+  if (response.status === 401) _throwSessionExpired();
+  if (!response.ok) return null;
+  const data = (await response.json()) as {
+    note?: { id: string; title: string; content_markdown: string; note_sources?: unknown[] } | null;
+  };
+  return data.note || null;
+}
+
+/** Update a saved note's title/markdown (cheatsheet editor, etc.). */
+export async function updateNote(
+  id: string,
+  patch: { title?: string; content_markdown?: string }
+): Promise<boolean> {
+  const response = await fetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (response.status === 401) _throwSessionExpired();
+  if (response.ok) _courseNotesCache.clear();
+  return response.ok;
+}
+
+/** Delete a saved note by id. */
+export async function deleteNote(id: string): Promise<boolean> {
+  const response = await fetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: _authJsonHeaders(),
+  });
+  if (response.ok) _courseNotesCache.clear();
+  return response.ok;
+}
+
+export async function gradeExamForgeAnswer(
+  examSessionId: string,
+  examQuestionId: string,
+  userAnswer: string
+): Promise<unknown> {
+  const response = await fetch(_backendUrl() + '/api/ai/examforge', {
+    method: 'POST',
+    headers: _authJsonHeaders(),
+    body: JSON.stringify({
+      action: 'grade',
+      examSessionId,
+      examQuestionId,
+      userAnswer,
+    }),
   });
   return response.json();
 }

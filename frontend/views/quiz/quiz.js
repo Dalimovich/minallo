@@ -5,11 +5,29 @@
   var _state = {};
 
   // ── DB helpers (shared via js/utils/db-helpers.js) ──────────────────────────
-  function _supaHeaders() { return window._ssDb.supaHeaders(); }
-  function _supaUrl()     { return window._ssDb.supaUrl(); }
-  function _userId()      { return window._ssDb.userId(); }
+  function _supaHeaders() {
+    if (window._ssDb && window._ssDb.supaHeaders) return window._ssDb.supaHeaders();
+    return {
+      'Content-Type': 'application/json',
+      apikey: window._SAKEY || '',
+      Authorization: 'Bearer ' + (window._sbToken || '')
+    };
+  }
+  function _supaUrl() {
+    if (window._ssDb && window._ssDb.supaUrl) return window._ssDb.supaUrl();
+    return String(window._SUPA || '').replace(/\/$/, '');
+  }
+  function _userId() {
+    if (window._ssDb && window._ssDb.userId) return window._ssDb.userId();
+    try {
+      var part = (window._sbToken || '').split('.')[1];
+      if (!part) return null;
+      return (JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))).sub) || null;
+    } catch (e) { return null; }
+  }
 
   function _dbLoadQuizzes(courseId) {
+    if (!_supaUrl()) return Promise.resolve([]);
     var url = _supaUrl() + '/rest/v1/quiz_runs?course_id=eq.' + encodeURIComponent(courseId) + '&order=created_at.desc&limit=50';
     return fetch(url, { headers: _supaHeaders() })
       .then(function(r) { return r.ok ? r.json() : []; })
@@ -18,7 +36,7 @@
 
   function _dbSaveQuiz(courseId, quiz) {
     var uid = _userId();
-    if (!uid) return Promise.resolve(null);
+    if (!uid || !_supaUrl()) return Promise.resolve(null);
     var payload = { user_id: uid, course_id: courseId, name: quiz.name, items: quiz.items };
     return fetch(_supaUrl() + '/rest/v1/quiz_runs', {
       method: 'POST',
@@ -116,11 +134,50 @@
     '</div>' +
   '</div>';
 
+  function _translateStatic(root) {
+    if (!root || typeof _t !== 'function') return;
+    var gen = root.querySelector('#qzGenerateBtn');
+    if (gen) gen.textContent = _t('qz_generate');
+    var search = root.querySelector('#qzSearchInput');
+    if (search) search.placeholder = _t('qz_search_ph');
+    var sort = root.querySelector('#qzSortSelect');
+    if (sort) sort.setAttribute('aria-label', _t('qz_sort_aria'));
+    [['recent', 'qz_sort_recent'], ['name', 'qz_sort_name'], ['score', 'qz_sort_score'], ['created', 'qz_sort_created']].forEach(function (pair) {
+      var opt = root.querySelector('#qzSortSelect option[value="' + pair[0] + '"]');
+      if (opt) opt.textContent = _t(pair[1]);
+    });
+    var view = root.querySelector('.qz-view-toggle');
+    if (view) view.setAttribute('aria-label', _t('qz_view_mode_aria'));
+    var grid = root.querySelector('.qz-view-btn[data-view="grid"]');
+    if (grid) grid.setAttribute('aria-label', _t('qz_grid_view_aria'));
+    var list = root.querySelector('.qz-view-btn[data-view="list"]');
+    if (list) list.setAttribute('aria-label', _t('qz_list_view_aria'));
+    var empty = root.querySelector('.qz-empty');
+    if (empty) empty.textContent = _t('qz_loading');
+    var all = root.querySelector('#qzViewAllRow');
+    if (all) all.childNodes[1].textContent = ' ' + _t('qz_view_all');
+    var name = root.querySelector('#qzStudyName');
+    if (name) name.textContent = _t('qz_select_quiz');
+    var count = root.querySelector('#qzStudyCount');
+    if (count) count.textContent = _t('qz_zero_questions');
+    var settings = root.querySelector('#qzStudySettingsBtn');
+    if (settings) settings.textContent = _t('qz_settings');
+    var pick = root.querySelector('.qz-card-empty');
+    if (pick) pick.textContent = _t('qz_pick_quiz');
+    var prev = root.querySelector('#qzPrevBtn');
+    if (prev) prev.textContent = _t('qz_previous');
+    var submit = root.querySelector('#qzSubmitBtn');
+    if (submit) submit.textContent = _t('qz_submit');
+    var next = root.querySelector('#qzNextBtn');
+    if (next) next.textContent = _t('qz_next');
+  }
+
   window.mountQuiz = function (target, course, options) {
     if (!target) return;
     options = options || {};
     target.innerHTML = _TEMPLATE_HTML;
     var root = target.querySelector('[data-quiz-root]');
+    _translateStatic(root);
     if (root) _initShell(root, course, options);
   };
 
@@ -143,6 +200,101 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  // ── Item normalisation + scoring (shared by generate + DB-load + render) ────
+  var _QZ_LETTERS = ['A', 'B', 'C', 'D'];
+
+  // Convert a raw item (from the generator proxy or a saved DB row) into the
+  // canonical frontend shape for its type. Returns null for unusable items.
+  // Backward-compat: legacy saved MCQ items (no `type`, options array, numeric
+  // or letter answer) normalise to a modern mcq item unchanged in behaviour.
+  function _normalizeQuizItem(item) {
+    if (!item) return null;
+    var type = (item.type || 'mcq').toString().trim().toLowerCase();
+    var base = {
+      question: item.question || '',
+      explanation: item.explanation || '',
+      source: item.source || '',
+      topic: (typeof item.topic === 'string' && item.topic.trim()) ? item.topic.trim() : null
+    };
+
+    if (type === 'true_false') {
+      var tfAns = item.answer;
+      if (typeof tfAns === 'string') {
+        var v = tfAns.trim().toLowerCase();
+        tfAns = ['true', 'wahr', 'yes', 'ja', 't', '1'].indexOf(v) !== -1;
+      } else { tfAns = !!tfAns; }
+      base.type = 'true_false';
+      base.answer = tfAns;
+      return base;
+    }
+
+    if (type === 'short_answer') {
+      var primary = (item.answer == null ? '' : String(item.answer)).trim();
+      if (!primary) return null;
+      var accepted = [];
+      var seen = {};
+      var pushAcc = function (s) {
+        if (typeof s === 'string' && s.trim()) {
+          var k = s.trim().toLowerCase();
+          if (!seen[k]) { seen[k] = true; accepted.push(s.trim()); }
+        }
+      };
+      pushAcc(primary);
+      var rawAcc = item.acceptableAnswers || item.accepted || item.alternatives;
+      if (Array.isArray(rawAcc)) rawAcc.forEach(pushAcc);
+      base.type = 'short_answer';
+      base.answer = primary;
+      base.acceptableAnswers = accepted;
+      return base;
+    }
+
+    // mcq (default / legacy)
+    var optsRaw = item.options;
+    var opts;
+    if (Array.isArray(optsRaw)) {
+      opts = optsRaw.map(function (o) { return (o == null ? '' : String(o)); });
+    } else if (optsRaw && typeof optsRaw === 'object') {
+      opts = _QZ_LETTERS.map(function (L) { return (optsRaw[L] == null ? '' : String(optsRaw[L])); });
+    } else {
+      return null;
+    }
+    if (!opts.some(function (v) { return (v || '').toString().trim(); })) return null;
+    var ansIdx = 0;
+    if (typeof item.answer === 'number') {
+      ansIdx = item.answer;
+    } else if (typeof item.answer === 'string') {
+      var m = item.answer.trim().toUpperCase().match(/^([A-D])/);
+      if (m) { ansIdx = _QZ_LETTERS.indexOf(m[1]); }
+      else {
+        var hit = opts.map(function (o) { return o.trim().toLowerCase(); }).indexOf(item.answer.trim().toLowerCase());
+        ansIdx = hit >= 0 ? hit : 0;
+      }
+    }
+    base.type = 'mcq';
+    base.options = opts;
+    base.answer = ansIdx;
+    return base;
+  }
+
+  // True if the learner's stored answer for `item` is correct. `ans` is the
+  // per-type stored answer: option index (mcq), boolean (true_false), or the
+  // typed string (short_answer).
+  function _isAnswerCorrect(item, ans) {
+    if (!item) return false;
+    var type = item.type || 'mcq';
+    if (type === 'true_false') return !!ans === !!item.answer;
+    if (type === 'short_answer') {
+      if (typeof ans !== 'string') return false;
+      var norm = function (s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); };
+      var got = norm(ans);
+      if (!got) return false;
+      var accepted = (item.acceptableAnswers && item.acceptableAnswers.length)
+        ? item.acceptableAnswers : [item.answer];
+      return accepted.some(function (a) { return norm(a) === got; });
+    }
+    return ans === item.answer;
   }
 
   function _statusLabel(quiz) {
@@ -297,7 +449,11 @@
           var q = state.quizzes.find(function (x) { return x.id === id; });
           if (!q) return;
           var name = window.prompt('Rename quiz', q.name);
-          if (name && name.trim()) { q.name = name.trim(); renderAll(); }
+          if (name && name.trim()) {
+            q.name = name.trim();
+            _dbUpdateQuiz(q._dbId, { name: q.name, updated_at: new Date().toISOString() });
+            renderAll();
+          }
         });
       });
       els.grid.querySelectorAll('[data-quiz-delete]').forEach(function (btn) {
@@ -381,14 +537,13 @@
         }
         els.options.innerHTML = optsArr.map(function (opt, i) {
           var cls = 'qz-option';
+          if (i === answered) cls += ' selected';
           if (isSubmitted) {
             if (i === ansIdx) cls += ' correct';
             else if (i === answered) cls += ' incorrect';
-          } else if (i === answered) {
-            cls += ' selected';
           }
           return (
-            '<button class="' + cls + '" data-opt-idx="' + i + '"' + (isSubmitted ? ' disabled' : '') + '>' +
+            '<button class="' + cls + '" data-opt-idx="' + i + '" aria-pressed="' + (i === answered ? 'true' : 'false') + '"' + (isSubmitted ? ' disabled' : '') + '>' +
               '<span class="qz-option-letter">' + _esc(letters[i] || String(i + 1)) + '</span>' +
               '<span>' + _esc(opt) + '</span>' +
             '</button>'
@@ -470,6 +625,12 @@
       if (q.bestScore == null || correct > q.bestScore) q.bestScore = correct;
       renderAll();
 
+      // Phase 2: record per-topic mastery for THIS submitted item.
+      _postQuizAttempt(courseId, [{
+        topic: q.items[idx] && q.items[idx].topic,
+        correct: q.answers[idx] === q.items[idx].answer
+      }]);
+
       // Check if all questions submitted — save to DB and show score popup
       var allDone = q.items.every(function(_, k) { return !!q.submitted[k]; });
       if (allDone) {
@@ -489,6 +650,51 @@
         _dbUpdateQuiz(q._dbId, { answers: q.answers, updated_at: new Date().toISOString() });
       }
     });
+
+    // ── Phase 2: mastery POST ──────────────────────────────────────────────
+    // Fire-and-forget. The backend filters items whose topic isn't a known
+    // primary_topic for this course, so passing null/unknown topics is safe
+    // — they just don't update anything. On the first quiz that does have
+    // topics we surface a small "mastery went X% → Y%" toast.
+    function _postQuizAttempt(cid, items) {
+      var BACKEND_URL = window.BACKEND_URL || '';
+      var token = window._sbToken || '';
+      var clean = (items || []).filter(function(it) {
+        return it && typeof it.topic === 'string' && it.topic.trim();
+      });
+      if (!clean.length) return;
+      // Snapshot current mastery so we can compute a delta after the write.
+      var before = {};
+      (state.mastery || []).forEach(function(r) { before[r.topic] = r.mastery_score; });
+
+      fetch(BACKEND_URL + '/api/ai/quiz-attempt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify({ courseId: cid, items: clean })
+      }).then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (!data || !Array.isArray(data.mastery)) return;
+          state.mastery = data.mastery;
+          // Toast for the topic(s) we just touched.
+          (data.updated || []).forEach(function(topic) {
+            var after = (data.mastery.find(function(m) { return m.topic === topic; }) || {}).mastery_score;
+            if (after == null) return;
+            var beforePct = Math.round((before[topic] || 0) * 100);
+            var afterPct  = Math.round(after * 100);
+            _toast(topic, 'Mastery: ' + beforePct + '% → ' + afterPct + '%');
+          });
+          // Let the dashboard widget re-render if it's listening.
+          try {
+            window.dispatchEvent(new CustomEvent('ss:mastery-updated', {
+              detail: { courseId: cid, mastery: data.mastery }
+            }));
+          } catch (e) { /* ignore */ }
+        })
+        .catch(function() { /* silent — mastery is best-effort */ });
+    }
 
     // ── Generation settings (persisted to localStorage per course) ──
     var _settingsKey = 'ss_quiz_settings_' + courseId;
@@ -523,6 +729,12 @@
       var s = _loadSettings();
       var count = s.count || 10;
       var diff  = s.difficulty || 'medium';
+      var ALL_TYPES = ['mcq', 'true_false', 'short_answer'];
+      var TYPE_LABELS = { mcq: 'Multiple choice', true_false: 'True / False', short_answer: 'Short answer' };
+      var selTypes = (Array.isArray(s.questionTypes) && s.questionTypes.length)
+        ? s.questionTypes.filter(function (t) { return ALL_TYPES.indexOf(t) !== -1; })
+        : ALL_TYPES.slice();
+      if (!selTypes.length) selTypes = ALL_TYPES.slice();
 
       var overlay = document.createElement('div');
       overlay.id = 'qzSettingsOverlay';
@@ -536,7 +748,7 @@
           '<div class="qzsp-settings-body">' +
             '<label class="qzsp-label">Number of questions</label>' +
             '<div class="qzsp-count-row">' +
-              '<input type="range" id="qzCountSlider" min="3" max="20" value="' + Math.min(count, 20) + '" class="qzsp-slider">' +
+              '<input type="range" id="qzCountSlider" min="3" max="10" value="' + Math.min(count, 10) + '" class="qzsp-slider">' +
               '<span id="qzCountVal" class="qzsp-count-val">' + count + '</span>' +
             '</div>' +
             '<label class="qzsp-label">Difficulty</label>' +
@@ -545,6 +757,15 @@
                 return '<label class="qzsp-diff-opt' + (diff === d ? ' active' : '') + '">' +
                   '<input type="radio" name="qzDiff" value="' + d + '"' + (diff === d ? ' checked' : '') + '>' +
                   d.charAt(0).toUpperCase() + d.slice(1) +
+                '</label>';
+              }).join('') +
+            '</div>' +
+            '<label class="qzsp-label">Question types</label>' +
+            '<div class="qzsp-types-row">' +
+              ALL_TYPES.map(function(t) {
+                return '<label class="qzsp-type-opt' + (selTypes.indexOf(t) !== -1 ? ' active' : '') + '">' +
+                  '<input type="checkbox" name="qzType" value="' + t + '"' + (selTypes.indexOf(t) !== -1 ? ' checked' : '') + '>' +
+                  TYPE_LABELS[t] +
                 '</label>';
               }).join('') +
             '</div>' +
@@ -569,6 +790,18 @@
         });
       });
 
+      overlay.querySelectorAll('.qzsp-type-opt').forEach(function(lbl) {
+        lbl.addEventListener('click', function(e) {
+          // Let the native checkbox toggle, then mirror its state on the label.
+          if (e.target.tagName !== 'INPUT') {
+            var cb = lbl.querySelector('input');
+            if (cb) cb.checked = !cb.checked;
+          }
+          var cb2 = lbl.querySelector('input');
+          lbl.classList.toggle('active', !!(cb2 && cb2.checked));
+        });
+      });
+
       overlay.querySelector('#qzResetHistory').addEventListener('click', function() {
         _resetHistory();
         _toast('History reset', 'The AI will generate fresh questions next time.');
@@ -579,9 +812,13 @@
 
       overlay.querySelector('#qzSettingsConfirm').onclick = function() {
         var selDiff = overlay.querySelector('input[name="qzDiff"]:checked');
+        var chosenTypes = [];
+        overlay.querySelectorAll('input[name="qzType"]:checked').forEach(function(cb) { chosenTypes.push(cb.value); });
+        if (!chosenTypes.length) chosenTypes = ALL_TYPES.slice();
         var settings = {
           count: parseInt(slider.value, 10),
-          difficulty: selDiff ? selDiff.value : 'medium'
+          difficulty: selDiff ? selDiff.value : 'medium',
+          questionTypes: chosenTypes
         };
         _saveSettings(settings);
         overlay.remove();
@@ -626,6 +863,23 @@
       var existing = document.getElementById('qzSourcePickerOverlay');
       if (existing) existing.remove();
 
+      // Only show files the course CURRENTLY has. The documents table can keep
+      // rows for files that were deleted/removed from the course (or carried
+      // over from a migration); those otherwise surface here as "Other files",
+      // including items the user no longer recognises. Cross-reference against
+      // the course's live file list (loose files + folder files) so the picker
+      // matches exactly what the course holds now.
+      var _courseFileNames = {};
+      (course.files || []).forEach(function (f) { if (f && f.name) _courseFileNames[f.name] = true; });
+      (course.userFolders || []).forEach(function (fd) {
+        (fd.files || []).forEach(function (f) { if (f && f.name) _courseFileNames[f.name] = true; });
+      });
+      if (Object.keys(_courseFileNames).length) {
+        docs = (docs || []).filter(function (d) {
+          return !!_courseFileNames[d.file_name || d.fileName || ''];
+        });
+      }
+
       // Group docs by folder using course.userFolders
       var fileToFolder = {};
       (course.userFolders || []).forEach(function (fd) {
@@ -660,7 +914,8 @@
             '<span class="qzsp-folder-icon">' + icon + '</span>' +
             '<span class="qzsp-folder-name">' + _esc(name) + '</span>' +
             '<span class="qzsp-folder-count">' + fdDocs.length + ' file' + (fdDocs.length !== 1 ? 's' : '') + '</span>' +
-            '<button class="qzsp-folder-selall" type="button">Select all</button>' +
+            '<button class="qzsp-folder-selall" data-folder-act="all" type="button">Select all</button>' +
+            '<button class="qzsp-folder-selall qzsp-folder-clear" data-folder-act="none" type="button">Clear</button>' +
           '</div>' +
           '<div class="qzsp-folder-files" style="display:none">' +
             fdDocs.map(itemHtml).join('') +
@@ -680,14 +935,14 @@
       overlay.className = 'qzsp-overlay';
       overlay.innerHTML =
         '<div class="qzsp-modal">' +
-          '<div class="qzsp-head"><span class="qzsp-title">&#x1F4C2; Choose source files</span>' +
+          '<div class="qzsp-head"><span class="qzsp-title">Choose source files</span>' +
             '<button class="qzsp-close" type="button">&#x2715;</button></div>' +
           '<p class="qzsp-sub">Select which indexed files to use for quiz generation.</p>' +
           '<div class="qzsp-list qzsp-folder-list">' + sectionsHtml + '</div>' +
           '<div class="qzsp-actions">' +
             '<button class="qzsp-btn-ghost" id="qzspSelectAll" type="button">Select all</button>' +
             '<button class="qzsp-btn-ghost" id="qzspClearAll" type="button">Clear</button>' +
-            '<button class="qzsp-btn-primary" id="qzspConfirm" type="button">&#x2728; Generate from selected</button>' +
+            '<button class="qzsp-btn-primary" id="qzspConfirm" type="button">Generate from selected</button>' +
           '</div>' +
         '</div>';
 
@@ -696,26 +951,27 @@
       // Auto-expand all folders on open
       overlay.querySelectorAll('.qzsp-folder-header').forEach(function (header) {
         var files = header.nextElementSibling;
-        if (files) { files.style.display = 'block'; header.classList.add('open'); header.querySelector('.qzsp-folder-toggle').innerHTML = '&#x25BE;'; }
+        if (files) { files.style.display = 'flex'; header.classList.add('open'); header.querySelector('.qzsp-folder-toggle').innerHTML = '&#x25BE;'; }
       });
 
       // Toggle expand/collapse
       overlay.querySelectorAll('.qzsp-folder-header').forEach(function (header) {
         header.addEventListener('click', function (e) {
-          if (e.target.classList.contains('qzsp-folder-selall')) return;
+          if (e.target.closest('[data-folder-act]')) return;
           var files = header.nextElementSibling;
           var open = files.style.display !== 'none';
-          files.style.display = open ? 'none' : 'block';
+          files.style.display = open ? 'none' : 'flex';
           header.querySelector('.qzsp-folder-toggle').innerHTML = open ? '&#x25B8;' : '&#x25BE;';
           header.classList.toggle('open', !open);
         });
       });
 
       // Per-folder select all
-      overlay.querySelectorAll('.qzsp-folder-selall').forEach(function (btn) {
+      overlay.querySelectorAll('[data-folder-act]').forEach(function (btn) {
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
-          btn.closest('.qzsp-folder').querySelectorAll('.qzsp-cb').forEach(function (cb) { cb.checked = true; });
+          var checked = btn.getAttribute('data-folder-act') === 'all';
+          btn.closest('.qzsp-folder').querySelectorAll('.qzsp-cb').forEach(function (cb) { cb.checked = checked; });
         });
       });
 
@@ -766,10 +1022,13 @@
       }
       _showGeneratingOverlay();
       var genOpts = {
-        count: settings.count || 10,
+        count: Math.min(settings.count || 10, 10),
         difficulty: settings.difficulty || 'medium',
         topic: null,
-        seenItems: _seenQuestions()
+        seenItems: _seenQuestions(),
+        questionTypes: (Array.isArray(settings.questionTypes) && settings.questionTypes.length)
+          ? settings.questionTypes
+          : ['mcq', 'true_false', 'short_answer']
       };
       if (documentIds && documentIds.length) genOpts.documentIds = documentIds;
       options.generate(courseId, 'quiz', genOpts)
@@ -788,10 +1047,24 @@
             }
           }
           var letters = ['A', 'B', 'C', 'D'];
+          // Drop non-MCQ items (true_false, short_answer) — the UI only renders
+          // 4-option buttons, so without this they appear with blank options.
+          // Also drop MCQs whose options dict/array is missing or all empty.
+          var mcqOnly = result.items.filter(function (item) {
+            if (item && item.type && item.type !== 'mcq') return false;
+            var o = item && item.options;
+            if (!o) return false;
+            if (Array.isArray(o)) return o.some(function (v) { return (v || '').toString().trim(); });
+            return letters.some(function (L) { return (o[L] || '').toString().trim(); });
+          });
+          if (!mcqOnly.length) {
+            _toast('Nothing generated', 'No usable multiple-choice questions came back. Try again.');
+            return;
+          }
           var quiz = {
             id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
             name: defaultName(),
-            items: result.items.map(function (item) {
+            items: mcqOnly.map(function (item) {
               // Normalize options: backend returns {A,B,C,D} object; convert to array
               var opts;
               if (Array.isArray(item.options)) {
@@ -812,7 +1085,8 @@
                 options: opts,
                 answer: ansIdx,
                 explanation: item.explanation || '',
-                source: item.source || ''
+                source: item.source || '',
+                topic: (typeof item.topic === 'string' && item.topic.trim()) ? item.topic.trim() : null
               };
             }),
             createdAt: Date.now(),
@@ -882,11 +1156,22 @@
           var answered = r.answers || {};
           var submitted = {};
           Object.keys(answered).forEach(function(k) { submitted[k] = true; });
+          // Defensive: legacy quizzes from before MCQ-only enforcement can
+          // contain items with empty options arrays (tf/sa items that the UI
+          // doesn't know how to render). Drop them so the user doesn't see
+          // questions with blank answers.
+          var safeItems = (r.items || []).filter(function (it) {
+            if (!it) return false;
+            var opts = it.options;
+            if (!opts) return false;
+            if (Array.isArray(opts)) return opts.some(function (v) { return (v || '').toString().trim(); });
+            return ['A','B','C','D'].some(function (L) { return (opts[L] || '').toString().trim(); });
+          });
           return {
             id: r.id,
             _dbId: r.id,
             name: r.name,
-            items: r.items || [],
+            items: safeItems,
             answers: answered,
             submitted: submitted,
             progress: 0,

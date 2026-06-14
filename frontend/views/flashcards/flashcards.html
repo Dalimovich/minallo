@@ -1,27 +1,27 @@
-<!-- Flashcards feature — injected into a course's #coFlashPanel by flashcards.js -->
+<!-- Flashcards feature - injected into a course's #coFlashPanel by flashcards.js -->
 <div class="fc-root" data-flashcards-root>
 
   <!-- Toolbar: Generate / New deck / search / sort / view toggle -->
   <div class="fc-toolbar">
-    <button class="fc-btn fc-btn-primary" id="fcGenerateBtn" type="button">
+    <button class="fc-btn fc-btn-primary" id="fcGenerateBtn" type="button" data-i18n="fc_generate">
       <span class="fc-btn-icon">&#x2728;</span> Generate cards
     </button>
 
     <div class="fc-search">
       <span class="fc-search-icon">&#x1F50D;</span>
-      <input type="text" id="fcSearchInput" placeholder="Search flashcards…" />
+      <input type="text" id="fcSearchInput" data-i18n-ph="fc_search_ph" placeholder="Search flashcards..." />
     </div>
 
-    <select class="fc-sort" id="fcSortSelect" aria-label="Sort decks">
-      <option value="recent">Recently studied</option>
-      <option value="name">By name</option>
-      <option value="size">By card count</option>
-      <option value="created">Recently created</option>
+    <select class="fc-sort" id="fcSortSelect" data-i18n-aria="fc_sort_aria" aria-label="Sort decks">
+      <option value="recent" data-i18n="fc_sort_recent">Recently studied</option>
+      <option value="name" data-i18n="fc_sort_name">By name</option>
+      <option value="size" data-i18n="fc_sort_size">By card count</option>
+      <option value="created" data-i18n="fc_sort_created">Recently created</option>
     </select>
 
-    <div class="fc-view-toggle" role="tablist" aria-label="View mode">
-      <button class="fc-view-btn active" data-view="grid" type="button" aria-label="Grid view">&#x25A6;</button>
-      <button class="fc-view-btn" data-view="list" type="button" aria-label="List view">&#x2630;</button>
+    <div class="fc-view-toggle" role="tablist" data-i18n-aria="fc_view_mode_aria" aria-label="View mode">
+      <button class="fc-view-btn active" data-view="grid" type="button" data-i18n-aria="fc_grid_view_aria" aria-label="Grid view">&#x25A6;</button>
+      <button class="fc-view-btn" data-view="list" type="button" data-i18n-aria="fc_list_view_aria" aria-label="List view">&#x2630;</button>
     </div>
   </div>
 
@@ -31,10 +31,10 @@
     <div class="fc-deck-pane" id="fcDeckPane">
       <div class="fc-deck-grid" id="fcDeckGrid">
         <!-- Deck cards injected by flashcards.js -->
-        <div class="fc-empty">Loading decks…</div>
+        <div class="fc-empty" data-i18n="fc_loading">Loading decks...</div>
       </div>
       <div class="fc-view-all" id="fcViewAllRow">
-        <span class="fc-view-all-icon">&#x1F4C1;</span> View all decks
+        <span class="fc-view-all-icon">&#x1F4C1;</span> <span data-i18n="fc_view_all">View all decks</span>
         <span class="fc-view-all-chev">&#x203A;</span>
       </div>
     </div>
@@ -43,16 +43,16 @@
       <div class="fc-study-header">
         <span class="fc-study-icon">&#x1F4DA;</span>
         <div class="fc-study-meta">
-          <div class="fc-study-deck-name" id="fcStudyName">Select a deck</div>
-          <div class="fc-study-deck-count" id="fcStudyCount">0 cards</div>
+          <div class="fc-study-deck-name" id="fcStudyName" data-i18n="fc_select_deck">Select a deck</div>
+          <div class="fc-study-deck-count" id="fcStudyCount" data-i18n="fc_zero_cards">0 cards</div>
         </div>
         <button class="fc-btn fc-btn-secondary fc-study-settings" id="fcStudySettingsBtn" type="button">
-          <span class="fc-btn-icon">&#x2699;</span> Study settings
+          <span data-i18n="fc_study_settings"><span class="fc-btn-icon">&#x2699;</span> Study settings</span>
         </button>
       </div>
 
       <div class="fc-card-stage" id="fcCardStage">
-        <div class="fc-card-empty">Pick a deck to start studying.</div>
+        <div class="fc-card-empty" data-i18n="fc_pick_deck">Pick a deck to start studying.</div>
       </div>
 
       <div class="fc-study-progress">
@@ -62,13 +62,13 @@
 
       <div class="fc-study-controls">
         <button class="fc-btn fc-btn-ghost" id="fcPrevBtn" type="button" disabled>
-          <span>&#x25C0;</span> Previous
+          <span data-i18n="fc_previous"><span>&#x25C0;</span> Previous</span>
         </button>
         <button class="fc-btn fc-btn-flip" id="fcFlipBtn" type="button" disabled>
-          <span class="fc-btn-icon">&#x21BB;</span> Flip card
+          <span data-i18n="fc_flip"><span class="fc-btn-icon">&#x21BB;</span> Flip card</span>
         </button>
         <button class="fc-btn fc-btn-ghost" id="fcNextBtn" type="button" disabled>
-          Next <span>&#x25B6;</span>
+          <span data-i18n="fc_next">Next <span>&#x25B6;</span></span>
         </button>
       </div>
     </div>

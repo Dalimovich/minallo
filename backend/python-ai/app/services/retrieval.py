@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..supabase_client import get_supabase
-from .embeddings import embed_texts
+from .embeddings import embed_query
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +47,109 @@ _NUMBERED_LIST_RE = re.compile(r"^\s*\d+[\.\)]", re.MULTILINE)
 _MISTAKE_RE = re.compile(r"fehler|mistake|achtung|attention|nicht verwechseln|do not|never|always", re.I)
 _TOC_RE = re.compile(r"^\s*\d+\s*\.{3,}", re.MULTILINE)
 
+# Phase 6 ranking constants.
+# The previous +0.25 active-doc boost was larger than the typical similarity
+# spread (~0.10-0.35), so chunks from the open doc swamped top-K even when
+# another doc held the actual answer. Drop to a tie-breaker level — enough
+# to win when similarity is comparable, but not enough to override a
+# materially more relevant chunk from a different document.
+# Active-doc boost tuning — three failure modes seen in real sessions:
+#   * 0.10 (original): open PDF lost the top-K entirely to bigger /
+#     keyword-denser docs. AG_9.1 had ZERO chunks in the top 12 for a
+#     Nachgiebigkeit question — old Klausuren took every slot.
+#   * 1.00 (first attempt): open PDF took ALL 12 top slots. Formelzettel
+#     never made it in — model fell back to a generic δ = L/(A·E) textbook
+#     formula.
+#   * 0.40 (second attempt): better balance, but AG_9.1 still took 5-6
+#     slots and Formelzettel only got 1-2 slots at the BOTTOM of top-12,
+#     where the model under-reads them.
+# 0.25 is the current compromise. With exercise-exact prepended (score 99)
+# the active doc already has its statement chunk locked in slot 1; we
+# don't need the boost to also dominate slots 2-12. Smaller boost lets
+# the formula sheet / lecture notes / definitions chunks compete on raw
+# relevance for those middle slots.
+_ACTIVE_DOC_BOOST = 0.25      # chunks from the doc the user is reading
+_PREFERRED_DOC_BOOST = 0.20   # chunks from the user-selected document set (when used as a hint, not a filter)
+# Boost for "formula sheet" documents matched by filename. The TU course
+# template explicitly names theirs ``...Formelzettel...`` / ``...Formula
+# Sheet...``; without this boost, formula-sheet chunks score lower than
+# lecture chunks (sparse text, low keyword density) and rarely make the
+# top-K — which is exactly the source the student WANTS retrieved for any
+# computational question.
+#
+# Bumped 0.40 → 0.60: with vision OCR enabled the Formelzettel now
+# produces clean structured formula chunks. The +0.40 boost was only
+# enough to put them at the bottom of top-12, where the model under-reads
+# them. +0.60 lands them in slots 3-5 where they actually get attention.
+_FORMULA_SHEET_BOOST = 0.60
+_FORMULA_SHEET_FILENAME_RE = re.compile(
+    r"formel(?:zettel|sammlung)?|formula[\s_-]*sheet|formulary",
+    re.IGNORECASE,
+)
+_QUALITY_PENALTY_WEAK = 0.15
+_QUALITY_PENALTY_FAILED = 0.30
+
+# Phase 8 ranking constants. Starting points per plan-v2 lines 168-184.
+# Tune against the math eval fixture (tests/fixtures/math_eval_cases.json).
+_EXERCISE_MATCH_BOOST = 0.20      # chunk text contains the exercise number from the query
+_DOC_TYPE_MATCH_BOOST = 0.15      # document_type matches the inferred question intent
+_UNIT_MATCH_BOOST = 0.15          # a unit/symbol from the query appears in the chunk
+_NEIGHBOUR_BOOST = 0.10           # chunk is on ±1 page from a top-scoring chunk in the same doc
+_FILENAME_MATCH_BOOST = 0.10      # file_name contains a meaningful query token
+_GENERIC_CHUNK_PENALTY = 0.20     # short, low-info chunk
+_NO_QUERY_TERM_PENALTY = 0.30     # chunk doesn't contain any meaningful query token
+_LECTURE_REFERENCE_BOOST = 0.18   # exercise/math questions should include professor lecture context
+_LECTURE_CONCEPT_BOOST = 0.32     # explanation/method questions should prefer professor lecture notes
+_SOLUTION_CONCEPT_PENALTY = 0.18  # worked solutions are secondary for conceptual explanations
+_NAMED_DOC_BOOST = 0.75           # explicit "in X.pdf / lecture 4" should anchor retrieval hard
+_OTHER_EXERCISE_CONTEXT_PENALTY = 0.45  # after the anchor, prefer lecture/formula over random worksheets
+
+# Phase 8 helpers — token filtering for "meaningful query term" checks.
+_STOPWORDS = frozenset({
+    # EN
+    "the","a","an","of","to","in","on","for","with","is","are","be","by","at",
+    "this","that","these","those","it","its","what","why","how","when","where",
+    "i","you","we","they","me","my","our","your","please","do","does","did","can",
+    "could","would","should","will","shall","not","no","yes","and","or","but","if",
+    "as","so","than","then","into","from","about","explain","tell","show","give",
+    # DE
+    "der","die","das","den","dem","des","ein","eine","einen","einer","eines","und",
+    "oder","aber","wenn","dann","ist","sind","war","waren","sein","mit","von","zu",
+    "im","in","an","am","auf","für","fur","über","uber","unter","bei","aus","nach",
+    "wie","was","wo","wer","wann","warum","bitte","welcher","welche","welches",
+    "nicht","kein","keine","ja","nein","mir","dir","ihm","ihr","wir","ihr","sie",
+})
+_TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß]+")
+
+# Document-type intent table — maps question signal → expected doc_type.
+# Used by the "+0.15 matching document type for question" boost.
+_INTENT_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("lösung", "loesung", "musterlösung", "solution", "answer", "musterloesung"),
+     "solution_sheet"),
+    (("aufgabe", "übung", "uebung", "exercise", "problem", "task"),
+     "exercise_sheet"),
+    (("formel", "formula", "equation", "gleichung", "theorem", "satz"),
+     "formula_sheet"),
+    (("klausur", "exam", "prüfung", "pruefung", "midterm", "final"),
+     "exam"),
+    (("zusammenfassung", "summary", "recap", "key takeaways"),
+     "summary"),
+)
+
+# Exercise-ref regex: "Aufgabe 1.2", "Exercise 3 (a)", "Problem 4.1.2",
+# "Übung 2 b", "Übungsaufgabe 9.1". Compound forms (Übungsaufgabe /
+# Uebungsaufgabe) listed first so the alternation grabs them whole rather
+# than stopping after the prefix and failing the digit lookahead.
+# Subpart is captured ONLY when it's delimited: parens around it, or a single
+# letter followed by whitespace / end-of-string / punctuation. This stops
+# "Aufgabe 1.2 please" from being read as "1.2 (p)".
+_EXERCISE_QUERY_RE = re.compile(
+    r"\b(?:übungsaufgabe|uebungsaufgabe|aufgabe|übung|uebung|exercise|problem|task|beispiel)\s+"
+    r"(\d+(?:\.\d+){0,3})"
+    r"(?:\s*\(([a-zA-Z])\)|\s+([a-zA-Z])(?=\s|[\.\,\?\!\:]|$))?",
+    re.IGNORECASE,
+)
+
 
 def _section_score(section_title: str | None) -> float:
     if not section_title:
@@ -76,17 +179,265 @@ def _text_study_score(text: str) -> float:
     return score
 
 
-def _study_score(chunk: dict[str, Any]) -> float:
+def _meaningful_tokens(text: str) -> set[str]:
+    """Lowercase, stopword-filtered, ≥3-char tokens. Used both to extract
+    query-specific terms and to score chunk overlap with them."""
+    if not text:
+        return set()
+    return {
+        t.lower()
+        for t in _TOKEN_RE.findall(text)
+        if len(t) >= 3 and t.lower() not in _STOPWORDS
+    }
+
+
+def _normalise_doc_match_text(text: str) -> str:
+    lower = (text or "").lower()
+    lower = (
+        lower.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+        .replace("vorlesung", "vorlesung lecture")
+        .replace("lecture", "lecture vorlesung")
+        .replace("loesung", "loesung solution")
+        .replace("solution", "solution loesung")
+    )
+    return re.sub(r"[^a-z0-9]+", " ", lower).strip()
+
+
+def _doc_name_matches_query(file_name: str, query: str) -> bool:
+    """True when the prompt appears to name a specific uploaded document.
+
+    This intentionally stays conservative: one shared word like "seminar" is
+    not enough. We require either the compact filename/stem phrase, or at
+    least two meaningful filename tokens present in the user's prompt.
+    """
+    if not file_name or not query:
+        return False
+    q_norm = _normalise_doc_match_text(query)
+    name = re.sub(r"\.[a-z0-9]{1,5}$", "", file_name.lower())
+    name_norm = _normalise_doc_match_text(name)
+    if not q_norm or not name_norm:
+        return False
+    compact_q = q_norm.replace(" ", "")
+    compact_name = name_norm.replace(" ", "")
+    if len(compact_name) >= 8 and compact_name in compact_q:
+        return True
+
+    q_parts = q_norm.split()
+    q_token_set = set(q_parts)
+    name_parts = name_norm.split()
+    name_numbers = {str(int(t)) for t in name_parts if t.isdigit()}
+    query_numbers = {str(int(t)) for t in q_parts if t.isdigit()}
+    name_tokens = [
+        t for t in name_norm.split()
+        if len(t) >= 3 and t not in _STOPWORDS and not t.isdigit()
+    ]
+    alpha_hits = sum(1 for t in set(name_tokens) if t in q_token_set)
+    if alpha_hits >= 1 and name_numbers and (name_numbers & query_numbers):
+        return True
+    if len(name_tokens) < 2:
+        return False
+    return alpha_hits >= min(3, len(set(name_tokens)))
+
+
+def infer_question_intent(question: str) -> str | None:
+    """Map a question to the document_type most likely to contain the
+    answer. Returns None when the signal is weak — better to leave the
+    Phase 8 doc-type boost dormant than to misroute generic questions.
+    """
+    if not question:
+        return None
+    lower = question.lower()
+    # Walk the intent table; first match wins. Order matters (solution
+    # before exercise so "Lösung von Aufgabe 1" picks solution_sheet).
+    for needles, doc_type in _INTENT_KEYWORDS:
+        if any(n in lower for n in needles):
+            return doc_type
+    return None
+
+
+_CONCEPT_EXPLANATION_RE = re.compile(
+    r"\b("
+    r"explain|explanation|understand|why|concept|intuition|meaning|method|"
+    r"in detail|for an engineering student|what does .* mean|"
+    r"erkl[aä]r|erklaer|warum|bedeutet|verständnis|verstaendnis|konzept|methode"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_conceptual_explanation_query(question: str) -> bool:
+    """True for requests where lecture notes should outrank worked solutions.
+
+    Students asking "explain why/how this works" usually want the professor's
+    lecture framing. Exercise solutions can still be useful supporting context,
+    but they should not beat a lecture chunk merely because they share symbols.
+    """
+    if not question:
+        return False
+    if infer_question_intent(question) in {"exercise_sheet", "solution_sheet", "exam"}:
+        return False
+    return bool(_CONCEPT_EXPLANATION_RE.search(question))
+
+
+def _is_generic_chunk(text: str) -> bool:
+    """Short, low-info chunks (≤ 120 chars, fewer than 2 meaningful
+    tokens) are penalised so they don't crowd out specific answers."""
+    if not text:
+        return True
+    stripped = text.strip()
+    if len(stripped) <= 120 and len(_meaningful_tokens(stripped)) < 2:
+        return True
+    return False
+
+
+# Units the query-overlap boost knows about. Matching tokens here in
+# both the query and a chunk is strong evidence the chunk is the answer.
+_KNOWN_UNITS = re.compile(
+    r"\b(?:m|cm|mm|km|kg|g|n|nm|kn|pa|kpa|mpa|gpa|j|kj|w|kw|s|ms|hz|"
+    r"khz|a|ma|v|mv|kv|c|k|rad|deg|°c|°f|°)\b",
+    re.IGNORECASE,
+)
+
+
+def _query_units(question: str) -> set[str]:
+    if not question:
+        return set()
+    return {m.group(0).lower() for m in _KNOWN_UNITS.finditer(question)}
+
+
+def _study_score(
+    chunk: dict[str, Any],
+    *,
+    active_document_id: str | None = None,
+    preferred_document_ids: set[str] | None = None,
+    named_document_ids: set[str] | None = None,
+    quality_by_doc_page: dict[tuple[str, int], str] | None = None,
+    # Phase 8 context — all optional so legacy callers still work.
+    question_intent: str | None = None,
+    query_tokens: set[str] | None = None,
+    query_units: set[str] | None = None,
+    exercise_number: str | None = None,
+    doc_meta: dict[str, dict[str, str | None]] | None = None,
+    conceptual_explanation: bool = False,
+    # Review fix #5: gate the formula-sheet filename boost so it only
+    # applies for math/computational questions. Defaults to True for
+    # backward compatibility with any caller that didn't update.
+    query_is_math: bool = True,
+) -> float:
     similarity = chunk.get("similarity") or 0.0
     source = chunk.get("source_type") or "other"
     official = bool(chunk.get("is_official"))
-    return (
+    score = (
         similarity
         + _SOURCE_BASE.get(source, 0.0)
         + (0.08 if official else 0.0)
         + _section_score(chunk.get("section_title"))
         + _text_study_score(chunk.get("chunk_text") or "")
     )
+    doc_id = chunk.get("document_id")
+    chunk_text = chunk.get("chunk_text") or ""
+
+    # Phase 6: active & preferred doc boosts.
+    if active_document_id and doc_id == active_document_id:
+        score += _ACTIVE_DOC_BOOST
+    if preferred_document_ids and doc_id in preferred_document_ids:
+        score += _PREFERRED_DOC_BOOST
+    if named_document_ids and doc_id in named_document_ids:
+        score += _NAMED_DOC_BOOST
+
+    # Phase 1: penalise chunks that originated from weak/failed extraction pages.
+    if quality_by_doc_page and doc_id:
+        page = chunk.get("page_start")
+        if isinstance(page, int):
+            quality = quality_by_doc_page.get((doc_id, page))
+            if quality == "weak":
+                score -= _QUALITY_PENALTY_WEAK
+            elif quality == "failed":
+                score -= _QUALITY_PENALTY_FAILED
+
+    # ── Phase 8 ─────────────────────────────────────────────────────────────
+
+    doc_meta_row = doc_meta.get(doc_id) if (doc_meta and doc_id) else None
+
+    # Phase 3 follow-up — formula-sheet boost (read filename from doc_meta).
+    # Files named "Formelzettel" / "Formula Sheet" / "Formelsammlung" etc.
+    # get an extra boost so their chunks can break into top-K alongside the
+    # active doc. Without this, the active-doc boost crowded every top-K
+    # slot with the exercise PDF and the precise formula never reached the
+    # model — falling back to a generic textbook approximation.
+    #
+    # Review fix #5: gated on ``query_is_math``. A conceptual question
+    # ("what is the difference between Sechskant- and Innensechskant-
+    # schrauben") should NOT have formula sheets crowd out the lecture
+    # summary that actually answers it. We only boost when the question
+    # is math/computational.
+    if query_is_math and doc_meta_row:
+        fn_raw = doc_meta_row.get("file_name") or ""
+        if _FORMULA_SHEET_FILENAME_RE.search(fn_raw):
+            score += _FORMULA_SHEET_BOOST
+
+    # +0.20: chunk text mentions the exact exercise number from the query.
+    if exercise_number and exercise_number in chunk_text:
+        score += _EXERCISE_MATCH_BOOST
+
+    # +0.15: document_type matches inferred question intent.
+    if question_intent and doc_meta_row:
+        if doc_meta_row.get("document_type") == question_intent:
+            score += _DOC_TYPE_MATCH_BOOST
+
+    # Exercise questions need the professor's lecture/formula context, not only
+    # the exercise sheet. Give lecture chunks a modest lift for math/exercise
+    # requests so they make the prompt as references alongside the task.
+    if query_is_math and question_intent in {"exercise_sheet", "solution_sheet"}:
+        doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
+        if source == "lecture" or doc_type == "lecture":
+            score += _LECTURE_REFERENCE_BOOST
+
+        anchor_ids = set(preferred_document_ids or set()) | set(named_document_ids or set())
+        if active_document_id:
+            anchor_ids.add(active_document_id)
+        if anchor_ids and doc_id not in anchor_ids and (
+            source in {"exercise", "solution"} or doc_type in {"exercise_sheet", "solution_sheet"}
+        ):
+            score -= _OTHER_EXERCISE_CONTEXT_PENALTY
+
+    # Explanation/method questions should surface the professor's lecture
+    # wording before a worked solution that happens to contain the same
+    # variables. This fixes cases like "explain why we square and sum x,z to
+    # eliminate alpha", where solution PDFs over-ranked the actual lecture.
+    if conceptual_explanation:
+        doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
+        if source == "lecture" or doc_type == "lecture":
+            score += _LECTURE_CONCEPT_BOOST
+        elif source == "solution" or doc_type == "solution_sheet":
+            score -= _SOLUTION_CONCEPT_PENALTY
+
+    # +0.15: a unit from the query appears in the chunk (strong signal for
+    # numerical/engineering questions).
+    if query_units:
+        chunk_lower = chunk_text.lower()
+        if any(u in chunk_lower for u in query_units):
+            score += _UNIT_MATCH_BOOST
+
+    # +0.10: file_name shares a meaningful token with the query.
+    if query_tokens and doc_meta_row:
+        fn = (doc_meta_row.get("file_name") or "").lower()
+        if fn and any(tok in fn for tok in query_tokens):
+            score += _FILENAME_MATCH_BOOST
+
+    # -0.20: chunk is short and low-info.
+    if _is_generic_chunk(chunk_text):
+        score -= _GENERIC_CHUNK_PENALTY
+
+    # -0.30: chunk doesn't contain ANY meaningful query token (BM25 already
+    # filtered hard, but this catches embedding-only matches that are
+    # topically adjacent rather than on-point).
+    if query_tokens:
+        chunk_tokens = _meaningful_tokens(chunk_text)
+        if not (chunk_tokens & query_tokens):
+            score -= _NO_QUERY_TERM_PENALTY
+
+    return score
 
 
 # ── Public surface ───────────────────────────────────────────────────────────
@@ -103,6 +454,15 @@ class RetrievedChunk:
     similarity: float
     chunk_type: str
     section_title: str | None
+    # Review-2 finding #3 — synthetic chunks (those prepended by
+    # _prepend_exercise_chunks / _prepend_formula_chunks from
+    # document_exercises / document_formulas exact-match lookups) carry
+    # similarity=1.0 and score=99 to keep them at the top of context.
+    # That value is artificial — those rows came from a deterministic
+    # SQL match, not from cosine-similarity reranking. Marking them so
+    # ``_context_strength`` can exclude them when judging whether REAL
+    # retrieval was strong enough to drive the rigid math worksheet.
+    is_synthetic: bool = False
 
     def to_api(self) -> dict[str, Any]:
         return {
@@ -122,41 +482,117 @@ _DEFAULT_CANDIDATES = 60
 _MIN_SIMILARITY = 0.10
 
 
+# Review-2 finding #5: course-wide generation (quiz / flashcards / notes
+# without explicit ``documentIds``) had no source filenames because the
+# router only fetched names for documents the user explicitly selected.
+# ``retrieve_chunks`` then returned chunks pointing at random docs in the
+# course, and every source label downstream became "Unknown".
+# Centralised here so all four generate paths (ask, quiz, flashcards,
+# notes) share the same logic.
+def backfill_doc_names(
+    chunks: list["RetrievedChunk"] | None,
+    doc_names: dict[str, str],
+) -> dict[str, str]:
+    """Ensure every chunk's ``document_id`` has a filename in ``doc_names``.
+
+    Mutates the passed dict in-place AND returns it for chained-call
+    convenience. Failures are non-fatal — UI just sees "Unknown" for
+    docs we couldn't look up, same as before.
+    """
+    if not chunks:
+        return doc_names
+    missing = {c.document_id for c in chunks if c.document_id and c.document_id not in doc_names}
+    if not missing:
+        return doc_names
+    try:
+        resp = get_supabase().table("documents").select("id, file_name").in_("id", list(missing)).execute()
+        for row in resp.data or []:
+            doc_names[row["id"]] = row.get("file_name") or "Unknown"
+    except Exception:
+        log.exception("doc_name backfill failed (non-fatal)")
+    return doc_names
+
+
 def retrieve_chunks(
     *,
     user_id: str,
     course_id: str,
     query: str,
     document_ids: list[str] | None = None,
+    preferred_document_ids: list[str] | None = None,
+    active_document_id: str | None = None,
+    document_name_query: str | None = None,
     top_k: int = 12,
     min_similarity: float = _MIN_SIMILARITY,
 ) -> list[RetrievedChunk]:
-    """Return up to top_k chunks for the question, reranked by study value."""
+    """Return up to top_k chunks for the question, reranked by study value.
+
+    `document_ids` is a hard filter when set. `preferred_document_ids` is only
+    a ranking hint, used by ask/stream so an open/selected exercise PDF can win
+    ties while course-wide retrieval still surfaces lecture/formula PDFs.
+    `active_document_id` adds a ranking boost without filtering.
+    """
     if not query.strip():
         return []
 
-    embedding = embed_texts([query])[0]
+    embedding = embed_query(query)
     sb = get_supabase()
+
+    # Phase 7: expand the BM25 side for math questions (exercise refs,
+    # formula keywords, …). Vector side keeps the original question so
+    # semantic similarity isn't diluted.
+    # Local import: query_expansion imports from this module for the
+    # exercise-reference detector, so a top-level import would cycle.
+    from .query_expansion import expand_query  # noqa: WPS433
+    expanded = expand_query(query)
 
     # Format the vector the way pgvector expects from RPC: "[v1,v2,...]" string.
     payload: dict[str, Any] = {
         "p_user_id":     user_id,
         "p_course_id":   course_id,
         "p_embedding":   "[" + ",".join(f"{v:.7f}" for v in embedding) + "]",
-        "p_query":       query,
+        "p_query":       expanded.text,
         "p_match_count": _DEFAULT_CANDIDATES,
         "p_threshold":   min_similarity,
     }
     if document_ids:
         payload["p_document_ids"] = list(document_ids)
 
+    named_document_ids = set()
+    if not document_ids:
+        named_document_ids = _resolve_mentioned_document_ids(
+            sb,
+            user_id=user_id,
+            course_id=course_id,
+            query=document_name_query or query,
+        )
+
     try:
-        resp = sb.rpc("match_chunks_hybrid", payload).execute()
+        if named_document_ids:
+            named_payload = dict(payload)
+            named_payload["p_document_ids"] = list(named_document_ids)
+            resp = sb.rpc("match_chunks_hybrid", named_payload).execute()
+        else:
+            resp = sb.rpc("match_chunks_hybrid", payload).execute()
     except Exception:
         log.exception("match_chunks_hybrid failed")
         return []
 
     rows: list[dict[str, Any]] = resp.data or []
+
+    # When the prompt explicitly names a document, search that document first
+    # but still append course-wide candidates so the model can fall back to
+    # lecture/formula material if the named/open PDF only contains the task.
+    if named_document_ids:
+        try:
+            broad_resp = sb.rpc("match_chunks_hybrid", payload).execute()
+            seen = {r.get("id") for r in rows if r.get("id")}
+            for r in broad_resp.data or []:
+                if r.get("id") not in seen:
+                    rows.append(r)
+                    seen.add(r.get("id"))
+        except Exception:
+            log.exception("match_chunks_hybrid named-doc broad fallback failed")
 
     # If the document filter returned nothing, try once more without it as a
     # safety net — same behaviour the JS pipeline already had.
@@ -175,13 +611,61 @@ def retrieve_chunks(
     if not rows:
         return []
 
+    # Look up extraction_quality for the (document_id, page_start) pairs we
+    # actually got back, so the ranker can downweight chunks from weak pages.
+    # Best-effort: a query failure leaves the map empty and we score without it.
+    quality_map = _load_page_qualities(sb, rows)
+
+    # Phase 8: load document_type + file_name for the candidate docs so the
+    # ranker can apply doc-type-match and filename-match boosts.
+    doc_meta = _load_doc_metadata(sb, [r.get("document_id") for r in rows if r.get("document_id")])
+
+    preferred = set(preferred_document_ids or document_ids or []) | named_document_ids
+    preferred = preferred or None
+    question_intent = infer_question_intent(query)
+    conceptual_explanation = is_conceptual_explanation_query(query)
+    query_tokens = _meaningful_tokens(query)
+    query_units = _query_units(query)
+    ex_ref = find_exercise_reference(query)
+    exercise_number = ex_ref[0] if ex_ref else None
+    # Local import to avoid a circular dependency at module-init time
+    # (query_expansion imports retrieval helpers).
+    from .query_expansion import is_math_question  # noqa: WPS433
+    query_is_math = is_math_question(query)
+
     # Rerank by study value
     ranked: list[tuple[float, dict[str, Any]]] = []
     for row in rows:
-        ranked.append((_study_score(row), row))
+        ranked.append((
+            _study_score(
+                row,
+                active_document_id=active_document_id,
+                preferred_document_ids=preferred,
+                named_document_ids=named_document_ids or None,
+                quality_by_doc_page=quality_map,
+                question_intent=question_intent,
+                query_tokens=query_tokens,
+                query_units=query_units,
+                exercise_number=exercise_number,
+                doc_meta=doc_meta,
+                conceptual_explanation=conceptual_explanation,
+                query_is_math=query_is_math,
+            ),
+            row,
+        ))
     ranked.sort(key=lambda pair: pair[0], reverse=True)
 
-    chosen = ranked[: max(top_k, 1)]
+    # Phase 8: one-shot neighbour boost on the post-sort list.
+    ranked = _apply_neighbour_boost(ranked)
+
+    chosen = _ensure_professor_reference_mix(
+        ranked,
+        top_k=max(top_k, 1),
+        doc_meta=doc_meta,
+        query_is_math=query_is_math,
+        question_intent=question_intent,
+        conceptual_explanation=conceptual_explanation,
+    )
 
     # Fetch chunk_type for each in one batch — RPC predates the new column.
     chunk_ids = [r["id"] for _, r in chosen if r.get("id")]
@@ -213,3 +697,540 @@ def retrieve_chunks(
         )
         for score, row in chosen
     ]
+
+
+# ── Page-quality lookup ──────────────────────────────────────────────────────
+
+
+def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None]]:
+    """For each unique document_id, fetch (document_type, file_name).
+    Best-effort: returns {} on any DB failure so ranking degrades to the
+    Phase 6 behaviour rather than crashing."""
+    if not doc_ids:
+        return {}
+    try:
+        resp = (
+            sb.table("documents")
+            .select("id, document_type, file_name")
+            .in_("id", list(set(doc_ids)))
+            .execute()
+        )
+    except Exception:
+        log.exception("documents metadata lookup failed")
+        return {}
+    out: dict[str, dict[str, str | None]] = {}
+    for r in resp.data or []:
+        out[r["id"]] = {
+            "document_type": r.get("document_type"),
+            "file_name":     r.get("file_name"),
+        }
+    return out
+
+
+def _resolve_mentioned_document_ids(
+    sb,
+    *,
+    user_id: str,
+    course_id: str,
+    query: str,
+) -> set[str]:
+    """Find uploaded docs whose filename is explicitly mentioned in query."""
+    if not query or len(query.strip()) < 4:
+        return set()
+    try:
+        resp = (
+            sb.table("documents")
+            .select("id, file_name")
+            .eq("user_id", user_id)
+            .eq("course_id", course_id)
+            .execute()
+        )
+    except Exception:
+        log.exception("document filename lookup failed")
+        return set()
+    out: set[str] = set()
+    for row in resp.data or []:
+        if _doc_name_matches_query(row.get("file_name") or "", query):
+            out.add(row["id"])
+    return out
+
+
+def _apply_neighbour_boost(
+    ranked: list[tuple[float, dict[str, Any]]],
+    *,
+    top_n: int = 5,
+) -> list[tuple[float, dict[str, Any]]]:
+    """Boost any chunk on the same document within ±1 page of a top-N
+    chunk. Idea: when one chunk is clearly relevant, its immediate
+    neighbours probably continue the answer (formula → derivation,
+    statement → solution). Applied once, not iteratively."""
+    if len(ranked) < 2:
+        return ranked
+
+    anchors: set[tuple[str, int]] = set()
+    for score, row in ranked[:top_n]:
+        doc_id = row.get("document_id")
+        page = row.get("page_start")
+        if doc_id and isinstance(page, int):
+            anchors.add((doc_id, page))
+    if not anchors:
+        return ranked
+
+    boosted: list[tuple[float, dict[str, Any]]] = []
+    for score, row in ranked:
+        doc_id = row.get("document_id")
+        page = row.get("page_start")
+        if doc_id and isinstance(page, int):
+            already_anchor = (doc_id, page) in anchors
+            if not already_anchor:
+                if (doc_id, page - 1) in anchors or (doc_id, page + 1) in anchors:
+                    score += _NEIGHBOUR_BOOST
+        boosted.append((score, row))
+    boosted.sort(key=lambda pair: pair[0], reverse=True)
+    return boosted
+
+
+def _ensure_professor_reference_mix(
+    ranked: list[tuple[float, dict[str, Any]]],
+    *,
+    top_k: int,
+    doc_meta: dict[str, dict[str, str | None]],
+    query_is_math: bool,
+    question_intent: str | None,
+    conceptual_explanation: bool = False,
+) -> list[tuple[float, dict[str, Any]]]:
+    """Keep room for professor/lecture references in exercise answers.
+
+    For exercise/math prompts the top slots can be monopolised by the open
+    worksheet because it repeats the exact exercise terms. Students still need
+    the professor's lecture/formula instructions. If those docs were retrieved
+    as candidates, ensure at least one lecture chunk and one formula-sheet
+    chunk survive into the final context.
+    """
+    if not ranked:
+        return []
+    chosen = ranked[:top_k]
+    if conceptual_explanation:
+        chosen_ids = {row.get("id") for _, row in chosen}
+
+        def _doc_type(row: dict[str, Any]) -> str:
+            meta = doc_meta.get(row.get("document_id")) or {}
+            return str(meta.get("document_type") or row.get("source_type") or "")
+
+        has_lecture = any(
+            _doc_type(row) == "lecture" or row.get("source_type") == "lecture"
+            for _, row in chosen
+        )
+        if not has_lecture:
+            for score, row in ranked[top_k:]:
+                if row.get("id") in chosen_ids:
+                    continue
+                if _doc_type(row) == "lecture" or row.get("source_type") == "lecture":
+                    chosen = chosen[: max(0, top_k - 1)] + [(score, row)]
+                    chosen.sort(key=lambda pair: pair[0], reverse=True)
+                    break
+        return chosen
+
+    if not query_is_math or question_intent not in {"exercise_sheet", "solution_sheet"}:
+        return chosen
+
+    chosen_ids = {row.get("id") for _, row in chosen}
+
+    def _doc_type(row: dict[str, Any]) -> str:
+        meta = doc_meta.get(row.get("document_id")) or {}
+        return str(meta.get("document_type") or row.get("source_type") or "")
+
+    def _file_name(row: dict[str, Any]) -> str:
+        meta = doc_meta.get(row.get("document_id")) or {}
+        return str(meta.get("file_name") or "")
+
+    def _has(predicate) -> bool:
+        return any(predicate(row) for _, row in chosen)
+
+    def _best_missing(predicate):
+        for score, row in ranked[top_k:]:
+            if row.get("id") in chosen_ids:
+                continue
+            if predicate(row):
+                return score, row
+        return None
+
+    is_lecture = lambda row: _doc_type(row) == "lecture" or row.get("source_type") == "lecture"
+    is_formula_sheet = lambda row: (
+        _doc_type(row) == "formula_sheet"
+        or bool(_FORMULA_SHEET_FILENAME_RE.search(_file_name(row)))
+    )
+
+    additions = []
+    if not _has(is_lecture):
+        additions.append(_best_missing(is_lecture))
+    if not _has(is_formula_sheet):
+        additions.append(_best_missing(is_formula_sheet))
+
+    additions = [c for c in additions if c and c[1].get("id") not in chosen_ids]
+    if additions:
+        keep = max(0, top_k - len(additions))
+        chosen = chosen[:keep] + additions
+
+    chosen.sort(key=lambda pair: pair[0], reverse=True)
+    return chosen
+
+
+def _load_page_qualities(sb, rows: list[dict[str, Any]]) -> dict[tuple[str, int], str]:
+    """For the (document_id, page_start) pairs in `rows`, fetch the matching
+    extraction_quality from document_pages. Returns {} on any query failure.
+    """
+    pairs: set[tuple[str, int]] = set()
+    for row in rows:
+        doc_id = row.get("document_id")
+        page = row.get("page_start")
+        if doc_id and isinstance(page, int):
+            pairs.add((doc_id, page))
+    if not pairs:
+        return {}
+    doc_ids = list({doc for doc, _ in pairs})
+    pages = list({page for _, page in pairs})
+    try:
+        resp = (
+            sb.table("document_pages")
+            .select("document_id, page_number, extraction_quality")
+            .in_("document_id", doc_ids)
+            .in_("page_number", pages)
+            .execute()
+        )
+    except Exception:
+        log.exception("document_pages extraction_quality lookup failed")
+        return {}
+    out: dict[tuple[str, int], str] = {}
+    for r in resp.data or []:
+        q = r.get("extraction_quality")
+        if q:
+            out[(r["document_id"], r["page_number"])] = q
+    return out
+
+
+# ── Exact-match exercise lookup (Phase 5/6) ─────────────────────────────────
+
+
+@dataclass
+class ExerciseHit:
+    """A direct hit on a document_exercises row — surfaces ahead of vector
+    retrieval when the user's query references an exercise by number.
+    """
+
+    document_id: str
+    exercise_number: str
+    subpart: str | None
+    page_start: int
+    page_end: int
+    statement_markdown: str
+    solution_markdown: str | None
+
+    def to_api(self) -> dict[str, Any]:
+        return {
+            "documentId": self.document_id,
+            "exerciseNumber": self.exercise_number,
+            "subpart": self.subpart,
+            "pageStart": self.page_start,
+            "pageEnd": self.page_end,
+            "statementMarkdown": self.statement_markdown,
+            "solutionMarkdown": self.solution_markdown,
+        }
+
+
+def find_exercise_reference(query: str) -> tuple[str, str | None] | None:
+    """If the user's query references an exercise by number, return
+    (exercise_number, subpart). Otherwise None.
+    """
+    if not query:
+        return None
+    m = _EXERCISE_QUERY_RE.search(query)
+    if not m:
+        return None
+    subpart = m.group(2) or m.group(3) or ""  # bracket form vs isolated letter
+    return (m.group(1), subpart.lower() or None)
+
+
+def retrieve_exercise_block(
+    *,
+    user_id: str,
+    course_id: str,
+    query: str,
+    document_ids: list[str] | None = None,
+    active_document_id: str | None = None,
+) -> ExerciseHit | None:
+    """Look up the exercise block referenced in the query, if any.
+
+    Search order (first hit wins):
+      1. active document (when set)
+      2. user-selected documents (when set)
+      3. anywhere in the course
+    """
+    ref = find_exercise_reference(query)
+    if not ref:
+        return None
+    exercise_number, subpart = ref
+    sb = get_supabase()
+
+    # Review fix #6: many courses repeat exercise numbers across documents
+    # (Blatt 1 Aufgabe 1, Blatt 2 Aufgabe 1, Klausur Aufgabe 1). The old
+    # ``.limit(1)`` returned whichever row Postgres happened to surface
+    # first — fine when the user has a doc open (active_document_id wins)
+    # but a coin flip otherwise. Now we fetch up to 5 candidates and pick
+    # the best by:
+    #   1. active_document_id   (highest signal)
+    #   2. preferred document_ids set
+    #   3. filename token overlap with the query
+    #   4. most recently uploaded
+    # When no signal disambiguates, the FIRST row is still returned but
+    # the caller is told there were multiple matches via the log.
+    def _select(doc_filter: list[str] | None) -> list[dict[str, Any]]:
+        try:
+            q = (
+                sb.table("document_exercises")
+                .select(
+                    "document_id, exercise_number, subpart, page_start, page_end, "
+                    "statement_markdown, solution_markdown, created_at"
+                )
+                .eq("user_id", user_id)
+                .eq("course_id", course_id)
+                .eq("exercise_number", exercise_number)
+            )
+            if doc_filter:
+                q = q.in_("document_id", doc_filter)
+            if subpart:
+                q = q.eq("subpart", subpart)
+            resp = q.limit(5).execute()
+        except Exception:
+            log.exception("document_exercises lookup failed")
+            return []
+        return resp.data or []
+
+    def _row_to_hit(r: dict[str, Any]) -> ExerciseHit:
+        return ExerciseHit(
+            document_id=r["document_id"],
+            exercise_number=r["exercise_number"],
+            subpart=r.get("subpart"),
+            page_start=r["page_start"],
+            page_end=r["page_end"],
+            statement_markdown=r.get("statement_markdown") or "",
+            solution_markdown=r.get("solution_markdown"),
+        )
+
+    # Tier 1 — active document. If the user has a PDF open and it
+    # contains the referenced exercise, we're done. No ambiguity possible.
+    if active_document_id:
+        rows = _select([active_document_id])
+        if rows:
+            return _row_to_hit(rows[0])
+
+    # Tier 2 — user-selected documents (when sent as a hint, not a
+    # hard filter — that's `document_ids` from the request).
+    if document_ids:
+        rows = _select(document_ids)
+        if rows:
+            if len(rows) > 1:
+                log.info(
+                    "exercise_lookup multiple_matches_in_selected document_ids=%s exercise=%s subpart=%s n=%d",
+                    document_ids, exercise_number, subpart, len(rows),
+                )
+            return _row_to_hit(rows[0])
+
+    # Tier 3 — anywhere in the course. Multiple matches are most likely
+    # here — disambiguate by filename-token overlap with the query, then
+    # by recency. Log loudly so we can see the pattern in real traffic.
+    rows = _select(None)
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return _row_to_hit(rows[0])
+
+    # Rank candidates. Fetch filenames once so we can score by token overlap.
+    doc_ids = list({r["document_id"] for r in rows})
+    file_names: dict[str, str] = {}
+    try:
+        meta = (
+            sb.table("documents")
+            .select("id, file_name")
+            .in_("id", doc_ids)
+            .execute()
+        )
+        for row in meta.data or []:
+            file_names[row["id"]] = (row.get("file_name") or "").lower()
+    except Exception:
+        log.exception("filename lookup for exercise disambiguation failed")
+
+    q_tokens = _meaningful_tokens(query)
+
+    def _candidate_score(r: dict[str, Any]) -> tuple[int, str]:
+        """Higher is better. Tuple = (filename-token-overlap, created_at)
+        so equal-overlap candidates fall back to newest-first."""
+        fn = file_names.get(r["document_id"], "")
+        overlap = sum(1 for t in q_tokens if t in fn)
+        return (overlap, r.get("created_at") or "")
+
+    rows.sort(key=_candidate_score, reverse=True)
+    log.info(
+        "exercise_lookup ambiguous_course_wide exercise=%s subpart=%s n=%d chosen=%s",
+        exercise_number, subpart, len(rows), rows[0]["document_id"],
+    )
+    return _row_to_hit(rows[0])
+
+
+# ── Exact-match formula lookup ──────────────────────────────────────────────
+
+
+@dataclass
+class FormulaHit:
+    """A direct hit on a document_formulas row. Surfaces ahead of vector
+    retrieval when the user's query references a named formula or symbol —
+    the analogue of ExerciseHit for formulas. Prepended to chunks so the
+    answerer sees the canonical formula before any similarity-based context.
+    """
+
+    document_id: str
+    formula_name: str | None
+    formula_markdown: str
+    symbols: list[str]
+    page_number: int
+
+    def to_api(self) -> dict[str, Any]:
+        return {
+            "documentId":       self.document_id,
+            "formulaName":      self.formula_name,
+            "formulaMarkdown":  self.formula_markdown,
+            "symbols":          self.symbols,
+            "pageNumber":       self.page_number,
+        }
+
+
+# Keywords that *imply* a formula question. Matching one is necessary
+# (otherwise every question fires a formula lookup) but not sufficient —
+# we still need a meaningful query token or symbol to match against.
+_FORMULA_INTENT_KEYWORDS = (
+    "formel", "formula", "gleichung", "equation", "satz", "theorem",
+    "moment", "spannung", "kraft", "energie", "leistung", "ableitung",
+    "integral", "taylor", "fourier", "matrix", "vektor", "betrag",
+    "nachgiebigkeit", "steifigkeit", "schraube", "schrauben", "flansch",
+    "vorspann", "vorspannkraft", "federkonstante",
+    "kinematik", "kinematics", "geschwindigkeit", "velocity",
+    "beschleunigung", "acceleration", "verzögerung", "verzoegerung",
+    "deceleration", "freier", "free", "fall", "fallzeit",
+)
+
+
+def find_formula_intent(query: str) -> set[str]:
+    """Return the meaningful tokens from the query when it looks like a
+    formula question. Empty set = don't bother hitting document_formulas.
+    """
+    if not query:
+        return set()
+    lower = query.lower()
+    if not any(kw in lower for kw in _FORMULA_INTENT_KEYWORDS):
+        return set()
+    return _meaningful_tokens(query)
+
+
+def retrieve_formula_block(
+    *,
+    user_id: str,
+    course_id: str,
+    query: str,
+    document_ids: list[str] | None = None,
+    active_document_id: str | None = None,
+    max_hits: int = 3,
+) -> list[FormulaHit]:
+    """Look up canonical formulas matching the query.
+
+    Match heuristic (cheap, no embeddings):
+      - formula_name ILIKE any meaningful query token, OR
+      - any element of symbols[] equals a query token (case-insensitive)
+
+    Search order: active document → selected documents → whole course.
+    Returns up to max_hits formulas, de-duplicated by (document_id, page).
+    Returns [] when the query has no formula intent or no rows match.
+    """
+    tokens = find_formula_intent(query)
+    if not tokens:
+        return []
+    sb = get_supabase()
+
+    # Two narrow queries (name-match + symbols-overlap), merged in Python.
+    # Avoids brittle PostgREST `or=` compound filters with commas inside
+    # ilike patterns and array literals — and keeps the SQL trivially safe.
+    select_cols = (
+        "document_id, formula_name, formula_markdown, symbols, page_number"
+    )
+    name_tokens = [t for t in tokens if len(t) >= 4]
+    symbol_tokens = list(tokens)
+
+    def _base(doc_filter: list[str] | None):
+        q = (
+            sb.table("document_formulas")
+            .select(select_cols)
+            .eq("user_id", user_id)
+            .eq("course_id", course_id)
+        )
+        if doc_filter:
+            q = q.in_("document_id", doc_filter)
+        return q
+
+    def _select(doc_filter: list[str] | None) -> list[FormulaHit]:
+        rows: list[dict] = []
+        # 1) formula_name ILIKE any meaningful token
+        for tok in name_tokens:
+            try:
+                resp = _base(doc_filter).ilike(
+                    "formula_name", f"%{tok}%",
+                ).limit(max_hits).execute()
+                rows.extend(resp.data or [])
+            except Exception:
+                log.exception("document_formulas name lookup failed")
+        # 2) symbols overlap with query tokens (text[] cs)
+        if symbol_tokens:
+            try:
+                resp = _base(doc_filter).overlaps(
+                    "symbols", symbol_tokens,
+                ).limit(max_hits).execute()
+                rows.extend(resp.data or [])
+            except Exception:
+                log.exception("document_formulas symbols lookup failed")
+
+        # De-duplicate by (document_id, page_number) preserving first occurrence.
+        seen_local: set[tuple[str, int]] = set()
+        out: list[FormulaHit] = []
+        for r in rows:
+            key = (r["document_id"], r["page_number"])
+            if key in seen_local:
+                continue
+            seen_local.add(key)
+            out.append(FormulaHit(
+                document_id=r["document_id"],
+                formula_name=r.get("formula_name"),
+                formula_markdown=r.get("formula_markdown") or "",
+                symbols=list(r.get("symbols") or []),
+                page_number=r["page_number"],
+            ))
+            if len(out) >= max_hits:
+                break
+        return out
+
+    seen: set[tuple[str, int]] = set()
+    hits: list[FormulaHit] = []
+
+    def _push(new_hits: list[FormulaHit]) -> None:
+        for h in new_hits:
+            key = (h.document_id, h.page_number)
+            if key in seen:
+                continue
+            seen.add(key)
+            hits.append(h)
+
+    if active_document_id:
+        _push(_select([active_document_id]))
+    if document_ids and len(hits) < max_hits:
+        _push(_select(document_ids))
+    if len(hits) < max_hits:
+        _push(_select(None))
+
+    return hits[:max_hits]

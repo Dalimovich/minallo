@@ -8,13 +8,11 @@ import { initStatePersistence } from './core/state-persistence.js';
 import { bindIf as _bindIf } from './core/portal-ui.js';
 import { initSettingsBridge, t as _t } from './features/settings/settings-bridge.js';
 import { initLandingAuthBridge } from './features/auth/landing-auth-bridge.js';
-import { initAiRenderBridge } from './features/ai-chat/ai-render-bridge.js';
-import { initAiExportBridge } from './features/ai-chat/ai-export-bridge.js';
-import { initAiAskBridge } from './features/ai-chat/ai-ask-bridge.js';
 import { initAiChipsBridge } from './features/ai-chat/ai-chips-bridge.js';
 import { initAiConfettiBridge, spawnConfetti } from './features/ai-chat/ai-confetti-bridge.js';
 import { initAiPanelEffects } from './features/ai-chat/ai-panel-effects.js';
 import { initAiPanelBridge } from './features/ai-chat/ai-panel-bridge.js';
+import { attachMessageNavigator } from './features/message-navigator/message-navigator.js';
 import {
   copyBubble as _copyBubble,
   fallbackCopy as _fallbackCopy,
@@ -43,6 +41,7 @@ import {
   renderCourses as _renderCourses,
   sdRenderCourses as _sdRenderCourses,
 } from './features/courses/courses-render.js';
+import { initCoursesLayout } from './features/courses/courses-layout.js';
 import { initCourseSearch } from './features/courses/course-search.js';
 import { initAuthBridge } from './features/auth/auth-bridge.js';
 import {
@@ -55,10 +54,15 @@ import {
   downloadFile as _downloadFile,
 } from './services/pdf-service.js';
 import { openFile as _openFile } from './features/pdf-viewer/pdf-viewer.js';
-import { runMultiSummary as _runMultiSummary } from './features/ai-chat/multi-summary.js';
+import { initPdfTabs } from './features/pdf-viewer/pdf-tabs.js';
 import {
   createCheckoutSession as _createCheckoutSession,
   createPortalSession as _createPortalSession,
+  pauseSubscription as _pauseSubscription,
+  resumeSubscription as _resumeSubscription,
+  cancelSubscription as _cancelSubscription,
+  reactivateSubscription as _reactivateSubscription,
+  applyRetentionDiscount as _applyRetentionDiscount,
   verifyPayment as _verifyPayment,
   activatePayPalSubscription as _activatePayPalSubscription,
   loadBillingConfig as _loadBillingConfig,
@@ -102,7 +106,18 @@ window.addUserMsg = (text: string) => _addUserMsg(text);
 window._setAiChipsVisible = _setAiChipsVisible;
 
 // ── GLOBAL STUBS (reassigned after init) ────────────────────────────────
-let askAI: (q: string, skipUserBubble?: boolean, opts?: { forceRefresh?: boolean }) => unknown =
+let askAI: (
+  q: string,
+  skipUserBubble?: boolean,
+  opts?: {
+    forceRefresh?: boolean;
+    problemSolver?: {
+      mode: string;
+      problem: string;
+      studentWork?: string;
+    };
+  }
+) => unknown =
   (_q): void => { console.warn('AI not ready yet'); };
 let openAI: () => void = (): void => {};
 let closeAI: () => void = (): void => {};
@@ -175,7 +190,31 @@ function _fetchPdfBytes(path: string, cb: (b: Uint8Array) => void, onError?: (e:
 }
 function openFile(f: unknown, course: LegacyCourse): void {
   _clearResumeFile();
+  _recordCourseFileOpen(course, f as { name?: string } | null | undefined);
   _openFile(f as Parameters<typeof _openFile>[0], course);
+}
+
+// Per-course set of file names the user has opened at least once. Stored in
+// localStorage as a JSON array (Set isn't JSON-serializable). Caller is the
+// only writer; readers (e.g. the courses grid) compute opened/total from this.
+const _OPENED_MAX = 500;
+function _recordCourseFileOpen(course: LegacyCourse | null | undefined, file: { name?: string } | null | undefined): void {
+  if (!course || !course.id || !file || !file.name) return;
+  try {
+    localStorage.setItem('ss_lastopen_' + course.id, String(Date.now()));
+  } catch { /* quota */ }
+  const key = 'ss_opened_' + course.id;
+  try {
+    const raw = localStorage.getItem(key);
+    const arr: string[] = raw ? JSON.parse(raw) : [];
+    if (arr.includes(file.name)) return;
+    arr.push(file.name);
+    if (arr.length > _OPENED_MAX) arr.splice(0, arr.length - _OPENED_MAX);
+    localStorage.setItem(key, JSON.stringify(arr));
+    const ts = Number(localStorage.getItem('ss_lastopen_' + course.id)) || Date.now();
+    const ps = (window as unknown as { _progressSync?: { syncCourseProgress?: (id: string, f: string[], ms: number) => void } })._progressSync;
+    ps?.syncCourseProgress?.(course.id, arr, ts);
+  } catch { /* corrupted entry or quota — skip silently */ }
 }
 function downloadFile(fname: string): unknown { return _downloadFile(fname); }
 window._fetchPdfBytes = _fetchPdfBytes;
@@ -183,7 +222,7 @@ window.openFile = openFile;
 window.downloadFile = downloadFile;
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let activeSemId = 'ws2526';
+let activeSemId = 'ss2526';
 let activeCourseId: string | null = null;
 let activeFileName: string | null = null;
 let currentCourseShort = '';
@@ -274,14 +313,29 @@ publishLegacyGlobals({
 });
 
 // ── COURSES DASHBOARD ─────────────────────────────────────────────────────
-let sdActiveSemId = 'ws2526';
+let sdActiveSemId = 'ss2526';
+try {
+  const saved = sessionStorage.getItem('ss_sd_sem');
+  if (saved && SEMS[saved]) sdActiveSemId = saved;
+} catch { /* storage unavailable */ }
 (window as unknown as { sdActiveSemId: string }).sdActiveSemId = sdActiveSemId;
 exposeLegacyVar('sdActiveSemId', () => sdActiveSemId, (v: string) => {
   sdActiveSemId = v;
   (window as unknown as { sdActiveSemId: string }).sdActiveSemId = v;
+  try { sessionStorage.setItem('ss_sd_sem', v); } catch { /* */ }
 });
 
 initCourseSearch({
+  getUserUniversity: () => window._userUniversity || localStorage.getItem('ss_university') || '',
+  getUserUniversityName: () => {
+    try {
+      const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
+      const cached = uid ? JSON.parse(localStorage.getItem('profile_cache_' + uid) || 'null') : null;
+      return String(cached?.university_name || cached?.university || window._userUniversity || '');
+    } catch {
+      return window._userUniversity || '';
+    }
+  },
   getUserMajor: () => _userMajor,
   getUserVertiefung: () => _userVertiefung,
   getSubjectList: () => SUBJECT_LIST,
@@ -290,6 +344,7 @@ initCourseSearch({
   saveUserCourses: () => { _saveUserCourses(); },
   renderCourses: () => { sdRenderCourses(); },
 });
+initCoursesLayout();
 
 // Studip semester dropdown
 const sdSemBtn = document.getElementById('sdSemBtn');
@@ -308,7 +363,10 @@ sdSemBtn?.addEventListener('click', (e: Event) => {
 sdSemDD?.querySelectorAll<HTMLElement>('.sem-opt').forEach((o) => {
   o.addEventListener('click', () => {
     const sid = o.getAttribute('data-sid');
-    if (sid) sdActiveSemId = sid;
+    if (sid) {
+      sdActiveSemId = sid;
+      try { sessionStorage.setItem('ss_sd_sem', sid); } catch { /* */ }
+    }
     if (sdSemLabel) sdSemLabel.textContent = (o.textContent || '').trim();
     const col = o.getAttribute('data-col');
     if (sdSemDot && col) sdSemDot.style.background = col;
@@ -368,7 +426,9 @@ document.getElementById('msmSaveBtn')?.addEventListener('click', async () => {
 });
 
 function runMultiSummary(fnames: string[], course: LegacyCourse): unknown {
-  return _runMultiSummary(fnames, course as unknown as Parameters<typeof _runMultiSummary>[1]);
+  return import(
+    /* @vite-ignore */ atob('Li9mZWF0dXJlcy9haS1jaGF0L211bHRpLXN1bW1hcnkuanM=')
+  ).then((mod) => mod.runMultiSummary(fnames, course));
 }
 (window as unknown as { runMultiSummary: typeof runMultiSummary }).runMultiSummary = runMultiSummary;
 
@@ -377,6 +437,8 @@ exposeLegacyVar('msmCurrentText', () => msmCurrentText, (v: string) => { msmCurr
 exposeLegacyVar('msmCurrentTitle', () => msmCurrentTitle, (v: string) => { msmCurrentTitle = v; });
 
 // ── PDF ───────────────────────────────────────────────────────────────────
+initPdfTabs();
+
 function updateZoomPct(): void {
   const el = document.getElementById('pdfZoomPct');
   if (el) el.textContent = Math.round(pdfScale * 100) + '%';
@@ -460,29 +522,122 @@ function _pdfScrollToPage(num: number): void {
   if (wrap) body.scrollTop = wrap.offsetTop;
 }
 
-document.getElementById('pdfZoomIn')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = Math.min(Math.round((pdfScale + 0.1) * 10) / 10, 3);
+// Zoom by scaling the already-rendered pages live via a CSS `zoom` multiplier
+// instead of re-rendering the canvases — so the document never reloads, blanks
+// or flashes; it just grows/shrinks smoothly. pdfScale stays the single source
+// of truth (the multiplier is pdfScale ÷ the scale we last rendered at), and
+// renderPages resets the multiplier so page-change/show-all re-renders stay
+// crisp. The viewport's top content is kept anchored as the page reflows.
+function _applyPdfZoom(targetScale: number): void {
+  const body = document.getElementById('pdfBody');
+  const rendered = window._pdfRenderedScale || 0.9;
+  const prevMul = pdfScale / rendered;
+  pdfScale = Math.min(4, Math.max(0.2, Math.round(targetScale * 100) / 100));
+  const newMul = pdfScale / rendered;
+  if (body) {
+    const prevTop = body.scrollTop;
+    body.style.setProperty('--pdf-wheel-zoom', String(newMul));
+    if (prevMul > 0) body.scrollTop = prevTop * (newMul / prevMul);
+  }
   updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+}
+
+document.getElementById('pdfZoomIn')?.addEventListener('click', () => {
+  _applyPdfZoom(Math.round((pdfScale + 0.1) * 10) / 10);
 });
 document.getElementById('pdfZoomOut')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = Math.max(Math.round((pdfScale - 0.1) * 10) / 10, 0.2);
-  updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+  _applyPdfZoom(Math.round((pdfScale - 0.1) * 10) / 10);
 });
 document.getElementById('pdfFit')?.addEventListener('click', () => {
+  _applyPdfZoom(0.9);
+});
+
+// Ctrl/Cmd + mouse wheel zoom, like a browser or native PDF reader.
+// preventDefault stops the browser's own page zoom.
+document.getElementById('pdfBody')?.addEventListener(
+  'wheel',
+  (e: WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    _applyPdfZoom(pdfScale * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+  },
+  { passive: false }
+);
+// Fullscreen reading mode. We request native fullscreen on <html> (so the
+// browser tabs + address bar disappear), and apply layout classes so that
+// INSIDE the fullscreen the sidebar + header are covered while the document
+// rail (#drRoot, a separate fixed element) stays visible and usable. Driving
+// the classes off `fullscreenchange` keeps them in sync no matter how the user
+// enters/exits (button, Esc, F11). If the browser blocks fullscreen we fall
+// back to the in-app maximize (classes only).
+function _applyPdfMax(on: boolean): void {
+  const wrap = document.getElementById('pdfViewerWrap');
+  if (!wrap) return;
   const pg = _pdfVisiblePage();
-  pdfScale = 0.9;
-  updateZoomPct();
+  wrap.classList.toggle('is-maximized', on);
+  document.body.classList.toggle('pdf-maximized', on);
+  const mbtn = document.getElementById('pdfMaximize');
+  if (mbtn) {
+    mbtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    mbtn.setAttribute('title', on ? 'Exit fullscreen (Esc)' : 'Fullscreen');
+    mbtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
+  }
   renderPages();
   setTimeout(() => _pdfScrollToPage(pg), 120);
+}
+function _pdfIsMax(): boolean {
+  return (
+    !!document.fullscreenElement ||
+    !!document.getElementById('pdfViewerWrap')?.classList.contains('is-maximized')
+  );
+}
+document.getElementById('pdfMaximize')?.addEventListener('click', () => {
+  if (_pdfIsMax()) {
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else _applyPdfMax(false);
+    return;
+  }
+  // Fullscreen <html> so the rail (a sibling of the PDF) stays on screen too.
+  const req = document.documentElement.requestFullscreen?.();
+  if (req && typeof req.then === 'function') {
+    req.catch(() => _applyPdfMax(true)); // success → fullscreenchange handles it
+  } else {
+    _applyPdfMax(true);
+  }
+});
+// Native enter/exit (button, Esc, F11) all route through here.
+document.addEventListener('fullscreenchange', () => {
+  _applyPdfMax(!!document.fullscreenElement);
+});
+// Esc also exits the in-app fallback when no native fullscreen is active.
+document.addEventListener('keydown', (e) => {
+  if (
+    e.key === 'Escape' &&
+    !document.fullscreenElement &&
+    document.getElementById('pdfViewerWrap')?.classList.contains('is-maximized')
+  ) {
+    _applyPdfMax(false);
+  }
 });
 document.getElementById('pdfDownload')?.addEventListener('click', () => {
   if (activeFileName) downloadFile(activeFileName);
+});
+document.getElementById('pdfBack')?.addEventListener('click', () => {
+  // Leaving the reader: exit fullscreen + drop maximize so the next view isn't
+  // stuck fixed.
+  if (document.fullscreenElement) void document.exitFullscreen?.();
+  document.body.classList.remove('pdf-maximized');
+  document.getElementById('pdfViewerWrap')?.classList.remove('is-maximized');
+  const w = window as unknown as {
+    activeCourseRef?: { id?: string } & Record<string, unknown>;
+    showCourseSection?: (course: unknown, section: string) => void;
+    showPortalSection?: (section: string) => void;
+  };
+  if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+    w.showCourseSection(w.activeCourseRef, 'files');
+    return;
+  }
+  if (typeof w.showPortalSection === 'function') w.showPortalSection('courses');
 });
 document.getElementById('pdfAll')?.addEventListener('click', () => {
   pdfShowAll = !pdfShowAll;
@@ -490,13 +645,99 @@ document.getElementById('pdfAll')?.addEventListener('click', () => {
   if (btn) btn.textContent = pdfShowAll ? 'Single page' : 'All pages';
   renderPages();
 });
+// In-toolbar Study button — delegates to the existing topbar trigger so the
+// Focus Session popup, click-outside guard, and timer state all stay in sync.
+document.getElementById('pdfStudyBtn')?.addEventListener('click', () => {
+  const stBtn = document.getElementById('studyTechBtn') as HTMLButtonElement | null;
+  if (stBtn) stBtn.click();
+});
 
 // ── AI PANEL ──────────────────────────────────────────────────────────────
 const aiPanel = document.getElementById('aiPanel');
 const aiMsgs = document.getElementById('aiMsgs');
 
-initAiRenderBridge();
+if (typeof window.renderMarkdown !== 'function') {
+  window.renderMarkdown = (text: string): string => escapeHtml(text);
+}
+
+// Cache-bust with ?v=<assetVersion> exactly like main.ts's lazyImportEncoded:
+// these feature chunks (and their nested static imports, e.g. ai-markdown.js) are
+// served immutable for a year, so without the version a returning browser keeps
+// the OLD renderer forever and never sees fixes (tables, KaTeX, etc).
+function _versionedImport(encodedPath: string): Promise<Record<string, unknown>> {
+  const path = atob(encodedPath);
+  const v = window.MinalloConfig?.assetVersion;
+  const url = v ? path + (path.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(String(v)) : path;
+  return import(/* @vite-ignore */ url);
+}
+
+let _aiRenderBridgePromise: Promise<unknown> | null = null;
+function _ensureAiRenderBridge(): Promise<unknown> {
+  if (_aiRenderBridgePromise) return _aiRenderBridgePromise;
+  _aiRenderBridgePromise = _versionedImport('Li9mZWF0dXJlcy9haS1jaGF0L2FpLXJlbmRlci1icmlkZ2UuanM=')
+    .then((mod) => (mod.initAiRenderBridge as () => unknown)())
+    .catch((err: unknown) => {
+      // Never cache the failed import — markdown/KaTeX rendering would stay
+      // broken for the whole session after one network blip.
+      _aiRenderBridgePromise = null;
+      throw err;
+    });
+  return _aiRenderBridgePromise;
+}
+(window as unknown as { _ensureAiRenderBridge?: () => Promise<unknown> })._ensureAiRenderBridge =
+  _ensureAiRenderBridge;
+
+let _aiExportBridgePromise: Promise<unknown> | null = null;
+function _ensureAiExportBridge(): Promise<unknown> {
+  if (_aiExportBridgePromise) return _aiExportBridgePromise;
+  _aiExportBridgePromise = _versionedImport('Li9mZWF0dXJlcy9haS1jaGF0L2FpLWV4cG9ydC1icmlkZ2UuanM=')
+    .then((mod) => (mod.initAiExportBridge as () => unknown)());
+  return _aiExportBridgePromise;
+}
+
 initAiPanelEffects({ aiMsgs, aiPanel });
+// Compact message minimap on the right edge of the side-panel chat. The
+// component is DOM-driven (MutationObserver on #aiMsgs), so it tracks both
+// the floating panel and its document-rail-hosted (.dr-host-ai) incarnation.
+if (aiPanel && aiMsgs) {
+  attachMessageNavigator({
+    host: aiPanel,
+    scroller: aiMsgs,
+    container: aiMsgs,
+    // User turns only (ChatGPT-style) — AI replies would double the list.
+    messageSelector: '.ai-msg-wrap.user',
+    isUser: () => true,
+    snippetSource: (row) => row.querySelector<HTMLElement>('.ai-bubble') || row,
+    // The document-rail's fixed button rail (z-index 9500) covers the
+    // drawer's right edge, so an edge overlay would hide behind it. When a
+    // vertical rail is on screen, mount the track INSIDE it (below the
+    // buttons) instead; it grows taller than the button stack and scrolls
+    // internally past the height cap. No rail → normal edge overlay.
+    inlineMount: () => {
+      const rail = document.querySelector<HTMLElement>('.dr-rail');
+      if (!rail) return null;
+      const r = rail.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return null;
+      // Mobile flips the rail horizontal at the bottom — no room for a
+      // vertical track there (the navigator is display:none <720px anyway).
+      if (r.width > r.height) return null;
+      return rail;
+    },
+    // Overlay-mode fallback: if the rail exists but inlineMount declined it,
+    // still keep the track clear of any horizontal overlap.
+    rightInset: () => {
+      const rail = document.querySelector<HTMLElement>('.dr-rail');
+      if (!rail) return 0;
+      const r = rail.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return 0;
+      const s = aiMsgs.getBoundingClientRect();
+      if (r.bottom < s.top || r.top > s.bottom) return 0;
+      return Math.max(0, s.right - r.left);
+    },
+    compact: true,
+    minMessages: 3,
+  });
+}
 const _aiPanelBridge = initAiPanelBridge({
   aiPanel, aiClose: document.getElementById('aiClose'), aiMsgs,
   t: _t, escapeHtml,
@@ -506,11 +747,19 @@ const _aiPanelBridge = initAiPanelBridge({
   getAiOpen: () => aiOpen,
   setAiOpen: (v: boolean) => { aiOpen = v; },
 });
-openAI = _aiPanelBridge.openAI;
+openAI = (): void => {
+  void _ensureAiRenderBridge();
+  void _ensureAiExportBridge();
+  _aiPanelBridge.openAI();
+};
 closeAI = _aiPanelBridge.closeAI;
 forceCloseAI = _aiPanelBridge.forceCloseAI;
 pinAI = _aiPanelBridge.pinAI;
-showSelectionBanner = _aiPanelBridge.showSelectionBanner;
+showSelectionBanner = (txt: string): void => {
+  void _ensureAiRenderBridge();
+  void _ensureAiExportBridge();
+  _aiPanelBridge.showSelectionBanner(txt);
+};
 
 (window as unknown as { _aiPanelBridge: typeof _aiPanelBridge })._aiPanelBridge = _aiPanelBridge;
 (window as unknown as { _aiMsgs: HTMLElement | null })._aiMsgs = aiMsgs;
@@ -519,8 +768,6 @@ window.openAI = openAI;
 window.forceCloseAI = forceCloseAI;
 window.pinAI = pinAI;
 window.showSelectionBanner = showSelectionBanner;
-
-initAiExportBridge();
 
 // Welcome message
 setTimeout(() => {
@@ -542,24 +789,156 @@ const _aiState = {
   set activeThinkTimer(v: ReturnType<typeof setInterval> | null) { activeThinkTimer = v; },
 };
 
-const _aiAskBridge = initAiAskBridge(_aiState as unknown as Parameters<typeof initAiAskBridge>[0]);
-askAI = _aiAskBridge.askAI as typeof askAI;
+let _aiAskBridgeReady = false;
+let _aiAskBridgePromise: Promise<{ askAI: typeof askAI; stopGeneration: () => void }> | null = null;
+function _ensureAiAskBridge(): Promise<{ askAI: typeof askAI; stopGeneration: () => void }> {
+  if (_aiAskBridgePromise) return _aiAskBridgePromise;
+  _aiAskBridgePromise = import(
+    /* @vite-ignore */ atob('Li9mZWF0dXJlcy9haS1jaGF0L2FpLWFzay1icmlkZ2UuanM=')
+  ).then((mod) => {
+    const bridge = mod.initAiAskBridge(_aiState);
+    askAI = bridge.askAI as typeof askAI;
+    _aiAskBridgeReady = true;
+    return bridge as { askAI: typeof askAI; stopGeneration: () => void };
+  });
+  return _aiAskBridgePromise;
+}
+
+askAI = ((q: string, skipUserBubble?: boolean, opts?: Parameters<typeof askAI>[2]) => {
+  return Promise.all([_ensureAiRenderBridge(), _ensureAiExportBridge()])
+    .then(() => _ensureAiAskBridge())
+    .then((bridge) => bridge.askAI(q, skipUserBubble, opts));
+}) as typeof askAI;
+window.askAI = askAI;
+window.stopGeneration = (): void => {
+  void _ensureAiAskBridge().then((bridge) => bridge.stopGeneration());
+};
+window.restoreCourseHistory = (courseId?: string | null, fileId?: string | null): void => {
+  // Ensure the render + export bridges too (not just ask) — otherwise restored
+  // history renders with renderMarkdown/_renderMath/_aiResponseActions missing,
+  // so answers come back as raw markdown/LaTeX with no export buttons.
+  void Promise.all([_ensureAiRenderBridge(), _ensureAiExportBridge()])
+    .then(() => _ensureAiAskBridge())
+    .then(() => {
+      if (typeof window.restoreCourseHistory === 'function') window.restoreCourseHistory(courseId, fileId);
+    });
+};
+window.clearCourseHistory = (courseId: string, fileId?: string | null): void => {
+  void _ensureAiAskBridge().then(() => {
+    if (typeof window.clearCourseHistory === 'function') window.clearCourseHistory(courseId, fileId);
+  });
+};
+window.resetAiPanelChat = (): void => {
+  void _ensureAiAskBridge().then(() => {
+    if (typeof window.resetAiPanelChat === 'function') window.resetAiPanelChat();
+  });
+};
+
+function _sendAiFromDomAfterBridge(): void {
+  const input = document.getElementById('aiInput') as HTMLTextAreaElement | null;
+  const q = (input?.value || '').trim();
+  const hasImages = !!(window._attachedImages && window._attachedImages.length > 0);
+  if (!q && !hasImages) return;
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
+  }
+  const count = document.getElementById('aiCharCount');
+  if (count) count.textContent = '0 / 2000';
+  void _ensureAiAskBridge().then((bridge) => {
+    if (hasImages && typeof window._legacyAskAI === 'function') {
+      window._legacyAskAI(q || 'What do you see in this image?');
+      return;
+    }
+    bridge.askAI(q || 'What do you see in this image?');
+  });
+}
+
+function _primeAiAskBridge(): void {
+  void _ensureAiAskBridge().catch((err) => {
+    console.error('[ai] failed to load ask bridge:', err);
+  });
+}
+
+const _aiSendBtn = document.getElementById('aiSend') as HTMLButtonElement | null;
+const _aiInput = document.getElementById('aiInput') as HTMLTextAreaElement | null;
+_aiSendBtn?.addEventListener('click', (e) => {
+  if (_aiAskBridgeReady) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (_aiSendBtn.classList.contains('is-stop')) {
+    window.stopGeneration?.();
+    return;
+  }
+  if (_aiSendBtn.disabled) return;
+  _sendAiFromDomAfterBridge();
+}, true);
+_aiInput?.addEventListener('focus', _primeAiAskBridge, { once: true });
+_aiInput?.addEventListener('keydown', (e) => {
+  if (_aiAskBridgeReady || e.key !== 'Enter' || e.shiftKey) return;
+  e.preventDefault();
+  _sendAiFromDomAfterBridge();
+}, true);
 
 initAiChipsBridge();
 initAiConfettiBridge();
 
-// Apply cached profile & courses instantly before auth completes
-(function (): void {
-  try {
-    const lastUid = localStorage.getItem('ss_last_uid');
-    if (!lastUid) return;
-    const cp = JSON.parse(localStorage.getItem('profile_cache_' + lastUid) || 'null');
-    if (cp) {
-      if (cp.full_name && typeof applyProfile === 'function') applyProfile(cp);
-      if (cp.courses && typeof _loadUserCourses === 'function') _loadUserCourses(cp.courses);
+// Two-phase cache application for instant perceived speed:
+//
+// Phase 1 (SYNC, now): apply cached PROFILE only — just DOM updates
+// (name, avatar, university). Pure local work, no network. Gives the
+// user a fully-styled shell on first paint instead of an empty header.
+//
+// Phase 2 (DEFERRED until ss-ready): apply cached COURSES via
+// _loadUserCourses. That call triggers restoreState → _ufMerge → storage
+// list, which can saturate the connection pool before ai.js loads. Keep
+// it after ss-ready so the boot chain isn't blocked by a storage fetch.
+let _cpCached: Record<string, unknown> | null = null;
+try {
+  const lastUid = localStorage.getItem('ss_last_uid');
+  if (lastUid) {
+    _cpCached = JSON.parse(localStorage.getItem('profile_cache_' + lastUid) || 'null');
+    if (_cpCached && _cpCached.full_name && typeof applyProfile === 'function') {
+      applyProfile(_cpCached);
     }
-  } catch { /* corrupted cache */ }
-})();
+  }
+} catch { /* corrupted cache — ignore */ }
+
+// The Profile form is lazy-loaded (views/profile/profile.html). The applyProfile
+// above runs at boot — before that HTML exists — so the fields stay empty until a
+// network refresh, which is why Profile appears to "load late". Re-apply the
+// cached profile the instant the section HTML is injected so fields fill
+// immediately. (loadUserData keeps profile_cache_<uid> fresh after its fetch, and
+// still re-applies on the network response if the user is already on the page.)
+try {
+  const _bus = (window as unknown as {
+    Minallo?: { on?: (name: string, handler: (p: { id?: string }) => void) => void };
+  }).Minallo;
+  _bus?.on?.('feature:html-loaded', (p) => {
+    if (!p || p.id !== 'psec-profile') return;
+    try {
+      const u = localStorage.getItem('ss_last_uid');
+      const cp = u
+        ? (JSON.parse(localStorage.getItem('profile_cache_' + u) || 'null') as Record<
+            string,
+            unknown
+          > | null)
+        : null;
+      if (cp && cp.full_name && typeof applyProfile === 'function') applyProfile(cp);
+    } catch {
+      /* corrupted cache — ignore */
+    }
+  });
+} catch {
+  /* bus not ready — ignore */
+}
+
+function _applyCachedCoursesNow(): void {
+  if (_cpCached && _cpCached.courses && typeof _loadUserCourses === 'function') {
+    _loadUserCourses(_cpCached.courses);
+  }
+}
+_applyCachedCoursesNow();
 renderCourses();
 renderTT();
 renderMails();
@@ -636,6 +1015,46 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   });
 })();
 
+// ── Sidebar expand / collapse toggle ──────────────────────────────────────
+// Click-to-expand (hover-expand was removed). State is sticky across reloads
+// and restored without animating so the rail never grows on its own.
+(function (): void {
+  const sb = document.querySelector<HTMLElement>('#portal .sidebar');
+  const btn = document.getElementById('sbToggle');
+  if (!sb || !btn) return;
+  const KEY = 'ss_sb_expanded';
+
+  // Collapsed rail shows icons only, so give each nav item a native tooltip
+  // (hover-to-expand is gone — this keeps the icons discoverable).
+  sb.querySelectorAll<HTMLElement>('.sb-item').forEach((item) => {
+    if (item.title) return;
+    const label = item.querySelector('span:not(.sb-item-badge)')?.textContent?.trim();
+    if (label) item.title = label;
+  });
+
+  function setExpanded(on: boolean, animate = true): void {
+    // Skip transitions when restoring saved state on load, so the rail never
+    // auto-grows on its own — only a deliberate click animates.
+    if (!animate) sb!.classList.add('sb-no-anim');
+    sb!.classList.toggle('expanded', on);
+    btn!.setAttribute('aria-expanded', on ? 'true' : 'false');
+    btn!.setAttribute('aria-label', on ? 'Collapse sidebar' : 'Expand sidebar');
+    btn!.setAttribute('title', on ? 'Collapse menu' : 'Expand menu');
+    if (!animate) {
+      void sb!.offsetWidth; // force reflow so the class change applies instantly
+      sb!.classList.remove('sb-no-anim');
+    }
+    try {
+      localStorage.setItem(KEY, on ? '1' : '0');
+    } catch {
+      /* storage may be blocked — toggle still works for the session */
+    }
+  }
+
+  setExpanded(localStorage.getItem(KEY) === '1', false);
+  btn.addEventListener('click', () => setExpanded(!sb!.classList.contains('expanded')));
+})();
+
 // Dashboard cards
 _bindIf('pcStudip', 'click', () => {
   const resumed = _showStudipResume();
@@ -648,7 +1067,11 @@ _bindIf('pcStudip', 'click', () => {
       localStorage.setItem('ss_last_section', 'studip');
     } catch { /* ignore */ }
     try {
-      history.pushState({ view: 'portal', section: 'studip' }, '', '#portal=courses');
+      // Bug 3 fix: guard against duplicate history entries when the hash is
+      // already #portal=courses (e.g. clicking the sidebar item twice).
+      if (location.hash !== '#portal=courses') {
+        history.pushState({ view: 'portal', section: 'studip' }, '', '#portal=courses');
+      }
     } catch { /* ignore */ }
   }
 });
@@ -679,6 +1102,11 @@ initLandingAuthBridge({ authBridge: _authBridge });
 (window as unknown as { _subService: Record<string, unknown> })._subService = {
   createCheckoutSession: _createCheckoutSession,
   createPortalSession: _createPortalSession,
+  pauseSubscription: _pauseSubscription,
+  resumeSubscription: _resumeSubscription,
+  cancelSubscription: _cancelSubscription,
+  reactivateSubscription: _reactivateSubscription,
+  applyRetentionDiscount: _applyRetentionDiscount,
   verifyPayment: _verifyPayment,
   activatePayPalSubscription: _activatePayPalSubscription,
   loadBillingConfig: _loadBillingConfig,

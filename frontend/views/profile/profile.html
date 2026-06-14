@@ -1,39 +1,40 @@
 <div class="dash-greeting">
-  <h1>&#x1F464; Profile</h1>
-  <p>Manage your account information</p>
+  <h1 data-i18n="profile_title">&#x1F464; Profile</h1>
+  <p data-i18n="profile_subtitle">Manage your account information</p>
 </div>
 <div class="profile-hero">
   <div class="ph-avatar" id="profileInitial">?</div>
   <div class="ph-info">
-    <h2>Profile</h2>
+    <h2 data-i18n="profile_hero_title">Profile</h2>
     <p>TU Braunschweig</p>
   </div>
 </div>
 <div class="widget-card">
-  <div class="widget-title">Personal details</div>
+  <div class="widget-title" data-i18n="profile_personal_details">Personal details</div>
   <div class="profile-fields">
     <div class="pf-group">
-      <label class="pf-label">Full name</label>
-      <input class="pf-input" id="profileName" type="text" placeholder="Your name" />
+      <label class="pf-label" data-i18n="profile_label_name">Full name</label>
+      <input class="pf-input" id="profileName" type="text" data-i18n-ph="profile_ph_name" placeholder="Your name" />
     </div>
     <div class="pf-group">
-      <label class="pf-label">Email</label>
-      <input class="pf-input" id="profileEmail" type="text" placeholder="Email" />
+      <label class="pf-label" data-i18n="profile_label_email">Email</label>
+      <input class="pf-input" id="profileEmail" type="text" data-i18n-ph="profile_ph_email" placeholder="Email" />
     </div>
     <div class="pf-group pf-enrolled-field">
-      <label class="pf-label">University</label>
-      <input class="pf-input" id="profileUniversity" type="text" placeholder="University" />
+      <label class="pf-label" data-i18n="profile_label_university">University</label>
+      <input class="pf-input" id="profileUniversity" type="text" data-i18n-ph="profile_ph_university" placeholder="University" />
     </div>
     <div class="pf-group pf-enrolled-field">
-      <label class="pf-label">Programme</label>
-      <input class="pf-input" id="profileProgramme" type="text" placeholder="Programme" />
+      <label class="pf-label" data-i18n="profile_label_programme">Programme</label>
+      <input class="pf-input" id="profileProgramme" type="text" data-i18n-ph="profile_ph_programme" placeholder="Programme" />
     </div>
     <div class="pf-group pf-enrolled-field" style="position: relative">
-      <label class="pf-label">Vertiefung (Fachprofil)</label>
+      <label class="pf-label" data-i18n="profile_label_vert">Vertiefung (Fachprofil)</label>
       <input
         class="pf-input"
         id="profileVertiefung"
         type="text"
+        data-i18n-ph="profile_ph_vert"
         placeholder="e.g. Mechatronik"
         autocomplete="off"
       />
@@ -56,30 +57,55 @@
       ></div>
     </div>
     <div class="pf-group pf-enrolled-field">
-      <label class="pf-label">Matrikel No.</label>
-      <input class="pf-input" id="profileMatrikel" type="text" placeholder="Matrikel no." />
+      <label class="pf-label" data-i18n="profile_label_matrikel_no">Matrikel No.</label>
+      <input class="pf-input" id="profileMatrikel" type="text" data-i18n-ph="profile_ph_matrikel" placeholder="Matrikel no." />
     </div>
     <div class="pf-group pf-learner-field" style="display: none">
-      <label class="pf-label">German Test</label>
+      <label class="pf-label" data-i18n="profile_german_test">German Test</label>
       <input
         class="pf-input"
         id="profileGermanTest"
         type="text"
+        data-i18n-ph="profile_ph_german_test"
         placeholder="e.g. TestDaF"
         readonly
       />
     </div>
     <div class="pf-group pf-learner-field" style="display: none">
-      <label class="pf-label">Target Level</label>
-      <input
-        class="pf-input"
-        id="profileGermanLevel"
-        type="text"
-        placeholder="e.g. TDN 4"
-        readonly
-      />
+      <label class="pf-label" data-i18n="profile_target_level">Target Level</label>
+      <!-- Editable: students advance (B1 → B2 → C1 …) and need to update
+           their level. This is the single source of truth read by the
+           Schreibtrainer (window._germanLevel). Onboarding seeds it; this
+           field updates it after. Common values across telc / Goethe /
+           TestDaF / DSH / DSD / OESD listed together. -->
+      <select class="pf-input" id="profileGermanLevel">
+        <option value="" data-i18n="profile_select_level">Select your level…</option>
+        <optgroup label="CEFR">
+          <option value="A1">A1</option>
+          <option value="A2">A2</option>
+          <option value="B1">B1</option>
+          <option value="B2">B2</option>
+          <option value="C1">C1</option>
+          <option value="C1 Hochschule">C1 Hochschule</option>
+          <option value="C2">C2</option>
+        </optgroup>
+        <optgroup label="TestDaF">
+          <option value="TDN 3">TDN 3</option>
+          <option value="TDN 4">TDN 4</option>
+          <option value="TDN 5">TDN 5</option>
+        </optgroup>
+        <optgroup label="DSH">
+          <option value="DSH-1">DSH-1</option>
+          <option value="DSH-2">DSH-2</option>
+          <option value="DSH-3">DSH-3</option>
+        </optgroup>
+        <optgroup label="DSD">
+          <option value="DSD I (B1/B2)">DSD I (B1/B2)</option>
+          <option value="DSD II (C1)">DSD II (C1)</option>
+        </optgroup>
+      </select>
     </div>
     <div></div>
-    <button class="pf-save profile-save-btn">&#x1F4BE; Save changes</button>
+    <button class="pf-save profile-save-btn" data-i18n="profile_save_btn">&#x1F4BE; Save changes</button>
   </div>
 </div>

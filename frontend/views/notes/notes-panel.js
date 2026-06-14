@@ -13,7 +13,7 @@
   var _saveTimer   = null;
   var _scope       = 'section';         // page | section | range | document
   var _language    = 'same_as_source';
-  var _detailLevel = 'balanced';        // brief | balanced | detailed | exam
+  var _detailLevel = 'detailed';         // quick | detailed | exam | beginner | flashcard
   var _rangeFrom   = 1;
   var _rangeTo     = 1;
 
@@ -27,6 +27,11 @@
   // ── Markdown + KaTeX renderer ─────────────────────────────────────────────
   function _renderMath(text) {
     if (!text || !window.katex) return text;
+    // Normalize \[…\]/\(…\) delimiters and bare formula-line LaTeX into $…$/$$…$$
+    // so the KaTeX passes below actually catch them (NotesMath loads first).
+    if (window.NotesMath && window.NotesMath.normalize) {
+      text = window.NotesMath.normalize(text);
+    }
     text = text.replace(/\$\$([^$]+?)\$\$/g, function (_, m) {
       try { return window.katex.renderToString(m, { displayMode: true,  throwOnError: false }); }
       catch (e) { return '$$' + m + '$$'; }
@@ -116,9 +121,9 @@
     return [
       '<div class="np-header">',
         '<div class="np-tabs">',
-          '<button class="np-tab active" data-tab="notes">Notes</button>',
-          '<button class="np-tab" data-tab="summary">Summary</button>',
-          '<button class="np-tab" data-tab="saved">Saved</button>',
+          '<button class="np-tab active" data-tab="notes" data-testid="notes-panel-tab">Notes</button>',
+          '<button class="np-tab" data-tab="summary" data-testid="summary-panel">Summary</button>',
+          '<button class="np-tab" data-tab="saved" data-testid="notes-saved-tab">Saved</button>',
         '</div>',
         '<div class="np-header-actions">',
           '<button class="np-icon-btn" id="npExport" title="Export as PDF">&#x1F4E4;</button>',
@@ -145,10 +150,11 @@
       '<div class="np-options-row" id="npDetailRow" style="display:none">',
         '<div class="np-option-group">',
           '<span class="np-option-label">Detail:</span>',
-          '<button class="np-opt" data-detail="brief">Brief</button>',
-          '<button class="np-opt active" data-detail="balanced">Balanced</button>',
-          '<button class="np-opt" data-detail="detailed">Detailed</button>',
+          '<button class="np-opt" data-detail="quick">Quick</button>',
+          '<button class="np-opt active" data-detail="detailed">Detailed</button>',
           '<button class="np-opt" data-detail="exam">Exam</button>',
+          '<button class="np-opt" data-detail="beginner">Beginner</button>',
+          '<button class="np-opt" data-detail="flashcard">Flashcard</button>',
         '</div>',
       '</div>',
 
@@ -204,6 +210,7 @@
     var panel = document.createElement('div');
     panel.id = 'pdfNotesPanel';
     panel.className = 'pdf-notes-panel';
+    panel.setAttribute('data-testid', 'notes-panel');
     panel.style.display = 'none';
     panel.innerHTML = _panelHTML();
     var wrap = $id('pdfViewerWrap');
@@ -214,22 +221,22 @@
   // ── Open / Close ──────────────────────────────────────────────────────────
   function _openPanel() {
     var panel = $id('pdfNotesPanel');
-    var pdfView = $id('pdfView');
-    if (!panel || !pdfView) return;
+    var centre = $id('centreContent');
+    if (!panel || !centre) return;
     _panelOpen = true;
     panel.style.display = 'flex';
-    pdfView.classList.add('pdf-split');
+    centre.classList.add('pdf-split');
     _renderCurrentTab();
     _loadNotes();
   }
 
   function _closePanel() {
     var panel = $id('pdfNotesPanel');
-    var pdfView = $id('pdfView');
-    if (!panel || !pdfView) return;
+    var centre = $id('centreContent');
+    if (!panel || !centre) return;
     _panelOpen = false;
     panel.style.display = 'none';
-    pdfView.classList.remove('pdf-split');
+    centre.classList.remove('pdf-split');
     var toggleBtn = $id('pdfNotesToggle');
     if (toggleBtn) toggleBtn.classList.remove('active');
   }
@@ -252,6 +259,18 @@
       _currentNote = _notesByType[tab] || null;
       _renderCurrentTab();
     }
+  }
+
+  // ── Summary type marker detection ─────────────────────────────────────────
+  var _MARKER_RE = /^<!--\s*minallo-summary-type:\s*([\w-]+)\s*-->\s*/;
+
+  function _stripMarker(md) {
+    return (md || '').replace(_MARKER_RE, '');
+  }
+
+  function _detectSummaryType(md) {
+    var m = (md || '').match(_MARKER_RE);
+    return m ? m[1] : 'study-content';
   }
 
   // ── Render editor state ───────────────────────────────────────────────────
@@ -281,8 +300,22 @@
     if (regen) regen.style.display = '';
     if (save)  save.style.display = '';
     if (title)   title.value = _currentNote.title || '';
-    if (editor)  editor.value = _currentNote.content_markdown || '';
-    if (preview) preview.innerHTML = _md2html(_currentNote.content_markdown || '');
+
+    var rawMd = _currentNote.content_markdown || '';
+    var summaryType = _currentNote._summaryType || _detectSummaryType(rawMd);
+    var cleanMd = _stripMarker(rawMd);
+
+    if (editor)  editor.value = cleanMd;
+    if (preview) {
+      var bannerHtml = '';
+      if (summaryType === 'content-light') {
+        bannerHtml = '<div class="np-content-light-banner">' +
+          '<strong>ℹ️</strong> These pages are mostly organizational. ' +
+          'For a useful study summary, select the next pages where the technical content begins.' +
+          '</div>';
+      }
+      preview.innerHTML = bannerHtml + _md2html(cleanMd);
+    }
     _setStatus('');
   }
 
@@ -294,9 +327,20 @@
     if (!list) return;
     if (empty) empty.style.display = 'none';
     if (wrap)  wrap.style.display = 'none';
+    list.style.display = 'flex';
 
-    if (!_savedNotes.length) {
-      list.style.display = 'flex';
+    // Show only the notes for the file currently open, so each file's saved
+    // notes stay separate instead of every file's notes piling up together.
+    // Fall back to showing all when the document id hasn't resolved yet (older
+    // notes can also lack a document_id), so nothing silently disappears.
+    var scoped = _savedNotes;
+    if (_ctx.documentId) {
+      scoped = _savedNotes.filter(function (n) {
+        return !n.document_id || n.document_id === _ctx.documentId;
+      });
+    }
+
+    if (!scoped.length) {
       list.innerHTML = '<div class="np-empty" style="height:100%">' +
         '<div class="np-empty-icon">&#x1F4DA;</div>' +
         '<div class="np-empty-title">No saved notes</div>' +
@@ -305,22 +349,33 @@
       return;
     }
 
-    list.style.display = 'flex';
-    list.innerHTML = _savedNotes.map(function (n, idx) {
+    function _itemHtml(n) {
       var date = n.created_at ? new Date(n.created_at).toLocaleDateString() : '';
       var pages = (n.source_page_start != null)
         ? 'S. ' + n.source_page_start + (n.source_page_end && n.source_page_end !== n.source_page_start ? '–' + n.source_page_end : '')
         : 'Whole PDF';
-      return '<div class="np-saved-item" data-idx="' + idx + '">' +
+      return '<div class="np-saved-item" data-id="' + _esc(n.id) + '">' +
         '<div class="np-saved-item-title">' + _esc(n.title || 'Untitled') + '</div>' +
         '<div class="np-saved-item-meta">' +
-          '<span class="np-saved-badge np-saved-badge-' + (n.type || 'notes') + '">' + (n.type === 'summary' ? 'Summary' : 'Notes') + '</span>' +
           '<span class="np-saved-pages">' + pages + '</span>' +
           '<span class="np-saved-date">' + date + '</span>' +
         '</div>' +
-        '<button class="np-saved-delete" data-id="' + n.id + '" title="Delete">&#x1F5D1;</button>' +
+        '<button class="np-saved-delete" data-id="' + _esc(n.id) + '" title="Delete">&#x1F5D1;</button>' +
       '</div>';
-    }).join('');
+    }
+
+    // Keep Notes and Summaries in their own labeled groups — never interleaved.
+    function _group(label, arr) {
+      if (!arr.length) return '';
+      return '<div class="np-saved-group">' +
+        '<div class="np-saved-group-title">' + label + ' <span class="np-saved-group-count">' + arr.length + '</span></div>' +
+        arr.map(_itemHtml).join('') +
+      '</div>';
+    }
+
+    var notesItems   = scoped.filter(function (n) { return n.type !== 'summary'; });
+    var summaryItems = scoped.filter(function (n) { return n.type === 'summary'; });
+    list.innerHTML = _group('Notes', notesItems) + _group('Summaries', summaryItems);
   }
 
   function _setStatus(msg, cls) {
@@ -332,35 +387,62 @@
 
   // ── Load notes from DB ────────────────────────────────────────────────────
   async function _loadNotes() {
-    if (!_ctx.documentId || !_ctx.courseId) return;
+    if (!_ctx.courseId) return;
     try {
-      var r = await fetch(
-        (window.BACKEND_URL || '') + '/api/notes?courseId=' + encodeURIComponent(_ctx.courseId) +
-        '&documentId=' + encodeURIComponent(_ctx.documentId),
-        { headers: _apiHeaders() }
-      );
-      var data = r.ok ? await r.json() : {};
-      var notes = data.notes || [];
-      _savedNotes = notes;
+      // Editor tabs (Notes / Summary) stay scoped to the OPEN document so the
+      // tab shows the note for the PDF in front of you.
+      if (_ctx.documentId) {
+        var r = await fetch(
+          (window.BACKEND_URL || '') + '/api/notes?courseId=' + encodeURIComponent(_ctx.courseId) +
+          '&documentId=' + encodeURIComponent(_ctx.documentId),
+          { headers: _apiHeaders() }
+        );
+        var data = r.ok ? await r.json() : {};
+        var notes = data.notes || [];
 
-      // Pick most recent note per type for the editor tabs
-      ['notes', 'summary'].forEach(function (t) {
-        var match = notes.find(function (n) { return n.type === t; });
-        if (match && !_notesByType[t]) {
-          _notesByType[t] = { id: match.id, title: match.title, type: match.type, content_markdown: '',
-            source_page_start: match.source_page_start, source_page_end: match.source_page_end,
-            created_at: match.created_at };
-        }
-      });
+        // Pick most recent note per type for the editor tabs
+        ['notes', 'summary'].forEach(function (t) {
+          var match = notes.find(function (n) { return n.type === t; });
+          if (match && !_notesByType[t]) {
+            _notesByType[t] = { id: match.id, title: match.title, type: match.type, content_markdown: '',
+              source_page_start: match.source_page_start, source_page_end: match.source_page_end,
+              created_at: match.created_at };
+          }
+        });
 
-      for (var t of ['notes', 'summary']) {
-        if (_notesByType[t] && _notesByType[t].id && !_notesByType[t].content_markdown) {
-          await _loadNoteContent(_notesByType[t]);
+        for (var t of ['notes', 'summary']) {
+          if (_notesByType[t] && _notesByType[t].id && !_notesByType[t].content_markdown) {
+            await _loadNoteContent(_notesByType[t]);
+          }
         }
       }
+
+      // Saved tab lists ALL of the course's notes/summaries — NOT just the open
+      // document's. A note is tied to the document_id it was generated on, so a
+      // document-scoped list went empty whenever you opened a different file or
+      // re-uploaded one (new document_id orphans the old notes). Course-scoped
+      // here means saved notes never silently disappear; opening one loads by id.
+      var rc = await fetch(
+        (window.BACKEND_URL || '') + '/api/notes?courseId=' + encodeURIComponent(_ctx.courseId),
+        { headers: _apiHeaders() }
+      );
+      var dc = rc.ok ? await rc.json() : {};
+      _savedNotes = (dc.notes || []).filter(function (n) {
+        return n.type === 'notes' || n.type === 'summary';
+      });
     } catch (e) { console.warn('[notes-panel] load error:', e); }
-    _currentNote = _notesByType[_activeTab] || null;
-    if (_panelOpen) _renderCurrentTab();
+    if (_panelOpen) {
+      // When the Saved tab is open, re-render the saved LIST. Calling
+      // _renderCurrentTab() here (the old behavior) blanked the list and showed
+      // the empty "No notes yet" editor, so freshly generated notes looked like
+      // they never appeared.
+      if (_activeTab === 'saved') {
+        _renderSavedList();
+      } else {
+        _currentNote = _notesByType[_activeTab] || null;
+        _renderCurrentTab();
+      }
+    }
   }
 
   async function _loadNoteContent(note) {
@@ -398,6 +480,15 @@
       body: JSON.stringify(payload)
     });
     return resp.json();
+  }
+
+  function _errorMessage(err, fallback) {
+    if (!err) return fallback || 'Request failed';
+    if (typeof err === 'string') return err;
+    if (err.message) return err.message;
+    if (err.error) return _errorMessage(err.error, fallback);
+    try { return JSON.stringify(err); } catch (_) {}
+    return fallback || 'Request failed';
   }
 
   function _setGenMsg(msg) {
@@ -489,10 +580,11 @@
         topicTitle:  isSummary ? (g.title || null) : undefined,
         pageRange:   { start: g.start, end: g.end }
       });
-      if (data.error) throw new Error(data.error);
+      if (data.error) throw new Error(_errorMessage(data.error, 'Section generation failed'));
       if (!data.empty && data.markdown) {
         // Prefer the heading the AI generated (e.g. "## Sandguss") over the metadata title
-        var mdHeading = data.markdown.match(/^##\s+(.+)/m);
+        var cleanSectionMd = _stripMarker(data.markdown);
+        var mdHeading = cleanSectionMd.match(/^##\s+(.+)/m);
         var realTitle = mdHeading ? mdHeading[1].replace(/[*_`]/g, '').trim() : (g.title || null);
         sections.push({ markdown: data.markdown, pageStart: g.start, pageEnd: g.end, title: realTitle });
       }
@@ -576,14 +668,23 @@
             }
           }, 1000);
         } else {
-          if (typeof showToast === 'function') showToast('Generation failed', data.error);
-          _setStatus(data.error, 'err');
+          var msg = _errorMessage(data.error, 'Generation failed');
+          if (typeof showToast === 'function') showToast('Generation failed', msg);
+          _setStatus(msg, 'err');
         }
       } else if (data.note) {
+        data.note._summaryType = _detectSummaryType(data.note.content_markdown);
+        data.note.content_markdown = _stripMarker(data.note.content_markdown);
         _notesByType[_activeTab] = data.note;
         _currentNote = data.note;
+        // Drop any stale optimistic/previous copy of this note, then add the
+        // fresh one with its document_id + content so it shows under the right
+        // file group in Saved and opens instantly without a refetch.
+        _savedNotes = _savedNotes.filter(function (n) { return n.id !== data.note.id; });
         _savedNotes.unshift({
           id: data.note.id, title: data.note.title, type: data.note.type,
+          document_id: data.note.document_id || _ctx.documentId || null,
+          content_markdown: data.note.content_markdown || '',
           source_page_start: data.note.source_page_start, source_page_end: data.note.source_page_end,
           created_at: new Date().toISOString()
         });
@@ -592,7 +693,7 @@
         if (typeof showToast === 'function') showToast('Notes ready', 'AI notes saved to your account.');
       }
     } catch (e) {
-      if (typeof showToast === 'function') showToast('Generation failed', e.message || 'Network error');
+      if (typeof showToast === 'function') showToast('Generation failed', _errorMessage(e, 'Network error'));
       _setStatus('Failed', 'err');
     } finally {
       _generating = false;
@@ -786,10 +887,13 @@
         return;
       }
       if (item) {
-        var idx = parseInt(item.getAttribute('data-idx'), 10);
-        var note = _savedNotes[idx];
+        // Look up by id (not list position): the saved list is grouped and the
+        // array order can change, so an index-based lookup would open the wrong
+        // note — or none at all.
+        var clickedId = item.getAttribute('data-id');
+        var note = _savedNotes.find(function (n) { return String(n.id) === String(clickedId); });
         if (!note) return;
-        // Switch to appropriate tab and load note content
+        // Switch to the matching editor tab and open the note immediately.
         var tab = (note.type === 'summary') ? 'summary' : 'notes';
         _notesByType[tab] = Object.assign({}, note, { content_markdown: note.content_markdown || '' });
         _currentNote = _notesByType[tab];
@@ -799,6 +903,8 @@
         });
         var actionBar = $id('npActionBar');
         if (actionBar) actionBar.style.display = '';
+        var detailRow = $id('npDetailRow');
+        if (detailRow) detailRow.style.display = (tab === 'summary') ? '' : 'none';
         var savedList = $id('npSavedList');
         if (savedList) savedList.style.display = 'none';
         if (!_currentNote.content_markdown) {

@@ -4,52 +4,179 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Minallo</title>
+  <title>Minallo - AI Exam Prep From Your Real Course Material</title>
+  <meta name="description" content="Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material.">
+  <link rel="canonical" href="https://minallo.de/">
+  <!-- Tell Google we want the full description used as the snippet and a
+       large image preview. Without max-snippet:-1 Google often truncates
+       or omits the meta description in favor of an auto-generated one. -->
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 
+  <!-- Open Graph (Facebook, LinkedIn, Slack, Discord previews) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Minallo">
+  <meta property="og:title" content="Minallo - AI Exam Prep From Your Real Course Material">
+  <meta property="og:description" content="Turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on your real course material.">
+  <meta property="og:url" content="https://minallo.de/">
+  <meta property="og:image" content="https://minallo.de/assets/favicon.png">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter / X card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Minallo - AI Exam Prep From Your Real Course Material">
+  <meta name="twitter:description" content="Turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on your real course material.">
+  <meta name="twitter:image" content="https://minallo.de/assets/favicon.png">
+
+  <!-- Structured data: tells Google this site is the Minallo AI study product,
+       distinct from the unrelated "Minallo Camping Farm Resort" listings. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Minallo",
+    "alternateName": "Minallo AI",
+    "url": "https://minallo.de/",
+    "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Minallo",
+    "url": "https://minallo.de/",
+    "logo": "https://minallo.de/assets/favicon.png",
+    "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Minallo",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Web",
+    "url": "https://minallo.de/",
+    "description": "AI exam-prep platform that turns real course material into summaries, quizzes, flashcards, cheatsheets, step-by-step explanations, and exam-style practice."
+  }
+  </script>
+
+  <!-- Favicons. Google's SERP favicon picker wants at least 48x48; our
+       /assets/favicon.png is 128x128 which qualifies. Declaring sizes="any"
+       lets Google pick the file without us pre-committing to a single size. -->
+  <link rel="icon" type="image/png" sizes="any" href="/assets/favicon.png" />
+  <link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon.png" />
   <link rel="shortcut icon" type="image/png" href="/assets/favicon.png" />
-  <link rel="apple-touch-icon" href="/assets/favicon.png" />
+  <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
+  <meta name="theme-color" content="#0b1220" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Inter served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
+       GDPR-friendly drop-in replacement for Google Fonts that does not log
+       IPs — the privacy-conscious workaround for LG Muenchen I
+       (3 O 17493/20). One narrow domain in the CSP.
+       Landing uses weights 400/600/700/800; 500 and jetbrains-mono dropped
+       (jetbrains is only needed inside the dashboard chat for code blocks
+       and is injected after auth). -->
+  <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap"
     rel="stylesheet"
+    href="https://fonts.bunny.net/css?family=inter:400,600,700,800&display=swap"
   />
+  <!-- Preload the two woff2 weights the hero/LCP element actually uses.
+       Starts the font fetch in parallel with the Bunny CSS parse instead
+       of waiting for it. Bunny .woff2 URLs are content-addressed and
+       stable; if Bunny ever rotates them the preload becomes a no-op
+       (browser falls back to fetching from the CSS rule). -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="https://fonts.bunny.net/inter/files/inter-latin-400-normal.woff2" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="https://fonts.bunny.net/inter/files/inter-latin-800-normal.woff2" />
 
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Google Sign-In client moved out of index.html — loader.js injects it
+       after the landing partial renders so it no longer blocks first paint.
+       auth-bootstrap.js polls for `google.accounts` so the deferred load
+       is transparent to OneTap init. -->
 
-  <link rel="stylesheet" href="/css/base.css?v=5" />
-  <link rel="stylesheet" href="/css/theme.css?v=5" />
-  <link rel="stylesheet" href="/css/styles.css?v=7" />
-  <link rel="stylesheet" href="/css/layout.css?v=5" />
-  <link rel="stylesheet" href="/css/document-rail.css?v=15" />
+  <!-- Keep the logged-out first paint lean. typography.css + new-landing.css
+       are the only render-blocking stylesheets here. auth.css is dynamically
+       injected by loader.js (it's only needed once the landing renders),
+       and dashboard CSS is injected post-auth. -->
+  <link rel="stylesheet" href="/css/typography.css?v=1" />
+  <link rel="stylesheet" href="/css/new-landing.css?v=23" />
+  <link rel="stylesheet" href="/css/performance.css?v=4" />
+  <style>
+    /* Visually hide the static SEO hero (still in the DOM for crawlers
+       that don't execute JS) so logged-in / human users see the splash
+       or landing instead of unstyled raw HTML. */
+    .ss-seo-hero {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+    /* Critical safety: these partials are injected before their feature CSS.
+       Keep modal markup hidden even if a stylesheet is delayed or lazy. */
+    #onboardModal {
+      display: none;
+    }
+    #multiSumModal:not(.show),
+    #lnModal:not(.show) {
+      display: none !important;
+    }
+  </style>
   </head>
   <body class="night">
-    <!-- Splash screen shown while the app loads after sign-in -->
-    <div id="ss-splash" style="display: none">
-      <div class="ss-splash-inner">
-        <div class="ss-splash-icon">M</div>
-        <div class="ss-splash-name">Minallo</div>
-        <div class="ss-splash-dots"><span></span><span></span><span></span></div>
-      </div>
+    <!-- SECTIONS ARE INJECTED HERE BY loader.js.
+         The static SEO hero below ships in the raw HTML so Googlebot
+         (and crawlers that don't execute JS) can read the H1, the
+         product description, and the "Minallo AI study platform"
+         phrasing without waiting for the SPA to hydrate. loader.js
+         replaces this block with the rendered landing/app sections. -->
+    <div id="ss-sections-root">
+      <main class="ss-seo-hero" role="main">
+        <h1>Upload Your Course. Let Minallo Build Your Exam Prep.</h1>
+        <p>
+          Minallo helps students turn lecture PDFs, scripts, formula sheets,
+          and exercise sheets into AI summaries, quizzes, flashcards,
+          cheatsheets, step-by-step explanations, and exam-style practice
+          based on their real course material.
+        </p>
+        <nav aria-label="AI study tools">
+          <a href="/flashcards-from-pdf.html">Generate flashcards from lecture PDFs</a>
+          <a href="/lecture-summary-generator.html">AI lecture summary generator</a>
+          <a href="/ai-quiz-generator-from-notes.html">AI quiz generator from notes</a>
+          <a href="/ai-tutor-for-engineering-students.html">AI tutor for engineering students</a>
+          <a href="/course-based-ai-learning-tool.html">Course-based AI learning tool</a>
+          <a href="/exam-study-guide-generator.html">Exam study guide generator</a>
+        </nav>
+      </main>
     </div>
 
-    <!-- SECTIONS ARE INJECTED HERE BY loader.js -->
-    <div id="ss-sections-root"></div>
-
-    <script src="js/minallo.js?v=2"></script>
-    <script src="js/config.js?v=1"></script>
-    <script type="module" src="js/features/ai-chat/ai-typing-config.js?v=1"></script>
-
-    <!-- Auth/session bootstrap: runs synchronously before supabase.js and loader.js -->
-    <script src="js/auth-bootstrap.js?v=2"></script>
-
-    <!-- Supabase REST client + auth logic (_enterApp, _showModal, _verifyAndEnter) -->
-    <script src="js/supabase.js?v=4"></script>
-
-    <!-- Section loader: fetches and injects HTML sections, fires ss-ready when done -->
-    <script type="module" src="js/loader.js?v=4"></script>
+    <!-- All boot scripts are deferred: they download in parallel with the
+         HTML body parse and execute in document order once parsing is done.
+         Module scripts (loader.js, ai-typing-config.js) are deferred by
+         default; classic scripts need the `defer` attribute explicitly.
+         Order preserved: ss-ready-marker → minallo → config → ai-typing →
+         auth-bootstrap → supabase → loader.
+         The runtime contract (auth-bootstrap before supabase before loader)
+         relies on the in-order execution `defer` guarantees. -->
+    <script src="js/ss-ready-marker.js?v=1" defer></script>
+    <script src="js/minallo.js?v=2" defer></script>
+    <script src="js/config.js?v=42" defer></script>
+    <!-- AI chat typing config — only read inside the dashboard chat
+         features, never on the public landing. `async` removes it from
+         the critical-request chain so it loads in parallel without
+         sequencing against loader.js. -->
+    <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=5"></script>
+    <script src="js/auth-bootstrap.js?v=5" defer></script>
+    <script src="js/supabase.js?v=6" defer></script>
+    <script type="module" src="js/loader.js?v=39"></script>
   </body>
 </html>

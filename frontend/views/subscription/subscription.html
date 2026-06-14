@@ -1,20 +1,20 @@
 <div class="dash-greeting">
-  <h1>&#x2B50; Subscription</h1>
-  <p>Try Pro free for 7 days, then &#x20AC;11.99/month</p>
+  <h1 data-i18n="sub_title">&#x2B50; Subscription</h1>
+  <p data-i18n="sub_subtitle">Try Pro free for 7 days, then &#x20AC;11.99/month</p>
 </div>
 <div class="sub-grid sub-grid-single">
   <div class="sub-card featured">
-    <div class="sub-badge">&#x1F525; Most popular</div>
-    <div class="sub-name">Pro</div>
-    <div class="sub-trial-badge">7-day free trial</div>
-    <div class="sub-price">&#x20AC;11.99 <span>/ month after trial</span></div>
+    <div class="sub-badge" data-i18n="sub_badge_popular">&#x1F525; Most popular</div>
+    <div class="sub-name" data-i18n="sub_plan_name">Pro</div>
+    <div class="sub-trial-badge" data-i18n="sub_trial_badge">7-day free trial</div>
+    <div class="sub-price">&#x20AC;11.99 <span data-i18n="sub_price_suffix">/ month after trial</span></div>
     <div class="sub-features">
-      <div class="sub-feat">Unlimited AI messages</div>
-      <div class="sub-feat">PDF reader</div>
-      <div class="sub-feat">Unlimited lecture notes</div>
-      <div class="sub-feat">Multi-PDF summaries</div>
-      <div class="sub-feat">Priority support</div>
-      <div class="sub-feat">Chat rooms</div>
+      <div class="sub-feat" data-i18n="sub_feat_ai">Generous AI usage (fair-use: 2000 chat &middot; 200 generations / month)</div>
+      <div class="sub-feat" data-i18n="sub_feat_pdf">PDF reader</div>
+      <div class="sub-feat" data-i18n="sub_feat_notes">Unlimited lecture notes</div>
+      <div class="sub-feat" data-i18n="sub_feat_multi">Multi-PDF summaries</div>
+      <div class="sub-feat" data-i18n="sub_feat_support">Priority support</div>
+      <div class="sub-feat" data-i18n="sub_feat_chat">Chat rooms</div>
     </div>
     <div
       id="subProStatus"
@@ -30,19 +30,78 @@
         margin-bottom: 10px;
       "
     >
-      &#x2713; Active subscription
+      <span data-i18n="sub_active">&#x2713; Active subscription</span>
     </div>
-    <button class="sub-btn sub-btn-upgrade" id="subUpgradeBtn">
-      &#x1F389; Start free 7-day trial
+    <!-- Pflichtangaben + Zustimmung zum vorzeitigen Beginn. The button stays
+         disabled until the user ticks the consent box; the flag is sent to
+         /api/create-checkout so we can record the consent server-side. -->
+    <fieldset class="sub-legal-block" id="subLegalBlock">
+      <legend class="sub-legal-legend">Pflichtinformationen</legend>
+      <ul class="sub-legal-list">
+        <li><strong>Preis:</strong> 11,99&nbsp;EUR pro Monat (Endpreis, keine USt. gem. &sect;&nbsp;19 UStG)</li>
+        <li><strong>Laufzeit:</strong> monatlich, jederzeit zum Ende des Abrechnungszeitraums kündbar</li>
+        <li><strong>Testphase:</strong> 7 Tage kostenlos, danach automatischer kostenpflichtiger Bezug</li>
+        <li><strong>Leistung:</strong> Zugang zu Pro-Funktionen (siehe <a href="/terms.html#leistung">AGB &sect;&nbsp;2</a>)</li>
+      </ul>
+      <label class="sub-legal-checkbox">
+        <input type="checkbox" id="subConsentWiderruf" />
+        <span>
+          Ich verlange ausdrücklich, dass Minallo bereits vor Ablauf der vierzehntägigen
+          Widerrufsfrist mit der Bereitstellung beginnt, und bestätige meine Kenntnis darüber,
+          dass bei einem Widerruf ein anteiliger Wertersatz für die bis dahin erbrachten
+          Leistungen entstehen kann (&sect;&nbsp;357a Abs.&nbsp;2 BGB).
+        </span>
+      </label>
+      <p class="sub-legal-note">
+        Mit Klick auf <em>Jetzt zahlungspflichtig bestellen</em> gibst du eine verbindliche
+        Bestellung ab. Es gelten unsere <a href="/terms.html">AGB</a>, die
+        <a href="/privacy.html">Datenschutzerklärung</a> und die
+        <a href="/withdrawal.html">Widerrufsbelehrung</a>.
+      </p>
+    </fieldset>
+    <button class="sub-btn sub-btn-upgrade" id="subUpgradeBtn" disabled>
+      &#x1F389; Jetzt zahlungspflichtig bestellen &middot; 7&nbsp;Tage gratis testen
     </button>
     <button
       class="sub-btn sub-btn-current"
       id="subManageBtn"
+      data-i18n="sub_manage"
       style="display: none; margin-top: 8px"
     >
       &#x2699;&#xFE0F; Manage / Cancel subscription
     </button>
+    <button
+      class="sub-btn sub-btn-current sub-btn-danger"
+      id="subCancelBtn"
+      type="button"
+      data-i18n="sub_cancel_btn"
+      style="display: none; margin-top: 8px"
+    >
+      Cancel subscription
+    </button>
+    <button
+      class="sub-btn sub-btn-current"
+      id="subReactivateBtn"
+      type="button"
+      data-i18n="sub_reactivate_btn"
+      style="display: none; margin-top: 8px"
+    >
+      Reactivate subscription
+    </button>
+    <div class="sub-pause-panel" id="subPausePanel" style="display: none">
+      <div class="sub-pause-title" data-i18n="sub_pause_title">Vacation pause</div>
+      <p class="sub-pause-copy" data-i18n="sub_pause_copy">Pause billing and Pro access while you are away.</p>
+      <label class="sub-pause-label" for="subPauseResumeAt" data-i18n="sub_pause_resume_label">Resume on</label>
+      <input class="sub-pause-input" type="date" id="subPauseResumeAt" />
+      <button class="sub-btn sub-btn-current" id="subPauseBtn" type="button" data-i18n="sub_pause_btn">Pause subscription</button>
+    </div>
+    <div class="sub-pause-panel sub-pause-panel-active" id="subResumePanel" style="display: none">
+      <div class="sub-pause-title" data-i18n="sub_paused_title">Subscription paused</div>
+      <p class="sub-pause-copy" id="subPausedUntil" data-i18n="sub_paused_copy">Pro access is paused during your vacation.</p>
+      <button class="sub-btn sub-btn-current" id="subResumeBtn" type="button" data-i18n="sub_resume_btn">Resume now</button>
+    </div>
     <p
+      data-i18n="sub_cancel_note"
       style="
         text-align: center;
         font-size: 0.72rem;
@@ -52,10 +111,25 @@
     >
       Cancel anytime. No charge during trial.
     </p>
+    <!-- Two independent fair-use counters populated by window.refreshAiUsage().
+         Hidden until the value loads. -->
+    <div class="sub-usage" id="subUsage" hidden>
+      <div class="sub-usage-label" data-i18n="sub_usage_chat">Chat &amp; tutor this month</div>
+      <div class="sub-usage-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+        <div class="sub-usage-bar-fill" id="subUsageFill" style="width: 0%"></div>
+      </div>
+      <div class="sub-usage-count" id="subUsageCount">&mdash;</div>
+      <div class="sub-usage-label" data-i18n="sub_usage_gen" style="margin-top: 10px">Quiz / flashcard / notes generations</div>
+      <div class="sub-usage-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+        <div class="sub-usage-bar-fill" id="subUsageFillGen" style="width: 0%"></div>
+      </div>
+      <div class="sub-usage-count" id="subUsageCountGen">&mdash;</div>
+    </div>
+
     <div class="sub-pay-methods" id="subPayMethods">
-      <span>Pay with</span>
+      <span data-i18n="sub_pay_with">Pay with</span>
       <div class="sub-pay-icons">
-        <span class="sub-pay-icon">&#x1F4B3; Card</span>
+        <span class="sub-pay-icon" data-i18n="sub_pay_card">&#x1F4B3; Card</span>
         <span class="sub-pay-icon">K Klarna</span>
         <span class="sub-pay-icon">&#x1F17F; PayPal</span>
       </div>

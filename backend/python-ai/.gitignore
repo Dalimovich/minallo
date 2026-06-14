@@ -8,3 +8,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# Generated diagnostic/eval reports — contain user document content
+scripts/diag_runs/
+scripts/eval_runs/

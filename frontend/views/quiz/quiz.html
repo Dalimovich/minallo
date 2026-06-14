@@ -1,26 +1,26 @@
-<!-- Quiz feature — injected into a course's #coQuizPanel by quiz.js -->
+<!-- Quiz feature - injected into a course's #coQuizPanel by quiz.js -->
 <div class="qz-root" data-quiz-root>
 
   <div class="qz-toolbar">
-    <button class="qz-btn qz-btn-primary" id="qzGenerateBtn" type="button">
+    <button class="qz-btn qz-btn-primary" id="qzGenerateBtn" type="button" data-i18n="qz_generate">
       <span class="qz-btn-icon">&#x2728;</span> Generate quiz
     </button>
 
     <div class="qz-search">
       <span class="qz-search-icon">&#x1F50D;</span>
-      <input type="text" id="qzSearchInput" placeholder="Search quizzes…" />
+      <input type="text" id="qzSearchInput" data-i18n-ph="qz_search_ph" placeholder="Search quizzes..." />
     </div>
 
-    <select class="qz-sort" id="qzSortSelect" aria-label="Sort quizzes">
-      <option value="recent">Recently taken</option>
-      <option value="name">By name</option>
-      <option value="score">By best score</option>
-      <option value="created">Recently created</option>
+    <select class="qz-sort" id="qzSortSelect" data-i18n-aria="qz_sort_aria" aria-label="Sort quizzes">
+      <option value="recent" data-i18n="qz_sort_recent">Recently taken</option>
+      <option value="name" data-i18n="qz_sort_name">By name</option>
+      <option value="score" data-i18n="qz_sort_score">By best score</option>
+      <option value="created" data-i18n="qz_sort_created">Recently created</option>
     </select>
 
-    <div class="qz-view-toggle" role="tablist" aria-label="View mode">
-      <button class="qz-view-btn active" data-view="grid" type="button" aria-label="Grid view">&#x25A6;</button>
-      <button class="qz-view-btn" data-view="list" type="button" aria-label="List view">&#x2630;</button>
+    <div class="qz-view-toggle" role="tablist" data-i18n-aria="qz_view_mode_aria" aria-label="View mode">
+      <button class="qz-view-btn active" data-view="grid" type="button" data-i18n-aria="qz_grid_view_aria" aria-label="Grid view">&#x25A6;</button>
+      <button class="qz-view-btn" data-view="list" type="button" data-i18n-aria="qz_list_view_aria" aria-label="List view">&#x2630;</button>
     </div>
   </div>
 
@@ -28,10 +28,10 @@
 
     <div class="qz-deck-pane" id="qzDeckPane">
       <div class="qz-deck-grid" id="qzDeckGrid">
-        <div class="qz-empty">Loading quizzes…</div>
+        <div class="qz-empty" data-i18n="qz_loading">Loading quizzes...</div>
       </div>
       <div class="qz-view-all" id="qzViewAllRow">
-        <span class="qz-view-all-icon">&#x1F4CB;</span> View all quizzes
+        <span class="qz-view-all-icon">&#x1F4CB;</span> <span data-i18n="qz_view_all">View all quizzes</span>
         <span class="qz-view-all-chev">&#x203A;</span>
       </div>
     </div>
@@ -40,16 +40,16 @@
       <div class="qz-study-header">
         <span class="qz-study-icon">&#x1F4CB;</span>
         <div class="qz-study-meta">
-          <div class="qz-study-name" id="qzStudyName">Select a quiz</div>
-          <div class="qz-study-count" id="qzStudyCount">0 questions</div>
+          <div class="qz-study-name" id="qzStudyName" data-i18n="qz_select_quiz">Select a quiz</div>
+          <div class="qz-study-count" id="qzStudyCount" data-i18n="qz_zero_questions">0 questions</div>
         </div>
         <button class="qz-btn qz-btn-secondary qz-study-settings" id="qzStudySettingsBtn" type="button">
-          <span class="qz-btn-icon">&#x2699;</span> Quiz settings
+          <span data-i18n="qz_settings"><span class="qz-btn-icon">&#x2699;</span> Quiz settings</span>
         </button>
       </div>
 
       <div class="qz-card-stage" id="qzCardStage">
-        <div class="qz-card-empty">Pick a quiz to start.</div>
+        <div class="qz-card-empty" data-i18n="qz_pick_quiz">Pick a quiz to start.</div>
       </div>
 
       <div class="qz-options" id="qzOptions"></div>
@@ -61,11 +61,11 @@
 
       <div class="qz-study-controls">
         <button class="qz-btn qz-btn-ghost" id="qzPrevBtn" type="button" disabled>
-          <span>&#x25C0;</span> Previous
+          <span data-i18n="qz_previous"><span>&#x25C0;</span> Previous</span>
         </button>
-        <button class="qz-btn qz-btn-submit" id="qzSubmitBtn" type="button" disabled>Submit</button>
+        <button class="qz-btn qz-btn-submit" id="qzSubmitBtn" type="button" data-i18n="qz_submit" disabled>Submit</button>
         <button class="qz-btn qz-btn-ghost" id="qzNextBtn" type="button" disabled>
-          Next <span>&#x25B6;</span>
+          <span data-i18n="qz_next">Next <span>&#x25B6;</span></span>
         </button>
       </div>
     </div>

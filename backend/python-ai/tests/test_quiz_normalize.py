@@ -81,3 +81,34 @@ def test_dedupe_strips_near_duplicates() -> None:
     ]
     out = _dedupe(items)
     assert len(out) == 2
+
+
+def test_deterministic_backfill_honours_requested_count() -> None:
+    from app.services.quiz import _deterministic_mcq_backfill
+    from app.services.retrieval import RetrievedChunk
+
+    chunks = [
+        RetrievedChunk(
+            chunk_id=f"c{i}",
+            document_id="doc1",
+            page_start=i,
+            page_end=i,
+            text=f"Important course statement number {i} explains the professor's method clearly.",
+            score=1.0,
+            similarity=0.8,
+            chunk_type="lecture",
+            section_title="Section",
+        )
+        for i in range(1, 11)
+    ]
+
+    items = _deterministic_mcq_backfill(
+        chunks=chunks,
+        doc_names={"doc1": "lecture.pdf"},
+        needed=10,
+        seen_questions=set(),
+    )
+
+    assert len(items) == 10
+    assert all(item["type"] == "mcq" for item in items)
+    assert all(item["source"].startswith("lecture.pdf") for item in items)

@@ -1,0 +1,262 @@
+"""Major-agnostic academic intent classification for answer routing."""
+
+from __future__ import annotations
+
+import re
+from enum import Enum
+from typing import Any
+
+from .query_expansion import is_math_question
+
+
+class AcademicIntent(str, Enum):
+    MATH_PROBLEM = "math_problem"
+    MIXED_MATH_AND_CONCEPT = "mixed_math_and_concept"
+    CONCEPTUAL_EXPLANATION = "conceptual_explanation"
+    COURSE_SUMMARY = "course_summary"
+    DEFINITION_OR_THEOREM = "definition_or_theorem"
+    COMPARISON = "comparison"
+    CODE_PROBLEM = "code_problem"
+    QUIZ_GENERATION = "quiz_generation"
+    FLASHCARD_GENERATION = "flashcard_generation"
+    CASE_OR_APPLICATION_REASONING = "case_or_application_reasoning"
+    GENERAL_COURSE_QA = "general_course_qa"
+    APP_QUESTION = "app_question"
+
+
+_CALC_VERB_RE = re.compile(
+    r"\b("
+    r"solve|calculate|compute|derive|evaluate|differentiate|integrate|"
+    r"simplify|factor|expand|determine|find|estimate|convert|prove|"
+    r"berechne|berechnen|rechne|rechnen|loese|loesen|l(?:oe|ö)se|"
+    r"bestimme|bestimmen|ermittle|ermitteln|ableiten|integrieren|beweise"
+    r")\b",
+    re.IGNORECASE,
+)
+_MATH_CONTEXT_RE = re.compile(
+    r"("
+    r"\b\d+(?:[\.,]\d+)?\s?(?:m|cm|mm|km|kg|g|mg|mcg|ml|l|n|pa|j|w|s|hz|"
+    r"eur|usd|%|mg/kg|mmol/l|bpm|units?)\b|"
+    r"[=≈≤≥≠]|[+\-*/^]\s*\d|"
+    r"\b(rate|ratio|percentage|roi|interest|profit|revenue|cost|dose|dosage|"
+    r"concentration|mol|molarity|force|velocity|acceleration|probability|"
+    r"mean|median|variance|standard deviation|regression|formula|equation|"
+    r"formel|gleichung|wahrscheinlichkeit|durchschnitt)\b"
+    r")",
+    re.IGNORECASE,
+)
+_EXERCISE_REF_RE = re.compile(
+    r"\b(?:aufgabe|uebung|übung|exercise|problem|task)\s+\d+(?:[.\-]\d+)?(?:\s*\([a-z]\))?\b",
+    re.IGNORECASE,
+)
+_NO_SOLVE_RE = re.compile(
+    r"\b(do\s+not|don't|without|nicht|ohne)\s+(?:solve|calculate|compute|loesen|lösen|berechnen|rechnen)\b|"
+    r"\bexplain\b.{0,40}\b(?:do\s+not|don't)\s+solve\b|"
+    r"\berkl(?:ä|ae)r(?:e|en)?\b.{0,40}\bnicht\s+l(?:ö|oe)sen\b",
+    re.IGNORECASE,
+)
+_CONCEPT_RE = re.compile(
+    r"\b(explain|why|how|intuition|concept|meaning|interpret|describe|"
+    r"erkl(?:ä|ae)r(?:e|en)?|warum|wie|bedeutet|konzept|intuition)\b",
+    re.IGNORECASE,
+)
+_SUMMARY_RE = re.compile(
+    r"\b(summar(?:y|ize|ise)|recap|overview|key points|main idea|"
+    r"zusammenfass(?:ung|en)|fasse zusammen|kernaussagen?)\b",
+    re.IGNORECASE,
+)
+_DEFINITION_RE = re.compile(
+    r"\b(define|definition|what is|what are|theorem|lemma|satz|begriff|"
+    r"definiere|was ist|was sind)\b",
+    re.IGNORECASE,
+)
+_COMPARISON_RE = re.compile(
+    r"\b(compare|contrast|difference between|differences?|versus|vs\.?|"
+    r"pros and cons|advantages?|disadvantages?|unterschied|vergleiche|"
+    r"gegen(?:ue|ü)ber|vor- und nachteile)\b",
+    re.IGNORECASE,
+)
+_CODE_RE = re.compile(
+    r"\b(code|coding|program|implement|debug|bug|error|exception|trace|"
+    r"python|java|javascript|typescript|c\+\+|sql|html|css|algorithm|"
+    r"compiler|runtime|stack trace)\b",
+    re.IGNORECASE,
+)
+_QUIZ_RE = re.compile(r"\b(quiz|mcq|multiple choice|practice questions?|test me|prüfe mich|uebungsfragen|übungsfragen)\b", re.IGNORECASE)
+_FLASHCARD_RE = re.compile(r"\b(flashcards?|karteikarten?|anki)\b", re.IGNORECASE)
+_CASE_RE = re.compile(
+    r"\b("
+    r"case|scenario|patient|diagnosis|treatment|symptoms?|clinical|"
+    r"business case|market entry|strategy|recommendation|recommend|"
+    r"marketing|segmentation|positioning|law|legal|policy|ethic(?:al|s)?|"
+    r"apply|application|analy[sz]e|analysis|interpret this case|"
+    r"fallbeispiel|patient(?:in)?|diagnose|therapie|strategie|"
+    r"empfehlung|rechtlich|ethisch|anwenden|analysiere"
+    r")\b",
+    re.IGNORECASE,
+)
+_APP_RE = re.compile(
+    r"\b(minallo|this\s+(?:site|app|website|platform)|upload|subscription|sidebar|"
+    r"navigation|settings|account|course page|pdf hochladen|abo|konto)\b",
+    re.IGNORECASE,
+)
+
+
+def _chunk_text(chunks: list[Any] | None, limit: int = 4) -> str:
+    if not chunks:
+        return ""
+    return "\n".join((getattr(c, "text", "") or "") for c in chunks[:limit])
+
+
+def _has_math_problem_context(chunks: list[Any] | None) -> bool:
+    if not chunks:
+        return False
+    joined = _chunk_text(chunks)
+    if not joined:
+        return False
+    has_problem_chunk = any(
+        (getattr(c, "chunk_type", "") or "").lower() in {"exercise", "solution", "formula"}
+        for c in chunks[:4]
+    )
+    return has_problem_chunk and bool(_MATH_CONTEXT_RE.search(joined))
+
+
+def _normalise_intent(value: AcademicIntent | str | None) -> AcademicIntent | None:
+    if value is None:
+        return None
+    if isinstance(value, AcademicIntent):
+        return value
+    try:
+        return AcademicIntent(value)
+    except ValueError:
+        return None
+
+
+def classify_academic_intent(
+    question: str,
+    chunks: list[Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> AcademicIntent:
+    """Classify the student's task intent across majors.
+
+    The older ``is_math_question`` helper remains a signal, but broad words
+    such as "problem", "case", "solution", and "Aufgabe" do not by
+    themselves route to the strict math worksheet.
+    """
+
+    metadata = metadata or {}
+    if metadata.get("app_question"):
+        return AcademicIntent.APP_QUESTION
+
+    text = (question or "").strip()
+    if not text:
+        return AcademicIntent.GENERAL_COURSE_QA
+    q = text.lower()
+
+    if _APP_RE.search(text) and not _MATH_CONTEXT_RE.search(text):
+        if any(token in q for token in ("minallo", "this app", "this site", "upload", "subscription", "sidebar")):
+            return AcademicIntent.APP_QUESTION
+
+    if _FLASHCARD_RE.search(text):
+        return AcademicIntent.FLASHCARD_GENERATION
+    if _QUIZ_RE.search(text):
+        return AcademicIntent.QUIZ_GENERATION
+    if _CODE_RE.search(text):
+        return AcademicIntent.CODE_PROBLEM
+    if _SUMMARY_RE.search(text):
+        return AcademicIntent.COURSE_SUMMARY
+    if _COMPARISON_RE.search(text):
+        return AcademicIntent.COMPARISON
+
+    no_solve = bool(_NO_SOLVE_RE.search(text))
+    calc_verb = bool(_CALC_VERB_RE.search(text))
+    math_context = bool(_MATH_CONTEXT_RE.search(text))
+    exercise_ref = bool(_EXERCISE_REF_RE.search(text))
+    visible_math_context = _has_math_problem_context(chunks)
+    legacy_math_signal = is_math_question(text)
+    conceptual_signal = bool(_CONCEPT_RE.search(text))
+    case_signal = bool(_CASE_RE.search(text))
+    definition_signal = bool(_DEFINITION_RE.search(text))
+
+    deictic_solve = calc_verb and bool(re.search(r"\b(this|it|that|the\s+(?:first|second|third)?\s*problem)\b", q))
+    deictic_visible_problem = bool(
+        re.search(r"\b(answer|do|work through|help with)\b.{0,40}\b(?:this|it|that|problem|aufgabe|exercise)\b", q)
+    )
+    explicit_math = (
+        not no_solve
+        and (
+            (calc_verb and (math_context or exercise_ref or visible_math_context or legacy_math_signal))
+            or (exercise_ref and visible_math_context)
+            or (deictic_solve and visible_math_context)
+            or (deictic_visible_problem and visible_math_context)
+        )
+    )
+
+    if explicit_math and conceptual_signal:
+        return AcademicIntent.MIXED_MATH_AND_CONCEPT
+    if explicit_math:
+        return AcademicIntent.MATH_PROBLEM
+
+    if definition_signal:
+        return AcademicIntent.DEFINITION_OR_THEOREM
+    if case_signal:
+        return AcademicIntent.CASE_OR_APPLICATION_REASONING
+    if conceptual_signal or no_solve:
+        return AcademicIntent.CONCEPTUAL_EXPLANATION
+    return AcademicIntent.GENERAL_COURSE_QA
+
+
+def intent_is_math_like(intent: AcademicIntent | str | None) -> bool:
+    return _normalise_intent(intent) in {
+        AcademicIntent.MATH_PROBLEM,
+        AcademicIntent.MIXED_MATH_AND_CONCEPT,
+    }
+
+
+def intent_allows_missing_input(intent: AcademicIntent | str | None) -> bool:
+    return intent_is_math_like(intent)
+
+
+def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
+    intent = _normalise_intent(intent) or AcademicIntent.GENERAL_COURSE_QA
+    lines = ["", "", "ACADEMIC TASK INTENT ROUTING:"]
+
+    if intent == AcademicIntent.CASE_OR_APPLICATION_REASONING:
+        lines.extend([
+            "- Treat this as case/application reasoning, not a math worksheet.",
+            "- Use this structure when supported by the sources: facts/context, relevant concept/framework, application to the case, conclusion/recommendation.",
+        ])
+    elif intent == AcademicIntent.COURSE_SUMMARY:
+        lines.append("- Treat this as a summary request: preserve the source's main points and avoid adding unstated examples.")
+    elif intent == AcademicIntent.DEFINITION_OR_THEOREM:
+        lines.append("- Treat this as a definition/theorem request: state the sourced definition or theorem first, then explain it briefly.")
+    elif intent == AcademicIntent.COMPARISON:
+        lines.append("- Treat this as a comparison request: compare dimensions side by side, then give the takeaway.")
+    elif intent == AcademicIntent.CODE_PROBLEM:
+        lines.append("- Treat this as a coding/debugging request: use fenced code blocks and explain the cause, fix, and trace when relevant.")
+    elif intent == AcademicIntent.QUIZ_GENERATION:
+        lines.append("- Treat this as quiz generation: produce study questions with answers/explanations grounded in the provided material.")
+    elif intent == AcademicIntent.FLASHCARD_GENERATION:
+        lines.append("- Treat this as flashcard generation: use compact front/back cards grounded in the provided material.")
+    elif intent == AcademicIntent.MIXED_MATH_AND_CONCEPT:
+        lines.append("- Treat this as mixed concept plus calculation: explain the idea briefly, then solve the numeric/formula part if context permits.")
+    elif intent == AcademicIntent.MATH_PROBLEM:
+        lines.append("- Treat this as a calculation/solving request only if the needed problem statement and calculation data are available.")
+    else:
+        lines.append("- Treat this as general university course Q&A; adapt to the student's major and the retrieved source type.")
+
+    if intent_allows_missing_input(intent):
+        lines.append("- `minallo-input` is permitted only for missing numeric input values needed to finish this calculation.")
+    else:
+        lines.append("- Never emit `minallo-input` for this request; ask a normal clarifying question only if needed.")
+
+    return "\n".join(lines)
+
+
+__all__ = (
+    "AcademicIntent",
+    "classify_academic_intent",
+    "intent_allows_missing_input",
+    "intent_is_math_like",
+    "intent_style_instruction",
+)

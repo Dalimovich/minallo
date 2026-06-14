@@ -43,6 +43,8 @@ setup('authenticate', async ({ page }) => {
       return (
         !!document.querySelector('#authEmail') ||
         !!document.querySelector('#authModal') ||
+        !!document.querySelector('#nlNavSignIn') ||
+        !!document.querySelector('#nlNavStartFree') ||
         !!document.querySelector('#landingLoginBtn') ||
         !!document.querySelector('[data-i18n="landing_nav_login"]') ||
         sessionStorage.getItem('ss_logged_in') === 'true' ||
@@ -68,7 +70,7 @@ setup('authenticate', async ({ page }) => {
   if (!isLoggedIn) {
     const loginBtn = page
       .locator(
-        '[data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
+        '#nlNavSignIn, [data-i18n="nav.signIn"], [data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
       )
       .first();
 

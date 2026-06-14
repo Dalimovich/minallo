@@ -12,7 +12,7 @@
 // toolbar callers use) and avoids parallel implementations.
 
 export type DocRailRoute = 'pdf' | 'courses' | 'other';
-export type DocRailMode = 'ai' | 'notes' | 'summary';
+export type DocRailMode = 'ai' | 'problem' | 'notes' | 'summary';
 
 interface NotesPanelApi {
   open: () => void;
@@ -27,19 +27,56 @@ interface DocRailWindow extends Window {
     setRouteVisibility: (route: DocRailRoute) => void;
     open: (mode: DocRailMode) => void;
     close: () => void;
+    currentMode: () => DocRailMode | null;
   };
   openAI?: () => void;
+  askAI?: (
+    prompt: string,
+    skipUserBubble?: boolean,
+    opts?: {
+      forceRefresh?: boolean;
+      problemSolver?: {
+        mode: string;
+        problem: string;
+        studentWork?: string;
+      };
+    }
+  ) => unknown;
   _notesPanel?: NotesPanelApi;
+  _ssLoadPortalFeature?: (name: string) => Promise<void>;
+  _ssSyncUrl?: () => void;
 }
 
 const WIDTH_KEY = 'ss_dr_width';
 const WIDTH_MIN = 340;
-const WIDTH_MAX = 520;
-const WIDTH_DEFAULT = 390;
+const WIDTH_MIN_MAXIMIZED = 390;
+const WIDTH_MAX = 900;
+const WIDTH_DEFAULT = 520;
+const SPLIT_CLASS = 'dr-pdf-split-open';
 
 let _initialized = false;
 let _openMode: DocRailMode | null = null;
+let _route: DocRailRoute = 'other';
 let _drawerWidth = WIDTH_DEFAULT;
+
+// Snapshot of the last Problem Solver submission so we can:
+//   * restore form fields when the user clicks the strip to return,
+//   * render the collapsed strip at the top of the AI panel while the
+//     answer is being read.
+// Persists until cleared via the Problem mode trash button.
+interface ProblemSubmission {
+  mode: string;
+  problem: string;
+  work: string;
+}
+let _lastProblemSubmission: ProblemSubmission | null = null;
+const PROBLEM_MODE_LABELS: Record<string, string> = {
+  hint: 'Hint ladder',
+  setup: 'Set up equations',
+  check: 'Check my work',
+  solve: 'Full solution',
+  practice: 'Generate similar practice',
+};
 
 // Track original parents/styles so we can restore the legacy panels on close.
 let _aiHomeParent: HTMLElement | null = null;
@@ -47,7 +84,8 @@ let _notesHomeParent: HTMLElement | null = null;
 
 function clampWidth(w: number): number {
   if (!Number.isFinite(w)) return WIDTH_DEFAULT;
-  return Math.max(WIDTH_MIN, Math.min(WIDTH_MAX, Math.round(w)));
+  const min = document.body.classList.contains('pdf-maximized') ? WIDTH_MIN_MAXIMIZED : WIDTH_MIN;
+  return Math.max(min, Math.min(WIDTH_MAX, Math.round(w)));
 }
 
 function loadWidth(): number {
@@ -71,6 +109,7 @@ function saveWidth(w: number): void {
 
 const HEADER_COPY: Record<DocRailMode, { title: string; subtitle: string }> = {
   ai: { title: 'AI', subtitle: 'Ask this document' },
+  problem: { title: 'Problem', subtitle: 'Solve engineering exercises' },
   notes: { title: 'Notes', subtitle: 'AI-generated notes from this PDF' },
   summary: { title: 'Summary', subtitle: 'AI-generated summary of this PDF' },
 };
@@ -97,11 +136,63 @@ function updateRailActive(mode: DocRailMode | null): void {
 }
 
 function applyWidth(drawer: HTMLElement, w: number): void {
-  drawer.style.width = w + 'px';
+  const px = w + 'px';
+  drawer.style.setProperty('width', px, 'important');
+  drawer.style.setProperty('flex-basis', px);
+}
+
+function setDrawerWidthVar(w: number): void {
+  const value = clampWidth(w) + 'px';
+  const root = $('drRoot');
+  if (root) root.style.setProperty('--dr-drawer-w', value);
+  document.body.style.setProperty('--dr-drawer-w', value);
+}
+
+function clearSplitState(): void {
+  const root = $('drRoot');
+  if (root) {
+    root.classList.remove('is-open');
+    root.style.removeProperty('--dr-drawer-w');
+  }
+  document.body.classList.remove(SPLIT_CLASS);
+  document.body.style.removeProperty('--dr-drawer-w');
+  const drawer = $('drDrawer');
+  if (drawer && root && drawer.parentElement !== root) {
+    drawer.classList.remove('dr-inline-split');
+    root.appendChild(drawer);
+  }
+}
+
+function applySplitState(drawer?: HTMLElement | null): void {
+  const root = $('drRoot');
+  if (!root) return;
+  const isSheet = !!drawer?.classList.contains('dr-sheet');
+  const shouldSplit = (_route === 'pdf' || _route === 'courses') && _openMode != null && !isSheet;
+  root.classList.toggle('is-open', shouldSplit);
+  document.body.classList.toggle(SPLIT_CLASS, shouldSplit);
+  if (shouldSplit) {
+    setDrawerWidthVar(_drawerWidth);
+    const appBody = document.querySelector('.app-body') as HTMLElement | null;
+    if (drawer && appBody && drawer.parentElement !== appBody) {
+      drawer.classList.add('dr-inline-split');
+      appBody.appendChild(drawer);
+    }
+  } else {
+    root.style.removeProperty('--dr-drawer-w');
+    document.body.style.removeProperty('--dr-drawer-w');
+    if (drawer && root && drawer.parentElement !== root) {
+      drawer.classList.remove('dr-inline-split');
+      root.appendChild(drawer);
+    }
+  }
+}
+
+function isDesktopDrawerOpen(drawer: HTMLElement): boolean {
+  return drawer.classList.contains('is-open') && !drawer.classList.contains('dr-sheet');
 }
 
 function updateDrawerModeClass(drawer: HTMLElement, mode: DocRailMode | null): void {
-  drawer.classList.remove('dr-mode-ai', 'dr-mode-notes', 'dr-mode-summary');
+  drawer.classList.remove('dr-mode-ai', 'dr-mode-problem', 'dr-mode-notes', 'dr-mode-summary');
   if (mode) drawer.classList.add('dr-mode-' + mode);
 }
 
@@ -119,6 +210,25 @@ function configureTrash(mode: DocRailMode): void {
     trash.onclick = () => {
       const btn = document.getElementById('aiClearBtn') as HTMLButtonElement | null;
       if (btn) btn.click();
+      // The Problem Solver strip lives in the AI content area; once the
+      // chat is cleared it's pointing at a context that no longer exists.
+      _lastProblemSubmission = null;
+      document.querySelector('.dr-problem-strip')?.remove();
+    };
+  } else if (mode === 'problem') {
+    trash.title = 'Clear problem';
+    trash.setAttribute('aria-label', 'Clear problem');
+    trash.onclick = () => {
+      const form = document.getElementById('drProblemForm') as HTMLFormElement | null;
+      if (form) form.reset();
+      document.querySelectorAll<HTMLButtonElement>('.dr-problem-mode').forEach((btn, idx) => {
+        const active = idx === 0;
+        btn.classList.toggle('is-active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      // Also drop the snapshot so the AI-mode strip doesn't reappear
+      // with stale content next time the AI panel mounts.
+      _lastProblemSubmission = null;
     };
   } else {
     // Notes / Summary — delete the currently-loaded note for this tab.
@@ -133,6 +243,172 @@ function configureTrash(mode: DocRailMode): void {
       trash.title = 'Coming soon';
     }
   }
+}
+
+function getSelectedText(): string {
+  try {
+    return window.getSelection()?.toString().trim() || '';
+  } catch {
+    return '';
+  }
+}
+
+function buildProblemChatText(mode: string, problem: string, work: string): string {
+  // Short chat-bubble text. The full problem + studentWork ride along as
+  // structured fields in `problemSolver`, so the backend assembles the
+  // canonical PROBLEM SOLVER INPUT block and doesn't need a second copy
+  // here. Keep a short preview so the user can recognise the entry in
+  // their chat history without scrolling back to the Problem panel.
+  const flatProblem = problem.replace(/\s+/g, ' ').trim();
+  const preview = flatProblem.length > 120 ? flatProblem.slice(0, 117) + '...' : flatProblem;
+  const workTag = work.trim() ? ' (with work attached)' : '';
+  return 'Problem Solver — ' + (PROBLEM_MODE_LABELS[mode] || mode) + workTag + '\n\n> ' + preview;
+}
+
+function renderProblemStrip(content: HTMLElement): void {
+  if (!_lastProblemSubmission) return;
+  // Idempotent — bail if the strip is already in this content area.
+  if (content.querySelector('.dr-problem-strip')) return;
+
+  const sub = _lastProblemSubmission;
+  const label = PROBLEM_MODE_LABELS[sub.mode] || sub.mode;
+  const flat = sub.problem.replace(/\s+/g, ' ').trim();
+  const preview = flat.length > 70 ? flat.slice(0, 67) + '...' : flat;
+
+  const strip = document.createElement('button');
+  strip.type = 'button';
+  strip.className = 'dr-problem-strip';
+  strip.setAttribute('aria-label', 'Edit Problem Solver inputs');
+  strip.title = 'Click to edit the Problem Solver inputs';
+
+  const tag = document.createElement('span');
+  tag.className = 'dr-problem-strip-tag';
+  tag.textContent = 'Problem Solver — ' + label;
+  const previewEl = document.createElement('span');
+  previewEl.className = 'dr-problem-strip-preview';
+  previewEl.textContent = preview;
+  const action = document.createElement('span');
+  action.className = 'dr-problem-strip-action';
+  action.textContent = 'Edit';
+
+  strip.appendChild(tag);
+  strip.appendChild(previewEl);
+  strip.appendChild(action);
+  strip.addEventListener('click', () => openDrawer('problem'));
+
+  content.insertBefore(strip, content.firstChild);
+}
+
+function mountProblemPanel(): void {
+  const content = getContentEl();
+  if (!content) return;
+  content.innerHTML =
+    '<form id="drProblemForm" class="dr-problem">' +
+      '<div class="dr-problem-hero">' +
+        '<div class="dr-problem-kicker">Engineering workflow</div>' +
+        '<h2>Turn a problem into a clean solution path.</h2>' +
+        '<p>Paste the exercise, add your attempt if you have one, then send it to the AI tutor with the right solving mode.</p>' +
+      '</div>' +
+      '<div class="dr-problem-modes" role="group" aria-label="Problem solver mode">' +
+        '<button type="button" class="dr-problem-mode is-active" data-mode="hint" aria-pressed="true">Hint</button>' +
+        '<button type="button" class="dr-problem-mode" data-mode="setup" aria-pressed="false">Setup</button>' +
+        '<button type="button" class="dr-problem-mode" data-mode="check" aria-pressed="false">Check</button>' +
+        '<button type="button" class="dr-problem-mode" data-mode="solve" aria-pressed="false">Solve</button>' +
+        '<button type="button" class="dr-problem-mode" data-mode="practice" aria-pressed="false">Practice</button>' +
+      '</div>' +
+      '<label class="dr-problem-field">' +
+        '<span>Problem statement</span>' +
+        '<textarea id="drProblemText" rows="8" placeholder="Paste the exercise, task, or selected PDF text here"></textarea>' +
+      '</label>' +
+      '<label class="dr-problem-field">' +
+        '<span>Your work optional</span>' +
+        '<textarea id="drProblemWork" rows="4" placeholder="Paste your equations or partial solution if you want it checked"></textarea>' +
+      '</label>' +
+      '<div class="dr-problem-actions">' +
+        '<button type="button" class="dr-problem-secondary" id="drProblemUseSelection">Use selection</button>' +
+        '<button type="submit" class="dr-problem-primary">Send to AI</button>' +
+      '</div>' +
+      '<p class="dr-problem-foot">Tip: select text in the PDF first, then use selection.</p>' +
+    '</form>';
+
+  content.querySelectorAll<HTMLButtonElement>('.dr-problem-mode').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      content.querySelectorAll<HTMLButtonElement>('.dr-problem-mode').forEach((b) => {
+        const active = b === btn;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    });
+  });
+
+  const problemText = content.querySelector<HTMLTextAreaElement>('#drProblemText');
+  const workText = content.querySelector<HTMLTextAreaElement>('#drProblemWork');
+  content.querySelector<HTMLButtonElement>('#drProblemUseSelection')?.addEventListener('click', () => {
+    const selected = getSelectedText();
+    if (!selected || !problemText) return;
+    problemText.value = problemText.value
+      ? problemText.value.trim() + '\n\n' + selected
+      : selected;
+    problemText.focus();
+  });
+
+  // Restore previous submission so "Edit" from the AI-mode strip lands
+  // the user back on the exact form state they sent.
+  if (_lastProblemSubmission) {
+    if (problemText) problemText.value = _lastProblemSubmission.problem;
+    if (workText) workText.value = _lastProblemSubmission.work;
+    const restoreMode = _lastProblemSubmission.mode;
+    content.querySelectorAll<HTMLButtonElement>('.dr-problem-mode').forEach((btn) => {
+      const active = btn.dataset.mode === restoreMode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  content.querySelector<HTMLFormElement>('#drProblemForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const problem = (problemText?.value || '').trim();
+    const work = (workText?.value || '').trim();
+    if (!problem) {
+      problemText?.focus();
+      return;
+    }
+    const activeMode =
+      content.querySelector<HTMLButtonElement>('.dr-problem-mode.is-active')?.dataset.mode || 'hint';
+    const chatText = buildProblemChatText(activeMode, problem, work);
+    // Snapshot the submission so the strip in AI mode + the "Edit"
+    // round-trip back to Problem mode can restore the exact inputs.
+    _lastProblemSubmission = { mode: activeMode, problem, work };
+    const w = window as DocRailWindow;
+    const send = () => {
+      if (typeof w.askAI === 'function') {
+        w.askAI(chatText, false, {
+          problemSolver: {
+            mode: activeMode,
+            problem,
+            studentWork: work || undefined,
+          },
+        });
+      }
+    };
+    if (_openMode === 'ai') {
+      // AI panel already mounted — send now, no need to wait for the
+      // ready event (it won't fire because openDrawer is a no-op).
+      send();
+    } else {
+      // Wait for mountAiPanel to finish, then send. Deterministic
+      // replacement for the previous magic 80ms setTimeout.
+      document.addEventListener('minallo-ai-panel-ready', send, { once: true });
+      openDrawer('ai');
+    }
+  });
+}
+
+function applyUserTypeVisibility(): void {
+  const w = window as Window & { _userType?: string };
+  const problemBtn = document.querySelector<HTMLElement>('.dr-rail-btn[data-dr-mode="problem"]');
+  if (problemBtn) problemBtn.style.display = w._userType === 'learner' ? 'none' : '';
+  if (w._userType === 'learner' && _openMode === 'problem') closeDrawer();
 }
 
 // ── Host content area helpers ────────────────────────────────────────────
@@ -162,7 +438,7 @@ function mountAiPanel(): void {
     return;
   }
   if (!_aiHomeParent) _aiHomeParent = panel.parentElement;
-  // The ai-bubble.js `detachPanel` may have set fixed positioning. Override.
+  // Reset any stray positioning so the panel sits flush inside the drawer.
   panel.classList.add('dr-host-ai');
   panel.style.position = 'static';
   panel.style.left = '';
@@ -182,6 +458,10 @@ function mountAiPanel(): void {
   // Make sure the legacy bridge treats the panel as visible so renders run.
   panel.classList.add('visible');
   content.appendChild(panel);
+  // If the user opened AI via the Problem Solver flow, prepend the
+  // collapsed strip so the problem stays visible while they read the
+  // streaming answer. Cleared via the Problem trash button.
+  renderProblemStrip(content);
   // Restore chat history via existing bridge.
   const w = window as DocRailWindow & { pinAI?: () => void };
   if (typeof w.openAI === 'function') {
@@ -203,6 +483,11 @@ function mountAiPanel(): void {
       input.focus();
     }
   }, 240);
+  // Signal callers (like the Problem Solver submit flow) that the AI
+  // panel is mounted and `window.askAI` can be invoked against a live
+  // panel. Dispatched at the end of mountAiPanel so any listener fires
+  // synchronously after DOM work completes.
+  document.dispatchEvent(new CustomEvent('minallo-ai-panel-ready'));
 }
 
 function restoreAiPanel(): void {
@@ -220,9 +505,9 @@ function restoreAiPanel(): void {
   panel.style.border = '';
   panel.style.background = '';
   panel.style.display = '';
-  // Park it back on document.body (where ai-bubble.js's detachPanel left it),
-  // hidden until next open. We don't try to put it back inside #pdfViewerWrap
-  // because that container may have been swapped out by route navigation.
+  // Park it back on document.body, collapsed (CSS width:0) until the next open.
+  // We don't try to put it back inside #pdfViewerWrap because that container
+  // may have been swapped out by route navigation.
   if (panel.parentElement !== document.body) {
     document.body.appendChild(panel);
   }
@@ -243,6 +528,10 @@ function ensureNotesPanel(): HTMLElement | null {
   } else if (w._notesPanel && typeof w._notesPanel.open === 'function') {
     // Fallback for older notes-panel.js without ensure().
     try { w._notesPanel.open(); } catch (_e) { /* ignore */ }
+  } else if (typeof w._ssLoadPortalFeature === 'function') {
+    void w._ssLoadPortalFeature('notesPanel').then(() => {
+      if (_openMode === 'notes' || _openMode === 'summary') mountNotesPanel(_openMode);
+    });
   }
   panel = document.getElementById('pdfNotesPanel') as HTMLElement | null;
   return panel;
@@ -258,10 +547,10 @@ function mountNotesPanel(mode: 'notes' | 'summary'): void {
     return;
   }
   if (!_notesHomeParent) _notesHomeParent = panel.parentElement;
-  // The legacy open() may have set #pdfView to .pdf-split — undo so the
+  // The legacy open() may have set #centreContent to .pdf-split — undo so the
   // PDF page keeps its full width while the drawer hosts the panel.
-  const pdfView = document.getElementById('pdfView');
-  if (pdfView) pdfView.classList.remove('pdf-split');
+  const centre = document.getElementById('centreContent');
+  if (centre) centre.classList.remove('pdf-split');
   // Reset legacy inline styles & host inside the drawer.
   panel.classList.add('dr-host-notes');
   panel.style.position = 'static';
@@ -275,7 +564,11 @@ function mountNotesPanel(mode: 'notes' | 'summary'): void {
   panel.style.border = 'none';
   panel.style.boxShadow = 'none';
   panel.style.background = 'transparent';
-  content.appendChild(panel);
+  // If the notes feature was lazy-loaded, this drawer may still contain the
+  // temporary "Open a PDF first" placeholder from the first mount attempt.
+  // Replace the content instead of appending so the hosted panel always starts
+  // directly below the drawer header.
+  content.replaceChildren(panel);
   // Switch to the relevant tab (Notes drawer → notes tab; Summary drawer →
   // summary tab). Simulating a click drives the legacy state machine
   // correctly (tabs, detail-row visibility, content render).
@@ -327,6 +620,8 @@ function renderModeContent(mode: DocRailMode): void {
   configureTrash(mode);
   if (mode === 'ai') {
     mountAiPanel();
+  } else if (mode === 'problem') {
+    mountProblemPanel();
   } else {
     mountNotesPanel(mode);
   }
@@ -364,6 +659,7 @@ function openDrawer(mode: DocRailMode): void {
   if (!drawer.classList.contains('dr-sheet')) {
     applyWidth(drawer, _drawerWidth);
   }
+  applySplitState(drawer);
   updateRailActive(mode);
   // Render after the slide-in starts so we don't pay the cost during the
   // transition; tiny delay also helps the input auto-focus feel natural.
@@ -371,10 +667,33 @@ function openDrawer(mode: DocRailMode): void {
     // Mode switch — render immediately.
     renderModeContent(mode);
   } else {
-    window.setTimeout(() => {
+    // First open — wait for the slide-in transition to finish so
+    // the drawer's final dimensions are settled before rendering.
+    const afterTransition = (): void => {
       if (_openMode === mode) renderModeContent(mode);
-    }, 40);
+      if (typeof (window as any).renderPages === 'function') {
+        (window as any).renderPages();
+      }
+    };
+    let fired = false;
+    const onEnd = (e: TransitionEvent): void => {
+      if (e.target !== drawer) return;
+      if (fired) return;
+      fired = true;
+      drawer.removeEventListener('transitionend', onEnd);
+      afterTransition();
+    };
+    drawer.addEventListener('transitionend', onEnd);
+    window.setTimeout(() => {
+      if (!fired) {
+        fired = true;
+        drawer.removeEventListener('transitionend', onEnd);
+        afterTransition();
+      }
+    }, 350);
   }
+  const w2 = window as DocRailWindow;
+  if (typeof w2._ssSyncUrl === 'function') w2._ssSyncUrl();
 }
 
 function closeDrawer(): void {
@@ -395,6 +714,7 @@ function closeDrawer(): void {
   }
   updateDrawerModeClass(drawer, null);
   updateRailActive(null);
+  clearSplitState();
   // Tear down hosted content so legacy modules' references stay valid.
   clearDrawerContent();
   const onEnd = (): void => {
@@ -405,6 +725,15 @@ function closeDrawer(): void {
   window.setTimeout(() => {
     if (!drawer.classList.contains('is-open')) drawer.hidden = true;
   }, 360);
+  // Re-render PDF after the slide-out transition so the canvas expands
+  // back to the full column width.
+  window.setTimeout(() => {
+    if (typeof (window as any).renderPages === 'function') {
+      (window as any).renderPages();
+    }
+  }, 320);
+  const w2 = window as DocRailWindow;
+  if (typeof w2._ssSyncUrl === 'function') w2._ssSyncUrl();
 }
 
 function toggleMode(mode: DocRailMode): void {
@@ -423,32 +752,51 @@ function wireResize(): void {
   let dragging = false;
   let startX = 0;
   let startW = 0;
+  let rafId = 0;
+  let pendingWidth = 0;
 
   const onMove = (e: MouseEvent): void => {
     if (!dragging) return;
     const dx = e.clientX - startX;
-    const next = clampWidth(startW - dx);
-    _drawerWidth = next;
-    applyWidth(drawer, next);
+    pendingWidth = clampWidth(startW - dx);
+    if (!rafId) {
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        _drawerWidth = pendingWidth;
+        applyWidth(drawer, pendingWidth);
+        if (document.body.classList.contains('pdf-maximized')) {
+          setDrawerWidthVar(pendingWidth);
+        }
+      });
+    }
   };
 
   const onUp = (): void => {
     if (!dragging) return;
     dragging = false;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    _drawerWidth = pendingWidth;
+    applyWidth(drawer, pendingWidth);
+    if (document.body.classList.contains(SPLIT_CLASS) || isDesktopDrawerOpen(drawer)) {
+      setDrawerWidthVar(pendingWidth);
+    }
     handle.classList.remove('is-active');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     saveWidth(_drawerWidth);
+    if (typeof (window as any).renderPages === 'function') {
+      (window as any).renderPages();
+    }
   };
 
   handle.addEventListener('mousedown', (e: MouseEvent) => {
-    // Resize is desktop-only — disable in mobile bottom-sheet mode.
     if (drawer.classList.contains('dr-sheet')) return;
     dragging = true;
     startX = e.clientX;
-    startW = drawer.offsetWidth || _drawerWidth;
+    startW = _drawerWidth;
+    pendingWidth = startW;
     handle.classList.add('is-active');
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
@@ -482,9 +830,16 @@ function wireClose(): void {
 function setRouteVisibility(route: DocRailRoute): void {
   const root = $('drRoot');
   if (!root) return;
+  _route = route;
+  applyUserTypeVisibility();
   root.hidden = false;
   root.classList.toggle('is-pdf', route === 'pdf');
   root.classList.toggle('is-courses', route === 'courses');
+  if (route === 'other') {
+    clearSplitState();
+  } else {
+    applySplitState($('drDrawer'));
+  }
   if (route === 'other' && _openMode != null) {
     closeDrawer();
   }
@@ -506,13 +861,17 @@ export function initDocumentRail(): void {
   wireRailButtons();
   wireClose();
   wireResize();
+  applyUserTypeVisibility();
+  window.addEventListener('ss-profile-updated', applyUserTypeVisibility);
 
   const w: DocRailWindow = window as DocRailWindow;
   w.__minalloDocRail = {
     setRouteVisibility,
     open: openDrawer,
     close: closeDrawer,
+    currentMode: () => _openMode,
   };
 
-  root.classList.remove('is-pdf', 'is-courses');
+  root.classList.remove('is-pdf', 'is-courses', 'is-open');
+  clearSplitState();
 }

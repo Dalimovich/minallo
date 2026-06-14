@@ -29,6 +29,42 @@ def test_question_hash_changes_with_wording() -> None:
     assert question_hash("Define velocity") != question_hash("Define acceleration")
 
 
+def test_question_hash_changes_with_source_scope() -> None:
+    from app.services.cache import question_hash
+
+    course = question_hash(
+        "Define velocity",
+        source_mode="course_files",
+        source_scope="course_files",
+    )
+    internet = question_hash(
+        "Define velocity",
+        source_mode="internet",
+        source_scope="internet",
+    )
+
+    assert course != internet
+
+
+def test_question_hash_changes_with_selected_documents() -> None:
+    from app.services.cache import question_hash
+
+    doc_a = question_hash(
+        "Define velocity",
+        source_mode="course_files",
+        source_scope="course_files",
+        selected_document_ids=["doc_a"],
+    )
+    doc_b = question_hash(
+        "Define velocity",
+        source_mode="course_files",
+        source_scope="course_files",
+        selected_document_ids=["doc_b"],
+    )
+
+    assert doc_a != doc_b
+
+
 def test_document_version_hash_is_order_independent() -> None:
     from app.services.cache import document_version_hash
 

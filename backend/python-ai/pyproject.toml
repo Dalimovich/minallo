@@ -14,6 +14,12 @@ dependencies = [
   "openai>=1.40",
   "pdfminer.six>=20240706",
   "tiktoken>=0.7",
+  # Phase 12 vision OCR — renders PDF pages to PNG for the vision model.
+  # Pure-Python wheel, ships its own PDFium binary, no system Poppler needed.
+  "pypdfium2>=4.30",
+  # pypdfium2.to_pil() lazy-imports PIL — Pillow must be installed at runtime.
+  "Pillow>=10.4",
+  "gunicorn>=21.2",
 ]
 
 [project.optional-dependencies]

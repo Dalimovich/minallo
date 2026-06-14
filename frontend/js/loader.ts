@@ -45,6 +45,34 @@ interface LandingTranslation {
   }
   if (SS) SS.emit('loader:start', { loggedIn: !!window._ssIsLoggedIn });
 
+  // Universal fetch-with-timeout helper. Every boot-path fetch goes through
+  // this so a single stalled request can't hang the entire app. On timeout
+  // we resolve the abort which surfaces as a normal fetch error in the
+  // caller's .catch — same handling as a network failure.
+  function _fetchTimeout(input: string, ms: number, init?: RequestInit): Promise<Response> {
+    const hasAC = typeof AbortController !== 'undefined';
+    const ctrl = hasAC ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+    return fetch(input, { ...(init || {}), signal: ctrl ? ctrl.signal : undefined })
+      .then((r) => { if (timer) clearTimeout(timer); return r; })
+      .catch((err) => { if (timer) clearTimeout(timer); throw err; });
+  }
+  // Hard splash-hide fallback. If ss-ready hasn't fired 35 seconds after
+  // boot — beyond every per-fetch and per-script timeout combined — force
+  // the splash off so the user sees SOMETHING they can act on, even if
+  // it's a partially-rendered page or a sign-in fallback. This is the
+  // last line of defense and must never depend on any boot artifact.
+  let _ssReadyFired = false;
+  window.addEventListener('ss-ready', () => { _ssReadyFired = true; }, { once: true });
+  setTimeout(() => {
+    if (_ssReadyFired) return;
+    console.error('[loader] hard splash-hide fallback — 35s elapsed without ss-ready');
+    try { document.body.setAttribute('data-ss-ready', '1'); } catch (e) { /* noop */ }
+    const splash = document.getElementById('ss-splash');
+    if (splash) splash.style.display = 'none';
+    try { window.dispatchEvent(new Event('ss-ready')); } catch (e) { /* noop */ }
+  }, 35000);
+
   // ── Landing translations ─────────────────────────────────────────────────
   const _landingTrans: Record<'en' | 'de', LandingTranslation> = {
     en: {
@@ -53,8 +81,8 @@ interface LandingTranslation {
       h1: 'Study smarter,<br>not harder.',
       subtitle:
         'One workspace for courses, PDFs, your AI tutor and lecture notes. Stop switching tabs — start understanding.',
-      cta: 'Start for free →',
-      note: 'Free forever · No credit card needed',
+      cta: 'Start free trial →',
+      note: '7-day free trial · Cancel anytime',
       features_label: 'What you get',
       features_title: 'Everything you need to ace your degree',
       f1_title: 'Smart PDF Viewer',
@@ -78,7 +106,7 @@ interface LandingTranslation {
       cta2_title: 'Ready to study smarter?',
       cta2_desc:
         'Join thousands of students already using Minallo to save time, understand more and stress less.',
-      cta2_btn: 'Create your free account →',
+      cta2_btn: 'Start your free trial →',
       stats_rating: 'Average rating',
       stats_students: 'Students',
       stats_pdfs: 'PDFs analysed',
@@ -93,7 +121,7 @@ interface LandingTranslation {
       subtitle:
         'Ein Arbeitsbereich für Kurse, PDFs, deinen KI-Tutor und Vorlesungsnotizen. Höre auf, Tabs zu wechseln — fange an zu verstehen.',
       cta: 'Kostenlos starten →',
-      note: 'Für immer kostenlos · Keine Kreditkarte nötig',
+      note: '7 Tage kostenlos testen · Jederzeit kündbar',
       features_label: 'Was du bekommst',
       features_title: 'Alles, was du für deinen Abschluss brauchst',
       f1_title: 'Intelligenter PDF-Viewer',
@@ -222,18 +250,29 @@ interface LandingTranslation {
     // remains in the repo (frontend/css/landing.css) but is no longer
     // injected — the new landing replaces it visually.
     (function () {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'css/new-landing.css?v=1';
-      document.head.appendChild(link);
-      // task-04: auth modal can be triggered from the landing too, ship its CSS up front.
-      const authLink = document.createElement('link');
-      authLink.rel = 'stylesheet';
-      authLink.href = 'css/auth.css?v=4';
-      document.head.appendChild(authLink);
+      function ensureStylesheet(href: string): void {
+        const path = href.split('?')[0] || href;
+        const exists = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some((link) => {
+          const current = link.getAttribute('href') || '';
+          const currentPath = current.split('?')[0] || current;
+          if (current === href) return true;
+          if (currentPath.endsWith(path)) {
+            link.setAttribute('href', href);
+            return true;
+          }
+          return false;
+        });
+        if (exists) return;
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        document.head.appendChild(link);
+      }
+      ensureStylesheet('css/new-landing.css?v=23');
+      ensureStylesheet('css/auth.css?v=5');
     })();
 
-    fetch('pages/new_landing.html')
+    _fetchTimeout('pages/new_landing.html?v=24', 10000)
       .then((r) => {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' loading new_landing.html');
         return r.text();
@@ -245,11 +284,27 @@ interface LandingTranslation {
         // can find its #/data-* hooks on first query.
         (function () {
           const script = document.createElement('script');
-          script.src = 'js/pages/new-landing.js?v=1';
+          script.src = 'js/pages/new-landing.js?v=22';
           script.defer = true;
           document.body.appendChild(script);
         })();
+        // Inject the Google Sign-In client (gsi/client) AFTER the landing
+        // partial is in the DOM. Previously this lived as a render-blocking
+        // <script async defer> in index.html — Lighthouse flagged it as 95KiB
+        // of which ~72KiB is unused on the landing, and it competed for
+        // bandwidth with the LCP fonts. auth-bootstrap.js polls for
+        // `google.accounts` every 100ms, so delaying the script load by a
+        // few hundred ms is transparent to OneTap init.
+        (function injectGsiClient(): void {
+          if (document.querySelector('script[src*="accounts.google.com/gsi/client"]')) return;
+          const gsi = document.createElement('script');
+          gsi.src = 'https://accounts.google.com/gsi/client';
+          gsi.async = true;
+          gsi.defer = true;
+          document.head.appendChild(gsi);
+        })();
         if (SS) SS.markReady('landing', { file: 'pages/new_landing.html' });
+        window.dispatchEvent(new Event('ss-ready'));
         console.log('✓ New landing page loaded');
 
         // Re-run fade-in observer — scripts inside landing.html don't execute via innerHTML
@@ -318,6 +373,7 @@ interface LandingTranslation {
           'background:linear-gradient(90deg,#b87bff,#ef79c4);' +
           'border:none;border-radius:999px;color:#fff;font-weight:800;cursor:pointer">' +
           'Sign in with Google</button></div>';
+        window.dispatchEvent(new Event('ss-ready'));
       });
 
     return; // ← do NOT load app sections below
@@ -346,22 +402,21 @@ interface LandingTranslation {
   // Inject feature CSS
   (function () {
     [
-      'css/auth.css?v=4',
+      'css/base.css?v=6',
+      'css/theme.css?v=6',
+      'css/styles.css?v=43',
+      'css/courses-redesign.css?v=40',
+      'views/daily-mission/daily-mission.css?v=11',
+      'css/app-design-system.css?v=6',
+      'css/layout.css?v=15',
+      'css/document-rail.css?v=28',
+      'css/auth.css?v=5',
+      'css/onboarding.css?v=1',
       'views/toast/toast.css',
-      'views/chatbot/chatbot.css',
-      'views/chatbot/ai-bubble.css',
-      'views/chat/chat.css',
-      'views/dashboard/dashboard.css',
-      'views/practice/practice.css',
-      'views/flashcards/flashcards.css',
-      'views/quiz/quiz.css',
-      'views/lecturenotes/lecturenotes.css',
-      'views/profile/profile.css',
-      'views/settings/settings.css',
-      'views/subscription/subscription.css',
-      'views/editor/editor.css',
       'views/games/games.css',
-      'views/notes/notes-panel.css',
+      // Light-mode polish loads LAST so it wins source-order ties
+      // against feature CSS that still hard-codes greys.
+      'css/light-mode.css?v=52',
     ].forEach((href) => {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
@@ -383,28 +438,56 @@ interface LandingTranslation {
   }
 
   function loadAppScript(): void {
-    const _v = Date.now();
+    const _v = String(window.MinalloConfig?.assetVersion || SS?.version || '1');
     if (SS) SS.emit('loader:app-script:start', {});
 
+    function versioned(src: string): string {
+      return src + (src.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(_v);
+    }
+
+    // 10s per-script timeout: HTTPS-inspection AV (e.g. Norton WFP) can drop a
+    // request silently — no onload, no onerror, just pending forever. Without
+    // this fallback the entire boot chain hangs and ss-ready never fires.
+    // On timeout we resolve (not reject) so the chain continues — downstream
+    // code may run degraded, but the splash hides and the user can recover.
+    const SCRIPT_TIMEOUT_MS = 10000;
+    // Scripts whose last load attempt errored/timed out. loadScript resolves
+    // either way (boot must not hang), so this set is how lazy-feature loading
+    // knows a "completed" chain actually has holes and must not be cached.
+    const failedScripts = new Set<string>();
     function loadScript(src: string, readyKey: string, options?: LoadScriptOptions): Promise<void> {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((resolve) => {
         const opts = options || {};
         const script = document.createElement('script');
         if (opts.type) script.type = opts.type;
-        script.src = src + '?v=' + _v;
-        script.onload = () => {
-          if (SS && readyKey) SS.markReady(readyKey, { file: src });
+        script.src = versioned(src);
+        let settled = false;
+        const settle = (reason: 'load' | 'error' | 'timeout', err?: Error): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (reason === 'load') {
+            failedScripts.delete(src);
+            if (SS && readyKey) SS.markReady(readyKey, { file: src });
+          } else {
+            // Drop the dead tag so a retry appends a fresh one that refetches.
+            failedScripts.add(src);
+            if (script.parentNode) script.parentNode.removeChild(script);
+            console.error('[loader] ' + reason + ': ' + src, err || '');
+            if (SS) SS.emit('loader:script:' + reason, { file: src });
+          }
           resolve();
         };
-        script.onerror = () => {
-          reject(new Error('Failed to load ' + src));
-        };
+        const timer = setTimeout(() => settle('timeout'), SCRIPT_TIMEOUT_MS);
+        script.onload = () => settle('load');
+        script.onerror = () => settle('error', new Error('Failed to load ' + src));
         document.body.appendChild(script);
       });
     }
 
     // Load dependency helpers and early feature globals first, then app/router.
     loadScript('js/dependencies.js', 'dependencies-script')
+      .then(() => loadScript('js/utils/db-helpers.js', 'db-helpers-script'))
       .then(() => loadScript('views/subscription/subscription.js', 'subscription-script'))
       .then(() => {
         // app-data.js must load before app.js — it declares SEMS, COLORS, MAJOR_LIST, SUBJECT_LIST
@@ -422,74 +505,334 @@ interface LandingTranslation {
         console.log('app.js + modules loaded');
         return loadScript('js/router.js', 'router-script');
       })
+      .then(() => loadScript('js/services/progress-sync.js', 'progress-sync-script', { type: 'module' }))
       .then(() => {
         // Feature scripts load AFTER app.js so _init() can safely call app globals.
         // Track all loads so ss-ready only fires after every feature script is done.
-        // Game sub-modules (tetris/solitaire/bird/chess) must load before games.js (hub)
-        // so their window.* functions are defined when games.js _init() wires the buttons.
         const featureSrcs = [
           'views/toast/toast.js',
-          'views/chatbot/chatbot.js?v=2',
-          'views/chatbot/ai-bubble.js?v=4',
-          'views/chat/chat.js',
-          'views/dashboard/dashboard-widget.js',
-          'views/dashboard/dashboard-calendar.js',
-          'js/utils/db-helpers.js',
-          'views/practice/practice.js',
-          'views/flashcards/flashcards.js',
-          'views/quiz/quiz.js',
-          'views/lecturenotes/lecturenotes.js',
-          'views/profile/profile.js',
-          'views/settings/settings.js',
-          'views/editor/editor.js',
-          'views/editor/merger.js',
-          'views/editor/writer.js',
-          'views/notes/notes-panel.js',
-          'views/games/games-tetris.js',
-          'views/games/games-solitaire-shared.js',
-          'views/games/games-solitaire-klondike.js',
-          'views/games/games-solitaire-spider.js',
-          'views/games/games-solitaire-scorpion.js',
-          'views/games/games-solitaire-freecell.js',
-          'views/games/games-solitaire-pyramid.js',
-          'views/games/games-solitaire-tripeaks.js',
-          'views/games/games-solitaire-vegas.js',
-          'views/games/games-solitaire-dispatcher.js',
-          'views/games/games-bird.js',
-          'views/games/games-chess.js',
-          'views/games/games.js',
         ];
-        const featurePromises = featureSrcs.map((src) => {
-          return new Promise<void>((res) => {
+        function loadDeferredFeatures(): void {
+          featureSrcs.forEach((src) => {
             const s = document.createElement('script');
-            s.src = src + '?v=' + _v;
-            s.onload = () => res();
-            s.onerror = () => {
-              console.error('Failed to load feature script:', src);
-              res();
+            s.src = versioned(src);
+            let settled = false;
+            const settle = (reason: 'load' | 'error' | 'timeout'): void => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
+              if (reason !== 'load') console.error('[loader] feature ' + reason + ':', src);
             };
+            const timer = setTimeout(() => settle('timeout'), SCRIPT_TIMEOUT_MS);
+            s.onload = () => settle('load');
+            s.onerror = () => settle('error');
             document.body.appendChild(s);
           });
-        });
+        }
 
-        void Promise.all(featurePromises).then(() => {
+        // Games hub: ~150KB across 13 scripts (8 solitaire variants, tetris,
+        // bird, chess, hub dispatcher). Most users never open the games page
+        // in a session — defer to first click on the games nav.
+        // Sub-modules (tetris/solitaire/bird/chess) must load before games.js
+        // (hub) so their window.* functions are defined when games.js _init()
+        // wires the buttons — we therefore load them sequentially.
+        (function setupGamesLazy(): void {
+          const GAMES_SCRIPTS = [
+            'views/games/games-tetris.js',
+            'views/games/games-solitaire-shared.js',
+            'views/games/games-solitaire-klondike.js',
+            'views/games/games-solitaire-spider.js',
+            'views/games/games-solitaire-scorpion.js',
+            'views/games/games-solitaire-freecell.js',
+            'views/games/games-solitaire-pyramid.js',
+            'views/games/games-solitaire-tripeaks.js',
+            'views/games/games-solitaire-vegas.js',
+            'views/games/games-solitaire-dispatcher.js',
+            'views/games/games-bird.js',
+            'views/games/games-chess.js',
+            'views/games/games.js',
+          ];
+          let loaded = false;
+          function loadGames(): void {
+            if (loaded) return;
+            loaded = true;
+            // async=false scripts download in PARALLEL but execute in
+            // insertion order, so games.js (the hub) still runs after every
+            // sub-module — readiness drops from 13 sequential round trips
+            // (the old promise chain) to roughly one.
+            GAMES_SCRIPTS.forEach((src) => {
+              const s = document.createElement('script');
+              s.src = versioned(src);
+              s.async = false;
+              s.onerror = (): void => { console.error('lazy-games failed:', src); };
+              document.body.appendChild(s);
+            });
+          }
+          function bindTrigger(): boolean {
+            const btn = document.getElementById('psbGames');
+            if (!btn) return false;
+            ['pointerenter', 'pointerdown', 'focusin', 'touchstart', 'click'].forEach((eventName) => {
+              btn.addEventListener(eventName, loadGames, { once: true, passive: eventName !== 'click' });
+            });
+            return true;
+          }
+          if (!bindTrigger()) {
+            // Section HTML may still be injecting — retry until the nav button exists.
+            const obs = new MutationObserver(() => {
+              if (bindTrigger()) obs.disconnect();
+            });
+            obs.observe(document.body, { childList: true, subtree: true });
+          }
+
+          // The hub injects its markup into the empty #psec-games div only
+          // after every script has run, so a cold click stared at a blank
+          // page. Prewarm the bundle once the app is idle — by the time a
+          // user reaches for Games it's already executed and the page
+          // renders instantly.
+          function scheduleGamesIdlePrewarm(): void {
+            const schedule = window.requestIdleCallback
+              ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 9000 })
+              : (cb: () => void) => window.setTimeout(cb, 3500);
+            window.setTimeout(() => schedule(loadGames), 2600);
+          }
+          if (document.body.getAttribute('data-ss-ready') === '1') scheduleGamesIdlePrewarm();
+          else window.addEventListener('ss-ready', scheduleGamesIdlePrewarm, { once: true });
+        })();
+
+        (function setupPortalFeatureLazyLoad(): void {
+          const lazyMap: Record<string, string[]> = {
+            dashboard: [
+              'views/dashboard/dashboard-widget.js',
+            ],
+            dashboardCalendar: ['views/dashboard/dashboard-calendar.js'],
+            chat: ['views/chat/chat.js'],
+            aipage: ['views/chatbot/chatbot.js?v=8'],
+            german: ['views/practice/practice.js'],
+            notes: ['views/lecturenotes/lecturenotes.js'],
+            profile: ['views/profile/profile.js'],
+            settings: ['views/settings/settings.js'],
+            flashcards: ['js/utils/db-helpers.js', 'views/flashcards/flashcards.js'],
+            quiz: ['js/utils/db-helpers.js', 'views/quiz/quiz.js'],
+            examforge: ['js/utils/db-helpers.js', 'views/examforge/examforge.js'],
+            cheatsheet: ['js/utils/db-helpers.js', 'views/cheatsheet/cheatsheet.js'],
+            deeplearn: ['js/utils/db-helpers.js', 'views/deep-learn/deep-learn.js'],
+            notesPanel: ['views/notes/notes-math.js', 'views/notes/notes-panel.js'],
+            // writer/merger register listeners for ss-editor-ready, so load
+            // them before editor.js fetches markup and dispatches the event.
+            editor: [
+              'views/editor/writer.js',
+              'views/editor/merger.js',
+              'views/editor/editor.js',
+            ],
+          };
+          const lazyCssMap: Record<string, string[]> = {
+            dashboard: ['views/dashboard/dashboard.css?v=5'],
+            chat: ['views/chat/chat.css'],
+            aipage: ['views/chatbot/chatbot.css?v=15'],
+            german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
+            notes: ['views/lecturenotes/lecturenotes.css'],
+            profile: ['views/profile/profile.css'],
+            settings: ['views/settings/settings.css'],
+            subscription: ['views/subscription/subscription.css'],
+            flashcards: ['views/flashcards/flashcards.css'],
+            quiz: ['views/quiz/quiz.css'],
+            examforge: ['views/examforge/examforge.css?v=2'],
+            cheatsheet: ['views/cheatsheet/cheatsheet.css'],
+            deeplearn: ['views/deep-learn/deep-learn.css'],
+            notesPanel: ['views/notes/notes-panel.css'],
+            editor: ['views/editor/editor.css'],
+          };
+          const lazyPromises: Record<string, Promise<void>> = {};
+          const navFeatureMap: Record<string, string> = {
+            psbDashboard: 'dashboard',
+            pcStudip: 'studip',
+            psbGerman: 'german',
+            psbProfile: 'profile',
+            authAvatar: 'profile',
+            psbSettings: 'settings',
+            psbSubscription: 'subscription',
+            psbNotes: 'notes',
+            psbEditor: 'editor',
+            psbAIPage: 'aipage',
+            psbChat: 'chat',
+            psbGames: 'games',
+          };
+          function ensureStylesheet(href: string): void {
+            const hrefWithVersion = versioned(href);
+            const path = href.split('?')[0] || href;
+            const exists = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some((link) => {
+              const current = link.getAttribute('href') || '';
+              const currentPath = current.split('?')[0] || current;
+              return current === hrefWithVersion || currentPath.endsWith(path);
+            });
+            if (exists) return;
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = hrefWithVersion;
+            // A failed link left in the DOM passes the `exists` check above
+            // forever, so the feature's CSS would never be retried. Drop it.
+            link.onerror = () => { link.remove(); };
+            document.head.appendChild(link);
+          }
+          function keepLightModeLast(): void {
+            const light = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).find((link) => {
+              return (link.getAttribute('href') || '').indexOf('css/light-mode.css') !== -1;
+            });
+            if (light) document.head.appendChild(light);
+          }
+          (window as unknown as {
+            _ssLoadPortalFeature?: (name: string) => Promise<void>;
+          })._ssLoadPortalFeature = function (name: string): Promise<void> {
+            const srcs = lazyMap[name] || [];
+            const css = lazyCssMap[name] || [];
+            if (!srcs.length && !css.length) return Promise.resolve();
+            if (lazyPromises[name]) return lazyPromises[name];
+            css.forEach(ensureStylesheet);
+            keepLightModeLast();
+            lazyPromises[name] = srcs
+              .reduce<Promise<void>>(
+                (p, src) => p.then(() => loadScript(src, 'lazy-' + name)),
+                Promise.resolve()
+              )
+              .then(() => {
+                // loadScript resolves even on error/timeout; if any script in
+                // this feature failed, evict the cache so the next visit
+                // retries instead of running the feature half-loaded forever.
+                if (srcs.some((src) => failedScripts.has(src))) delete lazyPromises[name];
+              });
+            return lazyPromises[name];
+          };
+
+          function loadPortalRoute(name: string): Promise<void> {
+            const htmlFiles: Record<string, string> = {
+              profile: 'views/profile/profile.html',
+              settings: 'views/settings/settings.html',
+              subscription: 'views/subscription/subscription.html',
+            };
+            if (name === 'aipage') prewarmChatbotShell();
+            const htmlPromise = htmlFiles[name]
+              ? loadFeatureSection({ id: 'psec-' + name, file: htmlFiles[name] })
+              : Promise.resolve();
+            const featurePromise = (window as unknown as {
+              _ssLoadPortalFeature?: (featureName: string) => Promise<void>;
+            })._ssLoadPortalFeature?.(name) || Promise.resolve();
+            return Promise.all([htmlPromise, featurePromise]).then(() => undefined);
+          }
+
+          function prewarmChatbotShell(): void {
+            const w = window as unknown as {
+              _ncbHtmlPromise?: Promise<string>;
+            };
+            if (!w._ncbHtmlPromise) {
+              w._ncbHtmlPromise = _fetchTimeout('views/chatbot/chatbot.html', 10000).then((r) => {
+                if (!r.ok) throw new Error('HTTP ' + r.status + ' loading chatbot.html');
+                return r.text();
+              });
+            }
+            const shellSrc =
+              'js/features/chatbot-new/shell.js?v=9&av=' +
+              encodeURIComponent(String(window.MinalloConfig?.assetVersion || SS?.version || '1'));
+            const exists = Array.from(document.querySelectorAll('link[rel="modulepreload"]')).some(
+              (link) => (link.getAttribute('href') || '') === shellSrc
+            );
+            if (!exists) {
+              const link = document.createElement('link');
+              link.rel = 'modulepreload';
+              link.href = shellSrc;
+              document.head.appendChild(link);
+            }
+          }
+
+          (window as unknown as {
+            _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+          })._ssPrewarmPortalFeature = function (name: string): Promise<void> {
+            if (!name || name === 'studip' || name === 'notifications' || name === 'lounge') {
+              return Promise.resolve();
+            }
+            return loadPortalRoute(name).catch((err: unknown) => {
+              console.warn('[loader] route prewarm failed:', name, err);
+            });
+          };
+
+          function setupNavIntentPrewarm(): void {
+            const rootNav = document.querySelector('#portal .sb-nav');
+            if (!rootNav) return;
+            const prewarmFromTarget = (target: EventTarget | null): void => {
+              const el = target instanceof Element ? target.closest<HTMLElement>('.sb-item') : null;
+              if (!el || el.dataset.comingSoon) return;
+              const featureName = navFeatureMap[el.id];
+              if (!featureName) return;
+              void (window as unknown as {
+                _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+              })._ssPrewarmPortalFeature?.(featureName);
+            };
+            ['pointerover', 'pointerdown', 'focusin', 'touchstart'].forEach((eventName) => {
+              rootNav.addEventListener(eventName, (event) => prewarmFromTarget(event.target), {
+                passive: true,
+              });
+            });
+          }
+          setupNavIntentPrewarm();
+
+          function scheduleChatPrewarm(): void {
+            const run = (): void => {
+              const loadFeature = (window as unknown as {
+                _ssLoadPortalFeature?: (name: string) => Promise<void>;
+              })._ssLoadPortalFeature;
+              if (typeof loadFeature !== 'function') return;
+              void Promise.all([loadFeature('aipage'), loadFeature('chat')]).catch((err) => {
+                console.warn('[loader] chat prewarm failed', err);
+              });
+              // Settings is html + js + css fetched on demand, so a cold
+              // click showed an empty section while the network round trips
+              // ran. Prewarm the whole route (same path the nav hover uses)
+              // so it renders instantly.
+              const prewarmRoute = (window as unknown as {
+                _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+              })._ssPrewarmPortalFeature;
+              if (typeof prewarmRoute === 'function') void prewarmRoute('settings');
+            };
+            const schedule = window.requestIdleCallback
+              ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 4500 })
+              : (cb: () => void) => window.setTimeout(cb, 1800);
+            window.setTimeout(() => schedule(run), 900);
+          }
+
+          if (document.body.getAttribute('data-ss-ready') === '1') scheduleChatPrewarm();
+          else window.addEventListener('ss-ready', scheduleChatPrewarm, { once: true });
+        })();
+
+        {
           const aiScript = document.createElement('script');
-          aiScript.src = 'js/ai.js?v=' + _v;
-          aiScript.onload = () => {
-            console.log('js/ai.js loaded');
-            if (SS) {
-              SS.markReady('ai', { file: 'js/ai.js' });
-              SS.markReady('app', {});
+          aiScript.src = versioned('js/ai.js');
+          let aiSettled = false;
+          const fireReady = (ok: boolean): void => {
+            if (aiSettled) return;
+            aiSettled = true;
+            clearTimeout(aiTimer);
+            if (ok) {
+              console.log('js/ai.js loaded');
+              if (SS) {
+                SS.markReady('ai', { file: 'js/ai.js' });
+                SS.markReady('app', {});
+              }
+            } else {
+              console.error('[loader] js/ai.js failed or timed out — falling back');
+              if (SS) SS.markReady('app', { ai: false });
             }
             window.dispatchEvent(new Event('ss-ready'));
+            const scheduleDashboard = window.requestIdleCallback
+              ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 3500 })
+              : (cb: () => void) => window.setTimeout(cb, 2500);
+            scheduleDashboard(() => {
+              loadDeferredFeatures();
+            });
           };
-          aiScript.onerror = () => {
-            console.error('Failed to load js/ai.js — falling back');
-            if (SS) SS.markReady('app', { ai: false });
-            window.dispatchEvent(new Event('ss-ready'));
-          };
+          const aiTimer = setTimeout(() => fireReady(false), SCRIPT_TIMEOUT_MS);
+          aiScript.onload = () => fireReady(true);
+          aiScript.onerror = () => fireReady(false);
           document.body.appendChild(aiScript);
-        });
+        }
       })
       .catch((err: unknown) => {
         console.error('Failed to load app scripts:', err);
@@ -498,34 +841,51 @@ interface LandingTranslation {
       });
   }
 
-  function loadFeatureSections(): Promise<unknown> {
-    return Promise.all(
-      FEATURE_SECTIONS.map((section) => {
-        return fetch(section.file)
-          .then((r) => {
-            if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + section.file);
-            return r.text();
-          })
-          .then((html) => {
-            const target = document.getElementById(section.id);
-            if (!target) {
-              console.warn('Missing feature section #' + section.id);
-              return;
-            }
-            target.innerHTML = html;
-            if (SS) SS.emit('feature:html-loaded', { id: section.id, file: section.file });
-          })
-          .catch((err: unknown) => {
-            console.error('Error loading ' + section.file + ':', err);
-          });
+  const loadedFeatureSections: Record<string, Promise<void>> = {};
+  function loadFeatureSection(section: FeatureSection): Promise<void> {
+    const cached = loadedFeatureSections[section.id];
+    if (cached) return cached;
+    const fetchOnce = (): Promise<string> =>
+      _fetchTimeout(section.file, 10000).then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + section.file);
+        return r.text();
+      });
+    const promise = fetchOnce()
+      // One immediate retry: a single DNS blip / slow first byte otherwise
+      // blanks the section (observed: settings.html AbortError on flaky DNS).
+      .catch(() => fetchOnce())
+      .then((html) => {
+        const target = document.getElementById(section.id);
+        if (!target) {
+          console.warn('Missing feature section #' + section.id);
+          return;
+        }
+        target.innerHTML = html;
+        if (SS) SS.emit('feature:html-loaded', { id: section.id, file: section.file });
       })
-    );
+      .catch((err: unknown) => {
+        console.error('Error loading ' + section.file + ':', err);
+        // Do NOT cache the failure — with it cached, every later visit to the
+        // section returned this settled promise and the page stayed blank for
+        // the rest of the session. Evict so the next navigation refetches.
+        delete loadedFeatureSections[section.id];
+      });
+    loadedFeatureSections[section.id] = promise;
+    return promise;
   }
+
+  (window as unknown as {
+    _ssLoadFeatureSection?: (name: string) => Promise<void>;
+  })._ssLoadFeatureSection = function (name: string): Promise<void> {
+    const id = name.startsWith('psec-') ? name : 'psec-' + name;
+    const section = FEATURE_SECTIONS.find((item) => item.id === id);
+    return section ? loadFeatureSection(section) : Promise.resolve();
+  };
 
   // Fetch all sections in parallel, inject in order
   void Promise.all(
     SECTIONS.map((filename) => {
-      return fetch(filename)
+      return _fetchTimeout(filename, 10000)
         .then((r) => {
           if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
           return r.text();
@@ -545,10 +905,7 @@ interface LandingTranslation {
       while (wrapper.firstChild) root.appendChild(wrapper.firstChild);
     });
     if (SS) SS.markReady('sections', { count: htmls.length });
-    void loadFeatureSections().then(() => {
-      if (SS) SS.markReady('feature-sections', { count: FEATURE_SECTIONS.length });
-      loadAppScript();
-    });
+    loadAppScript();
   });
 })();
 
