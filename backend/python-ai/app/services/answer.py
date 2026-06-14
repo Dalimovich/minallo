@@ -75,7 +75,10 @@ def _needs_max_completion_tokens(model: str | None) -> bool:
 
 
 def chat_completion_params(
-    model: str | None, max_tokens: int, temperature: float | None = None
+    model: str | None,
+    max_tokens: int,
+    temperature: float | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Build the model-specific token/temperature kwargs for chat.completions.
 
@@ -83,11 +86,16 @@ def chat_completion_params(
     tokens are billed against this cap, so a tight value truncates the
     answer) and NO temperature. Chat models: `max_tokens` + optional
     temperature, as before.
+
+    `reasoning_effort` overrides the global default for this call only — used
+    by synthesis tasks (e.g. note generation) that don't need the deep
+    reasoning the global math default is tuned for, so they can run at "low"
+    and emit far fewer (billed) reasoning tokens.
     """
     if is_reasoning_model(model):
         return {
             "max_completion_tokens": max(max_tokens, 12000),
-            "reasoning_effort": get_settings().openai_reasoning_effort,
+            "reasoning_effort": reasoning_effort or get_settings().openai_reasoning_effort,
         }
     if _needs_max_completion_tokens(model):
         params: dict[str, Any] = {"max_completion_tokens": max_tokens}

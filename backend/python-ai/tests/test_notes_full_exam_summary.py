@@ -109,9 +109,12 @@ def test_staged_merge_sends_all_sections_without_silent_truncation(monkeypatch: 
 
     calls: list[str] = []
 
-    def fake_call_openai(system_prompt: str, user_message: str, max_tokens: int = 4000) -> str:
+    def fake_call_openai(
+        system_prompt: str, user_message: str, max_tokens: int = 4000,
+        user_id: str | None = None, heavy: bool = False,
+    ) -> tuple[str, bool]:
         calls.append(user_message)
-        return "<!-- minallo-summary-type: study-content -->\n" + user_message
+        return "<!-- minallo-summary-type: study-content -->\n" + user_message, False
 
     monkeypatch.setattr(notes_full, "_call_openai", fake_call_openai)
 
@@ -120,7 +123,7 @@ def test_staged_merge_sends_all_sections_without_silent_truncation(monkeypatch: 
         for i in range(6)
     ]
 
-    result = notes_full._merge_with_staging("system", "Merge:\n\n", parts, max_chars=180, max_tokens=1000)
+    result, _heavy_capped = notes_full._merge_with_staging("system", "Merge:\n\n", parts, max_chars=180, max_tokens=1000)
 
     sent_text = "\n".join(calls)
     for i in range(6):
