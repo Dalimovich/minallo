@@ -1116,14 +1116,6 @@ def stream_answer(
             " tables, labels, and numeric values from the image when extracted"
             " text is incomplete. Treat the image as part of [Source 0]."
         )
-    if not app_question:
-        system_prompt += _intent_resolution_runtime_overlay(
-            question,
-            has_visible_context=include_source_zero,
-            has_history=bool(previous_turns),
-            active_file_name=("Problem Solver input" if has_problem_source else active_file_name),
-        )
-
     # ── Workspace awareness (layer 2 of the three knowledge layers) ──────────
     # The live workspace block carries the student's real course data (file/
     # quiz/deck/exam counts, weak topics, current tab). It rides EVERY course
@@ -1138,6 +1130,24 @@ def stream_answer(
         system_prompt += EXAM_COACH_OVERLAY
     elif assistant_mode == "tutor" and not app_question:
         system_prompt += TUTOR_STRUCTURE_OVERLAY
+
+    # ── Cache-friendly ordering ──────────────────────────────────────────────
+    # The intent-resolution overlay embeds the literal question, so it is the
+    # one part of the system prompt that changes on EVERY request. Appending it
+    # last keeps it out of the cacheable prefix (OpenAI prompt caching matches
+    # the longest identical leading span of the request). Everything above is
+    # stable across a user's same-type questions, so it now stays cached on
+    # follow-ups instead of being invalidated by this overlay sitting mid-prompt.
+    # Only this block's POSITION moved — its content, and every other block, is
+    # unchanged, so the model receives exactly the same instructions and the
+    # answer is identical.
+    if not app_question:
+        system_prompt += _intent_resolution_runtime_overlay(
+            question,
+            has_visible_context=include_source_zero,
+            has_history=bool(previous_turns),
+            active_file_name=("Problem Solver input" if has_problem_source else active_file_name),
+        )
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:
