@@ -873,13 +873,24 @@ function _sleep(ms: number): Promise<void> {
 function initCourseStudyTools(co: HTMLElement, course: LegacyCourse): void {
   window._generateStudyTool = generateStudyTool as unknown as Window['_generateStudyTool'];
 
+  // bindFileEvents() (and therefore this function) runs on every files-panel
+  // refresh, but the tab nodes persist across refreshes. Without a guard each
+  // refresh stacks another click listener on the same tab, so one click fires
+  // showCourseSection N times — and each fast-path refresh re-binds again,
+  // compounding into an unbounded /api/documents/list storm. Bind each tab once.
   co.querySelectorAll<HTMLElement>('[data-course-tab]').forEach((tab) => {
+    if (tab.dataset.studyTabBound === '1') return;
+    tab.dataset.studyTabBound = '1';
     tab.addEventListener('click', () => {
       const tabName = tab.getAttribute('data-course-tab') || 'files';
+      // Resolve the live course at click time: the tab node may outlive the
+      // `course` captured here if the panel is reused, but window.activeCourseRef
+      // always tracks the course currently on screen.
+      const activeCourse = (window.activeCourseRef as LegacyCourse) || course;
       if (typeof window.showCourseSection === 'function') {
-        window.showCourseSection(course, tabName);
+        window.showCourseSection(activeCourse, tabName);
       } else {
-        setCourseStudyMode(co, course, tabName);
+        setCourseStudyMode(co, activeCourse, tabName);
       }
     });
   });

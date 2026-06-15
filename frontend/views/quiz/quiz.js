@@ -297,6 +297,15 @@
     return ans === item.answer;
   }
 
+  // True if the learner has supplied an answer for `item`. Short-answer needs a
+  // non-blank string; mcq/true_false treat any non-null stored value as answered
+  // (option index 0 and boolean `false` are both legitimate answers).
+  function _hasAnswer(item, ans) {
+    if (ans == null) return false;
+    if ((item && item.type) === 'short_answer') return String(ans).trim() !== '';
+    return true;
+  }
+
   function _statusLabel(quiz) {
     if (!quiz.lastTaken) return { cls: 'never', text: 'Not started' };
     var diff = Date.now() - new Date(quiz.lastTaken).getTime();
@@ -513,50 +522,90 @@
           '<div class="qz-card-question">' + _esc(item.question) + '</div>';
       }
 
-      // Options — tolerate both shapes:
-      //   - Array ['mass*a', 'energy', ...]            ← legacy + proxy-normalised
-      //   - Dict  { A: 'mass*a', B: 'energy', ... }    ← raw Python pipeline shape
-      // Also accept item.answer as either a letter ('A') or a numeric index.
+      // Answer area — rendered per question type:
+      //   mcq          → 4 option buttons
+      //   true_false   → two option buttons (Wahr / Falsch)
+      //   short_answer → a free-text input, graded against acceptableAnswers
       if (els.options) {
-        var letters = ['A', 'B', 'C', 'D'];
-        var optsRaw = item.options;
-        var optsArr;
-        if (Array.isArray(optsRaw)) {
-          optsArr = optsRaw;
-        } else if (optsRaw && typeof optsRaw === 'object') {
-          optsArr = letters.map(function (L) {
-            return typeof optsRaw[L] === 'string' ? optsRaw[L] : '';
-          });
-        } else {
-          optsArr = [];
-        }
-        var ansIdx = item.answer;
-        if (typeof ansIdx === 'string') {
-          var m = ansIdx.trim().toUpperCase().match(/^([A-D])/);
-          ansIdx = m ? letters.indexOf(m[1]) : -1;
-        }
-        els.options.innerHTML = optsArr.map(function (opt, i) {
-          var cls = 'qz-option';
-          if (i === answered) cls += ' selected';
-          if (isSubmitted) {
-            if (i === ansIdx) cls += ' correct';
-            else if (i === answered) cls += ' incorrect';
-          }
-          return (
-            '<button class="' + cls + '" data-opt-idx="' + i + '" aria-pressed="' + (i === answered ? 'true' : 'false') + '"' + (isSubmitted ? ' disabled' : '') + '>' +
-              '<span class="qz-option-letter">' + _esc(letters[i] || String(i + 1)) + '</span>' +
-              '<span>' + _esc(opt) + '</span>' +
-            '</button>'
-          );
-        }).join('');
+        var qType = item.type || 'mcq';
 
-        // Explanation after submit
+        if (qType === 'true_false') {
+          var tfCorrect = !!item.answer;
+          var tfOpts = [
+            { val: true, glyph: '✓', label: 'Wahr / True' },
+            { val: false, glyph: '✗', label: 'Falsch / False' }
+          ];
+          els.options.innerHTML = tfOpts.map(function (o) {
+            var cls = 'qz-option';
+            if (answered === o.val) cls += ' selected';
+            if (isSubmitted) {
+              if (o.val === tfCorrect) cls += ' correct';
+              else if (answered === o.val) cls += ' incorrect';
+            }
+            return (
+              '<button class="' + cls + '" data-tf="' + (o.val ? '1' : '0') + '" aria-pressed="' + (answered === o.val ? 'true' : 'false') + '"' + (isSubmitted ? ' disabled' : '') + '>' +
+                '<span class="qz-option-letter">' + o.glyph + '</span>' +
+                '<span>' + o.label + '</span>' +
+              '</button>'
+            );
+          }).join('');
+        } else if (qType === 'short_answer') {
+          var saVal = (typeof answered === 'string') ? answered : '';
+          els.options.innerHTML =
+            '<input type="text" class="qz-sa-input" id="qzSaInput" placeholder="Type your answer…" value="' + _esc(saVal) + '"' + (isSubmitted ? ' disabled' : '') + ' autocomplete="off" />';
+          if (isSubmitted) {
+            var saOk = _isAnswerCorrect(item, answered);
+            els.options.innerHTML +=
+              '<div class="qz-sa-result ' + (saOk ? 'correct' : 'incorrect') + '">' +
+                (saOk ? '✓ Correct' : '✗ Not quite') +
+                '<div class="qz-sa-expected">Expected: ' + _esc(item.answer) + '</div>' +
+              '</div>';
+          }
+        } else {
+          // mcq — tolerate both option shapes:
+          //   - Array ['mass*a', 'energy', ...]            ← legacy + proxy-normalised
+          //   - Dict  { A: 'mass*a', B: 'energy', ... }    ← raw Python pipeline shape
+          // Also accept item.answer as either a letter ('A') or a numeric index.
+          var letters = ['A', 'B', 'C', 'D'];
+          var optsRaw = item.options;
+          var optsArr;
+          if (Array.isArray(optsRaw)) {
+            optsArr = optsRaw;
+          } else if (optsRaw && typeof optsRaw === 'object') {
+            optsArr = letters.map(function (L) {
+              return typeof optsRaw[L] === 'string' ? optsRaw[L] : '';
+            });
+          } else {
+            optsArr = [];
+          }
+          var ansIdx = item.answer;
+          if (typeof ansIdx === 'string') {
+            var m = ansIdx.trim().toUpperCase().match(/^([A-D])/);
+            ansIdx = m ? letters.indexOf(m[1]) : -1;
+          }
+          els.options.innerHTML = optsArr.map(function (opt, i) {
+            var cls = 'qz-option';
+            if (i === answered) cls += ' selected';
+            if (isSubmitted) {
+              if (i === ansIdx) cls += ' correct';
+              else if (i === answered) cls += ' incorrect';
+            }
+            return (
+              '<button class="' + cls + '" data-opt-idx="' + i + '" aria-pressed="' + (i === answered ? 'true' : 'false') + '"' + (isSubmitted ? ' disabled' : '') + '>' +
+                '<span class="qz-option-letter">' + _esc(letters[i] || String(i + 1)) + '</span>' +
+                '<span>' + _esc(opt) + '</span>' +
+              '</button>'
+            );
+          }).join('');
+        }
+
+        // Explanation after submit (shared across types)
         if (isSubmitted && item.explanation) {
           els.options.innerHTML +=
             '<div class="qz-explanation">&#x1F4A1; ' + _esc(item.explanation) + '</div>';
         }
 
-        // Render math in question + options (ensure KaTeX loaded first)
+        // Render math in question + answer area (ensure KaTeX loaded first)
         var _mathEls = [els.cardStage, els.options].filter(Boolean);
         var _doMath = function() {
           if (!window.renderMathInElement) return;
@@ -567,12 +616,34 @@
         else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doMath).catch(function(){}); }
 
         if (!isSubmitted) {
-          els.options.querySelectorAll('[data-opt-idx]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              q.answers[idx] = parseInt(btn.getAttribute('data-opt-idx'), 10);
-              renderStudy();
+          if (qType === 'true_false') {
+            els.options.querySelectorAll('[data-tf]').forEach(function (btn) {
+              btn.addEventListener('click', function () {
+                q.answers[idx] = btn.getAttribute('data-tf') === '1';
+                renderStudy();
+              });
             });
-          });
+          } else if (qType === 'short_answer') {
+            // Don't re-render on each keystroke (it would steal input focus).
+            // Store the live value and toggle Submit directly.
+            var saInput = els.options.querySelector('#qzSaInput');
+            if (saInput) {
+              saInput.addEventListener('input', function () {
+                q.answers[idx] = saInput.value;
+                if (els.submit) els.submit.disabled = !saInput.value.trim();
+              });
+              saInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && els.submit && !els.submit.disabled) els.submit.click();
+              });
+            }
+          } else {
+            els.options.querySelectorAll('[data-opt-idx]').forEach(function (btn) {
+              btn.addEventListener('click', function () {
+                q.answers[idx] = parseInt(btn.getAttribute('data-opt-idx'), 10);
+                renderStudy();
+              });
+            });
+          }
         }
       }
 
@@ -583,7 +654,8 @@
       if (els.prev) els.prev.disabled = idx === 0;
       if (els.next) els.next.disabled = idx >= q.items.length - 1;
       if (els.submit) {
-        els.submit.disabled = answered == null;
+        var hasAns = _hasAnswer(item, answered);
+        els.submit.disabled = !hasAns;
         if (isSubmitted) {
           els.submit.textContent = '✓ Submitted';
           els.submit.className = 'qz-btn qz-btn-submit submitted';
@@ -591,7 +663,7 @@
         } else {
           els.submit.textContent = 'Submit';
           els.submit.className = 'qz-btn qz-btn-submit';
-          els.submit.disabled = answered == null;
+          els.submit.disabled = !hasAns;
         }
       }
     }
@@ -615,12 +687,12 @@
       var q = state.quizzes.find(function (x) { return x.id === state.activeId; });
       if (!q) return;
       var idx = q.progress || 0;
-      if (q.answers[idx] == null || q.submitted[idx]) return;
+      if (!_hasAnswer(q.items[idx], q.answers[idx]) || q.submitted[idx]) return;
       q.submitted[idx] = true;
       q.lastTaken = new Date().toISOString();
       var correct = 0;
       q.items.forEach(function (_, k) {
-        if (q.submitted[k] && q.answers[k] === q.items[k].answer) correct++;
+        if (q.submitted[k] && _isAnswerCorrect(q.items[k], q.answers[k])) correct++;
       });
       if (q.bestScore == null || correct > q.bestScore) q.bestScore = correct;
       renderAll();
@@ -628,7 +700,7 @@
       // Phase 2: record per-topic mastery for THIS submitted item.
       _postQuizAttempt(courseId, [{
         topic: q.items[idx] && q.items[idx].topic,
-        correct: q.answers[idx] === q.items[idx].answer
+        correct: _isAnswerCorrect(q.items[idx], q.answers[idx])
       }]);
 
       // Check if all questions submitted — save to DB and show score popup
@@ -1046,49 +1118,20 @@
               return;
             }
           }
-          var letters = ['A', 'B', 'C', 'D'];
-          // Drop non-MCQ items (true_false, short_answer) — the UI only renders
-          // 4-option buttons, so without this they appear with blank options.
-          // Also drop MCQs whose options dict/array is missing or all empty.
-          var mcqOnly = result.items.filter(function (item) {
-            if (item && item.type && item.type !== 'mcq') return false;
-            var o = item && item.options;
-            if (!o) return false;
-            if (Array.isArray(o)) return o.some(function (v) { return (v || '').toString().trim(); });
-            return letters.some(function (L) { return (o[L] || '').toString().trim(); });
-          });
-          if (!mcqOnly.length) {
-            _toast('Nothing generated', 'No usable multiple-choice questions came back. Try again.');
+          // Normalise every returned item into its canonical per-type shape
+          // (mcq / true_false / short_answer). _normalizeQuizItem drops only
+          // genuinely unusable items (e.g. an mcq with no options).
+          var normItems = result.items
+            .map(_normalizeQuizItem)
+            .filter(Boolean);
+          if (!normItems.length) {
+            _toast('Nothing generated', 'No usable questions came back. Try again.');
             return;
           }
           var quiz = {
             id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
             name: defaultName(),
-            items: mcqOnly.map(function (item) {
-              // Normalize options: backend returns {A,B,C,D} object; convert to array
-              var opts;
-              if (Array.isArray(item.options)) {
-                opts = item.options;
-              } else {
-                opts = letters.map(function (l) { return (item.options && item.options[l]) || ''; });
-              }
-              // Normalize answer: backend returns letter string "A"-"D"; convert to index
-              var ansIdx = 0;
-              if (typeof item.answer === 'number') {
-                ansIdx = item.answer;
-              } else if (typeof item.answer === 'string') {
-                var li = letters.indexOf(item.answer.toUpperCase());
-                ansIdx = li >= 0 ? li : 0;
-              }
-              return {
-                question: item.question || '',
-                options: opts,
-                answer: ansIdx,
-                explanation: item.explanation || '',
-                source: item.source || '',
-                topic: (typeof item.topic === 'string' && item.topic.trim()) ? item.topic.trim() : null
-              };
-            }),
+            items: normItems,
             createdAt: Date.now(),
             lastTaken: null,
             progress: 0,
@@ -1156,17 +1199,12 @@
           var answered = r.answers || {};
           var submitted = {};
           Object.keys(answered).forEach(function(k) { submitted[k] = true; });
-          // Defensive: legacy quizzes from before MCQ-only enforcement can
-          // contain items with empty options arrays (tf/sa items that the UI
-          // doesn't know how to render). Drop them so the user doesn't see
-          // questions with blank answers.
-          var safeItems = (r.items || []).filter(function (it) {
-            if (!it) return false;
-            var opts = it.options;
-            if (!opts) return false;
-            if (Array.isArray(opts)) return opts.some(function (v) { return (v || '').toString().trim(); });
-            return ['A','B','C','D'].some(function (L) { return (opts[L] || '').toString().trim(); });
-          });
+          // Normalise saved items into their canonical per-type shape so the
+          // study UI can render mcq / true_false / short_answer alike. Drops
+          // only genuinely unusable rows (e.g. an mcq with no options).
+          var safeItems = (r.items || [])
+            .map(_normalizeQuizItem)
+            .filter(Boolean);
           return {
             id: r.id,
             _dbId: r.id,
