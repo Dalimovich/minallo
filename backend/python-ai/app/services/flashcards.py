@@ -59,13 +59,23 @@ Card types (mix them):
 - notation: professor's symbol → meaning + usage
 
 Rules:
-1. Every card must be grounded in the context.
-2. Prefer formulas, definitions, theorems, worked examples, common mistakes.
-3. Back must be substantial — not a one-word answer.
-4. Use the source's notation/terminology.
-5. Math in KaTeX: $...$ inline, $$...$$ display.
-6. Cite source as "filename, p.N".
-7. Match the language of the source material.
+1. The FRONT is ALWAYS the prompt the student must answer — a question, a term,
+   or a "How do you…?" / "When do you…?" / "What is…?" cue. It must read as
+   something to be answered, never as the answer itself.
+2. The BACK holds the full answer: the definition, formula, numbered steps,
+   worked solution, or explanation. ALL solution steps and worked-out content
+   go on the back — NEVER put numbered steps, a solution, or an explanation on
+   the front. (For method_steps/mini_exercise, the front states the task/problem;
+   the back gives the steps/solution.)
+3. Every card must be grounded in the context.
+4. Prefer formulas, definitions, theorems, worked examples, common mistakes.
+5. Back must be substantial — not a one-word answer.
+6. Use the source's notation/terminology.
+7. Math in KaTeX: $...$ inline, $$...$$ display. Use real LaTeX commands
+   (\\varphi, \\sum, \\Delta), NOT raw Unicode glyphs (φ, ∑), inside math.
+8. Use real newlines for line breaks, never the literal two characters "\\n".
+9. Cite source as "filename, p.N".
+10. Match the language of the source material.
 
 CRITICAL: produce EXACTLY {count} items in "items".
 
@@ -73,8 +83,8 @@ Return ONLY valid JSON in this exact shape (no markdown fence, no commentary):
 {{
   "items": [
     {{
-      "front": "question / term",
-      "back":  "answer / explanation",
+      "front": "the question / term / task to answer (NOT the answer)",
+      "back":  "the full answer / steps / explanation",
       "tags":  ["definition", "formula"],
       "difficulty": "easy|medium|hard",
       "source": "filename, p.X"
