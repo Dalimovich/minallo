@@ -290,12 +290,51 @@
     });
   }
 
-  // Card text for display: escape, then turn the generator's line breaks into
-  // <br>. Models often emit a literal two-char "\n" (backslash-n) as well as
-  // real newlines; both should render as a break instead of running together
-  // or showing "\n" verbatim.
+  // The generator sometimes drops raw Unicode math glyphs (φ, ∑, ‖, ≤ …) inside
+  // math mode, where KaTeX hard-fails even with strict:false and dumps the raw
+  // source in red. Map the common offenders to real LaTeX commands.
+  var _FC_MATH_UNICODE = {
+    'φ': '\\varphi', 'ϕ': '\\phi', 'Φ': '\\Phi',
+    'α': '\\alpha', 'β': '\\beta', 'γ': '\\gamma', 'Γ': '\\Gamma',
+    'δ': '\\delta', 'Δ': '\\Delta', '∆': '\\Delta',
+    'ε': '\\varepsilon', 'ζ': '\\zeta', 'η': '\\eta', 'θ': '\\theta',
+    'κ': '\\kappa', 'λ': '\\lambda', 'μ': '\\mu', 'ν': '\\nu', 'ξ': '\\xi',
+    'π': '\\pi', 'Π': '\\Pi', 'ρ': '\\rho', 'σ': '\\sigma', 'Σ': '\\Sigma',
+    'τ': '\\tau', 'χ': '\\chi', 'ψ': '\\psi', 'ω': '\\omega', 'Ω': '\\Omega',
+    '∑': '\\sum', '∏': '\\prod', '∫': '\\int', '√': '\\sqrt', '∂': '\\partial',
+    '∇': '\\nabla', '∞': '\\infty',
+    '≤': '\\le', '≥': '\\ge', '≠': '\\ne', '≈': '\\approx', '≡': '\\equiv',
+    '±': '\\pm', '∓': '\\mp', '×': '\\times', '÷': '\\div', '·': '\\cdot',
+    '→': '\\to', '←': '\\leftarrow', '↔': '\\leftrightarrow', '⇒': '\\Rightarrow', '⇔': '\\Leftrightarrow',
+    '∈': '\\in', '∉': '\\notin', '⊂': '\\subset', '⊆': '\\subseteq', '∪': '\\cup', '∩': '\\cap',
+    '∀': '\\forall', '∃': '\\exists', '∅': '\\emptyset',
+    '‖': '\\|', '∥': '\\parallel', '⊥': '\\perp', '∝': '\\propto', '°': '^{\\circ}'
+  };
+  var _FC_MATH_RE = new RegExp('[' + Object.keys(_FC_MATH_UNICODE).join('').replace(/\s/g, '') + ']', 'g');
+  function _fcConvertMath(seg) {
+    return seg.replace(_FC_MATH_RE, function (ch) {
+      var rep = _FC_MATH_UNICODE[ch];
+      if (!rep) return ch;
+      // A LaTeX control word needs a boundary after it, or "\le5" / "\sum2"
+      // would be misparsed. A trailing space is harmless in math mode.
+      return /[a-zA-Z]$/.test(rep) ? rep + ' ' : rep;
+    });
+  }
+  // Only normalize INSIDE math delimiters — a German sentence containing "Δ" or
+  // "∑" as prose must stay as that glyph, not turn into "\Delta". The
+  // alternation lists $$…$$ before $…$ so display math wins at each position.
+  var _FC_SEG_RE = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/g;
+  function _fcNormalizeMath(s) {
+    if (!s) return s;
+    return String(s).replace(_FC_SEG_RE, _fcConvertMath);
+  }
+
+  // Card text for display: normalize math Unicode, escape, then turn the
+  // generator's line breaks into <br>. The newline rule deliberately ignores
+  // "\n" that is the start of a LaTeX command (\nabla, \ne, \nu) so it only
+  // breaks genuine literal newlines (which precede a space/digit/end).
   function _fcCardHtml(s) {
-    return _esc(s).replace(/\\n|\r\n|\r|\n/g, '<br>');
+    return _esc(_fcNormalizeMath(s)).replace(/\\n(?![A-Za-z])|\r\n|\r|\n/g, '<br>');
   }
 
   function _initShell(root, course, options) {
@@ -491,7 +530,10 @@
         // strict:false lets KaTeX RENDER stray Unicode (φ, ∑, …) that the
         // generator sometimes emits inside math mode instead of dumping the raw
         // source in red error text.
-        var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false, strict: false };
+        // errorColor muted (not alarming red): if some content still won't parse
+        // after normalization, it degrades to quiet inline text instead of a wall
+        // of red.
+        var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false, strict: false, errorColor: '#9aa4b2' };
         var _doMath = function() { if (window.renderMathInElement) try { renderMathInElement(els.cardStage, _katexOpts); } catch(e) {} };
         if (window.renderMathInElement) { _doMath(); }
         else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doMath).catch(function(){}); }
