@@ -308,14 +308,31 @@
     '‖': '\\|', '∥': '\\parallel', '⊥': '\\perp', '∝': '\\propto', '°': '^{\\circ}'
   };
   var _FC_MATH_RE = new RegExp('[' + Object.keys(_FC_MATH_UNICODE).join('').replace(/\s/g, '') + ']', 'g');
+  function _fcMapChar(ch) {
+    var rep = _FC_MATH_UNICODE[ch];
+    if (!rep) return ch;
+    // A LaTeX control word needs a boundary after it, or "\le5" / "\sum2"
+    // would be misparsed. A trailing space is harmless in math mode.
+    return /[a-zA-Z]$/.test(rep) ? rep + ' ' : rep;
+  }
+  // Convert Unicode math glyphs to LaTeX, but NEVER inside a \text{…}/\mathrm{…}/
+  // \operatorname{…} group: there the raw glyph (e.g. φ) renders fine in text
+  // mode, whereas a math command like \varphi is invalid and prints literally.
+  // The generator routinely wraps variables as \text{φ}, so this guard is what
+  // actually makes those cards render.
+  var _FC_TOKEN_RE = /\\(?:text|mathrm|operatorname|mathbf|mathit)\s*\{[^{}]*\}/g;
   function _fcConvertMath(seg) {
-    return seg.replace(_FC_MATH_RE, function (ch) {
-      var rep = _FC_MATH_UNICODE[ch];
-      if (!rep) return ch;
-      // A LaTeX control word needs a boundary after it, or "\le5" / "\sum2"
-      // would be misparsed. A trailing space is harmless in math mode.
-      return /[a-zA-Z]$/.test(rep) ? rep + ' ' : rep;
-    });
+    var out = '';
+    var last = 0;
+    var m;
+    _FC_TOKEN_RE.lastIndex = 0;
+    while ((m = _FC_TOKEN_RE.exec(seg)) !== null) {
+      out += seg.slice(last, m.index).replace(_FC_MATH_RE, _fcMapChar);
+      out += m[0]; // leave the \text{…} group untouched
+      last = m.index + m[0].length;
+    }
+    out += seg.slice(last).replace(_FC_MATH_RE, _fcMapChar);
+    return out;
   }
   // Only normalize INSIDE math delimiters — a German sentence containing "Δ" or
   // "∑" as prose must stay as that glyph, not turn into "\Delta". The
