@@ -168,7 +168,9 @@ export function initPdfControls(options: PdfControlsOptions): {
       w.showCourseSection(w.activeCourseRef, 'files');
       return;
     }
-    if (typeof w.showPortalSection === 'function') w.showPortalSection('courses');
+    // 'studip' is the internal portal-section id; 'courses' is a URL alias only,
+    // and passing it to showPortalSection blanks the page (no psec-courses node).
+    if (typeof w.showPortalSection === 'function') w.showPortalSection('studip');
   });
 
   document.getElementById('pdfAll')?.addEventListener('click', () => {

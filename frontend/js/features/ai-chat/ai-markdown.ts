@@ -398,8 +398,11 @@ function _runCourseTabAction(tab: string): boolean {
   };
   if (!w.activeCourseRef || typeof w.showCourseSection !== 'function') return false;
   // Make sure the Courses section is on screen first (the click may come from
-  // the standalone Chatbot), then switch to the requested course tab.
-  if (typeof w.showPortalSection === 'function') w.showPortalSection('courses');
+  // the standalone Chatbot), then switch to the requested course tab. The
+  // internal portal-section id is 'studip' — passing 'courses' (a URL alias
+  // only) finds no `psec-courses` element, so showPortalSection hides every
+  // section and reveals none, blanking the page underneath the course view.
+  if (typeof w.showPortalSection === 'function') w.showPortalSection('studip');
   w.showCourseSection(w.activeCourseRef, tab);
   return true;
 }
