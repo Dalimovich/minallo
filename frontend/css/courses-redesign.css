@@ -3071,8 +3071,15 @@ body.night .co-inner-v2 .co-folder-section.co-folder-v2.folder-drop-target-activ
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.025);
+  /* The base .fc-card-stage rule pairs its cream background with dark
+     (#1a1a1a) text. Here the background is dark, so the inherited dark text
+     would be unreadable — pin a light color for the question/answer face. */
+  color: #f3f4f6;
   padding: 24px;
   min-height: 200px;
+}
+.co-inner-v2 .fc-card-content {
+  color: #f3f4f6;
 }
 .co-inner-v2 .qz-card-pill {
   display: inline-block;
