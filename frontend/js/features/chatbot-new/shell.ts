@@ -3019,7 +3019,11 @@ function buildApiMessages(
   const folderDocs: Array<{ name: string; text: string }> = [];
   sourceLibrary.items
     .filter((s) => active.selectedSourceIds.includes(s.id))
-    .forEach((s) => (s.documents || []).forEach((d) => folderDocs.push(d)));
+    // Only docs with extracted text belong in the inline <document> blocks.
+    // Children whose extraction failed are still carried in s.documents (so the
+    // RAG path can send their ids/names), but injecting them here would emit an
+    // empty document block that wastes tokens and reads as "this file is blank".
+    .forEach((s) => (s.documents || []).forEach((d) => { if (d.text) folderDocs.push(d); }));
   let lastUserIdx = -1;
   for (let i = trimmed.length - 1; i >= 0; i--) {
     if (trimmed[i]!.role === 'user') { lastUserIdx = i; break; }
@@ -3423,6 +3427,7 @@ interface PickedItem {
   name: string;
   meta: string;
   courseId: string;
+  folderKey?: string;
 }
 
 function getSems(): Record<string, SemEntry> {
@@ -3610,6 +3615,7 @@ function initImportModal(root: HTMLElement): void {
         name: rowEl.dataset.name || '',
         meta: rowEl.dataset.meta || '',
         courseId: activeCourse.id,
+        folderKey: rowEl.dataset.folderId || undefined,
       });
       rowEl.classList.add('ncb-folder-row--selected');
     }
@@ -3849,7 +3855,9 @@ async function loadPickedDocuments(
       type FileRef = { name: string; folder?: string; id?: string };
       const targets: FileRef[] = [];
       if (p.kind === 'folder') {
-        const fd = (course.userFolders || []).find((x) => x.name === p.name);
+        const fd = (course.userFolders || []).find((x) =>
+          p.folderKey ? (x.id || x.name) === p.folderKey : x.name === p.name
+        );
         if (fd) (fd.files || []).forEach((f) => targets.push({ name: f.name, folder: fd.name, id: f.id }));
       } else {
         const inRoot = (course.files || []).find((f) => f.name === p.name);
@@ -3870,7 +3878,8 @@ async function loadPickedDocuments(
         targets.map((t) => fetchCourseFileText(uid, course, t.name, t.folder))
       );
       results.forEach((text, i) => {
-        if (text) docs.push({ name: targets[i]!.name, text, id: targets[i]!.id });
+        const target = targets[i]!;
+        docs.push({ name: target.name, text: text || '', id: target.id });
       });
     }
     out.push({
