@@ -350,7 +350,9 @@
             <section class="ncb-context-card ncb-sources-card">
               <div class="ncb-context-card-head">
                 <h3 class="ncb-context-card-title" data-i18n="cb_sources_card_title">Sources used</h3>
-                <span class="ncb-files-pill ncb-sources-count" data-i18n="cb_sources_count_zero">0 files</span>
+                <!-- Count is owned by renderSourcesCard(); no data-i18n here or the
+                     localized refresh would clobber the live "N selected" value back to "0 files". -->
+                <span class="ncb-files-pill ncb-sources-count">0 selected</span>
               </div>
               <!-- Populated by renderSourcesCard() from chat.attachedFolders. -->
               <div class="ncb-source-list"></div>
