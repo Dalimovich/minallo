@@ -282,6 +282,57 @@ async function loadAdminStats(): Promise<void> {
   void guard(loadRetention());
   // Funnel reuses the signup scan rather than running a second full one.
   void guard(reloadSignupChart().then(() => loadFunnel()));
+
+  // Keep the dashboard live: re-pull every section on a short interval so the
+  // admin sees current numbers without reloading the page.
+  _startStatsAutoRefresh();
+}
+
+// ── Live auto-refresh ────────────────────────────────────────────────────────
+// Re-fetch every section every few seconds while the admin tab is open and
+// visible. Unlike the first load this skips the "Loading…" placeholders (so it
+// updates in place without flicker) and drops the shared per-open snapshot so
+// each tick fetches fresh numbers.
+const STATS_REFRESH_MS = 4000;
+let _statsTimer: number | null = null;
+let _refreshing = false;
+
+function _adminSectionVisible(): boolean {
+  const sec = document.getElementById('psec-admin');
+  return !!sec && sec.style.display !== 'none';
+}
+
+async function refreshAdminStats(): Promise<void> {
+  // Skip ticks when busy, off-screen, or the tab is backgrounded — no point
+  // hammering the backend while nobody is looking.
+  if (_refreshing || document.hidden || !_adminSectionVisible()) return;
+  if (typeof adminSvc.getSignupStats !== 'function') return;
+  _refreshing = true;
+  _subStatsPromise = null; // force a fresh subscription snapshot this tick
+  const guard = (p: Promise<void>): Promise<void> => p.catch(() => { /* section keeps its last value */ });
+  try {
+    await Promise.all([
+      guard(loadNewUsers()),
+      guard(loadFinancials()),
+      guard(loadUsage()),
+      guard(loadAiUsage()),
+      guard(loadFinanceSeries()),
+      guard(loadSubscriptionCards()),
+      guard(loadRetention()),
+      guard(reloadSignupChart().then(() => loadFunnel())),
+    ]);
+  } finally {
+    _refreshing = false;
+  }
+}
+
+function _startStatsAutoRefresh(): void {
+  if (_statsTimer != null) return;
+  _statsTimer = window.setInterval(() => { void refreshAdminStats(); }, STATS_REFRESH_MS);
+  // Refresh immediately when the tab regains focus instead of waiting a tick.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void refreshAdminStats();
+  });
 }
 
 async function reloadSignupChart(): Promise<void> {
