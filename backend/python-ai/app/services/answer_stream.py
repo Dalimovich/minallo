@@ -1070,11 +1070,14 @@ def stream_answer(
     ):
         effective_max_tokens = max(max_tokens, 4500)
     # A full practice exam (one Aufgabe per file + sub-questions + Kurzlösung)
-    # scales with the number of covered files; give it ~700 tokens per file so a
-    # 13-file exam doesn't truncate mid-way (capped to keep cost bounded).
+    # scales with the number of covered files. Reasoning models (o4-mini, the
+    # strong model exams now run on) also spend tokens on hidden reasoning that
+    # counts against max_completion_tokens, so give them more headroom per file
+    # to avoid truncating before all sections finish.
     if is_exam_request:
         exam_file_count = len({c.document_id for c in used_chunks if c.document_id})
-        effective_max_tokens = max(effective_max_tokens, 6000, min(12000, exam_file_count * 700))
+        per_file = 1000 if is_reasoning_model(target_model) else 700
+        effective_max_tokens = max(effective_max_tokens, 6000, min(16000, exam_file_count * per_file))
 
     # Reasoning effort: the global default (medium) is tuned for the deep
     # multi-phase reasoning that actual exercise-SOLVING and diagram/figure
