@@ -481,6 +481,12 @@ class RetrievedChunk:
 _DEFAULT_CANDIDATES = 60
 _MIN_SIMILARITY = 0.10
 
+# Coverage-intent selections ("a question per file", "summarize each", exams):
+# how many chunks to guarantee per still-missing selected document via the
+# per-document candidate floor (each fetched with the similarity threshold
+# relaxed to 0, scoped to a single doc).
+_COVERAGE_PER_DOC_FLOOR = 2
+
 
 # Review-2 finding #5: course-wide generation (quiz / flashcards / notes
 # without explicit ``documentIds``) had no source filenames because the
@@ -524,6 +530,7 @@ def retrieve_chunks(
     document_name_query: str | None = None,
     top_k: int = 12,
     min_similarity: float = _MIN_SIMILARITY,
+    guarantee_documents: bool = False,
 ) -> list[RetrievedChunk]:
     """Return up to top_k chunks for the question, reranked by study value.
 
@@ -531,6 +538,13 @@ def retrieve_chunks(
     a ranking hint, used by ask/stream so an open/selected exercise PDF can win
     ties while course-wide retrieval still surfaces lecture/formula PDFs.
     `active_document_id` adds a ranking boost without filtering.
+
+    `guarantee_documents` is for coverage-intent requests ("a question per
+    file", "summarize each", exams) over an explicit multi-document selection:
+    it adds a per-document candidate floor so a selected doc whose chunks all
+    score below the global threshold/cap still contributes, instead of being
+    silently dropped. Off for normal narrow questions, which stay relevance-
+    ranked within the selection.
     """
     if not query.strip():
         return []
@@ -607,6 +621,21 @@ def retrieve_chunks(
         except Exception:
             log.exception("match_chunks_hybrid (fallback) failed")
             rows = []
+
+    # Coverage-intent selections: make sure every selected document has at least
+    # a candidate in the pool before ranking, so the per-document coverage splice
+    # below can actually include it. Placed before the empty-guard so it can also
+    # populate a pool the thresholded pull left empty.
+    if guarantee_documents and document_ids:
+        rows = _add_per_document_floor(
+            sb,
+            rows,
+            user_id=user_id,
+            course_id=course_id,
+            embedding=embedding,
+            expanded_text=expanded.text,
+            document_ids=document_ids,
+        )
 
     if not rows:
         return []
@@ -883,6 +912,73 @@ def _ensure_professor_reference_mix(
     return chosen
 
 
+def _add_per_document_floor(
+    sb,
+    rows: list[dict[str, Any]],
+    *,
+    user_id: str,
+    course_id: str,
+    embedding: list[float],
+    expanded_text: str,
+    document_ids: list[str],
+    per_doc: int = _COVERAGE_PER_DOC_FLOOR,
+) -> list[dict[str, Any]]:
+    """Guarantee every selected document has candidates in the pool.
+
+    A single hybrid pull ranks chunks globally, so when many documents are
+    selected the candidate pool (top ``_DEFAULT_CANDIDATES``, similarity ≥
+    ``_MIN_SIMILARITY``) can be filled entirely by a few high-scoring docs —
+    thin or loosely-related selected docs then never appear, and the
+    per-document coverage splice downstream can only reorder candidates it can
+    see. A *batched* fetch over all missing docs doesn't fix this either:
+    ``match_chunks_hybrid`` caps its semantic CTE at 200 candidates ranked
+    globally, so the least-similar selected docs still fall outside it. So fetch
+    each still-missing doc's best chunks ONE DOC AT A TIME (threshold relaxed to
+    0) — scoped to a single doc, the RPC's 200-candidate window always contains
+    that doc's top chunks, guaranteeing a floor regardless of similarity. One
+    cheap RPC per missing doc, only on coverage-intent multi-doc selections.
+    """
+    if len(document_ids) < 2:
+        return rows
+    present = {r.get("document_id") for r in rows if r.get("document_id")}
+    missing = [d for d in document_ids if d and d not in present]
+    if not missing:
+        return rows
+    base = {
+        "p_user_id": user_id,
+        "p_course_id": course_id,
+        "p_embedding": "[" + ",".join(f"{v:.7f}" for v in embedding) + "]",
+        "p_query": expanded_text,
+        "p_match_count": per_doc,
+        "p_threshold": 0.0,
+    }
+    existing_ids = {r.get("id") for r in rows if r.get("id")}
+    added = 0
+    covered = 0
+    for doc_id in missing:
+        try:
+            resp = sb.rpc("match_chunks_hybrid", {**base, "p_document_id": doc_id}).execute()
+        except Exception:
+            log.exception("per-document coverage floor fetch failed (doc=%s)", doc_id)
+            continue
+        got = 0
+        for r in resp.data or []:
+            if r.get("document_id") != doc_id or r.get("id") in existing_ids:
+                continue
+            rows.append(r)
+            existing_ids.add(r.get("id"))
+            added += 1
+            got += 1
+        if got:
+            covered += 1
+    if added:
+        log.info(
+            "per-document floor added %d chunk(s) across %d/%d missing selected docs",
+            added, covered, len(missing),
+        )
+    return rows
+
+
 def _ensure_per_document_coverage(
     ranked: list[tuple[float, dict[str, Any]]],
     chosen: list[tuple[float, dict[str, Any]]],
@@ -895,36 +991,47 @@ def _ensure_per_document_coverage(
     When the user hard-scopes retrieval to several documents (e.g. selects 8
     lectures and asks for "one question per lecture"), a flat top-k can pack
     the slots with chunks from a few high-scoring docs and starve the rest, so
-    the model never sees — and can't write about — every selection. For each
-    selected doc that has a candidate but isn't in `chosen`, splice in its
-    best-ranked chunk. Coverage wins over the exact top-k cap, but the result
-    is still bounded by the number of selected documents.
+    the model never sees — and can't write about — every selection.
+
+    Reserve one slot for each selected doc that has a candidate in `ranked`,
+    then fill the remaining slots with the best-scored chunks. Doing it this way
+    (rather than the older "splice in only docs absent from `chosen`, then trim
+    `chosen` to fit") is what keeps a doc whose sole chunk sat in the trimmed
+    tail from being silently dropped. Coverage wins over the exact top-k cap, so
+    the result can be as large as the number of coverable selected docs.
     """
     if not document_ids or len(document_ids) < 2:
         return chosen
     selected = set(document_ids)
-    present = {row.get("document_id") for _, row in chosen}
-    missing = [d for d in selected if d and d not in present]
-    if not missing:
+
+    # Best-ranked chunk per selected doc that actually has a candidate. `ranked`
+    # is score-descending, so the first hit per doc is its strongest.
+    best_by_doc: dict[str, tuple[float, dict[str, Any]]] = {}
+    for score, row in ranked:
+        doc_id = row.get("document_id")
+        if doc_id in selected and doc_id not in best_by_doc:
+            best_by_doc[doc_id] = (score, row)
+    if not best_by_doc:
         return chosen
 
-    additions: list[tuple[float, dict[str, Any]]] = []
-    for doc_id in missing:
-        for score, row in ranked:
-            if row.get("document_id") == doc_id:
-                additions.append((score, row))
-                break
-    if not additions:
-        return chosen
+    guaranteed = list(best_by_doc.values())
+    chosen_ids = {row.get("id") for _, row in guaranteed}
+    out_pairs = list(guaranteed)
+    # Fill the rest of top_k with the highest-scoring remaining chunks, keeping
+    # the relevance signal for docs that earned several slots.
+    budget = max(top_k, len(guaranteed))
+    for score, row in chosen:
+        if len(out_pairs) >= budget:
+            break
+        cid = row.get("id")
+        if cid in chosen_ids:
+            continue
+        chosen_ids.add(cid)
+        out_pairs.append((score, row))
 
-    # Drop the lowest-scored chosen chunks to make room, but never below one
-    # slot per *other* present document so we don't trade one starved doc for
-    # another. Falls back to coverage-first if top_k is tighter than the count.
-    keep = max(0, top_k - len(additions))
-    merged = chosen[:keep] + additions
     seen: set[str] = set()
     out: list[tuple[float, dict[str, Any]]] = []
-    for score, row in sorted(merged, key=lambda pair: pair[0], reverse=True):
+    for score, row in sorted(out_pairs, key=lambda pair: pair[0], reverse=True):
         cid = row.get("id")
         if cid in seen:
             continue

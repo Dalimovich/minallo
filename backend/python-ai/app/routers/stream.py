@@ -760,6 +760,10 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     active_document_id=payload.activeDocumentId,
                     document_name_query=question,
                     top_k=stream_top_k,
+                    # Coverage intent ("a question per file", exams) over an
+                    # explicit multi-doc selection: guarantee every selected doc
+                    # contributes a candidate so none is silently starved.
+                    guarantee_documents=generative_request,
                 )
             )
         except EmbeddingServiceUnavailable as exc:
