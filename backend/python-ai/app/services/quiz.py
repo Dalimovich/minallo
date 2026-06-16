@@ -420,6 +420,78 @@ def _run_one_quiz_shard(
         return None
 
 
+def _verify_mcq_keys(
+    items: list[dict[str, Any]],
+    context: str,
+    diagnostics: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Drop MCQs whose keyed answer fails an independent re-derivation.
+
+    A second model call answers each MCQ from the same context *without seeing
+    the answer key*. Only a confident disagreement drops the item, so a shaky
+    verifier can't erode the count — the goal is to catch the rare confidently
+    wrong key (e.g. swapped Si/Cu values) before it reaches the student. On any
+    failure the items pass through unchanged: verification must never block a quiz.
+    """
+    mcqs = [(i, it) for i, it in enumerate(items) if it.get("type") == "mcq"]
+    if not mcqs:
+        return items
+
+    lines: list[str] = []
+    for n, (_, it) in enumerate(mcqs, 1):
+        opts = it.get("options") or {}
+        opt_text = "  ".join(f"{l}) {opts.get(l, '')}" for l in _LETTERS)
+        lines.append(f"{n}. {it.get('question', '')}\n   {opt_text}")
+    questions_block = "\n\n".join(lines)
+
+    system = (
+        "You are a meticulous exam answer-key checker. For each numbered "
+        "multiple-choice question, determine the single correct option using "
+        "ONLY the COURSE CONTEXT below. Re-derive the answer yourself; do not "
+        "assume any option is correct. Watch for swapped symbols, names, "
+        "numbers, units, or percentages between the options.\n\n"
+        'Return ONLY JSON: {"verdicts": [{"n": 1, "letter": "A", '
+        '"confident": true}, ...]}. Set "confident" to false when the context '
+        "does not clearly decide the answer."
+    )
+    user = "COURSE CONTEXT:\n\n" + context + "\n\nQUESTIONS:\n\n" + questions_block
+
+    try:
+        res = chat_json(system=system, user=user, max_tokens=min(2000, 200 + len(mcqs) * 40))
+    except Exception:
+        log.exception("quiz: verification pass failed; keeping items unverified")
+        return items
+
+    diagnostics["prompt_tokens"] += res.prompt_tokens or 0
+    diagnostics["completion_tokens"] += res.completion_tokens or 0
+
+    verdicts = res.data.get("verdicts") if isinstance(res.data, dict) else None
+    if not isinstance(verdicts, list):
+        return items
+
+    by_n: dict[int, dict[str, Any]] = {}
+    for v in verdicts:
+        if isinstance(v, dict):
+            try:
+                by_n[int(v.get("n"))] = v
+            except (TypeError, ValueError):
+                continue
+
+    drop_indices: set[int] = set()
+    for n, (orig_idx, it) in enumerate(mcqs, 1):
+        v = by_n.get(n)
+        if not v or not v.get("confident"):
+            continue
+        letter = str(v.get("letter") or "").strip().upper()[:1]
+        if letter in _LETTERS and letter != it.get("answer"):
+            drop_indices.add(orig_idx)
+
+    if not drop_indices:
+        return items
+    log.info("quiz: verification dropped %d MCQ item(s) with disputed keys", len(drop_indices))
+    return [it for i, it in enumerate(items) if i not in drop_indices]
+
+
 def generate_quiz(
     *,
     user_id: str,
@@ -441,6 +513,10 @@ def generate_quiz(
     if lang not in ("auto", "de", "en"):
         lang = "auto"
     types = [t for t in (question_types or _DEFAULT_TYPES) if t in _VALID_TYPES] or _DEFAULT_TYPES
+    # Over-collect a small buffer of MCQs so the verification pass can drop a
+    # disputed item without immediately falling back to a low-value
+    # deterministic recognition question.
+    over_target = requested + (3 if "mcq" in types else 0)
 
     chunks = retrieve_chunks(
         user_id=user_id, course_id=course_id,
@@ -518,7 +594,7 @@ def generate_quiz(
         if not isinstance(raw_items, list):
             continue
         for raw in raw_items:
-            if len(collected) >= requested:
+            if len(collected) >= over_target:
                 break
             norm = _normalize(raw, known_topics_set)
             if not norm:
@@ -559,7 +635,13 @@ def generate_quiz(
                     seen_questions.add(key)
                     collected.append(norm)
 
-    collected = _dedupe(collected)[:requested]
+    collected = _dedupe(collected)
+    # Independent verification pass: a fresh model call (blind to the answer
+    # key) re-derives each MCQ's answer from the same context. An item whose
+    # key it *confidently* rejects is dropped — a wrong answer key is worse
+    # than one fewer question. One extra mini call; stays on the quiz meter.
+    collected = _verify_mcq_keys(collected, context, diagnostics)
+    collected = collected[:requested]
     if len(collected) < requested and "mcq" in types:
         collected.extend(_deterministic_mcq_backfill(
             chunks=chunks,
