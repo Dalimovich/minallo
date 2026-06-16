@@ -110,19 +110,33 @@ def _resolve_document_ids_by_name(user_id: str, course_id: str, names: list[str]
     if not clean:
         return []
     sb = get_supabase()
+    # Pull all of the course's documents once and match in Python so a tiny
+    # name mismatch (case, a missing/extra .pdf extension, surrounding spaces)
+    # doesn't silently drop the whole selection back to a whole-course search.
     try:
         resp = (
             sb.table("documents")
             .select("id, file_name")
             .eq("user_id", user_id)
             .eq("course_id", course_id)
-            .in_("file_name", clean)
+            .limit(2000)
             .execute()
         )
     except Exception:
         log.exception("resolve document ids by name failed")
         return []
-    return [row["id"] for row in (resp.data or []) if row.get("id")]
+
+    def _norm(s: str) -> str:
+        s = (s or "").strip().lower()
+        return s[:-4] if s.endswith(".pdf") else s
+
+    wanted = {_norm(n) for n in clean}
+    out: list[str] = []
+    for row in (resp.data or []):
+        fn = row.get("file_name") or ""
+        if row.get("id") and (fn.strip().lower() in {n.lower() for n in clean} or _norm(fn) in wanted):
+            out.append(row["id"])
+    return out
 
 
 class PreviousTurn(BaseModel):

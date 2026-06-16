@@ -2203,10 +2203,17 @@ function ragEligibility(
   if (scopeToSelection) {
     const ids = new Set<string>();
     const names = new Set<string>();
-    selected.forEach((s) => (s.documents || []).forEach((d) => {
-      if (d.id) ids.add(d.id);
-      if (d.name) names.add(d.name);
-    }));
+    selected.forEach((s) => {
+      (s.documents || []).forEach((d) => {
+        if (d.id) ids.add(d.id);
+        if (d.name) names.add(d.name);
+      });
+      // A file-type source exposes its filename as the source name. Some items
+      // (migrated chats, sources imported without expanded documents[]) have an
+      // empty documents[] — without this the whole selection would be sent as
+      // nothing and retrieval would silently fall back to a whole-course search.
+      if (s.name && /\.(pdf|docx?|txt|pptx?)$/i.test(s.name)) names.add(s.name);
+    });
     documentIds = Array.from(ids);
     documentNames = Array.from(names);
   }
