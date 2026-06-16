@@ -795,6 +795,19 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             log.exception("doc_name backfill failed")
 
     relevance_score = course_relevance_score(question, chunks)
+    # Selection→retrieval diagnostic: shows whether the client's file selection
+    # actually reached and scoped retrieval, and how many distinct docs the
+    # chunks span. Lets us pinpoint a 17-selected → 4-covered drop without
+    # guessing. Cheap one-liner; safe to keep.
+    log.info(
+        "ask_stream selection-diag scope=%s reqIds=%d reqNames=%d resolved=%d chunkDocs=%d relevance=%.3f",
+        effective_scope,
+        len(payload.documentIds or []),
+        len(payload.documentNames or []),
+        len(retrieval_document_ids or []),
+        len({c.document_id for c in chunks if c.document_id}),
+        relevance_score,
+    )
     source_decision = replace(
         source_decision,
         relevance_score=relevance_score,
