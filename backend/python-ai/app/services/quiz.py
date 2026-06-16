@@ -605,7 +605,17 @@ def generate_quiz(
             seen_questions.add(key)
             collected.append(norm)
 
-    # ── Round 2: one serial backfill if we're short ──────────────────────────
+    # ── Verify, then backfill any deficit with fresh, re-verified questions ──
+    # Independent verification pass: a fresh model call (blind to the answer
+    # key) re-derives each MCQ's answer from the same context and drops any item
+    # whose key it *confidently* rejects. Verifying BEFORE backfill means a
+    # dropped (wrong-key) item counts as a deficit the backfill rounds then
+    # replace with a newly generated question — so the user still gets exactly
+    # the count they requested, filled with real questions rather than padded
+    # with a low-value recognition item.
+    collected = _dedupe(collected)
+    collected = _verify_mcq_keys(collected, context, diagnostics)
+
     for round_idx in range(_BACKFILL_ROUNDS):
         if len(collected) >= requested:
             break
@@ -618,30 +628,32 @@ def generate_quiz(
             language=lang,
             understanding=understanding,
         )
-        if backfill is not None:
-            diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0
-            diagnostics["completion_tokens"] += backfill.completion_tokens or 0
-            raw_items = backfill.data.get("items") if isinstance(backfill.data, dict) else None
-            if isinstance(raw_items, list):
-                for raw in raw_items:
-                    if len(collected) >= requested:
-                        break
-                    norm = _normalize(raw, known_topics_set)
-                    if not norm:
-                        continue
-                    key = re.sub(r"\W+", " ", (norm["question"] or "").lower()).strip()
-                    if not key or key in seen_questions:
-                        continue
-                    seen_questions.add(key)
-                    collected.append(norm)
+        if backfill is None:
+            continue
+        diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0
+        diagnostics["completion_tokens"] += backfill.completion_tokens or 0
+        raw_items = backfill.data.get("items") if isinstance(backfill.data, dict) else None
+        if not isinstance(raw_items, list):
+            continue
+        fresh: list[dict[str, Any]] = []
+        for raw in raw_items:
+            norm = _normalize(raw, known_topics_set)
+            if not norm:
+                continue
+            key = re.sub(r"\W+", " ", (norm["question"] or "").lower()).strip()
+            if not key or key in seen_questions:
+                continue
+            seen_questions.add(key)
+            fresh.append(norm)
+        # Verify the replacements too, so a backfilled item can't reintroduce
+        # the very wrong-key bug we just removed.
+        fresh = _verify_mcq_keys(fresh, context, diagnostics)
+        for it in fresh:
+            if len(collected) >= requested:
+                break
+            collected.append(it)
 
-    collected = _dedupe(collected)
-    # Independent verification pass: a fresh model call (blind to the answer
-    # key) re-derives each MCQ's answer from the same context. An item whose
-    # key it *confidently* rejects is dropped — a wrong answer key is worse
-    # than one fewer question. One extra mini call; stays on the quiz meter.
-    collected = _verify_mcq_keys(collected, context, diagnostics)
-    collected = collected[:requested]
+    collected = _dedupe(collected)[:requested]
     if len(collected) < requested and "mcq" in types:
         collected.extend(_deterministic_mcq_backfill(
             chunks=chunks,
