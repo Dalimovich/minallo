@@ -1362,6 +1362,14 @@ def stream_answer(
     ) // 4
     yield _sse({"usageEst": True, "model": target_model, "estPromptTokens": est_prompt_tokens})
 
+    # Live status: everything before this point (retrieval, prompt assembly) is
+    # done — from here the model is writing the answer. For reasoning models
+    # (o4-mini exams) this is the long no-token pause, so advancing the status
+    # line to "writing the answer" here is the most accurate it can be. The
+    # router forwards this verbatim to the chatbot + side-panel status line.
+    if not app_question:
+        yield _sse({"status": "writing_answer"})
+
     try:
         stream = client.chat.completions.create(
             model=target_model,

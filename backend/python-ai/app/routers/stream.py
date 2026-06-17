@@ -11,6 +11,7 @@ Reuses /ask's retrieval + ownership + cache logic.
 from __future__ import annotations
 
 import logging
+import json
 import re
 from dataclasses import replace
 from typing import Any
@@ -214,6 +215,10 @@ def _sse_bytes(payload: str) -> bytes:
     return ("data: " + payload + "\n\n").encode("utf-8")
 
 
+def _status_sse(status_key: str) -> bytes:
+    return _sse_bytes(json.dumps({"status": status_key}, ensure_ascii=False))
+
+
 def _source_debug_enabled() -> bool:
     try:
         from ..config import get_settings  # noqa: WPS433
@@ -235,11 +240,12 @@ def _stream_static_answer(
     model: str | None = None,
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
+    status_key: str = "writing_answer",
 ):
-    import json
     sources = sources or []
 
     def gen():
+        yield _status_sse(status_key)
         meta = {
             "meta": True,
             "retrievalMode": decision.source_scope.value,
@@ -447,6 +453,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             or "Which file should I use? Please select a PDF or switch to All course files.",
             decision=source_decision,
             answer_mode="clarification",
+            status_key="reading_question",
         )
 
     if source_decision.source_scope == SourceScope.INTERNET and not app_or_workspace:
@@ -467,6 +474,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             model=web_answer.get("model"),
             prompt_tokens=web_answer.get("promptTokens"),
             completion_tokens=web_answer.get("completionTokens"),
+            status_key="writing_answer",
         )
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE and not app_or_workspace:
@@ -484,6 +492,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             model=general.get("model"),
             prompt_tokens=general.get("promptTokens"),
             completion_tokens=general.get("completionTokens"),
+            status_key="writing_answer",
         )
 
     # ── Live workspace context (layer 2: the student's real Minallo data) ────
@@ -624,6 +633,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             cached_confidence = "low"
         else:
             cached_confidence = "high" if cached.get("retrievalMode") == "strong" else "low"
+        yield _status_sse("writing_answer")
         yield _sse_bytes(json.dumps({
             "meta": True,
             "retrievalMode": cached.get("retrievalMode", "strong"),
@@ -844,6 +854,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 text=course_not_found_answer(),
                 decision=source_decision,
                 answer_mode="strong",
+                status_key="no_strong_match",
             )
         general_decision = replace(
             source_decision,
@@ -863,6 +874,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             model=general.get("model"),
             prompt_tokens=general.get("promptTokens"),
             completion_tokens=general.get("completionTokens"),
+            status_key="no_strong_match",
         )
 
     # ── Stream + save to cache on finish ─────────────────────────────────────
@@ -878,6 +890,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
 
     def gen():
         import json
+        if app_or_workspace:
+            yield _status_sse("checking_app_context")
+        elif chunks:
+            yield _status_sse("collecting_sources")
+        else:
+            yield _status_sse("writing_answer")
         gen_iter = stream_answer(
             question=question, chunks=chunks, doc_names=doc_name_map,
             tutor_mode=tutor_mode,

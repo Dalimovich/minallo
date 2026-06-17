@@ -15,6 +15,7 @@ import { buildPageContext } from './ai-page-context.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import {
   createAIThinkingStatus,
+  getInitialAssistantStatus,
   getThinkingContext,
   type AIThinkingStatus
 } from './ai-thinking-status.js';
@@ -783,10 +784,21 @@ export function initAskAI(
     const initialThinkingContext = getThinkingContext({
       problemSolver: opts?.problemSolver,
       courseId: window.activeCourseId || window.currentCourseId || '',
-      hasCourseMaterial: !!(window.pdfFullText || window.activeFileName)
+      selectedCourseId: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null,
+      selectedSourceCount: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId ? 1 : 0,
+      hasCourseMaterial: !!(window.pdfFullText || window.activeFileName),
+      question
     });
     let thinking: AIThinkingStatus | null = createAIThinkingStatus({
       context: initialThinkingContext,
+      status: getInitialAssistantStatus({
+        problemSolver: opts?.problemSolver,
+        courseId: window.activeCourseId || window.currentCourseId || '',
+        selectedCourseId: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null,
+        selectedSourceCount: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId ? 1 : 0,
+        hasCourseMaterial: !!(window.pdfFullText || window.activeFileName),
+        question
+      }),
       host: aiMsgs,
       surface: 'panel',
       compact: true
@@ -1370,11 +1382,11 @@ export function initAskAI(
                         if (evt.meta && thinking) {
                           const answerMode = String(evt.answerMode || '');
                           if (answerMode === 'math' || _isProblemSolver) {
-                            thinking.set('Preparing step-by-step solution...');
+                            thinking.set('preparing_step_solution');
                           } else if (answerMode === 'app') {
-                            thinking.set('Checking Minallo features...');
+                            thinking.set('checking_app_context');
                           } else {
-                            thinking.set('Structuring the answer...');
+                            thinking.set('writing_answer');
                           }
                         }
                         if (evt.t) {
@@ -1424,7 +1436,7 @@ export function initAskAI(
                   compact: true
                 });
               }
-              if (thinking) thinking.set('Preparing answer...');
+              if (thinking) thinking.set('writing_answer');
               sendRagRequest(
                 _courseId,
                 question,

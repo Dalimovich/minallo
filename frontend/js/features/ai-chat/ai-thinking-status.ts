@@ -8,9 +8,26 @@ export type ThinkingContext =
   | 'flashcards'
   | 'general';
 
+export type AssistantStatus =
+  | 'reading_question'
+  | 'checking_selected_file'
+  | 'searching_course_material'
+  | 'reading_selected_part'
+  | 'reading_relevant_sections'
+  | 'collecting_sources'
+  | 'writing_answer'
+  | 'no_strong_match'
+  | 'preparing_quiz'
+  | 'preparing_flashcards'
+  | 'preparing_examforge'
+  | 'preparing_summary'
+  | 'preparing_deep_explanation'
+  | 'preparing_step_solution'
+  | 'checking_app_context';
+
 export interface AIThinkingStatus {
   el: HTMLElement;
-  set: (text: string) => void;
+  set: (status: AssistantStatus | string) => void;
   remove: (immediate?: boolean) => void;
   waitMinimum: () => Promise<void>;
 }
@@ -30,46 +47,62 @@ interface ThinkingContextInput {
 interface CreateThinkingStatusOptions {
   context: ThinkingContext;
   host: HTMLElement | null;
+  status?: AssistantStatus;
   surface?: 'panel' | 'chatbot';
   compact?: boolean;
   minimumMs?: number;
-  rotateMs?: number;
   append?: boolean;
 }
 
-const FIRST_THINKING_MESSAGE = 'Retrieving relevant content';
-
-const THINKING_MESSAGES: Record<ThinkingContext, string[]> = {
-  'exercise-solver': [
-    'Analyzing the exercise',
-    'Setting up the equations',
-    'Preparing the solution'
-  ],
-  'course-qa': [
-    'Checking course material',
-    'Matching the question with your documents',
-    'Preparing the explanation'
-  ],
-  summary: [
-    'Reading the material',
-    'Extracting key points',
-    'Preparing the summary'
-  ],
-  quiz: [
-    'Finding key concepts',
-    'Creating quiz questions',
-    'Preparing the quiz'
-  ],
-  flashcards: [
-    'Extracting definitions',
-    'Finding important concepts',
-    'Preparing flashcards'
-  ],
-  general: ['Understanding your question', 'Preparing the answer']
+export const assistantStatusText: Record<AssistantStatus, string> = {
+  reading_question:
+    "I'm reading your question and checking what context is needed.",
+  checking_selected_file:
+    "I'm checking the selected course file for the relevant section.",
+  searching_course_material:
+    "I'm searching through your uploaded course material for the best match.",
+  reading_selected_part:
+    "I'm reading the selected part before connecting it to your question.",
+  reading_relevant_sections:
+    "I'm looking for the sections that directly support the answer.",
+  collecting_sources:
+    "I'm collecting the source references before writing the final answer.",
+  writing_answer:
+    "I'm writing the answer based on the material I found.",
+  no_strong_match:
+    "I couldn't find a strong match in the uploaded material, so I'm preparing a careful answer.",
+  preparing_quiz:
+    "I'm finding the important concepts to turn them into quiz questions.",
+  preparing_flashcards:
+    "I'm extracting key terms and definitions from your material.",
+  preparing_examforge:
+    "I'm analyzing the course topics and building an exam-style structure.",
+  preparing_summary:
+    "I'm identifying the main points before creating the summary.",
+  preparing_deep_explanation:
+    "I'm reading the relevant section carefully before explaining it step by step.",
+  preparing_step_solution:
+    "I'm reading the exercise carefully before writing the solution steps.",
+  checking_app_context:
+    "I'm checking the Minallo workspace context that matches your question.",
 };
 
-function messagesForContext(context: ThinkingContext): string[] {
-  return [FIRST_THINKING_MESSAGE, ...(THINKING_MESSAGES[context] || THINKING_MESSAGES.general)];
+const CONTEXT_INITIAL_STATUS: Record<ThinkingContext, AssistantStatus> = {
+  'exercise-solver': 'preparing_step_solution',
+  'course-qa': 'searching_course_material',
+  summary: 'preparing_summary',
+  quiz: 'preparing_quiz',
+  flashcards: 'preparing_flashcards',
+  general: 'reading_question',
+};
+
+function isAssistantStatus(value: string): value is AssistantStatus {
+  return Object.prototype.hasOwnProperty.call(assistantStatusText, value);
+}
+
+function statusToText(status: AssistantStatus | string): string {
+  if (isAssistantStatus(status)) return assistantStatusText[status];
+  return status || assistantStatusText.reading_question;
 }
 
 export function getThinkingContext(input: ThinkingContextInput = {}): ThinkingContext {
@@ -93,19 +126,37 @@ export function getThinkingContext(input: ThinkingContextInput = {}): ThinkingCo
   return 'general';
 }
 
+export function getInitialAssistantStatus(input: ThinkingContextInput = {}): AssistantStatus {
+  const tool = String(input.tool || '').toLowerCase();
+  const tutorMode = String(input.tutorMode || '').toLowerCase();
+  const question = String(input.question || '').toLowerCase();
+
+  if (input.problemSolver || tutorMode === 'solve') return 'preparing_step_solution';
+  if (tool === 'examforge' || /\bexamforge\b|\bexam\b/.test(question)) return 'preparing_examforge';
+  if (tool === 'quiz' || tutorMode === 'quiz' || /\bquiz\b/.test(question)) return 'preparing_quiz';
+  if (tool === 'flashcards' || /\bflashcards?\b/.test(question)) return 'preparing_flashcards';
+  if (tool === 'summary' || /\bsummari[sz]e\b|\bsummary\b/.test(question)) return 'preparing_summary';
+  if (/\b(deep\s*learn|deep explanation|step by step|explain deeply)\b/.test(question)) {
+    return 'preparing_deep_explanation';
+  }
+  if ((input.selectedSourceCount || 0) === 1 || input.selectedCourseId) return 'checking_selected_file';
+  if ((input.selectedSourceCount || 0) > 1 || (input.filesCount || 0) > 1) {
+    return 'searching_course_material';
+  }
+  if (input.hasCourseMaterial || input.courseId) return 'searching_course_material';
+  return CONTEXT_INITIAL_STATUS[getThinkingContext(input)];
+}
+
 function thinkingHtml(text: string, surface: 'panel' | 'chatbot', compact: boolean): string {
   const classes =
     'ai-thinking-card' +
     (surface === 'chatbot' ? ' ai-thinking-card--chatbot' : '') +
     (compact ? ' ai-thinking-card--compact' : '');
   if (surface === 'panel') {
-    // Side panel: subtle ChatGPT-style dots only — no status copy, no orb,
-    // no tool names. Status text still lands in a screen-reader-only span
-    // so assistive tech keeps getting the progress updates.
     return (
-      '<div class="' + classes + ' ai-thinking-card--dots" aria-live="polite" role="status">' +
-      '<span class="ai-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
-      '<span class="ai-thinking-sr">' + escapeHtml(displayThinkingText(text)) + '</span>' +
+      '<div class="' + classes + ' ai-thinking-card--live" aria-live="polite" role="status">' +
+      '<span class="ai-thinking-dot" aria-hidden="true"></span>' +
+      '<span class="ai-thinking-text">' + escapeHtml(displayThinkingText(text)) + '</span>' +
       '</div>'
     );
   }
@@ -123,7 +174,7 @@ function thinkingHtml(text: string, surface: 'panel' | 'chatbot', compact: boole
 }
 
 function displayThinkingText(text: string): string {
-  return (text || FIRST_THINKING_MESSAGE).replace(/\.*$/, '');
+  return (text || assistantStatusText.reading_question).trim();
 }
 
 export function createAIThinkingStatus(options: CreateThinkingStatusOptions): AIThinkingStatus | null {
@@ -131,9 +182,8 @@ export function createAIThinkingStatus(options: CreateThinkingStatusOptions): AI
   if (!host) return null;
 
   const surface = options.surface || 'panel';
-  const messages = messagesForContext(options.context);
+  const firstText = statusToText(options.status || CONTEXT_INITIAL_STATUS[options.context]);
   const minimumMs = Math.max(options.minimumMs ?? 500, 0);
-  const rotateMs = Math.max(options.rotateMs ?? 800, 500);
   const createdAt = Date.now();
   const append = options.append !== false;
 
@@ -145,28 +195,19 @@ export function createAIThinkingStatus(options: CreateThinkingStatusOptions): AI
   wrap.setAttribute('data-ai-transient', 'thinking');
 
   if (surface === 'chatbot') {
-    wrap.innerHTML = thinkingHtml(messages[0] || FIRST_THINKING_MESSAGE, surface, !!options.compact);
+    wrap.innerHTML = thinkingHtml(firstText, surface, !!options.compact);
   } else {
     wrap.innerHTML =
       '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
       '<div class="msg-body">' +
-      thinkingHtml(messages[0] || FIRST_THINKING_MESSAGE, surface, !!options.compact) +
+      thinkingHtml(firstText, surface, !!options.compact) +
       '</div>';
   }
 
   if (append) host.appendChild(wrap);
   else host.replaceChildren(wrap);
 
-  let index = 0;
   let removed = false;
-  let manualUntil = 0;
-  const timer = window.setInterval(() => {
-    if (removed) return;
-    if (Date.now() < manualUntil) return;
-    index = (index + 1) % messages.length;
-    const text = wrap.querySelector<HTMLElement>('.ai-thinking-text, .ai-thinking-sr');
-    if (text) text.textContent = messages[index] || FIRST_THINKING_MESSAGE;
-  }, rotateMs);
 
   const waitMinimum = (): Promise<void> => {
     const remaining = minimumMs - (Date.now() - createdAt);
@@ -176,17 +217,13 @@ export function createAIThinkingStatus(options: CreateThinkingStatusOptions): AI
 
   return {
     el: wrap,
-    set(text: string): void {
-      const node = wrap.querySelector<HTMLElement>('.ai-thinking-text, .ai-thinking-sr');
-      if (node && text) {
-        node.textContent = displayThinkingText(text);
-        manualUntil = Date.now() + Math.max(rotateMs + 450, 1200);
-      }
+    set(status: AssistantStatus | string): void {
+      const node = wrap.querySelector<HTMLElement>('.ai-thinking-text');
+      if (node && status) node.textContent = displayThinkingText(statusToText(status));
     },
     remove(immediate = false): void {
       if (removed) return;
       removed = true;
-      clearInterval(timer);
       if (!wrap.parentNode) return;
       if (immediate) {
         wrap.remove();

@@ -12,6 +12,7 @@ import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
   createAIThinkingStatus,
   getThinkingContext,
+  getInitialAssistantStatus,
   type AIThinkingStatus
 } from '../ai-chat/ai-thinking-status.js';
 import { routeStudyIntent } from '../ai-chat/intent-router.js';
@@ -862,6 +863,9 @@ async function streamAiReply(
   const bubble = aiRow.querySelector<HTMLElement>('.ncb-bubble-body');
   const thinking = createAIThinkingStatus({
     context: chatbotThinkingContext(state),
+    // Specific first message from real request context (selected file, exam,
+    // quiz, …) instead of the coarse context bucket — matches the side panel.
+    status: chatbotInitialStatus(state),
     host: bubble,
     surface: 'chatbot',
     compact: true,
@@ -2034,16 +2038,28 @@ function renderDailyMissionText(data: DailyMissionResponse): string {
   return lines.join('\n');
 }
 
-function chatbotThinkingContext(state: ConversationState): ReturnType<typeof getThinkingContext> {
+// Shared real-context signal for the live status line: selected sources,
+// course material, the question text and tutor mode. Feeds BOTH the coarse
+// context bucket and the specific initial status, so the chatbot picks the
+// same accurate first message the side panel does.
+function chatbotStatusInput(state: ConversationState) {
   const last = state.messages[state.messages.length - 1];
   const active = chatStore.getActive();
-  return getThinkingContext({
+  return {
     question: last?.text || '',
     tutorMode: getCurrentTutorMode(),
     selectedSourceCount: active.selectedSourceIds.length,
     filesCount: (last?.files || []).length,
     hasCourseMaterial: active.selectedSourceIds.length > 0
-  });
+  };
+}
+
+function chatbotThinkingContext(state: ConversationState): ReturnType<typeof getThinkingContext> {
+  return getThinkingContext(chatbotStatusInput(state));
+}
+
+function chatbotInitialStatus(state: ConversationState): ReturnType<typeof getInitialAssistantStatus> {
+  return getInitialAssistantStatus(chatbotStatusInput(state));
 }
 
 
@@ -2338,6 +2354,11 @@ async function streamFromAskStream(
       if (!line.startsWith('data: ')) continue;
       try {
         const evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
+        // Live status: backend pipeline events ("collecting_sources",
+        // "writing_answer", …) update the pending bubble's status line before
+        // any answer token arrives. Once a token creates the real bubble
+        // (ensureLiveReveal) the line is gone, so this is a no-op after that.
+        if (typeof evt.status === 'string') thinking?.set(evt.status);
         if (typeof evt.t === 'string') {
           answerBuf += evt.t;
           const reveal = await ensureLiveReveal();

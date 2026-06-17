@@ -6047,31 +6047,11 @@ body:not(.night) .ai-thinking-card {
 
 .ai-thinking-text {
   overflow-wrap: anywhere;
-  color: transparent;
-  background:
-    linear-gradient(
-      90deg,
-      var(--muted, rgba(203, 213, 225, 0.68)) 0%,
-      rgba(248, 250, 252, 0.96) 42%,
-      var(--muted, rgba(203, 213, 225, 0.68)) 78%
-    );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  animation: aiTextShimmer 1.4s linear infinite;
+  color: var(--muted, rgba(203, 213, 225, 0.72));
 }
 
 body:not(.night) .ai-thinking-text {
-  background:
-    linear-gradient(
-      90deg,
-      var(--lm-muted, rgba(71, 85, 105, 0.78)) 0%,
-      rgba(15, 23, 42, 0.95) 42%,
-      var(--lm-muted, rgba(71, 85, 105, 0.78)) 78%
-    );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
+  color: var(--lm-muted, rgba(71, 85, 105, 0.82));
 }
 
 .ai-thinking-wave {
@@ -6112,6 +6092,22 @@ body:not(.night) .ai-thinking-text {
 /* ── Side panel: ChatGPT-style streaming ─────────────────────────────── */
 
 /* Subtle thinking dots — the only waiting state before the first paint. */
+.ai-thinking-card--live {
+  gap: 8px;
+  padding: 8px 0;
+  max-width: min(96%, 520px);
+}
+
+.ai-thinking-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: currentColor;
+  opacity: 0.62;
+  animation: aiDotPulse 1.2s ease-in-out infinite;
+}
+
 .ai-thinking-card--dots {
   gap: 0;
   padding: 10px 0;
