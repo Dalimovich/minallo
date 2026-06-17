@@ -856,6 +856,19 @@ async function streamAiReply(
   sendBtn: HTMLButtonElement,
   msgs: HTMLElement
 ): Promise<void> {
+  // Bind this reply to the chat it STARTED in. `state.messages` is a live
+  // reference that loadActiveChatIntoCenter RE-POINTS on chat switch, so
+  // pushing the finished reply to `state.messages` would land it in whichever
+  // chat is active at finalize time — the cause of "the reply shows up in the
+  // wrong chat, before an empty message". Push to the captured array instead,
+  // guard DOM/shared-state mutations to when this chat is still on screen, and
+  // let the stream complete in the background so the answer is never lost.
+  const originChat = chatStore.getActive();
+  const originId = originChat.id;
+  const originMessages = originChat.messages;
+  const isOriginActive = (): boolean => chatStore.activeId === originId;
+  const touchOrigin = (): void => { originChat.updatedAt = Date.now(); };
+
   state.isSending = true;
   setSendBtnMode(sendBtn, 'pause');
 
@@ -875,9 +888,19 @@ async function streamAiReply(
   const controller = new AbortController();
   state.controller = controller;
 
+  // If the user navigated away and back while streaming, the live view was
+  // re-rendered WITHOUT this still-in-flight reply (it isn't in the array yet).
+  // Once the reply is saved, re-render so it appears instead of staying lost.
+  const reconcileView = (): void => {
+    if (isOriginActive() && !aiRow.isConnected) {
+      const root = msgs.closest<HTMLElement>('.ncb-root');
+      if (root) loadActiveChatIntoCenter(root);
+    }
+  };
+
   try {
-    const allowDiagrams = latestUserAllowsDiagrams(state.messages);
-    const latestFileLabel = latestUserFileLabel(state.messages);
+    const allowDiagrams = latestUserAllowsDiagrams(originMessages);
+    const latestFileLabel = latestUserFileLabel(originMessages);
     // Phase 12 wiring: when the active chat has ≥1 course-imported source
     // selected AND the latest user message is text-only (no images, no
     // file uploads), route to the Python /ask-stream so plan-v2's RAG +
@@ -888,22 +911,25 @@ async function streamAiReply(
       const msg: ChatMessage = { role: 'assistant', text: routed.text };
       if (routed.missionMarker) msg.missionMarker = routed.missionMarker;
       if (routed.generatedDoc) msg.generatedDoc = routed.generatedDoc;
-      state.messages.push(msg);
-      setBubbleSubtitle(aiRow, 'course_files');
-      touchActiveChat();
+      originMessages.push(msg);
+      touchOrigin();
       saveChatStore();
-      appendBubbleActions(aiRow, routed.text);
+      if (isOriginActive()) {
+        setBubbleSubtitle(aiRow, 'course_files');
+        appendBubbleActions(aiRow, routed.text);
+      }
+      reconcileView();
       return;
     }
 
-    const rag = ragEligibility(state.messages);
+    const rag = ragEligibility(originMessages);
     let raw: string;
     if (rag) {
       // History = everything BEFORE the just-added user turn (which is
       // already in rag.question). Without this the backend retrieves on
       // the literal text "I don't know" and falls into PARTIAL mode
       // instead of recognising the message as a reply to its own question.
-      const priorTurns = state.messages
+      const priorTurns = originMessages
         .slice(0, -1)
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text)
         .map((m) => ({
@@ -914,10 +940,10 @@ async function streamAiReply(
       // before a refresh) rides along as openFileContext — the backend
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
-      const followUpDoc = await resolveFollowUpDoc(state.messages, rag.courseId || null);
+      const followUpDoc = await resolveFollowUpDoc(originMessages, rag.courseId || null);
       const streamed = await streamFromAskStream(rag.question, rag.courseId, bubble, controller, priorTurns, thinking, rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams);
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
-      state.messages.push({
+      originMessages.push({
         role: 'assistant',
         text: raw,
         allowDiagrams,
@@ -927,8 +953,8 @@ async function streamAiReply(
         courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
         sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
       });
-      setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
-    } else if (normaliseSourceMode(chatStore.getActive().sourceMode) === 'course_files') {
+      if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
+    } else if (normaliseSourceMode(originChat.sourceMode) === 'course_files') {
       // Locked to Course Files but no course files are attached to this chat,
       // so there's nothing to search. Honour the mode's contract — never answer
       // from general knowledge here — and tell the user how to attach files
@@ -939,30 +965,32 @@ async function streamAiReply(
         'cb_course_files_none',
         "You're in **Course Files** mode, but no course files are attached to this chat yet, so there's nothing for me to search. Click the **import** button (the folder icon next to the message box) to add files from one of your courses, then ask again — or switch the source selector to **Auto** or **Internet**."
       );
-      if (bubble) renderRichBubble(bubble, raw, false);
-      state.messages.push({ role: 'assistant', text: raw, allowDiagrams: false });
-      setBubbleSubtitle(aiRow, 'course_files');
+      if (isOriginActive() && bubble) renderRichBubble(bubble, raw, false);
+      originMessages.push({ role: 'assistant', text: raw, allowDiagrams: false });
+      if (isOriginActive()) setBubbleSubtitle(aiRow, 'course_files');
     } else {
-      const followUpDoc = await resolveFollowUpDoc(state.messages, null);
-      raw = await callGenericAi(state.messages, bubble, controller, thinking, followUpDoc, allowDiagrams);
+      const followUpDoc = await resolveFollowUpDoc(originMessages, null);
+      raw = await callGenericAi(originMessages, bubble, controller, thinking, followUpDoc, allowDiagrams);
       raw = sanitizeChatbotDiagrams(raw, allowDiagrams);
-      state.messages.push({ role: 'assistant', text: raw, allowDiagrams });
+      originMessages.push({ role: 'assistant', text: raw, allowDiagrams });
       // Generic chat path — no course retrieval ran, so don't claim otherwise.
-      setBubbleSubtitle(aiRow, latestFileLabel ? 'file:' + latestFileLabel : 'general_knowledge');
+      if (isOriginActive()) setBubbleSubtitle(aiRow, latestFileLabel ? 'file:' + latestFileLabel : 'general_knowledge');
     }
-    touchActiveChat();
+    touchOrigin();
     saveChatStore();
-    appendBubbleActions(aiRow, raw);
+    if (isOriginActive()) appendBubbleActions(aiRow, raw);
+    reconcileView();
 
-    // After the first AI reply, ask the model for a 4-6 word title.
-    if (state.messages.filter((m) => m.role === 'assistant').length === 1) {
+    // After the first AI reply, ask the model for a 4-6 word title — only while
+    // this chat is still on screen (titling a backgrounded chat could mislabel).
+    if (isOriginActive() && originMessages.filter((m) => m.role === 'assistant').length === 1) {
       void generateChatTitle(state).then((title) => {
-        if (title) updateChatTitle(title);
+        if (title && isOriginActive()) updateChatTitle(title);
       });
     }
   } catch (err) {
     thinking?.remove(true);
-    if (bubble) {
+    if (isOriginActive() && bubble) {
       if ((err as Error)?.name === 'AbortError') {
         bubble.innerHTML =
           '<em class="ncb-bubble-aborted">' +
@@ -987,11 +1015,16 @@ async function streamAiReply(
       }
     }
   } finally {
-    state.controller = null;
-    state.isSending = false;
-    setSendBtnMode(sendBtn, 'send');
+    // Only reset the SHARED send state if THIS stream is still the active one.
+    // The user may have switched away and started another send in a new chat;
+    // clobbering state/the send button then would break that live stream.
+    if (state.controller === controller) {
+      state.controller = null;
+      state.isSending = false;
+      setSendBtnMode(sendBtn, 'send');
+    }
     // Sticky: don't yank a user who scrolled up to read while the answer finished.
-    scrollMsgsToBottom(msgs, false);
+    if (isOriginActive()) scrollMsgsToBottom(msgs, false);
   }
 }
 
@@ -4885,8 +4918,10 @@ function updateActiveSidebarItem(root: HTMLElement, chatId: string): void {
 
 function switchActiveChat(root: HTMLElement, chatId: string): void {
   if (chatId === chatStore.activeId) return;
-  // Abort in-flight response on the old chat.
-  if (liveState?.controller) liveState.controller.abort();
+  // Do NOT abort an in-flight reply on switch: streamAiReply is bound to its
+  // origin chat and finishes in the background, saving the answer there so it's
+  // still present when the user returns. (Aborting here used to drop the reply
+  // entirely, and re-pointing state.messages landed it in the wrong chat.)
   chatStore.activeId = chatId;
   saveChatStore();
   updateActiveSidebarItem(root, chatId);
