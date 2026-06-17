@@ -1298,6 +1298,89 @@ def build_source_coverage_overlay(
     return overlay
 
 
+# Placeholder phrases that signal an answer key was left incomplete (the model
+# summarised instead of answering). Matched case-insensitively against the
+# Kurzlösung text. Kept tight so legitimate prose doesn't trip them.
+_EXAM_PLACEHOLDER_RE = re.compile(
+    r"stichpunktartig|analog\s+(?:zu\s+)?oben|f(?:ü|ue)r\s+jede\s+(?:weitere\s+)?aufgabe"
+    r"|(?:siehe|wie)\s+oben|\banaloge?\s+(?:antwort|l(?:ö|oe)sung)|\bplatzhalter\b"
+    r"|\bergänzen\b|\bzu\s+ergänzen\b|\bTODO\b",
+    re.IGNORECASE,
+)
+# A bare ellipsis used as the whole answer ("- …" / "..."), not mid-sentence.
+_BARE_ELLIPSIS_RE = re.compile(r"(?m)^[\s>*\-]*(?:…|\.\.\.)\s*$")
+# Non-technical / intro-slide question material that shouldn't seed an Aufgabe.
+_NON_TECHNICAL_RE = re.compile(
+    r"kommunikationsstruktur|infoveranstaltung|info-?veranstaltung|qr[-\s]?code"
+    r"|zielgruppen?\b|anmeldelink|veranstaltungs|agenda\b|stundenplan|raumnummer",
+    re.IGNORECASE,
+)
+_AUFGABE_HEADER_RE = re.compile(r"(?im)^#{1,4}\s*Aufgabe\s+(\d+)\b")
+
+
+def lint_exam_output(text: str) -> list[str]:
+    """Validate a generated Probeklausur + Kurzlösung before it's trusted.
+
+    Returns a list of human-readable issues (empty == clean). Mechanical checks
+    only — they catch the failure modes that made generated exams unusable:
+    a missing/placeholder answer key, tasks with no model answer, intro-slide
+    questions, and the DIN 8580-vs-8593 classification mix-up. This is a lint
+    (advisory): callers log it and may repair, not a hard schema validator.
+    """
+    issues: list[str] = []
+    if not text or not text.strip():
+        return ["empty output"]
+
+    # Split question section from the answer key.
+    m = re.search(r"(?im)^#{1,3}\s*Kurzl(?:ö|oe)sung\b", text)
+    if not m:
+        issues.append("no `## Kurzlösung` section — the answer key is missing entirely")
+        questions, solution = text, ""
+    else:
+        questions, solution = text[: m.start()], text[m.start():]
+
+    q_nums = [int(n) for n in _AUFGABE_HEADER_RE.findall(questions)]
+    a_nums = {int(n) for n in _AUFGABE_HEADER_RE.findall(solution)}
+
+    # 7.1 — every task has a matching answer.
+    for n in q_nums:
+        if n not in a_nums:
+            issues.append(f"Aufgabe {n} has no model answer in the Kurzlösung")
+
+    # 7.2 — no placeholders standing in for an answer.
+    if solution:
+        if _EXAM_PLACEHOLDER_RE.search(solution):
+            issues.append("Kurzlösung contains placeholder text instead of real answers")
+        if _BARE_ELLIPSIS_RE.search(solution):
+            issues.append("Kurzlösung uses a bare '…' in place of an answer")
+
+    # 7.3 — each answer carries some substance (proxy: not near-empty).
+    if solution and a_nums:
+        blocks = re.split(r"(?im)^#{1,4}\s*Aufgabe\s+\d+\b", solution)[1:]
+        for n, block in zip(sorted(a_nums), blocks):
+            if len(block.strip()) < 60:
+                issues.append(f"Aufgabe {n} answer is too thin for the assigned points")
+
+    # 7.4 / 7.5 — intro/admin slide material used as a question.
+    if _NON_TECHNICAL_RE.search(questions):
+        issues.append(
+            "a question is built from non-technical (intro/admin/QR/event) slide material"
+        )
+
+    # 7.6 — DIN level mix-up: classifying joining processes under DIN 8580 Hauptgruppen.
+    if (
+        re.search(r"\bDIN\s*8580\b", questions, re.IGNORECASE)
+        and re.search(r"\bF(?:ü|ue)gen\b", questions, re.IGNORECASE)
+        and not re.search(r"\bDIN\s*8593\b", questions, re.IGNORECASE)
+    ):
+        issues.append(
+            "joining (Fügen) classification cites DIN 8580 Hauptgruppen — should be "
+            "DIN 8593 Untergruppen des Fügens"
+        )
+
+    return issues
+
+
 def generate_answer(
     *,
     question: str,

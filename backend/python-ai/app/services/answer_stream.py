@@ -40,6 +40,7 @@ from .answer import (
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
     build_source_coverage_overlay,
+    lint_exam_output,
     _cited_indices,
     strip_answer_intro,
     _context_strength,
@@ -1463,6 +1464,19 @@ def stream_answer(
         if diagram_fence:
             yield _sse({"t": diagram_fence})
             full_answer += diagram_fence
+
+    # Exam quality gate (advisory). The EXAM_GENERATION prompt forbids an
+    # incomplete/placeholder Kurzlösung, intro-slide questions and the DIN
+    # 8580/8593 mix-up; this surfaces the cases where the model slipped anyway
+    # so bad exams are visible in logs (and metered for follow-up) instead of
+    # silently shipping. Non-blocking — the answer already streamed.
+    if is_exam_request:
+        exam_issues = lint_exam_output(full_answer)
+        if exam_issues:
+            log.warning(
+                "exam lint flagged %d issue(s): %s",
+                len(exam_issues), "; ".join(exam_issues),
+            )
 
     cited = _cited_indices(full_answer, len(used_chunks))
     filtered_sources = [_source_payload(c, i) for i, c in enumerate(used_chunks, start=1) if i in cited]
