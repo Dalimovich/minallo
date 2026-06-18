@@ -135,7 +135,7 @@ _PURE_CHITCHAT_RE = re.compile(
 _SOCIAL_QUESTION_RE = re.compile(
     r"^\s*(?:"
     r"how\s+are\s+you|how'?s\s+it\s+going|what'?s\s+up|"
-    r"wie\s+geht(?:'s|\s+es)?(?:\s+dir)?|alles\s+gut"
+    r"wie\s+geht(?:'?s|\s+es)?(?:\s+dir)?|alles\s+gut"
     r")\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
@@ -273,6 +273,8 @@ def chitchat_answer(question: str) -> str:
         return "See you. Good luck with your studying."
     if _SOCIAL_QUESTION_RE.match(text):
         return "I'm doing well and ready to help. What would you like to study?"
+    if re.match(r"^(ok(?:ay)?|kk|cool|nice|great|perfect)\b", text):
+        return "Got it. What would you like to work on next?"
     return "Hi! What would you like to study or work on?"
 
 

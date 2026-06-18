@@ -112,9 +112,14 @@ def test_wants_per_source_coverage() -> None:
 def test_non_academic_chitchat_is_not_course_work() -> None:
     from app.services.answer_intent import chitchat_answer, is_non_academic_chitchat
 
-    for q in ["hi", "Hello!", "thanks", "ok", "how are you?", "danke"]:
+    # Pure social/acknowledgement turns (incl. German "wie gehts" without an
+    # apostrophe, which used to slip through and trigger a RAG/exam answer).
+    for q in ["hi", "Hello!", "thanks", "ok", "how are you?", "danke", "wie gehts", "cool", "perfect"]:
         assert is_non_academic_chitchat(q), q
         assert "Source" not in chitchat_answer(q)
+
+    # A bare acknowledgement gets an acknowledgement reply, not a greeting.
+    assert chitchat_answer("ok") == "Got it. What would you like to work on next?"
 
     for q in ["hi, explain entropy", "what is force?", "ok explain chapter 2", "thanks, now make a quiz"]:
         assert not is_non_academic_chitchat(q), q
