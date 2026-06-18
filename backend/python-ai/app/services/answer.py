@@ -1286,6 +1286,32 @@ _EXERCISE_REQUEST_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+# FILENAME signals — robust even when the document_understanding migration isn't
+# applied (source_type_buckets returns {}). A selection of files named "…Ex3…",
+# "Übung", "Lösungen", "Solutions" is exercise material; "Kapitel", "Vorlesung",
+# "Skript", "slides" is lecture material.
+_EXERCISE_FILE_RE = re.compile(
+    r"(?:ü|ue)bung|exercise|aufgabe|(?:ü|ue)bungsbl|l(?:ö|oe)sung|solution|"
+    r"problem[\s_-]*set|worksheet|tutorial|\bex[\s_-]*\d|_ex\b|\bhw\d|\bblatt",
+    re.IGNORECASE,
+)
+_LECTURE_FILE_RE = re.compile(
+    r"vorlesung|lecture|skript|script|folien|slides?|kapitel|chapter|handout|notes",
+    re.IGNORECASE,
+)
+
+
+def _file_name_buckets(file_names: list[str] | None) -> tuple[int, int]:
+    """(exercise_files, lecture_files) inferred from filenames alone."""
+    ex = lec = 0
+    for n in file_names or []:
+        if not n:
+            continue
+        if _EXERCISE_FILE_RE.search(n):
+            ex += 1
+        elif _LECTURE_FILE_RE.search(n):
+            lec += 1
+    return ex, lec
 
 
 def detect_exam_style(
@@ -1293,24 +1319,33 @@ def detect_exam_style(
     chunks: list[RetrievedChunk] | None,
     *,
     doc_ids: set[str] | list[str] | None = None,
+    file_names: list[str] | None = None,
     user_id: str | None = None,
 ) -> str:
     """Return the exam style for EXAM_GENERATION: ``"quantitative"`` |
     ``"hybrid"`` | ``"theory"`` (the default — keeps the existing behaviour).
 
-    Combines three signals: the SELECTED source types (exercise/solution sheets
-    vs lecture/reference), the retrieved CHUNKS (exercise chunk types, formulas +
-    given values, calc-vs-theory cue density), and the USER's wording ("similar
-    to the Übungen", "calculation questions").
+    Combines four signals: the SELECTED source types (exercise/solution sheets vs
+    lecture/reference, via document_understanding buckets), the selected FILE
+    NAMES (robust when that migration isn't applied), the retrieved CHUNKS
+    (exercise chunk types, formulas + given values, calc-vs-theory cue density),
+    and the USER's wording ("similar to the Übungen", "calculation questions").
+
+    Pass the AUTHORITATIVE selection (``doc_ids`` / ``file_names`` from the Study
+    panel) when available — not just the retrieved-chunk ids — so a retrieval
+    that happens to surface recap chunks doesn't flip a calc subject to theory.
     """
     chunks = chunks or []
 
-    # 1) What the selected SOURCES are (strongest signal when available).
+    # 1) What the selected SOURCES are — document_understanding buckets, then a
+    # filename fallback (the migration may not be applied; buckets come back {}).
     exercise_docs = lecture_docs = 0
     if doc_ids:
         counts = source_type_buckets(list(doc_ids), user_id=user_id)
         exercise_docs = counts.get("exercise", 0) + counts.get("solution", 0)
         lecture_docs = counts.get("lecture", 0) + counts.get("reference", 0) + counts.get("exam", 0)
+    if exercise_docs == 0 and lecture_docs == 0:
+        exercise_docs, lecture_docs = _file_name_buckets(file_names)
 
     # 2) What the retrieved CHUNKS look like.
     ex_chunks = sum(
@@ -1399,22 +1434,29 @@ _HYBRID_EXAM_OVERLAY = (
 )
 
 
-def build_exam_style_overlay(
-    question: str,
-    chunks: list[RetrievedChunk] | None,
-    *,
-    doc_ids: set[str] | list[str] | None = None,
-    user_id: str | None = None,
-) -> str:
-    """Style override for EXAM_GENERATION based on what the selected sources are.
-    Empty for the ``theory`` default (the existing lecture-exam behaviour is
-    unchanged); the calculation override only fires for exercise material."""
-    style = detect_exam_style(question, chunks, doc_ids=doc_ids, user_id=user_id)
+def exam_style_overlay(style: str) -> str:
+    """The prompt overlay text for an already-resolved exam style."""
     if style == "quantitative":
         return _QUANTITATIVE_EXAM_OVERLAY
     if style == "hybrid":
         return _HYBRID_EXAM_OVERLAY
     return ""
+
+
+def build_exam_style_overlay(
+    question: str,
+    chunks: list[RetrievedChunk] | None,
+    *,
+    doc_ids: set[str] | list[str] | None = None,
+    file_names: list[str] | None = None,
+    user_id: str | None = None,
+) -> str:
+    """Style override for EXAM_GENERATION based on what the selected sources are.
+    Empty for the ``theory`` default (the existing lecture-exam behaviour is
+    unchanged); the calculation override only fires for exercise material."""
+    return exam_style_overlay(
+        detect_exam_style(question, chunks, doc_ids=doc_ids, file_names=file_names, user_id=user_id)
+    )
 
 
 def build_source_coverage_overlay(
@@ -1598,6 +1640,79 @@ def lint_exam_output(text: str) -> list[str]:
     return issues
 
 
+# Lint issues serious enough to justify a (single, costed) repair pass before the
+# exam is trusted. The thin-answer checks are graded, not hard failures, so they
+# stay advisory — everything else (missing/placeholder Kurzlösung, a task with no
+# model answer, admin-slide questions, over-skip, DIN mix-up) blocks.
+_EXAM_BLOCKING_SUBSTRINGS = (
+    "answer key is missing",
+    "no model answer",
+    "placeholder",
+    "bare '…'",
+    "non-technical",
+    "dismissed as non-technical",
+    "DIN 8580",
+    "empty output",
+)
+
+
+def exam_lint_blocking(issues: list[str]) -> list[str]:
+    """Subset of lint issues that should trigger a repair (vs advisory)."""
+    return [
+        i for i in issues
+        if any(s.lower() in i.lower() for s in _EXAM_BLOCKING_SUBSTRINGS)
+    ]
+
+
+def repair_exam_output(
+    *,
+    system_prompt: str,
+    user_message: str,
+    bad_answer: str,
+    issues: list[str],
+    client: Any,
+    model: str,
+    max_tokens: int,
+) -> str:
+    """One repair pass: re-prompt the model with the concrete lint failures and
+    keep whichever version (original vs repaired) lints cleaner. Never raises —
+    on any error the original answer is returned unchanged."""
+    try:
+        repair_instruction = (
+            "The exam draft below FAILED validation. Rewrite the COMPLETE exam "
+            "(questions + full `## Kurzlösung`) fixing every listed problem, while "
+            "keeping the same request, language, exam style and source coverage.\n\n"
+            "PROBLEMS TO FIX:\n- " + "\n- ".join(issues) + "\n\n"
+            "Rules: use ONLY technical content (never an admin/title/QR/event/"
+            "literature slide); cover every selected file exactly once; never leave "
+            "a placeholder or '…' in the Kurzlösung; give every Aufgabe a complete "
+            "model answer scaled to its points; keep formulas source-faithful.\n\n"
+            "EXAM DRAFT TO REPAIR:\n" + bad_answer
+        )
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+                {"role": "user", "content": repair_instruction},
+            ],
+            **chat_completion_params(model, max_tokens),
+        )
+        msg = completion.choices[0].message if completion.choices else None
+        repaired = strip_answer_intro((msg.content if msg else "") or "")
+        if not repaired.strip():
+            return bad_answer
+        # Keep the cleaner draft (repair can occasionally regress).
+        if len(exam_lint_blocking(lint_exam_output(repaired))) <= len(
+            exam_lint_blocking(lint_exam_output(bad_answer))
+        ):
+            return repaired
+        return bad_answer
+    except Exception:  # noqa: BLE001 — repair is best-effort, never fatal
+        log.exception("repair_exam_output failed")
+        return bad_answer
+
+
 def generate_answer(
     *,
     question: str,
@@ -1607,8 +1722,16 @@ def generate_answer(
     max_tokens: int = 1200,
     tutor_mode: str = DEFAULT_TUTOR_MODE,
     weak_topics: list[str] | None = None,
+    selected_file_names: list[str] | None = None,
+    selected_document_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Return the structured answer dict the API surface exposes."""
+    """Return the structured answer dict the API surface exposes.
+
+    ``selected_file_names`` / ``selected_document_ids`` are the AUTHORITATIVE
+    selection from the Study panel — passed into the coverage overlay (so every
+    selected file is covered, not just retrieved ones) and exam-style detection
+    (so a retrieval that surfaces recap chunks can't flip a calc subject to
+    theory). Both optional; fall back to what the retrieved chunks imply."""
     settings = get_settings()
     app_question = is_app_question(question)
 
@@ -1647,13 +1770,24 @@ def generate_answer(
     # once and never invents a file the student didn't select.
     is_exam_request = academic_intent == AcademicIntent.EXAM_GENERATION
     if (is_exam_request or wants_per_source_coverage(question)) and used_chunks:
-        system_prompt += build_source_coverage_overlay(used_chunks, doc_names, exam=is_exam_request)
+        system_prompt += build_source_coverage_overlay(
+            used_chunks, doc_names, exam=is_exam_request,
+            selected_file_names=selected_file_names,
+        )
     # Subject-aware exam style: exercise/solution sheets for a calculation
     # subject (Technische Mechanik, Mathe, Physik) get a calculation-heavy exam
     # instead of the lecture-slide theory exam. No-op (theory) otherwise.
+    # Resolve once so it can also be returned for debugging/analytics.
+    exam_style = "theory"
     if is_exam_request and used_chunks:
-        exam_doc_ids = {c.document_id for c in used_chunks if getattr(c, "document_id", None)}
-        system_prompt += build_exam_style_overlay(question, used_chunks, doc_ids=exam_doc_ids)
+        style_doc_ids = selected_document_ids or [
+            c.document_id for c in used_chunks if getattr(c, "document_id", None)
+        ]
+        exam_style = detect_exam_style(
+            question, used_chunks,
+            doc_ids=style_doc_ids, file_names=selected_file_names,
+        )
+        system_prompt += exam_style_overlay(exam_style)
     # Route by answer mode: math/exercise questions hit the strong model,
     # everything else stays on the cheaper mini model. Math reasoning is
     # where mini gets variable distinctions wrong (d vs d_3) and silently
@@ -1733,6 +1867,19 @@ def generate_answer(
         if fence:
             answer_text += fence
 
+    # Exam quality gate (/ask is non-streamed, so unlike stream_answer it can
+    # validate BEFORE returning): lint the exam, and on blocking failures run a
+    # single repair pass instead of shipping a broken Probeklausur.
+    if is_exam_request:
+        blocking = exam_lint_blocking(lint_exam_output(answer_text))
+        if blocking:
+            log.warning("exam lint blocking (%d) — repairing: %s", len(blocking), "; ".join(blocking))
+            answer_text = repair_exam_output(
+                system_prompt=system_prompt, user_message=user_message,
+                bad_answer=answer_text, issues=blocking,
+                client=client, model=target_model, max_tokens=effective_max_tokens,
+            )
+
     sources = [] if app_question else _sources_for_answer(answer_text, used_chunks, doc_names)
 
     # Phase 10: deterministic verification independent of the model's
@@ -1767,6 +1914,7 @@ def generate_answer(
         "verification":    verification,            # Phase 10 status + reasons + details
         "groundedSources": sources,
         "model":           target_model,
+        "examStyle":       exam_style if is_exam_request else None,  # quantitative|hybrid|theory (debug)
         "promptTokens":    completion.usage.prompt_tokens if completion.usage else None,
         "completionTokens": completion.usage.completion_tokens if completion.usage else None,
     }

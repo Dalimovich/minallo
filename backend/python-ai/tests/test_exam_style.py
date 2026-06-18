@@ -102,3 +102,29 @@ def test_theory_overlay_is_noop() -> None:
     # Theory exams keep the existing prompt — the override must be empty.
     q = "create an exam from my selected files"
     assert build_exam_style_overlay(q, _FERTIGUNGSTECHNIK_LECTURE_CHUNKS, doc_ids=None) == ""
+
+
+def test_filename_signal_overrides_misleading_retrieval() -> None:
+    # The selected files are exercise sheets, but retrieval surfaced recap/theory
+    # chunks. The filename signal (robust without the doc-understanding migration)
+    # must keep it quantitative; lecture filenames must keep it theory.
+    q = "generate an exam"
+    assert detect_exam_style(
+        q, _FERTIGUNGSTECHNIK_LECTURE_CHUNKS, doc_ids=None,
+        file_names=["EngMec2_Ex3_Solutions.pdf", "Uebung_4.pdf", "TM2_Aufgabenblatt_2.pdf"],
+    ) == "quantitative"
+    assert detect_exam_style(
+        q, _FERTIGUNGSTECHNIK_LECTURE_CHUNKS, doc_ids=None,
+        file_names=["Kapitel_3_Kunststoff.pdf", "Vorlesung_Umformen.pdf"],
+    ) == "theory"
+
+
+def test_exam_lint_blocking_separates_hard_failures() -> None:
+    from app.services.answer import exam_lint_blocking, lint_exam_output
+
+    # Missing Kurzlösung is a hard failure → must be blocking.
+    bad = "# Probeklausur\n## Aufgabe 1: Kinematik — 15 Punkte\na) Berechnen Sie v."
+    blocking = exam_lint_blocking(lint_exam_output(bad))
+    assert any("answer key is missing" in b for b in blocking)
+    # A clean exam yields no blocking issues.
+    assert exam_lint_blocking([]) == []

@@ -929,10 +929,13 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             user_id=user_id,
             # The student's selection is the coverage contract for exam /
             # per-file requests — pass the resolved names so every selected file
-            # gets a section and any still-processing ones are reported.
+            # gets a section and any still-processing ones are reported. The ids
+            # also anchor exam-style detection to the real selection, not just
+            # whatever chunks retrieval happened to surface.
             selected_file_names=[
-                doc_name_map[i] for i in retrieval_document_ids if i in doc_name_map
+                doc_name_map[i] for i in (retrieval_document_ids or []) if i in doc_name_map
             ] or None,
+            selected_document_ids=list(retrieval_document_ids) if retrieval_document_ids else None,
         )
         for chunk_bytes in gen_iter:
             # Decode the SSE event so we can intercept the closing 'done' frame.

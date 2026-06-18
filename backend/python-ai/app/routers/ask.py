@@ -742,6 +742,11 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             doc_names=doc_name_map,
             tutor_mode=tutor_mode,
             weak_topics=weak_topics,
+            # Authoritative selection → coverage contract + exam-style detection.
+            selected_document_ids=list(retrieval_document_ids) if retrieval_document_ids else None,
+            selected_file_names=[
+                doc_name_map[i] for i in (retrieval_document_ids or []) if i in doc_name_map
+            ] or None,
         )
         answer = _with_source_meta(answer, source_decision)
     except Exception as e:  # noqa: BLE001

@@ -39,7 +39,9 @@ from .answer import (
     MINALLO_APP_CONTEXT,
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
-    build_exam_style_overlay,
+    detect_exam_style,
+    exam_lint_blocking,
+    exam_style_overlay,
     build_source_coverage_overlay,
     lint_exam_output,
     _cited_indices,
@@ -923,6 +925,7 @@ def stream_answer(
     workspace_question: bool = False,
     user_id: str | None = None,
     selected_file_names: list[str] | None = None,
+    selected_document_ids: list[str] | None = None,
 ) -> Generator[bytes, None, None]:
     """Generator that yields SSE byte chunks. Pluggable into FastAPI's
     StreamingResponse with media_type='text/event-stream'.
@@ -1097,11 +1100,20 @@ def stream_answer(
     # subject (Technische Mechanik, Mathe, Physik) get a calculation-heavy exam
     # (Rechenaufgaben + Kurzfragen, full worked Kurzlösung, unit checks) instead
     # of the lecture-slide theory exam. No-op (theory) for lecture material.
+    exam_style = "theory"
     if is_exam_request and used_chunks:
-        exam_doc_ids = {c.document_id for c in used_chunks if getattr(c, "document_id", None)}
-        system_prompt += build_exam_style_overlay(
-            question, used_chunks, doc_ids=exam_doc_ids, user_id=user_id,
+        # Use the AUTHORITATIVE selection (resolved doc ids + file names) for the
+        # style decision, not just the retrieved-chunk ids — a retrieval that
+        # surfaces recap chunks must not flip a calc subject to a theory exam.
+        style_doc_ids = selected_document_ids or [
+            c.document_id for c in used_chunks if getattr(c, "document_id", None)
+        ]
+        exam_style = detect_exam_style(
+            question, used_chunks,
+            doc_ids=style_doc_ids, file_names=selected_file_names, user_id=user_id,
         )
+        system_prompt += exam_style_overlay(exam_style)
+        log.info("exam style resolved: %s", exam_style)
     # An exercise/figure page bitmap will be attached below whenever retrieval
     # surfaced a figure-bearing chunk on a math/exercise question — even if the
     # rigid math worksheet template wasn't picked (e.g. the formula sheet wasn't
@@ -1517,18 +1529,20 @@ def stream_answer(
             yield _sse({"t": diagram_fence})
             full_answer += diagram_fence
 
-    # Exam quality gate (advisory). The EXAM_GENERATION prompt forbids an
-    # incomplete/placeholder Kurzlösung, intro-slide questions and the DIN
-    # 8580/8593 mix-up; this surfaces the cases where the model slipped anyway
-    # so bad exams are visible in logs (and metered for follow-up) instead of
-    # silently shipping. Non-blocking — the answer already streamed.
+    # Exam quality gate. The answer already STREAMED (we can't un-send it), so a
+    # live repair pass would need to buffer the whole exam — deferred. Here we
+    # lint, log, and EMIT the result (resolved style + blocking issues) in the
+    # final metadata so the frontend/telemetry can see why an exam looked the way
+    # it did. /ask (generate_answer) runs the actual lint→repair gate.
     if is_exam_request:
         exam_issues = lint_exam_output(full_answer)
+        blocking = exam_lint_blocking(exam_issues)
         if exam_issues:
             log.warning(
-                "exam lint flagged %d issue(s): %s",
-                len(exam_issues), "; ".join(exam_issues),
+                "exam lint flagged %d issue(s) (%d blocking): %s",
+                len(exam_issues), len(blocking), "; ".join(exam_issues),
             )
+        yield _sse({"examStyle": exam_style, "examLint": exam_issues, "examLintBlocking": blocking})
 
     cited = _cited_indices(full_answer, len(used_chunks))
     filtered_sources = [_source_payload(c, i) for i, c in enumerate(used_chunks, start=1) if i in cited]
