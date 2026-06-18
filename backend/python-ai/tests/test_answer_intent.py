@@ -81,6 +81,16 @@ def test_math_false_positives_stay_non_math(question: str) -> None:
         ("which file says this", AcademicIntent.SOURCE_FINDING),
         ("show me the source", AcademicIntent.SOURCE_FINDING),
         ("in which chapter is this defined", AcademicIntent.SOURCE_FINDING),
+        # Explaining one formula (vs listing them all).
+        ("explain this formula", AcademicIntent.FORMULA_EXPLANATION),
+        ("what does each variable mean in this equation", AcademicIntent.FORMULA_EXPLANATION),
+        ("when should I use this formula", AcademicIntent.FORMULA_EXPLANATION),
+        ("erklaere diese Formel", AcademicIntent.FORMULA_EXPLANATION),
+        # Exam-priority list (not a timed plan).
+        ("what's important for the exam", AcademicIntent.EXAM_PRIORITY_LIST),
+        ("what should I focus on", AcademicIntent.EXAM_PRIORITY_LIST),
+        ("what is likely to appear on the exam", AcademicIntent.EXAM_PRIORITY_LIST),
+        ("most important topics", AcademicIntent.EXAM_PRIORITY_LIST),
     ],
 )
 def test_classifies_new_student_workflow_intents(question: str, intent: AcademicIntent) -> None:
@@ -88,10 +98,32 @@ def test_classifies_new_student_workflow_intents(question: str, intent: Academic
 
 
 @pytest.mark.parametrize(
+    "question",
+    [
+        "explain entropy like my professor",
+        "answer in Musterloesung style",
+        "give me an exam-ready answer",
+        "what would the exam expect",
+        "use the course wording",
+    ],
+)
+def test_professor_style_is_a_flag_not_an_intent(question: str) -> None:
+    from app.services.answer_intent import wants_professor_style
+
+    # The flag fires...
+    assert wants_professor_style(question)
+    # ...but it must NOT hijack the base intent (it's layered on top).
+    assert classify_academic_intent("explain entropy like my professor") == (
+        AcademicIntent.CONCEPTUAL_EXPLANATION
+    )
+    assert not wants_professor_style("explain entropy")
+
+
+@pytest.mark.parametrize(
     ("question", "intent"),
     [
         # High-precision: these must NOT trip the new intents (regression guard).
-        ("explain this formula", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("explain how this process works", AcademicIntent.CONCEPTUAL_EXPLANATION),
         ("where does energy come from in this reaction", AcademicIntent.GENERAL_COURSE_QA),
         # "is X correct" without an answer/solution noun must NOT become grading.
         ("is this proof correct", AcademicIntent.GENERAL_COURSE_QA),

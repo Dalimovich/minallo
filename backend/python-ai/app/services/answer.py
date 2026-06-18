@@ -29,10 +29,12 @@ from .openai_client import get_openai_client
 from .document_context import source_type_buckets, understanding_block_for_ids
 from .answer_intent import (
     AcademicIntent,
+    PROFESSOR_STYLE_INSTRUCTION,
     classify_academic_intent,
     intent_is_math_like,
     intent_style_instruction,
     wants_per_source_coverage,
+    wants_professor_style,
 )
 from .retrieval import RetrievedChunk
 
@@ -1112,6 +1114,10 @@ def pick_system_prompt(
     if coach:
         prompt += coach
     prompt += intent_style_instruction(academic_intent)
+    # Cross-cutting style modifier: layered on ANY intent so "explain X like my
+    # professor" keeps its base structure but adopts the course's wording.
+    if wants_professor_style(question):
+        prompt += PROFESSOR_STYLE_INSTRUCTION
     return prompt, label
 
 

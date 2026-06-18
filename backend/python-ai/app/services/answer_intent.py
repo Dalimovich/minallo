@@ -24,6 +24,8 @@ class AcademicIntent(str, Enum):
     ANSWER_CORRECTION_OR_GRADING = "answer_correction_or_grading"
     PRACTICE_VARIANT_GENERATION = "practice_variant_generation"
     FORMULA_EXTRACTION = "formula_extraction"
+    FORMULA_EXPLANATION = "formula_explanation"
+    EXAM_PRIORITY_LIST = "exam_priority_list"
     SOURCE_FINDING = "source_finding"
     CASE_OR_APPLICATION_REASONING = "case_or_application_reasoning"
     GENERAL_COURSE_QA = "general_course_qa"
@@ -160,6 +162,42 @@ _SOURCE_FINDING_RE = re.compile(
     r"|\bquelle\s+(?:angeben|nennen|f(?:ü|ue)r)\b",
     re.IGNORECASE,
 )
+# Explain ONE formula (meaning / variables / when to use) — NOT list them all.
+_FORMULA_EXPLANATION_RE = re.compile(
+    r"\b(?:explain|erkl(?:ä|ae)r\w*|what\s+does|was\s+bedeutet)\b[^.?!\n]{0,30}"
+    r"\b(?:formula|formulae|formel\w*|equation|gleichung\w*)"
+    r"|\b(?:formula|formulae|formel\w*|equation|gleichung\w*)\b[^.?!\n]{0,30}"
+    r"\b(?:mean\b|means\b|bedeut\w*|stand\s+for)"
+    r"|\bwhat\s+(?:does|do)\b[^.?!\n]{0,25}\b(?:variable|symbol|term|letter)s?\b[^.?!\n]{0,15}\bmean"
+    r"|\bwhen\s+(?:do|should)\s+i\s+use\s+(?:this|the)\s+(?:formula|formel\w*|equation)"
+    r"|\bwann\s+(?:nutze|verwende|benutze)\s+ich\s+(?:diese|die)\s+(?:formel|gleichung)"
+    r"|\bwhy\s+is\b[^.?!\n]{0,45}\b(?:divided\s+by|multiplied\s+by|squared|to\s+the\s+power)",
+    re.IGNORECASE,
+)
+# "What's important / likely for the exam" — a priority list, not a timed plan
+# (timed "make a study plan" is handled by the frontend mission router).
+_EXAM_PRIORITY_RE = re.compile(
+    r"\bwhat(?:'?s| is| are)?\s+(?:the\s+)?(?:most\s+)?important\b[^.?!\n]{0,30}"
+    r"\b(?:for\s+the\s+(?:exam|klausur|test)|topics?|to\s+know)"
+    r"|\bwhat\s+(?:should\s+i|to)\s+focus\s+on\b"
+    r"|\bwhat(?:'?s| is)?\s+(?:likely|going)\s+to\s+(?:appear|come\s+up|be\s+(?:on|in)\s+the\s+(?:exam|test|klausur))"
+    r"|\bwhat\s+(?:will|might|could)\s+(?:be\s+)?(?:on|in)\s+the\s+(?:exam|klausur|test)"
+    r"|\bmost\s+important\s+topics?\b|\bwichtigste[nr]?\s+themen\b"
+    r"|\bwas\s+(?:ist|kommt)\b[^.?!\n]{0,30}\b(?:wichtig|klausurrelevant|in\s+der\s+(?:klausur|pr(?:ü|ue)fung))"
+    r"|\bexam\s+priorit\w*|\bklausurrelevant\w*",
+    re.IGNORECASE,
+)
+# Cross-cutting STYLE flag (not a mutually-exclusive intent): "answer like my
+# professor / in the script / Musterlösung style". Layered on the base intent.
+_PROFESSOR_STYLE_RE = re.compile(
+    r"\b(?:like|wie)\s+(?:my|the|our|mein\w*|der|die|unser\w*)\s+(?:prof\w*|dozent\w*|lecturer|teacher|professor)"
+    r"|\b(?:in|im)\s+(?:the\s+)?(?:script|skript|vorlesungsstil|lecture\s+style)"
+    r"|\bmusterl(?:ö|oe)sung\b|\bexam[-\s]?ready\b|\bexam[-\s]?style\b|\bklausurreif\w*"
+    r"|\bwhat\s+(?:would|does)\s+the\s+(?:exam|professor|prof|klausur)\s+(?:expect|want)"
+    r"|\bprofessor[-\s]?style\b|\buse\s+(?:the\s+)?(?:course|lecture)\s+wording\b"
+    r"|\b(?:answer|write|antworte?)\b[^.?!\n]{0,20}\blike\s+(?:in\s+)?(?:the\s+)?(?:lecture|script|skript|exam|klausur)\b",
+    re.IGNORECASE,
+)
 _CASE_RE = re.compile(
     r"\b("
     r"case|scenario|patient|diagnosis|treatment|symptoms?|clinical|"
@@ -277,6 +315,12 @@ def classify_academic_intent(
         return AcademicIntent.PRACTICE_VARIANT_GENERATION
     if _FORMULA_EXTRACTION_RE.search(text):
         return AcademicIntent.FORMULA_EXTRACTION
+    # Explaining ONE formula is checked AFTER extraction so "explain all the
+    # formulas" lists them, but "explain this formula" explains it.
+    if _FORMULA_EXPLANATION_RE.search(text):
+        return AcademicIntent.FORMULA_EXPLANATION
+    if _EXAM_PRIORITY_RE.search(text):
+        return AcademicIntent.EXAM_PRIORITY_LIST
     if _SOURCE_FINDING_RE.search(text):
         return AcademicIntent.SOURCE_FINDING
 
@@ -322,6 +366,27 @@ def wants_per_source_coverage(question: str) -> bool:
     """True when the student asks for output covering each/every selected file
     ("a question for every lecture", "one per chapter", "all sources")."""
     return bool(_PER_SOURCE_COVERAGE_RE.search(question or ""))
+
+
+# Professor / exam-ready styling is a CROSS-CUTTING modifier, not a standalone
+# intent: "explain X like my professor" is still a conceptual explanation, just
+# phrased the course's way. So it's layered on top of whatever intent fires.
+PROFESSOR_STYLE_INSTRUCTION = (
+    "\n\nPROFESSOR / EXAM-READY STYLE (layer this on top of the format above): the "
+    "student wants the answer phrased the way THEIR course would. Use the EXACT "
+    "terminology, notation and definitions from the retrieved COURSE CONTEXT — not "
+    "generic textbook wording — follow the lecture's structure/order, and write it at "
+    "the level a Musterlösung would earn full marks for. Where useful, end with a "
+    "short `**Expected keywords:**` line (the terms a grader looks for) and a one-line "
+    "`**Common mistake:**`. If the course context doesn't actually contain what's "
+    "needed, say so plainly instead of filling the gap with general knowledge."
+)
+
+
+def wants_professor_style(question: str) -> bool:
+    """True when the student asks for a course/professor/Musterlösung-style answer
+    ('answer like my professor', 'in the script', 'exam-ready', 'klausurreif')."""
+    return bool(_PROFESSOR_STYLE_RE.search(question or ""))
 
 
 def is_non_academic_chitchat(question: str) -> bool:
@@ -416,6 +481,16 @@ def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
             "- For each formula give: the formula (copied EXACTLY from the source — same symbols, same numerator/denominator), its variables with units, and a short 'used for / condition' note.",
             "- NEVER invent or guess a formula that is not in the retrieved source. If a needed formula isn't present, say so rather than fabricating it.",
         ])
+    elif intent == AcademicIntent.FORMULA_EXPLANATION:
+        lines.extend([
+            "- Treat this as explaining ONE formula. Use this structure: `## Formula` (state it exactly as in the source), `## Meaning` (what it computes, in one or two sentences), `## Variables` (each symbol with its meaning and unit), `## When to use it` (and the condition/assumption it needs), `## Common mistake`, `## Mini example` (a short worked numeric example).",
+            "- Only DERIVE the formula if the source actually shows the derivation; if the source merely states it, say so and explain/apply it instead of inventing a derivation. Never invent variables or a formula the source doesn't contain.",
+        ])
+    elif intent == AcademicIntent.EXAM_PRIORITY_LIST:
+        lines.extend([
+            "- Treat this as an EXAM-PRIORITY request: rank what to focus on, do not write a timed schedule. Use `## Must know`, `## Should know`, `## Nice to know`, and `## Likely question types`, grounded in the selected course material (topics the sources emphasise / repeat / build on).",
+            "- Be specific to the actual sources — name the real topics, formulas and processes — not generic exam advice. If you can't tell what's emphasised from the material, say so.",
+        ])
     elif intent == AcademicIntent.SOURCE_FINDING:
         lines.extend([
             "- Treat this as a SOURCE-FINDING request: the student wants WHERE something is, not a full explanation. Answer with the exact file name and the page/section/`[Source N]` where it appears, plus a SHORT quote or one-line summary of the relevant part.",
@@ -440,6 +515,7 @@ def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
 
 __all__ = (
     "AcademicIntent",
+    "PROFESSOR_STYLE_INSTRUCTION",
     "chitchat_answer",
     "classify_academic_intent",
     "intent_allows_missing_input",
@@ -447,4 +523,5 @@ __all__ = (
     "intent_style_instruction",
     "is_non_academic_chitchat",
     "wants_per_source_coverage",
+    "wants_professor_style",
 )
