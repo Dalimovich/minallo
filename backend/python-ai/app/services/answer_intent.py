@@ -121,6 +121,24 @@ _APP_RE = re.compile(
     r"navigation|settings|account|course page|pdf hochladen|abo|konto)\b",
     re.IGNORECASE,
 )
+_PURE_CHITCHAT_RE = re.compile(
+    r"^\s*(?:"
+    r"hi|hii+|hello|hey|heyy+|yo|sup|"
+    r"good\s+(?:morning|afternoon|evening)|"
+    r"hallo|moin|servus|guten\s+(?:morgen|tag|abend)|"
+    r"thanks?|thank\s+you|thx|danke|dankeschoen|dankeschon|"
+    r"ok(?:ay)?|kk|cool|nice|great|perfect|"
+    r"bye|goodbye|see\s+you|tsch(?:ue|u)ss|ciao"
+    r")\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_SOCIAL_QUESTION_RE = re.compile(
+    r"^\s*(?:"
+    r"how\s+are\s+you|how'?s\s+it\s+going|what'?s\s+up|"
+    r"wie\s+geht(?:'s|\s+es)?(?:\s+dir)?|alles\s+gut"
+    r")\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
 
 
 def _chunk_text(chunks: list[Any] | None, limit: int = 4) -> str:
@@ -238,6 +256,26 @@ def wants_per_source_coverage(question: str) -> bool:
     return bool(_PER_SOURCE_COVERAGE_RE.search(question or ""))
 
 
+def is_non_academic_chitchat(question: str) -> bool:
+    """True for pure social/acknowledgement turns that should not query RAG."""
+    text = (question or "").strip()
+    if not text:
+        return False
+    return bool(_PURE_CHITCHAT_RE.match(text) or _SOCIAL_QUESTION_RE.match(text))
+
+
+def chitchat_answer(question: str) -> str:
+    """Small static replies for social turns; avoids wasting an LLM/RAG call."""
+    text = (question or "").strip().lower()
+    if re.match(r"^(thanks?|thank\s+you|thx|danke|dankeschoen|dankeschon)\b", text):
+        return "You're welcome. What would you like to work on next?"
+    if re.match(r"^(bye|goodbye|see\s+you|tsch(?:ue|u)ss|ciao)\b", text):
+        return "See you. Good luck with your studying."
+    if _SOCIAL_QUESTION_RE.match(text):
+        return "I'm doing well and ready to help. What would you like to study?"
+    return "Hi! What would you like to study or work on?"
+
+
 def intent_is_math_like(intent: AcademicIntent | str | None) -> bool:
     return _normalise_intent(intent) in {
         AcademicIntent.MATH_PROBLEM,
@@ -309,9 +347,11 @@ def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
 
 __all__ = (
     "AcademicIntent",
+    "chitchat_answer",
     "classify_academic_intent",
     "intent_allows_missing_input",
     "intent_is_math_like",
     "intent_style_instruction",
+    "is_non_academic_chitchat",
     "wants_per_source_coverage",
 )

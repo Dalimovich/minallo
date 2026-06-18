@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
 from ..services.answer import DEFAULT_TUTOR_MODE, generate_answer, is_app_question, normalise_tutor_mode
+from ..services.answer_intent import chitchat_answer, is_non_academic_chitchat
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.general_answer import generate_general_answer
 from ..services.retrieval import (
@@ -374,6 +375,33 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         active_document_id=payload.activeDocumentId,
         open_file_context=open_file_context,
     )
+
+    if is_non_academic_chitchat(question):
+        chitchat_decision = replace(
+            source_decision,
+            source_scope=SourceScope.GENERAL_KNOWLEDGE,
+            source_label="",
+            used_document_ids=[],
+            relevance_score=None,
+            web_search_used=False,
+        )
+        answer = _simple_source_answer(chitchat_answer(question), chitchat_decision)
+        answer["answerMode"] = "general"
+        return AskResponse(
+            answer=answer["answer"],
+            retrievalMode=answer["retrievalMode"],
+            answerMode=answer.get("answerMode"),
+            tutorMode=tutor_mode,
+            verification=None,
+            groundedSources=[],
+            cacheHit=False,
+            model=None,
+            selectedSourceMode=answer.get("selectedSourceMode"),
+            sourceScope=answer.get("sourceScope"),
+            courseFileScope=answer.get("courseFileScope"),
+            sourceLabel=answer.get("sourceLabel"),
+            sourceDebug=answer.get("sourceDebug"),
+        )
 
     if is_app_question(question):
         app_decision = replace(

@@ -109,6 +109,17 @@ def test_wants_per_source_coverage() -> None:
     assert not wants_per_source_coverage("what is Urformen")
 
 
+def test_non_academic_chitchat_is_not_course_work() -> None:
+    from app.services.answer_intent import chitchat_answer, is_non_academic_chitchat
+
+    for q in ["hi", "Hello!", "thanks", "ok", "how are you?", "danke"]:
+        assert is_non_academic_chitchat(q), q
+        assert "Source" not in chitchat_answer(q)
+
+    for q in ["hi, explain entropy", "what is force?", "ok explain chapter 2", "thanks, now make a quiz"]:
+        assert not is_non_academic_chitchat(q), q
+
+
 def test_exam_overlay_lists_files_and_demands_coverage() -> None:
     from app.services.answer import build_source_coverage_overlay
     from app.services.retrieval import RetrievedChunk

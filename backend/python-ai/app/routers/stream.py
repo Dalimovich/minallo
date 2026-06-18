@@ -31,7 +31,9 @@ from ..services.answer import DEFAULT_TUTOR_MODE, is_app_question, normalise_tut
 from ..services.answer_stream import stream_answer
 from ..services.answer_intent import (
     AcademicIntent,
+    chitchat_answer,
     classify_academic_intent,
+    is_non_academic_chitchat,
     wants_per_source_coverage,
 )
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
@@ -428,6 +430,22 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         active_document_id=payload.activeDocumentId,
         open_file_context=payload.openFileContext,
     )
+
+    if is_non_academic_chitchat(question):
+        chitchat_decision = replace(
+            source_decision,
+            source_scope=SourceScope.GENERAL_KNOWLEDGE,
+            source_label="",
+            used_document_ids=[],
+            relevance_score=None,
+            web_search_used=False,
+        )
+        return _stream_static_answer(
+            text=chitchat_answer(question),
+            decision=chitchat_decision,
+            answer_mode="general",
+            status_key="writing_answer",
+        )
 
     app_question = is_app_question(question)
     # Workspace questions ("where are my flashcards", "which quizzes did I
