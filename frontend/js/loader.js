@@ -242,7 +242,7 @@
             ensureStylesheet('css/new-landing.css?v=23');
             ensureStylesheet('css/auth.css?v=5');
         })();
-        _fetchTimeout('pages/new_landing.html?v=24', 10000)
+        _fetchTimeout('pages/new_landing.html?v=25', 10000)
             .then((r) => {
             if (!r.ok)
                 throw new Error('HTTP ' + r.status + ' loading new_landing.html');
