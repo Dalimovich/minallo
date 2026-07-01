@@ -369,6 +369,7 @@
             'css/app-design-system.css?v=6',
             'css/layout.css?v=16',
             'css/document-rail.css?v=28',
+            'css/mobile-responsive.css?v=1',
             'css/auth.css?v=5',
             'css/onboarding.css?v=1',
             'views/toast/toast.css',
@@ -600,7 +601,7 @@
                 const lazyCssMap = {
                     dashboard: ['views/dashboard/dashboard.css?v=5'],
                     chat: ['views/chat/chat.css'],
-                    aipage: ['views/chatbot/chatbot.css?v=15'],
+                    aipage: ['views/chatbot/chatbot.css?v=16'],
                     german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
                     notes: ['views/lecturenotes/lecturenotes.css'],
                     profile: ['views/profile/profile.css'],

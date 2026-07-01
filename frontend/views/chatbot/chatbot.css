@@ -4323,3 +4323,21 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   background: #dbeafe;
   border-color: #2563eb;
 }
+
+@media (max-width: 768px) {
+  body.ncb-fullbleed #portal .main .topbar {
+    display: flex !important;
+    position: relative;
+    z-index: 80;
+    background: #071124;
+    border-bottom-color: rgba(148, 163, 184, 0.14);
+  }
+
+  body.ncb-fullbleed #portal .main .main-scroll {
+    padding: 0 !important;
+  }
+
+  body.ncb-fullbleed #psec-aipage {
+    height: calc(100dvh - 58px) !important;
+  }
+}
