@@ -261,15 +261,23 @@
   }
 
   .co-inner-v2 .co-course-tabs {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
     width: 100%;
     max-width: none;
     margin: 0 0 16px;
     padding: 7px;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-padding-left: 7px;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
     border-radius: 14px;
+    scrollbar-width: none;
   }
 
   .co-inner-v2 .co-course-tabs::-webkit-scrollbar {
@@ -277,10 +285,11 @@
   }
 
   .co-inner-v2 .co-course-tab {
-    flex: none;
+    flex: 0 0 auto;
     min-width: 0;
     min-height: 38px;
-    width: 100%;
+    width: auto;
+    min-width: max-content;
     padding: 0 8px;
     border-radius: 10px;
     border-color: rgba(255, 255, 255, 0.08);
@@ -289,6 +298,7 @@
     font-size: 0.76rem;
     line-height: 1.1;
     white-space: nowrap;
+    scroll-snap-align: start;
   }
 
   .co-inner-v2 .co-course-tab svg {
@@ -303,9 +313,6 @@
     text-overflow: ellipsis;
   }
 
-  .co-inner-v2 .co-course-tab:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
 
   .co-inner-v2 .co-card.co-card-v2,
   .co-inner-v2 .co-files-inner-card,

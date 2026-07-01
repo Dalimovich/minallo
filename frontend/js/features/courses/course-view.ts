@@ -613,6 +613,18 @@ function _decorateDocTypeBadges(filesList: HTMLElement | null, course: LegacyCou
   })();
 }
 
+function _resetCourseTabsScroll(co: HTMLElement, sec?: string): void {
+  if (sec && sec !== 'files' && sec !== 'flashcards') return;
+  const tabs = co.querySelector<HTMLElement>('.co-course-tabs');
+  if (!tabs) return;
+  const reset = (): void => {
+    tabs.scrollLeft = 0;
+  };
+  reset();
+  requestAnimationFrame(reset);
+  setTimeout(reset, 80);
+}
+
 function _refreshFilesPanel(co: HTMLElement, course: LegacyCourse): void {
   const { totalFiles, studiedTotal, unreadTotal } = _computeFileStats(course);
   const sub = co.querySelector<HTMLElement>('#coFilesPanel .co-panel-sub');
@@ -642,6 +654,7 @@ function _refreshFilesPanel(co: HTMLElement, course: LegacyCourse): void {
       });
     });
   }
+  _resetCourseTabsScroll(co, 'files');
 }
 
 function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse): void {
@@ -694,6 +707,7 @@ function _switchTabOnly(co: HTMLElement, sec: string, course: LegacyCourse): voi
   if (sec === 'flashcards' || sec === 'examforge' || sec === 'cheatsheet' || sec === 'deeplearn') {
     _mountFeaturePanel(co, sec, course);
   }
+  _resetCourseTabsScroll(co, sec);
 }
 
 export function showCourseSection(course: LegacyCourse, section: string): void {
@@ -844,6 +858,7 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
     _buildCourseNextSteps(course, _progress) +
     '</div>';
   document.body.classList.add('minallo-in-course');
+  _resetCourseTabsScroll(co, sec);
 
   const backBtn = co.querySelector<HTMLButtonElement>('#coBackBtn');
   if (backBtn) {
