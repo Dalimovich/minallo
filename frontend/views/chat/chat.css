@@ -23,7 +23,7 @@
 }
 .chat-rooms-hdr {
   padding: 16px 16px 10px;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -123,6 +123,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  /* Shrink-wrap to content (don't stretch to the full 72%) so the absolutely
+     positioned hover toolbar — anchored to this block's right edge — sits next
+     to the bubble instead of way out at the container edge. */
+  align-self: flex-start;
   max-width: 72%;
 }
 .chat-msg-me {
@@ -196,7 +200,10 @@
   position: relative;
 }
 .chat-msg-actions {
-  display: none;
+  /* Hidden until the message is hovered. */
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
   position: absolute;
   top: -18px;
   right: 4px;
@@ -206,9 +213,11 @@
   padding: 2px 4px;
   gap: 2px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.12s;
 }
 .chat-msg:hover .chat-msg-actions {
-  display: flex;
+  opacity: 1;
+  pointer-events: auto;
 }
 .chat-action-btn {
   background: none;
@@ -236,7 +245,7 @@
   padding: 2px 8px;
   font-size: 0.78rem;
   cursor: pointer;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 700;
   transition: all 0.12s;
 }
@@ -294,7 +303,7 @@
   color: var(--on-glass-muted);
   transition: all 0.15s;
   flex-shrink: 0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .chat-tool-btn:hover {
   background: rgba(59, 130, 246, 0.18);
@@ -317,7 +326,7 @@
   border: 1px solid var(--divider);
   border-radius: 22px;
   padding: 10px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--on-glass);
@@ -390,7 +399,7 @@
   color: rgba(59, 130, 246, 0.9);
   cursor: pointer;
   transition: all 0.15s;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   flex-shrink: 0;
 }
 .chat-add-friend-btn:hover {
@@ -464,7 +473,7 @@
   color: rgba(6, 214, 160, 0.9);
   cursor: pointer;
   white-space: nowrap;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .chat-friend-accept-btn:hover {
   background: rgba(6, 214, 160, 0.28);
@@ -496,7 +505,7 @@
   justify-content: space-between;
   padding: 20px 20px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.92);
@@ -529,7 +538,7 @@
   border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 13px 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.88);
@@ -552,7 +561,7 @@
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 22px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.5);
@@ -629,7 +638,7 @@
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 9px;
   padding: 6px 13px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.74rem;
   color: rgba(59, 130, 246, 0.9);
@@ -676,7 +685,7 @@
   line-height: 1;
 }
 .notif-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.4rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -694,7 +703,7 @@
   border: 1px solid rgba(59, 130, 246, 0.25);
   border-radius: 20px;
   padding: 7px 14px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.74rem;
   color: rgba(59, 130, 246, 0.85);
@@ -715,7 +724,7 @@
   border: none;
   border-bottom: 2px solid transparent;
   padding: 10px 16px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.78rem;
   color: var(--on-glass-faint);
@@ -746,7 +755,7 @@
   opacity: 0.3;
 }
 .notif-empty-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: var(--on-glass-muted);
 }
@@ -810,7 +819,7 @@
 }
 
 /* ----------------------------------------------------------------
-   MOBILE RESPONSIVE � Minallo
+   MOBILE RESPONSIVE — Minallo
    Breakpoints: 768px tablet  |  480px phone  |  360px small phone
    ---------------------------------------------------------------- */
 
@@ -913,7 +922,7 @@
   }
 }
 
-/* Hamburger button � hidden on desktop, shown on mobile */
+/* Hamburger button — hidden on desktop, shown on mobile */
 #portalHamburger {
   display: none;
   width: 38px;
@@ -1020,9 +1029,6 @@
     border-left: none !important;
     border-top: 1px solid rgba(37, 99, 235, 0.25);
   }
-  #aiResizeHandle {
-    display: none !important;
-  }
   #aiTab {
     right: 16px !important;
     top: auto !important;
@@ -1046,7 +1052,7 @@
   .ai-chips::-webkit-scrollbar {
     display: none;
   }
-  /* App view � AI panel inside portal */
+  /* App view — AI panel inside portal */
   #portal #aiPanel {
     position: fixed !important;
     right: 0 !important;
@@ -1242,7 +1248,7 @@
 
 /* Widget panel responsive -- moved to features/css/dashboard.css */
 
-/* Toast mobile styles � moved to features/toast/toast.css */
+/* Toast mobile styles — moved to features/toast/toast.css */
 
 /* -- Level select grid: fewer columns on very small phone -- */
 @media (max-width: 360px) {
@@ -1372,12 +1378,12 @@
     flex: 1 !important;
     max-width: 90px !important;
   }
-  /* Canvas sizing is handled by JS (initCanvas) � CSS just ensures display:block */
+  /* Canvas sizing is handled by JS (initCanvas) — CSS just ensures display:block */
   #tetrisCanvas {
     display: block !important;
   }
 
-  /* Flappy bird: scale canvas to fit � keep internal resolution, scale CSS display */
+  /* Flappy bird: scale canvas to fit — keep internal resolution, scale CSS display */
   .bird-wrap {
     display: flex !important;
     justify-content: center !important;
@@ -1545,7 +1551,7 @@
   margin-bottom: 10px;
 }
 .sol-vc-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.1rem;
   color: var(--on-glass);
   margin-bottom: 4px;
@@ -1629,7 +1635,7 @@
   color: #c0392b;
 }
 .sol-spc-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.05rem;
   color: var(--on-glass);
   margin-bottom: 3px;
@@ -2050,17 +2056,24 @@ body.night .yt-pl-name {
   color: #ff4040;
 }
 .st-done-popup {
-  background: var(--card);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(96, 165, 250, 0.28);
   border-radius: 24px;
   padding: 36px 32px 28px;
   max-width: 360px;
   width: 90%;
   text-align: center;
-  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.25);
+  color: #e2e8f0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
   animation: stDoneIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 body.night .st-done-popup {
-  background: #1a1828;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.96);
 }
 @keyframes stDoneIn {
   from {
@@ -2079,15 +2092,15 @@ body.night .st-done-popup {
 .st-done-title {
   font-size: 1.15rem;
   font-weight: 800;
-  color: var(--text);
+  color: #f8fafc;
   margin-bottom: 10px;
 }
 body.night .st-done-title {
-  color: #e2d9f3;
+  color: #f8fafc;
 }
 .st-done-sub {
   font-size: 0.82rem;
-  color: var(--muted);
+  color: rgba(226, 232, 240, 0.65);
   line-height: 1.6;
   margin-bottom: 24px;
 }
@@ -2113,16 +2126,25 @@ body.night .st-done-title {
   transform: translateY(-1px);
 }
 .st-done-primary {
-  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  box-shadow: 0 8px 22px -8px rgba(37, 99, 235, 0.6);
+}
+.st-done-primary:hover {
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.75);
 }
 .st-done-secondary {
-  background: rgba(37, 99, 235, 0.1);
-  color: var(--purple);
-  border: 1.5px solid rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.12);
+  color: #bfdbfe;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+}
+.st-done-secondary:hover {
+  background: rgba(37, 99, 235, 0.22);
+  color: #fff;
 }
 body.night .st-done-secondary {
-  background: rgba(37, 99, 235, 0.15);
+  background: rgba(37, 99, 235, 0.12);
 }
 .st-music-row {
   display: flex;
@@ -2199,12 +2221,15 @@ body.night .st-done-secondary {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 200px;
-  padding: 14px 16px 16px;
-  background: rgba(12, 8, 28, 0.92);
-  border: 1px solid rgba(59, 130, 246, 0.22);
-  border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  width: 240px;
+  padding: 14px 18px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 20px;
+  color: #e2e8f0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(18px);
   animation: smcIn 0.3s ease;
 }
@@ -2213,13 +2238,13 @@ body.night .st-done-secondary {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .smc-btn {
   background: none;
   border: none;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(226, 232, 240, 0.55);
   font-size: 0.85rem;
   width: 24px;
   height: 24px;
@@ -2233,58 +2258,62 @@ body.night .st-done-secondary {
   padding: 0;
 }
 .smc-btn:hover {
-  background: rgba(59, 130, 246, 0.15);
-  color: #e2c5ff;
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
 }
 .smc-art {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb, #db2777);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: #fff;
   flex-shrink: 0;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
 }
 .smc-track {
   width: 100%;
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .smc-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #f0e6ff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #f8fafc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 168px;
+  max-width: 100%;
+  letter-spacing: 0.01em;
 }
 .smc-artist {
-  font-size: 0.68rem;
-  color: rgba(59, 130, 246, 0.7);
-  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(147, 197, 253, 0.85);
+  margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 168px;
+  max-width: 100%;
 }
 .smc-progress-wrap {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .smc-progress-range {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 3px;
+  height: 4px;
   border-radius: 99px;
   background: linear-gradient(
     to right,
-    #2563eb var(--pct, 0%),
-    rgba(255, 255, 255, 0.12) var(--pct, 0%)
+    #3b82f6 var(--pct, 0%),
+    rgba(96, 165, 250, 0.18) var(--pct, 0%)
   );
   outline: none;
   cursor: pointer;
@@ -2295,8 +2324,8 @@ body.night .st-done-secondary {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.7);
+  background: #60a5fa;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.75);
   cursor: pointer;
   transition: transform 0.12s;
 }
@@ -2305,33 +2334,35 @@ body.night .st-done-secondary {
   height: 12px;
   border: none;
   border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.7);
+  background: #60a5fa;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.75);
   cursor: pointer;
 }
 .smc-progress-range:hover::-webkit-slider-thumb {
-  transform: scale(1.4);
+  transform: scale(1.35);
 }
 .smc-time-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.6rem;
-  color: rgba(59, 130, 246, 0.55);
-  margin-top: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba(147, 197, 253, 0.7);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
 .smc-controls {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 16px;
   width: 100%;
 }
 .smc-ctrl {
-  background: none;
-  border: none;
+  background: rgba(59, 130, 246, 0.10);
+  border: 1px solid rgba(96, 165, 250, 0.22);
   cursor: pointer;
-  color: rgba(59, 130, 246, 0.8);
-  font-size: 1.1rem;
+  color: #bfdbfe;
+  font-size: 0.95rem;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -2341,47 +2372,51 @@ body.night .st-done-secondary {
   transition:
     background 0.15s,
     color 0.15s,
-    transform 0.12s;
+    transform 0.12s,
+    border-color 0.15s;
   padding: 0;
   line-height: 1;
 }
 .smc-ctrl:hover {
-  color: #e2c5ff;
-  transform: scale(1.15);
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(147, 197, 253, 0.55);
+  color: #fff;
+  transform: translateY(-1px);
 }
 .smc-ctrl.smc-play {
-  background: linear-gradient(135deg, #2563eb, #a21caf);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(96, 165, 250, 0.55);
   color: #fff;
   font-size: 1rem;
-  width: 42px;
-  height: 42px;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.45);
+  width: 46px;
+  height: 46px;
+  box-shadow: 0 8px 22px -6px rgba(37, 99, 235, 0.7);
 }
 .smc-ctrl.smc-play:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.6);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.85);
 }
 .st-music-pill {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb, #a21caf);
-  border: none;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(96, 165, 250, 0.55);
   cursor: pointer;
   font-size: 1.15rem;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.5);
+  box-shadow: 0 8px 22px -6px rgba(37, 99, 235, 0.7);
   transition:
     transform 0.15s,
     box-shadow 0.15s;
   animation: smcIn 0.25s ease;
 }
 .st-music-pill:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 22px rgba(124, 58, 237, 0.65);
+  transform: translateY(-1px) scale(1.06);
+  box-shadow: 0 12px 28px -8px rgba(59, 130, 246, 0.85);
 }
 /* Games locked during focus */
 #psbGames.st-locked {
@@ -2574,90 +2609,6 @@ body.night .music-yt-input {
   padding: 4px 0;
 }
 
-/* -- Splash screen -------------------------------------------------------- */
-#ss-splash {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.5s ease;
-}
-#ss-splash.ss-splash-out {
-  opacity: 0;
-  pointer-events: none;
-}
-.ss-splash-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.1rem;
-  animation: ss-splash-in 0.4s ease both;
-}
-@keyframes ss-splash-in {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.ss-splash-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #2563eb, #0ea5e9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Fredoka One', sans-serif;
-  font-size: 2.5rem;
-  color: #fff;
-  box-shadow: 0 8px 32px rgba(37, 99, 235, 0.35);
-}
-.ss-splash-name {
-  font-family: 'Fredoka One', sans-serif;
-  font-size: 1.75rem;
-  background: linear-gradient(90deg, #60a5fa, #0ea5e9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.ss-splash-dots {
-  display: flex;
-  gap: 6px;
-  margin-top: 0.3rem;
-}
-.ss-splash-dots span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #60a5fa;`r`n  opacity: 0.5;
-  animation: ss-dot-pulse 1.4s ease-in-out infinite;
-}
-.ss-splash-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.ss-splash-dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-@keyframes ss-dot-pulse {
-  0%,
-  80%,
-  100% {
-    transform: scale(0.72);
-    opacity: 0.35;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 /* -- CHAT LAYOUT (glassy panels) -- */
 #psec-chat {
   padding: 12px !important;
@@ -2749,7 +2700,7 @@ body.night .music-yt-input {
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 .dc-sidebar-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.2rem;
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   -webkit-background-clip: text;
@@ -2765,7 +2716,7 @@ body.night .music-yt-input {
 .dc-top-btn {
   flex: 1;
   padding: 7px 4px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.6);
@@ -2971,7 +2922,7 @@ body.night .music-yt-input {
   min-width: 0;
 }
 .dc-main-room-name {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.05rem;
   color: rgba(255, 255, 255, 0.9);
   overflow: hidden;
@@ -3194,7 +3145,12 @@ body.night .music-yt-input {
 /* Hover action row */
 .chat-msg-actions {
   position: absolute;
-  right: 14px;
+  /* Incoming messages are left-aligned, so anchor the toolbar to the LEFT and
+     let it extend right into open space — anchoring it right made it overflow
+     past the bubble's left edge on short messages and get clipped by the
+     container. Own messages flip to right-anchored below. */
+  left: 6px;
+  right: auto;
   top: -16px;
   display: flex;
   gap: 2px;
@@ -3204,11 +3160,24 @@ body.night .music-yt-input {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
   padding: 4px;
+  /* Hidden until the message is hovered. The previous reveal targeted
+     `.chat-msg-group:hover`, but messages render as `.chat-msg`, so the
+     toolbar never appeared — hence the correct selector below. */
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
   z-index: 10;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.chat-msg:hover .chat-msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Own messages are right-aligned — anchor the toolbar to the right so it
+   extends left into the open space beside the bubble. */
+.chat-msg-me .chat-msg-actions {
+  left: auto;
+  right: 6px;
 }
 .chat-act-btn {
   background: none;
@@ -3271,7 +3240,7 @@ body.night .music-yt-input {
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .dc-input-btn:hover:not(:disabled) {
   background: rgba(59, 130, 246, 0.22);
@@ -3304,7 +3273,7 @@ body.night .music-yt-input {
   background: none;
   border: none;
   outline: none;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.88rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.85);
@@ -3382,6 +3351,154 @@ body.night .music-yt-input {
   box-shadow:
     0 12px 48px rgba(0, 0, 0, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+@media (max-width: 760px) {
+  #psec-chat {
+    padding: 10px !important;
+    min-width: 0;
+    overflow-x: hidden !important;
+  }
+
+  #psec-chat::before,
+  #psec-chat::after,
+  #psec-chat .dc-blob {
+    width: 260px;
+    height: 260px;
+    filter: blur(52px);
+    opacity: 0.24;
+  }
+
+  .dc-layout {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .dc-sidebar {
+    width: 100%;
+    min-width: 0;
+    max-height: 178px;
+    border-radius: 18px;
+  }
+
+  .dc-sidebar-top {
+    padding: 12px;
+  }
+
+  .dc-sidebar-title {
+    font-size: 1rem;
+    margin-bottom: 8px;
+  }
+
+  .dc-sidebar-btns {
+    gap: 8px;
+  }
+
+  .dc-top-btn {
+    min-height: 40px;
+    border-radius: 14px;
+    font-size: 0.72rem;
+  }
+
+  .dc-sidebar-body {
+    display: none;
+  }
+
+  .dc-sidebar-footer {
+    padding: 8px 12px;
+  }
+
+  .dc-main {
+    min-width: 0;
+    min-height: 420px;
+    height: calc(100dvh - 380px);
+    border-radius: 18px;
+  }
+
+  .dc-main-hdr {
+    height: auto;
+    min-height: 52px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .dc-main-room-name {
+    font-size: 0.95rem;
+  }
+
+  .dc-main-room-desc {
+    font-size: 0.64rem;
+  }
+
+  .dc-main-hdr-right {
+    gap: 4px;
+  }
+
+  .dc-hdr-icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .dc-msgs {
+    padding: 12px 12px 8px;
+  }
+
+  .chat-empty {
+    width: 100%;
+    max-width: 100%;
+    padding: 24px 14px;
+    margin: auto;
+    box-sizing: border-box;
+  }
+
+  .chat-msg-bubble {
+    max-width: 100%;
+  }
+
+  .dc-input-row {
+    padding: 9px 10px 10px;
+    gap: 7px;
+  }
+
+  .dc-input-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .dc-input-wrap {
+    min-width: 0;
+    padding: 0 10px;
+  }
+
+  .dc-send-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+  }
+
+  .dc-members-panel {
+    display: none !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .dc-sidebar-btns {
+    grid-template-columns: 1fr 1fr;
+    display: grid;
+  }
+
+  .dc-top-btn {
+    width: 100%;
+  }
+
+  .dc-main {
+    height: calc(100dvh - 404px);
+  }
 }
 .dc-members-section {
   margin-bottom: 10px;

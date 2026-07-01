@@ -7,6 +7,7 @@
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwcmZramVpYXd4bGNuaXRzZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMjAyMzUsImV4cCI6MjA4OTc5NjIzNX0.LbJKG8J_jd2oKYAmQg0ycb-LBnQM1ItlseOLMT_24jc',
     paypalSdkUrl:
       'https://www.paypal.com/sdk/js?client-id=AXujeSZkOypAa2RuWUkmO0PX_BNMszy5rH_hvys2fTcwx-6gFCJOW1-ICXRGdDlB6X1BwdmFsy463rFN&vault=true&intent=subscription&currency=EUR',
+    assetVersion: '20260702-course-tabs-left-scroll',
     ai: {
       model: 'claude-sonnet-4-5',
       maxTokens: 4096,
@@ -15,8 +16,8 @@
     },
     // Python AI service base URL (Fly.io). The streaming /ask-stream
     // endpoint is called directly from the browser so the SSE connection
-    // isn't capped by Netlify's 30s function timeout. All other AI calls
-    // still go through /api/* on Netlify.
+    // isn't capped by Cloudflare's function timeout. All other AI calls
+    // still go through /api/* on Cloudflare Pages.
     aiServiceUrl: 'https://python-ai.fly.dev'
   };
 

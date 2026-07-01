@@ -9,11 +9,15 @@ to match the existing `vector(1536)` column in document_chunks.
 from __future__ import annotations
 
 import logging
+import os
+from functools import lru_cache
 from typing import Sequence
 
-from openai import OpenAI
+from openai import APIError, OpenAI, RateLimitError
 
 from ..config import get_settings
+from .openai_client import get_openai_client
+from .usage_meter import record_usage, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -22,8 +26,22 @@ log = logging.getLogger(__name__)
 _BATCH_SIZE = 100
 
 
+def _query_cache_size() -> int:
+    try:
+        return max(1, int(os.environ.get("EMBED_QUERY_CACHE_SIZE", "")))
+    except ValueError:
+        return 2048
+
+
+_QUERY_CACHE_SIZE = _query_cache_size()
+
+
+class EmbeddingServiceUnavailable(RuntimeError):
+    """Raised when the embedding provider cannot serve retrieval right now."""
+
+
 def _client() -> OpenAI:
-    return OpenAI(api_key=get_settings().openai_api_key)
+    return get_openai_client()
 
 
 def embed_texts(texts: Sequence[str]) -> list[list[float]]:
@@ -37,12 +55,46 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
 
     for start in range(0, len(texts), _BATCH_SIZE):
         batch = list(texts[start:start + _BATCH_SIZE])
-        resp = client.embeddings.create(
+        try:
+            resp = client.embeddings.create(
+                model=settings.openai_embedding_model,
+                input=batch,
+                dimensions=settings.openai_embedding_dim,
+            )
+        except RateLimitError as exc:
+            log.exception("embedding provider rate-limited retrieval")
+            raise EmbeddingServiceUnavailable(
+                "AI retrieval is temporarily unavailable because the embedding provider is out of quota."
+            ) from exc
+        except APIError as exc:
+            log.exception("embedding provider failed")
+            raise EmbeddingServiceUnavailable(
+                "AI retrieval is temporarily unavailable because the embedding provider failed."
+            ) from exc
+        record_usage(
+            feature="embeddings",
             model=settings.openai_embedding_model,
-            input=batch,
-            dimensions=settings.openai_embedding_dim,
+            **usage_from_response(resp),
         )
         # OpenAI returns embeddings in input order.
         out.extend(item.embedding for item in resp.data)
 
     return out
+
+
+@lru_cache(maxsize=_QUERY_CACHE_SIZE)
+def _embed_query_cached(text: str) -> tuple[float, ...]:
+    return tuple(embed_texts([text])[0])
+
+
+def embed_query(text: str) -> list[float]:
+    """Embed a single retrieval query, cached per process.
+
+    Query embeddings are deterministic for a given input + model, so repeated
+    or popular questions (and double-clicks) shouldn't each pay an OpenAI call
+    in the request path. Cached as an immutable tuple; returned as a fresh list
+    so callers can mutate safely. Whitespace-normalised so trivially-different
+    phrasings share a cache slot.
+    """
+    key = " ".join(text.split())
+    return list(_embed_query_cached(key))

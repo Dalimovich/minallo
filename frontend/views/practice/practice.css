@@ -1,94 +1,552 @@
-/* ── GERMAN LEARNER PRACTICE ── */
-.gl-hero {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(14, 165, 233, 0.08));
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 20px;
-  padding: 20px 24px;
-  margin-bottom: 20px;
+/* ── GERMAN LEARNER PRACTICE ──
+ *
+ * Practice-hub design (matches the mockup): full-width hero with a big
+ * DE avatar, pill-shaped stat row, level chip + Start practice button,
+ * then a grid of skill cards with descriptor chips and progress bars.
+ * .gl-skill-card class is kept on each card so practice.js's existing
+ * event delegation (`.closest('.gl-skill-card')`) keeps working — the
+ * v2 visual is owned by the .gl-skill-card-v2 class on the same element. */
+
+/* Shell scoping: practice page uses the same outer container as the
+ * courses overview so global page margins / max-width stay consistent. */
+#psec-german .gl-shell {
+  display: block;
 }
-.gl-hero-flag {
-  font-size: 2.4rem;
-  line-height: 1;
+
+/* ── Hero ── */
+.gl-hero-v2 {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 32px 26px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.16) 0%, rgba(15, 23, 42, 0.45) 60%, rgba(99, 102, 241, 0.12) 100%);
+  color: #f8fafc;
+  margin-bottom: 22px;
 }
-.gl-hero-text {
-  flex: 1;
+.gl-hero-glow {
+  position: absolute;
+  inset: -40% -10% auto auto;
+  width: 60%;
+  height: 200%;
+  background: radial-gradient(closest-side, rgba(96, 165, 250, 0.18), transparent 70%);
+  pointer-events: none;
 }
-.gl-hero-title {
-  font-family: 'Fredoka One', cursive;
-  font-size: 1.4rem;
-  background: linear-gradient(135deg, #3b82f6, #0ea5e9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.gl-hero-sub {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.45);
-  margin-top: 3px;
-}
-.gl-hero-chip {
-  padding: 6px 14px;
-  background: linear-gradient(135deg, #3b82f6, #0ea5e9);
-  border-radius: 30px;
-  font-family: 'Fredoka One', cursive;
-  font-size: 0.95rem;
-  color: #fff;
-  white-space: nowrap;
-}
-.gl-skill-grid {
+.gl-hero-grid {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 8px;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: start;
 }
-@media (max-width: 600px) {
-  .gl-skill-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-.gl-skill-card {
+.gl-hero-left { min-width: 0; }
+.gl-hero-actions {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 18px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 2px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  cursor: pointer;
-  transition:
-    border-color 0.2s,
-    background 0.2s;
-  text-align: center;
+  align-items: stretch;
+  gap: 12px;
+  min-width: 220px;
 }
-.gl-skill-card:hover {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(59, 130, 246, 0.07);
+.gl-hero-actions .gl-level-chip-readonly,
+.gl-hero-actions .gl-start-btn {
+  justify-content: center;
+}
+.gl-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(147, 197, 253, 0.32);
+  background: rgba(96, 165, 250, 0.10);
+  color: #bfdbfe;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.gl-hero-eyebrow svg { color: #60a5fa; }
+
+.gl-hero-headline {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 18px;
+}
+.gl-hero-avatar {
+  flex-shrink: 0;
+  width: 78px;
+  height: 78px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.45), rgba(37, 99, 235, 0.20));
+  border: 1px solid rgba(147, 197, 253, 0.40);
+  box-shadow:
+    0 12px 32px -8px rgba(37, 99, 235, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  /* Match the .sb-avatar nudge so the DE glyphs sit visually centred. */
+  line-height: 1;
+  padding-bottom: 3px;
+}
+.gl-hero-headline-text { flex: 1; min-width: 0; }
+.gl-hero-title {
+  font-family: var(--font-main);
+  font-size: 2.1rem;
+  line-height: 1.05;
+  color: #ffffff;
+  margin: 0;
+  background: none;
+  -webkit-text-fill-color: initial;
+}
+.gl-hero-sub {
+  margin: 8px 0 0 0;
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.72);
+  max-width: 56ch;
+}
+
+/* Stat pills */
+.gl-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+.gl-hero-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.gl-hero-stat-pill svg { color: #93c5fd; }
+.gl-hero-stat-pill[data-stat="level"] svg { color: #fbbf24; }
+.gl-hero-stat-pill[data-stat="progress"] svg { color: #34d399; }
+.gl-hero-stat-pill[data-stat="time"] svg { color: #60a5fa; }
+.gl-hero-stat-pill[data-stat="ai"] svg { color: #c4b5fd; }
+
+/* Read-only level chip + Start practice button — placed in the right-hand
+ * .gl-hero-actions column (stacked, like SS-2026 + Add Subject in courses). */
+.gl-level-chip-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.30);
+  background: rgba(15, 23, 42, 0.65);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: default;
+  white-space: nowrap;
+}
+.gl-level-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #06d6a0;
+  box-shadow: 0 0 8px rgba(6, 214, 160, 0.7);
+}
+.gl-level-chip-lock {
+  font-size: 0.7rem;
+  opacity: 0.5;
+  margin-left: 2px;
+}
+.gl-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 28px -8px rgba(37, 99, 235, 0.65);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.gl-start-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 32px -8px rgba(59, 130, 246, 0.8);
+}
+
+/* ── Skill grid ── */
+.gl-skill-grid-v2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.gl-skill-card-v2 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.gl-skill-card-v2:hover {
+  transform: translateY(-2px);
+  border-color: rgba(147, 197, 253, 0.35);
+  box-shadow: 0 22px 44px -22px rgba(37, 99, 235, 0.55);
+}
+.gl-skill-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--gl-card-grad, linear-gradient(90deg, #60a5fa, #2563eb));
+}
+.gl-skill-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
 }
 .gl-skill-icon {
-  font-size: 1.6rem;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(147, 197, 253, 0.22);
+  font-size: 1.25rem;
+  line-height: 1;
 }
+.gl-skill-head-text { flex: 1; min-width: 0; }
 .gl-skill-name {
-  font-family: 'Fredoka One', cursive;
-  font-size: 0.95rem;
-  color: #e2d9f3;
+  margin: 0;
+  font-family: var(--font-main);
+  font-size: 1.18rem;
+  font-weight: 400;
+  color: #f8fafc;
+  line-height: 1.2;
 }
 .gl-skill-sub {
-  font-size: 0.65rem;
+  margin-top: 4px;
+  font-family: var(--font-main);
+  font-size: 0.78rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.35);
-  line-height: 1.3;
+  color: rgba(226, 232, 240, 0.55);
+}
+.gl-skill-chip {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.78);
+  font-family: var(--font-main);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.gl-skill-chip-ai {
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(167, 139, 250, 0.12);
+  color: #c4b5fd;
+}
+
+/* Practice progress block */
+.gl-skill-progress {
+  margin-top: 18px;
+}
+.gl-skill-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.gl-skill-progress-label {
+  font-family: var(--font-main);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.55);
+}
+.gl-skill-progress-value {
+  font-family: var(--font-main);
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+.gl-skill-progress-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.gl-skill-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gl-card-grad, linear-gradient(90deg, #60a5fa, #2563eb));
+  transition: width 0.4s ease;
+}
+
+/* Open practice button — solid white pill, matches the mockup */
+.gl-skill-open-btn {
+  margin-top: 18px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+  font-family: var(--font-main);
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+.gl-skill-open-btn:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+
+.gl-daily-plan {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(110, 231, 183, 0.16);
+  background:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.16), transparent 38%),
+    rgba(15, 23, 42, 0.55);
+}
+.gl-daily-kicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(110, 231, 183, 0.12);
+  border: 1px solid rgba(110, 231, 183, 0.28);
+  color: #a7f3d0;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.gl-daily-copy h2 {
+  margin: 10px 0 7px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.2rem, 2vw, 1.65rem);
+  line-height: 1.15;
+}
+.gl-daily-copy p {
+  margin: 0;
+  max-width: 52ch;
+  color: rgba(226, 232, 240, 0.7);
+  font-weight: 650;
+  line-height: 1.55;
+}
+.gl-daily-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.gl-daily-step {
+  display: grid;
+  gap: 4px;
+  min-height: 92px;
+  padding: 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.gl-daily-step:hover,
+.gl-daily-step:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(110, 231, 183, 0.36);
+  background: rgba(110, 231, 183, 0.08);
+  outline: none;
+}
+.gl-daily-step span {
+  color: #67e8f9;
+  font-size: 0.72rem;
+  font-weight: 1000;
+}
+.gl-daily-step strong {
+  color: #fff;
+  font-size: 0.95rem;
+}
+.gl-daily-step small {
+  color: rgba(226, 232, 240, 0.55);
+  font-weight: 750;
+}
+.gl-skill-icon-text {
+  font-size: 0.95rem;
+  font-weight: 1000;
+}
+
+.gl-skill-view {
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-back-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-bottom: 16px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 900;
+  cursor: pointer;
+}
+.gl-back-btn:hover {
+  border-color: rgba(125, 211, 252, 0.35);
+  background: rgba(56, 189, 248, 0.10);
+}
+.gl-detail-hero,
+.gl-files-panel,
+.gl-ai-panel {
+  margin-bottom: 16px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 35%),
+    rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+}
+.gl-detail-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.gl-detail-hero h2 {
+  margin: 12px 0 7px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.45rem, 3vw, 2.25rem);
+  line-height: 1.05;
+}
+.gl-detail-hero p {
+  margin: 0;
+  max-width: 62ch;
+  color: rgba(226, 232, 240, 0.66);
+  font-weight: 700;
+  line-height: 1.55;
+}
+.gl-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.gl-files-head,
+.gl-ai-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.gl-file-list {
+  display: grid;
+  gap: 8px;
+}
+.gl-upload-progress {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: rgba(226, 232, 240, 0.68);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+.gl-upload-progress i {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.gl-upload-progress b {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #10b981);
+}
+.gl-ai-panel-head button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.055);
+  color: #e2e8f0;
+  font-weight: 850;
+  cursor: pointer;
+}
+.gl-ai-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+@media (max-width: 860px) {
+  .gl-hero-grid { grid-template-columns: 1fr; }
+  .gl-hero-actions { min-width: 0; flex-direction: row; flex-wrap: wrap; }
+  .gl-daily-plan { grid-template-columns: 1fr; }
+  .gl-detail-hero { flex-direction: column; }
+  .gl-detail-actions { justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .gl-hero-v2 { padding: 22px 20px; }
+  .gl-hero-title { font-size: 1.7rem; }
+  .gl-hero-avatar { width: 64px; height: 64px; border-radius: 18px; font-size: 1.3rem; }
+  .gl-skill-grid-v2 { grid-template-columns: 1fr; }
+  .gl-daily-steps { grid-template-columns: 1fr; }
 }
 .gl-ai-chip {
   padding: 8px 14px;
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.25);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.76rem;
   color: rgba(255, 255, 255, 0.7);
@@ -129,7 +587,7 @@
   background: rgba(59, 130, 246, 0.1);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.82rem;
   color: rgba(59, 130, 246, 0.9);
@@ -173,7 +631,7 @@
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.7);
@@ -185,7 +643,7 @@
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   border: none;
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: #fff;
@@ -197,7 +655,7 @@
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: #3b82f6;
@@ -209,7 +667,7 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.25);
   border-radius: 20px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: rgba(239, 68, 68, 0.8);
@@ -265,7 +723,7 @@
   border-radius: 10px;
   background: transparent;
   color: rgba(255, 255, 255, 0.58);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   cursor: pointer;
 }
@@ -287,7 +745,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.78);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   cursor: pointer;
   transition:
@@ -306,8 +764,9 @@
   color: #fff;
 }
 .gl-study-body {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
 }
 .gl-quiz-shell {
   width: min(100%, 560px);
@@ -339,7 +798,7 @@
 }
 .gl-quiz-question {
   margin: 8px 0 14px;
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.18rem, 2vw, 1.55rem);
   line-height: 1.25;
   color: #26112b;
@@ -359,7 +818,7 @@
   border: 2px solid #f4d7fa;
   background: #fff3fb;
   color: #37213b;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 900;
   text-align: left;
   cursor: pointer;
@@ -433,7 +892,7 @@
   border-radius: 16px;
   background: linear-gradient(135deg, #fb7185, #fb923c);
   color: #fff;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.96rem;
   font-weight: 1000;
   cursor: pointer;
@@ -532,13 +991,13 @@
   transform: rotateY(180deg);
 }
 .gl-flash-text {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.35rem, 3vw, 2rem);
   line-height: 1.35;
   color: #f8fafc;
 }
 .gl-flash-side.back .gl-flash-text {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: clamp(1.02rem, 2vw, 1.32rem);
   font-weight: 900;
   color: #e2e8f0;
@@ -556,7 +1015,7 @@
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(255, 255, 255, 0.055);
   color: #e2e8f0;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 1000;
   cursor: pointer;
 }

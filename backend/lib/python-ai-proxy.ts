@@ -2,15 +2,21 @@
 //
 // Python is now the only AI implementation — the legacy JS pipelines have
 // been removed. Every AI/document handler is a thin auth+forward shell
-// over this helper. Auth happens in the Netlify function (Supabase JWT);
+// over this helper. Auth happens in the host function (Supabase JWT);
 // this helper just signs the upstream request with INTERNAL_SECRET so the
-// Python service knows the call came through Netlify.
+// Python service knows the call came through our edge.
+//
+// Uses Web `fetch` so it runs on Workers (Cloudflare Pages Functions) —
+// Node's https.request isn't implemented in unenv's nodejs_compat shim.
 
-import https from 'https';
 import { optionalEnv } from './env';
 import type { PythonProxyResult } from './types';
 
-const _UPSTREAM_TIMEOUT_MS = 26000;
+// Grounded generation (cheatsheet, structured Deep Learn) runs ~40 tok/s and a
+// dense sheet can take 45–55s. 120s default gives comfortable margin for heavy
+// grounded generation that can approach ~50s; still overridable per-env via
+// AI_UPSTREAM_TIMEOUT_MS (e.g. set lower in staging to fail fast).
+const _UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_UPSTREAM_TIMEOUT_MS', '120000'), 10);
 
 function _config(): { serviceUrl: string; internalToken: string } {
   return {
@@ -28,57 +34,49 @@ export function pythonAiConfigured(): boolean {
 
 /** Forwards `payload` to `<AI_SERVICE_URL>/<endpoint>`. `body` is the
  *  parsed JSON response when available, else `{ raw }`. `ok` is true only on 2xx. */
-export function forwardToPython<T = unknown>(
+export async function forwardToPython<T = unknown>(
   endpoint: string,
   payload: unknown
 ): Promise<PythonProxyResult<T>> {
-  return new Promise<PythonProxyResult<T>>(function (resolve) {
-    const { serviceUrl, internalToken } = _config();
-    if (!serviceUrl || !internalToken) {
-      return resolve({ ok: false, status: 503, body: { error: 'AI service not configured' } });
-    }
-    let target: URL;
-    try {
-      target = new URL(serviceUrl.replace(/\/$/, '') + '/' + endpoint);
-    } catch {
-      return resolve({ ok: false, status: 500, body: { error: 'Invalid AI_SERVICE_URL' } });
-    }
-    const body = JSON.stringify(payload || {});
-    const req = https.request(
-      {
-        hostname: target.hostname,
-        port: target.port || 443,
-        path: target.pathname + target.search,
-        method: 'POST',
-        headers: {
-          'X-Internal-Token': internalToken,
-          'Content-Type': 'application/json',
-          'Content-Length': String(Buffer.byteLength(body)),
-          Accept: 'application/json'
-        }
+  const { serviceUrl, internalToken } = _config();
+  if (!serviceUrl || !internalToken) {
+    return { ok: false, status: 503, body: { error: 'AI service not configured' } };
+  }
+  let targetUrl: string;
+  try {
+    targetUrl = new URL(serviceUrl.replace(/\/$/, '') + '/' + endpoint).toString();
+  } catch {
+    return { ok: false, status: 500, body: { error: 'Invalid AI_SERVICE_URL' } };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), _UPSTREAM_TIMEOUT_MS);
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'X-Internal-Token': internalToken,
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
       },
-      function (res) {
-        let buf = '';
-        res.on('data', function (c) { buf += c; });
-        res.on('end', function () {
-          let parsed: T | { raw: string };
-          try { parsed = JSON.parse(buf) as T; } catch { parsed = { raw: buf }; }
-          const status = res.statusCode ?? 502;
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            body: parsed
-          });
-        });
-      }
-    );
-    req.setTimeout(_UPSTREAM_TIMEOUT_MS, function () {
-      req.destroy(new Error('Python AI service timed out'));
+      body: JSON.stringify(payload || {}),
+      signal: controller.signal
     });
-    req.on('error', function () {
-      resolve({ ok: false, status: 502, body: { error: 'Upstream AI service error' } });
-    });
-    req.write(body);
-    req.end();
-  });
+    const text = await res.text();
+    let parsed: T | { raw: string };
+    try {
+      parsed = JSON.parse(text) as T;
+    } catch {
+      parsed = { raw: text };
+    }
+    return {
+      ok: res.status >= 200 && res.status < 300,
+      status: res.status,
+      body: parsed
+    };
+  } catch {
+    return { ok: false, status: 502, body: { error: 'Upstream AI service error' } };
+  } finally {
+    clearTimeout(timer);
+  }
 }

@@ -49,6 +49,14 @@ interface YTPlayerVars {
   list?: string;
 }
 
+function _stT(key: string): string {
+  try {
+    return typeof window._t === 'function' ? window._t(key) : key;
+  } catch {
+    return key;
+  }
+}
+
 interface YTPlayerConfig {
   height: string;
   width: string;
@@ -91,6 +99,13 @@ interface TimerSettings {
 
 let _stRunning = false;
 let _stPaused = false;
+let _stVolume: number = ((): number => {
+  try {
+    const v = parseInt(localStorage.getItem('ss_st_volume') || '70', 10);
+    return isNaN(v) ? 70 : Math.max(0, Math.min(100, v));
+  } catch { return 70; }
+})();
+let _stMutedByUser = false;
 let _stTimer: ReturnType<typeof setInterval> | null = null;
 let _stSecondsLeft = 0;
 /* Wall-clock end time (ms since epoch). Source of truth while ticking; nulled
@@ -189,6 +204,16 @@ function _stCreatePlayer(customList: string | null): void {
     '<button class="smc-ctrl smc-play" id="stMiniPlayPause" title="Play/Pause">&#x25B6;</button>' +
     '<button class="smc-ctrl" id="stMiniNext" title="Next">&#x23ED;</button>' +
     '</div>' +
+    '<div class="smc-volume-row">' +
+    '<button class="smc-vol-btn" id="smcVolBtn" title="Mute / unmute">' +
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>' +
+        '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+        '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' +
+      '</svg>' +
+    '</button>' +
+    '<input type="range" id="smcVolume" class="smc-vol-range" min="0" max="100" value="70" step="1" aria-label="Volume">' +
+    '</div>' +
     '</div>' +
     '<button class="st-music-pill" id="stMusicPill" title="Show music player" style="display:none">&#x266B;</button>';
   document.body.appendChild(holder);
@@ -217,6 +242,35 @@ function _stCreatePlayer(customList: string | null): void {
     if (pill) pill.style.display = 'none';
     if (card) card.style.display = 'flex';
   });
+
+  // Volume slider + mute toggle.
+  const volRange = document.getElementById('smcVolume') as HTMLInputElement | null;
+  const volBtn = document.getElementById('smcVolBtn') as HTMLButtonElement | null;
+  if (volRange) {
+    volRange.value = String(_stVolume);
+    _smcSetVolumeFill(_stVolume);
+    volRange.addEventListener('input', () => {
+      const v = Math.max(0, Math.min(100, parseInt(volRange.value, 10) || 0));
+      _stVolume = v;
+      _stMutedByUser = v === 0;
+      try { localStorage.setItem('ss_st_volume', String(v)); } catch { /* quota */ }
+      _smcSetVolumeFill(v);
+      _smcSyncVolBtn();
+      try { if (_ytPlayer) _ytPlayer.setVolume(v); } catch { /* ignore */ }
+    });
+  }
+  if (volBtn) {
+    volBtn.addEventListener('click', () => {
+      _stMutedByUser = !_stMutedByUser;
+      const target = _stMutedByUser ? 0 : (_stVolume || 70);
+      if (!_stMutedByUser && _stVolume === 0) _stVolume = 70;
+      try { if (_ytPlayer) _ytPlayer.setVolume(target); } catch { /* ignore */ }
+      if (volRange) volRange.value = String(target);
+      _smcSetVolumeFill(target);
+      _smcSyncVolBtn();
+    });
+  }
+  _smcSyncVolBtn();
 
   let _smcSeeking = false;
   const progressEl = document.getElementById('smcProgress') as HTMLInputElement | null;
@@ -284,7 +338,7 @@ function _stCreatePlayer(customList: string | null): void {
       setTimeout(() => {
         try {
           e.target.unMute();
-          e.target.setVolume(70);
+          e.target.setVolume(_stMutedByUser ? 0 : _stVolume);
         } catch {
           /* ignore */
         }
@@ -372,7 +426,7 @@ function _stPlayMusic(): void {
     try {
       _ytPlayer.playVideo();
       _ytPlayer.unMute();
-      _ytPlayer.setVolume(70);
+      _ytPlayer.setVolume(_stMutedByUser ? 0 : _stVolume);
       _stShowMusicControls(true);
       return;
     } catch {
@@ -429,14 +483,102 @@ function _stShowMusicControls(show: boolean): void {
   }
 }
 
+function _smcSetVolumeFill(pct: number): void {
+  const r = document.getElementById('smcVolume') as HTMLInputElement | null;
+  if (r) r.style.setProperty('--vol', Math.max(0, Math.min(100, pct)) + '%');
+}
+
+function _smcSyncVolBtn(): void {
+  const btn = document.getElementById('smcVolBtn');
+  if (!btn) return;
+  btn.classList.toggle('smc-vol-muted', _stMutedByUser || _stVolume === 0);
+}
+
 function _stUpdateMini(): void {
   const t = document.getElementById('stMiniTime');
   const l = document.getElementById('stMiniLabel');
   if (t) t.textContent = _stFmt(_stSecondsLeft);
   if (l)
     l.textContent =
-      _stPhase === 'focus' ? 'Focus' : _stPhase === 'short' ? 'Short break' : 'Long break';
+      _stPhase === 'focus'
+        ? _stT('tb_focus_mini')
+        : _stPhase === 'short'
+          ? _stT('st_short_break')
+          : _stT('st_long_break');
+  _syncCourseStudyBtn();
 }
+
+/** Swap a Study button between "open the popup" and a live
+ * Pause / timer / Stop cluster, depending on whether a session is running.
+ * Runs for both the course-overview button and the PDF-header button so
+ * the two stay in sync with the single global timer state. */
+function _syncStudyBtnFor(wrapId: string, btnId: string, controlsId: string): void {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const btn = document.getElementById(btnId) as HTMLElement | null;
+  let controls = document.getElementById(controlsId);
+
+  if (!_stRunning) {
+    if (controls) controls.remove();
+    if (btn) {
+      btn.style.display = '';
+      btn.classList.remove('co-study-btn-compact', 'pdf-study-button-compact');
+    }
+    return;
+  }
+
+  /* Keep the Study button visible alongside the controls so the user can
+   * re-open the Focus Session popup mid-session (e.g. to switch playlist).
+   * Compact form: icon-only to save room for the controls cluster. */
+  if (btn) {
+    btn.style.display = '';
+    btn.classList.add(
+      btnId === 'pdfStudyBtn' ? 'pdf-study-button-compact' : 'co-study-btn-compact'
+    );
+  }
+
+  const timerText = _stFmt(_stSecondsLeft);
+  const pauseGlyph = _stPaused ? '&#x25B6;' : '&#x23F8;';
+  const pauseTitle = _stPaused ? _stT('tb_resume_title') : _stT('tb_pause_title');
+  const pauseBtnId = controlsId + 'Pause';
+  const stopBtnId = controlsId + 'Stop';
+
+  if (!controls) {
+    controls = document.createElement('div');
+    controls.id = controlsId;
+    controls.className = 'co-study-controls';
+    wrap.appendChild(controls);
+    controls.addEventListener('click', (e) => {
+      const t = (e.target as HTMLElement | null)?.closest<HTMLElement>('button');
+      if (!t) return;
+      e.stopPropagation();
+      if (t.id === pauseBtnId) {
+        const mini = document.getElementById('stMiniPause') as HTMLButtonElement | null;
+        if (mini) mini.click();
+        else _syncCourseStudyBtn();
+      } else if (t.id === stopBtnId) {
+        _stStop();
+      }
+    });
+  }
+  controls.innerHTML =
+    '<button id="' + pauseBtnId + '" class="co-study-ctrl" type="button" title="' + pauseTitle + '">' +
+      pauseGlyph +
+    '</button>' +
+    '<span class="co-study-timer">' + timerText + '</span>' +
+    '<button id="' + stopBtnId + '" class="co-study-ctrl co-study-ctrl-stop" type="button" title="' + _stT('tb_stop_title') + '">' +
+      '&#x25A0;' +
+    '</button>';
+}
+
+function _syncCourseStudyBtn(): void {
+  _syncStudyBtnFor('coStudyWrap', 'coStudyBtn', 'coStudyControls');
+  _syncStudyBtnFor('pdfStudyWrap', 'pdfStudyBtn', 'pdfStudyControls');
+}
+
+// Expose so course-view.ts can call after re-rendering the topnav.
+(window as unknown as { _syncCourseStudyBtn?: () => void })._syncCourseStudyBtn =
+  _syncCourseStudyBtn;
 
 function _stUpdatePauseBtn(): void {
   const btn = document.getElementById('stMiniPause');
@@ -616,6 +758,7 @@ function _stStop(): void {
   if (mini) mini.style.display = 'none';
   _stUpdatePauseBtn();
   _stPersist();
+  _syncCourseStudyBtn();
 }
 
 /* Restore a previously running timer from localStorage. Called once on init.
@@ -676,7 +819,100 @@ function _stRestore(): void {
   _stStartTimer();
 }
 
+/** Open the Study Techniques popup as a true dropdown anchored to the
+ * Study button. The popup is re-parented INTO the .co-study-wrap (which
+ * is `position: relative`) so it scrolls with the button automatically,
+ * no JS reposition needed. */
+export function openStudyPopup(): void {
+  const overlay = document.getElementById('stOverlay');
+  const popup = document.getElementById('stPopup');
+  if (!popup) return;
+  if (overlay) overlay.style.display = 'none';
+
+  // Prefer the in-PDF Study trigger when the PDF view is open, then the
+  // course-workspace wrapper, then the legacy topbar trigger.
+  const pdfBtn = document.getElementById('pdfStudyBtn');
+  const pdfVisible =
+    !!pdfBtn && pdfBtn.offsetParent !== null;
+  const wrap =
+    (pdfVisible ? (pdfBtn!.parentElement as HTMLElement | null) : null) ||
+    (document.getElementById('coStudyWrap') as HTMLElement | null) ||
+    (document.getElementById('studyTechBtn')?.parentElement as HTMLElement | null);
+  if (wrap) {
+    // The popup is absolute-positioned with top:100%/right:0, so the wrap
+    // needs to establish a positioning context.
+    if (getComputedStyle(wrap).position === 'static') {
+      wrap.style.position = 'relative';
+    }
+    if (popup.parentElement !== wrap) wrap.appendChild(popup);
+  }
+
+  popup.classList.remove('shrinking');
+  // Position is relative to .co-study-wrap (or fallback parent). Top:100%
+  // means just below the button; right:0 aligns to the button's right
+  // edge. Scrolling the page scrolls the wrapper → popup follows.
+  popup.style.cssText =
+    'position:absolute;top:calc(100% + 8px);right:0;left:auto;' +
+    'width:340px;max-height:80vh;' +
+    'background:#1a1828;border:1px solid rgba(96,165,250,.32);border-radius:20px;' +
+    'box-shadow:0 24px 60px rgba(0,0,0,.55);overflow-y:auto;overflow-x:hidden;' +
+    'pointer-events:all;color:#e2e8f0;display:block;z-index:2000;';
+  // Restart the CSS open animation by clearing and forcing reflow.
+  popup.style.animation = 'none';
+  void popup.offsetWidth;
+  popup.style.animation = '';
+
+  const startBtn = document.getElementById('stStart');
+  if (startBtn) startBtn.textContent = _stRunning ? '▶ Apply & Restart' : '▶ Start';
+  if (window._ytRenderSelect) window._ytRenderSelect();
+  const sel = document.getElementById('stPlaylistSelector');
+  if (sel) sel.style.display = _stMusicSrc === 'youtube' ? 'block' : 'none';
+}
+
+export function closeStudyPopup(): void {
+  const popup = document.getElementById('stPopup');
+  const overlay = document.getElementById('stOverlay');
+  if (popup) popup.style.display = 'none';
+  if (overlay) overlay.style.display = 'none';
+}
+
+// Publish at module-load time too, not only inside initStudyTimer, so the
+// course-view Study button can find it even on very early clicks.
+(window as unknown as {
+  openStudyPopup?: () => void;
+  closeStudyPopup?: () => void;
+}).openStudyPopup = openStudyPopup;
+(window as unknown as {
+  openStudyPopup?: () => void;
+  closeStudyPopup?: () => void;
+}).closeStudyPopup = closeStudyPopup;
+
+/** Kick off a 25-min focus Pomodoro immediately — no popup, no navigation.
+ * Used by the "25 min focus session" next-step button on courses overview. */
+export function startQuickPomodoro(minutes = 25): void {
+  if (_stTimer) clearInterval(_stTimer);
+  _stStopMusic();
+  _stRunning = true;
+  _stPaused = false;
+  _stPhase = 'focus';
+  _stCycle = 0;
+  _stSettings = { ..._stSettings, focus: minutes };
+  _stSecondsLeft = minutes * 60;
+  _stMusicMuted = false;
+  _stMusicEnabled = _stMusicSrc !== 'none';
+  const mini = document.getElementById('stMiniTimer');
+  if (mini) mini.style.display = 'flex';
+  _stUpdateMini();
+  _stStartTimer();
+  _stLockGames(true);
+  if (_stMusicEnabled) _stPlayMusic();
+  _syncCourseStudyBtn();
+}
+(window as unknown as { startQuickPomodoro?: (m?: number) => void }).startQuickPomodoro =
+  startQuickPomodoro;
+
 export function initStudyTimer(): void {
+  (window as unknown as { openStudyPopup?: () => void }).openStudyPopup = openStudyPopup;
   document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -686,15 +922,7 @@ export function initStudyTimer(): void {
     if (!btn || !overlay || !popup) return;
 
     if (target.closest('#studyTechBtn')) {
-      overlay.style.display = 'block';
-      popup.classList.remove('shrinking');
-      popup.style.transform = '';
-      popup.style.opacity = '';
-      const startBtn = document.getElementById('stStart');
-      if (startBtn) startBtn.textContent = _stRunning ? '▶ Apply & Restart' : '▶ Start';
-      if (window._ytRenderSelect) window._ytRenderSelect();
-      const sel = document.getElementById('stPlaylistSelector');
-      if (sel) sel.style.display = _stMusicSrc === 'youtube' ? 'block' : 'none';
+      openStudyPopup();
       return;
     }
 
@@ -709,10 +937,10 @@ export function initStudyTimer(): void {
         _stMusicSrc = src;
       }
       const hints: Record<MusicSrc, string> = {
-        lofi: 'Lofi Girl radio — always available',
-        youtube: 'Choose a saved playlist below',
-        spotify: 'Controls your Spotify playback',
-        none: 'No music during session',
+        lofi: _stT('st_music_hint_lofi_radio'),
+        youtube: _stT('st_music_hint_youtube'),
+        spotify: _stT('st_music_hint_spotify'),
+        none: _stT('st_music_hint_none'),
       };
       const hint = document.getElementById('stMusicHint');
       if (hint) hint.textContent = hints[_stMusicSrc] || '';
@@ -728,11 +956,23 @@ export function initStudyTimer(): void {
       return;
     }
 
+    const popupOpen = popup.style.display === 'block';
     if (
       target.closest('#stClose') ||
-      (!target.closest('#stPopup') && overlay.style.display === 'block')
+      // Outside-click-to-close. Excludes the trigger button itself so the
+      // toggle handler can decide what to do.
+      (!target.closest('#stPopup') && !target.closest('#coStudyBtn') && !target.closest('#studyTechBtn') && !target.closest('#pdfStudyBtn') && popupOpen)
     ) {
-      overlay.style.display = 'none';
+      closeStudyPopup();
+      return;
+    }
+
+    if (target.closest('#stSaveDefault')) {
+      // Persist current settings as the user's default (existing _stPersist
+      // already writes everything to localStorage). Show a small toast.
+      _stPersist();
+      const t = window.showToast;
+      if (typeof t === 'function') t(_stT('st_default_saved'), '');
       return;
     }
 
@@ -803,7 +1043,7 @@ export function initStudyTimer(): void {
       _stMusicEnabled = _stMusicSrc !== 'none';
       popup.classList.add('shrinking');
       setTimeout(() => {
-        overlay.style.display = 'none';
+        closeStudyPopup();
         popup.classList.remove('shrinking');
         const mini = document.getElementById('stMiniTimer');
         if (mini) mini.style.display = 'flex';

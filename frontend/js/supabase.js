@@ -22,8 +22,16 @@ var _SBCFG = window.MinalloConfig || {};
 var SUPA_URL = _SBCFG.supabaseUrl || window._SUPA || '';
 var SUPA_KEY = _SBCFG.supabaseAnonKey || window._SAKEY || '';
 var _sbToken = null; // access token after login
+window._sbToken = null; // expose to window for API clients
 var _currentUser = null;
 var _sbAuthCallbacks = [];
+// Single-flight guard for refreshSession(). Supabase rotates the refresh token
+// on every use, so N callers firing N concurrent refreshes with the same stored
+// token make all-but-one fail — and the failing path nulls _sbToken + clears the
+// stored session. That knocks out in-flight work (e.g. a multi-file upload where
+// each _ufUpload awaits _ufEnsureFreshToken). Sharing one in-flight promise means
+// concurrent callers get the single successful refresh instead of racing.
+var _sbRefreshInFlight = null;
 var _SS = window.Minallo;
 
 function _sbStoreSession(accessToken, refreshToken) {
@@ -31,12 +39,11 @@ function _sbStoreSession(accessToken, refreshToken) {
     // Persistent across tab close — user "stays signed in until they log out"
     // (per product requirement). Previously this wrote to sessionStorage which
     // is volatile per-tab; the result was every new tab forced a re-login.
-    localStorage.setItem('sb_sess_token', accessToken || '');
+    sessionStorage.setItem('sb_sess_token', accessToken || '');
     if (refreshToken) localStorage.setItem('sb_sess_refresh', refreshToken);
-    // Wipe any sessionStorage copy from before this commit so the fallback
-    // reader below doesn't return stale tokens.
-    sessionStorage.removeItem('sb_sess_token');
-    sessionStorage.removeItem('sb_sess_refresh');
+    // Keep the long-lived refresh token for "stay signed in", but avoid
+    // persisting short-lived bearer access tokens across browser restarts.
+    localStorage.removeItem('sb_sess_token');
     // Legacy keys from an even earlier scheme — leave the removes for safety.
     localStorage.removeItem('sb_token');
     localStorage.removeItem('sb_refresh');
@@ -45,11 +52,11 @@ function _sbStoreSession(accessToken, refreshToken) {
 
 function _sbStoredToken() {
   try {
-    // Prefer localStorage; fall back to sessionStorage so users mid-session
-    // when this code deploys don't get logged out.
+    // Access tokens are tab/session-scoped. Persistent login is restored with
+    // the refresh token instead of keeping bearer tokens on disk.
     return (
-      localStorage.getItem('sb_sess_token') ||
       sessionStorage.getItem('sb_sess_token') ||
+      localStorage.getItem('sb_sess_token') ||
       null
     );
   } catch (e) {
@@ -148,6 +155,7 @@ var _sb = {
       var d = await r.json();
       if (d.access_token) {
         _sbToken = d.access_token;
+        window._sbToken = _sbToken;
         _currentUser = d.user;
         _ssAuth('signed-in', { source: 'password', user: _currentUser });
         // Always persist — user stays logged in across browser restarts until explicit sign-out
@@ -162,28 +170,156 @@ var _sb = {
       return d;
     },
     signOut: function () {
+      // Clear local state BEFORE the network call so a failed/offline logout
+      // can't leave stale tokens on disk that look "still signed in" on reload.
+      // Capture the auth header up front so the best-effort revocation still
+      // carries the user's bearer token.
+      var logoutHeaders = _sbHeaders();
+      _sbToken = null;
+      window._sbToken = null;
+      _currentUser = null;
+      _ssAuth('signed-out', { source: 'signOut' });
+      _sbClearStoredSession();
+      localStorage.removeItem('ss_state');
+      sessionStorage.removeItem('ss_last_active');
+      // Chat history, AI-generated study material, drafts and connected-account
+      // tokens are private user data. Wipe so a different user signing into the
+      // same browser can never see (or use) any of it.
+      try {
+        var _wipePrefixes = [
+          // Per-course AI chat history (course rail).
+          'ss_course_qa_',
+          // Legacy per-file chat transcripts (storage-service loadChat/saveChat).
+          'ss_chat_',
+          // Generated summary markdown / cheatsheet pointers per course.
+          'minallo_sum_last_',
+          'minallo_cs_last_',
+          // Per-course file-list caches, counters and progress.
+          'ss_uf_cache_',
+          'ss_fc_',
+          'ss_progress_total_',
+          'ss_opened_',
+          'ss_lastopen_'
+        ];
+        var _wipeExact = [
+          'ss_stats',
+          // Legacy unscoped chatbot store (pre per-uid scoping). The scoped
+          // ss_ncb_*:<uid> keys stay — they're namespaced per user id, so a
+          // different account can't read them and chats survive a re-login.
+          'ss_ncb_chats_v1',
+          'ss_ncb_active_v1',
+          'ss_ncb_sources_v1',
+          'ncb_tutor_mode',
+          // Writing-coach drafts are private user text.
+          'ss_writing_coach_draft',
+          'ss_writing_coach_task',
+          'ss_focus_timer_v1',
+          'ss_last_section',
+          'ss_university',
+          'ss_pdfed_recents',
+          // Connected music accounts: never leave OAuth tokens behind, or the
+          // next account on this browser could control the previous user's
+          // Spotify / see their playlists.
+          'ss_sp_token',
+          'ss_sp_refresh',
+          'ss_sp_verifier',
+          'ss_yt_playlists'
+        ];
+        var _qaKeys = [];
+        for (var _i = 0; _i < localStorage.length; _i++) {
+          var _k = localStorage.key(_i);
+          if (!_k) continue;
+          var _hit = _wipeExact.indexOf(_k) !== -1;
+          for (var _wp = 0; !_hit && _wp < _wipePrefixes.length; _wp++) {
+            if (_k.indexOf(_wipePrefixes[_wp]) === 0) _hit = true;
+          }
+          if (_hit) _qaKeys.push(_k);
+        }
+        _qaKeys.forEach(function (k) { localStorage.removeItem(k); });
+      } catch (e) {}
+      // Wipe in-memory course state so the next account on this browser
+      // doesn't see the previous user's courses (the per-user-id localStorage
+      // cache stays — it's already namespaced, just not visible to other UIDs).
+      try {
+        if (typeof SEMS !== 'undefined' && SEMS) {
+          Object.keys(SEMS).forEach(function (sid) { SEMS[sid].courses = []; });
+        }
+        // Drop the legacy unscoped key in case an older client wrote to it.
+        localStorage.removeItem('ss_user_courses');
+      } catch (e) {}
+      // Profile + course caches keyed by ss_last_uid are read at app boot
+      // (app.ts) BEFORE auth resolves. If we leave them behind, the NEXT
+      // user signing in on the same browser flashes the previous user's
+      // name / courses for a moment. Clear both.
+      //
+      // Also wipe onboarding answers — both the unscoped legacy keys
+      // (ss_user_type/ss_major/ss_vertiefung) and the per-uid variants
+      // (ss_user_type_<uid>/ss_german_test_<uid>/ss_german_level_<uid>).
+      // These don't directly leak across users since user-data.ts loads the
+      // signed-in user's profile from Supabase on next login, but they're
+      // stale account data that ought to come off when the user logs out.
+      try {
+        for (var _pi = localStorage.length - 1; _pi >= 0; _pi--) {
+          var _pk = localStorage.key(_pi);
+          if (!_pk) continue;
+          if (
+            _pk.indexOf('profile_cache_') === 0 ||
+            _pk.indexOf('ss_user_type_') === 0 ||
+            _pk.indexOf('ss_german_test_') === 0 ||
+            _pk.indexOf('ss_german_level_') === 0
+          ) localStorage.removeItem(_pk);
+        }
+        localStorage.removeItem('ss_last_uid');
+        localStorage.removeItem('ss_user_type');
+        localStorage.removeItem('ss_major');
+        localStorage.removeItem('ss_vertiefung');
+        // Also drop the device-trial marker so a re-login on the same
+        // browser doesn't keep "you already used your trial" stuck on.
+        localStorage.removeItem('minallo_trial_used');
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem('ss_logged_in');
+      } catch (e) {}
+      try {
+        sessionStorage.removeItem('ss_portal_tab');
+      } catch (e) {}
+      clearTimeout(_activityTimer);
+      _sbAuthCallbacks.forEach(function (cb) {
+        cb('SIGNED_OUT', null);
+      });
       return fetch(SUPA_URL + '/auth/v1/logout', {
         method: 'POST',
-        headers: _sbHeaders()
-      }).then(function () {
-        _sbToken = null;
-        _currentUser = null;
-        _ssAuth('signed-out', { source: 'signOut' });
-        _sbClearStoredSession();
-        localStorage.removeItem('ss_state');
-        sessionStorage.removeItem('ss_last_active');
-        // ── Session routing: clear the login flag so next page load shows landing ─
-        try {
-          sessionStorage.removeItem('ss_logged_in');
-        } catch (e) {}
-        try {
-          sessionStorage.removeItem('ss_portal_tab');
-        } catch (e) {}
-        clearTimeout(_activityTimer);
-        _sbAuthCallbacks.forEach(function (cb) {
-          cb('SIGNED_OUT', null);
-        });
+        headers: logoutHeaders
+      }).catch(function () {});
+    },
+    // Send a password-recovery email. Supabase renders the "Reset Password"
+    // email template (configured in dashboard) with a magic link to
+    // SITE_URL + redirectTo + #access_token=...&type=recovery.
+    recover: async function (email, redirectTo) {
+      var url = SUPA_URL + '/auth/v1/recover';
+      if (redirectTo) url += '?redirect_to=' + encodeURIComponent(redirectTo);
+      var r = await fetch(url, {
+        method: 'POST',
+        headers: _sbHeaders(),
+        body: JSON.stringify({ email: email })
       });
+      var d = await r.json().catch(function () { return {}; });
+      return { ok: r.ok, status: r.status, body: d };
+    },
+    // Update the password of the currently-authenticated user. Used by the
+    // reset-password page after Supabase has set a recovery JWT via the email
+    // link redirect.
+    updatePassword: async function (newPassword, recoveryToken) {
+      var headers = recoveryToken
+        ? Object.assign({}, _sbHeaders(), { Authorization: 'Bearer ' + recoveryToken })
+        : _sbHeaders();
+      var r = await fetch(SUPA_URL + '/auth/v1/user', {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify({ password: newPassword })
+      });
+      var d = await r.json().catch(function () { return {}; });
+      return { ok: r.ok, status: r.status, body: d };
     },
     getUser: function () {
       if (!_sbToken) return Promise.resolve(null);
@@ -203,9 +339,13 @@ var _sb = {
       _sbAuthCallbacks.push(cb);
     },
     refreshSession: function () {
+      // Coalesce concurrent refreshes onto one network round-trip (see
+      // _sbRefreshInFlight note above) so parallel callers can't race the
+      // refresh-token rotation and clobber each other's session.
+      if (_sbRefreshInFlight) return _sbRefreshInFlight;
       var ref = _sbStoredRefresh();
       if (!ref) return Promise.resolve(null);
-      return fetch(SUPA_URL + '/auth/v1/token?grant_type=refresh_token', {
+      _sbRefreshInFlight = fetch(SUPA_URL + '/auth/v1/token?grant_type=refresh_token', {
         method: 'POST',
         headers: _sbHeaders(),
         body: JSON.stringify({ refresh_token: ref })
@@ -226,12 +366,24 @@ var _sb = {
         })
         .catch(function () {
           return null;
+        })
+        .finally(function () {
+          _sbRefreshInFlight = null;
         });
+      return _sbRefreshInFlight;
     },
     restoreSession: function () {
       _ssAuth('checking', { source: 'restoreSession' });
       var token = _sbStoredToken();
       if (!token) {
+        if (_sbStoredRefresh()) {
+          window._sbSessionReady = _sb.auth.refreshSession().then(function (user) {
+            if (user && user.id) return _settle(user, 'refreshSession');
+            _ssAuth('signed-out', { source: 'restoreSession' });
+            return null;
+          });
+          return window._sbSessionReady;
+        }
         _ssAuth('signed-out', { source: 'restoreSession' });
         window._sbSessionReady = Promise.resolve(null);
         return window._sbSessionReady;
@@ -364,6 +516,43 @@ function _resetActivityTimer() {
   document.addEventListener(ev, _resetActivityTimer, { passive: true });
 });
 
+// ── Welcome email (first successful login) ─────────────────────────────────
+// Fire-and-forget call to the python-ai service, which sends a one-time
+// welcome email over Zoho SMTP. Sent-once truth lives in the auth user's
+// app_metadata (welcome_email_sent_at), set server-side; the localStorage key
+// only avoids repeating the network call on every app entry.
+function _maybeSendWelcomeEmail(user) {
+  if (!user || !user.id || !user.email) return;
+  var key = 'ss_welcome_mail_' + user.id;
+  try {
+    if (localStorage.getItem(key)) return;
+  } catch (e) {}
+  if (user.app_metadata && user.app_metadata.welcome_email_sent_at) {
+    try { localStorage.setItem(key, '1'); } catch (e) {}
+    return;
+  }
+  var base = window.AI_SERVICE_URL || '';
+  if (!base || !_sbToken) return;
+  // Defer so this never competes with app boot for bandwidth.
+  setTimeout(function () {
+    fetch(base + '/welcome-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _sbToken },
+      body: JSON.stringify({
+        language: window._lang || localStorage.getItem('ss_lang') || 'en'
+      })
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        // "sent" and "already_sent" both mean: never ask again on this device.
+        if (d && (d.sent || d.reason === 'already_sent')) {
+          try { localStorage.setItem(key, '1'); } catch (e) {}
+        }
+      })
+      .catch(function () { /* retried on a later login */ });
+  }, 4000);
+}
+
 // Global auth helpers
 function _enterApp(user) {
   _currentUser = user;
@@ -392,13 +581,23 @@ function _enterApp(user) {
   }
   // ───────────────────────────────────────────────────────────────────────
 
+  // First-login welcome email. After the routing guard on purpose: the
+  // first-ever _enterApp reloads the page immediately (above), which would
+  // cancel the deferred request — the post-reload _enterApp lands here.
+  _maybeSendWelcomeEmail(user);
+
   // Sync nightBtn safely — nightOn may not be defined yet if app.js hasn't run
   var _nb = document.getElementById('nightBtn');
   var _nightOn =
     typeof nightOn !== 'undefined' ? nightOn : sessionStorage.getItem('ss_dark') !== '0';
   if (_nb) _nb.textContent = _nightOn ? '☀️' : '🌙';
   var modal = document.getElementById('authModal');
-  if (modal) modal.style.display = 'none';
+  document.body.classList.add('minallo-app-active');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.style.pointerEvents = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
 
   // Only reset to portal view on the first entry into the app.
   // If the user is already in the app (Stud.IP or files view), a repeated
@@ -471,9 +670,23 @@ function _enterApp(user) {
       }[_targetSec] || 'psbDashboard'
     );
   if (typeof showPortalSection === 'function') showPortalSection(_targetSec);
+  if (typeof window._ssAfterFeature === 'function') {
+    window._ssAfterFeature(_targetSec, function () {
+      if (_targetSec === 'aipage' && typeof window._aipRefreshSidebar === 'function') window._aipRefreshSidebar();
+      if (_targetSec === 'chat' && typeof window._chatInit === 'function') window._chatInit();
+      if (_targetSec === 'german' && typeof window._glBackToHome === 'function') window._glBackToHome();
+    });
+  }
   if (typeof updateAuthIndicator === 'function') updateAuthIndicator(user);
   if (user && typeof loadUserData === 'function') loadUserData(user.id);
-  if (typeof window._ssHideSplash === 'function') window._ssHideSplash();
+  // Hydrate localStorage from DB so study progress & lounge stats survive
+  // clearing browser storage. No-op if progress-sync hasn't loaded yet —
+  // the ss-ready listener inside progress-sync.ts covers the page-reload path.
+  try {
+    if (window._progressSync && typeof window._progressSync.loadAndHydrate === 'function') {
+      window._progressSync.loadAndHydrate().catch(function () {});
+    }
+  } catch (e) {}
   _ssAuth('entered', { source: 'enterApp', user: user });
   if (_SS && typeof _SS.markReady === 'function')
     _SS.markReady('auth', { userId: user && user.id });
@@ -522,6 +735,7 @@ function _enterApp(user) {
 
 function _showModal() {
   _sbToken = null;
+  window._sbToken = null;
   _currentUser = null;
   _ssAuth('signed-out', { source: 'showModal' });
 
@@ -534,10 +748,20 @@ function _showModal() {
   sessionStorage.removeItem('ss_show_auth');
   sessionStorage.removeItem('ss_portal_tab');
 
-  if (typeof window._ssHideSplash === 'function') window._ssHideSplash();
+  // Wipe any portal-* history state router.js left behind. Otherwise the URL
+  // shows #portal=dashboard while the user is on the auth screen, and Back
+  // pops to that entry → _ssApplyHistoryState shows the portal without auth.
+  try {
+    history.replaceState(null, '', window.location.pathname);
+  } catch (e) {}
 
   var modal = document.getElementById('authModal');
-  if (modal) modal.style.display = 'flex';
+  document.body.classList.remove('minallo-app-active');
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.style.pointerEvents = '';
+    modal.removeAttribute('aria-hidden');
+  }
 
   var portal = document.getElementById('portal');
   if (portal) {
@@ -556,23 +780,34 @@ function _sbRefreshAccessToken() {
     ref = _sbStoredRefresh();
   } catch (e) {}
   if (!ref) return Promise.resolve(null);
+  // 5s timeout: this fetch gates the whole boot on refresh. Without a
+  // timeout, any Supabase auth slowness (rate-limit, transient outage,
+  // proxy hiccup) leaves the user stuck on the splash forever because
+  // _verifyAndEnter waits on this promise.
+  var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = controller ? setTimeout(function () { controller.abort(); }, 5000) : null;
   return fetch(SUPA_URL + '/auth/v1/token?grant_type=refresh_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: SUPA_KEY },
-    body: JSON.stringify({ refresh_token: ref })
+    body: JSON.stringify({ refresh_token: ref }),
+    signal: controller ? controller.signal : undefined
   })
     .then(function (r) {
+      if (timer) clearTimeout(timer);
       return r.json();
     })
     .then(function (d) {
       if (d && d.access_token) {
         _sbToken = d.access_token;
+        window._sbToken = _sbToken;
         _sbStoreSession(d.access_token, d.refresh_token || ref);
         return d.access_token;
       }
       return null;
     })
-    .catch(function () {
+    .catch(function (err) {
+      if (timer) clearTimeout(timer);
+      console.warn('[Auth] refresh failed/timed out:', err && err.name);
       return null;
     });
 }
@@ -581,6 +816,7 @@ function _verifyAndEnter(tok) {
   _ssAuth('checking', { source: 'verifyAndEnter' });
   _ssEmit('auth:verify:start', { hasToken: !!tok });
   _sbToken = tok;
+  window._sbToken = tok;
 
   function _giveUp() {
     _ssAuth('failed', { source: 'verifyAndEnter' });
@@ -597,7 +833,13 @@ function _verifyAndEnter(tok) {
         else _giveUp();
       });
     }
-    _sb.auth.getUser()
+    // 5s timeout: _sb.auth.getUser hits /auth/v1/user and has no built-in
+    // timeout. Without this race, any auth endpoint slowness leaves the
+    // boot waiting on this promise forever and the splash never hides.
+    var timeoutPromise = new Promise(function (_resolve, reject) {
+      setTimeout(function () { reject(new Error('getUser timeout')); }, 5000);
+    });
+    Promise.race([_sb.auth.getUser(), timeoutPromise])
       .then(function (user) {
         if (user && user.id) {
           _ssEmit('auth:verify:success', { userId: user.id, refreshed: refreshedAlready });
@@ -606,7 +848,12 @@ function _verifyAndEnter(tok) {
           _onFail();
         }
       })
-      .catch(_onFail);
+      .catch(function (err) {
+        if (err && err.message === 'getUser timeout') {
+          console.warn('[Auth] getUser timed out — falling back to sign-in modal');
+        }
+        _onFail();
+      });
   }
 
   if (_jwtAliveEnough(tok)) {
@@ -637,6 +884,7 @@ window.addEventListener('ss-ready', function () {
 
   function _clearSavedAuth() {
     _sbToken = null;
+    window._sbToken = null;
     _currentUser = null;
     _ssAuth('signed-out', { source: 'clearSavedAuth' });
 
@@ -655,8 +903,17 @@ window.addEventListener('ss-ready', function () {
   function _showModalClean() {
     _clearSavedAuth();
 
+    try {
+      history.replaceState(null, '', window.location.pathname);
+    } catch (e) {}
+
     var modal = document.getElementById('authModal');
-    if (modal) modal.style.display = 'flex';
+    document.body.classList.remove('minallo-app-active');
+    if (modal) {
+      modal.style.display = 'flex';
+      modal.style.pointerEvents = '';
+      modal.removeAttribute('aria-hidden');
+    }
 
     var portal = document.getElementById('portal');
     if (portal) {
@@ -810,6 +1067,15 @@ window.addEventListener('ss-ready', function () {
     _ssAuth('checking', { source: 'persistentToken' });
     console.log('[Auth] → path: persistent sb_token restore');
     _verifyAndEnter(savedTok);
+    return;
+  }
+  if (_sbStoredRefresh()) {
+    _ssAuth('checking', { source: 'persistentRefresh' });
+    console.log('[Auth] persistent refresh restore');
+    _sbRefreshAccessToken().then(function (newTok) {
+      if (newTok) _verifyAndEnter(newTok);
+      else _showModalClean();
+    });
     return;
   }
 

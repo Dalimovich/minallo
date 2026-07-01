@@ -1,6 +1,126 @@
 // Minallo auth/bootstrap shell.
 // Runs before supabase.js and loader.js so they can read the boot route.
 
+// Install console-log filter IMMEDIATELY so the noisy boot-time logs from
+// supabase.js (Supabase REST client ready, [Auth] path traces) are
+// silenced in production. Real users don't need to see implementation
+// details — and our console was noisier than YouTube/Cloudflare's
+// because we shipped dev logs to prod. Set localStorage.MINALLO_DEBUG=1
+// to re-enable everything when you're actually debugging.
+(function () {
+  try {
+    if (localStorage.getItem('MINALLO_DEBUG') === '1') return;
+  } catch (e) { return; }
+  var origLog = console.log.bind(console);
+  var origWarn = console.warn.bind(console);
+  var devPrefixes = [
+    'Supabase REST client',
+    'Supabase reachable',
+    'app.js + modules loaded',
+    'js/ai.js loaded',
+    '✓ js/ai.js loaded',
+    '✓ New landing page',
+    '[Auth]',
+    '[router]',
+    '[loadUserData]',
+    '[loader]',
+    '[storage]',
+    '[restore]',
+    '[watchdog]',
+  ];
+  function isDev(args) {
+    var first = args && args[0];
+    if (typeof first !== 'string') return false;
+    for (var i = 0; i < devPrefixes.length; i++) {
+      if (first.indexOf(devPrefixes[i]) === 0) return true;
+    }
+    return false;
+  }
+  console.log = function () {
+    if (isDev(arguments)) return;
+    origLog.apply(console, arguments);
+  };
+  console.warn = function () {
+    if (isDev(arguments)) return;
+    origWarn.apply(console, arguments);
+  };
+})();
+
+function _ssForceSplashOff(reason) {
+  try { document.body.setAttribute('data-ss-ready', '1'); } catch (e) {}
+  try {
+    var splash = document.getElementById('ss-splash');
+    if (splash) splash.style.display = 'none';
+  } catch (e) {}
+  if (reason) console.error('[watchdog] ' + reason);
+}
+
+// Escape hatch for state-restore hangs: visit /?reset=1 to wipe the
+// localStorage keys that drive boot-time course/file restore, then
+// reload to a clean slate. Strips the query AND the hash (the hash is
+// restored from ss_state, but if we don't drop it now the router still
+// reads it as a deep-link target). Sets ss_reset_done so the watchdog
+// doesn't immediately re-fire and re-redirect into an infinite loop.
+(function () {
+  try {
+    var qp = new URLSearchParams(window.location.search);
+    if (qp.get('reset') === '1') {
+      try { localStorage.removeItem('ss_state'); } catch (e) {}
+      try { localStorage.removeItem('ss_last_section'); } catch (e) {}
+      try { sessionStorage.removeItem('ss_portal_tab'); } catch (e) {}
+      // Auth tokens too: persistent-refresh restore on boot is itself a
+      // known hang source (Supabase refresh fetch w/ no timeout — see
+      // _sbRefreshAccessToken). Without clearing these, ?reset=1 sends
+      // the user right back into the same hang path.
+      try { localStorage.removeItem('sb_sess_token'); } catch (e) {}
+      try { localStorage.removeItem('sb_sess_refresh'); } catch (e) {}
+      try { sessionStorage.removeItem('sb_sess_token'); } catch (e) {}
+      try { sessionStorage.removeItem('ss_logged_in'); } catch (e) {}
+      try { sessionStorage.setItem('ss_reset_done', '1'); } catch (e) {}
+      history.replaceState(null, '', window.location.pathname);
+    }
+  } catch (e) {}
+})();
+
+// Splash watchdog: if ss-ready hasn't fired 15s after boot, the app is
+// hung — most often on a state-restore (e.g. #course=... pointing at a
+// course whose data fails to load). Redirect to ?reset=1 to break the
+// cycle instead of leaving the user stuck on the splash forever.
+// One-shot per tab via sessionStorage so we never loop: if a reset has
+// already happened this tab and we're STILL hung, escalate to a hard
+// landing-page bounce instead of redirecting in circles.
+(function () {
+  var ready = false;
+  window.addEventListener('ss-ready', function () {
+    ready = true;
+    // A successful boot proves the one-shot reset is no longer needed.
+    // Leaving this flag sticky makes the next refresh take the "already
+    // reset" branch, which was the repeat-refresh splash trap.
+    try { sessionStorage.removeItem('ss_reset_done'); } catch (e) {}
+  }, { once: true });
+  setTimeout(function () {
+    if (ready) return;
+    var alreadyReset = false;
+    try { alreadyReset = sessionStorage.getItem('ss_reset_done') === '1'; } catch (e) {}
+    if (alreadyReset) {
+      // Reset already tried this tab and we're still hung. Do not trap the
+      // user behind the splash; reveal the page and let auth/router fall back.
+      _ssForceSplashOff('ss-ready never fired after reset — forcing splash off.');
+      return;
+    }
+    if (window.location.search.indexOf('reset=1') !== -1) return;
+    window.location.replace(window.location.pathname + '?reset=1');
+  }, 15000);
+
+  // Last local guard. loader.js also has a 35s hard fallback, but this file
+  // loads earlier and is classic JS, so it still protects users if module
+  // loading itself gets stuck or cached HTML still contains the splash.
+  setTimeout(function () {
+    if (ready) return;
+    _ssForceSplashOff('emergency splash fallback — 25s elapsed without ss-ready.');
+  }, 25000);
+})();
+
 (function () {
   var loggedIn = false;
 
@@ -37,10 +157,17 @@
 
   if (!loggedIn) {
     try {
-      // Tokens persist in localStorage now (so the user stays signed in
-      // across tab close). Fall back to sessionStorage for in-flight
-      // sessions from before this code deployed.
-      if (localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token')) {
+      // Stay-signed-in across browser restart: sessionStorage is volatile per
+      // tab, so after a real restart only the refresh token (in localStorage)
+      // remains. supabase.js's restoreSession() handles the refresh round-trip,
+      // but it only runs when we boot into the app shell — and the app shell
+      // only boots when loggedIn is true here. So treat presence of EITHER an
+      // access token OR a refresh token as "logged in" for boot routing.
+      if (
+        localStorage.getItem('sb_sess_token') ||
+        sessionStorage.getItem('sb_sess_token') ||
+        localStorage.getItem('sb_sess_refresh')
+      ) {
         loggedIn = true;
       }
     } catch (e) {}
@@ -52,15 +179,39 @@
     window.Minallo.emit('auth:boot-route', { loggedIn: loggedIn });
   }
 
+  // Honour the saved theme preference. Default to night when nothing is set
+  // (matches the prior site-wide force).
   try {
-    if (localStorage.getItem('ss_dark') === '0') document.body.classList.remove('night');
+    var saved = localStorage.getItem('ss_dark');
+    var nightOn = saved === null ? true : saved !== '0';
+    document.body.classList.toggle('night', nightOn);
+    if (saved === null) localStorage.setItem('ss_dark', '1');
   } catch (e) {}
 
-  if (loggedIn) {
-    var sp = document.getElementById('ss-splash');
-    if (sp) sp.style.display = 'flex';
+  // When the user isn't authenticated, the URL must read minallo.de/ only.
+  // Wipes any stale #portal=… hash or ?error=… query so the landing + auth
+  // modal never display app-route URLs. The app's own router pushes the
+  // section hash back after sign-in.
+  if (!loggedIn) {
+    var hash = window.location.hash;
+    var search = window.location.search;
+    var hasOAuthHashToken = hash && hash.indexOf('access_token') !== -1;
+    if ((hash || search) && !hasOAuthHashToken) {
+      try {
+        history.replaceState(null, '', window.location.pathname);
+      } catch (e) {}
+    }
   }
 })();
+
+// Back/forward cache (bfcache) defeats every in-memory auth check: Chrome
+// restores the cached, authenticated DOM without re-running scripts, so
+// _currentUser is still set and history-state restore re-mounts the app.
+// Always reload on bfcache restore — small flicker on Back navigation,
+// but the dashboard can never reappear post-logout from a cached entry.
+window.addEventListener('pageshow', function (e) {
+  if (e.persisted) window.location.reload();
+});
 
 window._onLoginSuccess = function () {
   try {
@@ -69,16 +220,6 @@ window._onLoginSuccess = function () {
   } catch (e) {}
   if (window.Minallo) window.Minallo.emit('auth:login-success', {});
   window.location.reload();
-};
-
-window._ssHideSplash = function () {
-  var sp = document.getElementById('ss-splash');
-  if (!sp || sp.style.display === 'none') return;
-  sp.classList.add('ss-splash-out');
-  setTimeout(function () {
-    sp.style.display = 'none';
-    sp.classList.remove('ss-splash-out');
-  }, 550);
 };
 
 var _CFG = window.MinalloConfig || {};
@@ -135,11 +276,14 @@ function _handleGoogleCredential(response) {
     })
     .then(function (d) {
       if (d && d.access_token) {
-        // Persistent across tab close (matches _sbStoreSession in supabase.js).
-        localStorage.setItem('sb_sess_token', d.access_token);
+        // Mirror _sbStoreSession in supabase.js exactly: short-lived bearer
+        // access token in sessionStorage (volatile per tab), refresh token
+        // in localStorage so we can refresh after a browser restart. Writing
+        // the access token to localStorage was a security inconsistency vs.
+        // the password-login path.
+        sessionStorage.setItem('sb_sess_token', d.access_token);
         if (d.refresh_token) localStorage.setItem('sb_sess_refresh', d.refresh_token);
-        sessionStorage.removeItem('sb_sess_token');
-        sessionStorage.removeItem('sb_sess_refresh');
+        localStorage.removeItem('sb_sess_token');
         localStorage.removeItem('sb_token');
         localStorage.removeItem('sb_refresh');
         if (window.Minallo)

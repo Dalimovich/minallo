@@ -103,6 +103,7 @@ export function addBotMsg(text: string): HTMLElement | null {
         ._ssEnsureKatex()
         .then(() => {
           if (window._renderMath && botBubble) window._renderMath(botBubble);
+          if (window._renderCode && botBubble) window._renderCode(botBubble);
         })
         .catch(() => {});
     }
@@ -167,6 +168,11 @@ export function serializeChatDOM(): Array<{ role: string; text: string }> {
     if (wrap.getAttribute('data-restored') === 'true') return;
     const bubble = wrap.querySelector('.ai-bubble') as HTMLElement | null;
     if (!bubble) return;
+    // Skip bubbles that are still streaming. data-raw is updated incrementally
+    // by ai-ask.ts so it's safe to read, but the bubble shouldn't enter the
+    // persisted history yet — finalize() writes the complete answer + clears
+    // the flag, and only then should saves include it.
+    if (bubble.getAttribute('data-streaming') === 'true') return;
     const role = bubble.classList.contains('user') ? 'user' : 'assistant';
     const text = (
       bubble.getAttribute('data-raw') ||

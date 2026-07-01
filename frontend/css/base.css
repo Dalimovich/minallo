@@ -49,15 +49,17 @@
   --card: #fff;
   --text: #2d2d2d;
   --muted: #888;
-  --sb-w: 240px;
-  --sb-collapsed: 58px;
+  --sb-w: 264px;
+  --sb-collapsed: 80px;
   --ai-w: 340px;
   --topbar-h: 54px;
   --shadow: 0 2px 14px rgba(0, 0, 0, 0.08);
   --border: #dbeafe;
-  --dp-bg: linear-gradient(135deg, #eff6ff 0%, #f8fafc 48%, #e0f2fe 100%);
-  --dp-solid: #eff6ff;
+  --minallo-page-bg: #f8fafc;
+  --dp-bg: var(--minallo-page-bg);
+  --dp-solid: var(--minallo-page-bg);
   --dp-modal: linear-gradient(135deg, #ffffff, #eff6ff);
+  --app-bg: var(--minallo-page-bg);
   /* adaptive semantic tokens */
   --glass-bg: rgba(255, 255, 255, 0.55);
   --glass-border: rgba(37, 99, 235, 0.2);

@@ -1,11 +1,37 @@
 // Supabase REST API helper using the service-role key.
 // Reads SUPABASE_URL from env at call time so this module is safe to require at load time.
+//
+// Uses Web `fetch` (not Node `https.request`) so this runs on Workers too —
+// unenv's nodejs_compat shim doesn't implement https.request.
 
-import https from 'https';
 import { requireEnv } from './env';
 import type { HttpHeaders, SupaResult } from './types';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+
+const _DEFAULT_TIMEOUT_MS = 12000;
+
+async function _fetchJson<T>(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<SupaResult<T>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    const text = await res.text();
+    let body: T;
+    try {
+      body = (text ? JSON.parse(text) : null) as T;
+    } catch {
+      body = text as unknown as T;
+    }
+    return { status: res.status, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export function supaRequest<T = unknown>(
   method: HttpMethod,
@@ -14,42 +40,23 @@ export function supaRequest<T = unknown>(
   serviceKey: string,
   extraHeaders?: HttpHeaders
 ): Promise<SupaResult<T>> {
-  return new Promise<SupaResult<T>>(function (resolve, reject) {
-    const supaUrl = requireEnv('SUPABASE_URL');
-    const bodyStr = body ? JSON.stringify(body) : '';
-    const url = new URL(supaUrl);
-    const headers: HttpHeaders = {
-      apikey: serviceKey,
-      Authorization: 'Bearer ' + serviceKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(extraHeaders || {}),
-      ...(bodyStr ? { 'Content-Length': String(Buffer.byteLength(bodyStr)) } : {})
-    };
-    const req = https.request(
-      {
-        hostname: url.hostname,
-        path: '/rest/v1/' + path,
-        method,
-        headers
-      },
-      function (res) {
-        let data = '';
-        res.on('data', function (c) { data += c; });
-        res.on('end', function () {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: (data ? JSON.parse(data) : null) as T });
-          } catch {
-            resolve({ status: res.statusCode ?? 0, body: data as unknown as T });
-          }
-        });
-      }
-    );
-    req.setTimeout(12000, function () { req.destroy(new Error('Supabase REST request timed out')); });
-    req.on('error', reject);
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  });
+  const supaUrl = requireEnv('SUPABASE_URL');
+  const headers: HttpHeaders = {
+    apikey: serviceKey,
+    Authorization: 'Bearer ' + serviceKey,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(extraHeaders || {})
+  };
+  return _fetchJson<T>(
+    supaUrl.replace(/\/$/, '') + '/rest/v1/' + path,
+    {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined
+    },
+    _DEFAULT_TIMEOUT_MS
+  );
 }
 
 // Supabase Auth Admin API (e.g. /auth/v1/admin/users)
@@ -58,34 +65,18 @@ export function supaAuthAdminRequest<T = unknown>(
   path: string,
   serviceKey: string
 ): Promise<SupaResult<T>> {
-  return new Promise<SupaResult<T>>(function (resolve, reject) {
-    const supaUrl = requireEnv('SUPABASE_URL');
-    const req = https.request(
-      {
-        hostname: new URL(supaUrl).hostname,
-        path: '/auth/v1/admin/' + path,
-        method,
-        headers: {
-          apikey: serviceKey,
-          Authorization: 'Bearer ' + serviceKey
-        }
-      },
-      function (res) {
-        let data = '';
-        res.on('data', function (c) { data += c; });
-        res.on('end', function () {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: (data ? JSON.parse(data) : null) as T });
-          } catch {
-            resolve({ status: res.statusCode ?? 0, body: data as unknown as T });
-          }
-        });
+  const supaUrl = requireEnv('SUPABASE_URL');
+  return _fetchJson<T>(
+    supaUrl.replace(/\/$/, '') + '/auth/v1/admin/' + path,
+    {
+      method,
+      headers: {
+        apikey: serviceKey,
+        Authorization: 'Bearer ' + serviceKey
       }
-    );
-    req.setTimeout(12000, function () { req.destroy(new Error('Supabase Auth request timed out')); });
-    req.on('error', reject);
-    req.end();
-  });
+    },
+    _DEFAULT_TIMEOUT_MS
+  );
 }
 
 export interface ActiveSubscription {

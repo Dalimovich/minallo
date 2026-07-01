@@ -16,7 +16,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
-from ..services.indexing import IndexingError, get_index_status, index_document
+from ..services.indexing import IndexingError, get_index_status, run_document_indexing
+from ..services.understanding_backfill import backfill_document, backfill_pending
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ def _verify_owner(document_id: str, user_id: str) -> dict:
 
 
 @router.post("/index-document", response_model=IndexDocumentResponse)
-async def index_document_endpoint(
+def index_document_endpoint(
     payload: IndexDocumentRequest,
     background: BackgroundTasks,
 ) -> IndexDocumentResponse:
@@ -94,7 +95,7 @@ async def index_document_endpoint(
 
     def _run() -> None:
         try:
-            index_document(payload.documentId, force=payload.force)
+            run_document_indexing(payload.documentId, force=payload.force)
         except IndexingError:
             # Already recorded on the row by indexing.py — just log and move on.
             log.warning("indexing failed for document %s", payload.documentId)
@@ -112,10 +113,32 @@ async def index_document_endpoint(
 
 
 @router.get("/document-index-status", response_model=IndexDocumentResponse)
-async def index_status_endpoint(
+def index_status_endpoint(
     documentId: str,
     userId: str,
 ) -> IndexDocumentResponse:
     """Poll-friendly status lookup. Same owner check as the trigger endpoint."""
     _verify_owner(documentId, userId)
     return IndexDocumentResponse(**get_index_status(documentId))
+
+
+class BackfillUnderstandingRequest(BaseModel):
+    userId: str | None = None
+    courseId: str | None = None
+    documentId: str | None = None
+    limit: int = 200
+    force: bool = False
+
+
+@router.post("/backfill-understanding")
+def backfill_understanding_endpoint(payload: BackfillUnderstandingRequest) -> dict:
+    """Recompute the Document Understanding Layer from stored page text WITHOUT
+    re-embedding. Either one documentId, or a batch scoped by user/course."""
+    if payload.documentId:
+        return backfill_document(payload.documentId, force=payload.force)
+    return backfill_pending(
+        user_id=payload.userId,
+        course_id=payload.courseId,
+        limit=max(1, min(int(payload.limit or 200), 1000)),
+        force=payload.force,
+    )

@@ -7,20 +7,42 @@
   var _state = {};
 
   // ── DB helpers (shared via js/utils/db-helpers.js) ──────────────────────────
-  function _supaHeaders() { return window._ssDb.supaHeaders(); }
-  function _supaUrl()     { return window._ssDb.supaUrl(); }
-  function _userId()      { return window._ssDb.userId(); }
+  function _supaHeaders() {
+    if (window._ssDb && window._ssDb.supaHeaders) return window._ssDb.supaHeaders();
+    return {
+      'Content-Type': 'application/json',
+      apikey: window._SAKEY || '',
+      Authorization: 'Bearer ' + (window._sbToken || '')
+    };
+  }
+  function _supaUrl() {
+    if (window._ssDb && window._ssDb.supaUrl) return window._ssDb.supaUrl();
+    return String(window._SUPA || '').replace(/\/$/, '');
+  }
+  function _userId() {
+    if (window._ssDb && window._ssDb.userId) return window._ssDb.userId();
+    try {
+      var part = (window._sbToken || '').split('.')[1];
+      if (!part) return null;
+      return (JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))).sub) || null;
+    } catch (e) { return null; }
+  }
 
+  // Resolves to an array on success (possibly empty), or null on failure
+  // (network blip, non-2xx). Callers MUST treat null as "unknown, retry later"
+  // and NOT cache it as "this course has no decks" — otherwise a transient
+  // error permanently blanks the deck list until a full page reload.
   function _dbLoadDecks(courseId) {
+    if (!_supaUrl()) return Promise.resolve([]);
     var url = _supaUrl() + '/rest/v1/flashcard_decks?course_id=eq.' + encodeURIComponent(courseId) + '&order=created_at.desc&limit=50';
     return fetch(url, { headers: _supaHeaders() })
-      .then(function(r) { return r.ok ? r.json() : []; })
-      .catch(function() { return []; });
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; });
   }
 
   function _dbSaveDeck(courseId, deck) {
     var uid = _userId();
-    if (!uid) return Promise.resolve(null);
+    if (!uid || !_supaUrl()) return Promise.resolve(null);
     var payload = { user_id: uid, course_id: courseId, name: deck.name, cards: deck.cards };
     return fetch(_supaUrl() + '/rest/v1/flashcard_decks', {
       method: 'POST',
@@ -46,6 +68,75 @@
       method: 'DELETE',
       headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=minimal' })
     }).catch(function() {});
+  }
+
+  // ── Spaced-repetition review state (Stage 3) ────────────────────────────────
+  // Review state lives in flashcard_review_state, keyed by (deck_id, card_index)
+  // where card_index is the position within the deck's `cards` array. Cards with
+  // NO row are treated as "new, due now" — they keep natural deck order rather
+  // than all becoming simultaneously overdue. Persistence goes through the
+  // server-side SM-2 endpoint so interval/ease growth is computed in one place.
+  function _backendUrl() { return (window.BACKEND_URL || ''); }
+  function _authHeaders() { return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') }; }
+
+  // Fetch the rated cards for a deck. Returns a map: cardIndex -> reviewRow.
+  function _dbLoadReviews(dbDeckId) {
+    if (!dbDeckId) return Promise.resolve({});
+    return fetch(_backendUrl() + '/api/study/flashcard-review?deckId=' + encodeURIComponent(dbDeckId), {
+      headers: _authHeaders()
+    })
+      .then(function(r) { return r.ok ? r.json() : { reviews: [] }; })
+      .then(function(data) {
+        var map = {};
+        (data && data.reviews || []).forEach(function(row) {
+          if (row && typeof row.card_index === 'number') map[row.card_index] = row;
+        });
+        return map;
+      })
+      .catch(function() { return {}; });
+  }
+
+  // Persist a single rating. Returns the updated review row (or null).
+  function _dbSaveReview(dbDeckId, cardIndex, rating) {
+    if (!dbDeckId) return Promise.resolve(null);
+    return fetch(_backendUrl() + '/api/study/flashcard-review', {
+      method: 'POST',
+      headers: _authHeaders(),
+      body: JSON.stringify({ deckId: dbDeckId, cardIndex: cardIndex, rating: rating })
+    })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { return data && data.review ? data.review : null; })
+      .catch(function() { return null; });
+  }
+
+  // Build the study order for a deck from its review map.
+  //   1. Due reviewed cards (have a row, due_at <= now), earliest due first.
+  //   2. New cards (no row) in natural deck order.
+  // Reviewed-but-not-yet-due cards are dropped from this session (nothing to do).
+  // If nothing is due and nothing is new, fall back to the whole deck in order so
+  // the learner can always study (e.g. re-review ahead of schedule).
+  function _buildStudyOrder(deck) {
+    var reviews = deck._reviews || {};
+    var now = Date.now();
+    var due = [];
+    var fresh = [];
+    var later = []; // reviewed but not yet due — studied LAST, never dropped
+    for (var i = 0; i < deck.cards.length; i++) {
+      var row = reviews[i];
+      if (!row) { fresh.push(i); continue; }
+      var dueAt = row.due_at ? new Date(row.due_at).getTime() : 0;
+      if (dueAt <= now) due.push({ idx: i, due: dueAt });
+      else later.push({ idx: i, due: dueAt });
+    }
+    due.sort(function(a, b) { return a.due - b.due; });
+    later.sort(function(a, b) { return a.due - b.due; });
+    // Due first (most overdue first), then new, then everything else. The
+    // session always covers the WHOLE deck so the count matches the "N cards"
+    // label — previously reviewed-not-yet-due cards were dropped, which made a
+    // 10-card deck show only 7.
+    return due.map(function(d) { return d.idx; })
+      .concat(fresh)
+      .concat(later.map(function(d) { return d.idx; }));
   }
 
   function _docStatusSummary(docs) {
@@ -101,7 +192,6 @@
         '<div class="fc-study-header">' +
           '<span class="fc-study-icon">&#x1F4DA;</span>' +
           '<div class="fc-study-meta"><div class="fc-study-deck-name" id="fcStudyName">Select a deck</div><div class="fc-study-deck-count" id="fcStudyCount">0 cards</div></div>' +
-          '<button class="fc-btn fc-btn-secondary fc-study-settings" id="fcStudySettingsBtn" type="button"><span class="fc-btn-icon">&#x2699;</span> Study settings</button>' +
         '</div>' +
         '<div class="fc-card-stage" id="fcCardStage"><div class="fc-card-empty">Pick a deck to start studying.</div></div>' +
         '<div class="fc-study-progress">' +
@@ -117,11 +207,48 @@
     '</div>' +
   '</div>';
 
+  function _translateStatic(root) {
+    if (!root || typeof _t !== 'function') return;
+    var gen = root.querySelector('#fcGenerateBtn');
+    if (gen) gen.textContent = _t('fc_generate');
+    var search = root.querySelector('#fcSearchInput');
+    if (search) search.placeholder = _t('fc_search_ph');
+    var sort = root.querySelector('#fcSortSelect');
+    if (sort) sort.setAttribute('aria-label', _t('fc_sort_aria'));
+    [['recent', 'fc_sort_recent'], ['name', 'fc_sort_name'], ['size', 'fc_sort_size'], ['created', 'fc_sort_created']].forEach(function (pair) {
+      var opt = root.querySelector('#fcSortSelect option[value="' + pair[0] + '"]');
+      if (opt) opt.textContent = _t(pair[1]);
+    });
+    var view = root.querySelector('.fc-view-toggle');
+    if (view) view.setAttribute('aria-label', _t('fc_view_mode_aria'));
+    var grid = root.querySelector('.fc-view-btn[data-view="grid"]');
+    if (grid) grid.setAttribute('aria-label', _t('fc_grid_view_aria'));
+    var list = root.querySelector('.fc-view-btn[data-view="list"]');
+    if (list) list.setAttribute('aria-label', _t('fc_list_view_aria'));
+    var empty = root.querySelector('.fc-empty');
+    if (empty) empty.textContent = _t('fc_loading');
+    var all = root.querySelector('#fcViewAllRow');
+    if (all) all.childNodes[1].textContent = ' ' + _t('fc_view_all');
+    var name = root.querySelector('#fcStudyName');
+    if (name) name.textContent = _t('fc_select_deck');
+    var count = root.querySelector('#fcStudyCount');
+    if (count) count.textContent = _t('fc_zero_cards');
+    var pick = root.querySelector('.fc-card-empty');
+    if (pick) pick.textContent = _t('fc_pick_deck');
+    var prev = root.querySelector('#fcPrevBtn');
+    if (prev) prev.textContent = _t('fc_previous');
+    var flip = root.querySelector('#fcFlipBtn');
+    if (flip) flip.textContent = _t('fc_flip');
+    var next = root.querySelector('#fcNextBtn');
+    if (next) next.textContent = _t('fc_next');
+  }
+
   window.mountFlashcards = function (target, course, options) {
     if (!target) return;
     options = options || {};
     target.innerHTML = _TEMPLATE_HTML;
     var root = target.querySelector('[data-flashcards-root]');
+    _translateStatic(root);
     if (root) _initShell(root, course, options);
   };
 
@@ -162,6 +289,94 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  // The generator sometimes drops raw Unicode math glyphs (φ, ∑, ‖, ≤ …) inside
+  // math mode, where KaTeX hard-fails even with strict:false and dumps the raw
+  // source in red. Map the common offenders to real LaTeX commands.
+  var _FC_MATH_UNICODE = {
+    'φ': '\\varphi', 'ϕ': '\\phi', 'Φ': '\\Phi',
+    'α': '\\alpha', 'β': '\\beta', 'γ': '\\gamma', 'Γ': '\\Gamma',
+    'δ': '\\delta', 'Δ': '\\Delta', '∆': '\\Delta',
+    'ε': '\\varepsilon', 'ζ': '\\zeta', 'η': '\\eta', 'θ': '\\theta',
+    'κ': '\\kappa', 'λ': '\\lambda', 'μ': '\\mu', 'ν': '\\nu', 'ξ': '\\xi',
+    'π': '\\pi', 'Π': '\\Pi', 'ρ': '\\rho', 'σ': '\\sigma', 'Σ': '\\Sigma',
+    'τ': '\\tau', 'χ': '\\chi', 'ψ': '\\psi', 'ω': '\\omega', 'Ω': '\\Omega',
+    '∑': '\\sum', '∏': '\\prod', '∫': '\\int', '√': '\\sqrt', '∂': '\\partial',
+    '∇': '\\nabla', '∞': '\\infty',
+    '≤': '\\le', '≥': '\\ge', '≠': '\\ne', '≈': '\\approx', '≡': '\\equiv',
+    '±': '\\pm', '∓': '\\mp', '×': '\\times', '÷': '\\div', '·': '\\cdot',
+    '→': '\\to', '←': '\\leftarrow', '↔': '\\leftrightarrow', '⇒': '\\Rightarrow', '⇔': '\\Leftrightarrow',
+    '∈': '\\in', '∉': '\\notin', '⊂': '\\subset', '⊆': '\\subseteq', '∪': '\\cup', '∩': '\\cap',
+    '∀': '\\forall', '∃': '\\exists', '∅': '\\emptyset',
+    '‖': '\\|', '∥': '\\parallel', '⊥': '\\perp', '∝': '\\propto', '°': '^{\\circ}'
+  };
+  var _FC_MATH_RE = new RegExp('[' + Object.keys(_FC_MATH_UNICODE).join('').replace(/\s/g, '') + ']', 'g');
+  function _fcMapChar(ch) {
+    var rep = _FC_MATH_UNICODE[ch];
+    if (!rep) return ch;
+    // A LaTeX control word needs a boundary after it, or "\le5" / "\sum2"
+    // would be misparsed. A trailing space is harmless in math mode.
+    return /[a-zA-Z]$/.test(rep) ? rep + ' ' : rep;
+  }
+  // Convert Unicode math glyphs to LaTeX, but NEVER inside a \text{…}/\mathrm{…}/
+  // \operatorname{…} group: there the raw glyph (e.g. φ) renders fine in text
+  // mode, whereas a math command like \varphi is invalid and prints literally.
+  // The generator routinely wraps variables as \text{φ}, so this guard is what
+  // actually makes those cards render.
+  var _FC_TOKEN_RE = /\\(?:text|mathrm|operatorname|mathbf|mathit)\s*\{[^{}]*\}/g;
+  function _fcConvertMath(seg) {
+    var out = '';
+    var last = 0;
+    var m;
+    _FC_TOKEN_RE.lastIndex = 0;
+    while ((m = _FC_TOKEN_RE.exec(seg)) !== null) {
+      out += seg.slice(last, m.index).replace(_FC_MATH_RE, _fcMapChar);
+      out += m[0]; // leave the \text{…} group untouched
+      last = m.index + m[0].length;
+    }
+    out += seg.slice(last).replace(_FC_MATH_RE, _fcMapChar);
+    return out;
+  }
+  // Only normalize INSIDE math delimiters — a German sentence containing "Δ" or
+  // "∑" as prose must stay as that glyph, not turn into "\Delta". The
+  // alternation lists $$…$$ before $…$ so display math wins at each position.
+  var _FC_SEG_RE = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/g;
+  function _fcNormalizeMath(s) {
+    if (!s) return s;
+    return String(s).replace(_FC_SEG_RE, _fcConvertMath);
+  }
+
+  // Some cards arrive with LaTeX but NO math delimiters at all (the generator
+  // forgot the $…$). KaTeX only renders inside delimiters, so that math shows as
+  // raw "\frac{…}" text. When a card has zero delimiters, wrap the recognized
+  // LaTeX atoms (\frac{}{}, \text{…}, \sqrt{…}, bare \commands, and ^/_ groups
+  // on a preceding token) in $…$ so they render. Conservative: only backslash
+  // commands and super/subscripts are touched — prose is never wrapped. If the
+  // card already uses delimiters, trust them and do nothing.
+  var _FC_ATOM_RE = /\\(?:frac|dfrac|tfrac|binom)\s*\{[^{}]*\}\s*\{[^{}]*\}|\\(?:text|mathrm|operatorname|sqrt|vec|hat|bar|overline|boldsymbol|mathbf|mathit)\s*\{[^{}]*\}|\\[a-zA-Z]+|[A-Za-zΑ-Ωα-ω0-9)\]}]\s*[\^_]\s*(?:\{[^{}]*\}|[A-Za-z0-9])/g;
+  function _fcAutoWrapMath(s) {
+    if (!s || /[$]|\\\(|\\\[/.test(s)) return s;
+    if (!/\\[a-zA-Z]|[\^_]\{|[\^_][A-Za-z0-9]/.test(s)) return s; // no LaTeX at all
+    return s.replace(_FC_ATOM_RE, function (m) { return '$' + m + '$'; });
+  }
+
+  // Card text for display.
+  // 1. NFKC-normalize: PDF extraction often yields Mathematical Alphanumeric
+  //    glyphs (𝜑 U+1D711, not φ U+03C6) that show as tofu boxes and that KaTeX
+  //    can't parse. NFKC folds them back to their canonical base (𝜑→φ, 𝑥→x).
+  // 2. Convert the generator's line breaks to a sentinel FIRST, so a literal
+  //    "\n" isn't mistaken for a LaTeX command by the steps below.
+  // 3. Auto-wrap bare LaTeX (cards with no delimiters), then map leftover
+  //    Unicode math glyphs to LaTeX inside math segments.
+  // 4. Escape, then restore the line breaks as <br>.
+  function _fcCardHtml(s) {
+    var t = String(s == null ? '' : s);
+    try { t = t.normalize('NFKC'); } catch (e) { /* very old engine */ }
+    t = t.replace(/\\n(?![A-Za-z])|\r\n|\r|\n/g, '');
+    t = _fcAutoWrapMath(t);
+    t = _fcNormalizeMath(t);
+    return _esc(t).replace(//g, '<br>');
   }
 
   function _initShell(root, course, options) {
@@ -249,7 +464,11 @@
           var d = state.decks.find(function (x) { return x.id === id; });
           if (!d) return;
           var name = window.prompt('Rename deck', d.name);
-          if (name && name.trim()) { d.name = name.trim(); renderAll(); }
+          if (name && name.trim()) {
+            d.name = name.trim();
+            _dbUpdateDeck(d._dbId, { name: d.name, updated_at: new Date().toISOString() });
+            renderAll();
+          }
         });
       });
       els.grid.querySelectorAll('[data-deck-menu]').forEach(function (b) {
@@ -276,8 +495,25 @@
       if (d) {
         d.flipped = false;
         if (typeof d.progress !== 'number') d.progress = 0;
+        d.pos = 0;             // position within the spaced-repetition study order
+        d.studyOrder = null;   // rebuilt once reviews load
+        // Load review state, then build the due-first / new-after order.
+        _dbLoadReviews(d._dbId).then(function(map) {
+          d._reviews = map;
+          d.studyOrder = _buildStudyOrder(d);
+          d.pos = 0;
+          if (state.activeId === id) renderStudy();
+        });
       }
       renderAll();
+    }
+
+    // Original card index currently shown, derived from the study order.
+    function _currentCardIndex(d) {
+      var order = (d && d.studyOrder) || null;
+      if (!order || !order.length) return Math.max(0, Math.min(d.progress || 0, d.cards.length - 1));
+      var pos = Math.max(0, Math.min(d.pos || 0, order.length - 1));
+      return order[pos];
     }
 
     function renderStudy() {
@@ -299,29 +535,88 @@
       if (els.studyName) els.studyName.textContent = d.name;
       if (els.studyCount) els.studyCount.textContent = d.cards.length + ' cards';
 
-      var idx = Math.max(0, Math.min(d.progress || 0, d.cards.length - 1));
+      // Spaced-repetition order: due-first then new. Until reviews load, the
+      // order is null and we fall back to natural deck order via progress.
+      var order = d.studyOrder && d.studyOrder.length ? d.studyOrder : null;
+      var sessionLen = order ? order.length : d.cards.length;
+      var pos = order
+        ? Math.max(0, Math.min(d.pos || 0, order.length - 1))
+        : Math.max(0, Math.min(d.progress || 0, d.cards.length - 1));
+      var idx = _currentCardIndex(d);
       var card = d.cards[idx];
       var face = d.flipped ? 'back' : 'front';
       var content = card[face] || '';
       var source = card.source || ((course && course.name) || 'Course');
 
+      // Rating buttons only after the card is flipped (the learner has seen the
+      // answer). Hidden on the front so they don't rate blindly.
+      var ratingHtml = '';
+      if (d.flipped) {
+        ratingHtml =
+          '<div class="fc-rating-row" id="fcRatingRow">' +
+            '<button class="fc-rating-btn fc-rate-again" data-rate="again" type="button">Again</button>' +
+            '<button class="fc-rating-btn fc-rate-hard" data-rate="hard" type="button">Hard</button>' +
+            '<button class="fc-rating-btn fc-rate-good" data-rate="good" type="button">Good</button>' +
+            '<button class="fc-rating-btn fc-rate-easy" data-rate="easy" type="button">Easy</button>' +
+          '</div>';
+      }
+
       if (els.cardStage) {
         els.cardStage.classList.add('has-card');
         els.cardStage.innerHTML =
-          '<div class="fc-card-progress-pill">Card ' + (idx + 1) + ' / ' + d.cards.length + '</div>' +
+          '<div class="fc-card-progress-pill">Card ' + (pos + 1) + ' / ' + sessionLen + '</div>' +
           '<div class="fc-card-source">' + _esc(source) + '</div>' +
-          '<div class="fc-card-content">' + _esc(content) + '</div>';
-        var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false };
+          '<div class="fc-card-content">' + _fcCardHtml(content) + '</div>' +
+          ratingHtml;
+        // strict:false lets KaTeX RENDER stray Unicode (φ, ∑, …) that the
+        // generator sometimes emits inside math mode instead of dumping the raw
+        // source in red error text.
+        // errorColor muted (not alarming red): if some content still won't parse
+        // after normalization, it degrades to quiet inline text instead of a wall
+        // of red.
+        var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false, strict: false, errorColor: '#9aa4b2' };
         var _doMath = function() { if (window.renderMathInElement) try { renderMathInElement(els.cardStage, _katexOpts); } catch(e) {} };
         if (window.renderMathInElement) { _doMath(); }
         else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doMath).catch(function(){}); }
+        // Wire rating buttons (stopPropagation so they don't trigger the
+        // card-stage flip handler).
+        els.cardStage.querySelectorAll('[data-rate]').forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            rateCard(d, btn.getAttribute('data-rate'));
+          });
+        });
       }
-      var pct = ((idx + 1) / d.cards.length) * 100;
+      var pct = ((pos + 1) / sessionLen) * 100;
       if (els.progressBar) els.progressBar.style.width = pct + '%';
-      if (els.progressLabel) els.progressLabel.textContent = (idx + 1) + ' / ' + d.cards.length;
-      if (els.prev) els.prev.disabled = idx === 0;
-      if (els.next) els.next.disabled = idx >= d.cards.length - 1;
+      if (els.progressLabel) els.progressLabel.textContent = (pos + 1) + ' / ' + sessionLen;
+      if (els.prev) els.prev.disabled = pos === 0;
+      if (els.next) els.next.disabled = pos >= sessionLen - 1;
       if (els.flip) els.flip.disabled = false;
+    }
+
+    // Record a rating, schedule the card via the server SM-2 endpoint, and
+    // advance to the next card in the session.
+    function rateCard(d, rating) {
+      if (!d || !d.cards.length) return;
+      var cardIndex = _currentCardIndex(d);
+      // Optimistically persist; update local review map so re-ordering on a
+      // later visit reflects the new schedule.
+      _dbSaveReview(d._dbId, cardIndex, rating).then(function(row) {
+        if (row && d._reviews) d._reviews[cardIndex] = row;
+      });
+      bumpStudied(d);
+      // Advance within the session order.
+      var order = d.studyOrder && d.studyOrder.length ? d.studyOrder : null;
+      var sessionLen = order ? order.length : d.cards.length;
+      if (order) {
+        d.pos = Math.min((d.pos || 0) + 1, sessionLen - 1);
+        // If we just rated the last card, stay put; the bar shows complete.
+      } else {
+        d.progress = Math.min((d.progress || 0) + 1, sessionLen - 1);
+      }
+      d.flipped = false;
+      renderStudy();
     }
 
     function renderAll() { renderDeckGrid(); renderStudy(); }
@@ -372,7 +667,7 @@
           '<div class="qzsp-settings-body">' +
             '<label class="qzsp-label">Number of cards</label>' +
             '<div class="qzsp-count-row">' +
-              '<input type="range" id="fcCountSlider" min="3" max="24" value="' + Math.min(count, 24) + '" class="qzsp-slider">' +
+              '<input type="range" id="fcCountSlider" min="3" max="10" value="' + Math.min(count, 10) + '" class="qzsp-slider">' +
               '<span id="fcCountVal" class="qzsp-count-val">' + count + '</span>' +
             '</div>' +
             '<label class="qzsp-label">Difficulty</label>' +
@@ -453,6 +748,23 @@
       var existing = document.getElementById('qzSourcePickerOverlay');
       if (existing) existing.remove();
 
+      // Only show files the course CURRENTLY has. The documents table can keep
+      // rows for files that were deleted/removed from the course (or carried
+      // over from a migration); those otherwise surface here as "Other files",
+      // including items the user no longer recognises. Cross-reference against
+      // the course's live file list (loose files + folder files) so the picker
+      // matches exactly what the course holds now.
+      var _courseFileNames = {};
+      (course.files || []).forEach(function (f) { if (f && f.name) _courseFileNames[f.name] = true; });
+      (course.userFolders || []).forEach(function (fd) {
+        (fd.files || []).forEach(function (f) { if (f && f.name) _courseFileNames[f.name] = true; });
+      });
+      if (Object.keys(_courseFileNames).length) {
+        docs = (docs || []).filter(function (d) {
+          return !!_courseFileNames[d.file_name || d.fileName || ''];
+        });
+      }
+
       // Group docs by folder using course.userFolders
       var fileToFolder = {};
       (course.userFolders || []).forEach(function (fd) {
@@ -487,7 +799,8 @@
             '<span class="qzsp-folder-icon">' + icon + '</span>' +
             '<span class="qzsp-folder-name">' + _esc(name) + '</span>' +
             '<span class="qzsp-folder-count">' + fdDocs.length + ' file' + (fdDocs.length !== 1 ? 's' : '') + '</span>' +
-            '<button class="qzsp-folder-selall" type="button">Select all</button>' +
+            '<button class="qzsp-folder-selall" data-folder-act="all" type="button">Select all</button>' +
+            '<button class="qzsp-folder-selall qzsp-folder-clear" data-folder-act="none" type="button">Clear</button>' +
           '</div>' +
           '<div class="qzsp-folder-files" style="display:none">' +
             fdDocs.map(itemHtml).join('') +
@@ -507,14 +820,14 @@
       overlay.className = 'qzsp-overlay';
       overlay.innerHTML =
         '<div class="qzsp-modal">' +
-          '<div class="qzsp-head"><span class="qzsp-title">&#x1F4C2; Choose source files</span>' +
+          '<div class="qzsp-head"><span class="qzsp-title">Choose source files</span>' +
             '<button class="qzsp-close" type="button">&#x2715;</button></div>' +
           '<p class="qzsp-sub">Select which indexed files to use for flashcard generation.</p>' +
           '<div class="qzsp-list qzsp-folder-list">' + sectionsHtml + '</div>' +
           '<div class="qzsp-actions">' +
             '<button class="qzsp-btn-ghost" id="qzspSelectAll" type="button">Select all</button>' +
             '<button class="qzsp-btn-ghost" id="qzspClearAll" type="button">Clear</button>' +
-            '<button class="qzsp-btn-primary" id="qzspConfirm" type="button">&#x2728; Generate from selected</button>' +
+            '<button class="qzsp-btn-primary" id="qzspConfirm" type="button">Generate from selected</button>' +
           '</div>' +
         '</div>';
 
@@ -523,24 +836,25 @@
       // Auto-expand all folders on open
       overlay.querySelectorAll('.qzsp-folder-header').forEach(function (header) {
         var files = header.nextElementSibling;
-        if (files) { files.style.display = 'block'; header.classList.add('open'); header.querySelector('.qzsp-folder-toggle').innerHTML = '&#x25BE;'; }
+        if (files) { files.style.display = 'flex'; header.classList.add('open'); header.querySelector('.qzsp-folder-toggle').innerHTML = '&#x25BE;'; }
       });
 
       overlay.querySelectorAll('.qzsp-folder-header').forEach(function (header) {
         header.addEventListener('click', function (e) {
-          if (e.target.classList.contains('qzsp-folder-selall')) return;
+          if (e.target.closest('[data-folder-act]')) return;
           var files = header.nextElementSibling;
           var open = files.style.display !== 'none';
-          files.style.display = open ? 'none' : 'block';
+          files.style.display = open ? 'none' : 'flex';
           header.querySelector('.qzsp-folder-toggle').innerHTML = open ? '&#x25B8;' : '&#x25BE;';
           header.classList.toggle('open', !open);
         });
       });
 
-      overlay.querySelectorAll('.qzsp-folder-selall').forEach(function (btn) {
+      overlay.querySelectorAll('[data-folder-act]').forEach(function (btn) {
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
-          btn.closest('.qzsp-folder').querySelectorAll('.qzsp-cb').forEach(function (cb) { cb.checked = true; });
+          var checked = btn.getAttribute('data-folder-act') === 'all';
+          btn.closest('.qzsp-folder').querySelectorAll('.qzsp-cb').forEach(function (cb) { cb.checked = checked; });
         });
       });
 
@@ -589,13 +903,21 @@
       els.generate.innerHTML = '<span class="fc-btn-icon">&#x23F3;</span> Generating…';
       _showGeneratingOverlay();
       var genOpts = {
-        count: settings.count || 12,
+        count: Math.min(settings.count || 10, 10),
         difficulty: settings.difficulty || 'medium',
         topic: null,
         seenItems: _seenCards()
       };
       if (documentIds && documentIds.length) genOpts.documentIds = documentIds;
       options.generate(course.id, 'flashcards', genOpts).then(function (result) {
+        // Drop cards with missing/blank front or back before counting —
+        // otherwise an item that slipped past backend validation lands in
+        // the deck as a card that renders empty when flipped.
+        if (result && Array.isArray(result.items)) {
+          result.items = result.items.filter(function (c) {
+            return c && (c.front || '').toString().trim() && (c.back || '').toString().trim();
+          });
+        }
         if (!result || !result.items || !result.items.length) {
           var allExisting = [];
           state.decks.forEach(function(d) { allExisting = allExisting.concat(d.cards); });
@@ -639,9 +961,23 @@
     }
 
     // ── Study controls ──
+    // Deck progress (last_studied_at / study_progress) is soft metadata, not
+    // something that needs a DB write on every single flip/next/rate. Writing
+    // per interaction turned rapid (or accidentally repeated) study actions into
+    // a flashcard_decks PATCH storm that exhausted the connection pool. Update
+    // local state immediately and debounce the persistence into one trailing
+    // write per burst.
+    var _bumpTimers = {};
     function bumpStudied(d) {
+      if (!d) return;
       d.lastStudied = new Date().toISOString();
-      _dbUpdateDeck(d._dbId, { last_studied_at: d.lastStudied, study_progress: d.progress || 0, updated_at: d.lastStudied });
+      if (!d._dbId) return;
+      var key = d._dbId;
+      if (_bumpTimers[key]) clearTimeout(_bumpTimers[key]);
+      _bumpTimers[key] = setTimeout(function () {
+        delete _bumpTimers[key];
+        _dbUpdateDeck(d._dbId, { last_studied_at: d.lastStudied, study_progress: d.progress || 0, updated_at: d.lastStudied });
+      }, 1200);
     }
     if (els.flip) els.flip.addEventListener('click', function () {
       var d = state.decks.find(function (x) { return x.id === state.activeId; });
@@ -656,18 +992,20 @@
     if (els.prev) els.prev.addEventListener('click', function () {
       var d = state.decks.find(function (x) { return x.id === state.activeId; });
       if (!d) return;
-      d.progress = Math.max(0, (d.progress || 0) - 1);
+      if (d.studyOrder && d.studyOrder.length) d.pos = Math.max(0, (d.pos || 0) - 1);
+      else d.progress = Math.max(0, (d.progress || 0) - 1);
       d.flipped = false;
       bumpStudied(d);
-      renderAll();
+      renderStudy();
     });
     if (els.next) els.next.addEventListener('click', function () {
       var d = state.decks.find(function (x) { return x.id === state.activeId; });
       if (!d) return;
-      d.progress = Math.min(d.cards.length - 1, (d.progress || 0) + 1);
+      if (d.studyOrder && d.studyOrder.length) d.pos = Math.min(d.studyOrder.length - 1, (d.pos || 0) + 1);
+      else d.progress = Math.min(d.cards.length - 1, (d.progress || 0) + 1);
       d.flipped = false;
       bumpStudied(d);
-      renderAll();
+      renderStudy();
     });
 
     if (els.generate) els.generate.addEventListener('click', function() {
@@ -700,17 +1038,35 @@
       });
     });
 
-    // Load from DB then render
-    if (!state._loaded) {
+    // Load from DB then render. A failed load (rows === null) must NOT set
+    // _loaded — otherwise the empty result is cached for the session and the
+    // user's decks vanish until a full reload. Show a retry instead.
+    function _loadDecks() {
       if (els.grid) els.grid.innerHTML = '<div class="fc-empty">Loading decks…</div>';
       _dbLoadDecks(course.id).then(function(rows) {
+        if (rows === null) {
+          if (els.grid) {
+            els.grid.innerHTML =
+              '<div class="fc-empty">Couldn\'t load your decks — check your connection. ' +
+              '<button type="button" class="fc-retry-load">Retry</button></div>';
+            var rb = els.grid.querySelector('.fc-retry-load');
+            if (rb) rb.addEventListener('click', _loadDecks);
+          }
+          return;
+        }
         state._loaded = true;
+        // Defensive: legacy decks can contain cards with missing/blank
+        // front or back (saved before backend validation rejected them).
+        // Drop them so flipping doesn't reveal an empty card.
+        var _validCard = function (c) {
+          return c && (c.front || '').toString().trim() && (c.back || '').toString().trim();
+        };
         state.decks = rows.map(function(r) {
           return {
             id: r.id,
             _dbId: r.id,
             name: r.name,
-            cards: r.cards || [],
+            cards: (r.cards || []).filter(_validCard),
             createdAt: new Date(r.created_at).getTime(),
             lastStudied: r.last_studied_at || null,
             progress: r.study_progress || 0,
@@ -720,6 +1076,10 @@
         state.activeId = null;
         renderAll();
       });
+    }
+
+    if (!state._loaded) {
+      _loadDecks();
     } else {
       state.activeId = null;
       renderAll();
