@@ -492,9 +492,14 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
   }
 
   function startUpload(picked: File[], targetFolder: string | null): void {
-      if (!picked.length) return;
+      console.log('[upload-diag] startUpload; picked =', picked.length, 'folder =', targetFolder);
+      if (!picked.length) {
+        console.warn('[upload-diag] BAIL: picked list empty');
+        return;
+      }
       const uid = window._currentUser && (window._currentUser.id || window._currentUser.sub);
       if (!uid) {
+        console.warn('[upload-diag] BAIL: no uid / not signed in');
         if (typeof window.showToast === 'function') {
           window.showToast('Not signed in', 'Sign in to upload files.');
         }
@@ -502,8 +507,13 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
       }
 
       const { valid: files, rejected } = filterOversizedFiles(picked);
+      console.log('[upload-diag] after size filter; valid =', files.length, 'rejected =', rejected.length, rejected.map((r) => r.file.name + ' — ' + r.reason));
       warnRejected(rejected, files.length === 0);
-      if (!files.length) return;
+      if (!files.length) {
+        console.warn('[upload-diag] BAIL: no valid files after size filter');
+        return;
+      }
+      console.log('[upload-diag] opening modal + firing', files.length, 'upload request(s)');
 
       const modal = openUploadModal();
       let cancelled = false;
@@ -613,6 +623,11 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
   if (uploadInput) {
     uploadInput.addEventListener('change', function (this: FolderUploadInput) {
       const picked = Array.from(this.files || []);
+      // [upload-diag] temporary instrumentation — remove once the >2-file
+      // upload bug is diagnosed.
+      console.log('[upload-diag] change fired; browser delivered', picked.length, 'file(s):', picked.map((f) => f.name + ' (' + f.size + 'B)'));
+      if (typeof window.showToast === 'function')
+        window.showToast('Upload debug', 'change: ' + picked.length + ' file(s) selected');
       // Reset the input so picking the same (oversized) file again still fires
       // `change`. Otherwise the user is stuck after one rejection.
       try { this.value = ''; } catch { /* ignore */ }
