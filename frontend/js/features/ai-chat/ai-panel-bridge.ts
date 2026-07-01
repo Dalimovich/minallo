@@ -109,7 +109,7 @@ export function initAiPanelBridge(options?: AiPanelBridgeOptions): {
 
     explainBtn.addEventListener('click', () => {
       banner.remove();
-      askAI('Explain this in detail for an engineering student: "' + txt + '"');
+      askAI('Explain this in detail: "' + txt + '"');
     });
     formulaBtn.addEventListener('click', () => {
       banner.remove();
