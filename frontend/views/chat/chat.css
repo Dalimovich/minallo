@@ -3373,6 +3373,7 @@ body.night .music-yt-input {
     width: 100%;
     min-width: 0;
     display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     overflow: hidden;
@@ -3381,7 +3382,8 @@ body.night .music-yt-input {
   .dc-sidebar {
     width: 100%;
     min-width: 0;
-    max-height: 178px;
+    max-height: min(34dvh, 280px);
+    min-height: 210px;
     border-radius: 18px;
   }
 
@@ -3405,17 +3407,42 @@ body.night .music-yt-input {
   }
 
   .dc-sidebar-body {
-    display: none;
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 8px 8px 10px;
+  }
+
+  .dc-sidebar-section-label,
+  .chat-rooms-section-label {
+    padding: 10px 6px 4px;
+    margin-top: 2px;
+  }
+
+  .chat-room-item,
+  .chat-friend-item,
+  .chat-friend-pending {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .chat-room-item .chat-room-label,
+  .chat-friend-name,
+  .chat-friend-pending-name {
+    display: block !important;
   }
 
   .dc-sidebar-footer {
-    padding: 8px 12px;
+    display: none;
   }
 
   .dc-main {
     min-width: 0;
-    min-height: 420px;
-    height: calc(100dvh - 380px);
+    min-height: 0;
+    height: auto;
     border-radius: 18px;
   }
 
