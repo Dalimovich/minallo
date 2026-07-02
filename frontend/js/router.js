@@ -140,6 +140,15 @@ function _ssSyncUrl() {
 }
 window._ssSyncUrl = _ssSyncUrl;
 
+// The canonical URL hash for a portal section. The courses listing is the
+// 'studip' section internally but lives at #portal=courses, so map it here —
+// every place that writes a section URL must go through this to avoid drift
+// (e.g. #portal=studip leaking into the address bar on refresh).
+function _ssPortalHash(section) {
+  var urlSection = section === 'studip' ? 'courses' : section;
+  return '#portal=' + encodeURIComponent(urlSection);
+}
+
 // Authoritative URL + ss_portal_tab + ss_last_section commit. Belt-and-suspenders
 // alongside the showPortalSection wrapper — calling this after every navigation
 // guarantees URL and storage match the visible section even if the wrapper
@@ -154,9 +163,8 @@ function _finalizeNav(section) {
     st.view = '';
     localStorage.setItem('ss_state', JSON.stringify(st));
   } catch (e) {}
-  var urlSection = section === 'studip' ? 'courses' : section;
   try {
-    var nextHash = '#portal=' + encodeURIComponent(urlSection);
+    var nextHash = _ssPortalHash(section);
     var cur = history.state || {};
     if (cur.view === 'portal' && cur.section === section && window.location.hash === nextHash) {
       return;
@@ -533,7 +541,7 @@ if (!_ssSkipBootRoute &&
     var _initSec = _pendingPortalRestore || 'dashboard';
     _ssReplaceHistory(
       { view: 'portal', section: _initSec },
-      '#portal=' + encodeURIComponent(_initSec)
+      _ssPortalHash(_initSec)
     );
   }
 }
@@ -570,6 +578,21 @@ window.addEventListener('popstate', function (e) {
   } finally {
     _ssHandlingPop = false;
   }
+  // Defensive: guarantee the address bar matches the restored portal section.
+  // The browser already restores the entry's stored URL on Back/Forward, but if
+  // that entry was ever committed with a non-canonical hash (e.g. #portal=studip
+  // instead of #portal=courses), correct it here so the URL always names the
+  // page the user is actually looking at. Course/file hashes carry extra state
+  // (section, file, AI panel) and are owned by _ssSyncUrl — leave those alone.
+  try {
+    var _ps = e.state;
+    if (_ps && _ps.view === 'portal' && _ps.section) {
+      var _canon = _ssPortalHash(_ps.section);
+      if (window.location.hash !== _canon) {
+        history.replaceState(_ps, '', _canon);
+      }
+    }
+  } catch (err) {}
 });
 
 _bindIf('studipBack', 'click', function () {
