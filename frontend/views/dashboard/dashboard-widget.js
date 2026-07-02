@@ -40,6 +40,10 @@
       return COLS;
     }
 
+    function gridRowHeight() {
+      return window.innerWidth <= 640 ? 140 : ROW_H;
+    }
+
     function clampWidgetToLayout(w) {
       var cols = layoutCols();
       w.cs = Math.max(1, Math.min(w.cs || 1, cols));
@@ -1236,7 +1240,7 @@
       var r = canvas.getBoundingClientRect();
       var cols = layoutCols();
       var cw = (r.width + GAP) / cols,
-        ch = ROW_H + GAP;
+        ch = gridRowHeight() + GAP;
       return {
         col: Math.max(1, Math.min(Math.floor((ax - r.left) / cw) + 1, cols)),
         row: Math.max(1, Math.floor((ay - r.top) / ch) + 1)
@@ -1274,10 +1278,23 @@
           'px;top:' +
           (e.clientY - dragging.offY) +
           'px';
-        hdr.setPointerCapture(e.pointerId);
+        try {
+          hdr.setPointerCapture(e.pointerId);
+        } catch (err) {}
+        document.addEventListener('pointermove', onDragMove);
+        document.addEventListener('pointerup', onDragEnd);
+        document.addEventListener('pointercancel', onDragCancel);
       });
-      hdr.addEventListener('pointermove', function (e) {
+
+      function clearDragListeners() {
+        document.removeEventListener('pointermove', onDragMove);
+        document.removeEventListener('pointerup', onDragEnd);
+        document.removeEventListener('pointercancel', onDragCancel);
+      }
+
+      function onDragMove(e) {
         if (!dragging) return;
+        e.preventDefault();
         ghost.style.left = e.clientX - dragging.offX + 'px';
         ghost.style.top = e.clientY - dragging.offY + 'px';
         var cell = getCellAt(e.clientX - dragging.offX, e.clientY - dragging.offY);
@@ -1296,7 +1313,7 @@
         });
         var canvasRect = canvas.getBoundingClientRect();
         var cw = (canvasRect.width + GAP) / cols,
-          ch = ROW_H + GAP;
+          ch = gridRowHeight() + GAP;
         computeDrop(w, col, row).forEach(function (move) {
           var el = canvas.querySelector('[data-uid="' + move.uid + '"]');
           if (!el) return;
@@ -1308,17 +1325,21 @@
             (canvasRect.top + (move.row - 1) * ch - cur.top) +
             'px)';
         });
-      });
-      hdr.addEventListener('pointercancel', function () {
+      }
+
+      function onDragCancel() {
         if (!dragging) return;
+        clearDragListeners();
         ghost.style.display = 'none';
         var el2 = canvas.querySelector('[data-uid="' + dragging.uid + '"]');
         if (el2) el2.classList.remove('is-dragging');
         dragging = null;
         renderAnimated();
-      });
-      hdr.addEventListener('pointerup', function (e) {
+      }
+
+      function onDragEnd(e) {
         if (!dragging) return;
+        clearDragListeners();
         var cell = getCellAt(e.clientX - dragging.offX, e.clientY - dragging.offY);
         var w = state.find(function (x) {
           return x.uid === dragging.uid;
@@ -1344,7 +1365,7 @@
         dragging = null;
         renderAnimated();
         _dwSave();
-      });
+      }
     }
 
     function bindResize(handle) {
@@ -1362,14 +1383,16 @@
       });
       handle.addEventListener('pointermove', function (e) {
         if (!resizing) return;
-        var r = canvas.getBoundingClientRect(),
-          ch = ROW_H + GAP;
+        var ch = gridRowHeight() + GAP;
         var w = state.find(function (x) {
           return x.uid === resizing.uid;
         });
         if (!w) return;
         var wantCs = resizing.sc;
-        var wantRs = Math.max(1, resizing.sr + Math.round((e.clientY - resizing.sy) / ch));
+        var wantRs = Math.max(
+          1,
+          resizing.sr + Math.round((e.clientY - resizing.sy) / ch)
+        );
         if (wantRs === w.rs) return;
         w.cs = wantCs;
         w.rs = wantRs;
@@ -1500,19 +1523,20 @@
       }
       if (!naturalTotal) return;
 
-      var cell = ROW_H + GAP;
+      var rowHeight = gridRowHeight();
+      var cell = rowHeight + GAP;
       // Cap at the viewport so the tile never runs off-screen; past this the
       // task list scrolls internally (its container is overflow-y:auto).
       var canvasTop = canvas.getBoundingClientRect().top;
       var avail = window.innerHeight - canvasTop - 24;
       var maxRows = Math.max(2, Math.floor((avail + GAP) / cell));
-      // tileHeight(rs) = rs*ROW_H + (rs-1)*GAP = rs*cell - GAP; solve for rs.
+      // tileHeight(rs) = rs*rowHeight + (rs-1)*GAP = rs*cell - GAP; solve for rs.
       var wantRs = Math.max(2, Math.ceil((naturalTotal + GAP) / cell));
       var capped = wantRs > maxRows;
       if (capped) wantRs = maxRows;
 
       if (capped && taskList && fullListHeight) {
-        var maxTileHeight = wantRs * ROW_H + (wantRs - 1) * GAP;
+        var maxTileHeight = wantRs * rowHeight + (wantRs - 1) * GAP;
         var chromeHeight = Math.max(0, naturalTotal - fullListHeight);
         var listMax = Math.max(120, maxTileHeight - chromeHeight);
         el.style.setProperty('--dm-widget-list-max-height', listMax + 'px');
