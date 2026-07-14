@@ -132,6 +132,27 @@
     <button class="settings-danger-btn" id="clearChatHistoryBtn" data-i18n="settings_clear_btn">Clear history</button>
   </div>
 </div>
+<div class="settings-block" id="feedbackBlock">
+  <div class="settings-block-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>
+    Feedback &amp; support
+  </div>
+  <p class="feedback-help">Found a problem or have an idea? Send it directly to the Minallo team.</p>
+  <form id="feedbackForm" class="feedback-form">
+    <label for="feedbackType">What would you like to share?</label>
+    <select id="feedbackType" class="feedback-input">
+      <option value="feedback">General feedback</option>
+      <option value="problem">Report a problem</option>
+      <option value="idea">Suggest an idea</option>
+    </select>
+    <label for="feedbackMessage">Message</label>
+    <textarea id="feedbackMessage" class="feedback-input feedback-textarea" minlength="10" maxlength="5000" required placeholder="Tell us what happened or what you would like to see…"></textarea>
+    <div class="feedback-footer">
+      <span id="feedbackStatus" class="feedback-status" role="status" aria-live="polite"></span>
+      <button id="feedbackSubmit" class="pf-save" type="submit">Send feedback</button>
+    </div>
+  </form>
+</div>
 <div class="settings-block">
   <div class="settings-block-title" data-i18n="settings_account">&#x1F464; Account</div>
   <div class="settings-row-new">

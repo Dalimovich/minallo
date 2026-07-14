@@ -68,6 +68,44 @@ function bindSettingsControls() {
   }
 
   var settingsLanguage = document.getElementById('settingsLanguage');
+
+  var feedbackForm = document.getElementById('feedbackForm');
+  if (feedbackForm && !feedbackForm.dataset.bound) {
+    feedbackForm.dataset.bound = '1';
+    feedbackForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      var typeEl = document.getElementById('feedbackType');
+      var messageEl = document.getElementById('feedbackMessage');
+      var statusEl = document.getElementById('feedbackStatus');
+      var submitEl = document.getElementById('feedbackSubmit');
+      var message = messageEl ? messageEl.value.trim() : '';
+      if (message.length < 10) {
+        statusEl.textContent = 'Please write at least 10 characters.';
+        statusEl.className = 'feedback-status error';
+        return;
+      }
+      submitEl.disabled = true;
+      submitEl.textContent = 'Sending…';
+      statusEl.textContent = '';
+      try {
+        var response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
+          body: JSON.stringify({ type: typeEl.value, message: message, pageUrl: window.location.href })
+        });
+        if (!response.ok) throw new Error('Could not send your message. Please try again.');
+        messageEl.value = '';
+        statusEl.textContent = 'Thank you — your message was sent.';
+        statusEl.className = 'feedback-status success';
+      } catch (error) {
+        statusEl.textContent = error && error.message ? error.message : 'Could not send your message.';
+        statusEl.className = 'feedback-status error';
+      } finally {
+        submitEl.disabled = false;
+        submitEl.textContent = 'Send feedback';
+      }
+    });
+  }
   if (settingsLanguage) {
     settingsLanguage.value = window._lang || localStorage.getItem('ss_lang') || 'en';
     settingsLanguage.addEventListener('change', function () {
