@@ -1,4 +1,3 @@
-import { requireEnv } from '../lib/env';
 import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
@@ -30,7 +29,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (message.length < 10) return fail(400, 'Please provide at least 10 characters');
   if (message.length > 5000) return fail(400, 'Feedback is too long');
 
-  const resendKey = requireEnv('RESEND_API_KEY');
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return fail(503, 'Email delivery is not configured yet. Please contact support@minallo.de.');
   const toEmail = process.env.FEEDBACK_TO_EMAIL || 'support@minallo.de';
   const fromEmail = process.env.FEEDBACK_FROM_EMAIL || 'Minallo Feedback <noreply@minallo.de>';
   const senderEmail = typeof user.email === 'string' ? user.email : 'unknown';

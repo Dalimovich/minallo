@@ -854,8 +854,11 @@ interface LandingTranslation {
   function loadFeatureSection(section: FeatureSection): Promise<void> {
     const cached = loadedFeatureSections[section.id];
     if (cached) return cached;
+    const sectionVersion = String(window.MinalloConfig?.assetVersion || SS?.version || '1');
+    const sectionUrl = section.file + (section.file.includes('?') ? '&' : '?') +
+      'v=' + encodeURIComponent(sectionVersion);
     const fetchOnce = (): Promise<string> =>
-      _fetchTimeout(section.file, 10000).then((r) => {
+      _fetchTimeout(sectionUrl, 10000).then((r) => {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + section.file);
         return r.text();
       });

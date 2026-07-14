@@ -95,7 +95,9 @@ function bindSettingsControls() {
         });
         if (!response.ok) {
           var errorBody = await response.json().catch(function () { return null; });
-          throw new Error(errorBody && errorBody.error ? errorBody.error : 'Could not send your message. Please try again.');
+          var serverMessage = errorBody && errorBody.error &&
+            (typeof errorBody.error === 'string' ? errorBody.error : errorBody.error.message);
+          throw new Error(serverMessage || 'Could not send your message. Please try again.');
         }
         messageEl.value = '';
         statusEl.textContent = 'Thank you — your message was sent.';
