@@ -22,7 +22,7 @@ Core user flows:
 - Generate lecture notes, flashcards, quizzes, cheatsheets, and exam prep material.
 - Deep-learn mode for focused topic mastery with adaptive difficulty.
 - Practice German in a separate learner space with a writing coach.
-- Use Pomodoro timer, Spotify playlists, streaks, games, and study progress tools.
+- Use Pomodoro timer, streaks, games, and study progress tools.
 - Chat with other students in rooms and direct messages.
 - Manage subscriptions (Stripe / PayPal) with pause, cancel, and retention flows.
 
@@ -144,7 +144,6 @@ docs/                         Specs, launch notes, endpoint docs
 | PDF editor | Merge, annotate, convert PDFs |
 | Practice mode | Exercise-focused study sessions |
 | Study timer | Pomodoro timer with session tracking |
-| Music | Spotify integration for study playlists |
 | Study games | Tetris, Chess, Solitaire, Flappy Bird |
 | Student chat | Rooms, DMs, friend lists, GIF search, reports |
 | Admin panel | User dashboard, retrieval debug logs, usage charts |

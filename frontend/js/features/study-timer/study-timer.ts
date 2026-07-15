@@ -87,7 +87,7 @@ declare global {
 }
 
 type Phase = 'focus' | 'short' | 'long';
-type MusicSrc = 'lofi' | 'youtube' | 'spotify' | 'none';
+type MusicSrc = 'lofi' | 'youtube' | 'none';
 type SettingsField = 'focus' | 'shortBreak' | 'longBreak' | 'cycles';
 
 interface TimerSettings {
@@ -411,15 +411,6 @@ function _stCreatePlayer(customList: string | null): void {
 function _stPlayMusic(): void {
   if (!_stMusicEnabled || _stMusicMuted) return;
   if (_stMusicSrc === 'none') return;
-  if (_stMusicSrc === 'spotify') {
-    if (window._spIsConnected && window._spIsConnected()) {
-      window.showToast?.('Spotify', 'Resuming your Spotify playback');
-      if (window._spPlayResume) window._spPlayResume();
-    } else {
-      window.showToast?.('Spotify not connected', 'Connect Spotify in Settings → Music Services');
-    }
-    return;
-  }
   const customList =
     _stMusicSrc === 'youtube' && window._getMusicPlaylistId ? window._getMusicPlaylistId() : null;
   if (_ytPlayer && _ytPlayerReady) {
@@ -933,13 +924,12 @@ export function initStudyTimer(): void {
       });
       srcCard.classList.add('active');
       const src = srcCard.dataset['src'];
-      if (src === 'lofi' || src === 'youtube' || src === 'spotify' || src === 'none') {
+      if (src === 'lofi' || src === 'youtube' || src === 'none') {
         _stMusicSrc = src;
       }
       const hints: Record<MusicSrc, string> = {
         lofi: _stT('st_music_hint_lofi_radio'),
         youtube: _stT('st_music_hint_youtube'),
-        spotify: _stT('st_music_hint_spotify'),
         none: _stT('st_music_hint_none'),
       };
       const hint = document.getElementById('stMusicHint');

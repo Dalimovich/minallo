@@ -217,12 +217,6 @@ var _sb = {
           'ss_last_section',
           'ss_university',
           'ss_pdfed_recents',
-          // Connected music accounts: never leave OAuth tokens behind, or the
-          // next account on this browser could control the previous user's
-          // Spotify / see their playlists.
-          'ss_sp_token',
-          'ss_sp_refresh',
-          'ss_sp_verifier',
           'ss_yt_playlists'
         ];
         var _qaKeys = [];
