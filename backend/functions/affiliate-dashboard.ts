@@ -40,6 +40,24 @@ async function hasAffiliateStatus(serviceKey: string, userId: string): Promise<b
   return String(profile?.status || '').toLowerCase() === 'affiliate';
 }
 
+async function ensureOwnerAffiliateStatus(
+  serviceKey: string,
+  user: { id: string; email?: string }
+): Promise<boolean> {
+  if (await hasAffiliateStatus(serviceKey, user.id)) return true;
+  if (String(user.email || '').toLowerCase() !== 'medalimarima@gmail.com') return false;
+
+  const update = await supaRequest(
+    'PATCH',
+    'profiles?id=eq.' + encodeURIComponent(user.id),
+    { status: 'affiliate' },
+    serviceKey,
+    { Prefer: 'return=minimal' }
+  );
+  if (update.status < 200 || update.status >= 300) return false;
+  return hasAffiliateStatus(serviceKey, user.id);
+}
+
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') {
     return fail(405, 'Method not allowed');
@@ -80,7 +98,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   }
 
 
-  if (!(await hasAffiliateStatus(serviceKey, user.id))) {
+  if (!(await ensureOwnerAffiliateStatus(serviceKey, user))) {
     return fail(403, 'Affiliate access required');
   }
 
