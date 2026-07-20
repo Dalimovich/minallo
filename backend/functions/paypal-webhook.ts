@@ -26,6 +26,7 @@
 import { requireEnv, optionalEnv } from '../lib/env';
 import { supaRequest } from '../lib/supabase-admin';
 import { recordSubEvent, lookupByPaypalSub } from '../lib/subscription-events';
+import { recordAffiliatePayment, recordAffiliateTrial } from '../lib/affiliate';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const PAYPAL_API_BASE = optionalEnv('PAYPAL_API_BASE', 'https://api-m.paypal.com');
@@ -318,13 +319,19 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
           updated_at: new Date().toISOString()
         },
         serviceKey, prefer);
-      // ACTIVATED = first paid activation; SALE.COMPLETED = a recurring payment.
+      // ACTIVATED confirms the subscription agreement, not that money moved.
+      // Only SALE.COMPLETED is proof of payment and may earn commission.
       await recordSubEvent(serviceKey, {
         user_id: analyticsUid, provider: 'paypal',
-        event_type: parsed.event_type === 'BILLING.SUBSCRIPTION.ACTIVATED' ? 'paid' : 'renewed',
+        event_type: parsed.event_type === 'BILLING.SUBSCRIPTION.ACTIVATED' ? 'trial_started' : 'paid',
         subscription_id: subId,
         period_end: expires
       });
+      if (parsed.event_type === 'PAYMENT.SALE.COMPLETED') {
+        await recordAffiliatePayment(serviceKey, analyticsUid);
+      } else {
+        await recordAffiliateTrial(serviceKey, analyticsUid);
+      }
     }
 
     await markEvent(parsed.id, 'processed', serviceKey);

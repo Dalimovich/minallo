@@ -9,6 +9,7 @@ import { supaRequest } from '../lib/supabase-admin';
 import { stripeGet, stripeDelete } from '../lib/stripe';
 import { recordDeviceTrial } from '../lib/trial-device';
 import { recordSubEvent, lookupByStripeCustomer } from '../lib/subscription-events';
+import { recordAffiliatePayment, recordAffiliateTrial } from '../lib/affiliate';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface StripeEvent<T = unknown> {
@@ -248,6 +249,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
           subscription_id: session.subscription || null,
           period_end: expiresAt
         });
+        if (noTrial) await recordAffiliatePayment(serviceKey, userId);
+        else await recordAffiliateTrial(serviceKey, userId);
       }
     }
 
@@ -309,6 +312,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
             user_id: prior.userId, provider: 'stripe', event_type: 'converted',
             subscription_id: sub.id || null, period_end: isoOrNull(sub.current_period_end)
           });
+          await recordAffiliatePayment(serviceKey, prior.userId);
         }
       }
     }

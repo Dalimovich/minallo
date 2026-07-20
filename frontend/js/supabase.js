@@ -147,6 +147,12 @@ var _sb = {
   auth: {
     signUp: async function (email, password, redirectTo) {
       var body = { email: email, password: password };
+      try {
+        var referralCode = localStorage.getItem('minallo_referral_code');
+        if (referralCode && /^[a-z0-9]{8,32}$/i.test(referralCode)) {
+          body.data = { referral_code: referralCode.toLowerCase() };
+        }
+      } catch (e) {}
       var url = SUPA_URL + '/auth/v1/signup';
       if (redirectTo) url += '?redirect_to=' + encodeURIComponent(redirectTo);
       var r = await fetch(url, {

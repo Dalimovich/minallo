@@ -24,6 +24,14 @@ function codeFor(userId: string): string {
   return userId.replace(/-/g, '').slice(0, 12).toLowerCase();
 }
 
+export function isRecentSignup(createdAt: unknown, nowMs = Date.now()): boolean {
+  if (typeof createdAt !== 'string') return false;
+  const createdMs = Date.parse(createdAt);
+  if (!Number.isFinite(createdMs)) return false;
+  const ageMs = nowMs - createdMs;
+  return ageMs >= 0 && ageMs <= 7 * 24 * 60 * 60 * 1000;
+}
+
 async function authenticate(event: NetlifyEvent) {
   const token = extractBearerToken(event.headers);
   return token ? verifySupabaseToken(token) : null;
@@ -54,6 +62,16 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     catch { return fail(400, 'Invalid JSON'); }
     const code = typeof body.referralCode === 'string' ? body.referralCode.trim().toLowerCase() : '';
     if (!/^[a-z0-9]{8,32}$/.test(code)) return fail(400, 'Invalid referral code');
+    const metadata = user.user_metadata as { referral_code?: unknown } | undefined;
+    const metadataCode = typeof metadata?.referral_code === 'string'
+      ? metadata.referral_code.trim().toLowerCase()
+      : '';
+    // Attribution belongs to account creation, not to existing users who later
+    // click somebody's link. Email signups carry the code in auth metadata;
+    // OAuth signups are accepted only during their first seven days.
+    if (metadataCode !== code && !isRecentSignup(user.created_at)) {
+      return fail(409, 'Referral attribution window has closed');
+    }
 
     const partnerRes = await supaRequest<PartnerRow[]>(
       'GET',

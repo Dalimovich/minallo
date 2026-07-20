@@ -8,6 +8,8 @@ import {
   hashTrialDeviceId,
   recordDeviceTrial
 } from '../lib/trial-device';
+import { recordSubEvent } from '../lib/subscription-events';
+import { recordAffiliateTrial } from '../lib/affiliate';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const PAYPAL_API_BASE = optionalEnv('PAYPAL_API_BASE', 'https://api-m.paypal.com');
@@ -147,6 +149,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (trialDeviceHash) {
       await recordDeviceTrial(serviceKey, trialDeviceHash, user.id, subscriptionId, 'paypal');
     }
+
+    await recordSubEvent(serviceKey, {
+      user_id: user.id,
+      provider: 'paypal',
+      event_type: 'trial_started',
+      subscription_id: subscriptionId,
+      period_end: expiresAt
+    });
+    await recordAffiliateTrial(serviceKey, user.id);
 
     const sourceIp =
       (event.headers && (event.headers['x-nf-client-connection-ip']
