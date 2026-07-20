@@ -498,6 +498,13 @@
     background: linear-gradient(135deg, var(--adm-blue), var(--adm-green));
   }
 
+  /* The owner affiliate shortcut sits directly after Admin. Admin eligibility
+     may resolve through either of two async boot paths; key its visibility to
+     the final Admin DOM state so callback order cannot leave it hidden. */
+  #psbAdmin:not([style*="display: none"]) + #psbAffiliate {
+    display: flex !important;
+  }
+
   @media (max-width: 900px) {
     #psec-admin .adm-grid { grid-template-columns: 1fr; }
   }
