@@ -1128,6 +1128,190 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   btn.addEventListener('click', () => setExpanded(!sb!.classList.contains('expanded')));
 })();
 
+// Accessible singleton tooltip for the compact sidebar. A fixed element avoids
+// clipping by the scrollable navigation column and never adds icon containers.
+(function (): void {
+  const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
+  if (!sidebar) return;
+  const targets = Array.from(
+    sidebar.querySelectorAll<HTMLElement>('.sb-item, .sb-toggle, .sb-user, .sb-night-btn')
+  );
+  const tooltip = document.createElement('div');
+  tooltip.id = 'sidebarTooltip';
+  tooltip.className = 'sb-tooltip';
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+  let timer: number | null = null;
+  let active: HTMLElement | null = null;
+
+  function labelFor(target: HTMLElement): string {
+    if (target.classList.contains('sb-toggle')) {
+      return sidebar!.classList.contains('expanded') ? 'Collapse sidebar' : 'Expand sidebar';
+    }
+    if (target.classList.contains('sb-user')) return 'Profile';
+    if (target.classList.contains('sb-night-btn')) {
+      return document.body.classList.contains('night') ? 'Light mode' : 'Night mode';
+    }
+    return (
+      target.querySelector<HTMLElement>('span[data-i18n], span:not(.sb-item-badge)')?.textContent?.trim() ||
+      target.getAttribute('aria-label') ||
+      ''
+    );
+  }
+
+  function hide(): void {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = null;
+    active?.removeAttribute('aria-describedby');
+    active = null;
+    tooltip.classList.remove('is-visible');
+    tooltip.hidden = true;
+  }
+
+  function show(target: HTMLElement): void {
+    if (sidebar!.classList.contains('expanded') || window.innerWidth <= 768) return;
+    hide();
+    timer = window.setTimeout(() => {
+      const label = labelFor(target);
+      if (!label || sidebar!.classList.contains('expanded')) return;
+      active = target;
+      target.setAttribute('aria-label', label);
+      tooltip.textContent = label;
+      tooltip.hidden = false;
+      const rect = target.getBoundingClientRect();
+      const top = Math.min(window.innerHeight - 18, Math.max(18, rect.top + rect.height / 2));
+      tooltip.style.left = `${Math.round(rect.right + 10)}px`;
+      tooltip.style.top = `${Math.round(top)}px`;
+      target.setAttribute('aria-describedby', tooltip.id);
+      requestAnimationFrame(() => tooltip.classList.add('is-visible'));
+      timer = null;
+    }, 200);
+  }
+
+  targets.forEach((target) => {
+    const label = labelFor(target);
+    if (label) target.setAttribute('aria-label', label);
+    target.removeAttribute('title');
+    if (!/^(BUTTON|A)$/.test(target.tagName)) {
+      target.setAttribute('role', 'button');
+      target.tabIndex = 0;
+      target.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          target.click();
+        }
+      });
+    }
+    target.addEventListener('pointerenter', () => show(target));
+    target.addEventListener('pointerleave', hide);
+    target.addEventListener('focus', () => show(target));
+    target.addEventListener('blur', hide);
+    target.addEventListener('click', hide);
+  });
+  sidebar.addEventListener('transitionstart', hide);
+  window.addEventListener('resize', hide);
+  window.addEventListener('scroll', hide, true);
+})();
+
+// Compact PDF toolbar: the existing page/zoom/fullscreen controls are reused
+// in the floating collapsed pill, so their state and listeners stay canonical.
+(function (): void {
+  const toolbar = document.getElementById('pdfToolbar');
+  const toggle = document.getElementById('pdfToolbarCollapse');
+  const dragHandle = document.getElementById('pdfToolbarDragHandle');
+  const pdfView = document.getElementById('pdfView');
+  if (!toolbar || !toggle || !dragHandle || !pdfView) return;
+  const toolbarEl = toolbar;
+  const toggleEl = toggle;
+  const dragHandleEl = dragHandle;
+  const pdfViewEl = pdfView;
+
+  function bounds(): { left: number; right: number; top: number; bottom: number } {
+    const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
+    const sidebarRight = sidebar?.getBoundingClientRect().right || 0;
+    const rect = toolbarEl.getBoundingClientRect();
+    const gap = 10;
+    const left = Math.max(gap, sidebarRight + gap);
+    return {
+      left,
+      right: Math.max(left, window.innerWidth - rect.width - gap),
+      top: gap,
+      bottom: Math.max(gap, window.innerHeight - rect.height - gap)
+    };
+  }
+
+  function place(left: number, top: number): void {
+    const limit = bounds();
+    toolbarEl.style.left = `${Math.round(Math.min(limit.right, Math.max(limit.left, left)))}px`;
+    toolbarEl.style.top = `${Math.round(Math.min(limit.bottom, Math.max(limit.top, top)))}px`;
+    toolbarEl.style.right = 'auto';
+  }
+
+  function keepClearOfSidebar(): void {
+    if (!toolbarEl.classList.contains('is-collapsed')) return;
+    const rect = toolbarEl.getBoundingClientRect();
+    place(rect.left, rect.top);
+  }
+
+  function setCollapsed(collapsed: boolean): void {
+    toolbarEl.classList.toggle('is-collapsed', collapsed);
+    toggleEl.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggleEl.setAttribute('aria-label', collapsed ? 'Expand PDF toolbar' : 'Collapse PDF toolbar');
+    toggleEl.setAttribute('title', collapsed ? 'Expand toolbar' : 'Collapse toolbar');
+    if (!collapsed) {
+      toolbarEl.style.removeProperty('left');
+      toolbarEl.style.removeProperty('top');
+      toolbarEl.style.removeProperty('right');
+    }
+  }
+
+  toggleEl.addEventListener('click', () => setCollapsed(!toolbarEl.classList.contains('is-collapsed')));
+  dragHandleEl.addEventListener('pointerdown', (event: PointerEvent) => {
+    if (!toolbarEl.classList.contains('is-collapsed')) return;
+    event.preventDefault();
+    dragHandleEl.setPointerCapture(event.pointerId);
+    const start = toolbarEl.getBoundingClientRect();
+    const offsetX = event.clientX - start.left;
+    const offsetY = event.clientY - start.top;
+    toolbarEl.classList.add('is-dragging');
+
+    const move = (moveEvent: PointerEvent): void => {
+      place(moveEvent.clientX - offsetX, moveEvent.clientY - offsetY);
+    };
+    const finish = (): void => {
+      dragHandleEl.removeEventListener('pointermove', move);
+      dragHandleEl.removeEventListener('pointerup', finish);
+      dragHandleEl.removeEventListener('pointercancel', finish);
+      toolbarEl.classList.remove('is-dragging');
+      const rect = toolbarEl.getBoundingClientRect();
+      const limit = bounds();
+      const distances = [
+        { edge: 'left', value: Math.abs(rect.left - limit.left) },
+        { edge: 'right', value: Math.abs(rect.left - limit.right) },
+        { edge: 'top', value: Math.abs(rect.top - limit.top) },
+        { edge: 'bottom', value: Math.abs(rect.top - limit.bottom) }
+      ].sort((a, b) => a.value - b.value);
+      const edge = distances[0]?.edge;
+      place(
+        edge === 'left' ? limit.left : edge === 'right' ? limit.right : rect.left,
+        edge === 'top' ? limit.top : edge === 'bottom' ? limit.bottom : rect.top
+      );
+    };
+    dragHandleEl.addEventListener('pointermove', move);
+    dragHandleEl.addEventListener('pointerup', finish);
+    dragHandleEl.addEventListener('pointercancel', finish);
+  });
+  window.addEventListener('resize', keepClearOfSidebar);
+  const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
+  if (sidebar && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(keepClearOfSidebar).observe(sidebar);
+  }
+  new MutationObserver(() => {
+    if (pdfViewEl.style.display !== 'none') setCollapsed(false);
+  }).observe(pdfViewEl, { attributes: true, attributeFilter: ['style'] });
+})();
+
 // Dashboard cards
 _bindIf('pcStudip', 'click', () => {
   const resumed = _showStudipResume();

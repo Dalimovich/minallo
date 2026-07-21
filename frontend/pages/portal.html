@@ -1738,6 +1738,7 @@
                         </div>
                       </div>
                       <div class="pdf-right">
+                        <div class="pdf-tabs-bar" id="pdfTabsBar" aria-label="Open PDF tabs"></div>
                         <div class="pdf-study-wrap" id="pdfStudyWrap">
                         <button
                           type="button"
@@ -1778,7 +1779,6 @@
                         </button>
                       </div>
                     </div>
-                    <div class="pdf-tabs-bar" id="pdfTabsBar" aria-label="Open PDF tabs"></div>
                     <div class="pdf-toolbar-controls">
                       <div class="pdf-control-group" id="pdfPageGroup">
                         <button
@@ -1920,6 +1920,31 @@
                           Download
                         </button>
                       </div>
+                      <button
+                        type="button"
+                        class="pdf-toolbar-button pdf-icon-button pdf-toolbar-drag-handle"
+                        id="pdfToolbarDragHandle"
+                        title="Move toolbar"
+                        aria-label="Move collapsed PDF toolbar"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <circle cx="8" cy="7" r="1.5"/><circle cx="16" cy="7" r="1.5"/>
+                          <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
+                          <circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="17" r="1.5"/>
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="pdf-toolbar-button pdf-icon-button pdf-collapse-button"
+                        id="pdfToolbarCollapse"
+                        title="Collapse toolbar"
+                        aria-label="Collapse PDF toolbar"
+                        aria-expanded="true"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="6 15 12 9 18 15" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 </div>

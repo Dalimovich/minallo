@@ -42,15 +42,15 @@
   width: var(--sb-collapsed);
   height: calc(100dvh - 28px);
   max-height: calc(100dvh - 28px);
-  margin: 14px 0 14px 14px;
-  padding: 14px 10px;
+  margin: 10px 0 10px 8px;
+  padding: 10px 7px;
   display: flex;
   flex-direction: column;
   background: rgba(15, 23, 42, 0.78);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 28px;
+  border-radius: 22px;
   box-shadow:
     0 18px 60px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -73,9 +73,9 @@
  * to the right edge when expanded so it reads as a "close" affordance. */
 .sb-toggle {
   flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 10px;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 7px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,7 +122,7 @@ body:not(.night) .sb-toggle:hover {
 /* User / profile block */
 .sb-user {
   flex-shrink: 0;
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
@@ -138,7 +138,7 @@ body:not(.night) .sb-toggle:hover {
     margin 260ms cubic-bezier(0.4, 0, 0.2, 1),
     height 260ms cubic-bezier(0.4, 0, 0.2, 1);
   justify-content: center;
-  height: 56px;
+  height: 44px;
 }
 #portal .sidebar.expanded .sb-user {
   justify-content: flex-start;
@@ -217,7 +217,7 @@ body:not(.night) .sb-toggle:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
@@ -267,9 +267,9 @@ body:not(.night) .sb-toggle:hover {
 /* Divider: visible in collapsed state, replaced by group label when expanded */
 .sb-divider {
   height: 1px;
-  width: 56px;
+  width: 36px;
   background: rgba(255, 255, 255, 0.10);
-  margin: 4px 0;
+  margin: 2px 0;
   flex-shrink: 0;
   align-self: center;
   transition:
@@ -291,10 +291,11 @@ body:not(.night) .sb-toggle:hover {
   display: flex;
   align-items: center;
   gap: 0;
-  height: 56px;
-  width: 56px;
+  min-height: 42px;
+  height: 42px;
+  width: 42px;
   padding: 0;
-  border-radius: 20px;
+  border-radius: 13px;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.045);
@@ -319,11 +320,11 @@ body:not(.night) .sb-toggle:hover {
   display: none !important;
 }
 #portal .sidebar.expanded .sb-item {
-  height: 68px;
+  height: 46px;
   width: 100%;
   justify-content: flex-start;
-  padding: 0 14px;
-  gap: 14px;
+  padding: 0 10px;
+  gap: 10px;
 }
 #portal .sidebar .sb-item:hover {
   background: rgba(255, 255, 255, 0.075);
@@ -351,7 +352,7 @@ body:not(.night) #portal .sidebar .sb-item.active {
 #portal .sidebar .sb-item.active::before {
   content: '';
   position: absolute;
-  left: -7px;
+  left: -5px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
@@ -389,18 +390,18 @@ body:not(.night) #portal .sidebar .sb-item.active {
   display: block;
 }
 .sb-item-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  overflow: hidden;
+  width: 22px;
+  height: 22px;
+  border-radius: 0;
+  overflow: visible;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.25rem;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   color: rgba(203, 213, 225, 1);
   transition:
     width 260ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -411,23 +412,21 @@ body:not(.night) #portal .sidebar .sb-item.active {
     color 180ms ease;
 }
 #portal .sidebar.expanded .sb-item-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 0;
 }
 #portal .sidebar .sb-item:hover .sb-item-icon {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(147, 197, 253, 0.20);
+  background: transparent;
+  border-color: transparent;
   color: #fff;
 }
 #portal .sidebar .sb-item.on .sb-item-icon,
 #portal .sidebar .sb-item.active .sb-item-icon {
-  background: rgba(59, 130, 246, 0.22);
-  border-color: rgba(147, 197, 253, 0.40);
+  background: transparent;
+  border-color: transparent;
   color: #fff;
-  box-shadow:
-    0 0 14px rgba(59, 130, 246, 0.30),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  box-shadow: none;
 }
 /* Light mode keeps dark glass sidebar for premium look — icons styled the same */
 body:not(.night) .sb-item-icon {
@@ -636,6 +635,65 @@ body.night .sb-night-thumb {
   overflow: hidden;
   background: var(--minallo-page-bg, var(--app-bg, var(--dp-bg)));
   background-image: none;
+}
+
+/* Compact navigation rail refinements. The item itself is the sole visible
+   container; icon wrappers remain layout-only. */
+#portal .sidebar .sb-item-icon,
+#portal .sidebar.expanded .sb-item-icon,
+body:not(.night) #portal .sidebar .sb-item-icon,
+#portal .sidebar .sb-item:hover .sb-item-icon,
+#portal .sidebar .sb-item.on .sb-item-icon,
+#portal .sidebar .sb-item.active .sb-item-icon {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+#portal .sidebar .sb-item:focus-visible,
+#portal .sidebar .sb-toggle:focus-visible,
+#portal .sidebar .sb-night-btn:focus-visible,
+#portal .sidebar .sb-user:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 3px;
+}
+#portal .sidebar .sb-bottom { padding-top: 7px; }
+#portal .sidebar .sb-night-btn { width: 42px; height: 42px; border-radius: 13px; }
+#portal .sidebar.expanded .sb-night-btn { height: 46px; border-radius: 13px; }
+#portal .sidebar .sb-night-track,
+#portal .sidebar.expanded .sb-night-track,
+body.night #portal .sidebar .sb-night-track {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sb-tooltip {
+  position: fixed;
+  z-index: 12000;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 7px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 7px;
+  background: #111827;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  color: #f8fafc;
+  font: 600 13px/1.25 var(--font-main);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%) translateX(-2px);
+  transition: opacity 70ms ease, transform 70ms ease;
+}
+.sb-tooltip.is-visible {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 #portal .main .topbar {
   display: none !important;

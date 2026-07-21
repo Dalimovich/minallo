@@ -377,6 +377,7 @@
             // Light-mode polish loads LAST so it wins source-order ties
             // against feature CSS that still hard-codes greys.
             'css/light-mode.css?v=54',
+            'css/compact-viewer.css?v=1',
         ].forEach((href) => {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
@@ -808,7 +809,10 @@
         const cached = loadedFeatureSections[section.id];
         if (cached)
             return cached;
-        const fetchOnce = () => _fetchTimeout(section.file, 10000).then((r) => {
+        const sectionVersion = String(window.MinalloConfig?.assetVersion || SS?.version || '1');
+        const sectionUrl = section.file + (section.file.includes('?') ? '&' : '?') +
+            'v=' + encodeURIComponent(sectionVersion);
+        const fetchOnce = () => _fetchTimeout(sectionUrl, 10000).then((r) => {
             if (!r.ok)
                 throw new Error('HTTP ' + r.status + ' loading ' + section.file);
             return r.text();

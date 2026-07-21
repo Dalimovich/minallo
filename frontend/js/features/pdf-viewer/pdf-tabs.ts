@@ -341,6 +341,9 @@ function tabIsBeingCompared(tab: PdfTab): boolean {
 function renderTabsStrip(): void {
   if (!stripEl) return;
   renderCompareChip();
+  const hasMultiple = tabs.length > 1;
+  barEl?.classList.toggle('has-multiple', hasMultiple);
+  stripEl.hidden = !hasMultiple;
   const seen = new Set<string>();
 
   for (let i = 0; i < tabs.length; i++) {
