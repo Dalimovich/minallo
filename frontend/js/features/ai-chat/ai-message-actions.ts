@@ -85,7 +85,7 @@ export function addBotMsg(text: string): HTMLElement | null {
   wrap.innerHTML =
     '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
     '<div class="msg-body">' +
-    '<div class="ai-bubble bot">' + botHtml + '</div>' +
+    '<div class="ai-bubble bot" dir="auto">' + botHtml + '</div>' +
     '<div class="msg-meta">' +
     '<span class="msg-time">' + t + '</span>' +
     '<button class="msg-action-btn" data-action="copy">' +
@@ -131,7 +131,7 @@ export function addUserMsg(text: string): HTMLElement | null {
     (window._t ? window._t('you_label') : 'You') +
     '</div>' +
     '<div class="msg-body">' +
-    '<div class="ai-bubble user">' + safe + '</div>' +
+    '<div class="ai-bubble user" dir="auto">' + safe + '</div>' +
     '<div class="msg-meta">' +
     '<span class="msg-time">' + t + '</span>' +
     '<button class="msg-action-btn user-btn" data-action="copy">Copy</button>' +
@@ -165,7 +165,7 @@ export function serializeChatDOM(): Array<{ role: string; text: string }> {
   if (!aiMsgs) return msgs;
   aiMsgs.querySelectorAll('.ai-msg-wrap').forEach((wrap) => {
     if (wrap.classList.contains('typing-wrap')) return;
-    if (wrap.getAttribute('data-restored') === 'true') return;
+    // Restored bubbles remain valid model context after reload/reopen.
     const bubble = wrap.querySelector('.ai-bubble') as HTMLElement | null;
     if (!bubble) return;
     // Skip bubbles that are still streaming. data-raw is updated incrementally

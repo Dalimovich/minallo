@@ -197,10 +197,8 @@ class AskStreamRequest(BaseModel):
     tutorMode: str | None = None
     sourceMode: str | None = "auto"
     courseFileScope: str | None = "all_course_files"
-    # Short transcript of the most recent turns in this chat session,
-    # newest last. Capped on the server (we trim to ~3 turns / ~2000 chars
-    # total) so the prompt size stays predictable even if the client
-    # sends a long history.
+    # Recent transcript for this file-scoped chat, newest last. The answer
+    # service enforces per-turn, message-count, and total-character caps.
     previousTurns: list[PreviousTurn] | None = None
     problemSolver: ProblemSolverPayload | None = None
     # Current UI location (page / course tab / open document title). Optional;

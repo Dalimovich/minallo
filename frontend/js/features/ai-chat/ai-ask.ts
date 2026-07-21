@@ -580,7 +580,7 @@ function _renderHistoryPairs(pairs: HistoryPair[] | null, aiMsgs: HTMLElement): 
     wrap.innerHTML =
       '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
       '<div class="msg-body">' +
-      '<div class="ai-bubble bot restored-answer"></div>' +
+      '<div class="ai-bubble bot restored-answer" dir="auto"></div>' +
       '<div class="msg-meta">' +
       '<button class="msg-action-btn" data-action="copy">' +
       (window._t ? window._t('copy_btn') : 'Copy') +
@@ -821,7 +821,6 @@ export function initAskAI(
     const _comparePdfDoc = _compareName
       ? (getPane('right').pdfDoc as PdfDocLike | null)
       : null;
-    const _lang = window._lang || localStorage.getItem('ss_lang') || 'en';
     const activeFileName = window.activeFileName || '';
     const currentCourseShort = window.currentCourseShort || '';
     const _MATH_PROMPT = (window as unknown as { _MATH_PROMPT?: string })._MATH_PROMPT || '';
@@ -833,12 +832,11 @@ export function initAskAI(
         ? 'You are Minallo, a German language tutor helping a student prepare for ' +
           (window._germanTest || 'a German exam') +
           (window._germanLevel ? ' at level ' + window._germanLevel : '') +
-          '. Always reply in ' + (_lang === 'de' ? 'German' : 'English') +
-          '. The student is reading ' + _docList +
+          '. Reply in the language of the student\'s latest question, regardless of the document, pasted text, previous messages, or interface language. Support any language and script, including Arabic and other right-to-left scripts. ' +
+          'The student is reading ' + _docList +
           '. ALWAYS base your answers on the actual document content below. Be thorough but concise.'
-        : 'You are Minallo, a friendly tutor for TU Braunschweig engineering students. Always reply in ' +
-          (_lang === 'de' ? 'German' : 'English') +
-          '. The student is reading ' + _docList + ' from ' + currentCourseShort +
+        : 'You are Minallo, a friendly tutor for TU Braunschweig engineering students. Reply in the language of the student\'s latest question, regardless of the document, pasted text, previous messages, or interface language. Support any language and script, including Arabic and other right-to-left scripts. ' +
+          'The student is reading ' + _docList + ' from ' + currentCourseShort +
           '. ALWAYS base your answers on the actual document content provided below. Do not use general knowledge when the document covers the topic. Be thorough but concise.') +
       MINALLO_APP_CONTEXT +
       _MATH_PROMPT;
@@ -1036,6 +1034,37 @@ export function initAskAI(
         let _openFileImages = _visibleTextWeak && pageImages[0]
           ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
           : undefined;
+        // Keep a recent user attachment available for anaphoric follow-ups
+        // such as "this one", "the image", or "where did that 100 come from?".
+        // Text-only previousTurns cannot carry the pixels themselves.
+        const _recentImageCtx = (window as unknown as {
+          _lastAiImageContext?: {
+            images?: Array<{ mediaType: string; data: string }>;
+            courseId?: string;
+            fileName?: string;
+            timestamp?: number;
+          };
+        })._lastAiImageContext;
+        const _currentCourseId = window.activeCourseId || window.currentCourseId || '';
+        const _refersToRecentVisual =
+          /\b(this|that|it|one|image|picture|screenshot|photo|formula|equation|shown|above)\b/i.test(question);
+        const _recentVisualMatches =
+          !!_recentImageCtx?.images?.length &&
+          _refersToRecentVisual &&
+          Date.now() - (_recentImageCtx.timestamp || 0) < 15 * 60 * 1000 &&
+          (!_recentImageCtx.courseId || _recentImageCtx.courseId === _currentCourseId) &&
+          (!_recentImageCtx.fileName || _recentImageCtx.fileName === activeFileName);
+        if (_recentVisualMatches) {
+          const _attachmentImages = _recentImageCtx!.images!.slice(-2).map((img) => ({
+            mediaType: img.mediaType,
+            data: img.data,
+            page: _currentPageNo
+          }));
+          _openFileImages = [..._attachmentImages, ...(_openFileImages || [])].slice(0, 2);
+          sysPrompt +=
+            '\n\nThe user recently attached the image(s) included with this request. ' +
+            'When they refer to "this", "that", "the image", or "this one", inspect those images directly and keep the prior conversation topic.';
+        }
         let _streamActiveFileName = activeFileName;
         let _streamOpenFileCtx = _openFileCtx;
         if (_compareName) {
@@ -1248,7 +1277,7 @@ export function initAskAI(
               ansWrap.className = 'ai-msg-wrap';
               ansWrap.innerHTML =
                 '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-                '<div class="msg-body"><div class="ai-bubble bot ai-bubble-streaming" style="min-height:20px"></div></div>';
+                '<div class="msg-body"><div class="ai-bubble bot ai-bubble-streaming" dir="auto" style="min-height:20px"></div></div>';
               aiMsgs.appendChild(ansWrap);
               _autoScroll(aiMsgs);
               bubble = ansWrap.querySelector<HTMLElement>('.ai-bubble.bot');
@@ -1285,27 +1314,22 @@ export function initAskAI(
             const _streamController = new AbortController();
             window._abortCurrentStream = (): void => _streamController.abort();
 
-            // Collect the last 4 messages (≈ 2 Q&A pairs) so the backend can
+            // Collect recent file-scoped messages so the backend can
             // resolve follow-up references like "explain the formula above"
             // without having to re-derive them from retrieval alone. Backend
-            // hard-caps this further (max 6 messages, 2k chars total), so
-            // it's safe to send a few more here than strictly needed.
+            // apply its own per-turn and total character caps.
             let _previousTurns: Array<{ role: string; text: string }> = [];
             try {
-              const _allMsgs = typeof window.serializeChatDOM === 'function'
-                ? window.serializeChatDOM()
-                : [];
-              // Drop the current user message if it's already in the DOM
-              // (addUserMsg ran above). We want prior turns, not the one
-              // being asked right now.
+              // Captured before addUserMsg(question), so repeated questions are
+              // preserved correctly and the current turn is never included.
+              const _allMsgs = _chatHistory;
               const _prior: Array<{ role: string; text: string }> = [];
               for (let _ci = _allMsgs.length - 1; _ci >= 0; _ci--) {
                 const m = _allMsgs[_ci]!;
                 const _txt = (m.text || '').trim();
                 if (!_txt) continue;
-                if (m.role === 'user' && _txt === question.trim()) continue; // skip current
                 _prior.unshift({ role: m.role, text: _txt });
-                if (_prior.length >= 4) break;
+                if (_prior.length >= 20) break;
               }
               _previousTurns = _prior;
             } catch { /* ignore — sending [] is safe */ }
@@ -1636,7 +1660,7 @@ export function initAskAI(
         ansWrap.innerHTML =
           '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
           '<div class="msg-body">' +
-          '<div class="ai-bubble bot" style="min-height:20px"></div>' +
+          '<div class="ai-bubble bot" dir="auto" style="min-height:20px"></div>' +
           '<div class="msg-meta" style="display:none">' +
           '<span class="msg-time">' + tNow + '</span>' +
           '<button class="msg-action-btn" data-action="copy">' +

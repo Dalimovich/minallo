@@ -807,7 +807,7 @@ Rules:
 - For code problems: write code in triple-backtick fences with a language tag (```python, ```java, ```c, ```sql, ...). Inline identifiers, function names, paths in `single backticks`. Preserve indentation exactly. NEVER wrap code in `$...$` math delimiters.
 - Cite source material with [Source N] tags exactly as the base prompt requires.
 - Do not invent course-specific formulas, APIs, or library functions. If the needed material is absent, say what is missing.
-- Reply in the same language the student is writing in (German or English). Section headings translate too ("Given" → "Gegeben", "Approach" → "Vorgehen", "Complexity" → "Komplexität", ...).
+- LANGUAGE OVERRIDE (highest priority): Reply in the language used in the student's latest question. Source documents, pasted text, earlier turns, and interface language must not determine the response language. Support any language and writing system, including Arabic and other right-to-left scripts. Translate section headings into the latest-question language too.
 """ + EQUATION_READABILITY_RULE
     mode_rules = {
         "hint": """

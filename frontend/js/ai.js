@@ -38,9 +38,7 @@ function _buildSystemPrompt() {
     '- When explaining a concept, write complete sentences that build understanding from first principles.\n' +
     '- Be thorough and precise — explain *why* something works, not just *what* it is.\n' +
     '- For formulas: write out the expression, then define every variable in a sentence each, then explain in plain language what the formula computes and when it applies.\n' +
-    '- Respond ENTIRELY in ' +
-    (typeof _lang !== 'undefined' && _lang === 'de' ? 'German (Deutsch)' : 'English') +
-    '. Do not switch languages mid-response.\n' +
+    '- Respond in the language used in the student\'s latest question. The document, pasted text, earlier turns, and interface language must not override the latest question. Support any language and writing system, including Arabic and other right-to-left scripts.\n' +
     '- If the document does not cover a topic, say so clearly instead of inventing an answer.\n' +
     '- Use **bold** for key terms, `monospace` for code/variables, and ### headers to separate major sections.\n\n' +
     'CONTENT RULES:\n' +
@@ -66,11 +64,24 @@ let askAI = function (question, skipUserBubble) {
   var _myChatKey = typeof _prevChatKey !== 'undefined' ? _prevChatKey : null; // capture now, before any async
   pinAI();
 
+  // The image-capable endpoint is separate from the RAG chat path. Include
+  // the visible conversation explicitly so an image turn remains a follow-up
+  // instead of silently starting a new conversation.
+  var _priorTurns = window.serializeChatDOM ? window.serializeChatDOM().slice(-20) : [];
+
   // Snapshot + clear images before anything else
   var _imgs = _attachedImages.slice();
   _attachedImages = [];
   window._attachedImages = _attachedImages;
   _renderImgPreviews();
+  if (_imgs.length > 0) {
+    window._lastAiImageContext = {
+      images: _imgs.slice(-2),
+      courseId: window.activeCourseId || window.currentCourseId || '',
+      fileName: window.activeFileName || '',
+      timestamp: Date.now()
+    };
+  }
 
   if (!skipUserBubble) {
     if (_imgs.length > 0) {
@@ -98,7 +109,7 @@ let askAI = function (question, skipUserBubble) {
         '<div class="ai-msg-imgs">' +
         _imgsHtml +
         '</div>' +
-        '<div class="ai-bubble user">' +
+        '<div class="ai-bubble user" dir="auto">' +
         _safe +
         '</div>' +
         '<div class="msg-meta"><span class="msg-time">' +
@@ -137,6 +148,17 @@ let askAI = function (question, skipUserBubble) {
     msgContent = question;
   }
 
+  var _visionHistory = [];
+  var _visionChars = 0;
+  for (var _hi = _priorTurns.length - 1; _hi >= 0; _hi--) {
+    var _turn = _priorTurns[_hi];
+    if (!_turn || (_turn.role !== 'user' && _turn.role !== 'assistant') || !_turn.text) continue;
+    var _turnText = String(_turn.text).slice(0, 1200);
+    if (_visionChars + _turnText.length > 12000) break;
+    _visionHistory.unshift({ role: _turn.role, content: _turnText });
+    _visionChars += _turnText.length;
+  }
+
   fetch(BACKEND_URL + '/api/ai', {
     method: 'POST',
     headers: {
@@ -147,7 +169,7 @@ let askAI = function (question, skipUserBubble) {
       model: AI_MODEL,
       max_tokens: AI_MAX_TOK,
       system: _buildSystemPrompt(),
-      messages: [{ role: 'user', content: msgContent }]
+      messages: _visionHistory.concat([{ role: 'user', content: msgContent }])
     })
   })
     .then(function (r) {
@@ -180,7 +202,7 @@ let askAI = function (question, skipUserBubble) {
       ansWrap.innerHTML =
         '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
         '<div class="msg-body">' +
-        '<div class="ai-bubble bot" style="min-height:20px"></div>' +
+        '<div class="ai-bubble bot" dir="auto" style="min-height:20px"></div>' +
         '<div class="msg-meta" style="display:none">' +
         '<span class="msg-time">' +
         t +
