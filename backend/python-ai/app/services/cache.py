@@ -25,6 +25,8 @@ from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
+_ANSWER_CACHE_SCHEMA = "answer-v7-multilingual-context"
+
 
 def _normalize_question(q: str) -> str:
     """Trim + lowercase + collapse internal whitespace."""
@@ -65,7 +67,7 @@ def question_hash(
     All extras default to None — legacy callers without context still
     produce a stable, smaller key.
     """
-    parts = [_normalize_question(q)]
+    parts = [_ANSWER_CACHE_SCHEMA, _normalize_question(q)]
     if tutor_mode:
         parts.append(f"tm={tutor_mode}")
     if active_document_id:

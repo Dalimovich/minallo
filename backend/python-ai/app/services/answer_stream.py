@@ -405,6 +405,16 @@ def _latest_question_language_overlay(question: str) -> str:
     )
 
 
+def _answer_matches_question_language(question: str, answer: str) -> bool:
+    """Prevent a stale cached answer from bypassing the language lock."""
+    expected = _detect_question_language(question)
+    if not expected or len((answer or "").strip()) < 40:
+        return True
+    cleaned = re.sub(r"\[Source\s+\d+\]|https?://\S+|[`$\\{}_^]", " ", answer or "")
+    actual = _LANGUAGE_DETECTOR.detect_language_of(cleaned)
+    return actual is None or actual == expected
+
+
 def _language_rewrite_followup_overlay(
     question: str,
     previous_turns: list[dict[str, str]] | None,

@@ -250,6 +250,16 @@ def test_visible_page_skips_redundant_retrieved_figure_render() -> None:
     )
 
 
+def test_cached_answer_language_must_match_latest_question() -> None:
+    from app.services.answer_stream import _answer_matches_question_language
+
+    question = "How do I answer Aufgabe 13.9?"
+    english = "Here is how to answer the exercise: first identify the required value, then substitute the given data."
+    german = "So beantwortest du die Aufgabe: Bestimme zuerst den gesuchten Wert und setze dann die gegebenen Daten ein."
+    assert _answer_matches_question_language(question, english)
+    assert not _answer_matches_question_language(question, german)
+
+
 # ── Cache key fold-in for previousTurns ─────────────────────────────────────
 
 

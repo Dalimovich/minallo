@@ -30,7 +30,7 @@ from ..services.access_control import (
     require_active_subscription,
 )
 from ..services.answer import DEFAULT_TUTOR_MODE, is_app_question, normalise_tutor_mode
-from ..services.answer_stream import stream_answer
+from ..services.answer_stream import _answer_matches_question_language, stream_answer
 from ..services.answer_intent import (
     AcademicIntent,
     chitchat_answer,
@@ -684,6 +684,10 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             "sourceDebug": cached.get("sourceDebug") if _source_debug_enabled() else None,
         }))
 
+    if cached and not _answer_matches_question_language(question, str(cached.get("answer") or "")):
+        log.warning("ask_stream rejected cached answer with mismatched response language")
+        cached = None
+
     if cached:
         record_retrieval_debug(DebugPayload(
             user_id=user_id, course_id=payload.courseId,
@@ -795,9 +799,13 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     guarantee_documents=generative_request,
                 )
             )
+            formula_query = (
+                (payload.problemSolver.problem or question).strip()
+                if payload.problemSolver else question
+            )
             formula_task = run_in_threadpool(
                 lambda: retrieve_formula_block(
-                    user_id=user_id, course_id=payload.courseId, query=retrieval_query,
+                    user_id=user_id, course_id=payload.courseId, query=formula_query,
                     document_ids=retrieval_document_ids,
                     active_document_id=payload.activeDocumentId,
                 )
