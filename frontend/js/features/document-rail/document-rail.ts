@@ -850,6 +850,13 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     document.documentElement.style.setProperty('--ai-panel-font-scale', String(scale));
     drawer.style.setProperty('--ai-panel-font-scale', String(scale));
     drawer.dataset.aiFontScale = String(scale);
+    // Older app bundles wrote the custom property directly onto #aiPanel.
+    // That inline value outranks inheritance from the drawer/root, so always
+    // update the actual hosted panel too.
+    const panel = document.getElementById('aiPanel');
+    panel?.style.setProperty('--ai-panel-font-scale', String(scale));
+    const messages = document.getElementById('aiMsgs');
+    messages?.style.setProperty('--ai-panel-font-scale', String(scale));
   };
   apply();
 
@@ -864,15 +871,20 @@ function wireAiFontZoom(drawer: HTMLElement): void {
   // Bind to the actual drawer rather than document/window. Chromium treats
   // root wheel listeners specially, while an explicit non-passive element
   // listener can reliably cancel browser zoom.
-  drawer.addEventListener('wheel', (event: WheelEvent) => {
+  const resizeFromWheel = (event: WheelEvent): void => {
     if (!drawer.classList.contains('dr-mode-ai')) return;
     if (!event.ctrlKey && !event.metaKey && !modifierHeld) return;
     event.preventDefault();
     event.stopPropagation();
-    scale = clamp(Math.round((scale + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10);
+    const legacyDelta = (event as WheelEvent & { wheelDelta?: number }).wheelDelta;
+    const scrollingUp = event.deltaY ? event.deltaY < 0 : (legacyDelta || 0) > 0;
+    scale = clamp(Math.round((scale + (scrollingUp ? 0.1 : -0.1)) * 10) / 10);
     apply();
     try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
-  }, { passive: false, capture: true });
+  };
+  drawer.addEventListener('wheel', resizeFromWheel, { passive: false, capture: true });
+  // Fallback for devices/drivers that still emit the legacy mousewheel event.
+  drawer.addEventListener('mousewheel', resizeFromWheel as EventListener, { passive: false, capture: true });
 }
 
 function setRouteVisibility(route: DocRailRoute): void {
