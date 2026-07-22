@@ -226,6 +226,16 @@ def test_exact_exercise_overlay_forbids_number_substitution() -> None:
     assert "differently numbered exercise" in overlay
 
 
+def test_default_explain_mode_is_conversational_and_interactive() -> None:
+    from app.services.answer import pick_system_prompt
+
+    prompt, _ = pick_system_prompt("I don't understand this step", "strong", [])
+    assert "CONVERSATIONAL EXPLAIN" in prompt
+    assert "recent chat history actively" in prompt
+    assert "ONE short, topic-specific check" in prompt
+    assert "Never withhold an answer" in prompt
+
+
 # ── Cache key fold-in for previousTurns ─────────────────────────────────────
 
 
