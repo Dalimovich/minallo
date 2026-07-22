@@ -421,15 +421,40 @@ def _language_rewrite_followup_overlay(
     )
 
 
-def _exact_exercise_overlay(question: str, *, has_visible_context: bool) -> str:
+def _resolved_exercise_number(
+    question: str,
+    previous_turns: list[dict[str, str]] | None = None,
+) -> str | None:
     match = re.search(
-        r"\b(?:task|exercise|problem|question|aufgabe|uebung)\s*(\d+(?:\.\d+)?)\b",
+        r"\b(?:task|exercise|problem|question|aufgabe|uebung)\s*(\d+(?:[.,]\d+)?)\b",
         question or "",
         re.IGNORECASE,
     )
     if not match:
+        return None
+    number = match.group(1).replace(",", ".")
+    if "." not in number and len(number) == 4:
+        for turn in reversed(previous_turns or []):
+            prior = re.search(
+                r"\b(?:task|exercise|problem|question|aufgabe|uebung)\s*(\d+)[.,](\d+)\b",
+                turn.get("text") or "",
+                re.IGNORECASE,
+            )
+            if prior and prior.group(1) + prior.group(2).zfill(2) == number:
+                return f"{prior.group(1)}.{int(prior.group(2))}"
+        return f"{int(number[:2])}.{int(number[2:])}"
+    return number
+
+
+def _exact_exercise_overlay(
+    question: str,
+    *,
+    has_visible_context: bool,
+    previous_turns: list[dict[str, str]] | None = None,
+) -> str:
+    number = _resolved_exercise_number(question, previous_turns)
+    if not number:
         return ""
-    number = match.group(1)
     visible = (
         "The currently visible PDF page is attached as Source 0 and is the primary evidence."
         if has_visible_context
@@ -438,6 +463,8 @@ def _exact_exercise_overlay(question: str, *, has_visible_context: bool) -> str:
     return (
         f"\nEXACT EXERCISE TARGET (mandatory): The student asked about exercise {number}. "
         f"{visible} Do not answer, blend in, or substitute any other exercise number. "
+        f"Exercise {number} is not an alias for a differently numbered exercise. Treat any "
+        "conflicting exercise identification in chat history or retrieved text as incorrect. "
         "Read the exact prompt, diagram, marked fields, choices, and professor solution before answering. "
         "If the evidence does not show the requested exercise clearly, say that instead of guessing.\n"
     )
@@ -1440,7 +1467,11 @@ def stream_answer(
     system_prompt += FINAL_RESPONSE_LANGUAGE_RULE
     system_prompt += _latest_question_language_overlay(question)
     system_prompt += _language_rewrite_followup_overlay(question, previous_turns)
-    system_prompt += _exact_exercise_overlay(question, has_visible_context=include_source_zero)
+    system_prompt += _exact_exercise_overlay(
+        question,
+        has_visible_context=include_source_zero,
+        previous_turns=previous_turns,
+    )
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:
@@ -1562,6 +1593,26 @@ def stream_answer(
     # the model anaphora context without blowing prompt size on a long
     # session.
     history_messages = _trim_previous_turns(previous_turns)
+
+    # A language-only request transforms the previous answer; it is not a new
+    # PDF question. Isolate it from fresh retrieval/current-page evidence so
+    # that "answer in German" cannot jump to an unrelated visible exercise.
+    rewrite_target = _explicit_requested_language(question)
+    if rewrite_target and _language_rewrite_followup_overlay(question, previous_turns):
+        previous_answer = next(
+            (m for m in reversed(history_messages) if m.get("role") == "assistant"),
+            None,
+        )
+        if previous_answer:
+            system_prompt = (
+                "You are translating the immediately previous assistant answer. "
+                f"Rewrite it completely in {rewrite_target.name.title()}. Preserve its exact "
+                "exercise number, explanation, calculations, values, formulas, and conclusion. "
+                "Do not use the currently visible PDF, retrieval results, or another exercise. "
+                "Do not ask a clarifying question. Output only the rewritten answer."
+            )
+            history_messages = [previous_answer]
+            user_content = "LANGUAGE REQUEST:\n" + question.strip()
 
     client = get_openai_client()
     prompt_tokens = None

@@ -203,6 +203,29 @@ def test_visible_pdf_context_promotes_retrieval_strength() -> None:
     assert _effective_strength_with_open_context("weak", False) == "weak"
 
 
+def test_compact_exercise_correction_resolves_against_recent_context() -> None:
+    from app.services.answer_stream import _resolved_exercise_number
+
+    turns = [
+        {"role": "user", "text": "How did the professor solve Aufgabe 13.6?"},
+        {"role": "assistant", "text": "For Aufgabe 13.6, the marked result is 114 s."},
+    ]
+    assert _resolved_exercise_number("no it's Aufgabe 1306", turns) == "13.6"
+
+
+def test_exact_exercise_overlay_forbids_number_substitution() -> None:
+    from app.services.answer_stream import _exact_exercise_overlay
+
+    overlay = _exact_exercise_overlay(
+        "How did the professor get Aufgabe 13.6?",
+        has_visible_context=True,
+        previous_turns=[],
+    )
+    assert "exercise 13.6" in overlay
+    assert "not an alias" in overlay
+    assert "differently numbered exercise" in overlay
+
+
 # ── Cache key fold-in for previousTurns ─────────────────────────────────────
 
 
