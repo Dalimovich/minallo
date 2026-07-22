@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Generator
 
 from lingua import Language, LanguageDetectorBuilder
@@ -169,8 +170,19 @@ _FIGURE_CHUNK_TYPES = FIGURE_CHUNK_TYPES
 # vision model to read reliably — it would "see" the figure but still report
 # l_K as not visible. 220 DPI keeps an A4 page well under gpt-4o's pixel limit
 # while making those numerals legible.
-_FIGURE_RENDER_DPI = 220
-_MAX_ATTACHED_IMAGES = 2  # hard cap on open-file + figure images per request
+_FIGURE_RENDER_DPI = 160
+_MAX_ATTACHED_IMAGES = 1  # ordinary requests attach at most one rendered page
+
+_EXPLICIT_VISUAL_RE = re.compile(
+    r"\b(figure|diagram|drawing|sketch|graph|table|image|shown|pictured|"
+    r"abbildung|diagramm|zeichnung|skizze|tabelle|grafik|bild)\b",
+    re.IGNORECASE,
+)
+_COMPLEX_REASONING_RE = re.compile(
+    r"\b(prove|proof|derive|derivation|multi[- ]?step|deep(?:ly)?|rigorous|"
+    r"beweis|herleiten|herleitung|ausführlich|detailliert)\b",
+    re.IGNORECASE,
+)
 
 # Instruction appended to the user turn when an exercise/figure page image is
 # attached. Deliberately exhaustive: engineering figures pack the bulk of the
@@ -1116,6 +1128,7 @@ def stream_answer(
     user_id: str | None = None,
     selected_file_names: list[str] | None = None,
     selected_document_ids: list[str] | None = None,
+    request_id: str | None = None,
 ) -> Generator[bytes, None, None]:
     """Generator that yields SSE byte chunks. Pluggable into FastAPI's
     StreamingResponse with media_type='text/event-stream'.
@@ -1309,11 +1322,20 @@ def stream_answer(
     # rigid math worksheet template wasn't picked (e.g. the formula sheet wasn't
     # retrieved, so answer_mode stayed "strong"). Compute the flag here so it can
     # also route the request to the vision-capable strong model.
+    figure_reference = bool(_EXPLICIT_VISUAL_RE.search(question))
+    extracted_text_incomplete = bool(
+        used_chunks
+        and any(
+            len((getattr(c, "content", None) or getattr(c, "text", None) or "").strip()) < 120
+            for c in used_chunks[:3]
+        )
+    )
     will_attach_figure = (
         not app_question
         and answer_mode in ("math", "strong")
         and bool(used_chunks)
         and any((getattr(c, "chunk_type", None) or "") in _FIGURE_CHUNK_TYPES for c in used_chunks)
+        and (figure_reference or deictic or extracted_text_incomplete)
     )
     # Route by answer mode: math/exercise questions hit the strong model,
     # everything else stays on the cheaper mini model. Must compute AFTER
@@ -1327,16 +1349,15 @@ def stream_answer(
     if model:
         target_model = model
     elif (
-        answer_mode == "math"
-        or problem_mode in {"setup", "check", "solve"}
-        or wants_diagram
+        wants_diagram
         or has_open_image
         or will_attach_figure
         # A multi-section mock exam (one Aufgabe per selected file, with calc
         # tasks + Kurzlösung) needs strong instruction-following: the mini model
         # silently drops most sections and covers only a few files. Route exams
         # to the strong model so the full per-file coverage is honoured.
-        or is_exam_request
+        or (is_exam_request and wants_full_coverage)
+        or bool(_COMPLEX_REASONING_RE.search(question))
     ):
         target_model = settings.openai_generate_model_strong
         # Monthly strong-model allowance: bounds worst-case OpenAI cost per
@@ -1533,6 +1554,7 @@ def stream_answer(
         has_open_image=has_open_image,
         deictic=deictic,
     ):
+        yield _sse({"status": "reading_figure"})
         # Guarantee the exercise figure at least one slot. The open visible
         # page (open_image_parts) may not be the page the drawing is on, and
         # for a figure-exercise the drawing is the most valuable image — don't
@@ -1640,6 +1662,8 @@ def stream_answer(
             user_content = "LANGUAGE REQUEST:\n" + question.strip()
 
     client = get_openai_client()
+    openai_started = time.perf_counter()
+    first_token_logged = False
     prompt_tokens = None
     completion_tokens = None
     cached_tokens = None
@@ -1664,7 +1688,7 @@ def stream_answer(
     # line to "writing the answer" here is the most accurate it can be. The
     # router forwards this verbatim to the chatbot + side-panel status line.
     if not app_question:
-        yield _sse({"status": "writing_answer"})
+        yield _sse({"status": "generating_answer"})
 
     try:
         stream = client.chat.completions.create(
@@ -1700,6 +1724,14 @@ def stream_answer(
             delta = choices[0].delta
             token = getattr(delta, "content", None) if delta else None
             if token:
+                if not first_token_logged:
+                    first_token_logged = True
+                    log.info(
+                        "ai_stream_timing request_id=%s phase=openai_first_token model=%s first_token_ms=%.0f prompt_tokens_est=%d",
+                        request_id or "none", target_model,
+                        (time.perf_counter() - openai_started) * 1000,
+                        est_prompt_tokens,
+                    )
                 if intro_hold:
                     intro_buf += token
                     cleaned = strip_answer_intro(intro_buf).lstrip("\n")
@@ -1737,6 +1769,11 @@ def stream_answer(
                 yield _sse({"t": cleaned})
 
     full_answer = "".join(answer_buf)
+    log.info(
+        "ai_stream_timing request_id=%s phase=openai_completion model=%s openai_ms=%.0f prompt_tokens=%s completion_tokens=%s",
+        request_id or "none", target_model, (time.perf_counter() - openai_started) * 1000,
+        prompt_tokens, completion_tokens,
+    )
 
     # Buffered exam path: the tokens above were accumulated but NOT streamed, so
     # we can lint and (on blocking failures) repair the exam BEFORE the user sees
@@ -1747,7 +1784,7 @@ def stream_answer(
         if blocking:
             log.warning("exam lint blocking (%d) — repairing before stream: %s",
                         len(blocking), "; ".join(blocking))
-            yield _sse({"status": "writing_answer"})
+            yield _sse({"status": "generating_answer"})
             full_answer = repair_exam_output(
                 system_prompt=system_prompt, user_message=user_content,
                 bad_answer=full_answer, issues=blocking,

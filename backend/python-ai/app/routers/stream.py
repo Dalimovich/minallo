@@ -15,6 +15,7 @@ import logging
 import json
 import re
 import time
+import uuid
 from dataclasses import replace
 from typing import Any
 
@@ -83,6 +84,12 @@ _ALLOWED_OPEN_FILE_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image
 # interactive bucket alongside /api/ai/ask and the writing coach.
 _INTERACTIVE_MONTHLY_CAP = 2000
 
+_BROAD_RETRIEVAL_RE = re.compile(
+    r"\b(whole|entire|complete|all|every|compare|study guide|full course|across)\b|"
+    r"\b(gesamte|alle|jeder|vergleiche|lernplan|vollständig)\b",
+    re.IGNORECASE,
+)
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["ask-stream"])
@@ -93,6 +100,40 @@ _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 def _require_uuid(value: str, label: str) -> None:
     if not value or not _UUID_RE.match(value):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} must be a UUID")
+
+
+def _retrieval_limit(question: str, selected_document_count: int, generative: bool = False) -> int:
+    """Small defaults for direct questions; preserve breadth for coverage requests."""
+    if generative or _BROAD_RETRIEVAL_RE.search(question or ""):
+        return 18 if selected_document_count <= 6 else min(48, selected_document_count * 3)
+    if selected_document_count <= 1:
+        return 8
+    if selected_document_count <= 3:
+        return 10
+    return 12
+
+
+def _deduplicate_chunks(chunks: list[Any]) -> list[Any]:
+    """Preserve priority order while removing repeated page/text variants."""
+    kept: list[Any] = []
+    fingerprints: set[tuple[str, int | None, str]] = set()
+    token_sets: list[set[str]] = []
+    for chunk in chunks:
+        text_value = re.sub(r"\s+", " ", (getattr(chunk, "text", "") or "").lower()).strip()
+        fingerprint = (
+            getattr(chunk, "document_id", "") or "",
+            getattr(chunk, "page_start", None),
+            text_value[:500],
+        )
+        if fingerprint in fingerprints:
+            continue
+        words = set(re.findall(r"\w+", text_value[:2000]))
+        if words and any(len(words & prior) / max(1, len(words | prior)) >= 0.92 for prior in token_sets):
+            continue
+        fingerprints.add(fingerprint)
+        token_sets.append(words)
+        kept.append(chunk)
+    return kept
 
 
 def _verify_user_owns_documents(user_id: str, course_id: str, document_ids: list[str] | None) -> dict[str, str]:
@@ -368,19 +409,98 @@ def _web_sources_to_js(sources: list[dict[str, Any]] | None) -> list[dict[str, A
 
 @router.post("/ask-stream")
 async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(verify_supabase_jwt)):
+    """Complete access preflight, then expose the deferred pipeline over SSE."""
+    started = time.perf_counter()
+    request_id = uuid.uuid4().hex
     user_id = user["id"]
-    # Paid feature — verify subscription before doing anything expensive.
+    access_started = time.perf_counter()
     await run_in_threadpool(lambda: require_active_subscription(user_id, "ask_stream"))
     await run_in_threadpool(lambda: enforce_interactive_cap(user_id, _INTERACTIVE_MONTHLY_CAP))
     await run_in_threadpool(
         lambda: enforce_rate_limit(
-            user_id,
-            "ask_stream",
-            _ASK_STREAM_RATE_LIMIT_MAX,
+            user_id, "ask_stream", _ASK_STREAM_RATE_LIMIT_MAX,
             _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS,
             "AI request limit reached. Please try again later.",
         )
     )
+    access_ms = (time.perf_counter() - access_started) * 1000
+
+    if payload.documentIds:
+        for did in payload.documentIds:
+            _require_uuid(did, "documentId")
+    if payload.activeDocumentId:
+        _require_uuid(payload.activeDocumentId, "activeDocumentId")
+    question = (payload.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
+    if len(question) > _MAX_STREAM_QUESTION_CHARS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
+    if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
+    _validate_open_file_images(payload.openFileImages)
+
+    resolved_ids = list(payload.documentIds) if payload.documentIds else []
+    if not resolved_ids and payload.documentNames:
+        resolved_ids = await run_in_threadpool(
+            lambda: _resolve_document_ids_by_name(user_id, payload.courseId, payload.documentNames)
+        )
+    preflight_doc_names = await run_in_threadpool(
+        lambda: _verify_user_owns_documents(user_id, payload.courseId, resolved_ids)
+    )
+    if payload.activeDocumentId:
+        preflight_doc_names.update(await run_in_threadpool(
+            lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
+        ))
+    preflight_ms = (time.perf_counter() - started) * 1000
+
+    async def early_stream():
+        first_sse_ms = (time.perf_counter() - started) * 1000
+        yield _status_sse("reading_question")
+        log.info(
+            "ai_stream_timing request_id=%s phase=first_sse access_ms=%.0f preflight_ms=%.0f first_sse_ms=%.0f",
+            request_id, access_ms, preflight_ms, first_sse_ms,
+        )
+        try:
+            status_queue: asyncio.Queue[str] = asyncio.Queue()
+            prepared_task = asyncio.create_task(
+                _prepare_ask_stream_response(
+                    payload, user, status_queue.put_nowait, request_id,
+                    {"resolved_document_ids": resolved_ids, "doc_name_map": preflight_doc_names},
+                )
+            )
+            while not prepared_task.done():
+                try:
+                    status_key = await asyncio.wait_for(status_queue.get(), timeout=0.1)
+                    yield _status_sse(status_key)
+                except asyncio.TimeoutError:
+                    continue
+            prepared = await prepared_task
+            while not status_queue.empty():
+                yield _status_sse(status_queue.get_nowait())
+            async for event in prepared.body_iterator:
+                yield event
+        except HTTPException as exc:
+            yield _sse_bytes(json.dumps({"error": str(exc.detail), "status": exc.status_code}))
+        except Exception:
+            log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
+            yield _sse_bytes(json.dumps({"error": "Unable to answer right now. Please try again."}))
+        finally:
+            log.info(
+                "ai_stream_timing request_id=%s phase=total total_ms=%.0f",
+                request_id, (time.perf_counter() - started) * 1000,
+            )
+
+    return StreamingResponse(early_stream(), media_type="text/event-stream")
+
+
+async def _prepare_ask_stream_response(
+    payload: AskStreamRequest, user: dict, status_sink=None, request_id: str | None = None,
+    preflight: dict[str, Any] | None = None,
+):
+    request_started = time.perf_counter()
+    request_id = request_id or uuid.uuid4().hex
+    user_id = user["id"]
+    # Paid feature — verify subscription before doing anything expensive.
 
     if payload.documentIds:
         for did in payload.documentIds:
@@ -401,8 +521,8 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
 
     # "Selected file(s)" scope: the chatbot sends file NAMES (it has no document
     # ids), so resolve them to ids here. Fall back to ids the client did send.
-    resolved_document_ids = list(payload.documentIds) if payload.documentIds else []
-    if not resolved_document_ids and payload.documentNames:
+    resolved_document_ids = list((preflight or {}).get("resolved_document_ids") or [])
+    if not preflight and not resolved_document_ids and payload.documentNames:
         resolved_document_ids = await run_in_threadpool(
             lambda: _resolve_document_ids_by_name(user_id, payload.courseId, payload.documentNames)
         )
@@ -413,13 +533,16 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     if (payload.courseFileScope or "").strip().lower() == "specific_files" and not resolved_document_ids:
         effective_scope = "all_course_files"
 
-    doc_name_map = await run_in_threadpool(
-        lambda: _verify_user_owns_documents(user_id, payload.courseId, resolved_document_ids)
-    )
-    if payload.activeDocumentId:
-        doc_name_map.update(await run_in_threadpool(
-            lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
-        ))
+    if preflight:
+        doc_name_map = dict(preflight.get("doc_name_map") or {})
+    else:
+        doc_name_map = await run_in_threadpool(
+            lambda: _verify_user_owns_documents(user_id, payload.courseId, resolved_document_ids)
+        )
+        if payload.activeDocumentId:
+            doc_name_map.update(await run_in_threadpool(
+                lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
+            ))
 
     source_decision = classify_source_scope(
         question=question,
@@ -524,11 +647,18 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     workspace_snapshot = None
     weak_topics: list[str] = []
     if payload.courseId:
+        if status_sink:
+            status_sink("collecting_sources")
         from ..services.mastery import fetch_weak_topics  # noqa: WPS433
-        workspace_snapshot = await run_in_threadpool(
-            lambda: fetch_workspace_snapshot(user_id, payload.courseId)
+        context_started = time.perf_counter()
+        workspace_snapshot, weak_topics = await asyncio.gather(
+            run_in_threadpool(lambda: fetch_workspace_snapshot(user_id, payload.courseId)),
+            run_in_threadpool(lambda: fetch_weak_topics(user_id, payload.courseId)),
         )
-        weak_topics = await run_in_threadpool(lambda: fetch_weak_topics(user_id, payload.courseId))
+        log.info(
+            "ai_stream_timing request_id=%s phase=context context_ms=%.0f",
+            request_id, (time.perf_counter() - context_started) * 1000,
+        )
     # App/workspace questions ("what courses do I have?") need the account-wide
     # course list: the per-course snapshot above cannot name the student's other
     # courses, which is exactly what the model used to invent.
@@ -623,6 +753,9 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         "workspace_fingerprint": ws_fingerprint or None,
     }
     if cacheable:
+        if status_sink:
+            status_sink("checking_cache")
+        cache_started = time.perf_counter()
         version_hash = await run_in_threadpool(lambda: fetch_course_version_hash(user_id, payload.courseId))
         if version_hash:
             cached = await run_in_threadpool(
@@ -632,6 +765,10 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     **cache_key_kwargs,
                 )
             )
+        log.info(
+            "ai_stream_timing request_id=%s phase=cache cache_ms=%.0f cache_hit=%s",
+            request_id, (time.perf_counter() - cache_started) * 1000, bool(cached),
+        )
 
     def cached_stream():
         # Replay cached answers in small chunks so cache hits still feel like
@@ -770,12 +907,15 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         exercise_hit = None
         formula_hits = []
     else:
+        if status_sink:
+            status_sink("collecting_sources")
         # Scale retrieval breadth with the number of explicitly-selected
         # documents so multi-file requests ("a question for every lecture",
         # exams) surface material from each one; per-document coverage in
         # retrieve_chunks then guarantees every selected doc is represented.
         _sel_doc_count = len(retrieval_document_ids or [])
-        stream_top_k = 18 if _sel_doc_count <= 6 else min(48, _sel_doc_count * 3)
+        broad_retrieval = generative_request or bool(_BROAD_RETRIEVAL_RE.search(question))
+        stream_top_k = _retrieval_limit(question, _sel_doc_count, generative_request)
         retrieval_started = time.perf_counter()
         try:
             exercise_task = run_in_threadpool(
@@ -818,8 +958,9 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         except EmbeddingServiceUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         log.info(
-            "ask_stream parallel retrieval completed in %.0fms",
-            (time.perf_counter() - retrieval_started) * 1000,
+            "ai_stream_timing request_id=%s phase=retrieval retrieval_ms=%.0f top_k=%d broad=%s chunk_count=%d formula_count=%d exercise_hit=%s",
+            request_id, (time.perf_counter() - retrieval_started) * 1000,
+            stream_top_k, broad_retrieval, len(chunks), len(formula_hits or []), bool(exercise_hit),
         )
         if exercise_hit:
             from .ask import _prepend_exercise_chunks  # reuse the same helper
@@ -828,6 +969,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         if formula_hits:
             from .ask import _prepend_formula_chunks  # reuse the same helper
             chunks = _prepend_formula_chunks(formula_hits, chunks)
+        before_dedup = len(chunks)
+        chunks = _deduplicate_chunks(chunks)
+        log.info(
+            "ai_stream_timing request_id=%s phase=dedup input_chunks=%d output_chunks=%d",
+            request_id, before_dedup, len(chunks),
+        )
 
     missing_ids = [c.document_id for c in chunks if c.document_id not in doc_name_map]
     if missing_ids:
@@ -951,6 +1098,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 doc_name_map[i] for i in (retrieval_document_ids or []) if i in doc_name_map
             ] or None,
             selected_document_ids=list(retrieval_document_ids) if retrieval_document_ids else None,
+            request_id=request_id,
         )
         for chunk_bytes in gen_iter:
             # Decode the SSE event so we can intercept the closing 'done' frame.
@@ -1018,6 +1166,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         # allowance notice in the token stream — replaying either next month
         # (or to the same user mid-month) would be wrong.
         if version_hash and full_text_buf and not captured_meta.get("heavyCapped"):
+            persistence_started = time.perf_counter()
             try:
                 save_answer(
                     user_id=user_id, course_id=payload.courseId,
@@ -1063,6 +1212,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 )
             except Exception:
                 log.exception("cache save after stream failed (non-fatal)")
+            finally:
+                log.info(
+                    "ai_stream_timing request_id=%s phase=persistence persistence_ms=%.0f",
+                    request_id, (time.perf_counter() - persistence_started) * 1000,
+                )
 
         record_retrieval_debug(DebugPayload(
             user_id=user_id, course_id=payload.courseId,

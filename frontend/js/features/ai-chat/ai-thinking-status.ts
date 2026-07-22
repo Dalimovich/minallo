@@ -15,6 +15,9 @@ export type AssistantStatus =
   | 'reading_selected_part'
   | 'reading_relevant_sections'
   | 'collecting_sources'
+  | 'checking_cache'
+  | 'reading_figure'
+  | 'generating_answer'
   | 'writing_answer'
   | 'no_strong_match'
   | 'preparing_quiz'
@@ -67,6 +70,12 @@ export const assistantStatusText: Record<AssistantStatus, string> = {
     "I'm looking for the sections that directly support the answer.",
   collecting_sources:
     "I'm collecting the source references before writing the final answer.",
+  checking_cache:
+    "I'm checking whether this question has already been answered from the same material.",
+  reading_figure:
+    "I'm reading the relevant figure or diagram.",
+  generating_answer:
+    "I'm preparing the answer from the material I found.",
   writing_answer:
     "I'm writing the answer based on the material I found.",
   no_strong_match:
