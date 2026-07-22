@@ -184,4 +184,5 @@ runIdle(() => {
 });
 
 // @ts-ignore — dynamic import with cache-busting query string
-import('./app.js?v=12');
+const appAssetVersion = String(window.MinalloConfig?.assetVersion || '1');
+import(/* @vite-ignore */ './app.js?v=' + encodeURIComponent(appAssetVersion));

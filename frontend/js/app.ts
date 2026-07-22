@@ -740,7 +740,7 @@ const aiMsgs = document.getElementById('aiMsgs');
 
 // Ctrl/Cmd + wheel changes only the AI panel's reading size. Keep normal wheel
 // scrolling untouched, and persist the preference for the next session.
-if (aiPanel && aiMsgs) {
+{
   const AI_FONT_SCALE_KEY = 'minallo_ai_font_scale';
   const clampAiFontScale = (value: number): number => Math.min(1.8, Math.max(0.7, value));
   let aiFontScale = 1;
@@ -750,7 +750,10 @@ if (aiPanel && aiMsgs) {
   } catch { /* localStorage can be unavailable in privacy mode */ }
 
   const applyAiFontScale = (): void => {
-    aiPanel.style.setProperty('--ai-panel-font-scale', String(aiFontScale));
+    // The panel is re-hosted inside the document rail and may not exist yet
+    // when app.js boots. The root variable works before and after re-hosting.
+    document.documentElement.style.setProperty('--ai-panel-font-scale', String(aiFontScale));
+    aiPanel?.style.setProperty('--ai-panel-font-scale', String(aiFontScale));
   };
   applyAiFontScale();
 
