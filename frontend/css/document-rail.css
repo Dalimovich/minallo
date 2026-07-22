@@ -352,6 +352,118 @@
   stroke-width: 2;
 }
 
+.dr-type-control {
+  display: none;
+  position: relative;
+}
+.dr-drawer.dr-mode-ai .dr-type-control { display: block; }
+.dr-type-btn span {
+  font: 800 0.72rem/1 var(--font-main);
+  letter-spacing: -0.04em;
+}
+.dr-type-btn[aria-expanded='true'] {
+  color: #fff;
+  border-color: rgba(125, 211, 252, 0.55);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.28), rgba(99, 102, 241, 0.26));
+  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.18);
+}
+.dr-type-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 10px);
+  right: -70px;
+  width: min(260px, calc(100vw - 28px));
+  padding: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 16px;
+  background: linear-gradient(155deg, rgba(15, 31, 58, 0.99), rgba(3, 11, 27, 0.99));
+  box-shadow: 0 22px 60px rgba(2, 6, 23, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  backdrop-filter: blur(18px);
+}
+.dr-type-menu[hidden] { display: none; }
+.dr-type-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 13px;
+  font: 800 0.82rem/1.2 var(--font-main);
+}
+.dr-type-preview {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border-radius: 9px;
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.13);
+  border: 1px solid rgba(125, 211, 252, 0.16);
+}
+.dr-type-label {
+  display: block;
+  margin: 10px 0 6px;
+  color: #94a3b8;
+  font: 750 0.66rem/1.2 var(--font-main);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dr-type-size {
+  display: grid;
+  grid-template-columns: 38px 1fr 38px;
+  align-items: center;
+  min-height: 40px;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+}
+.dr-type-size button {
+  height: 38px;
+  border: 0;
+  background: transparent;
+  color: #bae6fd;
+  cursor: pointer;
+  font: 700 1.18rem/1 var(--font-main);
+  transition: background 150ms ease, color 150ms ease;
+}
+.dr-type-size button:hover { background: rgba(56, 189, 248, 0.12); color: #fff; }
+.dr-type-size output {
+  text-align: center;
+  color: #f8fafc;
+  font: 800 0.78rem/1 var(--font-main);
+}
+.dr-type-select-wrap { position: relative; }
+.dr-type-select-wrap select {
+  width: 100%;
+  height: 42px;
+  appearance: none;
+  padding: 0 38px 0 12px;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 12px;
+  outline: none;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.72);
+  font: 700 0.76rem/1 var(--font-main);
+  cursor: pointer;
+}
+.dr-type-select-wrap select:focus { border-color: rgba(56, 189, 248, 0.55); box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); }
+.dr-type-select-wrap svg {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translateY(-50%);
+  color: #7dd3fc;
+  pointer-events: none;
+}
+.dr-drawer.dr-mode-ai .dr-host-ai {
+  font-family: var(--ai-panel-font-family, var(--font-main));
+}
+.dr-drawer.dr-mode-ai .dr-host-ai .ai-bubble {
+  font-family: inherit;
+}
+
 /* Drawer content area — Task-02 mounts the legacy AI / Notes panels here.
    overflow:hidden (not auto) so the drawer never grows a scrollbar of its
    own. The hosted panels' own scroll regions (.np-preview, .ai-msgs) handle

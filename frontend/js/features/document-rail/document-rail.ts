@@ -838,12 +838,22 @@ function wireClose(): void {
 
 function wireAiFontZoom(drawer: HTMLElement): void {
   const storageKey = 'minallo_ai_font_scale';
+  const familyStorageKey = 'minallo_ai_font_family';
+  const families: Record<string, string> = {
+    modern: 'var(--font-main)',
+    readable: 'Arial, Helvetica, sans-serif',
+    classic: 'Georgia, "Times New Roman", serif',
+    mono: '"Cascadia Code", "SFMono-Regular", Consolas, monospace',
+  };
   const clamp = (value: number): number => Math.min(1.8, Math.max(0.7, value));
   let scale = 1;
+  let family = 'modern';
   let modifierHeld = false;
   try {
     const saved = Number.parseFloat(localStorage.getItem(storageKey) || '1');
     if (Number.isFinite(saved)) scale = clamp(saved);
+    const savedFamily = localStorage.getItem(familyStorageKey) || 'modern';
+    if (families[savedFamily]) family = savedFamily;
   } catch { /* storage may be unavailable */ }
 
   const apply = (): void => {
@@ -857,6 +867,11 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     panel?.style.setProperty('--ai-panel-font-scale', String(scale));
     const messages = document.getElementById('aiMsgs');
     messages?.style.setProperty('--ai-panel-font-scale', String(scale));
+    const familyValue = families[family] || 'var(--font-main)';
+    drawer.style.setProperty('--ai-panel-font-family', familyValue);
+    panel?.style.setProperty('--ai-panel-font-family', familyValue);
+    const value = document.getElementById('drFontValue');
+    if (value) value.textContent = Math.round(scale * 100) + '%';
   };
   apply();
 
@@ -885,6 +900,45 @@ function wireAiFontZoom(drawer: HTMLElement): void {
   drawer.addEventListener('wheel', resizeFromWheel, { passive: false, capture: true });
   // Fallback for devices/drivers that still emit the legacy mousewheel event.
   drawer.addEventListener('mousewheel', resizeFromWheel as EventListener, { passive: false, capture: true });
+
+  const control = document.getElementById('drTypeControl');
+  const button = document.getElementById('drTypeBtn') as HTMLButtonElement | null;
+  const menu = document.getElementById('drTypeMenu');
+  const familySelect = document.getElementById('drFontFamily') as HTMLSelectElement | null;
+  const setMenuOpen = (open: boolean): void => {
+    if (!menu || !button) return;
+    menu.hidden = !open;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  button?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setMenuOpen(menu?.hidden !== false);
+  });
+  menu?.addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', (event) => {
+    if (control && !control.contains(event.target as Node)) setMenuOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setMenuOpen(false);
+  });
+  document.getElementById('drFontMinus')?.addEventListener('click', () => {
+    scale = clamp(Math.round((scale - 0.1) * 10) / 10);
+    apply();
+    try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
+  });
+  document.getElementById('drFontPlus')?.addEventListener('click', () => {
+    scale = clamp(Math.round((scale + 0.1) * 10) / 10);
+    apply();
+    try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
+  });
+  if (familySelect) {
+    familySelect.value = family;
+    familySelect.addEventListener('change', () => {
+      family = families[familySelect.value] ? familySelect.value : 'modern';
+      apply();
+      try { localStorage.setItem(familyStorageKey, family); } catch { /* ignore */ }
+    });
+  }
 }
 
 function setRouteVisibility(route: DocRailRoute): void {

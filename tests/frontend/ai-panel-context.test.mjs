@@ -11,8 +11,10 @@ const DOCUMENT_RAIL = read('frontend/js/features/document-rail/document-rail.ts'
 const MAIN = read('frontend/js/main.ts');
 const CONFIG = read('frontend/js/config.js');
 const INDEX = read('frontend/index.html');
+const PORTAL = read('frontend/pages/portal.html');
 const AI_ASK = read('frontend/js/features/ai-chat/ai-ask.ts');
 const CSS = read('frontend/css/styles.css');
+const DOCUMENT_RAIL_CSS = read('frontend/css/document-rail.css');
 
 test('Ctrl/Cmd + wheel resizing works across the complete AI drawer', () => {
   assert.match(DOCUMENT_RAIL, /drawer\.addEventListener\(['"]wheel['"]/);
@@ -32,8 +34,18 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-font-zoom-v2['"]/);
-  assert.match(INDEX, /config\.js\?v=20260722-ai-font-zoom-v2/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-typography-menu['"]/);
+  assert.match(INDEX, /config\.js\?v=20260722-ai-typography-menu/);
+});
+
+test('AI drawer exposes a persisted typography menu beside its header actions', () => {
+  assert.match(PORTAL, /id="drTypeBtn"/);
+  assert.match(PORTAL, /id="drFontMinus"/);
+  assert.match(PORTAL, /id="drFontPlus"/);
+  assert.match(PORTAL, /id="drFontFamily"/);
+  assert.match(DOCUMENT_RAIL, /minallo_ai_font_family/);
+  assert.match(DOCUMENT_RAIL, /familySelect\.addEventListener\(['"]change['"]/);
+  assert.match(DOCUMENT_RAIL_CSS, /\.dr-type-menu/);
 });
 
 test('questions about the visible professor solution attach the visible PDF page', () => {

@@ -2382,6 +2382,33 @@
           </div>
         </div>
         <div class="dr-header-r">
+          <div class="dr-type-control" id="drTypeControl">
+            <button type="button" class="dr-icon-btn dr-type-btn" id="drTypeBtn" title="Text appearance" aria-label="Text appearance" aria-expanded="false" aria-controls="drTypeMenu">
+              <span aria-hidden="true">Aa</span>
+            </button>
+            <div class="dr-type-menu" id="drTypeMenu" role="dialog" aria-label="AI text appearance" hidden>
+              <div class="dr-type-menu-head">
+                <span>Text appearance</span>
+                <span class="dr-type-preview" aria-hidden="true">Aa</span>
+              </div>
+              <div class="dr-type-label">Text size</div>
+              <div class="dr-type-size" role="group" aria-label="AI text size">
+                <button type="button" id="drFontMinus" aria-label="Decrease text size">−</button>
+                <output id="drFontValue" aria-live="polite">100%</output>
+                <button type="button" id="drFontPlus" aria-label="Increase text size">+</button>
+              </div>
+              <label class="dr-type-label" for="drFontFamily">Font family</label>
+              <div class="dr-type-select-wrap">
+                <select id="drFontFamily">
+                  <option value="modern">Modern Sans</option>
+                  <option value="readable">Highly Readable</option>
+                  <option value="classic">Classic Serif</option>
+                  <option value="mono">Technical Mono</option>
+                </select>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+              </div>
+            </div>
+          </div>
           <button type="button" class="dr-icon-btn" id="drTrash" title="Delete">
             <!-- Trash -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
