@@ -12,6 +12,7 @@ const MAIN = read('frontend/js/main.ts');
 const CONFIG = read('frontend/js/config.js');
 const INDEX = read('frontend/index.html');
 const PORTAL = read('frontend/pages/portal.html');
+const LOADER = read('frontend/js/loader.ts');
 const AI_ASK = read('frontend/js/features/ai-chat/ai-ask.ts');
 const CSS = read('frontend/css/styles.css');
 const DOCUMENT_RAIL_CSS = read('frontend/css/document-rail.css');
@@ -39,15 +40,20 @@ test('production app bundle uses the deployment asset version instead of a fixed
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {
-  assert.match(PORTAL, /id="drTypeBtn"/);
+  assert.match(PORTAL, /id="drSizeBtn"/);
+  assert.match(PORTAL, /id="drFamilyBtn"/);
+  assert.match(PORTAL, /id="drSizeMenu"/);
+  assert.match(PORTAL, /id="drFamilyMenu"/);
   assert.match(PORTAL, /id="drFontMinus"/);
   assert.match(PORTAL, /id="drFontPlus"/);
-  assert.match(PORTAL, /id="drFontFamily"/);
+  assert.match(PORTAL, /data-font-family="modern"/);
   assert.match(DOCUMENT_RAIL, /minallo_ai_font_family/);
-  assert.match(DOCUMENT_RAIL, /familySelect\.addEventListener\(['"]change['"]/);
+  assert.match(DOCUMENT_RAIL, /familyOptions\.forEach/);
   assert.match(DOCUMENT_RAIL, /querySelectorAll<HTMLElement>\(['"]\.ai-bubble['"]\)/);
   assert.match(DOCUMENT_RAIL_CSS, /\.dr-type-menu/);
   assert.match(DOCUMENT_RAIL_CSS, /--ai-panel-font-family/);
+  assert.match(LOADER, /document-rail\.css\?v=31/);
+  assert.match(INDEX, /loader\.js\?v=46/);
 });
 
 test('questions about the visible professor solution attach the visible PDF page', () => {

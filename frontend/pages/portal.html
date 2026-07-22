@@ -2382,31 +2382,33 @@
           </div>
         </div>
         <div class="dr-header-r">
-          <div class="dr-type-control" id="drTypeControl">
-            <button type="button" class="dr-icon-btn dr-type-btn" id="drTypeBtn" title="Text appearance" aria-label="Text appearance" aria-expanded="false" aria-controls="drTypeMenu">
-              <span aria-hidden="true">Aa</span>
+          <div class="dr-type-control" id="drSizeControl">
+            <button type="button" class="dr-icon-btn dr-type-btn" id="drSizeBtn" title="Text size" aria-label="Text size" aria-expanded="false" aria-controls="drSizeMenu">
+              <span aria-hidden="true">A↕</span>
             </button>
-            <div class="dr-type-menu" id="drTypeMenu" role="dialog" aria-label="AI text appearance" hidden>
+            <div class="dr-type-menu dr-size-menu" id="drSizeMenu" role="dialog" aria-label="AI text size" hidden>
               <div class="dr-type-menu-head">
-                <span>Text appearance</span>
-                <span class="dr-type-preview" aria-hidden="true">Aa</span>
+                <span>Text size</span>
+                <span class="dr-type-preview" aria-hidden="true">A↕</span>
               </div>
-              <div class="dr-type-label">Text size</div>
               <div class="dr-type-size" role="group" aria-label="AI text size">
                 <button type="button" id="drFontMinus" aria-label="Decrease text size">−</button>
                 <output id="drFontValue" aria-live="polite">100%</output>
                 <button type="button" id="drFontPlus" aria-label="Increase text size">+</button>
               </div>
-              <label class="dr-type-label" for="drFontFamily">Font family</label>
-              <div class="dr-type-select-wrap">
-                <select id="drFontFamily">
-                  <option value="modern">Modern Sans</option>
-                  <option value="readable">Highly Readable</option>
-                  <option value="classic">Classic Serif</option>
-                  <option value="mono">Technical Mono</option>
-                </select>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
-              </div>
+              <div class="dr-type-hint">Ctrl/Cmd + scroll also works</div>
+            </div>
+          </div>
+          <div class="dr-type-control" id="drFamilyControl">
+            <button type="button" class="dr-icon-btn dr-type-btn" id="drFamilyBtn" title="Font family" aria-label="Font family" aria-expanded="false" aria-controls="drFamilyMenu">
+              <span aria-hidden="true">Ff</span>
+            </button>
+            <div class="dr-type-menu dr-family-menu" id="drFamilyMenu" role="menu" aria-label="AI font family" hidden>
+              <div class="dr-type-menu-head"><span>Font family</span><span class="dr-type-preview" aria-hidden="true">Ff</span></div>
+              <button type="button" class="dr-font-option" data-font-family="modern" role="menuitem"><span style="font-family:var(--font-main)">Modern Sans</span><small>Clean and balanced</small></button>
+              <button type="button" class="dr-font-option" data-font-family="readable" role="menuitem"><span style="font-family:Arial, sans-serif">Highly Readable</span><small>Clear at every size</small></button>
+              <button type="button" class="dr-font-option" data-font-family="classic" role="menuitem"><span style="font-family:Georgia, serif">Classic Serif</span><small>Book-like reading</small></button>
+              <button type="button" class="dr-font-option" data-font-family="mono" role="menuitem"><span style="font-family:Consolas, monospace">Technical Mono</span><small>Precise and structured</small></button>
             </div>
           </div>
           <button type="button" class="dr-icon-btn" id="drTrash" title="Delete">

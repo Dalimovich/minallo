@@ -909,25 +909,39 @@ function wireAiFontZoom(drawer: HTMLElement): void {
   // Fallback for devices/drivers that still emit the legacy mousewheel event.
   drawer.addEventListener('mousewheel', resizeFromWheel as EventListener, { passive: false, capture: true });
 
-  const control = document.getElementById('drTypeControl');
-  const button = document.getElementById('drTypeBtn') as HTMLButtonElement | null;
-  const menu = document.getElementById('drTypeMenu');
-  const familySelect = document.getElementById('drFontFamily') as HTMLSelectElement | null;
-  const setMenuOpen = (open: boolean): void => {
+  const sizeControl = document.getElementById('drSizeControl');
+  const familyControl = document.getElementById('drFamilyControl');
+  const sizeButton = document.getElementById('drSizeBtn') as HTMLButtonElement | null;
+  const familyButton = document.getElementById('drFamilyBtn') as HTMLButtonElement | null;
+  const sizeMenu = document.getElementById('drSizeMenu');
+  const familyMenu = document.getElementById('drFamilyMenu');
+  const setMenuOpen = (menu: HTMLElement | null, button: HTMLButtonElement | null, open: boolean): void => {
     if (!menu || !button) return;
     menu.hidden = !open;
     button.setAttribute('aria-expanded', open ? 'true' : 'false');
   };
-  button?.addEventListener('click', (event) => {
+  sizeButton?.addEventListener('click', (event) => {
     event.stopPropagation();
-    setMenuOpen(menu?.hidden !== false);
+    setMenuOpen(familyMenu, familyButton, false);
+    setMenuOpen(sizeMenu, sizeButton, sizeMenu?.hidden !== false);
   });
-  menu?.addEventListener('click', (event) => event.stopPropagation());
+  familyButton?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setMenuOpen(sizeMenu, sizeButton, false);
+    setMenuOpen(familyMenu, familyButton, familyMenu?.hidden !== false);
+  });
+  sizeMenu?.addEventListener('click', (event) => event.stopPropagation());
+  familyMenu?.addEventListener('click', (event) => event.stopPropagation());
   document.addEventListener('click', (event) => {
-    if (control && !control.contains(event.target as Node)) setMenuOpen(false);
+    const target = event.target as Node;
+    if (sizeControl && !sizeControl.contains(target)) setMenuOpen(sizeMenu, sizeButton, false);
+    if (familyControl && !familyControl.contains(target)) setMenuOpen(familyMenu, familyButton, false);
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') setMenuOpen(false);
+    if (event.key === 'Escape') {
+      setMenuOpen(sizeMenu, sizeButton, false);
+      setMenuOpen(familyMenu, familyButton, false);
+    }
   });
   document.getElementById('drFontMinus')?.addEventListener('click', () => {
     scale = clamp(Math.round((scale - 0.15) * 20) / 20);
@@ -939,14 +953,21 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     apply();
     try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
   });
-  if (familySelect) {
-    familySelect.value = family;
-    familySelect.addEventListener('change', () => {
-      family = families[familySelect.value] ? familySelect.value : 'modern';
+  const familyOptions = document.querySelectorAll<HTMLButtonElement>('.dr-font-option[data-font-family]');
+  const syncFamilyOptions = (): void => {
+    familyOptions.forEach((option) => option.classList.toggle('is-active', option.dataset.fontFamily === family));
+  };
+  syncFamilyOptions();
+  familyOptions.forEach((option) => {
+    option.addEventListener('click', () => {
+      const next = option.dataset.fontFamily || 'modern';
+      family = families[next] ? next : 'modern';
       apply();
+      syncFamilyOptions();
       try { localStorage.setItem(familyStorageKey, family); } catch { /* ignore */ }
+      setMenuOpen(familyMenu, familyButton, false);
     });
-  }
+  });
 }
 
 function setRouteVisibility(route: DocRailRoute): void {
