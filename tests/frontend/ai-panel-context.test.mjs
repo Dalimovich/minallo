@@ -34,8 +34,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-typography-menu['"]/);
-  assert.match(INDEX, /config\.js\?v=20260722-ai-typography-menu/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-typography-menu-v2['"]/);
+  assert.match(INDEX, /config\.js\?v=20260722-ai-typography-menu-v2/);
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {
@@ -45,7 +45,9 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.match(PORTAL, /id="drFontFamily"/);
   assert.match(DOCUMENT_RAIL, /minallo_ai_font_family/);
   assert.match(DOCUMENT_RAIL, /familySelect\.addEventListener\(['"]change['"]/);
+  assert.match(DOCUMENT_RAIL, /querySelectorAll<HTMLElement>\(['"]\.ai-bubble['"]\)/);
   assert.match(DOCUMENT_RAIL_CSS, /\.dr-type-menu/);
+  assert.match(DOCUMENT_RAIL_CSS, /--ai-panel-font-family/);
 });
 
 test('questions about the visible professor solution attach the visible PDF page', () => {

@@ -461,7 +461,13 @@
   font-family: var(--ai-panel-font-family, var(--font-main));
 }
 .dr-drawer.dr-mode-ai .dr-host-ai .ai-bubble {
-  font-family: inherit;
+  font-family: var(--ai-panel-font-family, var(--font-main)) !important;
+  font-size: calc(0.82rem * var(--ai-panel-font-scale, 1)) !important;
+}
+.dr-drawer.dr-mode-ai .dr-host-ai .ai-bubble :is(.md-p, .md-h, li, blockquote, strong, em),
+.dr-drawer.dr-mode-ai .dr-host-ai .ai-rag-sources,
+.dr-drawer.dr-mode-ai .dr-host-ai .msg-sender {
+  font-family: var(--ai-panel-font-family, var(--font-main)) !important;
 }
 
 /* Drawer content area — Task-02 mounts the legacy AI / Notes panels here.

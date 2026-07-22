@@ -870,6 +870,14 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     const familyValue = families[family] || 'var(--font-main)';
     drawer.style.setProperty('--ai-panel-font-family', familyValue);
     panel?.style.setProperty('--ai-panel-font-family', familyValue);
+    messages?.style.setProperty('--ai-panel-font-family', familyValue);
+    // Apply directly to existing messages as well as their container. This
+    // makes the controls immediately visible even when a legacy theme rule
+    // set a custom property or font family on an individual bubble.
+    messages?.querySelectorAll<HTMLElement>('.ai-bubble').forEach((bubble) => {
+      bubble.style.setProperty('--ai-panel-font-scale', String(scale));
+      bubble.style.setProperty('--ai-panel-font-family', familyValue);
+    });
     const value = document.getElementById('drFontValue');
     if (value) value.textContent = Math.round(scale * 100) + '%';
   };
@@ -893,7 +901,7 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     event.stopPropagation();
     const legacyDelta = (event as WheelEvent & { wheelDelta?: number }).wheelDelta;
     const scrollingUp = event.deltaY ? event.deltaY < 0 : (legacyDelta || 0) > 0;
-    scale = clamp(Math.round((scale + (scrollingUp ? 0.1 : -0.1)) * 10) / 10);
+    scale = clamp(Math.round((scale + (scrollingUp ? 0.15 : -0.15)) * 20) / 20);
     apply();
     try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
   };
@@ -922,12 +930,12 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     if (event.key === 'Escape') setMenuOpen(false);
   });
   document.getElementById('drFontMinus')?.addEventListener('click', () => {
-    scale = clamp(Math.round((scale - 0.1) * 10) / 10);
+    scale = clamp(Math.round((scale - 0.15) * 20) / 20);
     apply();
     try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
   });
   document.getElementById('drFontPlus')?.addEventListener('click', () => {
-    scale = clamp(Math.round((scale + 0.1) * 10) / 10);
+    scale = clamp(Math.round((scale + 0.15) * 20) / 20);
     apply();
     try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
   });
