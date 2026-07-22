@@ -67,6 +67,16 @@ from .workspace_context import (
 
 log = logging.getLogger(__name__)
 
+FINAL_RESPONSE_LANGUAGE_RULE = """
+
+FINAL RESPONSE-LANGUAGE RULE (highest priority): Answer entirely in the language
+of the student's latest QUESTION below. Determine that language from the request
+words and sentence structure. Ignore document text, earlier turns, interface
+language, and quoted or referenced titles/labels such as "Aufgabe 13.1" when
+choosing the response language. A question written in English must receive an
+English answer even when the course material and technical terms are German.
+"""
+
 
 # Coverage-intent requests ("a question per file", exams) must let EVERY
 # selected document reach the prompt. The default MAX_PROMPT_CHUNKS top-N
@@ -1300,6 +1310,11 @@ def stream_answer(
             has_history=bool(previous_turns),
             active_file_name=("Problem Solver input" if has_problem_source else active_file_name),
         )
+
+    # Keep this request-specific instruction last so a German document, course
+    # title, or exercise label cannot outweigh the language of the student's
+    # actual request (for example: "I don't understand Aufgabe 13.1").
+    system_prompt += FINAL_RESPONSE_LANGUAGE_RULE
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:

@@ -3,6 +3,15 @@
 from __future__ import annotations
 
 
+def test_final_language_rule_ignores_foreign_exercise_labels() -> None:
+    """An English request stays English even if it names a German exercise."""
+    from app.services.answer_stream import FINAL_RESPONSE_LANGUAGE_RULE
+
+    assert "latest QUESTION" in FINAL_RESPONSE_LANGUAGE_RULE
+    assert '"Aufgabe 13.1"' in FINAL_RESPONSE_LANGUAGE_RULE
+    assert "English answer" in FINAL_RESPONSE_LANGUAGE_RULE
+
+
 # ── Previous-turns trimming ─────────────────────────────────────────────────
 
 

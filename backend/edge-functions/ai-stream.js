@@ -860,7 +860,9 @@ const TYPE_INSTRUCTIONS = {
 
 function buildPrompt(mode, lang, qType, openFileName, hasHandwritten) {
   const strict = mode !== 'general';
-  const langLine = lang === 'de' ? 'Respond in **German** — the course materials are in German.' : 'Respond in **English**.';
+  const langLine = lang === 'de'
+    ? 'Respond in **German** because the student\'s question is German.'
+    : 'Respond in **English** because the student\'s question is English. German document text or labels such as "Aufgabe 13.1" must not change the response language.';
   const openFileLine = openFileName
     ? 'The student is currently reading **' + openFileName + '**. The OPEN FILE block contains the problem/exercise text from that file. Use it to understand exactly what is being asked. Look in ALL other course documents (lectures, solution sheets) for the explanation and full solution.'
     : '';
