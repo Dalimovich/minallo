@@ -13,12 +13,23 @@ def test_final_language_rule_ignores_foreign_exercise_labels() -> None:
 
 
 def test_professor_solution_followup_targets_visible_pdf() -> None:
-    from app.services.answer_stream import _is_deictic_question
+    from app.services.answer_stream import (
+        _exact_exercise_overlay,
+        _is_deictic_question,
+        _latest_question_language_overlay,
+    )
 
     assert _is_deictic_question(
         "I don't understand how the Aufgabe was answered. Please explain in detail how the prof answered it"
     )
     assert _is_deictic_question("Walk me through the solution shown here")
+    assert _is_deictic_question("now correct Aufgabe 13.2")
+    overlay = _latest_question_language_overlay("now correct Aufgabe 13.2")
+    assert "mandatory): English" in overlay
+    exercise = _exact_exercise_overlay("now correct Aufgabe 13.2", has_visible_context=True)
+    assert "exercise 13.2" in exercise
+    assert "Source 0" in exercise
+    assert "other exercise number" in exercise
 
 
 # ── Previous-turns trimming ─────────────────────────────────────────────────

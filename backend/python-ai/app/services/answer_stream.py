@@ -303,6 +303,7 @@ _DEICTIC_QUESTION_RE = re.compile(
     r"the (section|page|formula|equation|paragraph|exercise above|exercise below)|"
     r"(first|second|third|next|previous|current|last)\s+(problem|exercise|task|question|aufgabe|uebung)|"
     r"(answer|solve|do|calculate|compute)\s+(it|this|that)|"
+    r"(correct|solve|answer|explain|do)\s+(task|exercise|problem|question|aufgabe|uebung)\s*\d+(?:\.\d+)?|"
     r"(how|why)[^\n]{0,80}(professor|prof|solution|answer(ed)?|worked|solved)|"
     r"(explain|walk me through)[^\n]{0,80}(answer|solution|working)|"
     r"explain this|what does this|what is this|summari[sz]e (this|the section|the page)|"
@@ -321,6 +322,49 @@ _DEICTIC_QUESTION_RE = re.compile(
 
 def _is_deictic_question(q: str) -> bool:
     return bool(_DEICTIC_QUESTION_RE.search(q or ""))
+
+
+def _latest_question_language_overlay(question: str) -> str:
+    """Make short mixed-label questions deterministic (e.g. English + Aufgabe)."""
+    words = set(re.findall(r"[a-zA-Z]+", (question or "").lower()))
+    english = words & {
+        "now", "correct", "please", "explain", "solve", "answer", "how", "why",
+        "what", "the", "this", "that", "it", "me", "in", "detail",
+    }
+    german = words & {
+        "jetzt", "bitte", "erklaer", "erklare", "loese", "lose", "beantworte",
+        "wie", "warum", "was", "die", "das", "mir", "ausfuehrlich",
+    }
+    if english and len(english) >= len(german):
+        return (
+            "\nLATEST-QUESTION LANGUAGE (mandatory): English. The word 'Aufgabe' is "
+            "only the exercise label. Write every heading and explanation in English.\n"
+        )
+    if german:
+        return "\nLATEST-QUESTION LANGUAGE (mandatory): German. Answer entirely in German.\n"
+    return ""
+
+
+def _exact_exercise_overlay(question: str, *, has_visible_context: bool) -> str:
+    match = re.search(
+        r"\b(?:task|exercise|problem|question|aufgabe|uebung)\s*(\d+(?:\.\d+)?)\b",
+        question or "",
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    number = match.group(1)
+    visible = (
+        "The currently visible PDF page is attached as Source 0 and is the primary evidence."
+        if has_visible_context
+        else "Use only evidence that explicitly matches this exercise number."
+    )
+    return (
+        f"\nEXACT EXERCISE TARGET (mandatory): The student asked about exercise {number}. "
+        f"{visible} Do not answer, blend in, or substitute any other exercise number. "
+        "Read the exact prompt, diagram, marked fields, choices, and professor solution before answering. "
+        "If the evidence does not show the requested exercise clearly, say that instead of guessing.\n"
+    )
 
 
 def _intent_resolution_runtime_overlay(
@@ -1318,6 +1362,8 @@ def stream_answer(
     # title, or exercise label cannot outweigh the language of the student's
     # actual request (for example: "I don't understand Aufgabe 13.1").
     system_prompt += FINAL_RESPONSE_LANGUAGE_RULE
+    system_prompt += _latest_question_language_overlay(question)
+    system_prompt += _exact_exercise_overlay(question, has_visible_context=include_source_zero)
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:

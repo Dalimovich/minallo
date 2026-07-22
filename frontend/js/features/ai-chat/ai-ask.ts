@@ -867,7 +867,8 @@ export function initAskAI(
     const _asksAboutVisibleSolution =
       /\b(how|why)\b[\s\S]{0,80}\b(prof(?:essor)?|solution|answer(?:ed)?|worked|solved)\b/i.test(question) ||
       /\b(explain|walk me through)\b[\s\S]{0,80}\b(answer|solution|working|rechnung|l[oö]sung)\b/i.test(question) ||
-      /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question);
+      /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question) ||
+      /\b(?:task|exercise|problem|question|aufgabe|[uü]bung)\s*\d+(?:\.\d+)?\b/i.test(question);
 
     _textReady
       .then(() => {
