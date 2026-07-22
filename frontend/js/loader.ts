@@ -409,7 +409,7 @@ interface LandingTranslation {
       'views/daily-mission/daily-mission.css?v=11',
       'css/app-design-system.css?v=6',
       'css/layout.css?v=16',
-      'css/document-rail.css?v=31',
+      'css/document-rail.css?v=32',
       'css/mobile-responsive.css?v=4',
       'css/auth.css?v=6',
       'css/onboarding.css?v=1',

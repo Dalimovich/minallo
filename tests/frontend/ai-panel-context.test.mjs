@@ -52,8 +52,10 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.match(DOCUMENT_RAIL, /querySelectorAll<HTMLElement>\(['"]\.ai-bubble['"]\)/);
   assert.match(DOCUMENT_RAIL_CSS, /\.dr-type-menu/);
   assert.match(DOCUMENT_RAIL_CSS, /--ai-panel-font-family/);
-  assert.match(LOADER, /document-rail\.css\?v=31/);
-  assert.match(INDEX, /loader\.js\?v=46/);
+  assert.match(DOCUMENT_RAIL_CSS, /\.dr-header\s*\{[\s\S]*?z-index:\s*60/);
+  assert.match(DOCUMENT_RAIL_CSS, /\.dr-type-menu\s*\{[\s\S]*?z-index:\s*100/);
+  assert.match(LOADER, /document-rail\.css\?v=32/);
+  assert.match(INDEX, /loader\.js\?v=47/);
 });
 
 test('questions about the visible professor solution attach the visible PDF page', () => {

@@ -256,6 +256,9 @@
   padding: 2px 2px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 6px;
+  position: relative;
+  z-index: 60;
+  overflow: visible;
 }
 
 .dr-header-l {
@@ -369,7 +372,7 @@
 }
 .dr-type-menu {
   position: absolute;
-  z-index: 40;
+  z-index: 100;
   top: calc(100% + 10px);
   right: 0;
   width: min(260px, calc(100vw - 28px));
@@ -642,7 +645,6 @@
   background: rgba(59, 130, 246, 0.12);
 }
 
-.dr-header,
 .dr-content {
   position: relative;
   z-index: 1;
