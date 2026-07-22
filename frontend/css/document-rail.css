@@ -1525,7 +1525,7 @@
 .dr-drawer .dr-host-ai .ai-bubble {
   border-radius: 14px;
   padding: 9px 11px;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--ai-panel-font-scale, 1));
   line-height: 1.5;
 }
 .dr-drawer .dr-host-ai .ai-bubble.bot {

@@ -5670,7 +5670,7 @@ body:not(.night) .qzsp-btn-primary {
   align-items: flex-end;
 }
 .msg-sender {
-  font-size: 0.63rem;
+  font-size: calc(0.63rem * var(--ai-panel-font-scale, 1));
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -5709,7 +5709,7 @@ body:not(.night) .qzsp-btn-primary {
 }
 .ai-bubble {
   padding: 11px 14px;
-  font-size: 0.83rem;
+  font-size: calc(0.83rem * var(--ai-panel-font-scale, 1));
   line-height: 1.65;
   word-break: break-word;
   border-radius: 14px;
@@ -5754,11 +5754,11 @@ body.night .ai-bubble.user {
   opacity: 1;
 }
 .msg-time {
-  font-size: 0.61rem;
+  font-size: calc(0.61rem * var(--ai-panel-font-scale, 1));
   color: var(--muted);
 }
 .msg-action-btn {
-  font-size: 0.65rem;
+  font-size: calc(0.65rem * var(--ai-panel-font-scale, 1));
   color: var(--muted);
   cursor: pointer;
   background: rgba(37, 99, 235, 0.08);
@@ -5807,13 +5807,13 @@ body.night .ai-bubble.user {
   line-height: 1.3;
 }
 .ai-bubble .md-h1 {
-  font-size: 1.05rem;
+  font-size: calc(1.05rem * var(--ai-panel-font-scale, 1));
 }
 .ai-bubble .md-h2 {
-  font-size: 0.97rem;
+  font-size: calc(0.97rem * var(--ai-panel-font-scale, 1));
 }
 .ai-bubble .md-h3 {
-  font-size: 0.88rem;
+  font-size: calc(0.88rem * var(--ai-panel-font-scale, 1));
 }
 .ai-bubble .md-p {
   margin: 0;
@@ -6068,7 +6068,7 @@ body:not(.night) .ai-thinking-card {
   color: var(--muted, rgba(203, 213, 225, 0.72));
 }
 /* Readability: increase chat text only inside the docked AI side panel. */
-#aiPanel .ai-bubble { font-size: 0.9rem; }
+#aiPanel .ai-bubble { font-size: calc(0.9rem * var(--ai-panel-font-scale, 1)); }
 
 body:not(.night) .ai-thinking-text {
   color: var(--lm-muted, rgba(71, 85, 105, 0.82));

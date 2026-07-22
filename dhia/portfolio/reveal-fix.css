@@ -1,18 +1,44 @@
-.reveal {
-  opacity: 1;
-  transform: none;
-  animation: reveal-in .75s ease both;
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(30px) scale(.985);
+  transition:
+    opacity .72s cubic-bezier(.2, .7, .2, 1),
+    transform .72s cubic-bezier(.2, .7, .2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
 }
 
-.delay-1 { animation-delay: .12s; }
-.delay-2 { animation-delay: .24s; }
+.scroll-reveal.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
 
-@keyframes reveal-in {
-  from { opacity: 0; transform: translateY(22px); }
-  to { opacity: 1; transform: none; }
+.hero-visual.visible .code-card {
+  animation: card-float 6s ease-in-out 1s infinite;
+}
+
+.hero-visual.visible .orb {
+  animation: orb-breathe 5s ease-in-out infinite alternate;
+}
+
+@keyframes card-float {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50% { transform: rotate(-1deg) translateY(-8px); }
+}
+
+@keyframes orb-breathe {
+  from { opacity: .72; transform: scale(.96); }
+  to { opacity: 1; transform: scale(1.04); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .reveal, .ticker div { animation: none !important; }
+  .scroll-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .hero-visual .code-card,
+  .hero-visual .orb,
+  .ticker div { animation: none !important; }
 }
