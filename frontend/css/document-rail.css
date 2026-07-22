@@ -8,7 +8,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --dr-rail-w: 64px;
+  --dr-rail-w: 66px;
   --dr-drawer-w: 390px;
   --dr-rail-right: 0px;
   --dr-drawer-right: var(--dr-rail-w);
@@ -26,6 +26,7 @@
 
 /* ── Rail ─────────────────────────────────────────────────────────────── */
 .dr-rail {
+  box-sizing: border-box;
   position: fixed;
   right: var(--dr-rail-right);
   top: 50%;
@@ -36,7 +37,7 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 7px 12px;
   border-radius: 1.65rem;
   border: 1px solid rgba(255, 255, 255, 0.10);
   background:
@@ -47,9 +48,9 @@
 }
 
 .dr-rail-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 16px;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,13 +67,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
-  border-radius: 1rem;
+  gap: 3px;
+  padding: 8px 3px;
+  border-radius: 0.85rem;
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.055);
   color: #94a3b8;
-  font: 800 10px/1 var(--font-main);
+  font: 800 9px/1 var(--font-main);
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms ease;
@@ -96,8 +97,8 @@
 }
 
 .dr-rail-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   stroke-width: 2;
 }
 

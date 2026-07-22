@@ -16,6 +16,7 @@ const LOADER = read('frontend/js/loader.ts');
 const AI_ASK = read('frontend/js/features/ai-chat/ai-ask.ts');
 const CSS = read('frontend/css/styles.css');
 const DOCUMENT_RAIL_CSS = read('frontend/css/document-rail.css');
+const MESSAGE_NAVIGATOR = read('frontend/js/features/message-navigator/message-navigator.ts');
 
 test('Ctrl/Cmd + wheel resizing works across the complete AI drawer', () => {
   assert.match(DOCUMENT_RAIL, /drawer\.addEventListener\(['"]wheel['"]/);
@@ -36,8 +37,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-live-font-resize-v3['"]/);
-  assert.match(INDEX, /config\.js\?v=20260722-ai-live-font-resize-v3/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260722-thin-drawer-controls-v4['"]/);
+  assert.match(INDEX, /config\.js\?v=20260722-thin-drawer-controls-v4/);
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {
@@ -55,7 +56,10 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.match(DOCUMENT_RAIL_CSS, /--ai-panel-font-family/);
   assert.match(DOCUMENT_RAIL_CSS, /\.dr-header\s*\{[\s\S]*?z-index:\s*60/);
   assert.match(DOCUMENT_RAIL_CSS, /\.dr-type-menu\s*\{[\s\S]*?z-index:\s*100/);
-  assert.match(LOADER, /document-rail\.css\?v=32/);
+  assert.match(DOCUMENT_RAIL_CSS, /--dr-rail-w:\s*66px/);
+  assert.doesNotMatch(MESSAGE_NAVIGATOR, /width:\s*calc\(var\(--dr-rail-w[^\n]+\+\s*24px\)/);
+  assert.match(MESSAGE_NAVIGATOR, /width:\s*var\(--dr-rail-w,\s*66px\)/);
+  assert.match(LOADER, /document-rail\.css\?v=33/);
   assert.match(INDEX, /loader\.js\?v=47/);
 });
 

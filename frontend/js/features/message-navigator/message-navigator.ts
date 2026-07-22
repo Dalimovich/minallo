@@ -231,7 +231,7 @@ const CSS = `
    vertically centered in the new lane, capped to the pill height. */
 .message-navigator--inline {
   position: absolute;
-  left: 9px !important;
+  left: 3px !important;
   top: 50% !important;
   transform: translateY(-50%);
   width: auto !important;
@@ -241,8 +241,9 @@ const CSS = `
    Original: 64px wide, 8px padding → 48px button column. Widened: +24px
    with padding-left 32px keeps the button column at 48px, unmoved. */
 .dr-rail.msgnav-rail-host {
-  width: calc(var(--dr-rail-w, 64px) + 24px);
-  padding-left: 32px;
+  width: var(--dr-rail-w, 66px);
+  padding-left: 22px;
+  padding-right: 6px;
 }
 .message-navigator--inline .message-navigator-track {
   background: rgba(255, 255, 255, 0.05);
