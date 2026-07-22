@@ -467,8 +467,8 @@ exposeLegacyVar('msmCurrentTitle', () => msmCurrentTitle, (v: string) => { msmCu
 initPdfTabs();
 
 function updateZoomPct(): void {
-  const el = document.getElementById('pdfZoomPct');
-  if (el) el.textContent = Math.round(pdfScale * 100) + '%';
+  const el = document.getElementById('pdfZoomPct') as HTMLInputElement | null;
+  if (el && document.activeElement !== el) el.value = Math.round(pdfScale * 100) + '%';
 }
 
 document.getElementById('pdfBody')?.addEventListener('mouseup', () => {
@@ -478,11 +478,15 @@ document.getElementById('pdfBody')?.addEventListener('mouseup', () => {
   }, 30);
 });
 
-let _pdfScrollTimer: ReturnType<typeof setTimeout> | null = null;
+let _pdfScrollFrame: number | null = null;
 document.getElementById('pdfBody')?.addEventListener('scroll', () => {
   if (!pdfShowAll) return;
-  if (_pdfScrollTimer) clearTimeout(_pdfScrollTimer);
-  _pdfScrollTimer = setTimeout(updatePageInfo, 80);
+  if (_pdfScrollFrame !== null) cancelAnimationFrame(_pdfScrollFrame);
+  _pdfScrollFrame = requestAnimationFrame(() => {
+    _pdfScrollFrame = null;
+    pdfPage = _pdfVisiblePage();
+    updatePageInfo();
+  });
 });
 document.getElementById('pdfPrev')?.addEventListener('click', () => {
   if (pdfPage > 1) {
@@ -516,9 +520,9 @@ document.getElementById('pdfNext')?.addEventListener('click', () => {
     const n = parseInt(this.value, 10);
     if (n >= 1 && n <= pdfTotal && pdfTotal > 0) {
       pdfPage = n;
-      pdfShowAll = false;
       updatePageInfo();
-      renderPages();
+      if (pdfShowAll) _pdfScrollToPage(n);
+      else renderPages();
     } else {
       this.value = String(pdfShowAll ? _pdfVisiblePage() : pdfPage);
     }
@@ -602,6 +606,29 @@ document.getElementById('pdfZoomOut')?.addEventListener('click', () => {
 document.getElementById('pdfFit')?.addEventListener('click', () => {
   _applyPdfZoom(0.9);
 });
+
+(function (): void {
+  const inp = document.getElementById('pdfZoomPct') as HTMLInputElement | null;
+  if (!inp) return;
+  inp.addEventListener('focus', function (this: HTMLInputElement) {
+    this.value = String(Math.round(pdfScale * 100));
+    this.select();
+  });
+  inp.addEventListener('keydown', function (this: HTMLInputElement, e: KeyboardEvent) {
+    if (e.key === 'Enter') { this.blur(); return; }
+    if (e.key === 'Escape') {
+      this.value = Math.round(pdfScale * 100) + '%';
+      this.blur();
+    }
+  });
+  inp.addEventListener('blur', function (this: HTMLInputElement) {
+    const percentage = Number.parseFloat(this.value.replace('%', '').trim());
+    if (Number.isFinite(percentage) && percentage >= 20 && percentage <= 400) {
+      _applyPdfZoom(percentage / 100);
+    }
+    this.value = Math.round(pdfScale * 100) + '%';
+  });
+})();
 
 // Ctrl/Cmd + mouse wheel zoom, like a browser or native PDF reader.
 // preventDefault stops the browser's own page zoom.

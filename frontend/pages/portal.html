@@ -1808,13 +1808,15 @@
                         >
                           &#x2212;
                         </button>
-                        <button
+                        <input
                           class="pdf-toolbar-button pdf-zoom-pct"
                           id="pdfZoomPct"
-                          title="Current zoom"
-                        >
-                          90%
-                        </button>
+                          type="text"
+                          inputmode="numeric"
+                          value="90%"
+                          aria-label="Zoom percentage"
+                          title="Enter zoom percentage"
+                        />
                         <button
                           class="pdf-toolbar-button pdf-icon-button"
                           id="pdfZoomIn"

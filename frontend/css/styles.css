@@ -2919,8 +2919,11 @@ body.pdf-maximized #pdfMaximize {
 }
 
 .pdf-toolbar-v2 .pdf-zoom-pct {
+  width: 56px;
   min-width: 56px;
   height: 32px;
+  box-sizing: border-box;
+  appearance: none;
   border-radius: 12px;
   background: rgba(59, 130, 246, 0.18);
   border: 1px solid rgba(96, 165, 250, 0.35);
@@ -2928,6 +2931,7 @@ body.pdf-maximized #pdfMaximize {
   font-weight: 700;
   font-size: 0.78rem;
   padding: 0 10px;
+  text-align: center;
 }
 
 /* PDF document area — keep original page rendering, just retint background */
