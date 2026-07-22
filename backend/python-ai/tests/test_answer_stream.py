@@ -9,7 +9,9 @@ def test_final_language_rule_ignores_foreign_exercise_labels() -> None:
 
     assert "latest QUESTION" in FINAL_RESPONSE_LANGUAGE_RULE
     assert '"Aufgabe 13.1"' in FINAL_RESPONSE_LANGUAGE_RULE
-    assert "English answer" in FINAL_RESPONSE_LANGUAGE_RULE
+    assert "every language and writing system" in FINAL_RESPONSE_LANGUAGE_RULE
+    assert "actual instruction/request" in FINAL_RESPONSE_LANGUAGE_RULE
+    assert "Never switch to the source language" in FINAL_RESPONSE_LANGUAGE_RULE
 
 
 def test_professor_solution_followup_targets_visible_pdf() -> None:
@@ -25,7 +27,10 @@ def test_professor_solution_followup_targets_visible_pdf() -> None:
     assert _is_deictic_question("Walk me through the solution shown here")
     assert _is_deictic_question("now correct Aufgabe 13.2")
     overlay = _latest_question_language_overlay("now correct Aufgabe 13.2")
-    assert "mandatory): English" in overlay
+    assert "whatever the language is" in overlay
+    assert "Aufgabe" in overlay
+    assert "mandatory): English" not in overlay
+    assert "mandatory): German" not in overlay
     exercise = _exact_exercise_overlay("now correct Aufgabe 13.2", has_visible_context=True)
     assert "exercise 13.2" in exercise
     assert "Source 0" in exercise

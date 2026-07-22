@@ -71,10 +71,14 @@ FINAL_RESPONSE_LANGUAGE_RULE = """
 
 FINAL RESPONSE-LANGUAGE RULE (highest priority): Answer entirely in the language
 of the student's latest QUESTION below. Determine that language from the request
-words and sentence structure. Ignore document text, earlier turns, interface
-language, and quoted or referenced titles/labels such as "Aufgabe 13.1" when
-choosing the response language. A question written in English must receive an
-English answer even when the course material and technical terms are German.
+words, grammar, and sentence structure before drafting the answer. This applies
+to every language and writing system (including Arabic, French, German, English,
+and all others). Ignore document text, earlier turns, interface language, and
+quoted or referenced titles/labels such as "Aufgabe 13.1" when choosing the
+response language. In a mixed-language question, follow the language used for
+the student's actual instruction/request; copied terminology and exercise names
+are not language evidence. Use the detected question language for every heading,
+explanation, transition, and conclusion. Never switch to the source language.
 """
 
 
@@ -325,24 +329,17 @@ def _is_deictic_question(q: str) -> bool:
 
 
 def _latest_question_language_overlay(question: str) -> str:
-    """Make short mixed-label questions deterministic (e.g. English + Aufgabe)."""
-    words = set(re.findall(r"[a-zA-Z]+", (question or "").lower()))
-    english = words & {
-        "now", "correct", "please", "explain", "solve", "answer", "how", "why",
-        "what", "the", "this", "that", "it", "me", "in", "detail",
-    }
-    german = words & {
-        "jetzt", "bitte", "erklaer", "erklare", "loese", "lose", "beantworte",
-        "wie", "warum", "was", "die", "das", "mir", "ausfuehrlich",
-    }
-    if english and len(english) >= len(german):
-        return (
-            "\nLATEST-QUESTION LANGUAGE (mandatory): English. The word 'Aufgabe' is "
-            "only the exercise label. Write every heading and explanation in English.\n"
-        )
-    if german:
-        return "\nLATEST-QUESTION LANGUAGE (mandatory): German. Answer entirely in German.\n"
-    return ""
+    """Universal language lock, intentionally free of language-specific heuristics."""
+    if not (question or "").strip():
+        return ""
+    return (
+        "\nUNIVERSAL LANGUAGE LOCK (mandatory): Before answering, silently identify "
+        "the language of the student's latest QUESTION from its instruction words, "
+        "grammar, and sentence structure. Answer exclusively in that same language, "
+        "whatever the language is. Ignore the language of sources, UI text, earlier "
+        "messages, course names, and embedded labels such as Aufgabe, Übung, chapitre, "
+        "or سؤال. Do not mention this detection step.\n"
+    )
 
 
 def _exact_exercise_overlay(question: str, *, has_visible_context: bool) -> str:
@@ -1378,6 +1375,16 @@ def stream_answer(
         if understanding:
             user_message += "\n\n" + understanding
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
+
+    # Repeat the universal lock after all source text. Recency matters for long
+    # document prompts: the final source may be in a different language and
+    # must never override the student's latest request language.
+    user_message += (
+        "\n\nFINAL LANGUAGE CHECK: Re-read the text under QUESTION, identify the "
+        "language of the student's instruction (not source text or quoted labels), "
+        "and write the entire answer only in that same language. This rule applies "
+        "to every language and writing system."
+    )
 
     # Auto-attach the exercise/figure page bitmap on math/exercise questions so
     # the vision model can read dimensions and geometry off the drawing — most
