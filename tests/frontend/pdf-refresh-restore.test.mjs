@@ -8,6 +8,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (rel) => readFileSync(resolve(ROOT, rel), 'utf8');
 const AUTH = read('frontend/js/supabase.js');
 const DATA = read('frontend/js/app-data.js');
+const PDF = read('frontend/js/app-pdf.js');
+const VIEWER = read('frontend/js/features/pdf-viewer/pdf-viewer.ts');
 
 test('refreshing an open PDF primes the viewer instead of showing Courses', () => {
   assert.match(AUTH, /_resumePdfImmediately/);
@@ -23,6 +25,14 @@ test('refreshing an open PDF primes the viewer instead of showing Courses', () =
   assert.ok(cachedOpen >= 0, 'cached PDF restore is invoked during page refresh');
   assert.ok(userDataLoad >= 0, 'normal user data loading still runs');
   assert.ok(cachedOpen < userDataLoad, 'the PDF restore starts before remote user data loading');
+});
+
+test('page refresh restores the exact visible PDF page once placeholders exist', () => {
+  assert.match(PDF, /sessionStorage\.setItem\(_pageKey, String\(pdfPage\)\)/);
+  assert.match(PDF, /sessionStorage\.removeItem\(_pageKey\)/);
+  assert.match(VIEWER, /window\.pdfPage = savedPage && savedPage <= pdfDoc\.numPages \? savedPage : 1/);
+  assert.match(VIEWER, /restoreSavedPage\(attempt \+ 1\)/);
+  assert.match(VIEWER, /data-page-num=/);
 });
 
 test('cached PDF opens before the storage listing refresh completes', () => {

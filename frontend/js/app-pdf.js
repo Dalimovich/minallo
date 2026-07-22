@@ -4,11 +4,13 @@ function updatePageInfo() {
   if (inp && document.activeElement !== inp) inp.value = pdfShowAll ? _pdfVisiblePage() : pdfPage;
   if (tot) tot.textContent = pdfTotal;
   // Persist page position in sessionStorage so it survives refresh
-  if (activeFileName && pdfPage && pdfPage > 1) {
+  if (activeFileName && pdfPage) {
     try {
       var _id = window.activeStorageName || activeFileName;
       var _cid = window.activeCourseId != null && window.activeCourseId !== '' ? String(window.activeCourseId) : 'demo';
-      sessionStorage.setItem('ss_page_' + _cid + '::' + _id, String(pdfPage));
+      var _pageKey = 'ss_page_' + _cid + '::' + _id;
+      if (pdfPage > 1) sessionStorage.setItem(_pageKey, String(pdfPage));
+      else sessionStorage.removeItem(_pageKey);
     } catch (e) {}
   }
 }

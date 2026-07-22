@@ -278,7 +278,11 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
               const pdfDoc = pdf as { numPages: number; getPage: (n: number) => Promise<unknown> };
               window.pdfDoc = pdfDoc;
               window.pdfTotal = pdfDoc.numPages;
-              window.pdfPage = 1;
+              const savedPage = _restorePageBookmark(
+                (f._course || course).id,
+                f._storageName || f.name
+              );
+              window.pdfPage = savedPage && savedPage <= pdfDoc.numPages ? savedPage : 1;
               // Always open in all-pages (continuous) mode. Show-all is
               // virtualized (app-pdf.ts renderPages uses an IntersectionObserver,
               // rendering only pages that scroll into view), so even a 200-page
@@ -293,12 +297,8 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
               if (typeof window._annotLoad === 'function') window._annotLoad(f.name);
               if (typeof window.renderPages === 'function') window.renderPages();
               snapshotWindowInto(pane);
-              const savedPage = _restorePageBookmark(
-                (f._course || course).id,
-                f._storageName || f.name
-              );
               if (savedPage && savedPage > 1 && savedPage <= pdfDoc.numPages) {
-                setTimeout(() => {
+                const restoreSavedPage = (attempt: number): void => {
                   if (window._pdfOpenSeq !== mySeq) return;
                   // In all-pages (continuous) mode, scroll to the saved page and
                   // stay in continuous mode — dispatching a page-input blur here
@@ -306,6 +306,12 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
                   if (window.pdfShowAll && typeof window._pdfScrollToPage === 'function') {
                     window.pdfPage = savedPage;
                     window._pdfScrollToPage(savedPage);
+                    const body = document.getElementById('pdfBody');
+                    const target = body?.querySelector<HTMLElement>('[data-page-num="' + savedPage + '"]');
+                    if (!target && attempt < 80) {
+                      setTimeout(() => restoreSavedPage(attempt + 1), 50);
+                      return;
+                    }
                     if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
                     return;
                   }
@@ -314,7 +320,8 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
                     inp.value = String(savedPage);
                     inp.dispatchEvent(new Event('blur'));
                   }
-                }, 700);
+                };
+                setTimeout(() => restoreSavedPage(0), 0);
               }
               // Skip eager text extraction when the backend has already
               // indexed this PDF — RAG retrieval covers AI answers, and
