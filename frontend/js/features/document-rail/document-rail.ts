@@ -856,6 +856,16 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     if (families[savedFamily]) family = savedFamily;
   } catch { /* storage may be unavailable */ }
 
+  const applyBubbleTypography = (bubble: HTMLElement, familyValue: string): void => {
+    bubble.style.setProperty('--ai-panel-font-scale', String(scale));
+    bubble.style.setProperty('--ai-panel-font-family', familyValue);
+    // Use a concrete inline size for the live update. Some Chromium builds
+    // defer repainting inherited custom-property changes inside the hosted,
+    // independently scrolling chat panel until its next layout (for example,
+    // after a reload). A real font-size mutation forces that layout now.
+    bubble.style.setProperty('font-size', `${0.82 * scale}rem`, 'important');
+  };
+
   const apply = (): void => {
     document.documentElement.style.setProperty('--ai-panel-font-scale', String(scale));
     drawer.style.setProperty('--ai-panel-font-scale', String(scale));
@@ -875,8 +885,7 @@ function wireAiFontZoom(drawer: HTMLElement): void {
     // makes the controls immediately visible even when a legacy theme rule
     // set a custom property or font family on an individual bubble.
     messages?.querySelectorAll<HTMLElement>('.ai-bubble').forEach((bubble) => {
-      bubble.style.setProperty('--ai-panel-font-scale', String(scale));
-      bubble.style.setProperty('--ai-panel-font-family', familyValue);
+      applyBubbleTypography(bubble, familyValue);
     });
     const value = document.getElementById('drFontValue');
     if (value) value.textContent = Math.round(scale * 100) + '%';

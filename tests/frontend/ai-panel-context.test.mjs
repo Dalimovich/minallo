@@ -27,6 +27,7 @@ test('Ctrl/Cmd + wheel resizing works across the complete AI drawer', () => {
   assert.match(DOCUMENT_RAIL, /document\.documentElement\.style\.setProperty\(['"]--ai-panel-font-scale/);
   assert.match(DOCUMENT_RAIL, /panel\?\.style\.setProperty\(['"]--ai-panel-font-scale/);
   assert.match(DOCUMENT_RAIL, /messages\?\.style\.setProperty\(['"]--ai-panel-font-scale/);
+  assert.match(DOCUMENT_RAIL, /style\.setProperty\(['"]font-size['"],\s*`\$\{0\.82 \* scale\}rem`,\s*['"]important['"]\)/);
   assert.doesNotMatch(APP, /minallo_ai_font_scale/);
   assert.match(CSS, /--ai-panel-font-scale/);
 });
@@ -35,8 +36,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-typography-menu-v2['"]/);
-  assert.match(INDEX, /config\.js\?v=20260722-ai-typography-menu-v2/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260722-ai-live-font-resize-v3['"]/);
+  assert.match(INDEX, /config\.js\?v=20260722-ai-live-font-resize-v3/);
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {
