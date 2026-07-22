@@ -836,6 +836,45 @@ function wireClose(): void {
   });
 }
 
+function wireAiFontZoom(drawer: HTMLElement): void {
+  const storageKey = 'minallo_ai_font_scale';
+  const clamp = (value: number): number => Math.min(1.8, Math.max(0.7, value));
+  let scale = 1;
+  let modifierHeld = false;
+  try {
+    const saved = Number.parseFloat(localStorage.getItem(storageKey) || '1');
+    if (Number.isFinite(saved)) scale = clamp(saved);
+  } catch { /* storage may be unavailable */ }
+
+  const apply = (): void => {
+    document.documentElement.style.setProperty('--ai-panel-font-scale', String(scale));
+    drawer.style.setProperty('--ai-panel-font-scale', String(scale));
+    drawer.dataset.aiFontScale = String(scale);
+  };
+  apply();
+
+  window.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key === 'Control' || event.key === 'Meta') modifierHeld = true;
+  }, { capture: true });
+  window.addEventListener('keyup', (event: KeyboardEvent) => {
+    if (event.key === 'Control' || event.key === 'Meta') modifierHeld = false;
+  }, { capture: true });
+  window.addEventListener('blur', () => { modifierHeld = false; });
+
+  // Bind to the actual drawer rather than document/window. Chromium treats
+  // root wheel listeners specially, while an explicit non-passive element
+  // listener can reliably cancel browser zoom.
+  drawer.addEventListener('wheel', (event: WheelEvent) => {
+    if (!drawer.classList.contains('dr-mode-ai')) return;
+    if (!event.ctrlKey && !event.metaKey && !modifierHeld) return;
+    event.preventDefault();
+    event.stopPropagation();
+    scale = clamp(Math.round((scale + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10);
+    apply();
+    try { localStorage.setItem(storageKey, String(scale)); } catch { /* ignore */ }
+  }, { passive: false, capture: true });
+}
+
 function setRouteVisibility(route: DocRailRoute): void {
   const root = $('drRoot');
   if (!root) return;
@@ -865,7 +904,10 @@ export function initDocumentRail(): void {
 
   _drawerWidth = loadWidth();
   const drawer = $('drDrawer');
-  if (drawer) applyWidth(drawer, _drawerWidth);
+  if (drawer) {
+    applyWidth(drawer, _drawerWidth);
+    wireAiFontZoom(drawer);
+  }
 
   wireRailButtons();
   wireClose();

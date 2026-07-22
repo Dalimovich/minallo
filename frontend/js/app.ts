@@ -738,41 +738,6 @@ document.getElementById('pdfStudyBtn')?.addEventListener('click', () => {
 const aiPanel = document.getElementById('aiPanel');
 const aiMsgs = document.getElementById('aiMsgs');
 
-// Ctrl/Cmd + wheel changes only the AI panel's reading size. Keep normal wheel
-// scrolling untouched, and persist the preference for the next session.
-{
-  const AI_FONT_SCALE_KEY = 'minallo_ai_font_scale';
-  const clampAiFontScale = (value: number): number => Math.min(1.8, Math.max(0.7, value));
-  let aiFontScale = 1;
-  try {
-    const savedScale = Number.parseFloat(localStorage.getItem(AI_FONT_SCALE_KEY) || '1');
-    if (Number.isFinite(savedScale)) aiFontScale = clampAiFontScale(savedScale);
-  } catch { /* localStorage can be unavailable in privacy mode */ }
-
-  const applyAiFontScale = (): void => {
-    // The panel is re-hosted inside the document rail and may not exist yet
-    // when app.js boots. The root variable works before and after re-hosting.
-    document.documentElement.style.setProperty('--ai-panel-font-scale', String(aiFontScale));
-    aiPanel?.style.setProperty('--ai-panel-font-scale', String(aiFontScale));
-  };
-  applyAiFontScale();
-
-  document.addEventListener(
-    'wheel',
-    (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target?.closest('#aiPanel, #drDrawer.dr-mode-ai')) return;
-      event.preventDefault();
-      const direction = event.deltaY < 0 ? 1 : -1;
-      aiFontScale = clampAiFontScale(Math.round((aiFontScale + direction * 0.1) * 10) / 10);
-      applyAiFontScale();
-      try { localStorage.setItem(AI_FONT_SCALE_KEY, String(aiFontScale)); } catch { /* ignore */ }
-    },
-    { passive: false, capture: true }
-  );
-}
-
 if (typeof window.renderMarkdown !== 'function') {
   window.renderMarkdown = (text: string): string => escapeHtml(text);
 }
