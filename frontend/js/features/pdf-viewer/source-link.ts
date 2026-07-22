@@ -44,20 +44,73 @@ function _isPseudoSource(name: string): boolean {
   return !n || n === 'source 0' || n.includes('problem solver') || n.includes('visible');
 }
 
-function _resolveFile(course: CourseLike | null, fileName: string): CourseFileRec | null {
+export function normalizeSourceFileName(value: string): string {
+  let decoded = String(value || '');
+  try { decoded = decodeURIComponent(decoded); } catch { /* keep original */ }
+  const base = decoded.split(/[\\/]/).pop() || decoded;
+  return base
+    .replace(/ß/g, 'ss')
+    .replace(/ẞ/g, 'ss')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+export function sourceFileNameSimilarity(left: string, right: string): number {
+  const a = normalizeSourceFileName(left);
+  const b = normalizeSourceFileName(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (Math.min(a.length, b.length) >= 12 && (a.endsWith(b) || b.endsWith(a))) return 0.98;
+  const pairs = (s: string): string[] => {
+    const out: string[] = [];
+    for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2));
+    return out;
+  };
+  const aPairs = pairs(a);
+  const bCounts = new Map<string, number>();
+  pairs(b).forEach((p) => bCounts.set(p, (bCounts.get(p) || 0) + 1));
+  let overlap = 0;
+  aPairs.forEach((p) => {
+    const count = bCounts.get(p) || 0;
+    if (count > 0) {
+      overlap++;
+      bCounts.set(p, count - 1);
+    }
+  });
+  return (2 * overlap) / Math.max(1, aPairs.length + Math.max(0, b.length - 1));
+}
+
+export function resolveCourseFile(course: CourseLike | null, fileName: string): CourseFileRec | null {
   if (!course || !fileName) return null;
   const want = fileName.trim().toLowerCase();
-  const match = (arr?: CourseFileRec[]): CourseFileRec | undefined =>
-    (arr || []).find(
+  const all: CourseFileRec[] = [
+    ...(course.files || []),
+    ...(course.userFolders || []).flatMap((fd) => fd.files || []),
+  ];
+  const exact = all.find(
       (f) => String(f.name || f._storageName || '').trim().toLowerCase() === want
     );
-  const direct = match(course.files);
-  if (direct) return direct;
-  for (const fd of course.userFolders || []) {
-    const inFolder = match(fd.files);
-    if (inFolder) return inFolder;
-  }
-  return null;
+  if (exact) return exact;
+
+  // Indexed names can lose non-ASCII characters (Übung → bung,
+  // Spritzgießen → Spritzgie_en). Pick a fuzzy match only when it is strong
+  // and clearly better than the runner-up, preventing an unrelated PDF open.
+  const ranked = all
+    .map((file) => ({
+      file,
+      score: Math.max(
+        sourceFileNameSimilarity(fileName, String(file.name || '')),
+        sourceFileNameSimilarity(fileName, String(file._storageName || ''))
+      ),
+    }))
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  const runnerUp = ranked[1];
+  return best && best.score >= 0.72 && (!runnerUp || best.score - runnerUp.score >= 0.08)
+    ? best.file
+    : null;
 }
 
 // All courses the client knows about: the active one first, then every course
@@ -83,7 +136,7 @@ function _allCourses(): CourseLike[] {
 function _resolveAnywhere(fileName: string): { file: CourseFileRec; course: CourseLike } | null {
   if (!fileName) return null;
   for (const course of _allCourses()) {
-    const file = _resolveFile(course, fileName);
+    const file = resolveCourseFile(course, fileName);
     if (file) return { file, course };
   }
   return null;
@@ -353,7 +406,7 @@ export function handleSourceClick(src: CitedSource, surface: 'sidebar' | 'popup'
 
   if (surface === 'sidebar') {
     const open = String(window.activeFileName || '').trim().toLowerCase();
-    if (open && open === fileName.toLowerCase()) {
+    if (open && sourceFileNameSimilarity(open, fileName) >= 0.9) {
       if (page) _jumpOpenPdf(page);
       return;
     }
