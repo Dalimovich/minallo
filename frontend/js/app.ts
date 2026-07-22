@@ -754,17 +754,19 @@ if (aiPanel && aiMsgs) {
   };
   applyAiFontScale();
 
-  aiMsgs.addEventListener(
+  document.addEventListener(
     'wheel',
     (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest('#aiPanel, #drDrawer.dr-mode-ai')) return;
       event.preventDefault();
       const direction = event.deltaY < 0 ? 1 : -1;
       aiFontScale = clampAiFontScale(Math.round((aiFontScale + direction * 0.1) * 10) / 10);
       applyAiFontScale();
       try { localStorage.setItem(AI_FONT_SCALE_KEY, String(aiFontScale)); } catch { /* ignore */ }
     },
-    { passive: false }
+    { passive: false, capture: true }
   );
 }
 

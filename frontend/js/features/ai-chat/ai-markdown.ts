@@ -1773,11 +1773,13 @@ export function renderMarkdown(text: string): string {
 
     if (/^\d+\. /.test(line)) {
       const olItems: string[] = [];
+      const listStart = Number.parseInt(line.match(/^(\d+)\./)?.[1] || '1', 10);
       while (i < lines.length && /^\d+\. /.test(lines[i] ?? '')) {
         olItems.push('<li>' + inline((lines[i] ?? '').replace(/^\d+\. /, '')) + '</li>');
         i++;
       }
-      out.push('<ol class="md-ol">' + olItems.join('') + '</ol>');
+      const startAttr = listStart === 1 ? '' : ' start="' + listStart + '"';
+      out.push('<ol class="md-ol"' + startAttr + '>' + olItems.join('') + '</ol>');
       continue;
     }
 

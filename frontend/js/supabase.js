@@ -659,8 +659,9 @@ function _enterApp(user) {
   // (courses listing without inApp). That case is fully covered by
   // ss_portal_tab, and overriding here would yank the user back to Courses
   // on every refresh after they navigated to Notes/Editor/Chatbot/etc.
+  var _savedSt = null;
   try {
-    var _savedSt = JSON.parse(localStorage.getItem('ss_state') || 'null');
+    _savedSt = JSON.parse(localStorage.getItem('ss_state') || 'null');
     if (_savedSt && _savedSt.inApp === true) {
       _restoreSec = 'studip';
     }
@@ -696,8 +697,42 @@ function _enterApp(user) {
         admin: 'psbAdmin'
       }[_targetSec] || 'psbDashboard'
     );
-  if (typeof showPortalSection === 'function') showPortalSection(_targetSec);
-  if (typeof window._ssAfterFeature === 'function') {
+  var _resumePdfImmediately = !!(
+    _savedSt && _savedSt.inApp === true && _savedSt.courseId && _savedSt.fileName
+  );
+  if (_resumePdfImmediately) {
+    // Do not flash the Courses dashboard while course/storage data hydrates.
+    // The cached file metadata will start the real open in _loadUserCourses;
+    // until then, show the PDF shell immediately so refresh preserves place.
+    try {
+      activeCourseId = _savedSt.courseId;
+      activeFileName = _savedSt.fileName;
+      activeCourseSection = _savedSt.section || 'files';
+      if (typeof selectTopLevelView === 'function') selectTopLevelView('file');
+      var _resumeOverview = document.getElementById('courseOverview');
+      var _resumeWelcome = document.getElementById('welcomeState');
+      var _resumePdfView = document.getElementById('pdfView');
+      if (_resumeOverview) _resumeOverview.style.display = 'none';
+      if (_resumeWelcome) _resumeWelcome.style.display = 'none';
+      if (_resumePdfView) _resumePdfView.style.display = 'flex';
+      var _resumeName = document.getElementById('pdfFileName');
+      if (_resumeName) _resumeName.textContent = _savedSt.fileName;
+      var _resumeBody = document.getElementById('pdfBody');
+      if (_resumeBody && !_resumeBody.querySelector('.pdf-page-wrap')) {
+        _resumeBody.innerHTML =
+          '<div class="pdf-loading"><div class="loading-dots"><span></span><span></span><span></span></div><p>Reopening PDF…</p></div>';
+      }
+      if (window.__minalloDocRail && typeof window.__minalloDocRail.setRouteVisibility === 'function') {
+        window.__minalloDocRail.setRouteVisibility('pdf');
+      }
+      if (typeof window._ssOpenCachedRestoredPdf === 'function') {
+        window._ssOpenCachedRestoredPdf(_savedSt.courseId, _savedSt.fileName);
+      }
+    } catch (e) {}
+  } else if (typeof showPortalSection === 'function') {
+    showPortalSection(_targetSec);
+  }
+  if (!_resumePdfImmediately && typeof window._ssAfterFeature === 'function') {
     window._ssAfterFeature(_targetSec, function () {
       if (_targetSec === 'aipage' && typeof window._aipRefreshSidebar === 'function') window._aipRefreshSidebar();
       if (_targetSec === 'chat' && typeof window._chatInit === 'function') window._chatInit();

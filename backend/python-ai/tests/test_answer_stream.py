@@ -12,6 +12,15 @@ def test_final_language_rule_ignores_foreign_exercise_labels() -> None:
     assert "English answer" in FINAL_RESPONSE_LANGUAGE_RULE
 
 
+def test_professor_solution_followup_targets_visible_pdf() -> None:
+    from app.services.answer_stream import _is_deictic_question
+
+    assert _is_deictic_question(
+        "I don't understand how the Aufgabe was answered. Please explain in detail how the prof answered it"
+    )
+    assert _is_deictic_question("Walk me through the solution shown here")
+
+
 # ── Previous-turns trimming ─────────────────────────────────────────────────
 
 

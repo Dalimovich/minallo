@@ -864,6 +864,10 @@ export function initAskAI(
           })
         : Promise.resolve();
     const _textReady = Promise.all([_leftTextReady, _rightTextReady]);
+    const _asksAboutVisibleSolution =
+      /\b(how|why)\b[\s\S]{0,80}\b(prof(?:essor)?|solution|answer(?:ed)?|worked|solved)\b/i.test(question) ||
+      /\b(explain|walk me through)\b[\s\S]{0,80}\b(answer|solution|working|rechnung|l[oö]sung)\b/i.test(question) ||
+      /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question);
 
     _textReady
       .then(() => {
@@ -875,7 +879,10 @@ export function initAskAI(
           pdfFullText.trim().length < 500 ||
           !_currentPageText.trim() ||
           _currentPageText.trim().length < 80;
-        return _visibleTextWeak ? pdfToImages(1) : [];
+        // Requests about how a displayed solution was answered depend on the
+        // exact working visible on the page (often inside a drawing/solution
+        // box that PDF text extraction scrambles). Always attach that page.
+        return _visibleTextWeak || _asksAboutVisibleSolution ? pdfToImages(1) : [];
       })
       .then(async (pageImages: string[]) => {
         let userContent: unknown;
@@ -1031,7 +1038,7 @@ export function initAskAI(
             !_openFileCtx ||
             _openFileCtx.trim().length < 500
           );
-        let _openFileImages = _visibleTextWeak && pageImages[0]
+        let _openFileImages = (_visibleTextWeak || _asksAboutVisibleSolution) && pageImages[0]
           ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
           : undefined;
         // Keep a recent user attachment available for anaphoric follow-ups

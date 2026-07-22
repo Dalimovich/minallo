@@ -386,6 +386,53 @@ function _loadUserCourses(data) {
       });
       if (_prcFresh) _prcCourse = _prcFresh;
     }
+    // Open immediately from the local file cache instead of holding the PDF
+    // shell behind the (up to 10s) Supabase listing refresh. _ufMerge still
+    // runs below and refreshes course metadata in the background.
+    var _prcOpenedFromCache =
+      window._ssFastRestoredFileKey === String(_prcCourse.id) + '::' + String(_prc.file || '');
+    if (_prc.file) {
+      try {
+        var _fastCache = JSON.parse(
+          localStorage.getItem('ss_uf_cache_' + _prcCourse.id) || 'null'
+        );
+        var _fastFile = null;
+        var _fastFolder = null;
+        if (_fastCache) {
+          _fastFile = (_fastCache.files || []).find(function (x) {
+            return x.name === _prc.file;
+          });
+          if (!_fastFile) {
+            (_fastCache.folders || []).some(function (fd) {
+              var hit = (fd.files || []).find(function (x) {
+                return x.name === _prc.file;
+              });
+              if (!hit) return false;
+              _fastFile = hit;
+              _fastFolder = fd.name;
+              return true;
+            });
+          }
+        }
+        if (_fastFile && _fastFile.storageName) {
+          var _fastUid =
+            (window._currentUser && (window._currentUser.id || window._currentUser.sub)) ||
+            localStorage.getItem('ss_last_uid');
+          openFile(
+            {
+              name: _fastFile.name,
+              _storageName: _fastFile.storageName,
+              _folder: _fastFolder,
+              _uploaded: true,
+              _uid: _fastUid,
+              _course: _prcCourse
+            },
+            _prcCourse
+          );
+          _prcOpenedFromCache = true;
+        }
+      } catch (e) {}
+    }
     // 10s timeout: mirrors the manual openCourse fallback at
     // course-view.ts:491. Without it, a hung storage list on refresh leaves
     // the restore promise pending forever AND its in-flight requests saturate
@@ -404,9 +451,11 @@ function _loadUserCourses(data) {
         // fall through to the .then below so the UI still renders
       })
       .then(function () {
-        _ssRestoring = true;
-        showCourseSection(_prcCourse, _prc.sec);
-        _ssRestoring = false;
+        if (!_prcOpenedFromCache) {
+          _ssRestoring = true;
+          showCourseSection(_prcCourse, _prc.sec);
+          _ssRestoring = false;
+        }
         try {
           var _tc = {
             files: _prcCourse.files
@@ -444,9 +493,9 @@ function _loadUserCourses(data) {
                   return x.name === _prc.file;
                 });
             });
-          if (_f) {
+          if (_f && !_prcOpenedFromCache) {
             openFile(_f, _prcCourse);
-          } else {
+          } else if (!_f && !_prcOpenedFromCache) {
             // _ufMerge may have been slow or partially failed — try the localStorage
             // cache as a fallback before giving up and clearing state.
             try {
@@ -506,6 +555,51 @@ function _loadUserCourses(data) {
       .catch(function () {});
   }
 }
+
+// Authentication calls this as soon as it knows a PDF should be resumed.
+// Cached storage identity is enough to start opening while profile and remote
+// file-list requests continue in the background.
+window._ssOpenCachedRestoredPdf = function (courseId, fileName) {
+  if (!courseId || !fileName || typeof openFile !== 'function') return false;
+  var course = null;
+  Object.values(SEMS).some(function (sem) {
+    course = (sem.courses || []).find(function (c) { return c.id === courseId; }) || null;
+    return !!course;
+  });
+  if (!course) return false;
+  try {
+    var cached = JSON.parse(localStorage.getItem('ss_uf_cache_' + courseId) || 'null');
+    if (!cached) return false;
+    var hit = (cached.files || []).find(function (f) { return f.name === fileName; }) || null;
+    var folder = null;
+    if (!hit) {
+      (cached.folders || []).some(function (fd) {
+        hit = (fd.files || []).find(function (f) { return f.name === fileName; }) || null;
+        if (hit) folder = fd.name;
+        return !!hit;
+      });
+    }
+    if (!hit || !hit.storageName) return false;
+    var uid =
+      (window._currentUser && (window._currentUser.id || window._currentUser.sub)) ||
+      localStorage.getItem('ss_last_uid');
+    openFile(
+      {
+        name: hit.name,
+        _storageName: hit.storageName,
+        _folder: folder,
+        _uploaded: true,
+        _uid: uid,
+        _course: course
+      },
+      course
+    );
+    window._ssFastRestoredFileKey = String(courseId) + '::' + String(fileName);
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
 
 // Predefined subject list — TU Braunschweig BSc programmes
 // All bachelor majors offered at TU Braunschweig

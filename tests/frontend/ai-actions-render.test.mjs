@@ -10,6 +10,13 @@ const { renderMarkdown, AI_ACTION_TABS, AI_ASK_ACTIONS, AI_ACTION_GENERATE_BTN }
   '../../frontend/js/features/ai-chat/ai-markdown.ts'
 );
 
+test('separated numbered sections preserve their displayed numbers', () => {
+  const html = renderMarkdown('1. First section\n\nExplanation\n\n2. Second section\n\n3. Third section');
+  assert.match(html, /<ol class="md-ol"><li>First section<\/li><\/ol>/);
+  assert.match(html, /<ol class="md-ol" start="2"><li>Second section<\/li><\/ol>/);
+  assert.match(html, /<ol class="md-ol" start="3"><li>Third section<\/li><\/ol>/);
+});
+
 function renderActions(spec) {
   return renderMarkdown('```minallo-actions\n' + JSON.stringify(spec) + '\n```');
 }
