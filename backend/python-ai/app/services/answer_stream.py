@@ -21,6 +21,8 @@ import os
 import re
 from typing import Any, Generator
 
+from lingua import Language, LanguageDetectorBuilder
+
 from .openai_client import get_openai_client
 
 from ..config import get_settings
@@ -328,17 +330,94 @@ def _is_deictic_question(q: str) -> bool:
     return bool(_DEICTIC_QUESTION_RE.search(q or ""))
 
 
+_LANGUAGE_DETECTOR = LanguageDetectorBuilder.from_all_languages().build()
+_LANGUAGE_ALIASES = {
+    "english": Language.ENGLISH,
+    "german": Language.GERMAN,
+    "deutsch": Language.GERMAN,
+    "french": Language.FRENCH,
+    "francais": Language.FRENCH,
+    "français": Language.FRENCH,
+    "arabic": Language.ARABIC,
+    "العربية": Language.ARABIC,
+    "spanish": Language.SPANISH,
+    "espanol": Language.SPANISH,
+    "español": Language.SPANISH,
+    "italian": Language.ITALIAN,
+    "italiano": Language.ITALIAN,
+    "turkish": Language.TURKISH,
+    "türkçe": Language.TURKISH,
+}
+
+
+def _explicit_requested_language(question: str) -> Language | None:
+    q = (question or "").casefold()
+    for alias, language in _LANGUAGE_ALIASES.items():
+        if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", q):
+            return language
+    return None
+
+
+def _detect_question_language(question: str) -> Language | None:
+    explicit = _explicit_requested_language(question)
+    if explicit and len((question or "").split()) <= 12:
+        return explicit
+    # Exercise labels are references, not sentence-language evidence. Without
+    # stripping "Aufgabe13.6", Lingua classifies "how did the prof find..." as
+    # German despite every instruction word being English.
+    cleaned = re.sub(
+        r"\b(?:aufgabe|übung|uebung|task|exercise|problem|question|chapitre)\s*\d+(?:\.\d+)?\b",
+        " ",
+        question or "",
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(re.findall(r"\w", cleaned, re.UNICODE)) < 4:
+        return explicit
+    return _LANGUAGE_DETECTOR.detect_language_of(cleaned) or explicit
+
+
 def _latest_question_language_overlay(question: str) -> str:
-    """Universal language lock, intentionally free of language-specific heuristics."""
+    """Lock generation to a language detected before the model is called."""
     if not (question or "").strip():
         return ""
+    detected = _detect_question_language(question)
+    detected_rule = ""
+    if detected:
+        detected_rule = (
+            f" The deterministic language detector identified {detected.name.title()} "
+            f"(ISO {detected.iso_code_639_1.name}). You MUST use that language."
+        )
     return (
         "\nUNIVERSAL LANGUAGE LOCK (mandatory): Before answering, silently identify "
         "the language of the student's latest QUESTION from its instruction words, "
         "grammar, and sentence structure. Answer exclusively in that same language, "
         "whatever the language is. Ignore the language of sources, UI text, earlier "
         "messages, course names, and embedded labels such as Aufgabe, Übung, chapitre, "
-        "or سؤال. Do not mention this detection step.\n"
+        "or سؤال. Do not mention this detection step." + detected_rule + "\n"
+    )
+
+
+def _language_rewrite_followup_overlay(
+    question: str,
+    previous_turns: list[dict[str, str]] | None,
+) -> str:
+    if not previous_turns or len((question or "").strip()) > 100:
+        return ""
+    target = _explicit_requested_language(question)
+    if not target:
+        return ""
+    has_assistant = any(
+        (turn.get("role") or "").lower() == "assistant" and (turn.get("text") or "").strip()
+        for turn in previous_turns
+    )
+    if not has_assistant:
+        return ""
+    return (
+        f"\nLANGUAGE-ONLY FOLLOW-UP (mandatory): The student is asking for the immediately "
+        f"previous assistant answer in {target.name.title()}. Preserve the exact exercise, "
+        "reasoning, values, formulas, and source grounding from that answer. Do not ask which "
+        "task they mean and do not start a different exercise. Output the rewritten answer now.\n"
     )
 
 
@@ -1360,6 +1439,7 @@ def stream_answer(
     # actual request (for example: "I don't understand Aufgabe 13.1").
     system_prompt += FINAL_RESPONSE_LANGUAGE_RULE
     system_prompt += _latest_question_language_overlay(question)
+    system_prompt += _language_rewrite_followup_overlay(question, previous_turns)
     system_prompt += _exact_exercise_overlay(question, has_visible_context=include_source_zero)
 
     user_message = "QUESTION:\n" + question.strip()

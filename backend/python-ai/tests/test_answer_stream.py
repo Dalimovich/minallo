@@ -16,8 +16,10 @@ def test_final_language_rule_ignores_foreign_exercise_labels() -> None:
 
 def test_professor_solution_followup_targets_visible_pdf() -> None:
     from app.services.answer_stream import (
+        _detect_question_language,
         _exact_exercise_overlay,
         _is_deictic_question,
+        _language_rewrite_followup_overlay,
         _latest_question_language_overlay,
     )
 
@@ -35,6 +37,18 @@ def test_professor_solution_followup_targets_visible_pdf() -> None:
     assert "exercise 13.2" in exercise
     assert "Source 0" in exercise
     assert "other exercise number" in exercise
+    assert _detect_question_language("how did the prof find the value for Aufgabe13.6").name == "ENGLISH"
+    assert _detect_question_language("Explique-moi la tâche 13.6").name == "FRENCH"
+    assert _detect_question_language("اشرح لي كيف وجد الأستاذ القيمة").name == "ARABIC"
+    followup = _language_rewrite_followup_overlay(
+        "in english pls",
+        [
+            {"role": "user", "text": "how did the prof find the value for Aufgabe13.6"},
+            {"role": "assistant", "text": "Die Rechnung ergibt 15 s."},
+        ],
+    )
+    assert "previous assistant answer in English" in followup
+    assert "Do not ask which task" in followup
 
 
 # ── Previous-turns trimming ─────────────────────────────────────────────────
