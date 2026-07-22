@@ -236,6 +236,20 @@ def test_default_explain_mode_is_conversational_and_interactive() -> None:
     assert "Never withhold an answer" in prompt
 
 
+def test_visible_page_skips_redundant_retrieved_figure_render() -> None:
+    from app.services.answer_stream import _should_attach_retrieved_figure
+
+    assert not _should_attach_retrieved_figure(
+        will_attach_figure=True, has_open_image=True, deictic=True,
+    )
+    assert _should_attach_retrieved_figure(
+        will_attach_figure=True, has_open_image=False, deictic=True,
+    )
+    assert _should_attach_retrieved_figure(
+        will_attach_figure=True, has_open_image=True, deictic=False,
+    )
+
+
 # ── Cache key fold-in for previousTurns ─────────────────────────────────────
 
 

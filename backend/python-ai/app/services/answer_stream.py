@@ -201,6 +201,13 @@ def _figure_vision_enabled() -> bool:
     return os.getenv("MINALLO_FIGURE_VISION", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+def _should_attach_retrieved_figure(
+    *, will_attach_figure: bool, has_open_image: bool, deictic: bool,
+) -> bool:
+    """Avoid rendering a competing page when the exact visible one is present."""
+    return will_attach_figure and not (has_open_image and deictic)
+
+
 def _figure_page_image_parts(
     used_chunks: list[RetrievedChunk],
     *,
@@ -1507,7 +1514,15 @@ def stream_answer(
     # exactly those that need the figure most. Capped at the image budget and
     # skipped when the student already supplied that visible page.
     figure_image_parts: list[dict[str, Any]] = []
-    if will_attach_figure:
+    # When a deictic question ("this solution", "how did the professor...")
+    # already includes the visible page image, that image is the exact evidence
+    # requested. Downloading and rendering a second retrieved page adds latency
+    # and can introduce a competing exercise, so skip it.
+    if _should_attach_retrieved_figure(
+        will_attach_figure=will_attach_figure,
+        has_open_image=has_open_image,
+        deictic=deictic,
+    ):
         # Guarantee the exercise figure at least one slot. The open visible
         # page (open_image_parts) may not be the page the drawing is on, and
         # for a figure-exercise the drawing is the most valuable image — don't

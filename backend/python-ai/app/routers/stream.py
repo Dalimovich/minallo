@@ -10,9 +10,11 @@ Reuses /ask's retrieval + ownership + cache logic.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
 import re
+import time
 from dataclasses import replace
 from typing import Any
 
@@ -770,15 +772,16 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         # retrieve_chunks then guarantees every selected doc is represented.
         _sel_doc_count = len(retrieval_document_ids or [])
         stream_top_k = 18 if _sel_doc_count <= 6 else min(48, _sel_doc_count * 3)
+        retrieval_started = time.perf_counter()
         try:
-            exercise_hit = await run_in_threadpool(
+            exercise_task = run_in_threadpool(
                 lambda: retrieve_exercise_block(
                     user_id=user_id, course_id=payload.courseId, query=retrieval_query,
                     document_ids=retrieval_document_ids,
                     active_document_id=payload.activeDocumentId,
                 )
             )
-            chunks = await run_in_threadpool(
+            chunks_task = run_in_threadpool(
                 lambda: retrieve_chunks(
                     user_id=user_id, course_id=payload.courseId,
                     query=retrieval_query, document_ids=retrieval_document_ids,
@@ -792,22 +795,28 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     guarantee_documents=generative_request,
                 )
             )
-        except EmbeddingServiceUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-        if exercise_hit:
-            from .ask import _prepend_exercise_chunks  # reuse the same helper
-            chunks = _prepend_exercise_chunks(exercise_hit, chunks)
-
-        try:
-            formula_hits = await run_in_threadpool(
+            formula_task = run_in_threadpool(
                 lambda: retrieve_formula_block(
                     user_id=user_id, course_id=payload.courseId, query=retrieval_query,
                     document_ids=retrieval_document_ids,
                     active_document_id=payload.activeDocumentId,
                 )
             )
+            exercise_hit, chunks, formula_hits = await asyncio.gather(
+                exercise_task,
+                chunks_task,
+                formula_task,
+            )
         except EmbeddingServiceUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        log.info(
+            "ask_stream parallel retrieval completed in %.0fms",
+            (time.perf_counter() - retrieval_started) * 1000,
+        )
+        if exercise_hit:
+            from .ask import _prepend_exercise_chunks  # reuse the same helper
+            chunks = _prepend_exercise_chunks(exercise_hit, chunks)
+
         if formula_hits:
             from .ask import _prepend_formula_chunks  # reuse the same helper
             chunks = _prepend_formula_chunks(formula_hits, chunks)
