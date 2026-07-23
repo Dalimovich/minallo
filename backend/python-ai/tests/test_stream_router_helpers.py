@@ -76,6 +76,41 @@ def test_retrieval_limit_preserves_broad_coverage() -> None:
     assert _retrieval_limit("Create an exam", 9, generative=True) == 27
 
 
+def test_critical_unverified_draft_is_rejected_and_not_cacheable() -> None:
+    from app.routers.stream import (
+        _verification_is_cacheable,
+        _verification_requires_rejection,
+    )
+
+    bad = {
+        "status": "missing_context",
+        "details": {"criticalNumericalMismatch": True},
+    }
+    assert _verification_requires_rejection(bad)
+    assert not _verification_is_cacheable(bad)
+
+    good = {
+        "status": "verified",
+        "details": {
+            "criticalNumericalMismatch": False,
+            "fabricatedFilenames": [],
+            "invalidSourceIndices": [],
+            "fakeSolutionPhrases": [],
+        },
+    }
+    assert not _verification_requires_rejection(good)
+    assert _verification_is_cacheable(good)
+
+
+def test_unsupported_numeric_claim_is_rejected() -> None:
+    from app.routers.stream import _verification_requires_rejection
+
+    assert _verification_requires_rejection({
+        "status": "partially_verified",
+        "details": {"numberMisses": ["580"]},
+    })
+
+
 def test_stream_opens_before_deferred_pipeline(monkeypatch) -> None:
     from app.routers import stream as stream_router
 

@@ -61,6 +61,7 @@ _FORMULA_BLOCK_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
 # fake (it can guess a plausible course filename + page number) so we no
 # longer accept them as standalone evidence — they're display-only.
 _SOURCE_TAG_RE = re.compile(r"\[Source\s+\d+\]", re.IGNORECASE)
+_SOURCE_INDEX_RE = re.compile(r"\[Source\s+(\d+)\]", re.IGNORECASE)
 # Inline `(somefile.pdf, p.7)` style references. Allowed only as display
 # text accompanying a real [Source N] tag — see _orphan_filename_refs.
 _FILENAME_CITATION_RE = re.compile(
@@ -78,6 +79,14 @@ _NUMBER_RE = re.compile(r"(?<![A-Za-z_])(\d{1,4}(?:[.,]\d+)?)(?![A-Za-z])")
 _SELF_REPORT_RE = re.compile(
     r"###\s*Confidence\s*\n+\s*(.{0,400})",
     re.IGNORECASE | re.DOTALL,
+)
+_FAKE_SOLUTION_RE = re.compile(
+    r"\b(insert (?:the )?values? from (?:the )?previous|"
+    r"for example[,:]?\s*(?:assume|use|set)|"
+    r"if you have the exact values?|"
+    r"this (?:question|exercise) probably concerns|"
+    r"you can now calculate)\b",
+    re.IGNORECASE,
 )
 
 # Section headings that mark a "calculation" zone. Numbers inside these
@@ -163,10 +172,23 @@ def _pos_in_spans(pos: int, spans: list[tuple[int, int]]) -> bool:
 
 def _number_is_derived(text: str, number_pos: int) -> bool:
     """True when the number sits after an ``=`` / ``≈`` on its own line —
-    the canonical shape of a calculated step (e.g. ``A = 109.96 mm × 5 mm = 549.80 mm²``)."""
+    the canonical shape of a reproducible calculated step.
+
+    A bare assignment such as ``F = 999 N`` is a claimed given, not a
+    derivation.  Require numeric operands and an arithmetic operator before the
+    final equality so unsupported assignments cannot disguise themselves as
+    calculations.
+    """
     line_start = text.rfind("\n", 0, number_pos) + 1
     prefix = text[line_start:number_pos]
-    return bool(_DERIVED_NUMBER_PREFIX_RE.search(prefix))
+    delimiters = list(_DERIVED_NUMBER_PREFIX_RE.finditer(prefix))
+    if not delimiters:
+        return False
+    calculation = prefix[:delimiters[-1].start()]
+    return bool(
+        re.search(r"\d", calculation)
+        and re.search(r"(?:[+*/×·÷]|(?<=\d)\s*-\s*\d)", calculation)
+    )
 
 
 def _formula_variables(expr: str) -> set[str]:
@@ -392,6 +414,18 @@ def verify_answer(
     details["sourceTagCount"] = len(source_tag_spans)
     if chunk_texts and not has_citation:
         reasons.append("no [Source N] citation present in answer")
+    source_indices = [int(m.group(1)) for m in _SOURCE_INDEX_RE.finditer(text)]
+    invalid_source_indices = sorted({
+        index for index in source_indices if index < 0 or index > len(chunk_texts)
+    })
+    details["invalidSourceIndices"] = invalid_source_indices
+    if invalid_source_indices:
+        reasons.append("citation references a source index outside the supplied evidence")
+
+    fake_solution_phrases = [m.group(0) for m in _FAKE_SOLUTION_RE.finditer(text)]
+    details["fakeSolutionPhrases"] = fake_solution_phrases
+    if fake_solution_phrases:
+        reasons.append("answer contains unsupported generic solution filler")
 
     # ── filename-citation validation ───────────────────────────────────────
     # Two failure modes for `(file.pdf, p.N)` style refs:
@@ -468,7 +502,7 @@ def verify_answer(
         # Allow numbers that are computed results: inside a Calculation /
         # Substitution section AND on a line that contains an `=`/`≈` before
         # the number itself.
-        if _pos_in_spans(m.start(), calc_spans) and _number_is_derived(cleaned, m.start()):
+        if _number_is_derived(cleaned, m.start()):
             derived_numbers.append(n)
             continue
         number_misses.append(n)
@@ -477,6 +511,21 @@ def verify_answer(
     details["derivedNumbers"]   = derived_numbers
     if number_misses:
         reasons.append(f"{len(number_misses)} number(s) not found in context or question")
+
+    # Exact copied-given validation.  Presence-only checks cannot distinguish
+    # an active-question value (560) from a similar example value (580), nor
+    # detect a lost sign, exponent or changed unit.
+    from .numerical_validation import validate_numerical_claims  # noqa: WPS433
+    numerical = validate_numerical_claims(
+        answer_text=text,
+        source_texts=list(chunk_texts) + ([question] if question else []),
+    )
+    details["numericalValidation"] = numerical.to_api()
+    details["criticalNumericalMismatch"] = not numerical.valid
+    if not numerical.valid:
+        reasons.append(
+            f"{len(numerical.mismatched_givens)} copied numerical given(s) disagree with evidence"
+        )
 
     # ── derive status ──────────────────────────────────────────────────────
     self_report = _parse_self_report(text)
@@ -510,6 +559,18 @@ def verify_answer(
     #   - formula not found and not a rearrangement of a cited formula
     #   - ungrounded number that isn't a derived calculation step
     #   - orphan filename ref (valid file, but no nearby [Source N])
+    if not numerical.valid:
+        return VerificationResult(
+            status="missing_context",
+            reasons=reasons + ["critical numerical mismatch"],
+            details=details,
+        )
+    if invalid_source_indices or fake_solution_phrases:
+        return VerificationResult(
+            status="missing_context",
+            reasons=reasons,
+            details=details,
+        )
     if formula_misses or number_misses or orphan_filenames:
         det_status = "partially_verified"
     else:

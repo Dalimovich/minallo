@@ -97,6 +97,26 @@ function pdfsForCourse(course: LegacyCourse | null | undefined): PdfTabFile[] {
   return out;
 }
 
+export function pdfCourseSections(
+  activeCourse: LegacyCourse | null,
+  sems: Array<{ courses: LegacyCourse[] }>
+): Array<{ course: LegacyCourse; files: PdfTabFile[] }> {
+  const courses = new Map<string, { course: LegacyCourse; files: PdfTabFile[] }>();
+  const addCourse = (course: LegacyCourse | null | undefined): void => {
+    if (!course) return;
+    const id = courseId(course);
+    const files = pdfsForCourse(course);
+    const existing = courses.get(id);
+    if (!existing || files.length > existing.files.length) courses.set(id, { course, files });
+  };
+
+  addCourse(activeCourse);
+  for (const sem of sems) {
+    for (const course of sem.courses || []) addCourse(course);
+  }
+  return Array.from(courses.values()).filter((section) => section.files.length);
+}
+
 function currentCourse(): LegacyCourse | null {
   const active = window.activeCourseRef || null;
   if (active) return active;
@@ -236,14 +256,10 @@ function renderMenu(): void {
   if (!menuEl) return;
   menuEl.replaceChildren();
 
-  const sems = allSems();
-  const sections: Array<{ course: LegacyCourse; files: PdfTabFile[] }> = [];
-  for (const sem of sems) {
-    for (const course of sem.courses || []) {
-      const files = pdfsForCourse(course);
-      if (files.length) sections.push({ course, files });
-    }
-  }
+  // The active course is the authoritative, hydrated object while a PDF is
+  // open. On a restored/deep-linked viewer route, the SEMS copy can still be
+  // the lightweight course record without its remotely loaded folders.
+  const sections = pdfCourseSections(currentCourse(), allSems());
   if (!sections.length) {
     menuEl.appendChild(makeEmpty('No PDFs in your courses yet.'));
     return;

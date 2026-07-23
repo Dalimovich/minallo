@@ -11,6 +11,7 @@ Reuses /ask's retrieval + ownership + cache logic.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import json
 import re
@@ -22,8 +23,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from ..config import get_settings
 from ..jwt_auth import verify_supabase_jwt
 from ..services.access_control import (
     enforce_interactive_cap,
@@ -221,6 +223,21 @@ class PageContextPayload(BaseModel):
     documentTitle: str | None = None
 
 
+class SelectedRegionPayload(BaseModel):
+    page: int = Field(ge=1)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+    id: str | None = None
+    origin: str | None = None
+    extractionMethod: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    documentRevision: str | None = None
+    nearbyQuestionLabel: str | None = None
+    cropHash: str | None = None
+
+
 class AskStreamRequest(BaseModel):
     courseId: str
     documentIds: list[str] | None = None
@@ -234,6 +251,13 @@ class AskStreamRequest(BaseModel):
     # model can ground "this question / this section" references even when
     # retrieval doesn't surface the exact chunk. Both optional.
     activeFileName: str | None = None
+    visiblePage: int | None = None
+    selectedText: str | None = None
+    selectedRegion: SelectedRegionPayload | None = None
+    viewerRevision: str | None = None
+    conversationId: str | None = None
+    conversationGeneration: int | None = Field(default=None, ge=0)
+    responseLanguage: str | None = None
     openFileContext: str | None = None
     openFileImages: list[OpenFileImagePayload] | None = None
     # Tutor-mode overlay: explain | solve | quiz. Defaults to 'explain'.
@@ -262,6 +286,28 @@ def _status_sse(status_key: str) -> bytes:
     return _sse_bytes(json.dumps({"status": status_key}, ensure_ascii=False))
 
 
+def _verification_requires_rejection(verification: Any) -> bool:
+    details = verification.get("details") if isinstance(verification, dict) else {}
+    return bool(
+        isinstance(details, dict)
+        and (
+            details.get("criticalNumericalMismatch")
+            or details.get("numberMisses")
+            or details.get("fabricatedFilenames")
+            or details.get("invalidSourceIndices")
+            or details.get("fakeSolutionPhrases")
+        )
+    )
+
+
+def _verification_is_cacheable(verification: Any) -> bool:
+    return bool(
+        isinstance(verification, dict)
+        and verification.get("status") == "verified"
+        and not _verification_requires_rejection(verification)
+    )
+
+
 def _source_debug_enabled() -> bool:
     try:
         from ..config import get_settings  # noqa: WPS433
@@ -284,17 +330,22 @@ def _stream_static_answer(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     status_key: str = "writing_answer",
+    extra_meta: dict[str, Any] | None = None,
 ):
     sources = sources or []
+    extra_meta = extra_meta or {}
 
     def gen():
+        confidence = "low" if answer_mode == "clarification" else "high"
+        unsupported = answer_mode == "clarification"
         yield _status_sse(status_key)
         meta = {
             "meta": True,
             "retrievalMode": decision.source_scope.value,
             "answerMode": answer_mode,
-            "confidence": "high",
-            "unsupported": False,
+            "confidence": confidence,
+            "unsupported": unsupported,
+            **extra_meta,
             **_source_meta(decision, cache_hit=False),
         }
         yield _sse_bytes(json.dumps(meta, ensure_ascii=False))
@@ -304,13 +355,14 @@ def _stream_static_answer(
             "done": True,
             "retrievalMode": decision.source_scope.value,
             "answerMode": answer_mode,
-            "confidence": "high",
-            "unsupported": False,
+            "confidence": confidence,
+            "unsupported": unsupported,
             "sources": sources,
             "cacheHit": False,
             "model": model,
             "promptTokens": prompt_tokens,
             "completionTokens": completion_tokens,
+            **extra_meta,
             **_source_meta(decision, cache_hit=False),
         }, ensure_ascii=False))
 
@@ -437,6 +489,10 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
+    if payload.selectedText and len(payload.selectedText) > 12000:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="selectedText is too long")
+    if payload.visiblePage is not None and payload.visiblePage < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visiblePage must be positive")
     _validate_open_file_images(payload.openFileImages)
 
     resolved_ids = list(payload.documentIds) if payload.documentIds else []
@@ -500,6 +556,8 @@ async def _prepare_ask_stream_response(
     request_started = time.perf_counter()
     request_id = request_id or uuid.uuid4().hex
     user_id = user["id"]
+    from ..services.request_generation import register_generation  # noqa: WPS433
+    register_generation(user_id, payload.conversationId, payload.conversationGeneration)
     # Paid feature — verify subscription before doing anything expensive.
 
     if payload.documentIds:
@@ -518,6 +576,9 @@ async def _prepare_ask_stream_response(
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
     open_file_images = _validate_open_file_images(payload.openFileImages)
+    previous_turns_payload: list[dict[str, str]] = [
+        {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
+    ]
 
     # "Selected file(s)" scope: the chatbot sends file NAMES (it has no document
     # ids), so resolve them to ids here. Fall back to ids the client did send.
@@ -544,8 +605,66 @@ async def _prepare_ask_stream_response(
                 lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
             ))
 
+    from ..services.reference_resolution import (  # noqa: WPS433
+        decide_evidence,
+        recovery_message,
+        resolve_language_context,
+        resolve_question_reference,
+    )
+    from ..services.dialogue_state import resolve_dialogue  # noqa: WPS433
+    language_context = resolve_language_context(
+        question,
+        explicit_response_language=payload.responseLanguage,
+        previous_turns=previous_turns_payload,
+    )
+    dialogue = resolve_dialogue(
+        question,
+        previous_turns=previous_turns_payload,
+        response_language=language_context.requested_response_language,
+    )
+    if dialogue.response_language != language_context.requested_response_language:
+        language_context = replace(
+            language_context,
+            requested_response_language=dialogue.response_language,
+        )
+    resolved_question = dialogue.resolved_request
+    selected_region_id = payload.selectedRegion.id if payload.selectedRegion else None
+    reference = resolve_question_reference(
+        question=resolved_question,
+        course_id=payload.courseId,
+        active_document_id=payload.activeDocumentId,
+        active_document_name=(
+            doc_name_map.get(payload.activeDocumentId or "") or payload.activeFileName
+        ),
+        visible_page=payload.visiblePage,
+        selected_text=payload.selectedText,
+        selected_region_id=selected_region_id,
+        visible_text=payload.openFileContext,
+        has_visible_image=bool(open_file_images),
+    )
+    evidence_decision = decide_evidence(
+        reference,
+        question=resolved_question,
+        has_history=bool(previous_turns_payload),
+    )
+    log.info(
+        "grounding_preflight request_id=%s reference_status=%s confidence=%.2f "
+        "candidate_count=%d evidence_action=%s recovery_code=%s language=%s dialogue_act=%s "
+        "active_document=%s visible_page=%s",
+        request_id,
+        reference.status,
+        reference.confidence,
+        len(reference.candidate_labels),
+        evidence_decision.action,
+        evidence_decision.recovery_code,
+        language_context.requested_response_language,
+        dialogue.dialogue_act.value,
+        bool(payload.activeDocumentId),
+        payload.visiblePage,
+    )
+
     source_decision = classify_source_scope(
-        question=question,
+        question=resolved_question,
         source_mode=payload.sourceMode,
         course_file_scope=effective_scope,
         selected_course_id=payload.courseId,
@@ -553,6 +672,27 @@ async def _prepare_ask_stream_response(
         active_document_id=payload.activeDocumentId,
         open_file_context=payload.openFileContext,
     )
+
+    if not evidence_decision.can_answer:
+        return _stream_static_answer(
+            text=recovery_message(
+                evidence_decision.recovery_code,
+                language_context.requested_response_language,
+            ),
+            decision=source_decision,
+            answer_mode="clarification",
+            status_key="identifying_question",
+            extra_meta={
+                "recovery": {
+                    "code": evidence_decision.recovery_code,
+                    "action": evidence_decision.action,
+                },
+                "referenceResolution": reference.to_api(),
+                "evidenceDecision": evidence_decision.to_api(),
+                "languageContext": language_context.to_api(),
+                "dialogueResolution": dialogue.to_api(),
+            },
+        )
 
     if is_non_academic_chitchat(question):
         chitchat_decision = replace(
@@ -719,6 +859,7 @@ async def _prepare_ask_stream_response(
     )
     cacheable = (
         tutor_mode == "explain"
+        and dialogue.requires_new_retrieval
         and not _is_deictic_question(question)
         and payload.problemSolver is None
         and not has_open_ctx
@@ -727,9 +868,6 @@ async def _prepare_ask_stream_response(
     # Normalise previousTurns once — folded into the cache key (two students
     # asking "explain that again" in different sessions must not collide) and
     # reused for retrieval/answer below.
-    previous_turns_payload: list[dict[str, str]] = [
-        {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
-    ]
     # Academic answers search the whole course even when the UI has a selected
     # document (lecture/formula PDFs hold the method while the selected PDF only
     # holds the exercise). So the cache is keyed on a WHOLE-COURSE version hash:
@@ -751,6 +889,19 @@ async def _prepare_ask_stream_response(
         "course_file_scope": source_decision.course_file_scope.value,
         "selected_document_ids": retrieval_document_ids,
         "workspace_fingerprint": ws_fingerprint or None,
+        "visible_page": payload.visiblePage,
+        "selected_region_fingerprint": (
+            json.dumps(payload.selectedRegion.model_dump(), sort_keys=True)
+            if payload.selectedRegion else None
+        ),
+        "response_language": language_context.requested_response_language,
+        "viewer_revision": payload.viewerRevision,
+        "grounding_mode": "strict-course-files",
+        "conversation_generation": payload.conversationGeneration,
+        "model_version": (
+            f"{get_settings().openai_generate_model}|"
+            f"{get_settings().openai_generate_model_strong}"
+        ),
     }
     if cacheable:
         if status_sink:
@@ -821,7 +972,11 @@ async def _prepare_ask_stream_response(
             "sourceDebug": cached.get("sourceDebug") if _source_debug_enabled() else None,
         }))
 
-    if cached and not _answer_matches_question_language(question, str(cached.get("answer") or "")):
+    if (
+        cached
+        and not payload.responseLanguage
+        and not _answer_matches_question_language(question, str(cached.get("answer") or ""))
+    ):
         log.warning("ask_stream rejected cached answer with mismatched response language")
         cached = None
 
@@ -851,7 +1006,7 @@ async def _prepare_ask_stream_response(
     # a student's mistaken equation would pull in irrelevant chunks.
     retrieval_query = (
         (payload.problemSolver.problem or question).strip()
-        if payload.problemSolver else question
+        if payload.problemSolver else resolved_question
     )
 
     # Follow-up rewriting. A short reply like "I don't know", "yes",
@@ -902,13 +1057,26 @@ async def _prepare_ask_stream_response(
     # MINALLO_APP_CONTEXT only — sending it empty chunks here saves the
     # retrieval cost AND prevents an accidental [Source N] leakage if the
     # model ever ignored its prompt override.
-    if app_or_workspace:
+    if app_or_workspace or not dialogue.requires_new_retrieval:
         chunks = []
         exercise_hit = None
         formula_hits = []
     else:
         if status_sink:
-            status_sink("collecting_sources")
+            status_sink("identifying_question")
+        from ..services.retrieval import retrieve_visible_page_chunks  # noqa: WPS433
+        visible_page_chunks = []
+        if payload.activeDocumentId and payload.visiblePage:
+            visible_page_chunks = await run_in_threadpool(
+                lambda: retrieve_visible_page_chunks(
+                    user_id=user_id,
+                    course_id=payload.courseId,
+                    document_id=payload.activeDocumentId,
+                    page_number=payload.visiblePage or 1,
+                )
+            )
+        if status_sink:
+            status_sink("searching_course_material")
         # Scale retrieval breadth with the number of explicitly-selected
         # documents so multi-file requests ("a question for every lecture",
         # exams) surface material from each one; per-document coverage in
@@ -969,6 +1137,9 @@ async def _prepare_ask_stream_response(
         if formula_hits:
             from .ask import _prepend_formula_chunks  # reuse the same helper
             chunks = _prepend_formula_chunks(formula_hits, chunks)
+        if visible_page_chunks:
+            visible_ids = {c.chunk_id for c in visible_page_chunks}
+            chunks = visible_page_chunks + [c for c in chunks if c.chunk_id not in visible_ids]
         before_dedup = len(chunks)
         chunks = _deduplicate_chunks(chunks)
         log.info(
@@ -976,12 +1147,32 @@ async def _prepare_ask_stream_response(
             request_id, before_dedup, len(chunks),
         )
 
+    retrieved_doc_ids = list(dict.fromkeys(
+        c.document_id for c in chunks
+        if c.document_id and not c.document_id.startswith("__")
+    ))
+    if retrieved_doc_ids:
+        # Defense in depth: RPC filters already include user+course, but verify
+        # every document that survived retrieval before its text reaches the
+        # model. A buggy/stale RPC can therefore never become a tenant leak.
+        verified_retrieved_names = await run_in_threadpool(
+            lambda: _verify_user_owns_documents(
+                user_id, payload.courseId, retrieved_doc_ids
+            )
+        )
+        doc_name_map.update(verified_retrieved_names)
+
     missing_ids = [c.document_id for c in chunks if c.document_id not in doc_name_map]
     if missing_ids:
         sb = get_supabase()
         try:
             resp = await run_in_threadpool(
-                lambda: sb.table("documents").select("id, file_name").in_("id", list(set(missing_ids))).execute()
+                lambda: sb.table("documents")
+                .select("id, file_name")
+                .eq("user_id", user_id)
+                .eq("course_id", payload.courseId)
+                .in_("id", list(set(missing_ids)))
+                .execute()
             )
             for row in resp.data or []:
                 doc_name_map[row["id"]] = row["file_name"]
@@ -1026,7 +1217,7 @@ async def _prepare_ask_stream_response(
     # product map + live workspace block, not from retrieved chunks. (Without
     # this exemption, "where is settings" with no open PDF used to fall through
     # to a generic general-knowledge answer that never saw the app map.)
-    if app_or_workspace:
+    if app_or_workspace or not dialogue.requires_new_retrieval:
         has_strong_course_anchor = True
     if not has_strong_course_anchor:
         if source_decision.selected_source_mode.value == "course_files":
@@ -1060,6 +1251,18 @@ async def _prepare_ask_stream_response(
     # ── Stream + save to cache on finish ─────────────────────────────────────
     full_text_buf: list[str] = []
     captured_meta: dict[str, Any] = {}
+    pending_token_events: list[bytes] = []
+    high_risk_validation = bool(
+        open_file_images
+        or payload.problemSolver
+        or re.search(
+            r"\b(calculate|compute|solve|result|how many|marked|checked|selected|"
+            r"berechne|bestimme|ermittle|löse|loese|ergebnis|wie viele|"
+            r"markiert|angekreuzt)\b",
+            question,
+            re.IGNORECASE,
+        )
+    )
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
     # Consulted by gen_with_abort_meter when the stream dies early.
@@ -1076,6 +1279,8 @@ async def _prepare_ask_stream_response(
             yield _status_sse("collecting_sources")
         else:
             yield _status_sse("writing_answer")
+        if high_risk_validation:
+            yield _status_sse("checking_values")
         gen_iter = stream_answer(
             question=question, chunks=chunks, doc_names=doc_name_map,
             tutor_mode=tutor_mode,
@@ -1099,6 +1304,8 @@ async def _prepare_ask_stream_response(
             ] or None,
             selected_document_ids=list(retrieval_document_ids) if retrieval_document_ids else None,
             request_id=request_id,
+            response_language=language_context.requested_response_language,
+            dialogue_overlay=dialogue.prompt_overlay(),
         )
         for chunk_bytes in gen_iter:
             # Decode the SSE event so we can intercept the closing 'done' frame.
@@ -1120,11 +1327,38 @@ async def _prepare_ask_stream_response(
                         abort_meter["promptTokens"] = int(evt.get("estPromptTokens") or 0)
                     continue
                 if evt.get("meta"):
+                    evt["dialogueResolution"] = dialogue.to_api()
                     evt.update(_source_meta(source_decision, cache_hit=False))
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                 if evt.get("t"):
                     full_text_buf.append(evt["t"])
+                    if high_risk_validation:
+                        pending_token_events.append(chunk_bytes)
+                        continue
                 if evt.get("done"):
+                    evt["dialogueResolution"] = dialogue.to_api()
+                    verification_payload = evt.get("verification")
+                    critical_reject = _verification_requires_rejection(verification_payload)
+                    if high_risk_validation and critical_reject:
+                        safe_text = recovery_message(
+                            "critical_numerical_mismatch",
+                            language_context.requested_response_language,
+                        )
+                        full_text_buf.clear()
+                        full_text_buf.append(safe_text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
+                        evt["answerMode"] = "verification_rejected"
+                        evt["confidence"] = "low"
+                        evt["unsupported"] = True
+                        evt["recovery"] = {
+                            "code": "critical_numerical_mismatch",
+                            "action": "report_missing_evidence",
+                        }
+                    elif high_risk_validation:
+                        for pending in pending_token_events:
+                            yield pending
+                        pending_token_events.clear()
                     captured_meta.update(evt)
                     record_usage(
                         feature="ask_stream",
@@ -1165,7 +1399,26 @@ async def _prepare_ask_stream_response(
         # are not cached: they came from the downgraded model and carry the
         # allowance notice in the token stream — replaying either next month
         # (or to the same user mid-month) would be wrong.
-        if version_hash and full_text_buf and not captured_meta.get("heavyCapped"):
+        cached_verification = captured_meta.get("verification")
+        cache_verified = _verification_is_cacheable(cached_verification)
+        if (
+            version_hash
+            and full_text_buf
+            and cache_verified
+            and not captured_meta.get("heavyCapped")
+            and not captured_meta.get("recovery")
+        ):
+            from ..services.request_generation import is_current_generation  # noqa: WPS433
+            if not is_current_generation(
+                user_id, payload.conversationId, payload.conversationGeneration
+            ):
+                log.info(
+                    "stale_generation_cache_blocked request_id=%s conversation_hash=%s generation=%s",
+                    request_id,
+                    hashlib.sha256((payload.conversationId or "").encode()).hexdigest()[:12],
+                    payload.conversationGeneration,
+                )
+                return
             persistence_started = time.perf_counter()
             try:
                 save_answer(

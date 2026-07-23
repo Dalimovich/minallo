@@ -17,6 +17,8 @@ export type AssistantStatus =
   | 'collecting_sources'
   | 'checking_cache'
   | 'reading_figure'
+  | 'checking_values'
+  | 'verifying_calculation'
   | 'generating_answer'
   | 'writing_answer'
   | 'no_strong_match'
@@ -74,6 +76,10 @@ export const assistantStatusText: Record<AssistantStatus, string> = {
     "I'm checking whether this question has already been answered from the same material.",
   reading_figure:
     "I'm reading the relevant figure or diagram.",
+  checking_values:
+    "I'm checking the copied values, signs, and units against the question.",
+  verifying_calculation:
+    "I'm independently verifying the calculation before showing the answer.",
   generating_answer:
     "I'm preparing the answer from the material I found.",
   writing_answer:

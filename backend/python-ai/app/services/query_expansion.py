@@ -91,6 +91,30 @@ _EXERCISE_VARIANTS = (
 )
 _SOLUTION_VARIANTS = ("Lösung", "Loesung", "Musterlösung", "Solution")
 
+# Conservative bilingual aliases. Distinct physical concepts deliberately use
+# separate groups, so mass and area moments of inertia are never conflated.
+_TECHNICAL_CONCEPTS: tuple[tuple[str, ...], ...] = (
+    ("standzeit", "werkzeugstandzeit", "tool life"),
+    ("schnittgeschwindigkeit", "cutting speed"),
+    ("vorschub", "feed rate"),
+    ("drehzahl", "spindle speed", "rotational speed"),
+    ("losgröße", "losgroesse", "batch size", "lot size"),
+    ("wirkungsgrad", "efficiency"),
+    ("massenträgheitsmoment", "massentraegheitsmoment", "mass moment of inertia"),
+    ("flächenträgheitsmoment", "flaechentraegheitsmoment", "second moment of area"),
+    ("parallelachsen-satz", "parallelachsensatz", "steinerscher satz", "parallel-axis theorem"),
+    ("randbedingung", "boundary condition"),
+)
+
+
+def _technical_expansions(question: str) -> list[str]:
+    q = (question or "").casefold()
+    out: list[str] = []
+    for group in _TECHNICAL_CONCEPTS:
+        if any(term in q for term in group):
+            out.extend(term for term in group if term not in q)
+    return out
+
 
 @dataclass
 class ExpandedQuery:
@@ -110,14 +134,23 @@ def expand_query(question: str) -> ExpandedQuery:
     * Math questions with an exercise reference: original text PLUS the
       full set of language/solution variants for that exercise number.
     """
+    technical = _technical_expansions(question)
     if not is_math_question(question):
-        return ExpandedQuery(text=question, expanded=False,
-                             exercise_number=None, subpart=None)
+        return ExpandedQuery(
+            text=question + ((" " + " ".join(technical)) if technical else ""),
+            expanded=bool(technical),
+            exercise_number=None,
+            subpart=None,
+        )
 
     ref = find_exercise_reference(question)
     if not ref:
-        return ExpandedQuery(text=question, expanded=False,
-                             exercise_number=None, subpart=None)
+        return ExpandedQuery(
+            text=question + ((" " + " ".join(technical)) if technical else ""),
+            expanded=bool(technical),
+            exercise_number=None,
+            subpart=None,
+        )
 
     exercise_number, subpart = ref
     variants: list[str] = []
@@ -134,7 +167,7 @@ def expand_query(question: str) -> ExpandedQuery:
         )]
         variants.extend(with_parens)
 
-    expanded_text = question + " " + " ".join(variants)
+    expanded_text = question + " " + " ".join(variants + technical)
     return ExpandedQuery(
         text=expanded_text,
         expanded=True,

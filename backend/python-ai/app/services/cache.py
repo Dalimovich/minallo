@@ -25,7 +25,11 @@ from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
-_ANSWER_CACHE_SCHEMA = "answer-v7-multilingual-context"
+_ANSWER_CACHE_SCHEMA = "answer-v9-dialogue-provenance"
+_PROMPT_VERSION = "tutor-dialogue-v3"
+_VALIDATOR_VERSION = "numerical-validator-v3"
+_SOURCE_PRIORITY_POLICY_VERSION = "active-question-first-v2"
+_INDEX_VERSION = "question-metadata-v2"
 
 
 def _normalize_question(q: str) -> str:
@@ -47,6 +51,17 @@ def question_hash(
     retrieved_chunk_ids: list[str] | None = None,
     web_query: str | None = None,
     workspace_fingerprint: str | None = None,
+    visible_page: int | None = None,
+    selected_region_fingerprint: str | None = None,
+    response_language: str | None = None,
+    viewer_revision: str | None = None,
+    grounding_mode: str | None = None,
+    model_version: str | None = None,
+    prompt_version: str = _PROMPT_VERSION,
+    validator_version: str = _VALIDATOR_VERSION,
+    source_priority_policy_version: str = _SOURCE_PRIORITY_POLICY_VERSION,
+    index_version: str = _INDEX_VERSION,
+    conversation_generation: int | None = None,
 ) -> str:
     """Composite cache key for an answer.
 
@@ -68,6 +83,16 @@ def question_hash(
     produce a stable, smaller key.
     """
     parts = [_ANSWER_CACHE_SCHEMA, _normalize_question(q)]
+    parts.extend([
+        f"prompt={prompt_version}",
+        f"validator={validator_version}",
+        f"priority={source_priority_policy_version}",
+        f"index={index_version}",
+    ])
+    if model_version:
+        parts.append(f"model={model_version}")
+    if conversation_generation is not None:
+        parts.append(f"generation={conversation_generation}")
     if tutor_mode:
         parts.append(f"tm={tutor_mode}")
     if active_document_id:
@@ -106,6 +131,16 @@ def question_hash(
         # Live workspace counts feed the prompt ("you have 3 quizzes") — a
         # cached answer must die when the workspace changes.
         parts.append(f"wf={workspace_fingerprint}")
+    if visible_page is not None:
+        parts.append(f"vp={visible_page}")
+    if selected_region_fingerprint:
+        parts.append(f"region={selected_region_fingerprint}")
+    if response_language:
+        parts.append(f"lang={response_language.lower()}")
+    if viewer_revision:
+        parts.append("rev=" + hashlib.sha256(viewer_revision.encode("utf-8")).hexdigest()[:16])
+    if grounding_mode:
+        parts.append(f"ground={grounding_mode}")
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -208,6 +243,17 @@ def lookup_answer(
     retrieved_chunk_ids: list[str] | None = None,
     web_query: str | None = None,
     workspace_fingerprint: str | None = None,
+    visible_page: int | None = None,
+    selected_region_fingerprint: str | None = None,
+    response_language: str | None = None,
+    viewer_revision: str | None = None,
+    grounding_mode: str | None = None,
+    model_version: str | None = None,
+    prompt_version: str = _PROMPT_VERSION,
+    validator_version: str = _VALIDATOR_VERSION,
+    source_priority_policy_version: str = _SOURCE_PRIORITY_POLICY_VERSION,
+    index_version: str = _INDEX_VERSION,
+    conversation_generation: int | None = None,
 ) -> dict[str, Any] | None:
     """Return the cached answer JSON, or None on miss. Bumps usage stats on hit.
 
@@ -233,6 +279,17 @@ def lookup_answer(
         retrieved_chunk_ids=retrieved_chunk_ids,
         web_query=web_query,
         workspace_fingerprint=workspace_fingerprint,
+        visible_page=visible_page,
+        selected_region_fingerprint=selected_region_fingerprint,
+        response_language=response_language,
+        viewer_revision=viewer_revision,
+        grounding_mode=grounding_mode,
+        model_version=model_version,
+        prompt_version=prompt_version,
+        validator_version=validator_version,
+        source_priority_policy_version=source_priority_policy_version,
+        index_version=index_version,
+        conversation_generation=conversation_generation,
     )
     sb = get_supabase()
     try:
@@ -281,6 +338,17 @@ def save_answer(
     retrieved_chunk_ids: list[str] | None = None,
     web_query: str | None = None,
     workspace_fingerprint: str | None = None,
+    visible_page: int | None = None,
+    selected_region_fingerprint: str | None = None,
+    response_language: str | None = None,
+    viewer_revision: str | None = None,
+    grounding_mode: str | None = None,
+    model_version: str | None = None,
+    prompt_version: str = _PROMPT_VERSION,
+    validator_version: str = _VALIDATOR_VERSION,
+    source_priority_policy_version: str = _SOURCE_PRIORITY_POLICY_VERSION,
+    index_version: str = _INDEX_VERSION,
+    conversation_generation: int | None = None,
 ) -> None:
     """Upsert the answer for next time. Safe to no-op on errors.
 
@@ -306,6 +374,17 @@ def save_answer(
             retrieved_chunk_ids=retrieved_chunk_ids,
             web_query=web_query,
             workspace_fingerprint=workspace_fingerprint,
+            visible_page=visible_page,
+            selected_region_fingerprint=selected_region_fingerprint,
+            response_language=response_language,
+            viewer_revision=viewer_revision,
+            grounding_mode=grounding_mode,
+            model_version=model_version,
+            prompt_version=prompt_version,
+            validator_version=validator_version,
+            source_priority_policy_version=source_priority_policy_version,
+            index_version=index_version,
+            conversation_generation=conversation_generation,
         ),
         "normalized_question":   _normalize_question(question),
         "document_version_hash": version_hash,

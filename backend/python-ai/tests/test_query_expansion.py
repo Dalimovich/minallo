@@ -118,3 +118,22 @@ def test_empty_query() -> None:
     res = qe.expand_query("")
     assert res.expanded is False
     assert res.text == ""
+
+
+def test_multilingual_technical_expansion_preserves_original_query() -> None:
+    qe = _import_qe()
+    res = qe.expand_query("Calculate the Standzeit.")
+    assert res.text.startswith("Calculate the Standzeit.")
+    assert "tool life" in res.text
+    assert res.expanded
+
+
+def test_distinct_moments_of_inertia_are_not_conflated() -> None:
+    qe = _import_qe()
+    mass = qe.expand_query("Explain the Massenträgheitsmoment")
+    assert "mass moment of inertia" in mass.text
+    assert "second moment of area" not in mass.text
+
+    area = qe.expand_query("Explain the Flächenträgheitsmoment")
+    assert "second moment of area" in area.text
+    assert "mass moment of inertia" not in area.text

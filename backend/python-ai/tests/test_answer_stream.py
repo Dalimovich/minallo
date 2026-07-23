@@ -21,6 +21,8 @@ def test_professor_solution_followup_targets_visible_pdf() -> None:
         _is_deictic_question,
         _language_rewrite_followup_overlay,
         _latest_question_language_overlay,
+        _is_user_correction,
+        _user_correction_overlay,
     )
 
     assert _is_deictic_question(
@@ -28,6 +30,9 @@ def test_professor_solution_followup_targets_visible_pdf() -> None:
     )
     assert _is_deictic_question("Walk me through the solution shown here")
     assert _is_deictic_question("now correct Aufgabe 13.2")
+    assert _is_deictic_question("not the professor marked 11")
+    assert _is_user_correction("not the professor marked 11")
+    assert not _is_user_correction("What did the professor mark?")
     overlay = _latest_question_language_overlay("now correct Aufgabe 13.2")
     assert "whatever the language is" in overlay
     assert "Aufgabe" in overlay
@@ -49,6 +54,15 @@ def test_professor_solution_followup_targets_visible_pdf() -> None:
     )
     assert "previous assistant answer in English" in followup
     assert "Do not ask which task" in followup
+    correction = _user_correction_overlay(
+        "not the professor marked 11",
+        has_visible_context=True,
+        has_history=True,
+    )
+    assert "not asking a new course question" in correction
+    assert "Do not switch to another exercise" in correction
+    assert "[Source 0]" in correction
+    assert _detect_question_language("not the professor marked 11").name == "ENGLISH"
 
 
 # ── Previous-turns trimming ─────────────────────────────────────────────────
@@ -234,6 +248,14 @@ def test_default_explain_mode_is_conversational_and_interactive() -> None:
     assert "recent chat history actively" in prompt
     assert "ONE short, topic-specific check" in prompt
     assert "Never withhold an answer" in prompt
+
+
+def test_math_prompt_distinguishes_sweep_moves_from_total_passes() -> None:
+    from app.services.answer import _SYSTEM_PROMPT_MATH
+
+    assert "number of additional moves" in _SYSTEM_PROMPT_MATH
+    assert "total number of passes/positions" in _SYSTEM_PROMPT_MATH
+    assert "m=10$ moves but $n=11$ passes" in _SYSTEM_PROMPT_MATH
 
 
 def test_visible_page_skips_redundant_retrieved_figure_render() -> None:

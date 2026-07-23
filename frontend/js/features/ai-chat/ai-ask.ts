@@ -12,6 +12,8 @@ import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import { getCompareFileName } from '../pdf-viewer/pdf-compare.js';
 import { bindMessageActionButtons } from './ai-message-actions.js';
 import { buildPageContext } from './ai-page-context.js';
+import { shouldAttachVisiblePdfPage } from './visible-page-gate.js';
+import { regionFromSelection } from './region-provenance.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import {
   createAIThinkingStatus,
@@ -865,6 +867,7 @@ export function initAskAI(
         : Promise.resolve();
     const _textReady = Promise.all([_leftTextReady, _rightTextReady]);
     const _asksAboutVisibleSolution =
+      shouldAttachVisiblePdfPage(question) ||
       /\b(how|why)\b[\s\S]{0,80}\b(prof(?:essor)?|solution|answer(?:ed)?|worked|solved)\b/i.test(question) ||
       /\b(explain|walk me through)\b[\s\S]{0,80}\b(answer|solution|working|rechnung|l[oö]sung)\b/i.test(question) ||
       /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question) ||
@@ -1345,6 +1348,31 @@ export function initAskAI(
             const _aiHost = (window.AI_SERVICE_URL || '').replace(/\/$/, '');
             if (!_aiHost) { fallbackToRag(); return; }
 
+            const _viewerSelection = window.getSelection();
+            const _viewerWrap = document.getElementById('pdfViewerWrap');
+            const _selectionAnchor = _viewerSelection?.anchorNode || null;
+            const _selectionFocus = _viewerSelection?.focusNode || null;
+            const _selectedPdfText =
+              _viewerWrap &&
+              _selectionAnchor &&
+              _selectionFocus &&
+              _viewerWrap.contains(_selectionAnchor) &&
+              _viewerWrap.contains(_selectionFocus)
+                ? (_viewerSelection?.toString() || '').trim().slice(0, 12000)
+                : '';
+            const _visiblePage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : undefined;
+            const _viewerRevision = [
+              window.activeCourseId || '',
+              _activeDocId || '',
+              window.activeStorageName || activeFileName || '',
+              String((window.pdfDoc as PdfDocLike | null | undefined)?.numPages || '')
+            ].join(':');
+            const _selectedRegion = regionFromSelection(
+              _viewerSelection,
+              _viewerWrap,
+              _viewerRevision,
+            );
+
             fetch(_aiHost + '/ask-stream', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -1360,6 +1388,15 @@ export function initAskAI(
                     ? [_activeDocId, _compareDocId]
                     : undefined,
                 activeDocumentId: _activeDocId || undefined,
+                visiblePage: _visiblePage,
+                selectedText: _selectedPdfText || undefined,
+                selectedRegion: _selectedRegion || undefined,
+                viewerRevision: _viewerRevision,
+                conversationId: getAiChatKey(
+                  _courseId,
+                  _activeDocId || undefined,
+                ),
+                conversationGeneration: myGenId,
                 // Tell the backend which file the user is reading and give it
                 // a slice of the actually-visible text. Without this the model
                 // sees only retrieved chunks, which can miss the section the
@@ -1492,6 +1529,15 @@ export function initAskAI(
 
             function finalize(meta: SseDoneEvent | null | undefined): void {
               if (_finalized) return;
+              if (myGenId !== state.currentGenId) {
+                _finalized = true;
+                removeThinking();
+                if (ansWrap) {
+                  ansWrap.remove();
+                  ansWrap = null;
+                }
+                return;
+              }
               if (!ansWrap && thinking && !_finalizeWaitingForThinking) {
                 _finalizeWaitingForThinking = true;
                 thinking.waitMinimum().then(() => {

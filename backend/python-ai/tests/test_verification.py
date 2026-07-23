@@ -100,6 +100,24 @@ def test_number_not_in_context_or_question_downgrades() -> None:
     assert any("number" in r for r in res.reasons)
 
 
+def test_fabricated_source_index_is_rejected() -> None:
+    res = verify_answer(
+        answer_text="The value is supported [Source 99].",
+        chunk_texts=["The value is supported."],
+    )
+    assert res.status == "missing_context"
+    assert res.details["invalidSourceIndices"] == [99]
+
+
+def test_generic_fake_solution_filler_is_rejected() -> None:
+    res = verify_answer(
+        answer_text="For example, assume k = 1.8 [Source 1].",
+        chunk_texts=["The exact value of k is not provided."],
+    )
+    assert res.status == "missing_context"
+    assert res.details["fakeSolutionPhrases"]
+
+
 def test_self_report_partial_downgrades_verified_to_partial() -> None:
     chunk = "$$ E = mc^2 $$"
     answer = (

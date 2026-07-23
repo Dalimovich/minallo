@@ -763,6 +763,52 @@ def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None
     return out
 
 
+def retrieve_visible_page_chunks(
+    *,
+    user_id: str,
+    course_id: str,
+    document_id: str,
+    page_number: int,
+    limit: int = 6,
+) -> list[RetrievedChunk]:
+    """Stage-A retrieval: exact active document/page before semantic search."""
+    if not document_id or page_number < 1:
+        return []
+    sb = get_supabase()
+    try:
+        resp = (
+            sb.table("document_chunks")
+            .select(
+                "id, document_id, chunk_text, page_start, page_end, "
+                "chunk_type, section_title"
+            )
+            .eq("user_id", user_id)
+            .eq("course_id", course_id)
+            .eq("document_id", document_id)
+            .lte("page_start", page_number)
+            .gte("page_end", page_number)
+            .limit(max(1, min(limit, 12)))
+            .execute()
+        )
+    except Exception:
+        log.exception("visible-page exact retrieval failed")
+        return []
+    return [
+        RetrievedChunk(
+            chunk_id=row["id"],
+            document_id=row["document_id"],
+            page_start=row.get("page_start"),
+            page_end=row.get("page_end"),
+            text=row.get("chunk_text") or "",
+            score=100.0 - idx,
+            similarity=1.0,
+            chunk_type=row.get("chunk_type") or "general",
+            section_title=row.get("section_title"),
+        )
+        for idx, row in enumerate(resp.data or [])
+    ]
+
+
 def _resolve_mentioned_document_ids(
     sb,
     *,

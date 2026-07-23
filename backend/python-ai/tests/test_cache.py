@@ -65,6 +65,69 @@ def test_question_hash_changes_with_selected_documents() -> None:
     assert doc_a != doc_b
 
 
+def test_question_hash_scopes_visible_page_language_revision_and_region() -> None:
+    from app.services.cache import question_hash
+
+    base = question_hash(
+        "Explain this",
+        visible_page=11,
+        response_language="en",
+        viewer_revision="rev-a",
+        selected_region_fingerprint='{"x":0.1}',
+        grounding_mode="strict-course-files",
+    )
+    assert base != question_hash(
+        "Explain this",
+        visible_page=12,
+        response_language="en",
+        viewer_revision="rev-a",
+        selected_region_fingerprint='{"x":0.1}',
+        grounding_mode="strict-course-files",
+    )
+    assert base != question_hash(
+        "Explain this",
+        visible_page=11,
+        response_language="de",
+        viewer_revision="rev-a",
+        selected_region_fingerprint='{"x":0.1}',
+        grounding_mode="strict-course-files",
+    )
+    assert base != question_hash(
+        "Explain this",
+        visible_page=11,
+        response_language="en",
+        viewer_revision="rev-b",
+        selected_region_fingerprint='{"x":0.1}',
+        grounding_mode="strict-course-files",
+    )
+
+
+def test_cache_identity_includes_generation_and_pipeline_versions() -> None:
+    from app.services.cache import question_hash
+
+    base = question_hash(
+        "continue",
+        conversation_generation=4,
+        model_version="gpt-model-a",
+    )
+    assert base != question_hash(
+        "continue",
+        conversation_generation=5,
+        model_version="gpt-model-a",
+    )
+    assert base != question_hash(
+        "continue",
+        conversation_generation=4,
+        model_version="gpt-model-b",
+    )
+    assert base != question_hash(
+        "continue",
+        conversation_generation=4,
+        model_version="gpt-model-a",
+        validator_version="future-validator",
+    )
+
+
 def test_document_version_hash_is_order_independent() -> None:
     from app.services.cache import document_version_hash
 

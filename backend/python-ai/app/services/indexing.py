@@ -406,6 +406,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             doc_topics=doc_topics,
             primary_topics=primary_topics,
             exercise_id_by_key=exercise_id_by_key,
+            document_revision=content_hash,
         )
 
         # Phase 4: classify the document and roll up per-page extraction
@@ -707,6 +708,7 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
         doc_topics=doc_topics,
         primary_topics=primary_topics,
         exercise_id_by_key=exercise_id_by_key,
+        document_revision=doc.get("document_revision") or doc.get("document_hash"),
     )
 
     now = datetime.now(timezone.utc).isoformat()
@@ -883,6 +885,7 @@ def _replace_chunks(
     doc_topics: list[str] | None = None,
     primary_topics: list[str | None] | None = None,
     exercise_id_by_key: dict[tuple[str, str | None], str] | None = None,
+    document_revision: str | None = None,
 ) -> None:
     sb.table("document_chunks").delete().eq("document_id", document_id).execute()
     rows = []
@@ -903,6 +906,20 @@ def _replace_chunks(
             "chunk_type": chunk.chunk_type,
             "token_count": chunk.token_count,
             "embedding": embedding,
+            "document_revision": document_revision,
+            "question_number": chunk.exercise_number,
+            "parent_question_number": (
+                chunk.exercise_number.split(".")[0]
+                if chunk.exercise_number and "." in chunk.exercise_number
+                else None
+            ),
+            "source_priority": {
+                "solution": 85,
+                "exam": 80,
+                "exercise": 75,
+                "lecture": 65,
+                "formula": 60,
+            }.get(source_type, 50),
         }
         # Topic columns are additive (added by migration 20260519_000006).
         # Skip writing them when extraction returned nothing — the DB default
@@ -921,7 +938,31 @@ def _replace_chunks(
                 row["exercise_id"] = ex_id
         rows.append(row)
     for start in range(0, len(rows), 100):
-        sb.table("document_chunks").insert(rows[start:start + 100]).execute()
+        batch = rows[start:start + 100]
+        try:
+            sb.table("document_chunks").insert(batch).execute()
+        except Exception as exc:
+            # Rolling-deploy compatibility: the grounding metadata migration
+            # may land just after this application release. Keep indexing
+            # operational on the old schema, while logging only the category
+            # (never private chunk text). Once migrated, the first insert path
+            # writes the full provenance fields automatically.
+            message = str(exc).casefold()
+            optional = {
+                "document_revision", "question_number",
+                "parent_question_number", "source_priority",
+            }
+            if not any(column in message for column in optional):
+                raise
+            log.warning(
+                "grounding_metadata_schema_not_ready document_id=%s batch_start=%d",
+                document_id, start,
+            )
+            legacy_batch = [
+                {key: value for key, value in row.items() if key not in optional}
+                for row in batch
+            ]
+            sb.table("document_chunks").insert(legacy_batch).execute()
 
 
 def _replace_exercises(
