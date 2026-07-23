@@ -362,21 +362,39 @@ var _sb = {
         body: JSON.stringify({ refresh_token: ref })
       })
         .then(function (r) {
-          return r.json();
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            return { ok: r.ok, status: r.status, body: body };
+          });
         })
-        .then(function (d) {
+        .then(function (result) {
+          var d = result.body;
           if (d.access_token) {
             _sbToken = d.access_token;
+            window._sbToken = d.access_token;
             _currentUser = d.user || _currentUser;
             _sbStoreSession(d.access_token, d.refresh_token || ref);
+            _ssAuth('signed-in', { source: 'refreshSession', user: _currentUser });
+            _sbAuthCallbacks.forEach(function (cb) {
+              cb('TOKEN_REFRESHED', { user: _currentUser });
+            });
+            try {
+              localStorage.setItem('ss_auth_sync', JSON.stringify({
+                type: 'TOKEN_REFRESHED',
+                at: Date.now()
+              }));
+            } catch (e) { /* storage unavailable */ }
             return _currentUser;
           }
-          _sbToken = null;
-          _sbClearStoredSession();
-          return null;
-        })
-        .catch(function () {
-          return null;
+          // Only an explicit invalid/revoked refresh token signs the user out.
+          // Network failures and Supabase 5xx responses preserve the session so
+          // a later request can retry without interrupting active work.
+          if (result.status === 400 || result.status === 401) {
+            _sbToken = null;
+            window._sbToken = null;
+            _sbClearStoredSession();
+            return null;
+          }
+          throw new Error('SESSION_REFRESH_NETWORK_ERROR');
         })
         .finally(function () {
           _sbRefreshInFlight = null;
@@ -504,6 +522,17 @@ var _sb = {
     };
   }
 };
+window._sb = _sb;
+
+// Keep tabs synchronized after one of them refreshes a rotating token. Tokens
+// remain in the existing shared storage; the event only tells peers to reload.
+window.addEventListener('storage', function (event) {
+  if (event.key !== 'ss_auth_sync') return;
+  var token = _sbStoredToken();
+  if (!token || token === _sbToken) return;
+  _sbToken = token;
+  window._sbToken = token;
+});
 
 console.log('Supabase REST client ready ✓');
 // Quick connectivity test

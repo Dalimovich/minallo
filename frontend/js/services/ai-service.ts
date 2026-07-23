@@ -1,5 +1,6 @@
 // All AI endpoints flow through Cloudflare Pages Functions (which forward to python-ai).
 // See docs/python-ai-endpoints.md for shapes.
+import { authenticatedFetch } from './authenticated-fetch.js';
 
 function _backendUrl(): string {
   return window.BACKEND_URL || '';
@@ -35,11 +36,11 @@ async function _detectAiCapError(response: Response): Promise<boolean> {
 }
 
 export async function sendAiRequest(payload: unknown): Promise<unknown> {
-  const response = await fetch(_backendUrl() + '/api/ai', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify(payload),
-  });
+  }, { safeToRetry: false });
   await _detectAiCapError(response);
   return response.json();
 }
@@ -84,11 +85,11 @@ export async function sendRagRequest(
   if (activeFileName) payload.activeFileName = activeFileName;
   if (openFileContext) payload.openFileContext = openFileContext;
 
-  const response = await fetch(_backendUrl() + '/api/ai/ask', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/ask', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify(payload),
-  });
+  }, { safeToRetry: true });
   await _detectAiCapError(response);
   if (!response.ok) {
     let detail = 'HTTP ' + response.status;

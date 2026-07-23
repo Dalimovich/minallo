@@ -23,6 +23,7 @@ import {
 } from './ai-thinking-status.js';
 import { getAiChatKey } from './chat-key.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 
 /** The subscription gate (HTTP 402 / "subscription required") should read as a
  * calm upgrade prompt, not a raw server error. */
@@ -1118,8 +1119,6 @@ export function initAskAI(
           const _ragMode = !_modeToggle || _modeToggle.checked ? 'strict' : 'general';
 
           return new Promise<AiResponse>((resolve) => {
-            const token = window._sbToken || '';
-
             let ansWrap: HTMLElement | null = null;
             let bubble: HTMLElement | null = null;
             let rawText = '';
@@ -1373,9 +1372,13 @@ export function initAskAI(
               _viewerRevision,
             );
 
-            fetch(_aiHost + '/ask-stream', {
+            const _conversationId = getAiChatKey(
+              _courseId,
+              _activeDocId || undefined,
+            );
+            authenticatedFetch(_aiHost + '/ask-stream', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+              headers: { 'Content-Type': 'application/json' },
               signal: _streamController.signal,
               body: JSON.stringify({
                 // documentIds is a preference hint for answer quality. Even
@@ -1392,10 +1395,7 @@ export function initAskAI(
                 selectedText: _selectedPdfText || undefined,
                 selectedRegion: _selectedRegion || undefined,
                 viewerRevision: _viewerRevision,
-                conversationId: getAiChatKey(
-                  _courseId,
-                  _activeDocId || undefined,
-                ),
+                conversationId: _conversationId,
                 conversationGeneration: myGenId,
                 // Tell the backend which file the user is reading and give it
                 // a slice of the actually-visible text. Without this the model
@@ -1417,7 +1417,7 @@ export function initAskAI(
                 // open document) — feeds the backend's live-workspace block.
                 pageContext: buildPageContext() || undefined,
               }),
-            })
+            }, { safeToRetry: true })
               .then(async (res) => {
                 if (!res.ok) {
                   if (res.status === 503 || res.status === 429) {

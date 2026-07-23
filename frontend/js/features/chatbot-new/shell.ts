@@ -25,6 +25,7 @@ import {
   type DailyMissionResponse
 } from '../../services/study-service.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 
 /** Returns today's date as YYYY-MM-DD in the local timezone. */
 function todayLocalDateStr(): string {
@@ -2334,12 +2335,10 @@ async function streamFromAskStream(
     const text = await callGenericAi([{ role: 'user', text: question }], bubble, controller, thinking, null, allowDiagrams);
     return { text, meta: null };
   }
-  const token = getSbToken() || '';
-
-  const resp = await fetch(aiHost + '/ask-stream', {
+  const resp = await authenticatedFetch(aiHost + '/ask-stream', {
     method: 'POST',
     signal: controller.signal,
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       courseId,
       question,
@@ -2370,7 +2369,7 @@ async function streamFromAskStream(
         openFileContext: generatedDoc.markdown.slice(0, NCB_GENERATED_DOC_CONTEXT_CHARS),
       } : {}),
     }),
-  });
+  }, { safeToRetry: true });
   if (!resp.ok || !resp.body || !resp.body.getReader) {
     const errText = await resp.text().catch(() => '');
     throw new Error('Ask-stream ' + resp.status + ': ' + errText.slice(0, 200));
