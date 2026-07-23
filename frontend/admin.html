@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#0b1220">
+  <title>Admin dashboard — Minallo</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="preconnect" href="https://fonts.bunny.net">
+  <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,600,700,800&display=swap">
+  <link rel="stylesheet" href="/css/typography.css?v=1">
+  <link rel="stylesheet" href="/css/theme.css?v=7">
+  <link rel="stylesheet" href="/css/styles.css?v=44">
+  <link rel="stylesheet" href="/css/courses-redesign.css?v=45">
+  <link rel="stylesheet" href="/css/app-design-system.css?v=6">
+  <style>
+    body.admin-standalone { min-height: 100vh; height: auto; overflow: auto; background: #0b1220; }
+    .admin-shell { width: min(1240px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 64px; }
+    .admin-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+    .admin-brand { color: #f8fafc; font-size: 22px; font-weight: 800; text-decoration: none; letter-spacing: -.04em; }
+    .admin-brand i { display: inline-block; width: 11px; height: 11px; margin-right: 10px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 22px rgba(56,189,248,.7); }
+    .admin-back { color: #94a3b8; font-weight: 600; text-decoration: none; }
+    .admin-back:hover { color: #f8fafc; }
+    .admin-state { min-height: 55vh; display: grid; place-items: center; color: #94a3b8; font-weight: 600; }
+    .admin-toast { position: fixed; right: 20px; bottom: 20px; z-index: 20; max-width: 340px; padding: 14px 18px; border: 1px solid rgba(148,163,184,.2); border-radius: 14px; color: #f8fafc; background: #172033; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+    .admin-toast small { display: block; margin-top: 3px; color: #94a3b8; }
+  </style>
+</head>
+<body class="night admin-standalone">
+  <main class="admin-shell">
+    <nav class="admin-nav"><a class="admin-brand" href="/"><i></i>minallo</a><a class="admin-back" href="/">Back to Minallo →</a></nav>
+    <div id="adminRoot"><div class="admin-state">Loading the admin dashboard…</div></div>
+  </main>
+  <script src="/js/config.js?v=20260720-admin-page"></script>
+  <script type="module" src="/js/admin-page.js?v=20260720"></script>
+</body>
+</html>

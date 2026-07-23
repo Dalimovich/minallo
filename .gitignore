@@ -22,8 +22,23 @@ build/
 Thumbs.db
 .vscode/
 
-# TS source maps (emitted by build:frontend)
+# tsc output (frontend/tsconfig.build.json emits into ./).
+# Netlify regenerates these via `npm run build:frontend` on every deploy.
+# Hand-written .js files (no .ts sibling) are re-included below.
+frontend/js/**/*.js
 frontend/js/**/*.js.map
+!frontend/js/ai.js
+!frontend/js/app-data.js
+!frontend/js/app-pdf.js
+!frontend/js/app-storage.js
+!frontend/js/auth-bootstrap.js
+!frontend/js/config.js
+!frontend/js/dependencies.js
+!frontend/js/minallo.js
+!frontend/js/pages/new-landing.js
+!frontend/js/router.js
+!frontend/js/ss-ready-marker.js
+!frontend/js/supabase.js
 
 # Playwright
 tests/e2e/.auth/
@@ -53,3 +68,11 @@ backend/package-lock.json
 
 # Local planning / handoff artifacts (not shared)
 artifacts/
+
+# Supabase CLI config (backend)
+.supabase/
+
+# Personal job-application documents (not part of Minallo)
+bewerbung-*/
+/bewerbung-dlr-5453/
+/dhia

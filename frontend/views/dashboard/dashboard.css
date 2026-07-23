@@ -3,7 +3,7 @@
   margin-bottom: 28px;
 }
 .dash-greeting h1 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2rem;
   color: var(--on-glass);
   margin-bottom: 4px;
@@ -37,10 +37,10 @@
   font-size: 3rem;
   opacity: 0.15;
   color: var(--on-glass);
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
 }
 .dash-empty-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.35rem;
   color: var(--on-glass);
   opacity: 0.35;
@@ -78,6 +78,54 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.dmw-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--on-glass);
+}
+.dmw-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+.dmw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
+}
+.dmw-status,
+.dmw-progress,
+.dmw-focus {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--on-glass-muted);
+}
+.dmw-focus {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--on-glass);
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+}
+.dmw-btn {
+  margin-top: auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.76rem;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  cursor: pointer;
 }
 
 /* ── Widget panel ── */
@@ -157,7 +205,7 @@
   flex-shrink: 0;
 }
 .wp-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.05rem;
   color: var(--on-glass);
 }
@@ -247,6 +295,15 @@
     transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
 }
+
+@media (hover: none), (pointer: coarse) {
+  .dash-widget {
+    touch-action: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 .dash-widget.is-dragging {
   opacity: 0.35;
   pointer-events: none;
@@ -257,6 +314,7 @@
   gap: 8px;
   padding: 11px 12px 6px;
   cursor: grab;
+  touch-action: none;
   flex-shrink: 0;
 }
 .dw-header:active {
@@ -266,7 +324,7 @@
   font-size: 0.9rem;
 }
 .dw-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.86rem;
   color: var(--on-glass);
   flex: 1;
@@ -297,33 +355,49 @@
 }
 .dw-body {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: 0 12px 10px;
-  overflow: hidden;
+  overflow: auto;
   min-height: 0;
   font-size: 0.78rem;
 }
 .dw-resize {
   position: absolute;
   bottom: 4px;
-  right: 4px;
-  width: 18px;
-  height: 18px;
-  cursor: se-resize;
+  left: 50%;
+  width: 46px;
+  height: 14px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+  touch-action: none;
   opacity: 0;
   transition: opacity 0.15s;
 }
 .dash-widget:hover .dw-resize {
   opacity: 0.7;
 }
+
+.dash-widget--daily-mission {
+  overflow: hidden;
+}
+.dash-widget--daily-mission .dw-body,
+.dash-widget--daily-mission .dmw-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .dw-resize::after {
   content: '';
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid var(--on-glass-muted);
-  border-bottom: 2px solid var(--on-glass-muted);
+  left: 50%;
+  bottom: 3px;
+  width: 26px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: var(--on-glass-muted);
 }
 #dragGhost {
   position: fixed;
@@ -338,7 +412,7 @@
 
 /* Widget content */
 .tw-date {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.95rem;
   color: var(--on-glass);
   margin-bottom: 6px;
@@ -1184,7 +1258,7 @@ body:not(.night) .gcw-reminder-close:hover {
   border: none;
   resize: none;
   color: var(--on-glass);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-size: 0.78rem;
   line-height: 1.65;
   outline: none;
@@ -1206,7 +1280,7 @@ body:not(.night) .gcw-reminder-close:hover {
   text-align: center;
 }
 .sw-val {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.2rem;
   color: var(--on-glass);
 }
@@ -1267,7 +1341,7 @@ body:not(.night) .gcw-reminder-close:hover {
   flex-shrink: 0;
 }
 .ww-temp {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2.1rem;
   color: var(--on-glass);
   line-height: 1;
@@ -1297,7 +1371,7 @@ body:not(.night) .gcw-reminder-close:hover {
   padding: 7px 10px;
   font-size: 0.74rem;
   color: var(--on-glass);
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   outline: none;
 }
 .aw-in:focus {
@@ -1330,9 +1404,9 @@ body:not(.night) .gcw-reminder-close:hover {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .dash-canvas {
-    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-columns: 1fr !important;
     grid-auto-rows: 140px !important;
   }
   .dash-greeting h1 {

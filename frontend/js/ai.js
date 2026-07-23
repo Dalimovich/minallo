@@ -6,6 +6,7 @@
 
 // ── CONFIG ────────────────────────────────────────────────────────────────
 var AI_CFG = (window.MinalloConfig && window.MinalloConfig.ai) || {};
+function _escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 var _aiUserScrolled = false; // true when user has manually scrolled up during generation
 var _attachedImages = []; // array of { data: base64string, mediaType: string }, max AI_IMG_MAX
 var AI_IMG_MAX = AI_CFG.imageMax || 5; // max images per message (keeps token budget sane)
@@ -37,9 +38,7 @@ function _buildSystemPrompt() {
     '- When explaining a concept, write complete sentences that build understanding from first principles.\n' +
     '- Be thorough and precise — explain *why* something works, not just *what* it is.\n' +
     '- For formulas: write out the expression, then define every variable in a sentence each, then explain in plain language what the formula computes and when it applies.\n' +
-    '- Respond ENTIRELY in ' +
-    (typeof _lang !== 'undefined' && _lang === 'de' ? 'German (Deutsch)' : 'English') +
-    '. Do not switch languages mid-response.\n' +
+    '- Respond in the language used in the student\'s latest question. The document, pasted text, earlier turns, and interface language must not override the latest question. Support any language and writing system, including Arabic and other right-to-left scripts.\n' +
     '- If the document does not cover a topic, say so clearly instead of inventing an answer.\n' +
     '- Use **bold** for key terms, `monospace` for code/variables, and ### headers to separate major sections.\n\n' +
     'CONTENT RULES:\n' +
@@ -51,7 +50,13 @@ function _buildSystemPrompt() {
 }
 
 // ── askAI — core Q&A ──────────────────────────────────────────────────────
-askAI = function (question, skipUserBubble) {
+// `let` (not `var`!) is intentional. js/ai.js is loaded as a CLASSIC script,
+// not a module, so top-level `var` still becomes a window property — which
+// would clobber the RAG-first window.askAI installed by ai-ask-bridge. `let`
+// at the top of a non-module script stays out of window. The name `askAI` is
+// kept so the local reference at the bottom of this file (chipPrompt →
+// askAI(prompt)) still resolves to this legacy implementation.
+let askAI = function (question, skipUserBubble) {
   if (!question) return;
   generationStopped = false;
   currentGenId++;
@@ -59,11 +64,24 @@ askAI = function (question, skipUserBubble) {
   var _myChatKey = typeof _prevChatKey !== 'undefined' ? _prevChatKey : null; // capture now, before any async
   pinAI();
 
+  // The image-capable endpoint is separate from the RAG chat path. Include
+  // the visible conversation explicitly so an image turn remains a follow-up
+  // instead of silently starting a new conversation.
+  var _priorTurns = window.serializeChatDOM ? window.serializeChatDOM().slice(-20) : [];
+
   // Snapshot + clear images before anything else
   var _imgs = _attachedImages.slice();
   _attachedImages = [];
   window._attachedImages = _attachedImages;
   _renderImgPreviews();
+  if (_imgs.length > 0) {
+    window._lastAiImageContext = {
+      images: _imgs.slice(-2),
+      courseId: window.activeCourseId || window.currentCourseId || '',
+      fileName: window.activeFileName || '',
+      timestamp: Date.now()
+    };
+  }
 
   if (!skipUserBubble) {
     if (_imgs.length > 0) {
@@ -72,7 +90,9 @@ askAI = function (question, skipUserBubble) {
       userWrap.className = 'ai-msg-wrap user';
       var _t = typeof getTime === 'function' ? getTime() : '';
       var _safe = question.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      var _allowedMedia = {'image/png':1,'image/jpeg':1,'image/gif':1,'image/webp':1};
       var _imgsHtml = _imgs
+        .filter(function (img) { return _allowedMedia[img.mediaType]; })
         .map(function (img) {
           return (
             '<img class="ai-msg-img" src="data:' +
@@ -89,7 +109,7 @@ askAI = function (question, skipUserBubble) {
         '<div class="ai-msg-imgs">' +
         _imgsHtml +
         '</div>' +
-        '<div class="ai-bubble user">' +
+        '<div class="ai-bubble user" dir="auto">' +
         _safe +
         '</div>' +
         '<div class="msg-meta"><span class="msg-time">' +
@@ -128,6 +148,17 @@ askAI = function (question, skipUserBubble) {
     msgContent = question;
   }
 
+  var _visionHistory = [];
+  var _visionChars = 0;
+  for (var _hi = _priorTurns.length - 1; _hi >= 0; _hi--) {
+    var _turn = _priorTurns[_hi];
+    if (!_turn || (_turn.role !== 'user' && _turn.role !== 'assistant') || !_turn.text) continue;
+    var _turnText = String(_turn.text).slice(0, 1200);
+    if (_visionChars + _turnText.length > 12000) break;
+    _visionHistory.unshift({ role: _turn.role, content: _turnText });
+    _visionChars += _turnText.length;
+  }
+
   fetch(BACKEND_URL + '/api/ai', {
     method: 'POST',
     headers: {
@@ -138,7 +169,7 @@ askAI = function (question, skipUserBubble) {
       model: AI_MODEL,
       max_tokens: AI_MAX_TOK,
       system: _buildSystemPrompt(),
-      messages: [{ role: 'user', content: msgContent }]
+      messages: _visionHistory.concat([{ role: 'user', content: msgContent }])
     })
   })
     .then(function (r) {
@@ -171,7 +202,7 @@ askAI = function (question, skipUserBubble) {
       ansWrap.innerHTML =
         '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
         '<div class="msg-body">' +
-        '<div class="ai-bubble bot" style="min-height:20px"></div>' +
+        '<div class="ai-bubble bot" dir="auto" style="min-height:20px"></div>' +
         '<div class="msg-meta" style="display:none">' +
         '<span class="msg-time">' +
         t +
@@ -202,16 +233,9 @@ askAI = function (question, skipUserBubble) {
         _curRawText = '';
         _curAnswWrap = null;
         var _keyToSave = _myChatKey || (typeof _prevChatKey !== 'undefined' ? _prevChatKey : null);
-        console.log(
-          '[AI] _finishRender key=',
-          _keyToSave,
-          'msgs in DOM=',
-          typeof aiMsgs !== 'undefined' ? aiMsgs.querySelectorAll('.ai-msg-wrap').length : 'N/A'
-        );
         if (typeof saveChatForFile === 'function' && _keyToSave) {
           try {
             saveChatForFile(_keyToSave);
-            console.log('[AI] saveChatForFile called for', _keyToSave);
           } catch (e) {
             console.warn('chat save failed', e);
           }
@@ -247,8 +271,7 @@ askAI = function (question, skipUserBubble) {
       setTimeout(function () {
         var words = rawText.split(/(\s+)/);
         var wIdx = 0;
-        var CHUNK = 6,
-          DELAY = 28;
+        var CHUNK = 18;
         function typeNext() {
           if (generationStopped || myGenId !== currentGenId) {
             _finishRender(words.slice(0, wIdx).join('') || rawText);
@@ -268,17 +291,19 @@ askAI = function (question, skipUserBubble) {
             renderMarkdown(words.slice(0, wIdx).join('')) +
             '<span class="stream-cursor">\u258b</span>';
           if (!_aiUserScrolled) aiMsgs.scrollTop = aiMsgs.scrollHeight;
-          activeTypeTimer = setTimeout(typeNext, DELAY);
+          activeTypeTimer = setTimeout(function () {
+            window.requestAnimationFrame(typeNext);
+          }, 34);
         }
         var _visHandler = function () {
           if (!document.hidden && myGenId === currentGenId) {
             clearTimeout(activeTypeTimer);
-            typeNext();
+            window.requestAnimationFrame(typeNext);
           }
           document.removeEventListener('visibilitychange', _visHandler);
         };
         document.addEventListener('visibilitychange', _visHandler);
-        typeNext();
+        window.requestAnimationFrame(typeNext);
       }, 340);
     })
     .catch(function (e) {
@@ -287,7 +312,15 @@ askAI = function (question, skipUserBubble) {
       document.getElementById('aiSend').classList.remove('is-stop');
     });
 };
-window.askAI = askAI;
+// IMPORTANT: do NOT publish this legacy askAI as window.askAI. The TS bridge
+// (frontend/js/features/ai-chat/ai-ask.ts) installs a RAG-first askAI that
+// routes every course question to /ask-stream so Phase-1 verification +
+// confidence-from-verification + math-template gating apply. Overwriting it
+// here would silently bypass all grounding and let the model invent textbook
+// formulas (the Nachgiebigkeit / Schweißnaht regression). The legacy is kept
+// only as _legacyAskAI so the image-attachment hook in ai-ask-bridge can still
+// reach a vision-capable path when the user snips/attaches an image.
+window._legacyAskAI = askAI;
 
 // ── chipPrompt — quick action buttons ────────────────────────────────────
 function chipPrompt(type, level) {
@@ -389,7 +422,7 @@ async function runMultiSummary(fnames, course) {
     '<div class="msm-files-list">' +
     fnames
       .map(function (n) {
-        return '<span class="msm-file-tag">\uD83D\uDCC4 ' + n + '</span>';
+        return '<span class="msm-file-tag">\uD83D\uDCC4 ' + _escHtml(n) + '</span>';
       })
       .join('') +
     '</div>';
@@ -508,7 +541,7 @@ async function runMultiSummary(fnames, course) {
           body.innerHTML =
             tagsHtml +
             '<p style="color:#ff6b35">\u274C ' +
-            (data.error.message || 'API error') +
+            'I couldn\'t create that summary just now. Please try again in a moment.' +
             '</p>';
           return;
         }
@@ -523,7 +556,7 @@ async function runMultiSummary(fnames, course) {
         document.getElementById('msmSaveBtn').style.display = '';
       })
       .catch(function (e) {
-        body.innerHTML = tagsHtml + '<p style="color:#ff6b35">\u274C ' + e.message + '</p>';
+        body.innerHTML = tagsHtml + '<p style="color:#ff6b35">I couldn\'t create that summary just now. Please try again in a moment.</p>';
       });
   });
 }
@@ -656,7 +689,6 @@ function _captureSnipRegion(x1, y1, x2, y2) {
   if (!btn) return;
 
   btn.addEventListener('click', function () {
-    if (typeof forceCloseAI === 'function') forceCloseAI();
     var overlay = document.createElement('div');
     overlay.id = 'snipOverlay';
     var hint = document.createElement('div');
@@ -698,9 +730,6 @@ function _captureSnipRegion(x1, y1, x2, y2) {
         endY = e.clientY;
       overlay.remove();
       document.removeEventListener('keydown', onKey);
-      // Open panel immediately so user sees the thumbnail without delay
-      if (typeof openAI === 'function') openAI();
-      if (typeof pinAI === 'function') pinAI();
       var result = _captureSnipRegion(startX, startY, endX, endY);
       if (!result) {
         if (typeof showToast === 'function')
@@ -726,144 +755,167 @@ function _captureSnipRegion(x1, y1, x2, y2) {
 (function () {
   var input = document.getElementById('aiFileInput');
   if (!input) return;
+
+  function isImageFile(file) {
+    return /^image\//i.test(file.type || '') || /\.(png|jpe?g)$/i.test(file.name || '');
+  }
+
+  function getActiveCourseForUpload() {
+    return window.activeCourseRef || null;
+  }
+
+  function getActiveUserId() {
+    return window._currentUser && (window._currentUser.id || window._currentUser.sub);
+  }
+
+  function guessSourceType(fileName) {
+    var n = (fileName || '').toLowerCase();
+    if (/\b(seminar|exercise|aufgabe|solution|sol|uebung|übung)\b/.test(n)) return 'exercise';
+    if (/\b(formula|formel|cheat|sheet|zusammenfassung|summary)\b/.test(n)) return 'formula_sheet';
+    return 'lecture';
+  }
+
+  function findMergedUpload(course, fileName) {
+    var files = Array.isArray(course.files) ? course.files : [];
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (f && f.name === fileName && f._uploaded && f._storageName) return f;
+    }
+    var folders = Array.isArray(course.userFolders) ? course.userFolders : [];
+    for (var j = 0; j < folders.length; j++) {
+      var list = Array.isArray(folders[j].files) ? folders[j].files : [];
+      for (var k = 0; k < list.length; k++) {
+        var ff = list[k];
+        if (ff && ff.name === fileName && ff._uploaded && ff._storageName) return ff;
+      }
+    }
+    return null;
+  }
+
+  async function indexCourseDocument(course, file) {
+    if (!course || !course.id) return;
+    var name = file && file.name;
+    if (!name || !/\.(pdf|txt|docx)$/i.test(name)) return;
+    var merged = findMergedUpload(course, name);
+    if (!merged || !merged._storageName) return;
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function () {
+      controller.abort();
+    }, 12000);
+    try {
+      var res = await fetch((window.BACKEND_URL || '') + '/api/documents/index-existing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + (window._sbToken || '')
+        },
+        body: JSON.stringify({
+          courseId: course.id,
+          storageName: merged._storageName,
+          fileName: merged.name || name,
+          sourceType: guessSourceType(merged.name || name),
+          folder: merged._folder || null
+        }),
+        signal: controller.signal
+      });
+      if (!res.ok) throw new Error('Index failed (' + res.status + ')');
+    } catch (e) {
+      console.warn('[ai-panel] document indexing failed', e);
+      if (typeof showToast === 'function')
+        showToast('Uploaded, indexing delayed', 'The file is saved. Try again shortly if AI cannot see it yet.');
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function uploadCourseDocument(file) {
+    var course = getActiveCourseForUpload();
+    var uid = getActiveUserId();
+    if (!course || !course.id) {
+      if (typeof showToast === 'function')
+        showToast('Open a course first', 'Documents from the AI panel are added to the active course.');
+      return;
+    }
+    if (!uid) {
+      if (typeof showToast === 'function') showToast('Not signed in', 'Sign in to upload files.');
+      return;
+    }
+    if (typeof window._ufUpload !== 'function') {
+      if (typeof showToast === 'function') showToast('Upload unavailable', 'Please try from the Files tab.');
+      return;
+    }
+
+    try {
+      if (typeof showToast === 'function') showToast('Uploading document', file.name);
+      await window._ufUpload(uid, course, file, null, null);
+      if (typeof window._ufMerge === 'function') await window._ufMerge(course);
+      await indexCourseDocument(course, file);
+      if (typeof showToast === 'function')
+        showToast('Document uploaded', file.name + ' was added to this course.');
+    } catch (e) {
+      if (typeof showToast === 'function')
+        showToast('Upload failed', file.name + ': ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  // Downscale + re-encode any image to a vision-friendly JPEG before attaching.
+  // The strict _ssValidateImageFile (1 MB cap, png/jpg only) is meant for course
+  // uploads to storage — real screenshots/photos routinely exceed 1 MB and may
+  // be .webp/HEIC, so they were being rejected with a "File blocked" toast. For
+  // AI vision attachments we normalise the image client-side instead.
+  function _attachImageFile(file) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      var MAX = 1568; // Anthropic's recommended max edge for vision
+      var w = img.naturalWidth || img.width || 1;
+      var h = img.naturalHeight || img.height || 1;
+      var scale = Math.min(1, MAX / Math.max(w, h));
+      var cw = Math.max(1, Math.round(w * scale));
+      var ch = Math.max(1, Math.round(h * scale));
+      var canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      var ctx = canvas.getContext('2d');
+      // White matte so transparent PNGs don't turn black when flattened to JPEG.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(img, 0, 0, cw, ch);
+      var dataUrl;
+      try {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('Could not read image', file.name || '');
+        return;
+      }
+      _addAttachedImage({ data: dataUrl.split(',')[1], mediaType: 'image/jpeg' });
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      if (typeof showToast === 'function')
+        showToast('Could not read image', (file.name || '') + ' — unsupported or corrupt.');
+    };
+    img.src = url;
+  }
+
   input.addEventListener('change', function () {
     var files = Array.prototype.slice.call(this.files);
     this.value = ''; // reset so same file can be re-selected
     files.forEach(function (file) {
-      try {
-        if (window._ssValidateImageFile)
-          window._ssValidateImageFile(file, window._SS_UPLOAD_AI_IMAGE_MAX_BYTES || 1024 * 1024);
-      } catch (e) {
-        if (typeof showToast === 'function')
-          showToast('File blocked', file.name + ': ' + e.message);
-        return;
-      }
-      var reader = new FileReader();
-      reader.onload = function (ev) {
-        _addAttachedImage({
-          data: ev.target.result.split(',')[1],
-          mediaType: file.type || 'image/png'
-        });
-      };
-      reader.readAsDataURL(file);
+      if (isImageFile(file)) _attachImageFile(file);
+      else uploadCourseDocument(file);
     });
     var ta = document.getElementById('aiInput');
     if (ta) ta.focus();
   });
 })();
 
-// ── AI panel resize (desktop only) ───────────────────────────────────────
-// The panel is detached by ai-bubble.js and positioned with `position: fixed`
-// + inline `left`/`top`/`width` (height defaults to content). So we set inline
-// width/height/left/top here too — CSS variables don't work because
-// #portal #aiPanel previously had `width: auto !important; height: auto`,
-// which we softened to non-important in this same commit.
-//
-// Anchoring: when resizing from the LEFT edge we also adjust `left` so the
-// RIGHT edge stays put (otherwise the panel just shifts as it grows). Same
-// for the TOP edge w.r.t. the BOTTOM edge. The corner handle does both.
-//
-// Persisted to localStorage 'ss_ai_panel_size' = { w, h }, which is the same
-// key ai-bubble.js reads in detachPanel() / getSavedPanelSize().
-(function () {
-  var leftHandle = document.getElementById('aiResizeHandle');
-  var topHandle = document.getElementById('aiResizeHandleTop');
-  var cornerHandle = document.getElementById('aiResizeHandleCorner');
-  var panel = document.getElementById('aiPanel');
-  if (!panel) return;
-
-  var W_MIN = 280;
-  var W_MAX = 800;
-  var H_MIN = 240;
-  var SIZE_KEY = 'ss_ai_panel_size';
-  var POS_KEY = 'ss_ai_panel_pos';
-
-  function persistSize(w, h) {
-    try {
-      var prev = {};
-      try {
-        prev = JSON.parse(localStorage.getItem(SIZE_KEY) || '{}') || {};
-      } catch (e) {}
-      prev.w = w;
-      prev.h = h;
-      localStorage.setItem(SIZE_KEY, JSON.stringify(prev));
-    } catch (e) {
-      /* ignore — private mode etc. */
-    }
-  }
-  function persistPos(left, top) {
-    try {
-      localStorage.setItem(POS_KEY, JSON.stringify({ left: left, top: top }));
-    } catch (e) {
-      /* ignore */
-    }
-  }
-
-  function startDrag(e, handle, axis, cursor) {
-    e.preventDefault();
-    var startX = e.clientX;
-    var startY = e.clientY;
-    var rect = panel.getBoundingClientRect();
-    var startW = rect.width;
-    var startH = rect.height;
-    var startLeft = rect.left;
-    var startTop = rect.top;
-    // Edges we keep anchored while dragging the opposite edge:
-    var rightAnchor = startLeft + startW;
-    var bottomAnchor = startTop + startH;
-    var H_MAX = Math.max(H_MIN, window.innerHeight - 16);
-
-    handle.classList.add('dragging');
-    document.body.style.cursor = cursor;
-    document.body.style.userSelect = 'none';
-
-    function onMove(ev) {
-      if (axis === 'x' || axis === 'xy') {
-        // LEFT edge: dragging leftward (clientX decreases) -> wider.
-        var deltaX = startX - ev.clientX;
-        var newW = Math.min(W_MAX, Math.max(W_MIN, startW + deltaX));
-        panel.style.width = newW + 'px';
-        // Keep the right edge fixed.
-        panel.style.left = rightAnchor - newW + 'px';
-      }
-      if (axis === 'y' || axis === 'xy') {
-        // TOP edge: dragging upward (clientY decreases) -> taller.
-        var deltaY = startY - ev.clientY;
-        var newH = Math.min(H_MAX, Math.max(H_MIN, startH + deltaY));
-        panel.style.height = newH + 'px';
-        // Keep the bottom edge fixed.
-        panel.style.top = bottomAnchor - newH + 'px';
-      }
-    }
-
-    function onUp() {
-      handle.classList.remove('dragging');
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      var r = panel.getBoundingClientRect();
-      persistSize(Math.round(r.width), Math.round(r.height));
-      persistPos(Math.round(r.left), Math.round(r.top));
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }
-
-  if (leftHandle)
-    leftHandle.addEventListener('mousedown', function (e) {
-      startDrag(e, leftHandle, 'x', 'col-resize');
-    });
-  if (topHandle)
-    topHandle.addEventListener('mousedown', function (e) {
-      startDrag(e, topHandle, 'y', 'row-resize');
-    });
-  if (cornerHandle)
-    cornerHandle.addEventListener('mousedown', function (e) {
-      startDrag(e, cornerHandle, 'xy', 'nw-resize');
-    });
-})();
+// ── AI panel resize ───────────────────────────────────────────────────────
+// Removed: the legacy free-floating #aiPanel and its drag-resize handles
+// (#aiResizeHandle / Top / Corner) are retired. #aiPanel now only appears
+// docked inside the document-rail drawer, which manages its own width via
+// #drResize (see document-rail.ts wireResize). No panel-level resize here.
 
 // ── Scroll-to-bottom button ───────────────────────────────────────────────
 (function () {
@@ -883,11 +935,3 @@ function _captureSnipRegion(x1, y1, x2, y2) {
   });
 })();
 
-console.log(
-  '\u2713 js/ai.js loaded — model: ' +
-    AI_MODEL +
-    ', max_tokens: ' +
-    AI_MAX_TOK +
-    ', pdf_cap: ' +
-    AI_PDF_CAP
-);

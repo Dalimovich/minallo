@@ -1,4 +1,568 @@
-<!-- PORTAL -->
+﻿<!-- PORTAL -->
+<style id="adm-dash-styles">
+  /* Admin "Business Control Center" — scoped to #psec-admin so it never
+     leaks into the rest of the app. Mirrors the standalone preview mockup. */
+  #psec-admin.adm-dash {
+    --adm-line: rgba(148, 163, 184, 0.16);
+    --adm-line-2: rgba(148, 163, 184, 0.26);
+    --adm-muted: var(--on-glass-muted, #94a3b8);
+    --adm-blue: #38bdf8;
+    --adm-green: #6ee7b7;
+    --adm-yellow: #facc15;
+    --adm-red: #fb7185;
+    --adm-radius: 20px;
+    --adm-card-bg: linear-gradient(180deg, rgba(40, 56, 82, 0.34), rgba(18, 30, 50, 0.42));
+    --adm-card-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  #psec-admin .adm-topbar {
+    margin: 4px 0 22px;
+  }
+  #psec-admin .adm-eyebrow {
+    color: var(--adm-green);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+  }
+  #psec-admin .adm-topbar h1 {
+    margin: 0;
+    font-size: clamp(24px, 2.6vw, 36px);
+    line-height: 1.05;
+    letter-spacing: -0.05em;
+  }
+  #psec-admin .adm-topbar p {
+    margin: 8px 0 0;
+    color: var(--adm-muted);
+    max-width: 720px;
+    line-height: 1.55;
+    font-size: 0.9rem;
+  }
+  #psec-admin .adm-loading {
+    color: var(--adm-muted);
+    font-size: 0.85rem;
+    padding: 8px 2px;
+  }
+
+  /* KPI strip */
+  #psec-admin .adm-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 13px;
+    margin-bottom: 18px;
+  }
+  #psec-admin .adm-kpi {
+    border: 1px solid var(--adm-line);
+    background: var(--adm-card-bg);
+    border-radius: var(--adm-radius);
+    box-shadow: var(--adm-card-shadow);
+    min-height: 120px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+  #psec-admin .adm-kpi::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 42%);
+    pointer-events: none;
+  }
+  #psec-admin .adm-kpi .adm-kpi-label {
+    color: var(--adm-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  #psec-admin .adm-kpi .adm-kpi-value {
+    font-size: 27px;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+  #psec-admin .adm-kpi .adm-kpi-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: max-content;
+    color: var(--adm-green);
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.24);
+    border-radius: 999px;
+    padding: 4px 8px;
+  }
+  #psec-admin .adm-kpi.warn .adm-kpi-delta {
+    color: var(--adm-yellow);
+    background: rgba(250, 204, 21, 0.11);
+    border-color: rgba(250, 204, 21, 0.23);
+  }
+  #psec-admin .adm-kpi.loss .adm-kpi-delta {
+    color: var(--adm-red);
+    background: rgba(251, 113, 133, 0.11);
+    border-color: rgba(251, 113, 133, 0.25);
+  }
+
+  /* Two-column layout */
+  #psec-admin .adm-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+    gap: 16px;
+    align-items: start;
+  }
+  #psec-admin .adm-stack {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  /* Cards */
+  #psec-admin .adm-card {
+    border: 1px solid var(--adm-line);
+    background: var(--adm-card-bg);
+    border-radius: var(--adm-radius);
+    box-shadow: var(--adm-card-shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  #psec-admin .adm-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 20px 0;
+  }
+  #psec-admin .adm-card-title {
+    margin: 0;
+    font-size: 16px;
+    letter-spacing: -0.03em;
+  }
+  #psec-admin .adm-card-desc {
+    margin: 5px 0 0;
+    color: var(--adm-muted);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  #psec-admin .adm-card-body {
+    padding: 16px 20px 20px;
+  }
+  #psec-admin .adm-card-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  #psec-admin .adm-pill {
+    border: 1px solid var(--adm-line-2);
+    color: var(--on-glass, #f8fafc);
+    background: rgba(17, 29, 48, 0.5);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  #psec-admin .adm-select {
+    border: 1px solid var(--adm-line-2);
+    color: var(--on-glass, #f8fafc);
+    background: rgba(17, 29, 48, 0.5);
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    outline: none;
+  }
+  #psec-admin .adm-date-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: var(--adm-muted, #aab8cc);
+    text-transform: uppercase;
+  }
+  #psec-admin .adm-date-field input[type='date'] {
+    color-scheme: dark;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  /* Mini stat grid (growth / activity / subscriptions) */
+  #psec-admin .adm-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 11px;
+  }
+  #psec-admin .adm-mini {
+    border: 1px solid var(--adm-line);
+    background: rgba(8, 17, 31, 0.32);
+    border-radius: 16px;
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  #psec-admin .adm-mini b {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+  #psec-admin .adm-mini span {
+    color: var(--adm-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+
+  /* New users (last 24h) */
+  #psec-admin .adm-new-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.16);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: var(--adm-green);
+    font-size: 12px;
+    font-weight: 900;
+    vertical-align: middle;
+    animation: admNewPulse 2s ease-in-out infinite;
+  }
+  #psec-admin .adm-new-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    margin-top: 8px;
+    border: 1px solid rgba(16, 185, 129, 0.32);
+    background: rgba(16, 185, 129, 0.08);
+    border-radius: 14px;
+  }
+  #psec-admin .adm-new-user-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  #psec-admin .adm-new-user-info b {
+    font-size: 13.5px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #psec-admin .adm-new-user-info span {
+    color: var(--adm-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .adm-new-chip {
+    flex-shrink: 0;
+    background: var(--adm-green, #34d399);
+    color: #04110b;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+  @keyframes admNewPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
+    50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+  }
+
+  /* Money breakdown */
+  #psec-admin .adm-money-box {
+    border: 1px solid var(--adm-line);
+    background: rgba(8, 17, 31, 0.32);
+    border-radius: 16px;
+    padding: 6px 15px;
+  }
+  #psec-admin .adm-money-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    color: var(--adm-muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  #psec-admin .adm-money-row:last-child { border-bottom: 0; }
+  #psec-admin .adm-money-row b { color: var(--on-glass, #f8fafc); font-weight: 800; }
+  #psec-admin .adm-money-row b.good { color: var(--adm-green); }
+  #psec-admin .adm-money-row b.bad { color: var(--adm-red); }
+  #psec-admin .adm-money-row.result {
+    border-top: 1px solid var(--adm-line-2);
+    border-bottom: 0;
+    margin-top: 2px;
+    padding-top: 11px;
+  }
+  #psec-admin .adm-money-row.result span,
+  #psec-admin .adm-money-row.result b { font-size: 14px; font-weight: 900; }
+  #psec-admin .adm-note {
+    margin-top: 12px;
+    font-size: 11.5px;
+    color: var(--adm-muted);
+  }
+  #psec-admin .adm-meter {
+    margin-top: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.14);
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.1);
+  }
+  #psec-admin .adm-meter > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--adm-blue), var(--adm-green));
+    border-radius: inherit;
+  }
+  #psec-admin .adm-meter-label {
+    display: flex;
+    justify-content: space-between;
+    color: var(--adm-muted);
+    font-size: 12.5px;
+    font-weight: 800;
+    margin-top: 12px;
+  }
+
+  /* Bar lists (feature usage) */
+  #psec-admin .adm-bar-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 54px;
+    gap: 12px;
+    align-items: center;
+    font-size: 12.5px;
+    color: var(--adm-muted);
+    font-weight: 800;
+  }
+  #psec-admin .adm-bar-row + .adm-bar-row { margin-top: 12px; }
+  #psec-admin .adm-track {
+    height: 10px;
+    background: rgba(148, 163, 184, 0.13);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  #psec-admin .adm-track > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--adm-blue), var(--adm-green));
+  }
+  #psec-admin .adm-bar-row b { color: var(--on-glass, #f8fafc); text-align: right; font-weight: 800; }
+
+  /* Tables (danger / retention) */
+  #psec-admin .adm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  #psec-admin .adm-table th {
+    text-align: left;
+    padding: 9px 10px;
+    color: var(--adm-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    border-bottom: 1px solid var(--adm-line);
+    font-weight: 800;
+  }
+  #psec-admin .adm-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    color: var(--adm-muted);
+  }
+  #psec-admin .adm-table tr:last-child td { border-bottom: 0; }
+  #psec-admin .adm-table td.lead { color: var(--on-glass, #f8fafc); font-weight: 700; }
+  #psec-admin .adm-tag {
+    display: inline-flex;
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--adm-blue);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+  }
+  #psec-admin .adm-tag.green { color: var(--adm-green); background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.22); }
+  #psec-admin .adm-tag.red { color: var(--adm-red); background: rgba(251, 113, 133, 0.1); border-color: rgba(251, 113, 133, 0.22); }
+
+  /* Cost settings inputs */
+  #psec-admin .adm-cfg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  #psec-admin .adm-cfg-grid label {
+    font-size: 11.5px;
+    color: var(--adm-muted);
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #psec-admin .adm-cfg-grid input {
+    width: 100%;
+    border: 1px solid var(--adm-line-2);
+    background: rgba(8, 17, 31, 0.4);
+    color: var(--on-glass, #f8fafc);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    outline: none;
+  }
+  #psec-admin .adm-empty {
+    color: var(--adm-muted);
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  /* SVG charts */
+  #psec-admin .adm-axis { fill: #aab8cc; font-size: 12px; font-weight: 700; }
+  #psec-admin .adm-axis-title { fill: var(--adm-muted); font-size: 12px; font-weight: 800; letter-spacing: 0.02em; }
+  #psec-admin .adm-gridline { stroke: rgba(148, 163, 184, 0.13); stroke-width: 1; }
+  #psec-admin .adm-axis-line { stroke: rgba(148, 163, 184, 0.28); stroke-width: 1; }
+  #psec-admin .adm-bar { fill: url(#admBar); }
+  #psec-admin .adm-bar-ghost { fill: rgba(148, 163, 184, 0.13); }
+  #psec-admin .adm-peak { fill: var(--adm-green); font-size: 11px; font-weight: 800; }
+  #psec-admin .adm-area { fill: url(#admArea); }
+  #psec-admin .adm-line-rev { fill: none; stroke: #38bdf8; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+  #psec-admin .adm-line-cost { fill: none; stroke: #fb7185; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 6 6; }
+  #psec-admin .adm-line-profit { fill: none; stroke: #6ee7b7; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+  #psec-admin .adm-dot { stroke: #0a1322; stroke-width: 2.5; }
+  #psec-admin .adm-chart-tip {
+    position: absolute;
+    pointer-events: none;
+    padding: 9px 11px;
+    min-width: 130px;
+    border-radius: 12px;
+    background: rgba(5, 12, 23, 0.94);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transform: translate(-50%, -116%);
+    transition: opacity 0.12s ease;
+    z-index: 6;
+  }
+  #psec-admin .adm-chart-tip strong { display: block; font-size: 12.5px; margin-bottom: 5px; color: var(--on-glass, #f8fafc); }
+  #psec-admin .adm-chart-tip span { display: flex; align-items: center; color: var(--adm-muted); font-size: 11.5px; line-height: 1.7; }
+  #psec-admin .adm-chart-tip span i { width: 8px; height: 8px; border-radius: 99px; display: inline-block; margin-right: 6px; }
+  #psec-admin .adm-chart-cap { font-size: 11.5px; color: var(--adm-muted); margin-top: 8px; }
+
+  /* Legend + segmented toggle */
+  #psec-admin .adm-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    align-items: center;
+    color: var(--adm-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    margin-top: 12px;
+  }
+  #psec-admin .adm-legend i { width: 9px; height: 9px; border-radius: 99px; display: inline-block; margin-right: 6px; }
+  #psec-admin .adm-segmented {
+    display: inline-flex;
+    padding: 3px;
+    gap: 3px;
+    border: 1px solid var(--adm-line);
+    border-radius: 999px;
+    background: rgba(10, 19, 34, 0.5);
+    flex-shrink: 0;
+  }
+  #psec-admin .adm-segmented button {
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--adm-muted);
+    padding: 6px 12px;
+    font-weight: 800;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+  #psec-admin .adm-segmented button.active {
+    color: #041725;
+    background: linear-gradient(135deg, var(--adm-blue), var(--adm-green));
+  }
+
+  #psec-admin .adm-tool-card {
+    max-width: 960px;
+    margin: 26px auto 0;
+    padding: 22px;
+    border: 1px solid var(--adm-line);
+    border-radius: 18px;
+    background: var(--adm-card-bg);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 16px 40px rgba(2,8,23,.18);
+  }
+  #psec-admin .adm-tool-head { margin-bottom: 16px; }
+  #psec-admin .adm-tool-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 5px;
+    color: var(--on-glass, #f8fafc);
+    font-size: 15px;
+    font-weight: 850;
+  }
+  #psec-admin .adm-tool-icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    color: #7dd3fc;
+    background: rgba(56,189,248,.12);
+    border: 1px solid rgba(56,189,248,.2);
+  }
+  #psec-admin .adm-tool-desc { margin: 0; color: var(--adm-muted); font-size: 12.5px; line-height: 1.5; }
+  #psec-admin .adm-tool-row { display: flex; align-items: center; gap: 10px; }
+  #psec-admin .adm-tool-row .chat-friend-search {
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid rgba(148,163,184,.18);
+    border-radius: 12px;
+    background: rgba(15,23,42,.64);
+    color: var(--on-glass, #f8fafc);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+    transition: border-color .16s, box-shadow .16s, background .16s;
+  }
+  #psec-admin .adm-tool-row .chat-friend-search:focus {
+    outline: none;
+    border-color: rgba(56,189,248,.65);
+    background: rgba(15,23,42,.82);
+    box-shadow: 0 0 0 3px rgba(56,189,248,.11);
+  }
+  #psec-admin .adm-tool-row .sub-btn {
+    min-height: 44px;
+    margin: 0;
+    padding: 0 20px !important;
+    border-radius: 12px;
+    flex: 0 0 auto;
+  }
+  @media (max-width: 720px) {
+    #psec-admin .adm-tool-card { padding: 17px; }
+    #psec-admin .adm-tool-row { align-items: stretch; flex-direction: column; }
+    #psec-admin .adm-tool-row .chat-friend-search,
+    #psec-admin .adm-tool-row .sub-btn { width: 100% !important; min-width: 0 !important; }
+  }
+
+  @media (max-width: 900px) {
+    #psec-admin .adm-grid { grid-template-columns: 1fr; }
+  }
+</style>
 <div id="portal">
   <div class="blobs">
     <div class="blob blob-1"></div>
@@ -10,90 +574,113 @@
   <div class="shell">
     <!-- ---- SIDEBAR ---- -->
     <nav class="sidebar">
+      <button
+        class="sb-toggle"
+        id="sbToggle"
+        type="button"
+        aria-label="Expand sidebar"
+        aria-expanded="false"
+        title="Expand menu"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
       <div class="sb-user" id="authIndicator">
         <div class="sb-avatar" id="authAvatar">?</div>
         <div class="sb-user-info">
-          <div class="sb-user-name" id="authName">Loading&#x2026;</div>
+          <div class="sb-user-name" id="authName" data-i18n="sb_loading">Loading&#x2026;</div>
           <div class="sb-user-uni" id="sbUserSub">TU Braunschweig</div>
         </div>
       </div>
 
       <div class="sb-nav">
-        <div class="sb-item psb on" id="psbDashboard">
+        <div class="sb-section-label" data-i18n="sb_section_workspace">Workspace</div>
+        <div class="sb-item psb on" id="psbDashboard" data-testid="sidebar-home">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="home"></span></div>
-          <span>Home</span>
+          <span data-i18n="nav_home">Home</span>
         </div>
-        <div class="sb-item psb" id="pcStudip">
+        <div class="sb-item psb" id="pcStudip" data-testid="sidebar-courses">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="courses"></span></div>
-          <span>Courses</span>
+          <span data-i18n="nav_courses">Courses</span>
         </div>
-        <!-- German learner nav � hidden for enrolled students -->
+        <!-- German learner nav &mdash; hidden for enrolled students -->
         <div class="sb-item psb" id="psbGerman" style="display: none">
           <div class="sb-item-icon">&#x1F1E9;&#x1F1EA;</div>
-          <span>Practice</span>
+          <span data-i18n="nav_practice">Practice</span>
         </div>
-        <div class="sb-item psb" id="psbNotes">
+        <div class="sb-item psb" id="psbNotes" data-testid="sidebar-notes" data-coming-soon="1" style="display: none">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="notes"></span></div>
-          <span>Lecture Notes</span>
+          <span data-i18n="nav_notes">Lecture Notes</span>
         </div>
-        <div class="sb-item psb" id="psbEditor">
+        <div class="sb-item psb" id="psbEditor" data-testid="sidebar-editor" style="display: none">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="editor"></span></div>
-          <span>Editor</span>
+          <span data-i18n="nav_editor">Editor</span>
         </div>
-        <div class="sb-item psb" id="psbAIPage">
+        <div class="sb-item psb" id="psbAIPage" data-testid="sidebar-chatbot">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="chatbot"></span></div>
-          <span>Chatbot</span>
+          <span data-i18n="nav_chatbot">Chatbot</span>
         </div>
-        <div class="sb-item psb" id="psbChat">
+        <div class="sb-item psb" id="psbChat" data-testid="sidebar-chat">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="chat"></span></div>
-          <span>Chat</span>
+          <span data-i18n="nav_chat">Chat</span>
         </div>
         <div class="sb-divider"></div>
-        <div class="sb-item psb" id="psbNotifications" data-coming-soon="1" style="opacity: 0.65">
+        <div class="sb-section-label" data-i18n="sb_section_activity">Activity</div>
+        <div class="sb-item psb" id="psbNotifications" data-testid="sidebar-notifications">
           <div class="sb-item-icon">
             <span class="sb-sprite" data-sprite="notifications"></span>
           </div>
-          <span>Notifications</span>
+          <span data-i18n="nav_notifications">Notifications</span>
         </div>
-        <div class="sb-item psb" id="psbGames">
+        <div class="sb-item psb" id="psbGames" data-testid="sidebar-games">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="games"></span></div>
-          <span>Games</span>
+          <span data-i18n="nav_games">Games</span>
         </div>
-        <div class="sb-item psb" id="psbLounge">
-          <div class="sb-item-icon" style="overflow: hidden; padding: 0">
-            <img
-              src="assets/icon-lounge.png"
-              class="sb-icon-img"
-              style="width: 44px; height: 44px; object-fit: cover; mix-blend-mode: multiply"
-            />
-          </div>
-          <span>Study Lounge</span>
+        <div class="sb-item psb" id="psbLounge" data-testid="sidebar-lounge">
+          <div class="sb-item-icon"><span class="sb-sprite" data-sprite="lounge"></span></div>
+          <span data-i18n="nav_lounge">Study Lounge</span>
         </div>
         <div class="sb-divider"></div>
-        <div class="sb-item psb" id="psbProfile">
+        <div class="sb-section-label" data-i18n="sb_section_account">Account</div>
+        <div class="sb-item psb" id="psbProfile" data-testid="sidebar-profile">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="profile"></span></div>
-          <span>Profile</span>
+          <span data-i18n="nav_profile">Profile</span>
         </div>
-        <div class="sb-item psb" id="psbSettings">
+        <div class="sb-item psb" id="psbSettings" data-testid="sidebar-settings">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="settings"></span></div>
-          <span>Settings</span>
+          <span data-i18n="nav_settings">Settings</span>
         </div>
-        <div class="sb-item psb" id="psbSubscription">
+        <div class="sb-item psb" id="psbSubscription" data-testid="sidebar-subscription">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="subscription"></span></div>
-          <span>Subscription</span>
+          <span data-i18n="nav_subscription">Subscription</span>
         </div>
-        <div class="sb-item psb" id="psbAdmin" style="display: none">
+        <a class="sb-item" id="psbAdmin" href="/admin.html" style="display: none; color: inherit; text-decoration: none">
           <div class="sb-item-icon">&#x1F6E1;&#xFE0F;</div>
-          <span>Admin</span>
-        </div>
+          <span data-i18n="nav_admin">Admin</span>
+        </a>
+        <a class="sb-item" id="psbAffiliate" href="/affiliate.html" style="display: none; color: inherit; text-decoration: none">
+          <div class="sb-item-icon">&#x2197;</div>
+          <span>Affiliate Dashboard</span>
+        </a>
       </div>
 
       <div class="sb-bottom">
         <button class="sb-night-btn" id="nightBtn">
           <span class="sb-night-track" id="nightTrack">
-            <span class="sb-night-track-label" id="nightLabel">Night</span>
+            <span class="sb-night-track-label" id="nightLabel" data-i18n="sb_night">Night</span>
             <span class="sb-night-thumb" id="nightThumb">
-              <span id="nightIcon">??</span>
+              <span id="nightIcon"></span>
             </span>
           </span>
         </button>
@@ -105,15 +692,16 @@
     <!-- ---- MAIN ---- -->
     <div class="main">
       <div class="topbar">
-        <button class="ptb-back-btn" id="goPortal" style="display: none">&#x2190; Back</button>
-        <button id="portalHamburger" aria-label="Open menu">&#x2630;</button>
-        <span class="tb-title" id="topTitle">Dashboard</span>
+        <button class="ptb-back-btn" id="goPortal" data-i18n="tb_back" style="display: none">&#x2190; Back</button>
+        <button id="portalHamburger" data-testid="portal-hamburger" data-i18n-aria="tb_menu_aria" aria-label="Open menu">&#x2630;</button>
+        <span class="tb-title" id="topTitle" data-i18n="nav_dashboard">Dashboard</span>
         <span class="tb-crumb" id="breadcrumb" style="display: none"></span>
         <div class="tb-spacer"></div>
         <button
           class="st-trigger-btn"
           id="studyTechBtn"
           style="display: none"
+          data-i18n-title="tb_study_title"
           title="Study Techniques"
         >
           <svg
@@ -129,7 +717,7 @@
             <circle cx="12" cy="12" r="10" />
             <polyline points="12 6 12 12 16 14" />
           </svg>
-          <span>Study</span>
+          <span data-i18n="tb_study">Study</span>
         </button>
         <!-- Mini timer widget (shown when timer is running) -->
         <div class="st-mini-timer" id="stMiniTimer" style="display: none">
@@ -147,18 +735,22 @@
             <polyline points="12 6 12 12 16 14" />
           </svg>
           <span id="stMiniTime">25:00</span>
-          <span class="st-mini-label" id="stMiniLabel">Focus</span>
-          <button class="st-mini-pause" id="stMiniPause" title="Pause">&#x23F8;</button>
-          <button class="st-mini-stop" id="stMiniStop" title="Stop">&#x25A0;</button>
+          <span class="st-mini-label" id="stMiniLabel" data-i18n="tb_focus_mini">Focus</span>
+          <button class="st-mini-pause" id="stMiniPause" data-i18n-title="tb_pause_title" title="Pause">&#x23F8;</button>
+          <button class="st-mini-stop" id="stMiniStop" data-i18n-title="tb_stop_title" title="Stop">&#x25A0;</button>
         </div>
       </div>
 
-      <!-- -- STUDY TECHNIQUES POPUP -- -->
+      <!-- -- FOCUS SESSION POPUP (was: Study Techniques) -- -->
       <div class="st-overlay" id="stOverlay" style="display: none">
-        <div class="st-popup" id="stPopup">
-          <div class="st-popup-head">
-            <span class="st-popup-title">Study Techniques</span>
-            <button class="st-popup-close" id="stClose">&#x2715;</button>
+        <div class="st-popup st-popup-v2" id="stPopup">
+          <div class="st-popup-head st-popup-head-v2">
+            <div class="st-popup-head-text">
+              <span class="st-popup-pill" data-i18n="st_rhythm">Study rhythm</span>
+              <span class="st-popup-title" data-i18n="st_focus_title">Focus Session</span>
+              <span class="st-popup-sub" data-i18n="st_focus_sub">Set your timing and ambience before you start studying.</span>
+            </div>
+            <button class="st-popup-close" id="stClose" data-i18n-aria="st_close_aria" aria-label="Close">&#x2715;</button>
           </div>
 
           <!-- Technique picker -->
@@ -166,29 +758,29 @@
             <button class="st-tech-card active" data-tech="pomodoro">
               <span class="st-tech-icon">&#x1F345;</span>
               <span class="st-tech-name">Pomodoro</span>
-              <span class="st-tech-desc">25 min focus � 5 min break</span>
+              <span class="st-tech-desc" data-i18n="st_pomodoro_desc">Classic focus rhythm &middot; 25 / 5</span>
             </button>
             <button class="st-tech-card" data-tech="5217">
               <span class="st-tech-icon">&#x26A1;</span>
               <span class="st-tech-name">52 / 17</span>
-              <span class="st-tech-desc">52 min focus � 17 min break</span>
+              <span class="st-tech-desc" data-i18n="st_5217_desc">Longer deep-work block</span>
             </button>
             <button class="st-tech-card" data-tech="9020">
               <span class="st-tech-icon">&#x1F9E0;</span>
               <span class="st-tech-name">90 / 20</span>
-              <span class="st-tech-desc">90 min focus � 20 min break</span>
+              <span class="st-tech-desc" data-i18n="st_9020_desc">Extended study sprint</span>
             </button>
             <button class="st-tech-card" data-tech="custom">
               <span class="st-tech-icon">&#x2699;&#xFE0F;</span>
               <span class="st-tech-name">Custom</span>
-              <span class="st-tech-desc">Set your own intervals</span>
+              <span class="st-tech-desc" data-i18n="st_custom_desc">Use your own intervals</span>
             </button>
           </div>
 
           <!-- Settings -->
           <div class="st-settings">
             <div class="st-setting-row">
-              <label class="st-setting-label">Focus (min)</label>
+              <label class="st-setting-label" data-i18n="st_focus_min">Focus (min)</label>
               <div class="st-stepper">
                 <button class="st-step-btn" data-field="focus" data-dir="-1">&#x2212;</button>
                 <span class="st-step-val" id="stFocusVal">25</span>
@@ -196,7 +788,7 @@
               </div>
             </div>
             <div class="st-setting-row">
-              <label class="st-setting-label">Short break (min)</label>
+              <label class="st-setting-label" data-i18n="st_short_break_min">Short break (min)</label>
               <div class="st-stepper">
                 <button class="st-step-btn" data-field="shortBreak" data-dir="-1">&#x2212;</button>
                 <span class="st-step-val" id="stShortVal">5</span>
@@ -204,7 +796,7 @@
               </div>
             </div>
             <div class="st-setting-row">
-              <label class="st-setting-label">Long break (min)</label>
+              <label class="st-setting-label" data-i18n="st_long_break_min">Long break (min)</label>
               <div class="st-stepper">
                 <button class="st-step-btn" data-field="longBreak" data-dir="-1">&#x2212;</button>
                 <span class="st-step-val" id="stLongVal">15</span>
@@ -212,7 +804,7 @@
               </div>
             </div>
             <div class="st-setting-row">
-              <label class="st-setting-label">Cycles before long break</label>
+              <label class="st-setting-label" data-i18n="st_cycles_before_long">Cycles before long break</label>
               <div class="st-stepper">
                 <button class="st-step-btn" data-field="cycles" data-dir="-1">&#x2212;</button>
                 <span class="st-step-val" id="stCyclesVal">4</span>
@@ -223,12 +815,10 @@
 
           <!-- Music source picker -->
           <div class="st-music-section">
-            <div class="st-setting-label" style="padding: 0 16px 8px; display: block">
-              ?? Music during focus
-            </div>
+            <div class="st-setting-label st-music-label" data-i18n="st_ambience">Ambience</div>
             <div class="st-music-sources" id="stMusicSources">
               <button class="st-music-src active" data-src="lofi">
-                <span class="st-music-src-icon">??</span>
+                <span class="st-music-src-icon">&#x1F3B5;</span>
                 <span>Lo-fi</span>
               </button>
               <button class="st-music-src" data-src="youtube">
@@ -239,32 +829,27 @@
                 </svg>
                 <span>YouTube</span>
               </button>
-              <button class="st-music-src" data-src="spotify">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="#1DB954">
-                  <path
-                    d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"
-                  />
-                </svg>
-                <span>Spotify</span>
-              </button>
               <button class="st-music-src" data-src="none">
-                <span class="st-music-src-icon">??</span>
-                <span>None</span>
+                <span class="st-music-src-icon">&#x1F507;</span>
+                <span data-i18n="st_music_none">None</span>
               </button>
             </div>
-            <div class="st-music-src-hint" id="stMusicHint">Lofi Girl radio � always available</div>
-            <!-- Playlist selector � shown when YouTube is active -->
+            <div class="st-music-src-hint" id="stMusicHint" data-i18n="st_music_hint_lofi">Quiet Focus playlist &middot; always available</div>
+            <!-- Playlist selector &mdash; shown when YouTube is active -->
             <div class="st-playlist-selector" id="stPlaylistSelector" style="display: none">
               <select class="st-playlist-select" id="stPlaylistSelect"></select>
             </div>
           </div>
 
-          <button class="st-start-btn" id="stStart" style="margin-top: 6px">&#x25B6; Start</button>
+          <div class="st-footer-row">
+            <button class="st-start-btn st-start-btn-v2" id="stStart" data-i18n="st_start_focus">&#x25B6; Start focus session</button>
+            <button class="st-save-default-btn" id="stSaveDefault" type="button" data-i18n="st_save_default">Save as default</button>
+          </div>
         </div>
       </div>
 
       <div class="main-scroll">
-        <!-- DASHBOARD � content injected by features/js/dashboard.js -->
+        <!-- DASHBOARD &mdash; content injected by features/js/dashboard.js -->
         <div id="psec-dashboard" class="portal-section"></div>
 
         <!-- PROFILE -->
@@ -277,30 +862,296 @@
         <div id="psec-subscription" class="portal-section" style="display: none"></div>
 
         <!-- ADMIN -->
-        <div id="psec-admin" class="portal-section" style="display: none">
-          <div class="dash-greeting">
-            <h1>&#x1F6E1;&#xFE0F; Admin</h1>
-            <p>Manage user subscriptions</p>
+        <div id="psec-admin" class="portal-section adm-dash" style="display: none">
+          <header class="adm-topbar">
+            <div>
+              <div class="adm-eyebrow" data-i18n="admin_eyebrow">Minallo admin</div>
+              <h1 data-i18n="admin_title">Business Control Center</h1>
+              <p data-i18n="admin_subtitle">Users, subscriptions, revenue, AI costs and real net profit — live from your database.</p>
+            </div>
+          </header>
+
+          <div class="adm-segmented" id="adminPageTabs" style="margin-bottom: 22px">
+            <button class="active" data-admin-page="overview">Overview</button>
+            <button data-admin-page="affiliates">Affiliates</button>
           </div>
-          <div style="max-width: 640px; margin: 0 auto">
-            <div style="display: flex; gap: 10px; margin-bottom: 18px">
+
+          <section id="adminAffiliatesView" style="display: none">
+            <div class="adm-card">
+              <div class="adm-card-head">
+                <div>
+                  <h2 class="adm-card-title">Affiliate performance</h2>
+                  <p class="adm-card-desc">Referrals, paid conversions and commission earned from the database.</p>
+                </div>
+                <select id="adminAffiliateRange" class="chat-friend-search" style="width:auto;min-width:140px">
+                  <option value="1">Today</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last year</option>
+                </select>
+              </div>
+              <div class="adm-card-body">
+                <div class="adm-mini-grid" id="adminAffiliateSummary"></div>
+                <div id="adminAffiliateTable" style="margin-top:18px"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ANALYTICS DASHBOARD (populated by admin-panel.ts) -->
+          <div id="adminStats">
+            <div id="adminStatsLoading" class="adm-loading">Loading stats…</div>
+            <div id="adminStatsBody" style="display: none">
+
+              <!-- KPI strip -->
+              <section class="adm-kpi-grid" id="adminFinanceCards" aria-label="Main KPIs"></section>
+
+              <div class="adm-grid">
+                <!-- LEFT column -->
+                <div class="adm-stack">
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title">
+                          <span data-i18n="admin_newusers_title">New users</span>
+                          <span id="adminNewUsersBadge" class="adm-new-badge" style="display: none"></span>
+                        </h2>
+                        <p class="adm-card-desc" data-i18n="admin_newusers_desc">Everyone who signed up in the last 24 hours, plus daily, weekly and monthly signup counts.</p>
+                      </div>
+                      <span class="adm-pill" data-i18n="admin_newusers_pill">Last 24h</span>
+                    </div>
+                    <div class="adm-card-body">
+                      <div class="adm-mini-grid" id="adminNewUserStats"></div>
+                      <div id="adminNewUsers" style="margin-top: 14px"></div>
+                    </div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_trend_title">Revenue, costs &amp; profit</h2>
+                        <p class="adm-card-desc" data-i18n="admin_trend_desc">Real monthly trend after AI, payment and fixed costs.</p>
+                      </div>
+                      <div class="adm-segmented" id="adminFinanceToggle" aria-label="Metric">
+                        <button class="active" data-metric="money" data-i18n="admin_trend_money">Money</button>
+                        <button data-metric="users" data-i18n="admin_trend_users">Users</button>
+                      </div>
+                    </div>
+                    <div class="adm-card-body">
+                      <div id="adminFinanceChart"></div>
+                      <div class="adm-legend">
+                        <span><i style="background:#38bdf8"></i><span data-i18n="admin_legend_rev">Revenue</span></span>
+                        <span><i style="background:#fb7185"></i><span data-i18n="admin_legend_cost">Costs</span></span>
+                        <span><i style="background:#6ee7b7"></i><span data-i18n="admin_legend_profit">Net profit</span></span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_growth_title">User growth</h2>
+                        <p class="adm-card-desc" data-i18n="admin_growth_desc">Daily signups over the selected range.</p>
+                      </div>
+                      <div class="adm-card-controls">
+                        <select id="adminRangeSel" class="adm-select">
+                          <option value="7d" data-i18n="admin_range_7d">Last 7 days</option>
+                          <option value="30d" selected data-i18n="admin_range_30d">Last 30 days</option>
+                          <option value="90d" data-i18n="admin_range_90d">Last 90 days</option>
+                          <option value="365d" data-i18n="admin_range_365d">Last year</option>
+                          <option value="all" data-i18n="admin_range_all">All time</option>
+                        </select>
+                        <select id="adminBucketSel" class="adm-select">
+                          <option value="day" data-i18n="admin_bucket_day">Daily</option>
+                          <option value="week" data-i18n="admin_bucket_week">Weekly</option>
+                          <option value="month" data-i18n="admin_bucket_month">Monthly</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="adm-card-body">
+                      <div class="adm-mini-grid" id="adminGrowthCards"></div>
+                      <div id="adminSignupChart" style="margin-top: 14px"></div>
+                    </div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_danger_title">User profitability</h2>
+                        <p class="adm-card-desc" data-i18n="admin_danger_desc">Which paid users are healthy and which cost more than they pay.</p>
+                      </div>
+                      <span class="adm-pill" data-i18n="admin_top_consumers">Top API consumers</span>
+                    </div>
+                    <div class="adm-card-body" id="adminDangerUsers"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_aiusage_title">AI usage meter</h2>
+                        <p class="adm-card-desc" data-i18n="admin_aiusage_desc">Real OpenAI spend per feature and model, from token metering.</p>
+                      </div>
+                      <select id="adminAiUsageDays" class="adm-select">
+                        <option value="7">Last 7 days</option>
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                      </select>
+                    </div>
+                    <div class="adm-card-body" id="adminAiUsage"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_export_title">Export report</h2>
+                        <p class="adm-card-desc" data-i18n="admin_export_desc">Download an Excel sheet of cost, revenue, profit and AI usage per user. Pick an exact date range, or use a quick preset.</p>
+                      </div>
+                      <div class="adm-card-controls">
+                        <label class="adm-date-field">From<input type="date" id="adminExportFrom" class="adm-select" /></label>
+                        <label class="adm-date-field">To<input type="date" id="adminExportTo" class="adm-select" /></label>
+                        <select id="adminExportPeriod" class="adm-select" title="Quick preset (ignored when a date range is set)">
+                          <option value="">Custom range</option>
+                          <option value="7">Last 7 days</option>
+                          <option value="30" selected>Last 30 days</option>
+                          <option value="90">Last 90 days</option>
+                          <option value="180">Last 180 days</option>
+                          <option value="365">Last 365 days</option>
+                        </select>
+                        <button id="adminExportBtn" class="sub-btn" style="width:auto;padding:8px 18px;font-size:.78rem">Download Excel</button>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminExportStatus"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_retention_title">Monthly retention</h2>
+                        <p class="adm-card-desc" data-i18n="admin_retention_desc">Active paid, new, renewed and cancelled per month.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminRetention"></div>
+                  </section>
+                </div>
+
+                <!-- RIGHT column -->
+                <aside class="adm-stack">
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_finance_title">Profit breakdown</h2>
+                        <p class="adm-card-desc" data-i18n="admin_finance_desc">Real result after AI, payment and fixed costs.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminFinanceBreakdown"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_cost_settings">Cost settings</h2>
+                        <p class="adm-card-desc" data-i18n="admin_cost_desc">Tune prices and per-call costs, then recompute.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminCostConfig"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_activity_title">Activity</h2>
+                        <p class="adm-card-desc" data-i18n="admin_activity_desc">Active users today, this week and this month.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body">
+                      <div class="adm-mini-grid" id="adminActivityCards"></div>
+                      <div id="adminFeatureUsage" style="margin-top: 14px"></div>
+                    </div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_subs_title">Subscriptions</h2>
+                        <p class="adm-card-desc" data-i18n="admin_subs_desc">Trials, conversions and churn.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body adm-mini-grid" id="adminSubCards"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
+                        <h2 class="adm-card-title" data-i18n="admin_funnel_title">Subscription funnel</h2>
+                        <p class="adm-card-desc" data-i18n="admin_funnel_desc">Where students drop off, from signup to paid.</p>
+                      </div>
+                    </div>
+                    <div class="adm-card-body" id="adminFunnel"></div>
+                  </section>
+                </aside>
+              </div>
+            </div>
+          </div>
+
+          <section class="adm-search adm-tool-card" id="adminUserTools">
+            <div class="adm-tool-head">
+              <h2 class="adm-tool-title"><span class="adm-tool-icon">⌕</span>User management</h2>
+              <p class="adm-tool-desc">Find an account to manage its Pro plan or affiliate access.</p>
+            </div>
+            <div class="adm-tool-row">
               <input
                 id="adminSearchInput"
                 class="chat-friend-search"
                 type="text"
+                data-i18n-ph="admin_search_email_ph"
                 placeholder="Search by email..."
                 style="flex: 1"
               />
               <button
                 id="adminSearchBtn"
                 class="sub-btn sub-btn-upgrade"
-                style="width: auto; padding: 10px 20px"
+                style="width: auto"
               >
-                Search
+                <span data-i18n="admin_search_btn">Search</span>
               </button>
             </div>
             <div id="adminResults"></div>
-          </div>
+          </section>
+
+          <!-- RETRIEVAL INSPECTOR -->
+          <section id="adminRetrievalTools" class="adm-tool-card">
+            <div class="adm-tool-head">
+              <h2 class="adm-tool-title" data-i18n="admin_retr_title"><span class="adm-tool-icon">⌕</span>Retrieval inspector</h2>
+              <p class="adm-tool-desc" data-i18n="admin_retr_sub">
+              Inspect the most recent retrieval_debug_log rows to see which chunks the AI saw for a given question.
+              </p>
+            </div>
+            <div class="adm-tool-row">
+              <input
+                id="retrInspectorUser"
+                class="chat-friend-search"
+                type="text"
+                placeholder="user_id (uuid, optional)"
+                style="flex: 2; min-width: 220px"
+              />
+              <input
+                id="retrInspectorCourse"
+                class="chat-friend-search"
+                type="text"
+                placeholder="course_id (optional)"
+                style="flex: 1; min-width: 140px"
+              />
+              <button
+                id="retrInspectorLoad"
+                class="sub-btn sub-btn-upgrade"
+                style="width: auto"
+              >
+                <span data-i18n="admin_retr_load">Load</span>
+              </button>
+            </div>
+            <div id="retrInspectorList"></div>
+            <div id="retrInspectorDetail" style="margin-top: 18px"></div>
+          </section>
         </div>
 
         <!-- PAYWALL MODAL -->
@@ -332,43 +1183,62 @@
             "
           >
             <div style="font-size: 2.8rem; margin-bottom: 10px">&#x1F393;</div>
-            <h2
+            <p
+              data-paywall-context
               style="
-                font-family: 'Fredoka One', cursive;
+                display: inline-flex;
+                margin: 0 0 10px;
+                padding: 5px 10px;
+                border-radius: 999px;
+                background: rgba(59, 130, 246, 0.14);
+                color: #93c5fd;
+                font-size: 0.74rem;
+                font-weight: 800;
+              "
+            >
+              You're trying to use Pro
+            </p>
+            <h2
+              data-paywall-title
+              data-i18n="pw_welcome"
+              style="
+                font-family: var(--font-main);
                 font-size: 1.7rem;
                 color: var(--on-glass);
                 margin: 0 0 8px;
               "
             >
-              Welcome to Minallo
+              Start Pro and unlock Minallo
             </h2>
             <p
               data-paywall-desc
+              data-i18n="pw_desc"
               style="font-size: 0.85rem; color: var(--on-glass-muted); margin: 0 0 20px"
             >
-              To access all features, start your free 7-day trial. No charge until the trial ends.
+              Try Pro free for 7 days and unlock Minallo's full exam-prep workflow: AI Tutor, Cheatsheet, Flashcards, ExamForge, and Deep Learn.
             </p>
-            <div class="sub-trial-badge" style="margin-bottom: 14px; display: inline-block">
+            <div class="sub-trial-badge" data-i18n="pw_trial_badge" style="margin-bottom: 14px; display: inline-block">
               &#x2728; 7-day free trial
             </div>
             <div
               style="
-                font-family: 'Fredoka One', cursive;
+                font-family: var(--font-main);
                 font-size: 2rem;
                 color: var(--on-glass);
                 margin-bottom: 16px;
               "
             >
-              &#x20AC;11.99
+              <span data-paywall-price-today>&#x20AC;0 today</span>
               <span
                 data-after-trial
+                data-i18n="pw_after_trial"
                 style="
                   font-size: 0.85rem;
-                  font-family: 'Nunito', sans-serif;
+                  font-family: var(--font-main);
                   font-weight: 700;
                   color: var(--on-glass-muted);
                 "
-                >/ month after trial</span
+                >Then &#x20AC;11.99/month after the trial</span
               >
             </div>
             <div
@@ -380,29 +1250,50 @@
                 gap: 7px;
               "
             >
-              <div class="sub-feat">Unlimited AI messages</div>
-              <div class="sub-feat">PDF reader &amp; lecture notes</div>
-              <div class="sub-feat">Multi-PDF summaries</div>
-              <div class="sub-feat">Chat rooms</div>
-              <div class="sub-feat">Priority support</div>
+              <div class="sub-feat" data-i18n="pw_feat_ai">AI Tutor</div>
+              <div class="sub-feat" data-i18n="pw_feat_pdf">Course Workspace and Files</div>
+              <div class="sub-feat" data-i18n="pw_feat_multi">Cheatsheet, Flashcards, and ExamForge</div>
+              <div class="sub-feat" data-i18n="pw_feat_chat">Deep Learn step-by-step explanations</div>
+              <div class="sub-feat" data-i18n="pw_feat_support">Course-based study help</div>
             </div>
             <button
               id="paywallUpgradeBtn"
               class="sub-btn sub-btn-upgrade"
               style="font-size: 0.92rem; padding: 14px"
             >
-              &#x1F389; Start free 7-day trial
+              Start 7-day free trial
+            </button>
+            <button
+              id="paywallNotNowBtn"
+              type="button"
+              data-i18n="pw_not_now"
+              style="
+                width: 100%;
+                margin-top: 8px;
+                padding: 12px;
+                border-radius: 14px;
+                border: 1px solid rgba(148, 163, 184, 0.24);
+                background: rgba(148, 163, 184, 0.08);
+                color: var(--on-glass);
+                font-family: var(--font-main);
+                font-weight: 800;
+                cursor: pointer;
+              "
+            >
+              Not now
             </button>
             <p
               data-cancel-note
+              data-i18n="pw_cancel_note"
               style="font-size: 0.72rem; color: var(--on-glass-muted); margin-top: 10px"
             >
-              Cancel anytime. No charge during trial.
+              Cancel anytime before the trial ends.
             </p>
             <div style="margin-top: 12px">
               <div id="paywallPaypal"></div>
             </div>
             <p
+              data-i18n="pw_pay_methods"
               style="
                 font-size: 0.7rem;
                 color: var(--on-glass-muted);
@@ -410,10 +1301,11 @@
                 opacity: 0.6;
               "
             >
-              Pay with Card � Klarna � PayPal
+              Pay with Card &middot; Klarna &middot; PayPal
             </p>
             <button
               id="paywallLogoutBtn"
+              data-i18n="pw_signout"
               style="
                 margin-top: 18px;
                 background: none;
@@ -423,7 +1315,7 @@
                 cursor: pointer;
                 opacity: 0.7;
                 text-decoration: underline;
-                font-family: 'Nunito', sans-serif;
+                font-family: var(--font-main);
               "
             >
               Sign out
@@ -433,107 +1325,119 @@
 
         <!-- COURSES -->
         <div id="psec-studip" class="portal-section" style="display: none">
-          <div style="max-width: 820px; margin: 0 auto; padding: 0 0 80px">
-            <div class="dash-greeting">
-              <h1>&#x1F4DA; My Courses</h1>
-              <p>Add the subjects you&apos;re taking this semester</p>
-            </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                margin-bottom: 24px;
-                flex-wrap: wrap;
-              "
-            >
-              <div style="position: relative; flex-shrink: 0">
-                <button class="sem-btn sd-sem-btn" id="sdSemBtn">
-                  <span class="sem-btn-l"
-                    ><span class="sem-dot" id="sdSemDot" style="background: #06d6a0"></span
-                    ><span id="sdSemLabel">WS 2025/26</span></span
-                  >
-                  <span class="sem-chev" id="sdSemChev">&#x25BC;</span>
-                </button>
-                <div class="sem-dd sd-sem-dd" id="sdSemDD">
-                  <div class="sem-opt sel" data-sid="ws2526" data-col="#06D6A0">
-                    &#x1F7E2; WS 2025/26
+          <div class="sd-shell">
+            <!-- Hero panel -->
+            <section class="sd-hero">
+              <div class="sd-hero-glow" aria-hidden="true"></div>
+              <div class="sd-hero-grid">
+                <div class="sd-hero-left">
+                  <div class="sd-hero-eyebrow">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
+                    <span data-i18n="sd_eyebrow">AI-ready course workspace</span>
                   </div>
-                  <div class="sem-opt" data-sid="ss25" data-col="#2563EB">&#x1F4C1; SS 2025</div>
-                  <div class="sem-opt" data-sid="ws2425" data-col="#FF6FB7">
-                    &#x1F4C1; WS 2024/25
-                  </div>
-                  <div class="sem-opt" data-sid="ss24" data-col="#4CC9F0">&#x1F4C1; SS 2024</div>
-                  <div class="sem-opt" data-sid="ws2324" data-col="#FF6B35">
-                    &#x1F4C1; WS 2023/24
+                  <h1 class="sd-hero-title">
+                    <span class="sd-hero-emoji" aria-hidden="true">&#x1F4DA;</span>
+                    <span data-i18n="sd_title">My Courses</span>
+                  </h1>
+                  <p class="sd-hero-sub" data-i18n="sd_sub">
+                    Organize your semester, upload lecture files, and open AI, notes, or summaries directly from each subject.
+                  </p>
+                  <div class="sd-hero-stats" id="sdHeroStats">
+                    <span class="sd-hero-stat" data-stat="semester"><span class="sd-hero-stat-dot"></span><span id="sdHeroSemLabel">WS 2025/26</span></span>
+                    <span class="sd-hero-stat" data-stat="courses">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
+                      <span id="sdHeroCoursesLabel">0 courses</span>
+                    </span>
+                    <span class="sd-hero-stat" data-stat="files">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <span id="sdHeroFilesLabel">0 files</span>
+                    </span>
+                    <span class="sd-hero-stat" data-stat="progress">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="9 12 11 14 15 10"/></svg>
+                      <span id="sdHeroProgressLabel">0% avg progress</span>
+                    </span>
                   </div>
                 </div>
-              </div>
-              <div
-                style="
-                  flex: 1;
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                  justify-content: center;
-                  min-width: 200px;
-                "
-              >
-                <div style="position: relative; flex: 1; max-width: 380px">
-                  <input
-                    id="courseSearchInput"
-                    type="text"
-                    placeholder="&#x1F50D; Search subjects..."
-                    autocomplete="off"
-                    style="
-                      width: 100%;
-                      box-sizing: border-box;
-                      padding: 10px 14px;
-                      border-radius: 12px;
-                      border: 1px solid rgba(37, 99, 235, 0.25);
-                      background: rgba(37, 99, 235, 0.07);
-                      color: inherit;
-                      font-size: 0.9rem;
-                      outline: none;
-                    "
-                  />
-                  <div
-                    id="courseSearchDrop"
-                    style="
-                      display: none;
-                      position: absolute;
-                      top: calc(100% + 4px);
-                      left: 0;
-                      right: 0;
-                      border-radius: 12px;
-                      border: 1px solid rgba(37, 99, 235, 0.25);
-                      max-height: 210px;
-                      overflow-y: auto;
-                      z-index: 300;
-                      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-                    "
-                  ></div>
+                <div class="sd-hero-actions">
+                  <div class="sd-hero-sem">
+                    <button class="sem-btn sd-sem-btn" id="sdSemBtn" type="button">
+                      <span class="sem-btn-l">
+                        <span class="sem-dot" id="sdSemDot" style="background: #06d6a0"></span>
+                        <span id="sdSemLabel">SS 2026</span>
+                      </span>
+                      <span class="sem-chev" id="sdSemChev">&#x25BC;</span>
+                    </button>
+                    <div class="sem-dd sd-sem-dd" id="sdSemDD">
+                      <div class="sem-opt sel" data-sid="ss2526" data-col="#06D6A0">&#x1F7E2; SS 2026</div>
+                      <div class="sem-opt" data-sid="ws2526" data-col="#FFD93D">&#x1F4C1; WS 2025/26</div>
+                      <div class="sem-opt" data-sid="ss25" data-col="#2563EB">&#x1F4C1; SS 2025</div>
+                      <div class="sem-opt" data-sid="ws2425" data-col="#FF6FB7">&#x1F4C1; WS 2024/25</div>
+                      <div class="sem-opt" data-sid="ss24" data-col="#4CC9F0">&#x1F4C1; SS 2024</div>
+                      <div class="sem-opt" data-sid="ws2324" data-col="#FF6B35">&#x1F4C1; WS 2023/24</div>
+                      <!-- Order: current semester first, older semesters below. WS 2025/26 is
+                           kept where it sits (= last upcoming-wise) since SS 2026 is "current". -->
+                    </div>
+                  </div>
+                  <button id="sdManageLayoutBtn" class="sd-layout-btn" type="button" aria-haspopup="menu">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>
+                    </svg>
+                    <span data-i18n="sd_manage_layout">Manage layout</span>
+                  </button>
                 </div>
-                <button
-                  id="courseAddBtn"
-                  style="
-                    padding: 10px 18px;
-                    border-radius: 12px;
-                    border: none;
-                    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-                    color: #fff;
-                    font-size: 0.88rem;
-                    font-weight: 600;
-                    cursor: pointer;
-                    white-space: nowrap;
-                    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-                  "
-                >
-                  + Add Subject
-                </button>
+              </div>
+            </section>
+
+            <!-- Search + Manage layout row -->
+            <div class="sd-controls">
+              <div class="sd-search-wrap">
+                <svg class="sd-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7"></circle>
+                  <line x1="20" y1="20" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  id="courseSearchInput"
+                  class="sd-search-input"
+                  type="text"
+                  data-i18n-ph="sd_search_ph"
+                  placeholder="Search subjects..."
+                  autocomplete="off"
+                />
+                <div id="courseSearchDrop" class="sd-search-drop"></div>
+              </div>
+              <button id="courseAddBtn" class="sd-add-btn" type="button">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span data-i18n="sd_add_subject">Add Subject</span>
+              </button>
+            </div>
+
+            <div id="sdCourseList" class="sd-course-grid">
+              <!-- Skeleton cards shown on first paint while real courses load.
+                   renderCourses() replaces this innerHTML, so they vanish
+                   automatically. The shimmer runs on the compositor thread
+                   (CSS animation), so users see motion even if JS is busy. -->
+              <div class="sd-course-skeleton">
+                <div class="sd-skel-bar w-60"></div>
+                <div class="sd-skel-bar w-40"></div>
+                <div class="sd-skel-bar w-80"></div>
+              </div>
+              <div class="sd-course-skeleton">
+                <div class="sd-skel-bar w-60"></div>
+                <div class="sd-skel-bar w-40"></div>
+                <div class="sd-skel-bar w-80"></div>
+              </div>
+              <div class="sd-course-skeleton">
+                <div class="sd-skel-bar w-60"></div>
+                <div class="sd-skel-bar w-40"></div>
+                <div class="sd-skel-bar w-80"></div>
+              </div>
+              <div class="sd-course-skeleton">
+                <div class="sd-skel-bar w-60"></div>
+                <div class="sd-skel-bar w-40"></div>
+                <div class="sd-skel-bar w-80"></div>
               </div>
             </div>
-            <div id="sdCourseList" class="sd-course-grid"></div>
+            <div id="sdNextSteps"></div>
           </div>
         </div>
 
@@ -544,60 +1448,148 @@
           style="display: none"
         ></div>
 
-        <!-- LECTURE NOTES � content injected by features/js/lecturenotes.js -->
-        <div id="psec-notes" class="portal-section" style="display: none"></div>
+        <!-- LECTURE NOTES &mdash; content injected by features/js/lecturenotes.js -->
+        <div id="psec-notes" class="portal-section" data-testid="notes-page" style="display: none"></div>
 
         <!-- CHAT -->
         <!-- CHATBOT PAGE -->
-        <!-- CHATBOT PAGE � content injected by features/chatbot/chatbot.js -->
+        <!-- CHATBOT PAGE &mdash; content injected by features/chatbot/chatbot.js -->
         <div
           id="psec-aipage"
           class="portal-section"
           style="display: none; padding: 0; height: 100%"
-        ></div>
+        >
+          <div class="chat-route-skeleton" aria-hidden="true">
+            <div class="chat-route-skeleton__sidebar">
+              <div class="chat-route-skeleton__brand"></div>
+              <div class="chat-route-skeleton__line chat-route-skeleton__line--wide"></div>
+              <div class="chat-route-skeleton__line"></div>
+              <div class="chat-route-skeleton__row"></div>
+              <div class="chat-route-skeleton__row"></div>
+              <div class="chat-route-skeleton__row chat-route-skeleton__row--soft"></div>
+            </div>
+            <div class="chat-route-skeleton__main">
+              <div class="chat-route-skeleton__top"></div>
+              <div class="chat-route-skeleton__bubble chat-route-skeleton__bubble--user"></div>
+              <div class="chat-route-skeleton__bubble"></div>
+              <div class="chat-route-skeleton__composer"></div>
+            </div>
+          </div>
+        </div>
 
-        <!-- CHAT � content injected by features/js/chat.js -->
+        <!-- CHAT &mdash; content injected by features/js/chat.js -->
         <div
           id="psec-chat"
           class="portal-section"
           style="display: none; padding: 0; height: 100%"
-        ></div>
+        >
+          <div class="chat-route-skeleton" aria-hidden="true">
+            <div class="chat-route-skeleton__sidebar">
+              <div class="chat-route-skeleton__brand"></div>
+              <div class="chat-route-skeleton__line chat-route-skeleton__line--wide"></div>
+              <div class="chat-route-skeleton__line"></div>
+              <div class="chat-route-skeleton__row"></div>
+              <div class="chat-route-skeleton__row"></div>
+              <div class="chat-route-skeleton__row chat-route-skeleton__row--soft"></div>
+            </div>
+            <div class="chat-route-skeleton__main">
+              <div class="chat-route-skeleton__top"></div>
+              <div class="chat-route-skeleton__bubble"></div>
+              <div class="chat-route-skeleton__bubble chat-route-skeleton__bubble--user"></div>
+              <div class="chat-route-skeleton__composer"></div>
+            </div>
+          </div>
+        </div>
 
         <!-- NOTIFICATIONS -->
         <div id="psec-notifications" class="portal-section" style="display: none">
-          <div class="notif-wrap">
-            <div class="notif-header">
-              <div class="notif-header-left">
-                <div class="notif-title-icon">&#x1F514;</div>
-                <div>
-                  <div class="notif-title">Notifications</div>
-                  <div class="notif-subtitle" id="notifCount">All caught up</div>
+          <div class="notif-page">
+            <div class="notif-page-header">
+              <div class="notif-page-heading">
+                <div class="notif-page-label" data-i18n="notif_page_label">Minallo Inbox</div>
+                <h1 class="notif-page-title" data-i18n="nav_notifications">Notifications</h1>
+              </div>
+              <div class="notif-search-wrap">
+                <span class="notif-search-icon" aria-hidden="true">&#x1F50D;</span>
+                <input
+                  type="search"
+                  id="notifSearch"
+                  class="notif-search-input"
+                  data-i18n-placeholder="notif_search_placeholder"
+                  placeholder="Search notifications..."
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+
+            <div class="notif-page-content">
+              <!-- LEFT: notifications inbox -->
+              <div class="notif-wrap">
+                <div class="notif-header">
+                  <div class="notif-header-left">
+                    <div class="notif-title" data-i18n="notif_inbox_title">Notifications</div>
+                    <span class="notif-count-badge" id="notifCount">0</span>
+                  </div>
+                  <button class="notif-mark-all" id="notifMarkAll" data-i18n="notif_mark_all">Mark all read</button>
+                </div>
+                <div class="notif-tabs">
+                  <button class="notif-tab active" data-tab="all" data-i18n="notif_tab_all">All</button>
+                  <button class="notif-tab" data-tab="unread" data-i18n="notif_tab_unread">Unread</button>
+                  <button class="notif-tab" data-tab="projects" data-i18n="notif_tab_projects">Projects</button>
+                  <button class="notif-tab" data-tab="files" data-i18n="notif_tab_files">Files</button>
+                </div>
+                <div class="notif-list" id="notifList">
+                  <div class="notif-empty">
+                    <div class="notif-empty-icon">&#x1F514;</div>
+                    <div class="notif-empty-title" data-i18n="notif_empty_title">You're all caught up!</div>
+                    <div class="notif-empty-sub" data-i18n="notif_empty_sub">New notifications will appear here</div>
+                  </div>
                 </div>
               </div>
-              <button class="notif-mark-all" id="notifMarkAll">Mark all read</button>
-            </div>
-            <div class="notif-tabs">
-              <button class="notif-tab active" data-tab="all">All</button>
-              <button class="notif-tab" data-tab="unread">Unread</button>
-            </div>
-            <div class="notif-list" id="notifList">
-              <div class="notif-empty">
-                <div class="notif-empty-icon">&#x1F514;</div>
-                <div class="notif-empty-title">You're all caught up!</div>
-                <div class="notif-empty-sub">New notifications will appear here</div>
+
+              <!-- RIGHT: pinned courses + selected notification -->
+              <div class="notif-side">
+                <div class="notif-pinned">
+                  <div class="notif-pinned-header">
+                    <div>
+                      <div class="notif-pinned-title" data-i18n="notif_pinned_title">Pinned courses</div>
+                      <div class="notif-pinned-sub" data-i18n="notif_pinned_sub">Quick access to the courses that matter most.</div>
+                    </div>
+                    <button class="notif-edit-pins" id="notifEditPins" data-i18n="notif_edit_pins">Edit pins</button>
+                  </div>
+                  <div class="notif-pin-editor" id="notifPinEditor" hidden></div>
+                  <div class="notif-pinned-grid" id="notifPinnedGrid"></div>
+                </div>
+
+                <div class="notif-selected">
+                  <div class="notif-selected-header">
+                    <div class="notif-selected-title" data-i18n="notif_selected_title">Selected notification</div>
+                    <span class="notif-live-badge" data-i18n="notif_live">Live</span>
+                  </div>
+                  <div class="notif-selected-body">
+                    <div class="notif-selected-tile">
+                      <div class="notif-selected-label" data-i18n="notif_current_action">Current action</div>
+                      <div class="notif-selected-value" id="notifSelectedAction" data-i18n="notif_none_selected">No notification selected</div>
+                    </div>
+                    <div class="notif-selected-tile">
+                      <div class="notif-selected-label" data-i18n="notif_connected_area">Connected area</div>
+                      <div class="notif-selected-value" id="notifSelectedArea" data-i18n="notif_select_item">Select an item from the inbox</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- GAMES � content injected by features/js/games.js -->
+        <!-- GAMES &mdash; content injected by features/js/games.js -->
         <div id="psec-games" class="portal-section" style="display: none; padding: 0"></div>
 
         <!-- STUDY LOUNGE -->
         <div id="psec-lounge" class="portal-section" style="display: none">
           <div class="dash-greeting">
-            <h1>&#x1F4CA; Study Lounge</h1>
-            <p>Your personal learning overview</p>
+            <h1 data-i18n="lounge_title">&#x1F4CA; Study Lounge</h1>
+            <p data-i18n="lounge_subtitle">Your personal learning overview</p>
           </div>
 
           <!-- Streak banner -->
@@ -605,9 +1597,9 @@
             <div class="lounge-streak-flame">&#x1F525;</div>
             <div>
               <div class="lounge-streak-val" id="loungeStreakVal">0</div>
-              <div class="lounge-streak-lbl">day streak</div>
+              <div class="lounge-streak-lbl" data-i18n="lounge_day_streak">day streak</div>
             </div>
-            <div class="lounge-streak-msg" id="loungeStreakMsg">Start studying today!</div>
+            <div class="lounge-streak-msg" id="loungeStreakMsg" data-i18n="lounge_streak_msg_start">Start studying today!</div>
           </div>
 
           <!-- Main stat cards -->
@@ -615,51 +1607,51 @@
             <div class="lounge-stat-card">
               <div class="lounge-stat-icon">&#x23F1;&#xFE0F;</div>
               <div class="lounge-stat-val" id="lsHours">0h 0m</div>
-              <div class="lounge-stat-lbl">Study Time</div>
-              <div class="lounge-stat-sub" id="lsHoursSub">Total time with files open</div>
+              <div class="lounge-stat-lbl" data-i18n="lounge_stat_time">Study Time</div>
+              <div class="lounge-stat-sub" id="lsHoursSub" data-i18n="lounge_stat_time_sub">Total time with files open</div>
             </div>
             <div class="lounge-stat-card">
               <div class="lounge-stat-icon">&#x1F4C2;</div>
               <div class="lounge-stat-val" id="lsFiles">0</div>
-              <div class="lounge-stat-lbl">Files Opened</div>
-              <div class="lounge-stat-sub" id="lsFilesSub">Unique PDFs studied</div>
+              <div class="lounge-stat-lbl" data-i18n="lounge_stat_files">Files Opened</div>
+              <div class="lounge-stat-sub" id="lsFilesSub" data-i18n="lounge_stat_files_sub">Unique PDFs studied</div>
             </div>
             <div class="lounge-stat-card">
               <div class="lounge-stat-icon">&#x1F393;</div>
               <div class="lounge-stat-val" id="lsCourses">0</div>
-              <div class="lounge-stat-lbl">Courses</div>
-              <div class="lounge-stat-sub" id="lsCoursesSub">Subjects you've explored</div>
+              <div class="lounge-stat-lbl" data-i18n="lounge_stat_courses">Courses</div>
+              <div class="lounge-stat-sub" id="lsCoursesSub" data-i18n="lounge_stat_courses_sub">Subjects you've explored</div>
             </div>
             <div class="lounge-stat-card">
               <div class="lounge-stat-icon">&#x1F916;</div>
               <div class="lounge-stat-val" id="lsAI">0</div>
-              <div class="lounge-stat-lbl">AI Messages</div>
-              <div class="lounge-stat-sub">Questions asked to AI</div>
+              <div class="lounge-stat-lbl" data-i18n="lounge_stat_ai">AI Messages</div>
+              <div class="lounge-stat-sub" data-i18n="lounge_stat_ai_sub">Questions asked to AI</div>
             </div>
             <div class="lounge-stat-card">
               <div class="lounge-stat-icon">&#x1F4DD;</div>
               <div class="lounge-stat-val" id="lsNotes">0</div>
-              <div class="lounge-stat-lbl">Lecture Notes</div>
-              <div class="lounge-stat-sub">Auto-summaries created</div>
+              <div class="lounge-stat-lbl" data-i18n="lounge_stat_notes">Lecture Notes</div>
+              <div class="lounge-stat-sub" data-i18n="lounge_stat_notes_sub">Auto-summaries created</div>
             </div>
             <div class="lounge-stat-card">
               <div class="lounge-stat-icon">&#x1F3AE;</div>
               <div class="lounge-stat-val" id="lsGames">0</div>
-              <div class="lounge-stat-lbl">Games Played</div>
-              <div class="lounge-stat-sub">Break sessions</div>
+              <div class="lounge-stat-lbl" data-i18n="lounge_stat_games">Games Played</div>
+              <div class="lounge-stat-sub" data-i18n="lounge_stat_games_sub">Break sessions</div>
             </div>
           </div>
 
           <!-- Courses list -->
-          <div class="lounge-section-hdr">&#x1F4DA; Courses Studied</div>
+          <div class="lounge-section-hdr" data-i18n="lounge_courses_studied">&#x1F4DA; Courses Studied</div>
           <div class="lounge-course-chips" id="loungeCourseChips">
-            <div class="lounge-empty-msg">No courses yet � open a subject to get started</div>
+            <div class="lounge-empty-msg" data-i18n="lounge_no_courses">No courses yet &mdash; open a subject to get started</div>
           </div>
 
           <!-- Recent files -->
-          <div class="lounge-section-hdr">&#x1F4C4; Recently Opened Files</div>
+          <div class="lounge-section-hdr" data-i18n="lounge_recent_files">&#x1F4C4; Recently Opened Files</div>
           <div class="lounge-recent-list" id="loungeRecentList">
-            <div class="lounge-empty-msg">No files opened yet</div>
+            <div class="lounge-empty-msg" data-i18n="lounge_no_files">No files opened yet</div>
           </div>
 
           <!-- Reset -->
@@ -667,6 +1659,7 @@
             <button
               class="settings-danger-btn"
               id="loungeResetBtn"
+              data-i18n="lounge_reset"
               style="font-size: 0.75rem; padding: 7px 18px"
             >
               Reset Stats
@@ -674,7 +1667,7 @@
           </div>
         </div>
 
-        <!-- PRACTICE � content injected by features/js/practice.js -->
+        <!-- PRACTICE &mdash; content injected by features/js/practice.js -->
         <div id="psec-german" class="portal-section" style="display: none"></div>
       </div>
       <!-- /main-scroll -->
@@ -702,7 +1695,7 @@
                 <span class="ws-icon">&#x1F4C2;</span>
                 <div class="ws-title" data-i18n="welcome_title">Select a file to read</div>
                 <div class="ws-sub" data-i18n="welcome_sub">
-                  Open a subject in the sidebar and click any file � it loads here as a real
+                  Open a subject in the sidebar and click any file &mdash; it loads here as a real
                   document.
                 </div>
                 <div class="ws-hint" data-i18n="welcome_hint">
@@ -714,319 +1707,374 @@
                 id="pdfView"
                 style="display: none; flex-direction: column; flex: 1; overflow: hidden"
               >
-                <div class="pdf-toolbar" id="pdfToolbar">
-                  <button class="pdf-tb-btn" id="pdfPrev" style="display: none">&#x25C0;</button>
-                  <span class="pdf-page-info" id="pdfPageInfo" style="display: none"
-                    >Page
-                    <input
-                      id="pdfPageInput"
-                      class="pdf-page-input"
-                      type="number"
-                      min="1"
-                      value="1"
-                    />
-                    / <span id="pdfPageTotal">1</span></span
-                  >
-                  <button class="pdf-tb-btn" id="pdfNext" style="display: none">&#x25B6;</button>
-                  <button class="pdf-tb-btn" id="pdfZoomOut">&#x2212;</button>
-                  <span class="pdf-zoom-pct" id="pdfZoomPct">90%</span>
-                  <button class="pdf-tb-btn" id="pdfZoomIn">+</button>
-                  <button class="pdf-tb-btn" id="pdfFit" data-i18n="pdf_fit">Fit</button>
-                  <button class="pdf-tb-btn" id="pdfAll" data-i18n="pdf_single">Single page</button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="pdfDownload"
-                    title="Download PDF"
-                    data-i18n="pdf_download"
-                  >
-                    &#x2B07; Download
-                  </button>
-                  <span style="flex: 1"></span>
-                  <!-- Annotate toggle -->
-                  <button
-                    class="pdf-tb-btn"
-                    id="pdfAnnotateToggle"
-                    title="Annotate"
-                    style="font-size: 0.8rem; gap: 4px; display: flex; align-items: center"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-                    </svg>
-                    Annotate
-                  </button>
-                  <span
-                    id="pdfFileName"
-                    style="
-                      font-size: 0.73rem;
-                      font-weight: 700;
-                      color: var(--muted);
-                      white-space: nowrap;
-                      overflow: hidden;
-                      text-overflow: ellipsis;
-                      max-width: 220px;
-                    "
-                  ></span>
+                <div class="pdf-toolbar pdf-toolbar-v2" id="pdfToolbar">
+                  <div class="pdf-toolbar-inner">
+                    <div class="pdf-toolbar-top">
+                      <div class="pdf-left">
+                        <button
+                          class="pdf-toolbar-button pdf-tb-back"
+                          id="pdfBack"
+                          title="Back to course"
+                          aria-label="Back to course"
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <line x1="19" y1="12" x2="5" y2="12" />
+                            <polyline points="12 19 5 12 12 5" />
+                          </svg>
+                          Back
+                        </button>
+                        <div class="pdf-file-info">
+                          <strong id="pdfFileName"></strong>
+                          <span class="pdf-tb-title" id="pdfHeaderTitle"></span>
+                        </div>
+                      </div>
+                      <div class="pdf-right">
+                        <div class="pdf-tabs-bar" id="pdfTabsBar" aria-label="Open PDF tabs"></div>
+                        <div class="pdf-study-wrap" id="pdfStudyWrap">
+                        <button
+                          type="button"
+                          class="pdf-study-button"
+                          id="pdfStudyBtn"
+                          title="Study Techniques"
+                          aria-label="Open Study Techniques"
+                        >
+                          <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                          </svg>
+                          Study
+                        </button>
+                        </div>
+                        <button
+                          type="button"
+                          class="pdf-maximize-both-button"
+                          id="pdfMaximizeBoth"
+                          title="Maximize both PDFs"
+                          aria-label="Maximize both PDFs"
+                          hidden
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="5" width="7" height="14" rx="1" />
+                            <rect x="14" y="5" width="7" height="14" rx="1" />
+                          </svg>
+                          Maximize both
+                        </button>
+                      </div>
+                    </div>
+                    <div class="pdf-toolbar-controls">
+                      <div class="pdf-control-group" id="pdfPageGroup">
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfPrev"
+                          title="Previous page"
+                          aria-label="Previous page"
+                        >
+                          &#x2212;
+                        </button>
+                        <span class="pdf-page-info" id="pdfPageInfo"><span class="pdf-page-label">Page</span><input id="pdfPageInput" class="pdf-page-input" type="number" min="1" value="1" /><span class="pdf-page-sep">/</span><span class="pdf-page-total" id="pdfPageTotal">1</span></span>
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfNext"
+                          title="Next page"
+                          aria-label="Next page"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div class="pdf-control-group">
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfZoomOut"
+                          title="Zoom out"
+                          aria-label="Zoom out"
+                        >
+                          &#x2212;
+                        </button>
+                        <input
+                          class="pdf-toolbar-button pdf-zoom-pct"
+                          id="pdfZoomPct"
+                          type="text"
+                          inputmode="numeric"
+                          value="90%"
+                          aria-label="Zoom percentage"
+                          title="Enter zoom percentage"
+                        />
+                        <button
+                          class="pdf-toolbar-button pdf-icon-button"
+                          id="pdfZoomIn"
+                          title="Zoom in"
+                          aria-label="Zoom in"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        class="pdf-toolbar-button"
+                        id="pdfFit"
+                        data-i18n="pdf_fit"
+                      >
+                        Fit
+                      </button>
+                      <button
+                        class="pdf-toolbar-button"
+                        id="pdfAll"
+                        data-i18n="pdf_single"
+                      >
+                        Single page
+                      </button>
+                      <button
+                        class="pdf-toolbar-button pdf-icon-button"
+                        id="pdfMaximize"
+                        title="Fullscreen"
+                        aria-label="Fullscreen"
+                        aria-pressed="false"
+                      >
+                        <svg class="pdf-max-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                          <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                          <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                          <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                        </svg>
+                        <svg class="pdf-min-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                          <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                          <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                          <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+                        </svg>
+                      </button>
+                      <!-- RIGHT-PANE CONTROLS — mirror of the left controls; shown only when split view is active. -->
+                      <div class="pdf-right-controls-group" id="pdfRightToolbar" hidden aria-label="Right pane controls">
+                        <div class="pdf-control-group">
+                          <button class="pdf-toolbar-button pdf-icon-button" id="pdfRightPrev" title="Previous page (right)" aria-label="Previous page (right)">−</button>
+                          <span class="pdf-page-info" id="pdfRightPageInfo">Page 1 / 1</span>
+                          <button class="pdf-toolbar-button pdf-icon-button" id="pdfRightNext" title="Next page (right)" aria-label="Next page (right)">+</button>
+                        </div>
+                        <div class="pdf-control-group">
+                          <button class="pdf-toolbar-button pdf-icon-button" id="pdfRightZoomOut" title="Zoom out (right)" aria-label="Zoom out (right)">−</button>
+                          <button class="pdf-toolbar-button pdf-zoom-pct" id="pdfRightZoomPct" title="Right pane zoom">90%</button>
+                          <button class="pdf-toolbar-button pdf-icon-button" id="pdfRightZoomIn" title="Zoom in (right)" aria-label="Zoom in (right)">+</button>
+                        </div>
+                        <button class="pdf-toolbar-button" id="pdfRightFit">Fit</button>
+                        <button class="pdf-toolbar-button" id="pdfRightAll">Single page</button>
+                      </div>
+                      <div class="pdf-controls-right">
+                        <button
+                          class="pdf-primary-button"
+                          id="pdfAnnotateToggle"
+                          title="Annotate"
+                          aria-haspopup="true"
+                          aria-expanded="false"
+                          aria-controls="annotToolbar"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                          </svg>
+                          Annotate
+                        </button>
+                        <button
+                          class="pdf-toolbar-button"
+                          id="pdfDownload"
+                          title="Download PDF"
+                          data-i18n="pdf_download"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Download
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        class="pdf-toolbar-button pdf-icon-button pdf-toolbar-drag-handle"
+                        id="pdfToolbarDragHandle"
+                        title="Move toolbar"
+                        aria-label="Move collapsed PDF toolbar"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <circle cx="8" cy="7" r="1.5"/><circle cx="16" cy="7" r="1.5"/>
+                          <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
+                          <circle cx="8" cy="17" r="1.5"/><circle cx="16" cy="17" r="1.5"/>
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="pdf-toolbar-button pdf-icon-button pdf-collapse-button"
+                        id="pdfToolbarCollapse"
+                        title="Collapse toolbar"
+                        aria-label="Collapse PDF toolbar"
+                        aria-expanded="true"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="6 15 12 9 18 15" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <!-- ANNOTATION TOOLBAR -->
+                <!-- ANNOTATION TOOLBAR &mdash; compact floating popover under the Annotate button -->
                 <div
                   id="annotToolbar"
-                  style="
-                    display: none;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 6px 14px;
-                    background: var(--glass-bg);
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-                    flex-wrap: wrap;
-                  "
+                  class="annotate-popover"
+                  role="toolbar"
+                  aria-label="Annotation tools"
+                  style="display: none"
                 >
-                  <!-- Tool buttons -->
-                  <div
-                    style="
-                      display: flex;
-                      gap: 4px;
-                      background: rgba(255, 255, 255, 0.06);
-                      border-radius: 10px;
-                      padding: 3px;
-                    "
-                  >
-                    <button
-                      class="annot-tool-btn active"
-                      id="annotToolPen"
-                      title="Pen"
-                      style="background: rgba(37, 99, 235, 0.35)"
-                    >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M12 20h9" />
-                        <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-                      </svg>
-                    </button>
-                    <button class="annot-tool-btn" id="annotToolHighlight" title="Highlight">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M15.5 2.1L21.9 8.5 8.9 21.5 2.5 21.9 2.1 15.5z" opacity=".3" />
-                        <path
-                          d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
-                    </button>
-                    <button class="annot-tool-btn" id="annotToolText" title="Text">
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <polyline points="4 7 4 4 20 4 20 7" />
-                        <line x1="9" y1="20" x2="15" y2="20" />
-                        <line x1="12" y1="4" x2="12" y2="20" />
-                      </svg>
-                    </button>
-                    <button class="annot-tool-btn" id="annotToolEraser" title="Eraser">
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M20 20H7L3 16l10-10 7 7-3.5 3.5" />
-                        <path d="M6.5 17.5l5-5" />
-                      </svg>
-                    </button>
-                  </div>
+                  <div class="annotate-toolbar-row">
+                    <!-- Group 1 &mdash; Tools -->
+                    <div class="annotate-group">
+                      <button class="annotate-tool-btn annot-tool-btn is-active active" id="annotToolPen" title="Pen" aria-label="Pen">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        </svg>
+                      </button>
+                      <button class="annotate-tool-btn annot-tool-btn" id="annotToolHighlight" title="Highlight" aria-label="Highlight">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M15.5 2.1L21.9 8.5 8.9 21.5 2.5 21.9 2.1 15.5z" opacity=".35" />
+                          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
+                      <button class="annotate-tool-btn annot-tool-btn" id="annotToolText" title="Text" aria-label="Text">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="4 7 4 4 20 4 20 7" />
+                          <line x1="9" y1="20" x2="15" y2="20" />
+                          <line x1="12" y1="4" x2="12" y2="20" />
+                        </svg>
+                      </button>
+                      <button class="annotate-tool-btn annot-tool-btn" id="annotToolEraser" title="Eraser" aria-label="Eraser">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 20H7L3 16l10-10 7 7-3.5 3.5" />
+                          <path d="M6.5 17.5l5-5" />
+                        </svg>
+                      </button>
+                    </div>
 
-                  <!-- Color swatches -->
-                  <div style="display: flex; gap: 5px; align-items: center">
-                    <div
-                      class="annot-color-swatch active"
-                      data-color="#000000"
-                      style="background: #000000"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#2563EB"
-                      style="background: #2563eb"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FF6FB7"
-                      style="background: #38bdf8"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FF3B30"
-                      style="background: #ff3b30"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FF9500"
-                      style="background: #ff9500"
-                    ></div>
-                    <div
-                      class="annot-color-swatch"
-                      data-color="#FFD60A"
-                      style="background: #ffd60a"
-                    ></div>
-                    <input
-                      type="color"
-                      id="annotColorPicker"
-                      value="#000000"
-                      title="Custom color"
-                      style="
-                        width: 24px;
-                        height: 24px;
-                        border: none;
-                        border-radius: 50%;
-                        cursor: pointer;
-                        padding: 0;
-                        background: none;
-                        outline: 2px solid rgba(255, 255, 255, 0.2);
-                      "
-                    />
-                  </div>
+                    <div class="annotate-separator" aria-hidden="true"></div>
 
-                  <!-- Thickness -->
-                  <div style="display: flex; align-items: center; gap: 6px">
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      style="opacity: 0.5"
-                    >
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    <input
-                      type="range"
-                      id="annotThickness"
-                      min="1"
-                      max="20"
-                      value="3"
-                      style="width: 72px; accent-color: #2563eb"
-                    />
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      style="opacity: 0.5"
-                    >
-                      <circle cx="12" cy="12" r="6" />
-                    </svg>
-                  </div>
+                    <!-- Group 2 &mdash; Colors -->
+                    <div class="annotate-group annotate-colors">
+                      <button class="annotate-color-swatch annot-color-swatch is-active active" data-color="#0F172A" style="background:#0F172A" title="Slate" aria-label="Slate"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#2563EB" style="background:#2563EB" title="Blue" aria-label="Blue"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#38BDF8" style="background:#38BDF8" title="Sky" aria-label="Sky"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#EF4444" style="background:#EF4444" title="Red" aria-label="Red"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#F59E0B" style="background:#F59E0B" title="Orange" aria-label="Orange"></button>
+                      <button class="annotate-color-swatch annot-color-swatch" data-color="#FACC15" style="background:#FACC15" title="Yellow" aria-label="Yellow"></button>
+                      <input type="color" id="annotColorPicker" value="#0F172A" title="Custom color" class="annotate-color-picker" />
+                    </div>
 
-                  <!-- Text controls (shown only in text mode) -->
-                  <div id="annotTextControls" style="display: none; gap: 6px; align-items: center">
-                    <select
-                      id="annotFontSize"
-                      style="
-                        background: rgba(255, 255, 255, 0.08);
-                        border: 1px solid rgba(255, 255, 255, 0.15);
-                        color: var(--on-glass);
-                        border-radius: 7px;
-                        padding: 3px 6px;
-                        font-size: 0.78rem;
-                      "
-                    >
-                      <option value="12">12</option>
-                      <option value="14">14</option>
-                      <option value="16" selected>16</option>
-                      <option value="18">18</option>
-                      <option value="20">20</option>
-                      <option value="24">24</option>
-                      <option value="28">28</option>
-                      <option value="32">32</option>
-                    </select>
-                    <button class="annot-fmt-btn" id="annotBold" title="Bold"><b>B</b></button>
-                    <button class="annot-fmt-btn" id="annotItalic" title="Italic"><i>I</i></button>
-                  </div>
+                    <div class="annotate-separator" aria-hidden="true"></div>
 
-                  <span style="flex: 1"></span>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotUndo"
-                    title="Undo"
-                    style="font-size: 0.75rem; padding: 4px 8px"
-                  >
-                    ? Undo
-                  </button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotClear"
-                    title="Clear page annotations"
-                    style="font-size: 0.75rem; padding: 4px 8px; color: #ff6b6b"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotDownload"
-                    title="Download annotated PDF"
-                    style="
-                      font-size: 0.75rem;
-                      padding: 4px 8px;
-                      background: rgba(37, 99, 235, 0.15);
-                      color: #2563eb;
-                    "
-                  >
-                    ? Save PDF
-                  </button>
-                  <button
-                    class="pdf-tb-btn"
-                    id="annotTransfer"
-                    title="Transfer to course"
-                    style="
-                      font-size: 0.75rem;
-                      padding: 4px 8px;
-                      background: rgba(6, 214, 160, 0.1);
-                      color: #06d6a0;
-                    "
-                  >
-                    ? To course
-                  </button>
+                    <!-- Group 3 &mdash; Stroke / thickness -->
+                    <div class="annotate-group annotate-stroke">
+                      <button class="annotate-action-btn" id="annotStrokeMinus" title="Thinner" aria-label="Thinner">&#x2212;</button>
+                      <input type="range" id="annotThickness" min="1" max="20" value="3" class="annotate-stroke-range" />
+                      <button class="annotate-action-btn" id="annotStrokePlus" title="Thicker" aria-label="Thicker">+</button>
+                    </div>
+
+                    <!-- Text controls (shown only in text mode) -->
+                    <div id="annotTextControls" class="annotate-group annotate-text-ctrls" style="display:none">
+                      <select id="annotFontSize" class="annotate-fontsize">
+                        <option value="12">12</option>
+                        <option value="14">14</option>
+                        <option value="16" selected>16</option>
+                        <option value="18">18</option>
+                        <option value="20">20</option>
+                        <option value="24">24</option>
+                        <option value="28">28</option>
+                        <option value="32">32</option>
+                      </select>
+                      <button class="annotate-fmt-btn" id="annotBold" title="Bold"><b>B</b></button>
+                      <button class="annotate-fmt-btn" id="annotItalic" title="Italic"><i>I</i></button>
+                    </div>
+
+                    <div class="annotate-separator" aria-hidden="true"></div>
+
+                    <!-- Group 4 &mdash; Quick actions -->
+                    <div class="annotate-group annotate-actions">
+                      <button class="annotate-action-btn" id="annotUndo" title="Undo" aria-label="Undo">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M3 7v6h6" />
+                          <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+                        </svg>
+                      </button>
+                      <button class="annotate-action-btn is-danger" id="annotClear" title="Clear page" aria-label="Clear page">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
+                      </button>
+                      <button class="annotate-action-btn is-primary" id="annotDownload" title="Save PDF" aria-label="Save PDF">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                          <polyline points="17 21 17 13 7 13 7 21" />
+                          <polyline points="7 3 7 8 15 8" />
+                        </svg>
+                      </button>
+                      <button class="annotate-action-btn is-success" id="annotTransfer" title="Save to course" aria-label="Save to course">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div class="pdf-body" id="pdfBody"></div>
+                <div class="pdf-bodies" id="pdfBodies">
+                  <div class="pdf-body" id="pdfBody"></div>
+                  <div class="pdf-pane-divider" id="pdfPaneDivider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+                  <div class="pdf-right-pane">
+                    <div class="pdf-body pdf-body-right" id="pdfBodyRight"></div>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- /centreContent -->
             <!-- AI PANEL -->
             <div id="aiPanel">
-              <div id="aiResizeHandle" title="Drag to resize width"></div>
-              <div id="aiResizeHandleTop" title="Drag to resize height"></div>
-              <div id="aiResizeHandleCorner" title="Drag to resize both"></div>
               <div class="ai-hdr">
                 <div class="ai-av-wrap">
                   <div class="ai-av">&#x1F393;</div>
@@ -1092,6 +2140,7 @@
                     >&#x1F517; Analogy</span
                   >
                   <span class="ai-tip" id="chip-flashcards">&#x1F4C7; Flashcards</span>
+                  <span class="ai-tip" id="chip-cheatsheet">&#x1F9FE; Cheatsheet</span>
                 </div>
                 <div class="chip-drawer" id="opts-summarise">
                   <div class="chip-drawer-inner">
@@ -1151,7 +2200,7 @@
                     class="ai-textarea"
                     id="aiInput"
                     data-i18n-ph="ai_placeholder"
-                    placeholder="Ask anything about this document�"
+                    placeholder="Ask anything about this document&hellip;"
                     rows="2"
                   ></textarea>
                   <div class="ai-bottom-row">
@@ -1186,11 +2235,11 @@
                     <input
                       type="file"
                       id="aiFileInput"
-                      accept=".png,.jpg,.jpeg"
+                      accept=".pdf,.txt,.docx,.png,.jpg,.jpeg"
                       multiple
                       style="display: none"
                     />
-                    <label class="ai-attach-btn" for="aiFileInput" title="Attach image">
+                    <label class="ai-attach-btn" for="aiFileInput" title="Attach image or upload course document">
                       <svg
                         width="14"
                         height="14"
@@ -1245,7 +2294,7 @@
   </div>
   <!-- /shell -->
 
-  <!-- ─── DOCUMENT RAIL + DRAWER (Task-01 shell) ────────────────────────────
+  <!-- --- DOCUMENT RAIL + DRAWER (Task-01 shell) ----------------------------
        Visibility is controlled by JS (document-rail.ts) toggling the
        .is-pdf / .is-courses classes on this root. Hidden everywhere else. -->
   <div id="drRoot" class="dr-root">
@@ -1269,17 +2318,29 @@
         </svg>
         <span>AI</span>
       </button>
-      <button type="button" class="dr-rail-btn" data-dr-mode="notes" title="Notes" aria-pressed="false">
-        <!-- NotebookText -->
+      <button type="button" class="dr-rail-btn" data-dr-mode="problem" title="Problem Solver" aria-pressed="false">
+        <!-- Calculator -->
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M2 6h4"/>
-          <path d="M2 10h4"/>
-          <path d="M2 14h4"/>
-          <path d="M2 18h4"/>
-          <rect x="6" y="3" width="14" height="18" rx="2"/>
-          <path d="M10 7h6"/>
-          <path d="M10 11h6"/>
-          <path d="M10 15h4"/>
+          <rect x="4" y="2" width="16" height="20" rx="2"/>
+          <line x1="8" y1="6" x2="16" y2="6"/>
+          <line x1="8" y1="10" x2="8" y2="10"/>
+          <line x1="12" y1="10" x2="12" y2="10"/>
+          <line x1="16" y1="10" x2="16" y2="10"/>
+          <line x1="8" y1="14" x2="8" y2="14"/>
+          <line x1="12" y1="14" x2="12" y2="14"/>
+          <line x1="16" y1="14" x2="16" y2="18"/>
+          <line x1="8" y1="18" x2="12" y2="18"/>
+        </svg>
+        <span>Problem</span>
+      </button>
+      <button type="button" class="dr-rail-btn" data-dr-mode="notes" title="Notes" aria-pressed="false">
+        <!-- StickyNote -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2h-3.5z"/>
+          <path d="M15 3v5a2 2 0 0 0 2 2h5"/>
+          <line x1="7" y1="9" x2="13" y2="9"/>
+          <line x1="7" y1="13" x2="13" y2="13"/>
+          <line x1="7" y1="17" x2="10" y2="17"/>
         </svg>
         <span>Notes</span>
       </button>
@@ -1321,6 +2382,35 @@
           </div>
         </div>
         <div class="dr-header-r">
+          <div class="dr-type-control" id="drSizeControl">
+            <button type="button" class="dr-icon-btn dr-type-btn" id="drSizeBtn" title="Text size" aria-label="Text size" aria-expanded="false" aria-controls="drSizeMenu">
+              <span aria-hidden="true">A↕</span>
+            </button>
+            <div class="dr-type-menu dr-size-menu" id="drSizeMenu" role="dialog" aria-label="AI text size" hidden>
+              <div class="dr-type-menu-head">
+                <span>Text size</span>
+                <span class="dr-type-preview" aria-hidden="true">A↕</span>
+              </div>
+              <div class="dr-type-size" role="group" aria-label="AI text size">
+                <button type="button" id="drFontMinus" aria-label="Decrease text size">−</button>
+                <output id="drFontValue" aria-live="polite">100%</output>
+                <button type="button" id="drFontPlus" aria-label="Increase text size">+</button>
+              </div>
+              <div class="dr-type-hint">Ctrl/Cmd + scroll also works</div>
+            </div>
+          </div>
+          <div class="dr-type-control" id="drFamilyControl">
+            <button type="button" class="dr-icon-btn dr-type-btn" id="drFamilyBtn" title="Font family" aria-label="Font family" aria-expanded="false" aria-controls="drFamilyMenu">
+              <span aria-hidden="true">Ff</span>
+            </button>
+            <div class="dr-type-menu dr-family-menu" id="drFamilyMenu" role="menu" aria-label="AI font family" hidden>
+              <div class="dr-type-menu-head"><span>Font family</span><span class="dr-type-preview" aria-hidden="true">Ff</span></div>
+              <button type="button" class="dr-font-option" data-font-family="modern" role="menuitem"><span style="font-family:var(--font-main)">Modern Sans</span><small>Clean and balanced</small></button>
+              <button type="button" class="dr-font-option" data-font-family="readable" role="menuitem"><span style="font-family:Arial, sans-serif">Highly Readable</span><small>Clear at every size</small></button>
+              <button type="button" class="dr-font-option" data-font-family="classic" role="menuitem"><span style="font-family:Georgia, serif">Classic Serif</span><small>Book-like reading</small></button>
+              <button type="button" class="dr-font-option" data-font-family="mono" role="menuitem"><span style="font-family:Consolas, monospace">Technical Mono</span><small>Precise and structured</small></button>
+            </div>
+          </div>
           <button type="button" class="dr-icon-btn" id="drTrash" title="Delete">
             <!-- Trash -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1384,7 +2474,7 @@
     >
       <h3
         style="
-          font-family: 'Fredoka One', cursive;
+          font-family: var(--font-main);
           font-size: 1.25rem;
           color: var(--on-glass);
           margin: 0;
@@ -1420,7 +2510,7 @@
   </div>
 </div>
 
-<!-- AI response export modal (chatbot page � any course) -->
+<!-- AI response export modal (chatbot page &mdash; any course) -->
 <div
   id="aiExportModal"
   style="
@@ -1456,7 +2546,7 @@
     >
       <h3
         style="
-          font-family: 'Fredoka One', cursive;
+          font-family: var(--font-main);
           font-size: 1.25rem;
           color: var(--on-glass);
           margin: 0;
@@ -1492,4 +2582,4 @@
   </div>
 </div>
 
-<!-- Widget panel, FAB and drag ghost � injected by features/js/dashboard.js -->
+<!-- Widget panel, FAB and drag ghost &mdash; injected by features/js/dashboard.js -->

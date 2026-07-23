@@ -54,8 +54,9 @@ def client(monkeypatch) -> TestClient:
         )],
     )
 
-    # Skip cache lookups; force regeneration path.
-    monkeypatch.setattr("app.routers.ask.fetch_document_version_hash", lambda *a, **kw: "vh1")
+    # Skip cache lookups; force regeneration path. (The version-hash helper was
+    # renamed document→course when caching moved to a whole-course version hash.)
+    monkeypatch.setattr("app.routers.ask.fetch_course_version_hash", lambda *a, **kw: "vh1")
     monkeypatch.setattr("app.routers.ask.lookup_answer", lambda **kw: None)
     monkeypatch.setattr("app.routers.ask.save_answer", lambda **kw: None)
 

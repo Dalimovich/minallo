@@ -1,0 +1,243 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  color-scheme: dark;
+  --legal-bg: #0b1020;
+  --legal-panel: rgba(255, 255, 255, 0.055);
+  --legal-panel-strong: rgba(255, 255, 255, 0.09);
+  --legal-border: rgba(255, 255, 255, 0.12);
+  --legal-text: #eef4ff;
+  --legal-muted: rgba(238, 244, 255, 0.72);
+  --legal-faint: rgba(238, 244, 255, 0.5);
+  --legal-accent: #56c7ff;
+  --legal-warn: #ffd166;
+}
+
+body {
+  min-height: 100vh;
+  font-family:
+    Inter,
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(86, 199, 255, 0.2), transparent 34rem),
+    radial-gradient(circle at 85% 10%, rgba(117, 79, 255, 0.18), transparent 32rem),
+    var(--legal-bg);
+  color: var(--legal-text);
+  line-height: 1.7;
+}
+
+.legal-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px clamp(20px, 5vw, 56px);
+  border-bottom: 1px solid var(--legal-border);
+  background: rgba(11, 16, 32, 0.78);
+  backdrop-filter: blur(14px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.legal-logo {
+  color: var(--legal-text);
+  font-weight: 800;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+
+.legal-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.legal-nav a {
+  color: var(--legal-muted);
+  font-size: 0.92rem;
+  text-decoration: none;
+}
+
+.legal-nav a:hover,
+.legal-nav a[aria-current="page"] {
+  color: var(--legal-accent);
+}
+
+.legal-shell {
+  width: min(920px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 58px 0 88px;
+}
+
+.legal-kicker {
+  color: var(--legal-accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin-top: 10px;
+  font-size: clamp(2rem, 5vw, 3.45rem);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.legal-updated {
+  margin-top: 14px;
+  color: var(--legal-faint);
+  font-size: 0.95rem;
+}
+
+.legal-card,
+.legal-warning {
+  margin-top: 30px;
+  padding: 22px;
+  border: 1px solid var(--legal-border);
+  border-radius: 8px;
+  background: var(--legal-panel);
+}
+
+.legal-warning {
+  border-color: rgba(255, 209, 102, 0.46);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.legal-warning strong {
+  color: var(--legal-warn);
+}
+
+.legal-content {
+  margin-top: 34px;
+}
+
+h2 {
+  margin-top: 34px;
+  font-size: 1.18rem;
+  line-height: 1.35;
+}
+
+h3 {
+  margin-top: 22px;
+  font-size: 1rem;
+}
+
+p,
+li,
+address {
+  color: var(--legal-muted);
+  font-size: 0.98rem;
+}
+
+p {
+  margin-top: 9px;
+}
+
+ul {
+  margin: 10px 0 0 20px;
+}
+
+li + li {
+  margin-top: 5px;
+}
+
+address {
+  font-style: normal;
+}
+
+a {
+  color: var(--legal-accent);
+}
+
+.legal-table {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid var(--legal-border);
+  border-radius: 8px;
+}
+
+.legal-table th,
+.legal-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--legal-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.legal-table th {
+  width: 32%;
+  color: var(--legal-text);
+  background: var(--legal-panel-strong);
+}
+
+.legal-table tr:last-child th,
+.legal-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.legal-placeholder {
+  color: var(--legal-warn);
+  font-weight: 700;
+}
+
+.legal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 54px;
+  padding-top: 22px;
+  border-top: 1px solid var(--legal-border);
+  color: var(--legal-faint);
+  font-size: 0.9rem;
+}
+
+.legal-footer a {
+  margin-left: 12px;
+  color: var(--legal-muted);
+  text-decoration: none;
+}
+
+.legal-footer a:hover {
+  color: var(--legal-accent);
+}
+
+@media (max-width: 680px) {
+  .legal-nav {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .legal-nav-links {
+    margin-left: 0;
+  }
+
+  .legal-shell {
+    padding-top: 38px;
+  }
+
+  .legal-table,
+  .legal-table tbody,
+  .legal-table tr,
+  .legal-table th,
+  .legal-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .legal-table th {
+    border-bottom: 0;
+  }
+}

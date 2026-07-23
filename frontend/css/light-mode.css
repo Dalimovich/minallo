@@ -1,0 +1,3353 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * LIGHT MODE — coherent system (no random patches)
+ *
+ * Rule of thumb:
+ *   - PAGE background  = one flat blue-grey app surface
+ *   - Every CONTENT FRAME / CARD / SECTION = clean white + soft blue border
+ *   - NESTED rows/items = same white, only-slightly-softer border
+ *   - Inputs            = near-white blue-grey + visible blue border
+ *   - Secondary buttons = white + blue border + soft shadow
+ *   - Primary CTAs      = strong brand gradient (UNTOUCHED)
+ *   - Dark mode         = UNTOUCHED — every selector is body:not(.night)
+ *
+ * Loaded LAST so source-order ties go to this file. Feature CSS that
+ * hard-codes greys / dark glass is overridden via:
+ *   1. semantic selector lists (preferred)
+ *   2. Tailwind-class attribute fallback (.bg-white/[0.045] etc.)
+ *   3. surgical page-specific blocks (only when no pattern fits)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 1.  TOKENS
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) {
+  /* Page surface: flat, not height-dependent. */
+  --minallo-page-bg: #f8fafc;
+  --lm-page-bg: var(--minallo-page-bg);
+
+  /* Text */
+  --lm-text: #172033;
+  --lm-muted: #53647f;
+  --lm-faint: #6b7b94;
+
+  /* Main cards */
+  --lm-card-bg: rgba(255, 255, 255, 0.94);
+  --lm-card-border: rgba(37, 99, 235, 0.22);
+  --lm-card-border-strong: rgba(37, 99, 235, 0.32);
+  --lm-card-shadow:
+    0 18px 46px rgba(37, 99, 235, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+
+  /* Nested rows / inner cards */
+  --lm-nested-bg: rgba(255, 255, 255, 0.96);
+  --lm-nested-border: rgba(37, 99, 235, 0.18);
+  --lm-nested-shadow:
+    0 8px 22px rgba(37, 99, 235, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+
+  /* Inputs */
+  --lm-input-bg: rgba(247, 250, 255, 0.92);
+  --lm-input-border: rgba(30, 64, 175, 0.26);
+  --lm-input-color: #172033;
+  --lm-input-placeholder: #7a879d;
+
+  /* Secondary / white buttons */
+  --lm-btn-bg: rgba(255, 255, 255, 0.94);
+  --lm-btn-border: rgba(30, 64, 175, 0.24);
+  --lm-btn-color: #172033;
+  --lm-btn-shadow:
+    0 8px 22px rgba(46, 68, 107, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  --lm-btn-hover-bg: rgba(255, 255, 255, 0.98);
+  --lm-btn-hover-border: rgba(37, 99, 235, 0.42);
+  --lm-btn-hover-shadow:
+    0 12px 32px rgba(37, 99, 235, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+
+  /* Aliases so feature CSS that reads --text/--muted/etc. still works */
+  --bg: var(--minallo-page-bg);
+  --dp-solid: var(--minallo-page-bg);
+  --dp-bg: var(--minallo-page-bg);
+  --app-bg: var(--minallo-page-bg);
+  --dp-modal: linear-gradient(155deg, #ffffff 0%, #f7f9fd 100%);
+  --text: var(--lm-text);
+  --muted: var(--lm-muted);
+  --on-glass: var(--lm-text);
+  --on-glass-muted: var(--lm-muted);
+  --on-glass-faint: var(--lm-faint);
+  --glass-bg: var(--lm-card-bg);
+  --glass-border: var(--lm-card-border);
+  --glass-border-top: rgba(255, 255, 255, 0.98);
+  --card-inner: var(--lm-nested-bg);
+  --card-inner-border: var(--lm-nested-border);
+  --row-bg: var(--lm-nested-bg);
+  --row-border: var(--lm-nested-border);
+  --section-label: var(--lm-faint);
+  --divider: rgba(37, 99, 235, 0.14);
+  --badge-bg: rgba(37, 99, 235, 0.10);
+  --badge-border: rgba(37, 99, 235, 0.22);
+  --badge-color: #1d4ed8;
+  --slot-bg: var(--lm-nested-bg);
+
+  --study-light-panel: rgba(255, 255, 255, 0.86);
+  --study-light-panel-strong: rgba(255, 255, 255, 0.96);
+  --study-light-text: #1f2a3d;
+  --study-light-title: #111827;
+  --study-light-muted: #697895;
+  --study-light-soft-muted: #8b9ab4;
+  --study-light-border: rgba(110, 145, 205, 0.26);
+  --study-light-border-strong: rgba(73, 128, 220, 0.42);
+  --study-light-blue: #4f8dff;
+  --study-light-blue-deep: #2467d6;
+  --study-light-blue-soft: rgba(79, 141, 255, 0.12);
+  --study-light-cyan-soft: rgba(72, 217, 233, 0.13);
+  --study-light-shadow: 0 28px 80px rgba(49, 86, 140, 0.22);
+  --study-light-card-shadow: 0 12px 28px rgba(58, 93, 145, 0.12);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 1b. TEXT SELECTION — light-mode override
+ *
+ * Light mode uses dark navy text (`--lm-text`), which is invisible against
+ * the default browser selection blue. The user reported "I can't read the
+ * selected text in the chat page and in every pop up". Override with a
+ * light-blue selection + dark text so the highlighted content stays
+ * legible against the page's white surfaces. ::selection doesn't inherit,
+ * so the rule must be set explicitly for the light-mode body.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) ::selection {
+  background: rgba(96, 165, 250, 0.40);
+  color: #0f172a;
+}
+body:not(.night) ::-moz-selection {
+  background: rgba(96, 165, 250, 0.40);
+  color: #0f172a;
+}
+
+/* PDF text layer exception: the dark selection text colour above paints a
+ * doubled copy of the glyphs over the canvas. Keep the overlay text
+ * transparent so only the highlight shows. Higher specificity than the
+ * body:not(.night) rule above, so it wins regardless of source order. */
+body:not(.night) .pdf-text-layer ::selection {
+  background: rgba(37, 99, 235, 0.28);
+  color: transparent;
+}
+body:not(.night) .pdf-text-layer ::-moz-selection {
+  background: rgba(37, 99, 235, 0.28);
+  color: transparent;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 2.  PAGE BACKGROUND — applied globally to every shell container
+ * ────────────────────────────────────────────────────────────────────────── */
+html:has(body:not(.night)),
+body:not(.night),
+body:not(.night) #ss-sections-root,
+body:not(.night) #root,
+body:not(.night) #portal,
+body:not(.night) #portal .shell,
+body:not(.night) #portal .main,
+body:not(.night) #portal .main .main-scroll,
+body:not(.night) #portal #app,
+body:not(.night) #portal #app .app-body,
+body:not(.night) .portal-shell,
+body:not(.night) .page-shell,
+body:not(.night) .app-shell,
+body:not(.night) .main-content,
+body:not(.night) .page-content,
+body:not(.night) .portal-section,
+body:not(.night) .courses-page,
+body:not(.night) .course-page,
+body:not(.night) .practice-page,
+body:not(.night) .lounge-page,
+body:not(.night) #studipDash,
+body:not(.night) #courseOverview,
+body:not(.night) #aiTutor,
+body:not(.night) .editor-portal-section,
+body:not(.night) .games-hub,
+body:not(.night) .gl-shell {
+  background: var(--minallo-page-bg, var(--app-bg, var(--lm-page-bg))) !important;
+  background-image: none !important;
+  color: var(--lm-text) !important;
+}
+
+/* The document writer's paper sheet (.ed-page) is the actual A4 canvas
+ * users type on — it must stay pure white regardless of theme. */
+body:not(.night) .ed-page {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * COURSE INNER VIEW (.co-*) — was painting grey because styles.css uses
+ * dark gradient overlays (rgba(15,23,42,0.35-0.40)) over translucent white.
+ * Force all the course-inner panels to clean white surfaces.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .co-hero {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+}
+body:not(.night) .co-hero-title,
+body:not(.night) .co-hero-monogram {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-hero-meta,
+body:not(.night) .co-hero-sub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-study-tools {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+}
+body:not(.night) .co-course-tabs {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-nested-shadow) !important;
+}
+body:not(.night) .co-course-tab {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-course-tab:hover:not(.active) {
+  background: rgba(99, 102, 241, 0.07) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-course-tab.active {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+body:not(.night) .co-folder-section,
+body:not(.night) .co-folder-header,
+body:not(.night) .co-folder-files,
+body:not(.night) .co-folder-empty {
+  background: transparent !important;
+  border-color: var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-folder-name-label {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-folder-count-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-back-btn {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-card-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Course hero — right-side progress panel (Study progress / Read / Notes /
+ * Practice / AI). courses-redesign.css uses translucent white over the
+ * (now-light) hero, so all the text reads as white-on-white. */
+body:not(.night) .co-inner-v2 .co-hero-progress {
+  background: rgba(99, 102, 241, 0.04) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .co-inner-v2 .co-hero-progress-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-inner-v2 .co-hero-progress-value {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .co-hero-progress-track {
+  background: rgba(148, 163, 184, 0.22) !important;
+}
+body:not(.night) .co-inner-v2 .co-hero-stat-pill {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Next-steps panel (.sd-next-steps): same dark-overlay problem. */
+body:not(.night) .sd-next-steps {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+}
+body:not(.night) .sd-next-steps-title {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .sd-next-steps-eyebrow {
+  color: #4338ca !important;
+}
+body:not(.night) .sd-next-step {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+  border-radius: 14px !important;
+}
+body:not(.night) .sd-next-step-title {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .sd-next-step-text {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .sd-next-step-icon {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border: 1px solid rgba(37, 99, 235, 0.28) !important;
+  color: #2563eb !important;
+}
+body:not(.night) .sd-next-step-arrow {
+  color: #2563eb !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 3.  CARDS / FRAMES / SECTIONS — clean white + soft blue border
+ *
+ * One shared override applied to every component that visually represents
+ * a content frame. Generic names from the design spec PLUS the project's
+ * actual class names so feature CSS that hard-coded greys gets killed.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .glass-card,
+body:not(.night) .light-card,
+/* Courses */
+body:not(.night) .course-card,
+body:not(.night) .course-files-card,
+body:not(.night) .course-workspace,
+body:not(.night) .gh-card,
+body:not(.night) .gh-card-preview,
+body:not(.night) .pc,
+/* Files */
+body:not(.night) .files-panel,
+body:not(.night) .next-steps-card,
+/* Quiz / Flashcards / Study */
+body:not(.night) .quiz-panel,
+body:not(.night) .quiz-preview,
+body:not(.night) .flashcards-panel,
+body:not(.night) .flashcard-preview,
+body:not(.night) .study-plan-panel,
+body:not(.night) .study-deck,
+body:not(.night) .qz-deck-card,
+body:not(.night) .qz-card-empty,
+body:not(.night) .qz-card-question,
+body:not(.night) .fc-deck-card,
+body:not(.night) .fc-card-empty,
+body:not(.night) .fc-card-content,
+/* Lounge / Dashboard */
+body:not(.night) .lounge-card,
+body:not(.night) .lounge-stat-card,
+body:not(.night) .widget-card,
+body:not(.night) .widget-panel,
+body:not(.night) .dash-greeting,
+/* Chat shell + outer panels */
+body:not(.night) .chat-shell,
+body:not(.night) .dc-members-panel,
+body:not(.night) .dc-members-section,
+/* Settings / Profile / Subscription */
+body:not(.night) .settings-block,
+body:not(.night) .profile-hero,
+body:not(.night) .sub-card,
+body:not(.night) .sub-pause-panel,
+body:not(.night) .sub-pause-panel-active,
+/* Editor */
+body:not(.night) .ed-hub-card,
+body:not(.night) .ed-hub-card-blue,
+body:not(.night) .ed-hub-card-purple,
+body:not(.night) .ed-hub-card-green,
+body:not(.night) .ed-home-empty,
+body:not(.night) .editor-card,
+body:not(.night) .editor-pages-panel,
+body:not(.night) .editor-props-panel,
+/* Writing coach */
+body:not(.night) .wc-card-glass,
+body:not(.night) .wc-feature-card,
+/* Lecture notes */
+body:not(.night) .ln-card,
+body:not(.night) .ln-modal,
+body:not(.night) .ln-section,
+/* Practice */
+body:not(.night) .gl-skill-card,
+body:not(.night) .gl-skill-card-v2,
+body:not(.night) .gl-hero-v2,
+body:not(.night) .sd-hero,
+/* Chatbot */
+body:not(.night) .ncb-card,
+body:not(.night) .ncb-action-card,
+body:not(.night) .ncb-context-card,
+body:not(.night) .ncb-notes-card,
+body:not(.night) .ncb-safe-card,
+body:not(.night) .ncb-sources-card,
+body:not(.night) .ncb-streak-card,
+/* Landing / marketing */
+body:not(.night) .nl-card,
+body:not(.night) .nl-glass,
+body:not(.night) .nl-paths__hero-card,
+body:not(.night) .nl-paths__preview-card,
+body:not(.night) .nl-pipeline__panel,
+body:not(.night) .nl-price-card,
+body:not(.night) .nl-tp-panel,
+body:not(.night) .nl-workflow__card,
+body:not(.night) .nl-lifestyle__card,
+body:not(.night) .nl-path-card,
+/* Misc */
+body:not(.night) .review-card,
+body:not(.night) .cta-box,
+body:not(.night) .legal-card,
+body:not(.night) .ob-card,
+body:not(.night) .ob-path-card,
+body:not(.night) .ob-test-card,
+body:not(.night) .st-tech-card,
+body:not(.night) .st-music-section,
+body:not(.night) .ext-banner,
+body:not(.night) .chess-panel,
+body:not(.night) .chess-waiting-box,
+body:not(.night) .chess-wld-box,
+body:not(.night) .chess-overlay-box,
+body:not(.night) .msm-box,
+body:not(.night) .chat-friend-box,
+body:not(.night) .ai-input-box,
+body:not(.night) .gen-overlay-box,
+body:not(.night) .np-gen-box {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Modal/popup HEADERS — chat.css sets `color: rgba(255,255,255,.92)` on
+   `.chat-friend-box-hdr` (and friends). Same specificity as the parent
+   rule above, so the white text wins on the header element itself even
+   when the surrounding card has been turned white. Force the header
+   text colour to the body text colour so titles like "+ Create Room"
+   read on the now-white modal. */
+body:not(.night) .chat-friend-box-hdr,
+body:not(.night) .chat-friend-box-hdr * {
+  color: var(--lm-text) !important;
+  background: transparent !important;
+}
+/* Same pattern for any sibling modal title elements that follow the
+   chat.css "white-on-dark-glass" convention. */
+body:not(.night) .msm-box-hdr,
+body:not(.night) .msm-box-title,
+body:not(.night) .ai-input-box-hdr,
+body:not(.night) .ai-input-box-title,
+body:not(.night) .gen-overlay-hdr,
+body:not(.night) .gen-overlay-title,
+body:not(.night) .np-gen-hdr,
+body:not(.night) .np-gen-title {
+  color: var(--lm-text) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 4.  NESTED CARDS / ROWS — same white, slightly softer border
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .light-nested-card,
+body:not(.night) .light-row,
+/* Course files */
+body:not(.night) .file-row,
+body:not(.night) .folder-row,
+body:not(.night) .separate-files-card,
+body:not(.night) .opened-folder-body,
+body:not(.night) .co-card,
+body:not(.night) .co-file,
+/* Quiz / flashcards rows */
+body:not(.night) .quiz-row,
+body:not(.night) .flashcard-row,
+body:not(.night) .next-step-row,
+/* Settings / profile rows */
+body:not(.night) .settings-row,
+body:not(.night) .profile-field,
+/* Chat */
+body:not(.night) .chat-message-bubble,
+body:not(.night) .chat-room-item,
+body:not(.night) .chat-member-item,
+body:not(.night) .chat-composer,
+body:not(.night) .member-row,
+body:not(.night) .room-row,
+/* Writing coach feedback container (chips below override colour) */
+body:not(.night) .wc-feedback-card,
+body:not(.night) .wc-feature-card-left,
+/* Notes / etc. */
+body:not(.night) .ln-card-preview,
+body:not(.night) .nl-tp-tab,
+body:not(.night) .ncb-context-card-head,
+body:not(.night) .na-mini-card,
+body:not(.night) .sub-feat,
+body:not(.night) .gl-hero-stat-pill,
+body:not(.night) .gl-level-chip-readonly,
+body:not(.night) .chess-mode-btn {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  box-shadow: var(--lm-nested-shadow) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Settings page rows: flat, just a separator (per design — no card chrome) */
+body:not(.night) .settings-row-new {
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--lm-nested-border) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .settings-row-new:last-child {
+  border-bottom: 0 !important;
+}
+body:not(.night) .settings-block-title {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Hover lift on big card frames */
+body:not(.night) .glass-card:hover,
+body:not(.night) .gh-card:hover,
+body:not(.night) .pc:hover,
+body:not(.night) .sub-card:hover,
+body:not(.night) .ed-hub-card:hover,
+body:not(.night) .qz-deck-card:hover,
+body:not(.night) .fc-deck-card:hover,
+body:not(.night) .ln-card:hover,
+body:not(.night) .gl-skill-card-v2:hover,
+body:not(.night) .lounge-stat-card:hover,
+body:not(.night) .widget-card:hover,
+body:not(.night) .ncb-action-card:hover,
+body:not(.night) .nl-card:hover {
+  border-color: var(--lm-card-border-strong) !important;
+  box-shadow:
+    0 24px 56px rgba(37, 99, 235, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 5.  TAILWIND-CLASS FALLBACK
+ *
+ * Catches components that use Tailwind-style `bg-white/[0.045]` etc. in
+ * their class attribute. Slate-900/950 and white-with-alpha-≤0.10 surfaces
+ * are exactly what reads as "muddy grey" in light mode. Force them white.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) main [class*="bg-slate-950"],
+body:not(.night) main [class*="bg-slate-900"],
+body:not(.night) main [class*="bg-slate-800"],
+body:not(.night) main [class*='bg-white/[0.0'],
+body:not(.night) main [class*='bg-white/[0.10'],
+body:not(.night) [class*='bg-slate-950'],
+body:not(.night) [class*='bg-slate-900'],
+body:not(.night) [class*='bg-white/[0.04'],
+body:not(.night) [class*='bg-white/[0.05'],
+body:not(.night) [class*='bg-white/[0.06'],
+body:not(.night) [class*='bg-white/[0.07'] {
+  background-color: var(--lm-card-bg) !important;
+  background-image: none !important;
+  border-color: var(--lm-card-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Children of those now-light containers shouldn't keep their dark-mode
+   white text. The Tailwind fallback only set `color` on the container —
+   text nested in headings/paragraphs/spans/buttons inherits their own
+   colours from utility classes (`text-white`, `text-slate-200`, etc.)
+   so we explicitly inherit here. */
+body:not(.night) [class*="bg-slate-950"] *,
+body:not(.night) [class*="bg-slate-900"] *,
+body:not(.night) [class*="bg-slate-800"] *,
+body:not(.night) [class*='bg-white/[0.0'] *,
+body:not(.night) [class*='bg-white/[0.10'] * {
+  color: inherit;
+}
+
+/* Generic Tailwind text-utility catches. Without these, a `text-white`
+   span inside any container (not just the dark-glass ones above) stays
+   white. We don't want to clobber semantic colour utilities like
+   text-red-500 or text-blue-600 — only the white / light-grey ones that
+   become unreadable against the light-mode page background. */
+body:not(.night) [class~="text-white"],
+body:not(.night) [class~="text-slate-50"],
+body:not(.night) [class~="text-slate-100"],
+body:not(.night) [class~="text-slate-200"],
+body:not(.night) [class~="text-slate-300"],
+body:not(.night) [class~="text-gray-50"],
+body:not(.night) [class~="text-gray-100"],
+body:not(.night) [class~="text-gray-200"],
+body:not(.night) [class~="text-gray-300"] {
+  color: var(--lm-text) !important;
+}
+body:not(.night) [class~="text-slate-400"],
+body:not(.night) [class~="text-slate-500"],
+body:not(.night) [class~="text-gray-400"],
+body:not(.night) [class~="text-gray-500"] {
+  color: var(--lm-muted) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 6.  TEXT
+ *
+ * Headings dark-navy. Sub/desc/meta blue-grey. No light-grey-on-white.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) h1,
+body:not(.night) h2,
+body:not(.night) h3,
+body:not(.night) h4,
+body:not(.night) .title,
+body:not(.night) .text-white,
+body:not(.night) .pc-name,
+body:not(.night) .ws-title,
+body:not(.night) .gh-card-name,
+body:not(.night) .ln-card-title,
+body:not(.night) .gl-skill-name,
+body:not(.night) .gl-hero-title,
+body:not(.night) .sd-hero-title,
+body:not(.night) .lounge-stat-card-title,
+body:not(.night) .wc-feature-card-title,
+body:not(.night) .review-name,
+body:not(.night) .ncb-card-title,
+body:not(.night) .ncb-header-title,
+body:not(.night) .ncb-sidebar-title,
+body:not(.night) .ncb-chat-header-title,
+body:not(.night) .ncb-context-title,
+body:not(.night) .ncb-context-card-title,
+body:not(.night) .ncb-action-title,
+body:not(.night) .ncb-chat-title,
+body:not(.night) .ncb-empty-title,
+body:not(.night) .ed-home-title,
+body:not(.night) .ed-home-empty-title,
+body:not(.night) .nl-card__title,
+body:not(.night) .nl-paths__hero-title,
+body:not(.night) .nl-paths__preview-title,
+body:not(.night) .nl-tp-panel__title,
+body:not(.night) .nl-pipeline__title,
+body:not(.night) .nl-price-card__name,
+body:not(.night) .nl-workflow__card-title,
+body:not(.night) .nl-lifestyle__card-title,
+body:not(.night) .nl-path-card__title,
+body:not(.night) .co-hero-title,
+body:not(.night) .co-card-name {
+  color: var(--lm-text) !important;
+}
+
+body:not(.night) .muted,
+body:not(.night) .subtitle,
+body:not(.night) .description,
+body:not(.night) .meta,
+body:not(.night) .pc-desc,
+body:not(.night) .ws-sub,
+body:not(.night) .gh-card-desc,
+body:not(.night) .gh-card-meta,
+body:not(.night) .gl-skill-sub,
+body:not(.night) .gl-hero-sub,
+body:not(.night) .sd-hero-sub,
+body:not(.night) .ln-card-meta,
+body:not(.night) .wc-feature-card-sub,
+body:not(.night) .lounge-stat-card-text,
+body:not(.night) .review-meta,
+body:not(.night) .ncb-header-subtitle,
+body:not(.night) .ncb-chat-meta,
+body:not(.night) .ncb-empty-subtitle,
+body:not(.night) .ncb-action-desc,
+body:not(.night) .ncb-safe-text,
+body:not(.night) .ed-home-empty-sub,
+body:not(.night) .nl-card__text,
+body:not(.night) .nl-lifestyle__card-text,
+body:not(.night) .nl-workflow__card-text,
+body:not(.night) .nl-path-card__desc,
+body:not(.night) .nl-paths__preview-text,
+body:not(.night) .nl-paths__hero-text,
+body:not(.night) .nl-pipeline__step-text,
+body:not(.night) .nl-price-card__sub,
+body:not(.night) .nl-hero__subtitle,
+body:not(.night) .nl-lead,
+body:not(.night) .nl-body,
+body:not(.night) .co-hero-meta,
+body:not(.night) .co-card-meta,
+body:not(.night) [class*='-sub']:not([class*='-subtitle--']):not([class*='-submit']),
+body:not(.night) [class*='-desc'],
+body:not(.night) [class*='-meta']:not([class*='-meta-row']) {
+  color: var(--lm-muted) !important;
+}
+
+body:not(.night) .sb-section-label,
+body:not(.night) .chess-section-label,
+body:not(.night) [class*='__eyebrow'],
+body:not(.night) .nl-eyebrow,
+body:not(.night) .ncb-eyebrow,
+body:not(.night) .ncb-chat-section-label {
+  color: var(--lm-faint) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 7.  INPUTS / TEXTAREAS / SELECTS
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+body:not(.night) textarea,
+body:not(.night) select,
+body:not(.night) .ai-textarea,
+body:not(.night) .chat-friend-search,
+body:not(.night) .chess-room-input,
+body:not(.night) .pf-input,
+body:not(.night) .wc-textarea,
+body:not(.night) .settings-select-new,
+body:not(.night) .ncb-search-input,
+body:not(.night) .ncb-input-textarea {
+  background: var(--lm-input-bg) !important;
+  border: 1px solid var(--lm-input-border) !important;
+  color: var(--lm-input-color) !important;
+}
+body:not(.night) input::placeholder,
+body:not(.night) textarea::placeholder {
+  color: var(--lm-input-placeholder) !important;
+  opacity: 1;
+}
+body:not(.night) input:focus,
+body:not(.night) textarea:focus,
+body:not(.night) select:focus {
+  border-color: rgba(37, 99, 235, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16) !important;
+  outline: none !important;
+}
+body:not(.night) .ncb-input {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-input-border) !important;
+  box-shadow: 0 12px 32px rgba(37, 99, 235, 0.08) !important;
+}
+
+/* Profile page: no card chrome around the outer grid or the label+input
+ * wrappers, and the inputs themselves drop their hard border so each field
+ * reads as a soft filled box rather than a rectangle outline. */
+body:not(.night) .profile-fields,
+body:not(.night) .pf-group {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+body:not(.night) .pf-input,
+body:not(.night) #profileName,
+body:not(.night) #profileEmail,
+body:not(.night) #profileUniversity,
+body:not(.night) #profileProgramme,
+body:not(.night) #profileVertiefung,
+body:not(.night) #profileMatrikel,
+body:not(.night) #profileTest,
+body:not(.night) #profileLevel {
+  background: rgba(247, 250, 255, 0.85) !important;
+  border: 1px solid transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18) !important;
+}
+body:not(.night) .pf-input:focus,
+body:not(.night) #profileName:focus,
+body:not(.night) #profileEmail:focus {
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(37, 99, 235, 0.45),
+    0 0 0 3px rgba(37, 99, 235, 0.12) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 8.  SECONDARY / WHITE BUTTONS
+ *
+ * Anything that isn't a primary CTA (next block) gets white + blue border.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) button:not([disabled]):not(.primary):not(.brand-btn):not(.danger-btn):not(.nl-btn--primary):not(.nl-btn--dark):not(.na-submit):not(.na-google):not(.gl-start-btn):not(.gl-skill-open-btn):not(.sub-btn-upgrade):not(.sub-btn-danger):not(.settings-save-btn):not(.profile-save-btn):not(.editor-export-btn):not(.editor-save-doc-btn):not(.tetris-start-btn):not(.chess-big-btn):not(.dc-send-btn):not(.msm-save-btn):not(.ncb-new-chat-btn):not(.ncb-send-btn):not(.ed-hub-action-primary):not(.qz-option):not(#authSubmit):not(#paywallUpgradeBtn):not(#subPauseBtn):not(#subResumeBtn):not(#subCancelBtn):not(.sb-night-btn):not(.psb):not(.st-popup-close):not(.st-tech-card):not(.st-step-btn):not(.st-music-src):not(.st-save-default-btn),
+body:not(.night) .btn:not(.primary),
+body:not(.night) .btn-secondary,
+body:not(.night) .back-btn,
+body:not(.night) .open-btn,
+body:not(.night) .settings-btn,
+body:not(.night) .manage-layout-btn,
+body:not(.night) .co-nav-btn,
+body:not(.night) .ed-tb-btn,
+body:not(.night) .editor-top-btn,
+body:not(.night) .editor-back-btn,
+body:not(.night) .game-back-btn,
+body:not(.night) .ed-home-new-btn,
+body:not(.night) .nl-btn--ghost,
+body:not(.night) .nl-btn--secondary,
+body:not(.night) .nl-lang-btn,
+body:not(.night) .tetris-ctrl-btn,
+body:not(.night) .chess-ptab,
+body:not(.night) .dc-top-btn,
+body:not(.night) .dc-hdr-icon-btn,
+body:not(.night) .dc-input-btn,
+body:not(.night) .epdf-mode-btn,
+body:not(.night) .sem-btn,
+body:not(.night) .ncb-pill,
+body:not(.night) .ncb-panel-open-btn,
+body:not(.night) .ncb-collapse-btn,
+body:not(.night) .ncb-context-close-btn,
+body:not(.night) .ncb-input-action-btn {
+  background: var(--lm-btn-bg) !important;
+  border: 1px solid var(--lm-btn-border) !important;
+  color: var(--lm-btn-color) !important;
+  box-shadow: var(--lm-btn-shadow) !important;
+  transition: background 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+body:not(.night) button:not([disabled]):not(.primary):not(.brand-btn):not(.danger-btn):not(.nl-btn--primary):not(.gl-start-btn):not(.gl-skill-open-btn):not(.sub-btn-upgrade):not(.ncb-new-chat-btn):not(.ncb-send-btn):not(.qz-option):not(.sb-night-btn):not(.psb):not(.st-popup-close):not(.st-tech-card):not(.st-step-btn):not(.st-music-src):not(.st-save-default-btn):hover,
+body:not(.night) .btn-secondary:hover,
+body:not(.night) .back-btn:hover,
+body:not(.night) .manage-layout-btn:hover,
+body:not(.night) .co-nav-btn:hover,
+body:not(.night) .ncb-pill:hover {
+  background: var(--lm-btn-hover-bg) !important;
+  border-color: var(--lm-btn-hover-border) !important;
+  box-shadow: var(--lm-btn-hover-shadow) !important;
+}
+
+/* Active tab look — brand-tinted but on the same white base */
+body:not(.night) .co-nav-btn.active,
+body:not(.night) .chess-ptab.chess-ptab-active,
+body:not(.night) .epdf-mode-btn.epdf-mode-active,
+body:not(.night) .ncb-pill.ncb-pill--active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(14, 165, 233, 0.10)) !important;
+  border-color: rgba(37, 99, 235, 0.36) !important;
+  color: #1d4ed8 !important;
+  box-shadow:
+    0 6px 20px rgba(37, 99, 235, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 9.  PRIMARY CTAs — keep brand gradient (UNTOUCHED whitewash)
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .nl-btn--primary,
+body:not(.night) .nl-btn--dark,
+body:not(.night) .na-submit,
+body:not(.night) .na-google,
+body:not(.night) .gl-start-btn,
+body:not(.night) .gl-skill-open-btn,
+body:not(.night) .sub-btn-upgrade,
+body:not(.night) .settings-save-btn,
+body:not(.night) .profile-save-btn,
+body:not(.night) .editor-export-btn,
+body:not(.night) .editor-save-doc-btn,
+body:not(.night) .tetris-start-btn,
+body:not(.night) .chess-big-btn,
+body:not(.night) .dc-send-btn,
+body:not(.night) .msm-save-btn,
+body:not(.night) .ncb-new-chat-btn,
+body:not(.night) .ncb-send-btn,
+body:not(.night) .ed-hub-action-primary,
+body:not(.night) #subPauseBtn,
+body:not(.night) #subResumeBtn,
+body:not(.night) #paywallUpgradeBtn,
+body:not(.night) #authSubmit,
+body:not(.night) [data-i18n='sd_add_subject'] {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  border: 1px solid transparent !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+  box-shadow:
+    0 10px 28px rgba(37, 99, 235, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+body:not(.night) .nl-btn--primary:hover,
+body:not(.night) .gl-start-btn:hover,
+body:not(.night) .gl-skill-open-btn:hover,
+body:not(.night) .sub-btn-upgrade:hover,
+body:not(.night) .ncb-new-chat-btn:hover,
+body:not(.night) #authSubmit:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+  box-shadow:
+    0 14px 36px rgba(37, 99, 235, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  transform: translateY(-1px);
+}
+
+/* Danger CTAs keep red tint */
+body:not(.night) .sub-btn-danger,
+body:not(.night) #subCancelBtn,
+body:not(.night) .ln-modal-del,
+body:not(.night) .danger-btn {
+  background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+  border: 1px solid transparent !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 26px rgba(220, 38, 38, 0.28) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 10. DEUTSCH SCHREIBTRAINER — feedback chip colours
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .wc-fb-grammar,
+body:not(.night) [data-fb-type='grammar'] {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  border: 1px solid rgba(185, 28, 28, 0.22) !important;
+}
+body:not(.night) .wc-fb-vocab,
+body:not(.night) [data-fb-type='vocab'],
+body:not(.night) [data-fb-type='vocabulary'] {
+  background: #fef3c7 !important;
+  color: #78350f !important;
+  border: 1px solid rgba(146, 64, 14, 0.22) !important;
+}
+body:not(.night) .wc-fb-style,
+body:not(.night) [data-fb-type='style'],
+body:not(.night) [data-fb-type='register'] {
+  background: #ede9fe !important;
+  color: #5b21b6 !important;
+  border: 1px solid rgba(109, 40, 217, 0.22) !important;
+}
+body:not(.night) .wc-fb-suggest,
+body:not(.night) .wc-fb-corrected,
+body:not(.night) [data-fb-type='suggestion'],
+body:not(.night) [data-fb-type='corrected'] {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  border: 1px solid rgba(22, 101, 52, 0.22) !important;
+}
+body:not(.night) .wc-fb-arrow,
+body:not(.night) [class*='fb'][class*='arrow'] {
+  color: #334155 !important;
+}
+
+/* Schreibtrainer result sections — match dark-mode framing in light mode */
+body:not(.night) .wc-result-section {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-card-border, rgba(15, 23, 42, 0.12)) !important;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
+}
+body:not(.night) .wc-result-title {
+  color: #0f172a !important;
+  border-bottom-color: rgba(15, 23, 42, 0.10) !important;
+}
+body:not(.night) .wc-result-subtitle {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+body:not(.night) .wc-score-cell {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.22) !important;
+}
+body:not(.night) .wc-score-label {
+  color: #1d4ed8 !important;
+}
+body:not(.night) .wc-score-value {
+  color: #0f172a !important;
+}
+body:not(.night) .wc-estimated {
+  color: #1f2937 !important;
+}
+body:not(.night) .wc-estimated strong { color: #1d4ed8 !important; }
+body:not(.night) .wc-score-explain { color: #334155 !important; }
+body:not(.night) .wc-score-explain summary { color: #1d4ed8 !important; }
+body:not(.night) .wc-strengths { color: #1f2937 !important; }
+body:not(.night) .wc-corrected {
+  background: #ecfdf5 !important;
+  border-left-color: #10b981 !important;
+  color: #064e3b !important;
+}
+body:not(.night) .wc-improved {
+  background: #e0f2fe !important;
+  border-left-color: #0284c7 !important;
+  color: #0c4a6e !important;
+}
+body:not(.night) .wc-ai-warning {
+  background: #fef9c3 !important;
+  border-color: rgba(161, 98, 7, 0.35) !important;
+  color: #713f12 !important;
+}
+body:not(.night) .wc-structure-missing,
+body:not(.night) .wc-exam-missing {
+  color: #334155 !important;
+}
+body:not(.night) .wc-issue {
+  background: #f8fafc !important;
+  border-color: rgba(15, 23, 42, 0.10) !important;
+}
+body:not(.night) .wc-issue-type {
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+body:not(.night) .wc-issue-original {
+  background: rgba(15, 23, 42, 0.06) !important;
+  color: rgba(15, 23, 42, 0.55) !important;
+}
+body:not(.night) .wc-issue-correction {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+}
+body:not(.night) .wc-issue-explanation {
+  color: rgba(15, 23, 42, 0.72) !important;
+}
+body:not(.night) .wc-issue-arrow { color: rgba(15, 23, 42, 0.45) !important; }
+body:not(.night) .wc-rule-card {
+  background: #f1f5f9 !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  color: #334155 !important;
+}
+body:not(.night) .wc-rule-card summary { color: #1d4ed8 !important; }
+body:not(.night) .wc-tips,
+body:not(.night) .wc-empty {
+  color: #475569 !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 11. CHAT PAGE — one outer white frame, transparent inner panels with
+ *     internal dividers (not three separate grey cards)
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .chat-shell {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+}
+body:not(.night) .chat-sidebar,
+body:not(.night) .chat-main,
+body:not(.night) .chat-members {
+  background: transparent !important;
+  border-color: rgba(37, 99, 235, 0.16) !important;
+}
+body:not(.night) .chat-message-bubble,
+body:not(.night) .chat-room-item,
+body:not(.night) .chat-member-item,
+body:not(.night) .chat-composer,
+body:not(.night) .dc-msg-text,
+body:not(.night) .dc-bubble {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dc-meta,
+body:not(.night) .dc-time {
+  color: var(--lm-muted) !important;
+}
+
+/* The chat page wrapper (#psec-chat) has a hard-coded dark navy gradient
+ * background plus two giant cyan/pink blob pseudo-elements. Replace the
+ * background with the page gradient and kill the blobs so the actual page
+ * canvas reads light, not dark.  */
+body:not(.night) #psec-chat {
+  background: var(--lm-page-bg) !important;
+}
+body:not(.night) #psec-chat::before,
+body:not(.night) #psec-chat::after {
+  display: none !important;
+  content: none !important;
+}
+/* Hide the animated cyan/pink blob backdrop INSIDE .dc-main too — same
+ * problem at the panel level. */
+body:not(.night) .dc-bg,
+body:not(.night) .dc-blob,
+body:not(.night) .dc-blob-1,
+body:not(.night) .dc-blob-2 {
+  display: none !important;
+}
+body:not(.night) .dc-main,
+body:not(.night) .dc-sidebar,
+body:not(.night) .dc-members-panel {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+}
+body:not(.night) .dc-main-hdr {
+  background: transparent !important;
+  border-bottom: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .chat-empty {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .chat-date-sep {
+  color: var(--lm-faint) !important;
+}
+body:not(.night) .dc-main-room-name {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dc-main-room-desc {
+  color: var(--lm-muted) !important;
+}
+
+/* Chat room creation modal: visibility buttons (Öffentlich / Freunde /
+ * Nur mit Einladung) and the NSFW + Slowmode labels were styled for dark
+ * mode (white text on translucent white — invisible here). */
+body:not(.night) .chat-vis-btn {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-card-border) !important;
+  color: var(--lm-text) !important;
+  box-shadow: var(--lm-nested-shadow) !important;
+}
+body:not(.night) .chat-vis-btn:hover {
+  background: #f8fafc !important;
+  border-color: var(--lm-card-border-strong) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .chat-vis-btn.active {
+  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 8px 22px rgba(37, 99, 235, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+}
+/* NSFW + Slowmode labels — inline styles in the HTML use white-50%-alpha;
+ * override by targeting the label elements inside the chat-room modal. */
+body:not(.night) #chatRoomNsfwCheck + span,
+body:not(.night) label:has(#chatRoomNsfwCheck),
+body:not(.night) label:has(#chatRoomSlowmodeSelect),
+body:not(.night) label:has(#chatRoomNsfwCheck) span,
+body:not(.night) label:has(#chatRoomSlowmodeSelect) span {
+  color: var(--lm-text) !important;
+}
+body:not(.night) #chatRoomSlowmodeSelect {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-input-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * EDITOR PAGE — inline-style overrides
+ *
+ * editor.html uses inline styles for the page title + subtitle + every
+ * card title + every card description. They were tuned for dark mode
+ * (gradient blue text, white-40% subtitles, #e2d9f3 card titles) so on
+ * a light surface they read as faded ghost text. Override via attribute
+ * selectors with !important so inline styles lose. */
+body:not(.night) [data-i18n='ed_hub_title'] {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  -webkit-text-fill-color: initial !important;
+  background-clip: initial !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) [data-i18n='ed_hub_sub'] {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) [data-i18n='ed_card_writer'],
+body:not(.night) [data-i18n='ed_card_pdf_editor'],
+body:not(.night) [data-i18n='ed_card_pdf_merger'] {
+  color: var(--lm-text) !important;
+  font-weight: 800 !important;
+}
+body:not(.night) [data-i18n='ed_card_writer_desc'],
+body:not(.night) [data-i18n='ed_card_pdf_editor_desc'],
+body:not(.night) [data-i18n='ed_card_pdf_merger_desc'] {
+  color: var(--lm-muted) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 12. CHATBOT (.ncb-*) — was hard-coded dark glass top to bottom
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .ncb-root {
+  background: var(--lm-page-bg) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .ncb-bg {
+  background: transparent !important;
+}
+body:not(.night) .ncb-bg-gradients {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(99, 102, 241, 0.06), transparent 32%),
+    radial-gradient(circle at 75% 30%, rgba(96, 165, 250, 0.05), transparent 28%),
+    radial-gradient(circle at 45% 85%, rgba(14, 165, 233, 0.05), transparent 35%) !important;
+}
+body:not(.night) .ncb-bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.04) 1px, transparent 1px) !important;
+  opacity: 0.4 !important;
+}
+body:not(.night) .ncb-header {
+  border-bottom: 1px solid var(--lm-card-border) !important;
+  background: rgba(255, 255, 255, 0.65) !important;
+}
+body:not(.night) .ncb-header-icon-tile,
+body:not(.night) .ncb-avatar {
+  background: rgba(37, 99, 235, 0.12) !important;
+  color: #1d4ed8 !important;
+  box-shadow: 0 0 24px rgba(37, 99, 235, 0.12) !important;
+}
+body:not(.night) .ncb-sidebar {
+  background: rgba(248, 250, 252, 0.6) !important;
+  border-right: 1px solid var(--lm-card-border) !important;
+}
+body:not(.night) .ncb-search-icon,
+body:not(.night) .ncb-chat-more {
+  color: var(--lm-faint) !important;
+}
+body:not(.night) .ncb-chat-item {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .ncb-chat-item:hover {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border-color: rgba(37, 99, 235, 0.18) !important;
+}
+body:not(.night) .ncb-chat-item--active {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.30) !important;
+}
+body:not(.night) .ncb-chat-icon {
+  background: rgba(37, 99, 235, 0.10) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .ncb-safe-head,
+body:not(.night) .ncb-greet-pill,
+body:not(.night) .ncb-chat-context-pill {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .ncb-action-icon {
+  background: rgba(37, 99, 235, 0.10) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .ncb-mini-tab {
+  background: var(--lm-nested-bg) !important;
+  border-color: var(--lm-nested-border) !important;
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .ncb-mini-tab:hover {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .ncb-mini-tab--active {
+  background: rgba(37, 99, 235, 0.10) !important;
+  border-color: rgba(37, 99, 235, 0.30) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .ncb-bubble {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .ncb-bubble--user {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.12)) !important;
+  border-color: rgba(37, 99, 235, 0.28) !important;
+  color: #172033 !important;
+}
+body:not(.night) .ncb-bubble--ai {
+  /* Bubble-free AI answer in light mode too. */
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 13. SIDEBAR — items, icons, labels, active pill, night toggle
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) #portal .sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f6fc 100%) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+}
+body:not(.night) .sb-user-name {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .sb-user-uni {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) #portal .sidebar.expanded .sb-user {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border-color: rgba(37, 99, 235, 0.14) !important;
+}
+body:not(.night) .sb-section-label {
+  color: var(--lm-faint) !important;
+}
+body:not(.night) .sb-divider {
+  background: rgba(148, 163, 184, 0.24) !important;
+}
+
+/* Items — thicker, transparent default, indigo hover/active */
+body:not(.night) #portal .sidebar .sb-item {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #334155 !important;
+  height: 64px !important;
+  width: 64px !important;
+  border-radius: 18px !important;
+}
+body:not(.night) #portal .sidebar.expanded .sb-item {
+  height: 64px !important;
+  width: 100% !important;
+}
+body:not(.night) #portal .sidebar .sb-item:hover {
+  background: rgba(37, 99, 235, 0.07) !important;
+  border-color: rgba(37, 99, 235, 0.14) !important;
+  color: #0f172a !important;
+}
+body:not(.night) #portal .sidebar .sb-item span[data-i18n],
+body:not(.night) #portal .sidebar .sb-item > span:not(.sb-item-icon) {
+  color: #334155 !important;
+  font-weight: 700 !important;
+}
+body:not(.night) #portal .sidebar .sb-item.on,
+body:not(.night) #portal .sidebar .sb-item.active {
+  background: linear-gradient(135deg, rgba(165, 180, 252, 0.32) 0%, rgba(147, 197, 253, 0.32) 100%) !important;
+  border-color: rgba(129, 140, 248, 0.30) !important;
+  color: #1e1b4b !important;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.12) !important;
+}
+body:not(.night) #portal .sidebar .sb-item.on span[data-i18n],
+body:not(.night) #portal .sidebar .sb-item.active span[data-i18n],
+body:not(.night) #portal .sidebar .sb-item.on > span:not(.sb-item-icon),
+body:not(.night) #portal .sidebar .sb-item.active > span:not(.sb-item-icon) {
+  color: #1e1b4b !important;
+  font-weight: 800 !important;
+}
+body:not(.night) #portal .sidebar .sb-item.on::before,
+body:not(.night) #portal .sidebar .sb-item.active::before {
+  background: #6366f1 !important;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.45) !important;
+}
+
+/* Sidebar icons — dark glyphs on light tile (was forced white in layout.css) */
+body:not(.night) .sb-item-icon {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+  color: #0f172a !important;
+}
+body:not(.night) .sb-item-icon .sb-sprite,
+body:not(.night) .sb-item-icon .sb-sprite svg {
+  color: #0f172a !important;
+  stroke: #0f172a !important;
+}
+body:not(.night) #portal .sidebar .sb-item:hover .sb-item-icon {
+  background: rgba(37, 99, 235, 0.10) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: #0f172a !important;
+}
+body:not(.night) #portal .sidebar .sb-item:hover .sb-item-icon .sb-sprite,
+body:not(.night) #portal .sidebar .sb-item:hover .sb-item-icon .sb-sprite svg {
+  color: #0f172a !important;
+  stroke: #0f172a !important;
+}
+body:not(.night) #portal .sidebar .sb-item.on .sb-item-icon,
+body:not(.night) #portal .sidebar .sb-item.active .sb-item-icon {
+  background: rgba(99, 102, 241, 0.18) !important;
+  border-color: rgba(99, 102, 241, 0.36) !important;
+  color: #1e1b4b !important;
+}
+body:not(.night) #portal .sidebar .sb-item.on .sb-item-icon .sb-sprite,
+body:not(.night) #portal .sidebar .sb-item.on .sb-item-icon .sb-sprite svg,
+body:not(.night) #portal .sidebar .sb-item.active .sb-item-icon .sb-sprite,
+body:not(.night) #portal .sidebar .sb-item.active .sb-item-icon .sb-sprite svg {
+  color: #1e1b4b !important;
+  stroke: #1e1b4b !important;
+}
+
+/* Night-toggle button matches nav-item palette */
+body:not(.night) .sb-night-btn {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #334155 !important;
+}
+body:not(.night) .sb-night-btn:hover {
+  background: rgba(37, 99, 235, 0.07) !important;
+  border-color: rgba(37, 99, 235, 0.14) !important;
+}
+body:not(.night) .sb-night-track {
+  background: rgba(165, 180, 252, 0.18) !important;
+  border-color: rgba(129, 140, 248, 0.24) !important;
+}
+body:not(.night) .sb-night-thumb {
+  color: #0f172a !important;
+}
+body:not(.night) .sb-night-thumb svg {
+  color: #0f172a !important;
+  stroke: #0f172a !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 14. PRACTICE / COURSES HERO + chips
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .gl-hero-glow,
+body:not(.night) .sd-hero-glow {
+  display: none !important;
+}
+body:not(.night) .gl-hero-v2,
+body:not(.night) .sd-hero {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  border-radius: 28px !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  padding: 28px 32px 26px !important;
+}
+body:not(.night) .gl-hero-avatar {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-nested-shadow) !important;
+  color: #1e1b4b !important;
+}
+body:not(.night) .gl-hero-stat-pill,
+body:not(.night) .sd-hero-stat,
+body:not(.night) .gl-level-chip-readonly {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+  font-weight: 700 !important;
+}
+body:not(.night) .gl-hero-eyebrow,
+body:not(.night) .sd-hero-eyebrow {
+  background: rgba(37, 99, 235, 0.10) !important;
+  border-color: rgba(37, 99, 235, 0.28) !important;
+  color: #1d4ed8 !important;
+}
+
+/* Practice skill cards: readable text + visible progress track */
+body:not(.night) .gl-skill-progress-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .gl-skill-progress-value {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .gl-skill-progress-track {
+  background: rgba(148, 163, 184, 0.18) !important;
+}
+body:not(.night) .gl-skill-chip {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .gl-skill-chip-ai {
+  background: rgba(167, 139, 250, 0.16) !important;
+  border-color: rgba(124, 58, 237, 0.32) !important;
+  color: #6d28d9 !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 15. SHARP-EDGE KILLER — rounded corners everywhere
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) [class*='-card']:not([class*='-card--']),
+body:not(.night) [class*='-panel']:not([class*='--ghost']):not(.chess-panel-tabs),
+body:not(.night) [class*='-hero']:not([class*='-hero-stat']):not([class*='-hero-actions']):not([class*='-hero-text']):not([class*='-hero-title']):not([class*='-hero-sub']):not([class*='-hero-eyebrow']):not([class*='-hero-glow']):not([class*='-hero-grid']):not([class*='-hero-left']):not([class*='-hero-headline']):not([class*='-hero-avatar']):not([class*='-hero-emoji']),
+body:not(.night) [class*='-shell']:not(.app-shell):not(.portal-shell):not(.page-shell),
+body:not(.night) [class*='-block']:not(.settings-block-title):not([class*='-block-']),
+body:not(.night) [class*='-section']:not([class*='-section-label']):not([class*='-section-title']):not([class*='-section-sub']):not([class*='-section-hdr']):not([class*='-section-head']):not(.sb-section-label):not(.chess-section-label),
+body:not(.night) [class*='-empty']:not([class*='-empty-']),
+body:not(.night) [class*='-feat']:not([class*='-featured']),
+body:not(.night) [class*='-row']:not([class*='-row-']),
+body:not(.night) [class*='-item']:not([class*='-item-']):not(.sb-item):not(.psb),
+body:not(.night) [class*='-box']:not([class*='-box-']),
+body:not(.night) [class*='-tile']:not([class*='-tile-']),
+body:not(.night) .dash-greeting,
+body:not(.night) .glass-card,
+body:not(.night) .pc,
+body:not(.night) .settings-block,
+body:not(.night) .profile-hero,
+body:not(.night) .ln-empty {
+  border-radius: 16px;
+}
+/* Bigger radius for top-level page cards */
+body:not(.night) [class*='-card']:not([class*='-card--']):not([class*='-card-']),
+body:not(.night) [class*='-hero']:not([class*='-hero-']),
+body:not(.night) [class*='-shell']:not(.app-shell):not(.portal-shell):not(.page-shell),
+body:not(.night) .dash-greeting,
+body:not(.night) .glass-card,
+body:not(.night) .profile-hero,
+body:not(.night) .ln-empty,
+body:not(.night) .ln-section {
+  border-radius: 20px;
+}
+
+/* Big empty-state cards (real content placeholders) — clean white frame. */
+body:not(.night) .ln-empty {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-muted) !important;
+}
+
+/* Inline empty messages (like "No courses yet" / "No files opened yet"):
+ * just muted italic text, no frame, no border — they're hints, not cards. */
+body:not(.night) .lounge-empty-msg,
+body:not(.night) [class*='-empty-msg'] {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--lm-muted) !important;
+  padding: 4px 0 !important;
+}
+body:not(.night) [class*='-pill'],
+body:not(.night) [class*='-chip'],
+body:not(.night) [class*='-badge'] {
+  border-radius: 999px;
+}
+body:not(.night) input,
+body:not(.night) textarea,
+body:not(.night) select {
+  border-radius: 12px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 16. MISC POLISH
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) ::-webkit-scrollbar-thumb {
+  background: rgba(37, 99, 235, 0.22);
+  border-radius: 10px;
+}
+body:not(.night) ::-webkit-scrollbar-thumb:hover {
+  background: rgba(37, 99, 235, 0.36);
+}
+body:not(.night) ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body:not(.night) code,
+body:not(.night) pre {
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+  border-radius: 6px;
+}
+
+body:not(.night) .qz-card-empty,
+body:not(.night) .fc-card-empty,
+body:not(.night) .lounge-empty {
+  color: var(--lm-muted) !important;
+}
+
+body:not(.night) .tetris-overlay {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 18. PAGE HEADER PADDING — title/sub must sit comfortably inside the card
+ *
+ * .dash-greeting, .ln-section, .profile-hero etc. get the white-card
+ * treatment but have zero padding by default, so the h1/p hug the left
+ * edge and look "outside" the rounded corner. Apply uniform padding so
+ * content stays visually contained.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) .dash-greeting,
+body:not(.night) .profile-hero,
+body:not(.night) .ln-section,
+body:not(.night) .gl-skill-card-v2 {
+  padding: 24px 32px !important;
+}
+body:not(.night) .ln-header {
+  margin-bottom: 16px !important;
+}
+
+/* Subscription feature rows: padding so the checkmark + text sit inside
+ * the rounded frame, not hugging the left edge. */
+body:not(.night) .sub-feat {
+  padding: 10px 16px !important;
+  margin-bottom: 6px !important;
+}
+body:not(.night) .sub-feat:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 17. STUDY LOUNGE — fix hard-coded white text + section headers
+ * ────────────────────────────────────────────────────────────────────────── */
+/* Section header is just a text label, NOT a card */
+body:not(.night) .lounge-section-hdr {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #1d4ed8 !important;
+  padding: 0 !important;
+}
+/* Stat values, labels, streak text — all were white/translucent */
+body:not(.night) .lounge-stat-val {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .lounge-stat-lbl {
+  color: #1d4ed8 !important;
+}
+body:not(.night) .lounge-stat-sub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .lounge-streak-lbl {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .lounge-streak-msg {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .lounge-empty-msg {
+  color: var(--lm-muted) !important;
+}
+/* Stat cards (hard-coded rgba(255,255,255,0.04) bg → white via Tailwind
+ * fallback won't catch this; explicit override) */
+body:not(.night) .lounge-stat-card {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  border-radius: 20px !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .lounge-recent-item {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+  border-radius: 14px !important;
+}
+/* Streak banner already has its own blue tint — keep it but tighten contrast */
+body:not(.night) .lounge-streak-banner {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(14, 165, 233, 0.06)) !important;
+  border: 1px solid rgba(37, 99, 235, 0.22) !important;
+  border-radius: 20px !important;
+}
+
+/* Course Files/Quiz/Flashcards outer panel card — dark rule sets a dark
+ * translucent slate that reads as muddy grey in light mode. Make it the
+ * standard white card surface instead. */
+body:not(.night) .co-inner-v2 .co-files-inner-card,
+body:not(.night) .co-inner-v2 .co-next-steps,
+body:not(.night) .co-inner-v2 .qz-deck-pane,
+body:not(.night) .co-inner-v2 .qz-study-pane,
+body:not(.night) .co-inner-v2 .fc-deck-pane,
+body:not(.night) .co-inner-v2 .fc-study-pane {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Course file rows: dark theme uses white text on glass; light mode needs
+ * explicit nested text colors so file names do not disappear on white rows. */
+body:not(.night) .co-inner-v2 .co-file.co-file-v2 .co-file-name {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .co-file.co-file-v2 .co-file-meta {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-inner-v2 .co-file-chip {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border-color: rgba(37, 99, 235, 0.16) !important;
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-inner-v2 .co-file-chip-studied {
+  background: rgba(20, 184, 166, 0.10) !important;
+  border-color: rgba(15, 118, 110, 0.20) !important;
+  color: #0f766e !important;
+}
+body:not(.night) .co-inner-v2 .co-file.co-file-v2 .co-file-icon-wrap {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-color: rgba(59, 130, 246, 0.18) !important;
+  color: #2563eb !important;
+}
+
+/* Quiz / Flashcards text inside the now-white panels — original styles use
+ * white/light-grey on dark glass; flip to dark navy so it stays legible. */
+body:not(.night) .co-inner-v2 .qz-deck-name,
+body:not(.night) .co-inner-v2 .fc-deck-name,
+body:not(.night) .co-inner-v2 .qz-deck-pane h1,
+body:not(.night) .co-inner-v2 .qz-deck-pane h2,
+body:not(.night) .co-inner-v2 .qz-deck-pane h3,
+body:not(.night) .co-inner-v2 .qz-study-pane h1,
+body:not(.night) .co-inner-v2 .qz-study-pane h2,
+body:not(.night) .co-inner-v2 .qz-study-pane h3,
+body:not(.night) .co-inner-v2 .fc-deck-pane h1,
+body:not(.night) .co-inner-v2 .fc-deck-pane h2,
+body:not(.night) .co-inner-v2 .fc-deck-pane h3,
+body:not(.night) .co-inner-v2 .fc-study-pane h1,
+body:not(.night) .co-inner-v2 .fc-study-pane h2,
+body:not(.night) .co-inner-v2 .fc-study-pane h3 {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .qz-deck-count,
+body:not(.night) .co-inner-v2 .fc-deck-count,
+body:not(.night) .co-inner-v2 .qz-deck-status,
+body:not(.night) .co-inner-v2 .fc-deck-status,
+body:not(.night) .co-inner-v2 .qz-empty,
+body:not(.night) .co-inner-v2 .fc-empty,
+body:not(.night) .co-inner-v2 .qz-counter,
+body:not(.night) .co-inner-v2 .fc-counter,
+body:not(.night) .co-inner-v2 .qz-page,
+body:not(.night) .co-inner-v2 .fc-page,
+body:not(.night) .co-inner-v2 .qz-toolbar::before,
+body:not(.night) .co-inner-v2 .fc-toolbar::before {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-inner-v2 .qz-view-all,
+body:not(.night) .co-inner-v2 .fc-view-all {
+  border: 1px dashed var(--lm-card-border-strong) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .qz-view-all:hover,
+body:not(.night) .co-inner-v2 .fc-view-all:hover {
+  background: rgba(37, 99, 235, 0.06) !important;
+}
+
+/* Quiz settings modal — overlay portal sits at body level, so target by
+ * itself (no .co-inner-v2 prefix). Flip dark glass to white card. */
+body:not(.night) .qzsp-modal {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .qzsp-title,
+body:not(.night) .qzsp-count-val,
+body:not(.night) .qzsp-name,
+body:not(.night) .qzsp-folder-name {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .qzsp-sub,
+body:not(.night) .qzsp-reset-hint,
+body:not(.night) .qzsp-folder-count,
+body:not(.night) .qzsp-folder-toggle {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .qzsp-close {
+  color: var(--lm-text) !important;
+  background: rgba(15, 23, 42, 0.06) !important;
+}
+body:not(.night) .qzsp-close:hover {
+  background: rgba(15, 23, 42, 0.12) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .qzsp-item,
+body:not(.night) .qzsp-folder {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .qzsp-diff-opt {
+  color: var(--lm-muted) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  background: #fff !important;
+}
+body:not(.night) .qzsp-diff-opt:hover {
+  color: var(--lm-text) !important;
+  border-color: var(--lm-card-border-strong) !important;
+}
+body:not(.night) .qzsp-diff-opt.active {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: #3b82f6 !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .qzsp-btn-ghost {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .qzsp-btn-ghost:hover {
+  background: rgba(37, 99, 235, 0.08) !important;
+}
+
+/* Writing coach (practise page) — "Feedback level" label + profile-level
+ * badge use white-on-dark; flip to legible dark/blue on white. */
+body:not(.night) .wc-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .wc-level-badge {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid rgba(37, 99, 235, 0.30) !important;
+}
+body:not(.night) .wc-level-badge-value {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .wc-level-badge-source {
+  color: #2563eb !important;
+}
+
+/* Courses page subject cards — keep them on a clean white surface so the
+ * coloured top accent strip + gradient progress bar pop. Without this they
+ * inherit the dark slate background and read as muddy grey. */
+body:not(.night) #psec-studip .sd-course-card {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) #psec-studip .sd-course-card:hover {
+  border-color: var(--lm-card-border-strong) !important;
+  box-shadow:
+    0 24px 56px rgba(37, 99, 235, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98) !important;
+}
+/* The colored top accent strip uses --sd-card-accent — keep it untouched
+ * but make sure its dark-mode "color-mix" tail still reads on white. */
+body:not(.night) #psec-studip .sd-course-bar {
+  opacity: 1 !important;
+}
+/* Meta chips ("0 files", "Not started") and progress label/value on the
+ * course tiles use white-on-dark; flip to dark text + visible chip on white. */
+body:not(.night) #psec-studip .sd-course-chip {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) #psec-studip .sd-course-chip-time {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) #psec-studip .sd-course-chip-time svg {
+  color: #2563eb !important;
+}
+body:not(.night) #psec-studip .sd-course-progress-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) #psec-studip .sd-course-progress-value {
+  color: var(--lm-text) !important;
+}
+body:not(.night) #psec-studip .sd-course-progress-track {
+  background: rgba(37, 99, 235, 0.10) !important;
+}
+body:not(.night) #psec-studip .sd-stat-pill {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) #psec-studip .sd-stat-pill .sd-stat-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) #psec-studip .sd-stat-pill .sd-stat-value {
+  color: var(--lm-text) !important;
+}
+
+/* PDF viewer toolbar: the v2 toolbar is dark glass by default. In light mode
+ * make it match the rest of the pale course surfaces. */
+body:not(.night) #pdfView,
+body:not(.night) .pdf-viewer-wrap {
+  background: #f6f9ff !important;
+}
+body:not(.night) .pdf-toolbar.pdf-toolbar-v2 {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-bottom: 1px solid var(--lm-card-border) !important;
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-file-info strong {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-file-info .pdf-tb-title,
+body:not(.night) .pdf-toolbar-v2 .pdf-file-info .pdf-tb-title-sub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-toolbar-controls {
+  background: rgba(37, 99, 235, 0.05) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-toolbar-button,
+body:not(.night) .pdf-toolbar-v2 .pdf-study-button {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-card-border-strong) !important;
+  color: var(--lm-text) !important;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.08) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-toolbar-button:hover,
+body:not(.night) .pdf-toolbar-v2 .pdf-study-button:hover {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border-color: rgba(37, 99, 235, 0.34) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-control-group {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-control-group .pdf-toolbar-button {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-control-group .pdf-toolbar-button:hover {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.18) !important;
+}
+body:not(.night) .pdf-tabs-scroll {
+  scrollbar-color: rgba(37, 99, 235, 0.5) rgba(226, 232, 240, 0.9);
+}
+body:not(.night) .pdf-tabs-scroll::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.9);
+}
+body:not(.night) .pdf-tabs-scroll::-webkit-scrollbar-thumb {
+  background: rgba(37, 99, 235, 0.5);
+}
+body:not(.night) .pdf-tab {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.10);
+  color: #334155;
+}
+body:not(.night) .pdf-tab:hover {
+  background: #fff;
+  border-color: rgba(37, 99, 235, 0.22);
+}
+body:not(.night) .pdf-tab.is-active {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.38);
+  color: #1e3a8a;
+  box-shadow: inset 0 -2px 0 #2563eb;
+}
+body:not(.night) .pdf-tab-close {
+  color: #64748b;
+}
+body:not(.night) .pdf-tab-close:hover,
+body:not(.night) .pdf-tab-close:focus {
+  background: rgba(239, 68, 68, 0.10);
+  color: #b91c1c;
+}
+body:not(.night) .pdf-tabs-add {
+  background: rgba(37, 99, 235, 0.10);
+  border-color: rgba(37, 99, 235, 0.28);
+  color: #1d4ed8;
+}
+body:not(.night) .pdf-tabs-add:hover {
+  background: rgba(37, 99, 235, 0.16);
+}
+body:not(.night) .pdf-tabs-menu {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+}
+body:not(.night) .pdf-tabs-menu-item {
+  color: #1e293b;
+}
+body:not(.night) .pdf-tabs-menu-item:hover {
+  background: rgba(37, 99, 235, 0.07);
+}
+body:not(.night) .pdf-tabs-menu-meta,
+body:not(.night) .pdf-tabs-empty {
+  color: #64748b;
+}
+body:not(.night) .pdf-tabs-menu-group {
+  color: rgba(30, 64, 175, 0.7);
+}
+body:not(.night) .pdf-tabs-menu-group + .pdf-tabs-menu-group,
+body:not(.night) .pdf-tabs-menu-item + .pdf-tabs-menu-group {
+  border-top-color: rgba(37, 99, 235, 0.12);
+}
+body:not(.night) .pdf-tab-compare {
+  color: rgba(30, 64, 175, 0.55);
+}
+body:not(.night) .pdf-tab-compare:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+body:not(.night) .pdf-tab.is-comparing {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+body:not(.night) .pdf-tab.is-comparing .pdf-tab-compare {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.16);
+}
+body:not(.night) .pdf-compare-chip {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: #1e3a8a;
+}
+body:not(.night) .pdf-compare-chip-x {
+  color: #1e3a8a;
+}
+body:not(.night) .pdf-compare-chip-x:hover {
+  background: rgba(37, 99, 235, 0.18);
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-page-info,
+body:not(.night) .pdf-toolbar-v2 .pdf-page-input {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-page-input {
+  background: rgba(37, 99, 235, 0.06) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-zoom-pct,
+body:not(.night) .pdf-toolbar-v2 .pdf-control-group .pdf-zoom-pct {
+  background: rgba(37, 99, 235, 0.10) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-primary-button {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.20) !important;
+}
+body:not(.night) .pdf-toolbar-v2 .pdf-primary-button:hover {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
+
+/* Next-step rows on the course detail page — white-on-glass in dark mode,
+ * unreadable on the now-white "Next steps" card in light mode. */
+body:not(.night) .co-inner-v2 .co-next-step {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .co-inner-v2 .co-next-step:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+  border-color: var(--lm-card-border-strong) !important;
+}
+body:not(.night) .co-inner-v2 .co-next-step-title {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .co-next-step-sub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-inner-v2 .co-next-step-icon {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border: 1px solid rgba(37, 99, 235, 0.28) !important;
+  color: #2563eb !important;
+}
+
+/* Document rail drawer (Notes / Summary panel) — many strings use
+ * white-on-glass; flip to dark navy / muted slate on the white drawer. */
+body:not(.night) .dr-drawer {
+  background: var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dr-title {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dr-subtitle {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .dr-empty {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .dr-icon-btn {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+/* Hosted notes panel inside the drawer — options labels (SCOPE/LANG),
+ * pills (Page/±1/Range/Whole PDF, Auto/EN/DE), and Generate button. */
+body:not(.night) .dr-drawer .np-options-row,
+body:not(.night) .dr-drawer .np-action-bar,
+body:not(.night) .dr-drawer .np-range-row {
+  background: transparent !important;
+  border-bottom-color: var(--lm-nested-border) !important;
+}
+body:not(.night) .dr-drawer .np-option-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .dr-drawer .np-opt {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dr-drawer .np-opt:hover:not(.active) {
+  color: var(--lm-text) !important;
+  border-color: var(--lm-card-border-strong) !important;
+}
+body:not(.night) .dr-drawer .np-opt.active {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: #2563eb !important;
+  color: #2563eb !important;
+}
+body:not(.night) .dr-drawer .np-tab {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .dr-drawer .np-tab.active {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dr-drawer .np-range-input {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dr-drawer .np-range-sep {
+  color: var(--lm-muted) !important;
+}
+
+/* AI panel hosted inside the document rail drawer — bot bubble + small
+ * meta strings use white-on-dark and disappear on the white drawer. */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot {
+  /* Bubble-free AI answer in the light-mode side rail too (keep readable text
+     color; drop the card bg/border/shadow). */
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--lm-text) !important;
+  box-shadow: none !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.bot-sender {
+  color: #2563eb !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.user-sender {
+  color: #0ea5e9 !important;
+}
+body:not(.night) .ai-bubble.user,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user {
+  color: #0f172a !important;
+}
+body:not(.night) .ai-bubble.user p,
+body:not(.night) .ai-bubble.user li,
+body:not(.night) .ai-bubble.user span,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user * {
+  color: #0f172a !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-time {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot p,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot li,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot span {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .chip-drawer {
+  background: #ffffff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* AI-rendered diagrams inside chat/Problem Solver answers */
+body:not(.night) .md-diagram-card,
+body:not(.night) .md-diagram-placeholder {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.08) !important;
+}
+body:not(.night) .md-ai-input,
+body:not(.night) .md-ai-input-fallback {
+  background: var(--lm-nested-bg) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.08) !important;
+}
+body:not(.night) .md-ai-input-prompt { color: var(--lm-text) !important; }
+body:not(.night) .md-ai-input-label,
+body:not(.night) .md-ai-input-unit,
+body:not(.night) .md-ai-input-fallback { color: var(--lm-muted) !important; }
+body:not(.night) .md-ai-input-value {
+  background: #fff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .md-ai-input-modal {
+  background: #fff !important;
+  border: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .md-ai-input-modal-backdrop { background: rgba(15, 23, 42, 0.45) !important; }
+body:not(.night) .md-ai-input-placeholder { color: var(--lm-muted) !important; }
+body:not(.night) .md-ai-action {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.35) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .md-ai-action:hover { background: rgba(37, 99, 235, 0.16) !important; }
+/* Inline quiz (minallo-quiz) — light surface variants. */
+body:not(.night) .md-quiz {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+body:not(.night) .md-quiz-head { color: var(--lm-muted) !important; }
+body:not(.night) .md-quiz-question { color: var(--lm-text) !important; }
+body:not(.night) .md-quiz-opt {
+  background: rgba(241, 245, 249, 0.9) !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .md-quiz-opt:hover:not(:disabled) { background: rgba(37, 99, 235, 0.1) !important; }
+body:not(.night) .md-quiz-letter { background: rgba(15, 23, 42, 0.08) !important; color: var(--lm-muted) !important; }
+body:not(.night) .md-quiz-opt.correct {
+  background: rgba(34, 197, 94, 0.14) !important; border-color: rgba(22, 163, 74, 0.55) !important; color: #166534 !important;
+}
+body:not(.night) .md-quiz-opt.incorrect {
+  background: rgba(239, 68, 68, 0.12) !important; border-color: rgba(220, 38, 38, 0.5) !important; color: #991b1b !important;
+}
+body:not(.night) .md-quiz-explain { background: rgba(15, 23, 42, 0.05) !important; color: var(--lm-muted) !important; }
+body:not(.night) .md-quiz-score { background: rgba(37, 99, 235, 0.1) !important; color: #1d4ed8 !important; }
+body:not(.night) .md-diagram-title,
+body:not(.night) .md-diagram-placeholder-title {
+  color: var(--lm-text) !important;
+}
+body:not(.night) .md-diagram-caption,
+body:not(.night) .md-diagram-placeholder-sub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .md-diagram-svg {
+  background:
+    linear-gradient(to right, rgba(37, 99, 235, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.06) 1px, transparent 1px),
+    #ffffff !important;
+}
+body:not(.night) .md-diagram-stage {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(14, 165, 233, 0.08), transparent 30%),
+    radial-gradient(circle at 88% 80%, rgba(34, 197, 94, 0.06), transparent 34%) !important;
+}
+body:not(.night) .md-diagram-toolbar {
+  background: rgba(255, 255, 255, 0.86) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12) !important;
+}
+body:not(.night) .md-diagram-toolbar button {
+  background: rgba(239, 246, 255, 0.9) !important;
+  border: 1px solid rgba(37, 99, 235, 0.16) !important;
+  color: #1e40af !important;
+}
+body:not(.night) .md-diagram-toolbar button:hover {
+  background: rgba(219, 234, 254, 0.95) !important;
+  border-color: rgba(14, 165, 233, 0.45) !important;
+}
+body:not(.night) .md-diagram-zoom-label {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .md-diagram-node {
+  fill: rgba(37, 99, 235, 0.08) !important;
+  stroke: rgba(37, 99, 235, 0.48) !important;
+}
+body:not(.night) .md-diagram-node-label {
+  fill: var(--lm-text) !important;
+}
+body:not(.night) .md-diagram-node-sub {
+  fill: var(--lm-muted) !important;
+}
+body:not(.night) .md-diagram-edge {
+  stroke: rgba(37, 99, 235, 0.72) !important;
+}
+body:not(.night) .md-diagram-edge-label,
+body:not(.night) .md-diagram-free-label {
+  fill: #1d4ed8 !important;
+  stroke: #ffffff !important;
+}
+
+/* AI-rendered 2D plots (minallo-plot fence). Dark defaults in styles.css
+ * leave the SVG with dark fills on a white page — labels become unreadable. */
+body:not(.night) .md-plot-svg {
+  background: var(--lm-nested-bg) !important;
+}
+body:not(.night) .md-plot-frame {
+  fill: #ffffff !important;
+  stroke: var(--lm-nested-border) !important;
+}
+body:not(.night) .md-plot-grid {
+  stroke: rgba(37, 99, 235, 0.18) !important;
+}
+body:not(.night) .md-plot-tick {
+  fill: var(--lm-muted) !important;
+}
+body:not(.night) .md-plot-axis-label {
+  fill: var(--lm-text) !important;
+}
+body:not(.night) .md-plot-marker {
+  fill: #ffffff !important;
+  stroke: #1d4ed8 !important;
+}
+body:not(.night) .md-plot-marker-label {
+  fill: var(--lm-text) !important;
+}
+body:not(.night) .md-plot-legend {
+  fill: var(--lm-text) !important;
+}
+
+/* Course detail hero (title + study progress block) — same dark slate issue
+ * as the panel cards. Flip to white card with a soft blue tint for color. */
+body:not(.night) .co-inner-v2 .co-hero {
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.10) 0%, rgba(167, 139, 250, 0.08) 100%),
+    var(--lm-card-bg) !important;
+  border: 1px solid var(--lm-card-border) !important;
+  box-shadow: var(--lm-card-shadow) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .co-topnav-title {
+  background: rgba(255, 255, 255, 0.78) !important;
+  border: 1px solid rgba(148, 163, 184, 0.34) !important;
+  color: var(--lm-text) !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: var(--lm-text) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08) !important;
+}
+body:not(.night) .co-inner-v2 .co-hero-stat-pill {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+  color: var(--lm-text) !important;
+}
+
+/* Course tabs (Files / Quiz / Flashcards) — give the active tab a strong
+ * brand-blue gradient so the user can tell which one is selected, and make
+ * inactive tabs read as light blue chips on the white surface. */
+body:not(.night) .co-inner-v2 .co-course-tabs {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border: 1px solid var(--lm-nested-border) !important;
+}
+body:not(.night) .co-inner-v2 .co-course-tab {
+  color: var(--lm-muted) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+body:not(.night) .co-inner-v2 .co-course-tab:hover:not(.active) {
+  background: rgba(37, 99, 235, 0.08) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .co-course-tab.active,
+body:not(.night) .co-inner-v2 .co-course-tab[aria-selected="true"],
+body:not(.night) .co-course-tab.active,
+body:not(.night) .co-course-tab[aria-selected="true"] {
+  background: #ffffff !important;
+  background-image: none !important;
+  border: 2px solid #3b82f6 !important;
+  border-color: #3b82f6 !important;
+  outline: 2px solid #3b82f6 !important;
+  outline-offset: -2px !important;
+  color: var(--lm-text) !important;
+  box-shadow: none !important;
+}
+body:not(.night) .co-inner-v2 .co-course-tab.active svg,
+body:not(.night) .co-course-tab.active svg {
+  stroke: #2563eb !important;
+  color: #2563eb !important;
+  opacity: 1 !important;
+}
+
+/* Quiz and flashcard study surfaces need their own light-mode treatment.
+ * The generic card reset above is intentionally broad, but these elements are
+ * text and answer controls rather than nested cards. */
+body:not(.night) .co-inner-v2 .qz-card-stage,
+body:not(.night) .co-inner-v2 .fc-card-stage,
+body:not(.night) .qz-card-stage,
+body:not(.night) .fc-card-stage {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 246, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.98) 100%
+  ) !important;
+  border: 1px solid rgba(147, 197, 253, 0.55) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    0 14px 34px rgba(37, 99, 235, 0.1) !important;
+  color: var(--lm-text) !important;
+}
+body:not(.night) .co-inner-v2 .qz-card-stage.empty,
+body:not(.night) .co-inner-v2 .fc-card-stage.empty,
+body:not(.night) .co-inner-v2 .fc-card-stage:not(.has-card),
+body:not(.night) .qz-card-stage.empty,
+body:not(.night) .fc-card-stage.empty,
+body:not(.night) .fc-card-stage:not(.has-card) {
+  background: rgba(248, 250, 252, 0.9) !important;
+  border: 1px dashed rgba(148, 163, 184, 0.75) !important;
+  box-shadow: none !important;
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .co-inner-v2 .qz-card-question,
+body:not(.night) .co-inner-v2 .fc-card-content,
+body:not(.night) .qz-card-question,
+body:not(.night) .fc-card-content {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #111827 !important;
+}
+body:not(.night) .co-inner-v2 .qz-card-pill,
+body:not(.night) .co-inner-v2 .fc-card-progress-pill,
+body:not(.night) .qz-card-pill,
+body:not(.night) .fc-card-progress-pill {
+  background: rgba(37, 99, 235, 0.1) !important;
+  border: 1px solid rgba(37, 99, 235, 0.22) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .co-inner-v2 .qz-option,
+body:not(.night) .qz-option {
+  position: relative;
+  opacity: 1 !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(148, 163, 184, 0.55) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05) !important;
+  color: #1f2937 !important;
+  text-shadow: none !important;
+}
+body:not(.night) .co-inner-v2 .qz-sa-input,
+body:not(.night) .qz-sa-input {
+  background: #ffffff !important;
+  border: 1px solid rgba(148, 163, 184, 0.55) !important;
+  color: #1f2937 !important;
+}
+body:not(.night) .co-inner-v2 .qz-sa-input::placeholder,
+body:not(.night) .qz-sa-input::placeholder {
+  color: rgba(100, 116, 139, 0.7) !important;
+}
+body:not(.night) .co-inner-v2 .qz-sa-input:focus,
+body:not(.night) .qz-sa-input:focus {
+  border-color: rgba(37, 99, 235, 0.55) !important;
+}
+body:not(.night) .co-inner-v2 .qz-sa-expected,
+body:not(.night) .qz-sa-expected {
+  color: #334155 !important;
+}
+body:not(.night) .co-inner-v2 .qz-option:hover:not(:disabled),
+body:not(.night) .qz-option:hover:not(:disabled) {
+  background: rgba(239, 246, 255, 0.96) !important;
+  border-color: rgba(37, 99, 235, 0.55) !important;
+  color: #111827 !important;
+}
+body:not(.night) .co-inner-v2 .qz-option-letter,
+body:not(.night) .qz-option-letter {
+  display: inline-flex !important;
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #1d4ed8 !important;
+}
+body:not(.night) .co-inner-v2 .qz-option > span:not(.qz-option-letter),
+body:not(.night) .qz-option > span:not(.qz-option-letter) {
+  color: inherit !important;
+  opacity: 1 !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.selected,
+body:not(.night) .qz-option.selected {
+  background: linear-gradient(135deg, rgba(219, 234, 254, 1), rgba(240, 253, 250, 1)) !important;
+  border: 2px solid #2563eb !important;
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.18),
+    0 12px 24px rgba(37, 99, 235, 0.12) !important;
+  color: #0f172a !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.selected::after,
+body:not(.night) .qz-option.selected::after {
+  content: '✓';
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+body:not(.night) .co-inner-v2 .qz-option.selected .qz-option-letter,
+body:not(.night) .qz-option.selected .qz-option-letter {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.correct,
+body:not(.night) .qz-option.correct {
+  background: #dcfce7 !important;
+  border-color: #16a34a !important;
+  color: #14532d !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.incorrect,
+body:not(.night) .qz-option.incorrect {
+  background: #fee2e2 !important;
+  border-color: #dc2626 !important;
+  color: #7f1d1d !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.correct .qz-option-letter,
+body:not(.night) .qz-option.correct .qz-option-letter {
+  background: #16a34a !important;
+  color: #ffffff !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.incorrect .qz-option-letter,
+body:not(.night) .qz-option.incorrect .qz-option-letter {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+body:not(.night) .co-inner-v2 .qz-option.correct.selected,
+body:not(.night) .qz-option.correct.selected {
+  box-shadow:
+    0 0 0 3px rgba(22, 163, 74, 0.20),
+    0 12px 24px rgba(22, 163, 74, 0.12) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 19. EDITOR HUB — PDF Editor / PDF Merger top toolbar buttons
+ *
+ * editor.css forces white-on-dark-glass with !important on a high-specificity
+ * selector. Re-target with the same specificity + body:not(.night) to bump
+ * us over it without raising specificity arms races elsewhere.
+ * ────────────────────────────────────────────────────────────────────────── */
+body:not(.night) #editorPdfEditorView > div:first-child button,
+body:not(.night) #editorPdfMergerView > div:first-child button {
+  background: var(--lm-btn-bg) !important;
+  border: 1px solid var(--lm-btn-border) !important;
+  color: var(--lm-btn-color) !important;
+  box-shadow: var(--lm-btn-shadow) !important;
+}
+body:not(.night) #editorPdfEditorView > div:first-child button:hover,
+body:not(.night) #editorPdfMergerView > div:first-child button:hover {
+  background: var(--lm-btn-hover-bg) !important;
+  border-color: var(--lm-btn-hover-border) !important;
+  box-shadow: var(--lm-btn-hover-shadow) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 20. AI DIAGRAMS / PLOTS — SVG text rendered with white fills
+ *
+ * The Python AI service emits diagrams/plots as inline <svg> with
+ * `fill="#fff"` or `stroke="#fff"` on axis labels, ticks, legends and
+ * node captions. Those become invisible on the light page background.
+ *
+ * We target <text> elements inside an .ai-msg / .ai-msgs-body and any
+ * .minallo-plot / .minallo-diagram fence-rendered SVG. Stroke is kept
+ * darker for axis lines; fills go to the body text colour. */
+body:not(.night) .ai-msg svg text,
+body:not(.night) .ai-msgs-body svg text,
+body:not(.night) .minallo-plot svg text,
+body:not(.night) .minallo-diagram svg text,
+body:not(.night) figure.minallo-plot text,
+body:not(.night) figure.minallo-diagram text {
+  fill: var(--lm-text) !important;
+}
+body:not(.night) .ai-msg svg .axis line,
+body:not(.night) .ai-msg svg .axis path,
+body:not(.night) .ai-msg svg .tick line,
+body:not(.night) .minallo-plot svg .axis line,
+body:not(.night) .minallo-plot svg .axis path,
+body:not(.night) .minallo-plot svg .tick line,
+body:not(.night) .minallo-diagram svg .axis line,
+body:not(.night) .minallo-diagram svg .axis path,
+body:not(.night) .minallo-diagram svg .tick line {
+  stroke: var(--lm-muted) !important;
+}
+/* Last-resort: any inline `stroke="#fff"` / `fill="#fff"` on plot SVGs.
+   Attribute selectors only catch presentation attrs, not CSS, so this is
+   tightly scoped to plot / diagram containers to avoid touching icons. */
+body:not(.night) .minallo-plot svg [stroke="#fff"],
+body:not(.night) .minallo-plot svg [stroke="white"],
+body:not(.night) .minallo-diagram svg [stroke="#fff"],
+body:not(.night) .minallo-diagram svg [stroke="white"] {
+  stroke: var(--lm-muted) !important;
+}
+body:not(.night) .minallo-plot svg [fill="#fff"],
+body:not(.night) .minallo-plot svg [fill="white"],
+body:not(.night) .minallo-diagram svg [fill="#fff"],
+body:not(.night) .minallo-diagram svg [fill="white"] {
+  fill: var(--lm-text) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * AI SIDE PANEL — full light-mode redesign
+ * Covers: document-rail drawer, rail buttons, hosted AI panel, composer,
+ * code blocks, sources, action buttons, scrollbar.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Rail (right shortcut buttons) ────────────────────────────────────── */
+body:not(.night) .dr-rail {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(245, 248, 255, 0.92)) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border: 1px solid #d9e6ff !important;
+  box-shadow: 0 18px 42px rgba(35, 65, 140, 0.14) !important;
+}
+body:not(.night) .dr-rail-avatar {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) .dr-rail-btn {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) .dr-rail-btn:hover {
+  background: #eef5ff !important;
+  border-color: #c4d8ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) .dr-rail-btn.is-active {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.28) !important;
+}
+
+/* ── Drawer shell ─────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer {
+  background:
+    radial-gradient(circle at 90% 8%, rgba(79, 109, 246, 0.10), transparent 26%),
+    linear-gradient(180deg, #fbfdff 0%, #f3f7ff 100%) !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 18px 42px rgba(35, 65, 140, 0.14) !important;
+  color: #17233f !important;
+}
+body:not(.night) .dr-orb-a,
+body:not(.night) .dr-orb-b {
+  display: none !important;
+}
+
+/* ── AI-mode content area (override dark gradient from document-rail.css) ─ */
+body:not(.night) .dr-drawer.dr-mode-ai .dr-content {
+  background: transparent !important;
+}
+
+/* ── File chip bar ───────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer.dr-mode-ai .dr-host-ai .ai-file-chip-bar {
+  background: rgba(238, 245, 255, 0.5) !important;
+  border-top-color: #d9e6ff !important;
+  border-bottom-color: #d9e6ff !important;
+}
+
+/* ── Drawer header ────────────────────────────────────────────────────── */
+body:not(.night) .dr-header {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-header-icon {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) .dr-title {
+  color: #17233f !important;
+}
+body:not(.night) .dr-subtitle {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-status-dot {
+  background: #34c58a !important;
+  box-shadow: 0 0 0 4px rgba(52, 197, 138, 0.14) !important;
+  border-color: #fbfdff !important;
+}
+body:not(.night) .dr-icon-btn {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #4f5f7d !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) .dr-icon-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── File chip (selected PDF indicator) ───────────────────────────────── */
+body:not(.night) .dr-drawer .ai-file-chip,
+body:not(.night) .dr-drawer .dr-host-ai .ai-file-chip {
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3f5fc9 !important;
+}
+
+/* ── Message area background ──────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-msgs {
+  background: transparent !important;
+}
+
+/* ── Bot bubble (transparent, readable text) ──────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot {
+  background: transparent !important;
+  border: 0 !important;
+  color: #17233f !important;
+  box-shadow: none !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot p,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot li,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot span,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot div {
+  color: #17233f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot b,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot strong {
+  color: #111a33 !important;
+  font-weight: 800 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot small {
+  color: #8390ad !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.bot .md-h {
+  color: #111a33 !important;
+}
+
+/* ── User bubble ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user {
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #17233f !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user,
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble.user * {
+  color: #17233f !important;
+}
+
+/* ── Sender labels ────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.bot-sender {
+  color: #4f6df6 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.bot-sender .msg-sender-dot {
+  background: #4f6df6 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.user-sender {
+  color: #0ea5e9 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-sender.user-sender .msg-sender-dot {
+  background: #0ea5e9 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .msg-time {
+  color: #8390ad !important;
+}
+
+/* ── Inline code ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble code {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── Code blocks ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .md-code-block {
+  background: #f4f8ff !important;
+  border: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-header {
+  background: #edf3ff !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-lang-tag {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-copy {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-copy:hover {
+  background: rgba(79, 109, 246, 0.10) !important;
+  color: #3859e8 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .md-code-block pre {
+  color: #17233f !important;
+}
+
+/* ── Blockquotes ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble .md-bq {
+  border-left-color: #4f6df6 !important;
+  background: #eef5ff !important;
+  color: #4f5f7d !important;
+}
+
+/* ── Math / formula blocks ────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .katex-display,
+body:not(.night) .dr-drawer .dr-host-ai .math-block,
+body:not(.night) .dr-drawer .dr-host-ai .MathJax_Display {
+  background: #f4f8ff !important;
+  border: 1px solid #d9e6ff !important;
+  border-radius: 14px !important;
+  padding: 10px 12px !important;
+  color: #17233f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .katex,
+body:not(.night) .dr-drawer .dr-host-ai .katex * {
+  color: #17233f !important;
+}
+
+/* ── RAG source pills ─────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-rag-sources {
+  border-top-color: #d9e6ff !important;
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-rag-sources > summary {
+  color: #17233f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-rag-sources li {
+  color: #4f5f7d !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-src-chip,
+body:not(.night) .dr-drawer .dr-host-ai .ai-source-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3f5fc9 !important;
+  border-radius: 999px !important;
+  font-weight: 800 !important;
+}
+
+/* ── Action buttons (Copy, Export, Download) ──────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-export-row button,
+body:not(.night) .dr-drawer .dr-host-ai .ai-copy,
+body:not(.night) .dr-drawer .dr-host-ai .ai-action-btn,
+body:not(.night) .dr-drawer .dr-host-ai .msg-action-btn {
+  background: #ffffff !important;
+  border: 1px solid #c4d8ff !important;
+  color: #2c3857 !important;
+  box-shadow: 0 4px 10px rgba(35, 65, 140, 0.07) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-export-row button:hover,
+body:not(.night) .dr-drawer .dr-host-ai .ai-copy:hover,
+body:not(.night) .dr-drawer .dr-host-ai .ai-action-btn:hover,
+body:not(.night) .dr-drawer .dr-host-ai .msg-action-btn:hover {
+  background: #eef5ff !important;
+  border-color: #9db8ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── Thinking / loading status ────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-thinking-card {
+  color: #4f5f7d !important;
+}
+
+/* ── Composer / input area ────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-input-area {
+  border-top: 1px solid #d9e6ff !important;
+  background: rgba(255, 255, 255, 0.45) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-input-box {
+  background: #ffffff !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 12px 32px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-input-box:focus-within {
+  border-color: #8ea8ff !important;
+  box-shadow:
+    0 0 0 4px rgba(79, 109, 246, 0.12),
+    0 12px 32px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-textarea {
+  color: #17233f !important;
+  background: transparent !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-textarea::placeholder {
+  color: #8a98b7 !important;
+}
+
+/* ── Bottom row: mode pill, char count, tool buttons ──────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-mode-pill {
+  background: #eaf4ff !important;
+  color: #4f6df6 !important;
+  border: 1px solid #cfe2ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-mode-pill:hover {
+  background: #dfeeff !important;
+  border-color: #b8d4ff !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-char-count {
+  color: #a0abc2 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-attach-btn,
+body:not(.night) .dr-drawer .dr-host-ai .ai-snip-btn {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #50607f !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-attach-btn:hover,
+body:not(.night) .dr-drawer .dr-host-ai .ai-snip-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* ── Send button ──────────────────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-send {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.25) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-send:hover {
+  background: linear-gradient(145deg, #7090ff, #5878f6) !important;
+  box-shadow: 0 14px 26px rgba(79, 109, 246, 0.32) !important;
+}
+
+/* ── Quick-action chips (if visible) ──────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-tip {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .ai-tip:hover {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+}
+
+/* ── Chip drawer (sub-menus) ──────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .chip-drawer {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #17233f !important;
+  box-shadow: 0 8px 24px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub:hover,
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub.is-active,
+body:not(.night) .dr-drawer .dr-host-ai .chip-sub.active {
+  background: #eef5ff !important;
+  border-color: #4f6df6 !important;
+  color: #4f6df6 !important;
+}
+
+/* ── Problem Solver strip ─────────────────────────────────────────────── */
+body:not(.night) .dr-problem-strip {
+  background: linear-gradient(180deg, rgba(79, 109, 246, 0.06), rgba(79, 109, 246, 0.02)) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) .dr-problem-strip:hover {
+  background: linear-gradient(180deg, rgba(79, 109, 246, 0.10), rgba(79, 109, 246, 0.04)) !important;
+}
+body:not(.night) .dr-problem-strip-tag {
+  color: #4f6df6 !important;
+}
+body:not(.night) .dr-problem-strip-preview {
+  color: #8390ad !important;
+}
+body:not(.night) .dr-problem-strip-action {
+  color: #4f6df6 !important;
+  border-color: rgba(79, 109, 246, 0.35) !important;
+}
+
+/* ── Horizontal rule inside AI answers ────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-bubble .md-hr {
+  border-top-color: #d9e6ff !important;
+}
+
+/* ── Scroll-to-bottom button ──────────────────────────────────────────── */
+body:not(.night) .dr-drawer .dr-host-ai .ai-scroll-btn {
+  background: #ffffff !important;
+  border-color: #d9e6ff !important;
+  color: #4f6df6 !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.10) !important;
+}
+
+/* ── Scrollbar (subtle light) ─────────────────────────────────────────── */
+body:not(.night) .dr-drawer *::-webkit-scrollbar {
+  width: 8px !important;
+}
+body:not(.night) .dr-drawer *::-webkit-scrollbar-thumb {
+  background: #c9d9f8 !important;
+  border-radius: 999px !important;
+}
+body:not(.night) .dr-drawer *::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* ── Also override the standalone #aiPanel (non-drawer) in light mode ── */
+body:not(.night) #aiPanel:not(.dr-host-ai) {
+  background:
+    radial-gradient(circle at 90% 8%, rgba(79, 109, 246, 0.10), transparent 26%),
+    linear-gradient(180deg, #fbfdff 0%, #f3f7ff 100%) !important;
+  border-left: 1px solid #cddfff !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-hdr {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-hdr h3 {
+  color: #4f6df6 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-hdr p {
+  color: #4f5f7d !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-av {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-status-dot {
+  background: #34c58a !important;
+  border-color: #fbfdff !important;
+  box-shadow: 0 0 0 4px rgba(52, 197, 138, 0.14) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-icon-btn {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #4f5f7d !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-icon-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-close {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #4f5f7d !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-close:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot {
+  color: #17233f !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot p,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot li,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot span,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot div {
+  color: #17233f !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot b,
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.bot strong {
+  color: #111a33 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-bubble.user {
+  background: #eef5ff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #17233f !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-input-area {
+  border-top: 1px solid #d9e6ff !important;
+  background: rgba(255, 255, 255, 0.45) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-input-box {
+  background: #ffffff !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 12px 32px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-tip {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .ai-tip:hover {
+  background: linear-gradient(145deg, #5f7bff, #4768f4) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-sender.bot-sender {
+  color: #4f6df6 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-sender.user-sender {
+  color: #0ea5e9 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-action-btn {
+  background: #ffffff !important;
+  border: 1px solid #c4d8ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) #aiPanel:not(.dr-host-ai) .msg-action-btn:hover {
+  background: #eef5ff !important;
+  color: #3859e8 !important;
+}
+
+/* Higher-specificity overrides for the AI panel while it is hosted in the
+ * document rail. styles.css contains #portal-scoped dark AI rules, so these
+ * intentionally include #portal as well. */
+body:not(.night) #portal .dr-drawer.dr-mode-ai,
+body:not(.night) #portal .dr-drawer.dr-mode-ai #aiPanel.dr-host-ai {
+  --dr-glass-bg: #ffffff;
+  --dr-glass-bg-soft: #f5f8ff;
+  --dr-glass-border: #d9e6ff;
+  --dr-glass-border-strong: #b9ccff;
+  --dr-text: #17233f;
+  --dr-text-strong: #111a33;
+  --dr-text-dim: #52617d;
+  --dr-text-faint: #8794ad;
+  --dr-sky-100: #2949d8;
+  --dr-sky-200: #3859e8;
+  --dr-sky-bg: rgba(79, 109, 246, 0.12);
+  --dr-sky-bg-soft: rgba(79, 109, 246, 0.08);
+  --dr-sky-border: rgba(79, 109, 246, 0.42);
+  --dr-sky-border-soft: rgba(79, 109, 246, 0.24);
+  background:
+    linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%) !important;
+  border-color: #cddfff !important;
+  color: #17233f !important;
+  box-shadow: 0 18px 42px rgba(35, 65, 140, 0.14) !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .dr-header {
+  min-height: 58px !important;
+  padding: 10px 10px 9px !important;
+  margin: -12px -12px 0 !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  border-bottom: 1px solid #d9e6ff !important;
+  color: #17233f !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .dr-title {
+  color: #17233f !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .dr-subtitle {
+  color: #52617d !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .dr-content {
+  background: #f5f8ff !important;
+  color: #17233f !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-hdr {
+  display: none !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-file-chip-bar {
+  background: #edf4ff !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-file-chip {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+  box-shadow: 0 3px 8px rgba(35, 65, 140, 0.06) !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-file-chip svg {
+  stroke: #3859e8 !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-msgs {
+  background: #f5f8ff !important;
+  color: #17233f !important;
+  scrollbar-color: #c9d9f8 transparent !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-msgs::-webkit-scrollbar-thumb {
+  background: #c9d9f8 !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-sender.bot-sender {
+  color: #3859e8 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-sender.bot-sender .msg-sender-dot {
+  background: #3859e8 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-sender.user-sender {
+  color: #0284c7 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-sender.user-sender .msg-sender-dot {
+  background: #0284c7 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-time {
+  color: #8794ad !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble.bot,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble.bot * {
+  color: #17233f !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble.bot {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble b,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble strong {
+  color: #111a33 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble.user {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #17233f !important;
+  box-shadow: 0 4px 12px rgba(35, 65, 140, 0.08) !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble.user * {
+  color: #17233f !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble code {
+  background: #edf4ff !important;
+  border: 1px solid #d9e6ff !important;
+  color: #2949d8 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble .md-code-block {
+  background: #ffffff !important;
+  border: 1px solid #d9e6ff !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble .md-code-header {
+  background: #edf4ff !important;
+  border-bottom: 1px solid #d9e6ff !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble .md-code-block pre,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble .md-code-block pre code {
+  color: #17233f !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-bubble .md-bq {
+  background: #edf4ff !important;
+  border-left-color: #4f6df6 !important;
+  color: #52617d !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-action-btn,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-action-btn,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-copy {
+  background: #ffffff !important;
+  border: 1px solid #c4d8ff !important;
+  color: #2c3857 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .msg-action-btn:hover,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-action-btn:hover,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-copy:hover {
+  background: #edf4ff !important;
+  color: #2949d8 !important;
+}
+
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-input-area {
+  background: #eef4ff !important;
+  border-top: 1px solid #d9e6ff !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-input-box {
+  background: #ffffff !important;
+  border: 1px solid #cddfff !important;
+  box-shadow: 0 10px 24px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-input-box:focus-within {
+  border-color: #8ea8ff !important;
+  box-shadow:
+    0 0 0 4px rgba(79, 109, 246, 0.12),
+    0 10px 24px rgba(35, 65, 140, 0.10) !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-textarea {
+  color: #17233f !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-textarea::placeholder {
+  color: #8794ad !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-mode-pill,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-attach-btn,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-snip-btn {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-char-count {
+  color: #8794ad !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-send {
+  background: #4f6df6 !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(79, 109, 246, 0.24) !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .ai-tip,
+body:not(.night) #portal .dr-drawer.dr-mode-ai .chip-sub {
+  background: #ffffff !important;
+  border: 1px solid #d6e5ff !important;
+  color: #3859e8 !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .chip-drawer {
+  background: #ffffff !important;
+  border-color: #d9e6ff !important;
+  color: #17233f !important;
+}
+body:not(.night) #portal .dr-drawer.dr-mode-ai .chip-drawer-label {
+  color: #8794ad !important;
+}
+
+/* Focus Session popup: dedicated light-mode glass treatment. */
+body:not(.night) #portal .st-popup.st-popup-v2 {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.91), rgba(248, 252, 255, 0.84)),
+    radial-gradient(circle at 14% 4%, rgba(79, 141, 255, 0.16), transparent 35%) !important;
+  border: 1px solid var(--study-light-border) !important;
+  box-shadow: var(--study-light-shadow) !important;
+  color: var(--study-light-text) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-popup-head-v2,
+body:not(.night) #portal .st-popup.st-popup-v2 .st-settings,
+body:not(.night) #portal .st-popup.st-popup-v2 .st-footer-row {
+  border-color: rgba(110, 145, 205, 0.22) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-popup-pill {
+  background: linear-gradient(135deg, rgba(79, 141, 255, 0.14), rgba(72, 217, 233, 0.10)) !important;
+  border: 1px solid rgba(79, 141, 255, 0.24) !important;
+  color: #2f5d9f !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-popup-title {
+  color: var(--study-light-title) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-popup-sub {
+  color: var(--study-light-muted) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-popup-close {
+  background: rgba(255, 255, 255, 0.86) !important;
+  border: 1px solid rgba(104, 139, 197, 0.24) !important;
+  color: #243047 !important;
+  box-shadow: 0 8px 18px rgba(64, 92, 139, 0.12) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-popup-close:hover {
+  background: #ffffff !important;
+  border-color: var(--study-light-border-strong) !important;
+  color: #111827 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-tech-card {
+  position: relative;
+  overflow: hidden;
+  padding-bottom: 17px;
+  background: rgba(255, 255, 255, 0.82) !important;
+  border: 1px solid rgba(104, 139, 197, 0.24) !important;
+  box-shadow: 0 10px 22px rgba(58, 93, 145, 0.08) !important;
+  color: #162235 !important;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-tech-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--study-light-border-strong) !important;
+  box-shadow: var(--study-light-card-shadow) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-tech-card.active {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(236, 245, 255, 0.96)),
+    radial-gradient(circle at 18% 12%, rgba(79, 141, 255, 0.18), transparent 45%) !important;
+  border-color: rgba(79, 141, 255, 0.58) !important;
+  box-shadow: 0 14px 32px rgba(79, 141, 255, 0.15) !important;
+  color: #162235 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-tech-card.active::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--study-light-blue), #48d9e9);
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-tech-name {
+  color: #162235 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-tech-desc {
+  color: #5d6d89 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-setting-label {
+  color: #4f5f78 !important;
+  font-weight: 700 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-stepper {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-step-btn {
+  background: linear-gradient(180deg, #ffffff, #f3f8ff) !important;
+  border: 1px solid rgba(104, 139, 197, 0.28) !important;
+  color: #1b2b48 !important;
+  box-shadow: 0 6px 14px rgba(62, 90, 139, 0.12) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-step-btn:hover {
+  background: linear-gradient(180deg, #ffffff, #eaf3ff) !important;
+  border-color: var(--study-light-border-strong) !important;
+  color: var(--study-light-blue-deep) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-step-val {
+  color: #172033 !important;
+  font-weight: 800 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-music-section {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(104, 139, 197, 0.22) !important;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(241, 247, 255, 0.74)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-music-label {
+  color: #5c6b84 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-music-src {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border: 1px solid rgba(104, 139, 197, 0.27) !important;
+  color: #192337 !important;
+  box-shadow: 0 8px 16px rgba(65, 93, 139, 0.08) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-music-src:hover {
+  border-color: var(--study-light-border-strong) !important;
+  background: #ffffff !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-music-src.active {
+  border-color: rgba(79, 141, 255, 0.48) !important;
+  background: linear-gradient(180deg, #ffffff, #eff6ff) !important;
+  box-shadow: 0 10px 20px rgba(79, 141, 255, 0.12) !important;
+  color: #192337 !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-music-src-hint {
+  color: var(--study-light-muted) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-playlist-select,
+body:not(.night) #portal .st-popup.st-popup-v2 .st-save-default-btn {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border: 1px solid rgba(104, 139, 197, 0.27) !important;
+  color: #192337 !important;
+  box-shadow: 0 8px 16px rgba(65, 93, 139, 0.08) !important;
+}
+
+body:not(.night) #portal .st-popup.st-popup-v2 .st-save-default-btn:hover {
+  background: #ffffff !important;
+  border-color: var(--study-light-border-strong) !important;
+  color: var(--study-light-blue-deep) !important;
+}

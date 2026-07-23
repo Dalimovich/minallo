@@ -7,6 +7,7 @@ import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { supaRequest } from '../lib/supabase-admin';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
+import { isSafeCourseId, isSafePdfStorageName } from '../lib/validation';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const SOURCE_BUCKET = 'course-uploads';
@@ -71,9 +72,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const isOfficialProfMaterial = body.isOfficialProfMaterial;
   const forceReindex = body.forceReindex;
 
-  if (!courseId || typeof courseId !== 'string') return fail(400, 'courseId is required');
-  if (!storageName || typeof storageName !== 'string') return fail(400, 'storageName is required');
-  if (!fileName || typeof fileName !== 'string') return fail(400, 'fileName is required');
+  if (!courseId || typeof courseId !== 'string' || !isSafeCourseId(courseId)) {
+    return fail(400, 'courseId is invalid');
+  }
+  if (!storageName || typeof storageName !== 'string' || !isSafePdfStorageName(storageName)) {
+    return fail(400, 'storageName is invalid');
+  }
+  if (!fileName || typeof fileName !== 'string' || !isSafePdfStorageName(fileName)) {
+    return fail(400, 'fileName is invalid');
+  }
 
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
   const courseKey = _ufKey(courseId);
@@ -83,7 +90,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const existing = await supaRequest<DocumentRow[]>(
     'GET',
-    'documents?user_id=eq.' + user.id +
+    'documents?user_id=eq.' + encodeURIComponent(user.id) +
       '&course_id=eq.' + encodeURIComponent(courseId) +
       '&storage_path=eq.' + encodeURIComponent(docStoragePath) +
       '&select=id,processing_status,storage_path&limit=1',
@@ -97,11 +104,11 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         alreadyIndexed: true, documentId: doc.id, processingStatus: 'ready'
       });
     }
-    await supaRequest('PATCH', 'documents?id=eq.' + doc.id,
+    await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(doc.id),
       { processing_status: 'uploaded', storage_path: docStoragePath }, serviceKey);
-    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + doc.id, null, serviceKey)
+    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
-    await supaRequest('DELETE', 'document_pages?document_id=eq.' + doc.id, null, serviceKey)
+    await supaRequest('DELETE', 'document_pages?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
     await _kickIndex(doc.id, user.id, courseId, docStoragePath);
     return jsonResponse(200, {

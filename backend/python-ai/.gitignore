@@ -8,3 +8,14 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# Generated diagnostic/eval reports — contain user document content
+scripts/diag_runs/
+scripts/eval_runs/
+
+# A/B harness outputs (ab_notes_model.py writes these) — generated, not source
+scripts/ab_out_*.md
+
+# One-off destructive ops scripts — kept locally, never shared (hardcoded email)
+scripts/purge_other_users_documents.sql
+scripts/purge_other_users_storage.py

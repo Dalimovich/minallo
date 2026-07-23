@@ -3,19 +3,42 @@
   var container = document.getElementById('psec-notes');
   if (!container) return;
 
-  fetch('views/lecturenotes/lecturenotes.html')
-    .then(function (r) {
+  // Retry the markup fetch a couple of times: this dispatcher only runs once
+  // (the loader won't re-inject the script on re-navigation), so a single
+  // transient network failure here would leave the page blank until a full
+  // reload. Retrying self-heals the common flaky-connection case.
+  function _ssFetchText(url, tries) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
-    })
+    }).catch(function (err) {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
+          return _ssFetchText(url, tries - 1);
+        });
+      }
+      throw err;
+    });
+  }
+  _ssFetchText('views/lecturenotes/lecturenotes.html', 2)
     .then(function (html) {
       var tmp = document.createElement('div');
       tmp.innerHTML = html;
       var sec = tmp.querySelector('#psec-notes');
       if (sec) {
+        // Preserve the live display. lecturenotes.html's #psec-notes ships with
+        // style="display:none", and this fetch resolves AFTER the first click
+        // already revealed the section — clobbering cssText would re-hide it,
+        // forcing a pointless second click.
+        var prevDisplay = container.style.display || 'none';
         container.style.cssText = sec.getAttribute('style') || '';
+        container.style.display = prevDisplay;
         while (sec.firstChild) container.appendChild(sec.firstChild);
       }
       _init();
+    })
+    .catch(function (err) {
+      console.error('lecturenotes.html load failed:', err);
     });
 
   function _init() {

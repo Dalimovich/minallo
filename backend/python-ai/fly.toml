@@ -8,16 +8,47 @@ primary_region = 'fra'
 
 [build]
 
+[env]
+  # Drives CORS origin allow-list + whether sourceDebug payloads are exposed to
+  # clients (app/main.py, ask.py). Must be 'production' on the live app so we
+  # don't ship debug internals or localhost CORS to real users.
+  ENVIRONMENT = 'production'
+
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  # Phase-3 indexing uses FastAPI BackgroundTasks — /index-document
+  # returns 200 in ms while the actual work runs async on the Python
+  # process. With auto_stop_machines='suspend' + min_machines_running=0,
+  # Fly considered the machine idle the moment the response went out and
+  # suspended it mid-task. All three reindexes froze in `extracting_text`
+  # because the background tasks were killed before they could update
+  # the DB row. Keep one machine warm and only stop on real idle.
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
 
+  # Edge admission control + horizontal-scale readiness. Fly load-balances on
+  # these per-machine limits and (once >1 machine is provisioned) auto-starts
+  # stopped machines past the soft limit. hard_limit is the shed point: beyond
+  # it the proxy returns 503 instead of letting requests pile into the
+  # threadpool and die on the 120s Cloudflare cap. Sized against the per-machine
+  # threadpool (2 workers × 64). NB: true horizontal autoscale still needs more
+  # machines provisioned (`fly scale count N`) — a cost decision left to the
+  # operator; this block just makes the box shed gracefully and be ready for it.
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 100
+    hard_limit = 140
+
 [[vm]]
-  memory = '1gb'
+  # shared (not performance) CPUs: the AI workload is mostly I/O-bound (waiting
+  # on OpenAI/Supabase), so dedicated cores aren't needed yet — 2 shared cpus
+  # run the 2 gunicorn workers + threadpool fine. 2 GB is the OCR-OOM guard
+  # (vision OCR rasterizes PDF pages to PNG). NB: performance cpus would force a
+  # 4 GB minimum (2 GB/core); revisit if load tests show CPU throttling.
+  memory = '2gb'
   cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 1024
+  cpus = 2
+  memory_mb = 2048

@@ -37,3 +37,46 @@ def test_study_score_boosts_formula_text() -> None:
     score_with_formula = _text_study_score("The kinematic equation is v = u + a*t which we apply.")
     score_plain = _text_study_score("This is a normal sentence with no formulas.")
     assert score_with_formula > score_plain
+
+
+def _row(doc_id: str, chunk_id: str) -> dict:
+    return {"id": chunk_id, "document_id": doc_id}
+
+
+def test_per_document_coverage_splices_missing_docs() -> None:
+    from app.services.retrieval import _ensure_per_document_coverage
+
+    # Ranked pool: doc A dominates the top, docs B and C only appear lower down.
+    ranked = [
+        (0.9, _row("A", "a1")),
+        (0.8, _row("A", "a2")),
+        (0.7, _row("A", "a3")),
+        (0.4, _row("B", "b1")),
+        (0.3, _row("C", "c1")),
+    ]
+    chosen = ranked[:3]  # all from doc A
+    out = _ensure_per_document_coverage(
+        ranked, chosen, document_ids=["A", "B", "C"], top_k=3
+    )
+    present = {row["document_id"] for _, row in out}
+    assert present == {"A", "B", "C"}  # every selected doc represented
+
+
+def test_per_document_coverage_noop_when_all_present() -> None:
+    from app.services.retrieval import _ensure_per_document_coverage
+
+    ranked = [(0.9, _row("A", "a1")), (0.8, _row("B", "b1"))]
+    chosen = ranked[:2]
+    out = _ensure_per_document_coverage(
+        ranked, chosen, document_ids=["A", "B"], top_k=5
+    )
+    assert out == chosen
+
+
+def test_per_document_coverage_noop_for_single_or_no_selection() -> None:
+    from app.services.retrieval import _ensure_per_document_coverage
+
+    ranked = [(0.9, _row("A", "a1")), (0.8, _row("B", "b1"))]
+    chosen = [ranked[0]]
+    assert _ensure_per_document_coverage(ranked, chosen, document_ids=["A"], top_k=5) == chosen
+    assert _ensure_per_document_coverage(ranked, chosen, document_ids=None, top_k=5) == chosen

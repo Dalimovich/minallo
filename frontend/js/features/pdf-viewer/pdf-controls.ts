@@ -19,8 +19,10 @@ export function initPdfControls(options: PdfControlsOptions): {
   pdfScrollToPage: (n: number) => void;
 } {
   function updateZoomPct(): void {
-    const el = document.getElementById('pdfZoomPct');
-    if (el) el.textContent = Math.round(options.getPdfScale() * 100) + '%';
+    const el = document.getElementById('pdfZoomPct') as HTMLInputElement | null;
+    if (el && document.activeElement !== el) {
+      el.value = Math.round(options.getPdfScale() * 100) + '%';
+    }
   }
 
   function pdfVisiblePage(): number {
@@ -58,11 +60,15 @@ export function initPdfControls(options: PdfControlsOptions): {
     }, 30);
   });
 
-  let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+  let scrollFrame: number | null = null;
   pdfBody?.addEventListener('scroll', () => {
     if (!options.getPdfShowAll()) return;
-    if (scrollTimer) clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(options.updatePageInfo, 80);
+    if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      options.setPdfPage(pdfVisiblePage());
+      options.updatePageInfo();
+    });
   });
 
   document.getElementById('pdfPrev')?.addEventListener('click', () => {
@@ -102,9 +108,9 @@ export function initPdfControls(options: PdfControlsOptions): {
       const n = parseInt(this.value, 10);
       if (n >= 1 && n <= options.getPdfTotal() && options.getPdfTotal() > 0) {
         options.setPdfPage(n);
-        options.setPdfShowAll(false);
         options.updatePageInfo();
-        options.renderPages();
+        if (options.getPdfShowAll()) pdfScrollToPage(n);
+        else options.renderPages();
       } else {
         this.value = String(options.getPdfShowAll() ? pdfVisiblePage() : options.getPdfPage());
       }
@@ -135,9 +141,68 @@ export function initPdfControls(options: PdfControlsOptions): {
     setTimeout(() => pdfScrollToPage(pg), 120);
   });
 
+  const zoomInput = document.getElementById('pdfZoomPct') as HTMLInputElement | null;
+  if (zoomInput) {
+    zoomInput.addEventListener('focus', function (this: HTMLInputElement) {
+      this.value = String(Math.round(options.getPdfScale() * 100));
+      this.select();
+    });
+    zoomInput.addEventListener('keydown', function (this: HTMLInputElement, e: KeyboardEvent) {
+      if (e.key === 'Enter') { this.blur(); return; }
+      if (e.key === 'Escape') {
+        this.value = Math.round(options.getPdfScale() * 100) + '%';
+        this.blur();
+      }
+    });
+    zoomInput.addEventListener('blur', function (this: HTMLInputElement) {
+      const percentage = Number.parseFloat(this.value.replace('%', '').trim());
+      if (Number.isFinite(percentage) && percentage >= 20 && percentage <= 300) {
+        const pg = pdfVisiblePage();
+        options.setPdfScale(percentage / 100);
+        updateZoomPct();
+        options.renderPages();
+        setTimeout(() => pdfScrollToPage(pg), 120);
+      }
+      this.value = Math.round(options.getPdfScale() * 100) + '%';
+    });
+  }
+
   document.getElementById('pdfDownload')?.addEventListener('click', () => {
     const fileName = options.getActiveFileName();
     if (fileName) options.downloadFile(fileName);
+  });
+
+  document.getElementById('pdfBack')?.addEventListener('click', () => {
+    const w = window as unknown as {
+      activeCourseRef?: { id?: string } & Record<string, unknown>;
+      activeFileName?: string | null;
+      pdfDoc?: unknown;
+      pdfFullText?: string;
+      _setAiChipsVisible?: (visible: boolean) => void;
+      showCourseSection?: (course: unknown, section: string) => void;
+      showPortalSection?: (section: string) => void;
+    };
+    if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+      // Clear file state BEFORE delegating to showCourseSection. Its
+      // router.js wrapper calls saveState() immediately after, which
+      // reads activeFileName/pdfDoc and persists them to ss_state. If
+      // we don't clear first, ss_state keeps pointing at the file and
+      // reload sends the user back into the PDF reader. The matching
+      // goPortal handler in router.js does the same cleanup.
+      w.activeFileName = null;
+      w.pdfDoc = null;
+      w.pdfFullText = '';
+      if (typeof w._setAiChipsVisible === 'function') w._setAiChipsVisible(false);
+      const pdfView = document.getElementById('pdfView');
+      const courseOverview = document.getElementById('courseOverview');
+      if (pdfView) pdfView.style.display = 'none';
+      if (courseOverview) courseOverview.style.display = 'block';
+      w.showCourseSection(w.activeCourseRef, 'files');
+      return;
+    }
+    // 'studip' is the internal portal-section id; 'courses' is a URL alias only,
+    // and passing it to showPortalSection blanks the page (no psec-courses node).
+    if (typeof w.showPortalSection === 'function') w.showPortalSection('studip');
   });
 
   document.getElementById('pdfAll')?.addEventListener('click', () => {

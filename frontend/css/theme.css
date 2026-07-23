@@ -22,7 +22,11 @@
   --auth-pw-label: rgba(30, 64, 175, 0.45);
   --auth-confirm-hint: rgba(30, 64, 175, 0.45);
   --auth-toggle-pw: rgba(30, 64, 175, 0.45);
-  --studip-bg: var(--dp-bg);
+  --minallo-page-bg: #f8fafc;
+  --app-bg: var(--minallo-page-bg);
+  --dp-bg: var(--minallo-page-bg);
+  --dp-solid: var(--minallo-page-bg);
+  --studip-bg: var(--minallo-page-bg);
   --studip-back-bg: rgba(37, 99, 235, 0.1);
   --studip-back-border: rgba(37, 99, 235, 0.2);
   --studip-back-color: #2563eb;
@@ -51,7 +55,8 @@ body.night {
   --auth-pw-label: rgba(255, 255, 255, 0.35);
   --auth-confirm-hint: rgba(255, 255, 255, 0.3);
   --auth-toggle-pw: rgba(255, 255, 255, 0.5);
-  --studip-bg: linear-gradient(135deg, #020617 0%, #0f172a 45%, #082f49 100%);
+  --minallo-page-bg: #0f172a;
+  --studip-bg: var(--minallo-page-bg);
   --studip-back-bg: rgba(255, 255, 255, 0.08);
   --studip-back-border: rgba(255, 255, 255, 0.15);
   --studip-back-color: rgba(255, 255, 255, 0.7);
@@ -67,9 +72,11 @@ body.night {
   --muted: #64748b;
   --shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
   --border: #1e293b;
-  --dp-bg: linear-gradient(135deg, #020617 0%, #0f172a 48%, #082f49 100%);
+  --minallo-page-bg: #0f172a;
+  --dp-bg: var(--minallo-page-bg);
   --dp-solid: #020617;
   --dp-modal: linear-gradient(135deg, #0f172a, #082f49);
+  --app-bg: var(--minallo-page-bg);
   /* adaptive semantic tokens — dark overrides */
   --glass-bg: rgba(255, 255, 255, 0.07);
   --glass-border: rgba(255, 255, 255, 0.14);
@@ -87,6 +94,11 @@ body.night {
   --badge-border: rgba(255, 255, 255, 0.12);
   --badge-color: rgba(255, 255, 255, 0.5);
   --slot-bg: rgba(255, 255, 255, 0.05);
+}
+html:has(body.night) {
+  --minallo-page-bg: #0f172a;
+  --app-bg: var(--minallo-page-bg);
+  background: var(--minallo-page-bg);
 }
 body.night .pdf-body {
   background: #1a1a2e;
@@ -494,8 +506,22 @@ body:not(.night) #authIndicator {
   border: 1px solid rgba(37, 99, 235, 0.2) !important;
   backdrop-filter: blur(12px);
 }
-body:not(.night) #authName {
-  color: rgba(30, 58, 138, 0.75) !important;
+body:not(.night) #authName,
+body:not(.night) #portal #authName {
+  color: var(--lm-text) !important;
+  font-weight: 700 !important;
+}
+body:not(.night) #sbUserSub,
+body:not(.night) #portal #sbUserSub {
+  color: var(--lm-muted) !important;
+}
+body:not(.night) .sb-avatar {
+  background: linear-gradient(145deg, #2563eb, #6366f1) !important;
+  border: 1px solid rgba(37, 99, 235, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 4px 14px rgba(37, 99, 235, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
 }
 
 /* Portal: pc-name / pc-desc are already covered but ensure inline color override */
@@ -532,7 +558,7 @@ body:not(.night) .pdf-loading {
   background: #ede0ff;
 }
 body {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   background: var(--bg);
   color: var(--text);
   overflow: hidden;

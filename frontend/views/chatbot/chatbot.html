@@ -1,258 +1,5 @@
-<div class="aip-outer" id="aipOuter">
-  <!-- ── HISTORY SIDEBAR ── -->
-  <div class="aip-sidebar" id="aipSidebar">
-    <div class="aip-sidebar-top">
-      <button class="aip-new-chat-btn" id="aipNewChatBtn">
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        <span data-i18n="aip_new_chat">New chat</span>
-      </button>
-    </div>
-    <div class="aip-sidebar-section-label" data-i18n="aip_chats_label">Chats</div>
-    <div class="aip-history-list" id="aipHistoryList">
-      <div class="aip-history-empty" data-i18n="aip_no_chats">No chats yet</div>
-    </div>
-  </div>
-
-  <!-- ── MAIN AREA ── -->
-  <div class="aip-wrap" id="aipWrap">
-    <!-- LANDING VIEW -->
-    <div class="aip-landing" id="aipLanding">
-      <div class="aip-landing-hero">
-        <div class="aip-greeting" id="aipGreeting">Hi there</div>
-        <div class="aip-subtitle" data-i18n="aip_subtitle">Where should we start?</div>
-      </div>
-      <div class="aip-center-box">
-        <textarea
-          class="aip-center-input"
-          id="aipLandingInput"
-          placeholder="Ask me anything…"
-          data-i18n-ph="aip_landing_ph"
-          rows="2"
-          maxlength="4000"
-        ></textarea>
-        <div class="aip-file-preview" id="aipLandingFilePreview"></div>
-        <div class="aip-center-bottom">
-          <input
-            type="file"
-            id="aipLandingFileInput"
-            accept=".pdf,.txt,.docx,.png,.jpg,.jpeg"
-            multiple
-            style="display: none"
-          />
-          <label class="aip-upload-btn" for="aipLandingFileInput">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
-              />
-            </svg>
-            <span data-i18n="aip_upload_btn">Upload photos &amp; files</span>
-          </label>
-          <button class="aip-upload-btn" id="aipImportCourseBtn">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
-            </svg>
-            Import from Course
-          </button>
-          <button class="aip-center-send" id="aipLandingSend">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div class="aip-chips-row" id="aipSuggestions">
-        <button
-          class="aip-chip"
-          data-prompt="Explain the difference between integrals and derivatives"
-        >
-          📐 Calculus basics
-        </button>
-        <button
-          class="aip-chip"
-          data-prompt="How do I manage my time better as a university student?"
-        >
-          ⏰ Time management
-        </button>
-        <button class="aip-chip" data-prompt="Give me 5 tips for writing a good academic paper">
-          📝 Academic writing
-        </button>
-        <button class="aip-chip" data-prompt="What is the Pomodoro technique and how do I use it?">
-          🍅 Pomodoro method
-        </button>
-        <button class="aip-chip" data-prompt="Explain Newton's three laws of motion">
-          ⚙️ Newton's laws
-        </button>
-      </div>
-    </div>
-
-    <!-- CHAT VIEW -->
-    <div class="aip-chat-view" id="aipChatView" style="display: none">
-      <div class="aip-chat-topbar">
-        <button class="aip-sb-toggle" id="aipSbToggle" title="Toggle history">&#x2630;</button>
-        <span class="aip-chat-topbar-title" id="aipChatTitle">Chat</span>
-        <button class="aip-clear-btn" id="aipClearBtn">
-          &#x2715; <span data-i18n="aip_new_chat">New chat</span>
-        </button>
-      </div>
-      <div class="aip-msgs" id="aipMsgs"></div>
-      <div class="aip-input-bar">
-        <div class="aip-input-inner">
-          <div class="aip-file-preview" id="aipChatFilePreview"></div>
-          <textarea
-            class="aip-input"
-            id="aipInput"
-            placeholder="Ask a follow-up…"
-            data-i18n-ph="aip_followup_ph"
-            rows="1"
-            maxlength="4000"
-          ></textarea>
-          <div class="aip-input-actions">
-            <input
-              type="file"
-              id="aipChatFileInput"
-              accept=".pdf,.txt,.docx,.png,.jpg,.jpeg"
-              multiple
-              style="display: none"
-            />
-            <label class="aip-upload-btn" for="aipChatFileInput">
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
-                />
-              </svg>
-              <span data-i18n="aip_upload_btn">Upload photos &amp; files</span>
-            </label>
-            <button class="aip-upload-btn" id="aipImportCourseBtnChat">
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
-              </svg>
-              Import from Course
-            </button>
-            <button class="aip-send-btn" id="aipSend">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <!-- /aip-wrap -->
-
-  <!-- Import-from-course modal -->
-  <div class="aip-course-overlay" id="aipCourseOverlay" style="display: none">
-    <div class="aip-course-modal">
-      <div class="aip-course-modal-hdr">
-        <span>Import from Course</span>
-        <button class="aip-course-modal-close" id="aipCourseClose">&#x2715;</button>
-      </div>
-      <div class="aip-course-modal-body">
-        <select class="aip-course-sel" id="aipCourseSel"></select>
-        <input
-          class="aip-course-search"
-          id="aipCourseSearch"
-          type="text"
-          placeholder="Search folders or files…"
-          autocomplete="off"
-        />
-        <div class="aip-course-breadcrumb" id="aipCourseBreadcrumb" style="display: none">
-          <button class="aip-course-back-btn" id="aipCourseBack">&#x2190; Back</button>
-          <span class="aip-course-breadcrumb-label" id="aipCourseBreadcrumbLabel"></span>
-        </div>
-        <div class="aip-course-file-list" id="aipCourseFileList">
-          <div class="aip-course-loading" id="aipCourseLoading" style="display: none">
-            <div class="aip-course-spinner"></div>
-            Loading files…
-          </div>
-          <div class="aip-course-empty" id="aipCourseEmpty" style="display: none">
-            No files found in this course.
-          </div>
-          <div id="aipCourseFiles"></div>
-        </div>
-      </div>
-      <div class="aip-course-modal-ftr">
-        <span class="aip-course-sel-count" id="aipCourseSelCount">0 files selected</span>
-        <button class="aip-course-cancel" id="aipCourseCancel">Cancel</button>
-        <button class="aip-course-import" id="aipCourseImport" disabled>Import</button>
-      </div>
-    </div>
-  </div>
-</div>
-<!-- /aip-outer -->
-
 <!-- ============ NEW CHATBOT SHELL (PR-01) ============ -->
-<div id="ncbRoot" class="ncb-root" hidden>
+<div id="ncbRoot" class="ncb-root" data-testid="chatbot-root" hidden>
   <div class="ncb-bg" aria-hidden="true"></div>
   <div class="ncb-bg-gradients" aria-hidden="true"></div>
   <div class="ncb-bg-grid" aria-hidden="true"></div>
@@ -267,20 +14,13 @@
           </svg>
         </div>
         <div class="ncb-header-text">
-          <h1 class="ncb-header-title">Chatbot</h1>
-          <p class="ncb-header-subtitle">Course-aware AI tutor</p>
+          <h1 class="ncb-header-title" data-i18n="cb_header_title">Chatbot</h1>
+          <p class="ncb-header-subtitle" data-i18n="cb_header_subtitle">Course-aware AI tutor</p>
         </div>
       </div>
 
       <div class="ncb-header-right">
-        <button type="button" class="ncb-pill ncb-pill--active">
-          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 7v14"/>
-            <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>
-          </svg>
-          <span>TM1</span>
-        </button>
-        <button type="button" class="ncb-panel-open-btn" aria-label="Open context panel">
+        <button type="button" class="ncb-panel-open-btn" data-i18n-aria="cb_open_panel" aria-label="Open context panel">
           <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect width="18" height="18" x="3" y="3" rx="2"/>
             <path d="M15 3v18"/>
@@ -292,29 +32,207 @@
 
     <main class="ncb-main">
       <div class="ncb-card">
-        <aside class="ncb-sidebar ncb-sidebar--placeholder" aria-label="Chat history (placeholder)"></aside>
+        <aside class="ncb-sidebar" aria-label="Chat history">
+          <div class="ncb-sidebar-head">
+            <div class="ncb-sidebar-head-text">
+              <p class="ncb-eyebrow" data-i18n="cb_sidebar_eyebrow">Minallo</p>
+              <h2 class="ncb-sidebar-title" data-i18n="cb_sidebar_title">AI Chats</h2>
+            </div>
+            <button type="button" class="ncb-collapse-btn" data-i18n-aria="cb_collapse_sidebar" aria-label="Collapse sidebar">
+              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-6-6 6-6"/>
+              </svg>
+            </button>
+          </div>
+
+          <button type="button" class="ncb-new-chat-btn">
+            <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h14"/><path d="M12 5v14"/>
+            </svg>
+            <span data-i18n="cb_new_chat">New chat</span>
+          </button>
+
+          <div class="ncb-search">
+            <svg class="ncb-icon ncb-icon--sm ncb-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" class="ncb-search-input" data-i18n-ph="cb_search_chats" data-i18n-aria="cb_search_chats_aria" placeholder="Search chats..." aria-label="Search chats" />
+          </div>
+
+          <div class="ncb-chat-list ncb-no-scrollbar">
+            <!-- Rendered from chat store at runtime (PR-05). -->
+          </div>
+
+          <div class="ncb-safe-card">
+            <div class="ncb-safe-head">
+              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+                <path d="m9 12 2 2 4-4"/>
+              </svg>
+              <span data-i18n="cb_safe_title">Course-safe mode</span>
+            </div>
+            <p class="ncb-safe-text" data-i18n="cb_safe_text">
+              Answers can be restricted to uploaded lectures, exercises, and course files.
+            </p>
+          </div>
+        </aside>
 
         <section class="ncb-center ncb-no-scrollbar">
           <div class="ncb-center-inner">
-            <div class="ncb-empty">
+            <div class="ncb-empty" data-state="empty">
+              <div class="ncb-chat-header">
+                <div class="ncb-chat-header-text">
+                  <p class="ncb-eyebrow" data-i18n="cb_current_chat">Current chat</p>
+                  <h2 class="ncb-chat-header-title" data-i18n="cb_chat_title_new">New chat</h2>
+                </div>
+                <span class="ncb-chat-context-pill" data-i18n="cb_context_active">Course context active</span>
+              </div>
+
+              <div class="ncb-msgs"></div>
+
               <div class="ncb-empty-head">
                 <div class="ncb-greet-pill">
                   <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
                     <path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>
                   </svg>
-                  <span>Hi Mohamed Ali Mariam &mdash; ready to study smarter?</span>
+                  <span data-i18n="cb_greet_full">Hi &mdash; ready to study smarter?</span>
                 </div>
-                <h2 class="ncb-empty-title">What are we studying today?</h2>
-                <p class="ncb-empty-subtitle">
+                <h2 class="ncb-empty-title" data-i18n="cb_empty_title">What are we studying today?</h2>
+                <p class="ncb-empty-subtitle" data-i18n="cb_empty_subtitle">
                   Upload a lecture, import a course file, solve an exercise, create notes, or ask Minallo to explain the topic like a personal tutor.
                 </p>
               </div>
 
-              <div class="ncb-input ncb-input--placeholder" aria-hidden="true"></div>
+              <!-- Scroll-to-bottom button: sticky-pinned just above the
+                   composer (its offset tracks the composer's live height via
+                   --ncb-composer-h). Centered over the chat column. The shell
+                   adds .is-visible only when the user has scrolled up away
+                   from the latest message. -->
+              <button type="button" class="ncb-scroll-bottom-btn" data-testid="chatbot-scroll-bottom"
+                      data-i18n-aria="cb_scroll_bottom_aria" aria-label="Scroll to latest message" tabindex="-1">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>
+                </svg>
+              </button>
+
+              <div class="ncb-input">
+                <!-- Tutor-mode pill row. Locale-aware labels (DE / EN) are
+                     applied by the shell on init. Default is 'explain' so
+                     normal questions receive direct grounded answers. The
+                     shell reads data-mode and forwards it to /ask-stream. -->
+                <div class="ncb-composer-modes">
+                <div class="ncb-tutor-modes" role="radiogroup" data-i18n-aria="cb_tutor_group_aria" aria-label="Tutor mode" data-testid="chatbot-tutor-modes">
+                  <button type="button" class="ncb-tutor-mode" data-mode="solve" aria-pressed="false"
+                          data-label-de="Gemeinsam lösen" data-label-en="Solve with me"
+                          data-i18n-title="cb_tutor_solve_title"
+                          title="Socratic — guides you step by step instead of revealing the full answer">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                      <path d="M12 17h.01"/>
+                    </svg>
+                    <span class="ncb-tutor-mode-label">Solve with me</span>
+                  </button>
+                  <button type="button" class="ncb-tutor-mode" data-mode="explain" aria-pressed="true"
+                          data-label-de="Erklären" data-label-en="Explain"
+                          data-i18n-title="cb_tutor_explain_title"
+                          title="Direct explanation grounded in your course files">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 9V5a3 3 0 0 0-6 0v4"/>
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                    </svg>
+                    <span class="ncb-tutor-mode-label">Explain</span>
+                  </button>
+                  <button type="button" class="ncb-tutor-mode" data-mode="quiz" aria-pressed="false"
+                          data-label-de="Quiz mich" data-label-en="Quiz me"
+                          data-i18n-title="cb_tutor_quiz_title"
+                          title="Generates a short MCQ check on this topic from your course files">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9.5 14.5 3 21"/>
+                      <path d="M16 3.549 7.12 20.171"/>
+                      <path d="M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2"/>
+                      <path d="M16 2v4"/>
+                      <path d="M14 4h4"/>
+                    </svg>
+                    <span class="ncb-tutor-mode-label">Quiz me</span>
+                  </button>
+                </div>
+
+                <div class="ncb-source-control" data-open="false">
+                  <button type="button" class="ncb-source-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Answer source">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                    <span class="ncb-source-trigger-label">Auto</span>
+                    <svg class="ncb-source-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                  </button>
+                  <div class="ncb-source-popup" role="menu" hidden>
+                    <div class="ncb-source-popup-section">
+                      <p class="ncb-source-popup-label">Source</p>
+                      <div class="ncb-source-mode-group" role="group" aria-label="Source mode">
+                        <button type="button" class="ncb-source-mode ncb-source-mode--active" data-source-mode="auto" aria-pressed="true">Auto</button>
+                        <button type="button" class="ncb-source-mode" data-source-mode="course_files" aria-pressed="false">Course Files</button>
+                        <button type="button" class="ncb-source-mode" data-source-mode="internet" aria-pressed="false">Internet</button>
+                      </div>
+                    </div>
+                    <div class="ncb-source-popup-section ncb-source-scope-section">
+                      <p class="ncb-source-popup-label">Files</p>
+                      <div class="ncb-course-scope-group" role="group" aria-label="Course file scope">
+                        <button type="button" class="ncb-course-scope ncb-course-scope--active" data-course-file-scope="all_course_files" aria-pressed="true">All files</button>
+                        <button type="button" class="ncb-course-scope" data-course-file-scope="specific_files" aria-pressed="false">Selected file(s)</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                </div>
+
+                <!-- Attachment / paste / files previews. Empty by default,
+                     populated by JS when the user attaches things. Each
+                     is auto-hidden when empty via CSS :empty. -->
+                <div class="ncb-attach-row" hidden></div>
+                <div class="ncb-files-row" hidden></div>
+                <div class="ncb-paste-row" hidden></div>
+                <input type="file" class="ncb-file-input" data-testid="chatbot-file-input" multiple hidden
+                       accept="image/*,application/pdf,text/plain,.txt,.md" />
+
+                <!-- Single inline input row: icon-only action buttons →
+                     textarea → send. ChatGPT-style. -->
+                <div class="ncb-input-row">
+                  <button type="button" class="ncb-input-action-btn ncb-upload-btn" data-testid="chatbot-upload"
+                          data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn"
+                          title="Upload photos & files" aria-label="Upload photos & files">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M13.234 20.252 21 12.3"/>
+                      <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
+                    </svg>
+                  </button>
+                  <button type="button" class="ncb-input-action-btn ncb-import-btn" data-testid="import-course"
+                          data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn"
+                          title="Import from Course" aria-label="Import from Course">
+                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                  </button>
+                  <textarea
+                    class="ncb-input-textarea"
+                    data-testid="chatbot-input"
+                    data-i18n-ph="cb_input_placeholder"
+                    data-i18n-aria="cb_input_aria"
+                    placeholder="Ask anything about your lectures, exercises, or course files..."
+                    aria-label="Type your message"
+                  ></textarea>
+                  <button type="button" class="ncb-send-btn" data-testid="chatbot-send" data-i18n-title="cb_send_btn" data-i18n-aria="cb_send_btn" title="Send message" aria-label="Send message">
+                    <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 19V5"/>
+                      <path d="m5 12 7-7 7 7"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
 
               <div class="ncb-actions">
-                <button type="button" class="ncb-action-card">
+                <button type="button" class="ncb-action-card" data-testid="quick-summarize"
+                        data-prefill="Summarize the attached lecture into clean, structured notes with headings, bullet points, and any formulas in LaTeX.">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
@@ -322,11 +240,12 @@
                       <path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
                     </svg>
                   </span>
-                  <span class="ncb-action-title">Summarize lecture</span>
-                  <span class="ncb-action-desc">Turn PDFs into clean notes</span>
+                  <span class="ncb-action-title" data-i18n="cb_action_summarize_title">Summarize lecture</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_summarize_desc">Turn PDFs into clean notes</span>
                 </button>
 
-                <button type="button" class="ncb-action-card">
+                <button type="button" class="ncb-action-card" data-testid="quick-solve"
+                        data-prefill="Solve this exercise step-by-step. Show every reasoning step, name the rule or theorem used, and write the final answer clearly.&#10;&#10;Exercise: ">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 18V5"/>
@@ -339,11 +258,12 @@
                       <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>
                     </svg>
                   </span>
-                  <span class="ncb-action-title">Solve exercise</span>
-                  <span class="ncb-action-desc">Step-by-step with formulas</span>
+                  <span class="ncb-action-title" data-i18n="cb_action_solve_title">Solve exercise</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_solve_desc">Step-by-step with formulas</span>
                 </button>
 
-                <button type="button" class="ncb-action-card">
+                <button type="button" class="ncb-action-card" data-testid="quick-exam-answer"
+                        data-prefill="Write a short, structured exam-style answer for the following question. Use clear definitions, the key formula, a worked step, and a one-line conclusion.&#10;&#10;Question: ">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/>
@@ -351,11 +271,12 @@
                       <path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>
                     </svg>
                   </span>
-                  <span class="ncb-action-title">Exam answer</span>
-                  <span class="ncb-action-desc">Short, structured, precise</span>
+                  <span class="ncb-action-title" data-i18n="cb_action_exam_title">Exam answer</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_exam_desc">Short, structured, precise</span>
                 </button>
 
-                <button type="button" class="ncb-action-card">
+                <button type="button" class="ncb-action-card" data-testid="quick-flashcards"
+                        data-prefill="Create flashcards from the attached material. Output as a markdown table with two columns: Front (term/question) and Back (definition/answer). Aim for 10–20 cards covering the most exam-relevant concepts.">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>
@@ -363,17 +284,158 @@
                       <path d="M16 2v20"/>
                     </svg>
                   </span>
-                  <span class="ncb-action-title">Create flashcards</span>
-                  <span class="ncb-action-desc">Save key concepts fast</span>
+                  <span class="ncb-action-title" data-i18n="cb_action_flash_title">Create flashcards</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_flash_desc">Save key concepts fast</span>
                 </button>
               </div>
             </div>
           </div>
         </section>
 
-        <aside class="ncb-context ncb-context--placeholder" aria-label="Context panel (placeholder)"></aside>
+        <aside class="ncb-context" aria-label="Context panel">
+          <div class="ncb-context-inner ncb-no-scrollbar">
+            <div class="ncb-context-head">
+              <div class="ncb-context-head-text">
+                <p class="ncb-eyebrow" data-i18n="cb_ctx_eyebrow">Context</p>
+                <h2 class="ncb-context-title" data-i18n="cb_ctx_title">Study panel</h2>
+              </div>
+              <button type="button" class="ncb-context-close-btn" data-i18n-aria="cb_close_panel" aria-label="Close context panel">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2"/>
+                  <path d="M15 3v18"/>
+                  <path d="m10 15-3-3 3-3"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="ncb-mini-tabs">
+              <button type="button" class="ncb-mini-tab ncb-mini-tab--active">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                  <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                  <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+                </svg>
+                <span data-i18n="cb_tab_files">Files</span>
+              </button>
+              <button type="button" class="ncb-mini-tab">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+                  <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+                  <path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
+                </svg>
+                <span data-i18n="cb_tab_sources">Sources</span>
+              </button>
+              <button type="button" class="ncb-mini-tab">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>
+                  <rect width="16" height="20" x="4" y="2" rx="2"/>
+                  <path d="M16 2v20"/>
+                </svg>
+                <span data-i18n="cb_tab_notes">Notes</span>
+              </button>
+            </div>
+
+            <section class="ncb-notes-card" hidden>
+              <div class="ncb-context-card-head">
+                <h3 class="ncb-context-card-title" data-i18n="cb_notes_card_title">Saved replies</h3>
+                <span class="ncb-files-pill ncb-notes-count">0</span>
+              </div>
+              <div class="ncb-notes-list">
+                <p class="ncb-notes-empty" data-i18n="cb_notes_empty">
+                  Save useful AI replies here by tapping the Save to notes button under any reply.
+                </p>
+              </div>
+            </section>
+
+            <section class="ncb-context-card ncb-sources-card">
+              <div class="ncb-context-card-head">
+                <h3 class="ncb-context-card-title" data-i18n="cb_sources_card_title">Sources used</h3>
+                <!-- Count is owned by renderSourcesCard(); no data-i18n here or the
+                     localized refresh would clobber the live "N selected" value back to "0 files". -->
+                <span class="ncb-files-pill ncb-sources-count">0 selected</span>
+              </div>
+              <!-- Populated by renderSourcesCard() from chat.attachedFolders. -->
+              <div class="ncb-source-list"></div>
+            </section>
+
+            <section class="ncb-context-card">
+              <h3 class="ncb-context-card-title" data-i18n="cb_tools_title">AI tools</h3>
+              <div class="ncb-tools-grid">
+                <button type="button" class="ncb-tool-btn" data-tool="quiz" data-i18n="cb_tool_quiz">Quiz me</button>
+                <button type="button" class="ncb-tool-btn" data-tool="flashcards" data-i18n="cb_tool_flashcards">Flashcards</button>
+                <button type="button" class="ncb-tool-btn" data-tool="summary" data-i18n="cb_tool_summary">Summary</button>
+                <button type="button" class="ncb-tool-btn" data-tool="export" data-i18n="cb_tool_export">Export</button>
+              </div>
+            </section>
+
+            <section class="ncb-streak-card">
+              <div class="ncb-streak-head">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 6v6l4 2"/>
+                </svg>
+                <h3 class="ncb-streak-title" data-i18n="cb_streak_title">Study streak</h3>
+              </div>
+              <p class="ncb-streak-text" data-i18n="cb_streak_text">
+                You are one focused session away from keeping today&rsquo;s streak alive.
+              </p>
+            </section>
+          </div>
+        </aside>
       </div>
     </main>
   </div>
 </div>
 <!-- /ncbRoot -->
+
+<div id="ncbImportModal" class="ncb-modal-overlay" data-testid="chatbot-import-modal" hidden aria-hidden="true">
+  <div class="ncb-modal" role="dialog" aria-modal="true" aria-labelledby="ncbImportTitle">
+    <div class="ncb-modal-head">
+      <div>
+        <p class="ncb-eyebrow" data-i18n="cb_modal_eyebrow">Course files</p>
+        <h3 id="ncbImportTitle" class="ncb-modal-title" data-i18n="cb_modal_title">Import from Course</h3>
+      </div>
+      <button type="button" class="ncb-modal-close" data-i18n-aria="cb_modal_close" aria-label="Close">
+        <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="ncb-modal-body">
+      <div class="ncb-modal-row">
+        <select class="ncb-modal-select" data-i18n-aria="cb_modal_course_aria" aria-label="Course"></select>
+        <svg class="ncb-icon ncb-icon--sm ncb-modal-select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+
+      <div class="ncb-modal-row ncb-modal-search">
+        <svg class="ncb-icon ncb-icon--sm ncb-modal-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" class="ncb-modal-search-input" data-i18n-ph="cb_modal_search_ph" data-i18n-aria="cb_modal_search_aria" placeholder="Search folders or files..." aria-label="Search folders or files" />
+      </div>
+
+      <div class="ncb-folder-breadcrumb" hidden>
+        <button type="button" class="ncb-folder-back">
+          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          <span data-i18n="cb_modal_back">Back</span>
+        </button>
+        <span class="ncb-folder-crumb-path"></span>
+      </div>
+
+      <div class="ncb-folder-list"></div>
+
+      <div class="ncb-modal-hint">
+        <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+        <div>
+          <p class="ncb-modal-hint-title" data-i18n="cb_modal_hint_title">Smart import</p>
+          <p class="ncb-modal-hint-text" data-i18n="cb_modal_hint_text">Imported course files are attached to this chat context and can be used for citations, summaries, and exercise solving.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ncb-modal-foot">
+      <p class="ncb-modal-count"><span class="ncb-modal-count-num">1</span> folder selected</p>
+      <div class="ncb-modal-btns">
+        <button type="button" class="ncb-modal-cancel" data-i18n="cb_modal_cancel">Cancel</button>
+        <button type="button" class="ncb-modal-import" data-i18n="cb_modal_import">Import</button>
+      </div>
+    </div>
+  </div>
+</div>

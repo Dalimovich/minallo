@@ -1,14 +1,69 @@
 import {
   sendAiRequest,
-  sendRagRequest,
   listCourseDocuments,
   submitRagFeedback,
   type CourseDocument,
   type RagAskResponse,
 } from '../../services/ai-service.js';
 import { extractPdfText } from '../pdf-viewer/pdf-text-extraction.js';
+import { getPane } from '../pdf-viewer/pdf-panes.js';
+import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
+import { getCompareFileName } from '../pdf-viewer/pdf-compare.js';
 import { bindMessageActionButtons } from './ai-message-actions.js';
+import { buildPageContext } from './ai-page-context.js';
+import { shouldAttachVisiblePdfPage } from './visible-page-gate.js';
+import { regionFromSelection } from './region-provenance.js';
 import { escapeHtml } from '../../utils/escape-html.js';
+import {
+  createAIThinkingStatus,
+  getInitialAssistantStatus,
+  getThinkingContext,
+  type AIThinkingStatus
+} from './ai-thinking-status.js';
+import { getAiChatKey } from './chat-key.js';
+import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { beginSafeStreamRecovery } from './stream-recovery.js';
+
+/** The subscription gate (HTTP 402 / "subscription required") should read as a
+ * calm upgrade prompt, not a raw server error. */
+function _isSubscriptionError(msg: string): boolean {
+  return /\b402\b/.test(msg) || /subscription/i.test(msg);
+}
+function _subscriptionMsg(): string {
+  const v = typeof window._t === 'function' ? window._t('cb_need_subscription') : '';
+  return v && v !== 'cb_need_subscription'
+    ? v
+    : 'You need an active subscription to use the AI tutor. Open **Subscription** in the menu to unlock it.';
+}
+
+function isInternalTechnicalQuestion(text: string): boolean {
+  const q = (text || '').toLowerCase();
+  if (!q.trim()) return false;
+  const probing = /\b(how|what|which|where|why|who|whose|is|are|was|were|does|did|show|tell|explain|describe|list|give|share|reveal|access|debug|bypass|inspect|built?|implemented|stored|connected|works?|configured|using|use[sd]?|powered|runs?|running|made)\b/i;
+  if (!probing.test(q)) return false;
+  // Tier A — vendor/infra names that are never course subjects: probing
+  // about them is always about Minallo's internals.
+  const vendorTerms = /\b(gpt[-\w.]*|openai|claude|anthropic|gemini|mistral|llama|supabase|stripe|paypal|cloudflare|netlify|fly\.io|system\s+prompts?|source\s+code|codebase|repositor(y|ies)|repo|tech\s+stack|rls|jwt|api\s+keys?|service\s+role)\b/i;
+  if (vendorTerms.test(q)) return true;
+  // Tier B — terms that ARE course subjects (databases, SQL, APIs, servers,
+  // models… students study these). Internal only when explicitly bound to
+  // Minallo itself — bare "explain this function", "what is a vector",
+  // "how do SQL joins work" are STUDY questions and must reach the tutor.
+  const self = "(minallo(?:'s)?|this\\s+(site|app|website|platform|chatbot|assistant|ai)|the\\s+(site|app|website|platform)|are\\s+you|do\\s+you\\s+(use|run)|you\\s+(use|run|built|made)|built\\s+(on|with)|powered\\s+by)";
+  const tech = '(apis?|backend|database|db|schemas?|sql|servers?|endpoints?|secrets?|rag|embeddings?|prompts?|architecture|implementation|migrations?|auth(entication)?|webhooks?|infrastructure|hosting|llms?|(ai|language)\\s+models?|models?|workers?)';
+  const bound = new RegExp(
+    '\\b' + self + '\\b[\\s\\S]{0,48}\\b' + tech + '\\b|\\b' + tech + '\\b[\\s\\S]{0,48}\\b' + self + '\\b', 'i'
+  );
+  return bound.test(q);
+}
+
+function _technicalRefusalMsg(): string {
+  const v = typeof window._t === 'function' ? window._t('ai_refuse_technical') : '';
+  return v && v !== 'ai_refuse_technical'
+    ? v
+    : "I can't help with technical or internal implementation details about Minallo. I can still help you study from your course material, create revision notes, quiz you, or explain a topic step by step.";
+}
 
 interface AskAiState {
   generationStopped: boolean;
@@ -37,14 +92,38 @@ interface RagMeta {
   answerCacheId?: string | null;
 }
 
+interface ProblemSolverOptions {
+  mode: string;
+  problem: string;
+  studentWork?: string;
+}
+
+interface SourceItem {
+  file_name?: string;
+  pages?: string | null;
+  section?: string | null;
+  index?: number | null;
+  documentId?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+}
+
 interface SseDoneEvent {
   done: true;
-  sources?: Array<{ file_name?: string; pages?: string | null; section?: string | null }>;
+  sources?: SourceItem[];
   confidence?: string;
   question_type?: string;
   unsupported?: boolean;
   answerCacheId?: string;
   [k: string]: unknown;
+}
+
+interface SseStreamEvent extends Partial<SseDoneEvent> {
+  t?: string;
+  error?: unknown;
+  meta?: boolean;
+  status?: string;
+  answerMode?: string;
 }
 
 interface PdfPage {
@@ -63,6 +142,146 @@ function _getTime(): string {
   return (
     d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0')
   );
+}
+
+// Mirrors strip_answer_intro in answer.py: drops banned opening announcements
+// (the old "### Course material found" preface, "I will use these uploaded
+// course sources…", "I'm powered by Minallo AI…") so answers saved BEFORE the
+// backend scrub, or streamed from a not-yet-redeployed backend, still render
+// starting with the substance. Sources render once, in the dropdown below.
+const ANSWER_INTRO_RX = new RegExp(
+  '^\\s*(?:' +
+    '#{1,6}\\s*course material found[^\\n]*' +
+    '|-\\s*\\[source\\s+\\d+\\][^\\n]*' +
+    "|i(?:'|’)?m\\s+(?:minallo\\b|powered\\s+by\\b)[^.!\\n]*[.!]?" +
+    '|i\\s+am\\s+(?:minallo\\b|powered\\s+by\\b)[^.!\\n]*[.!]?' +
+    "|i(?:\\s+will|(?:'|’)ll)\\s+use\\s+(?:th(?:e|ese|is)|your)\\s+(?:uploaded\\s+)?(?:course\\s+)?(?:sources?|materials?|files?|documents?)[^.!\\n]*[.!]?" +
+    "|based\\s+on\\s+(?:the\\s+|your\\s+|these\\s+)?(?:provided\\s+|uploaded\\s+|retrieved\\s+)?(?:course\\s+)?(?:sources?|materials?|documents?)\\s*,?\\s*(?:here(?:'|’)?s\\b|here\\s+is\\b|below\\s+is\\b|i(?:\\s+will|(?:'|’)ll)\\b)[^.!:\\n]*[.!:]?" +
+    '|ich\\s+bin\\s+minallo\\b[^.!\\n]*[.!]?' +
+    '|ich\\s+werde\\s+von\\s+minallo\\b[^.!\\n]*[.!]?' +
+    '|ich\\s+(?:werde|nutze|verwende)\\s+(?:diese|die|deine|ihre)\\s+(?:hochgeladenen?\\s+\\w*|kurs\\w*)[^.!\\n]*[.!]?' +
+    ')[ \\t]*',
+  'i'
+);
+
+function stripAnswerIntro(text: string): string {
+  let out = text || '';
+  for (;;) {
+    const m = out.match(ANSWER_INTRO_RX);
+    if (!m || !m[0].trim()) break;
+    out = out.slice(m[0].length);
+  }
+  return out === text ? text : out.replace(/^\n+/, '');
+}
+
+function stripSourceMarkers(text: string): string {
+  return stripAnswerIntro(text || '')
+    .replace(/\s*\[Source\s+\d+\]/gi, '')
+    .replace(/\s+\./g, '.')
+    .replace(/\s+,/g, ',')
+    .trim();
+}
+
+function stripSourceMarkersLive(text: string): string {
+  // Live re-renders always pass the FULL buffer from position 0, so the
+  // start-anchored intro strip is safe here too.
+  return stripAnswerIntro(text || '')
+    .replace(/\s*\[Source\s+\d+\]/gi, '')
+    .replace(/\s+\./g, '.')
+    .replace(/\s+,/g, ',');
+}
+
+function _sourceLine(s: SourceItem): string {
+  let line = s.file_name || 'Unknown';
+  if (s.pages) {
+    const pages = String(s.pages);
+    line += /^\d/.test(pages) ? ', p.' + pages : ', ' + pages;
+  }
+  if (s.section) line += ' · ' + s.section;
+  return line;
+}
+
+function _sourceClickPage(s: SourceItem): number {
+  return Number(s.pageStart) || firstPage(s.pages);
+}
+
+function _openSource(s: SourceItem): void {
+  handleSourceClick(
+    { fileName: s.file_name, documentId: s.documentId, page: _sourceClickPage(s) },
+    'sidebar'
+  );
+}
+
+function appendSourcesDropdown(bubble: HTMLElement | null, sources?: SourceItem[]): void {
+  if (!bubble || !sources || !sources.length || bubble.querySelector('.ai-rag-sources')) return;
+  const details = document.createElement('details');
+  details.className = 'ai-rag-sources';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Sources (' + sources.length + ')';
+  const list = document.createElement('ul');
+  sources.forEach((s) => {
+    const item = document.createElement('li');
+    item.textContent = _sourceLine(s);
+    // Real course files become clickable; the [Source 0] visible-page /
+    // problem-solver pseudo-source is left as plain text.
+    const name = (s.file_name || '').toLowerCase();
+    if (s.file_name && !/problem solver|visible|^source 0$/.test(name)) {
+      item.className = 'src-cite-item';
+      item.title = 'Open this source';
+      item.addEventListener('click', () => _openSource(s));
+    }
+    list.appendChild(item);
+  });
+  details.append(summary, list);
+  bubble.appendChild(details);
+}
+
+// Turn inline [Source N] markers in a rendered answer bubble into clickable
+// chips that open the Nth source (matched by its `index`). Walks text nodes
+// only and skips math/code so KaTeX and code blocks are never touched.
+function linkifySourceCitations(bubble: HTMLElement | null, sources?: SourceItem[]): void {
+  if (!bubble || !sources || !sources.length) return;
+  const byIndex = new Map<number, SourceItem>();
+  sources.forEach((s, i) => {
+    const idx = typeof s.index === 'number' ? s.index : i + 1;
+    byIndex.set(idx, s);
+  });
+  if (!byIndex.size) return;
+
+  const walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT);
+  const targets: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    const t = n as Text;
+    if (!/\[Source\s+\d+\]/i.test(t.nodeValue || '')) continue;
+    if ((t.parentElement || undefined)?.closest('.katex, code, pre')) continue;
+    targets.push(t);
+  }
+  targets.forEach((tn) => {
+    const frag = document.createDocumentFragment();
+    (tn.nodeValue || '').split(/(\[Source\s+\d+\])/i).forEach((part) => {
+      const m = part.match(/\[Source\s+(\d+)\]/i);
+      if (m) {
+        const idx = parseInt(m[1] || '0', 10);
+        const span = document.createElement('span');
+        span.className = 'src-cite';
+        span.textContent = '[' + idx + ']';
+        span.dataset.srcN = String(idx);
+        frag.appendChild(span);
+      } else if (part) {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+    tn.parentNode?.replaceChild(frag, tn);
+  });
+
+  bubble.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement | null)?.closest('.src-cite') as HTMLElement | null;
+    if (!chip) return;
+    const idx = parseInt(chip.dataset.srcN || '', 10);
+    const s = byIndex.get(idx);
+    if (s) _openSource(s);
+  });
 }
 
 // ── Auto-scroll controller ──────────────────────────────────────────────────
@@ -84,6 +303,55 @@ function _autoScroll(el: HTMLElement | null): void {
   el.scrollTop = el.scrollHeight;
 }
 
+// rAF-throttled variant for streaming paints: at most one scroll per frame,
+// and (via _autoScroll) never against a user who scrolled up.
+let _autoScrollRaf: number | null = null;
+function _scheduleAutoScroll(el: HTMLElement | null): void {
+  if (_autoScrollRaf != null) return;
+  _autoScrollRaf = window.requestAnimationFrame(() => {
+    _autoScrollRaf = null;
+    _autoScroll(el);
+  });
+}
+
+const MINALLO_APP_CONTEXT =
+  '\n\nMINALLO APP CONTEXT.\n' +
+  'You are running inside Minallo at minallo.de — a study platform + AI tutor for university students. ' +
+  'When the user asks a product / navigation question, give numbered step-by-step instructions naming the exact sidebar item, tab and button. ' +
+  'Do NOT say "look for the Upload button" or "check the interface" — use the map below. App questions do NOT need [Source N] citations.\n\n' +
+
+  'SIDEBAR (top → bottom):\n' +
+  '1. Home — dashboard, greeting, study widget, recent courses, calendar.\n' +
+  '2. Courses — semesters and courses. Inside a course: Files | Notes | Summaries | Quiz | Flashcards | Forum | Calendar tabs.\n' +
+  '3. Lecture Notes — every auto-generated note / summary across courses.\n' +
+  '4. Editor — Writer (rich-text + AI rewrite/shorten/expand), PDF Editor (annotate/sign/fill), PDF Merger (combine PDFs).\n' +
+  '5. Chatbot — general Minallo AI chat. Supports file + image uploads.\n' +
+  '6. Chat — student/friend chat rooms (Öffentlich / Freunde / Nur mit Einladung). Toggles: NSFW, Slow-mode.\n' +
+  '7. Games — "🎮 Game Room" hub. Tetris, Chess, Flappy Bird, and Solitaire with 7 variants (Klondike, Spider, Freecell, Pyramid, Scorpion, TriPeaks, Vegas).\n' +
+  '8. Study Lounge — total minutes, current/longest streak, opened files, per-course breakdown, weekly chart, Reset stats button.\n' +
+  '9. Profile — account profile.\n' +
+  '10. Settings — language DE/EN, German level + test type, sign-out, delete account.\n' +
+  '11. Subscription — plan, period end, Stripe billing portal, PayPal pause/resume/cancel/reactivate, retention discount.\n' +
+  '12. Admin — admin-only tools (visible only to admins).\n' +
+  'Top bar "Study" = focus timer. Sidebar bottom "Night" = dark/light toggle. Footer: Impressum + Privacy Policy.\n\n' +
+
+  'UPLOAD A DOCUMENT: 1) Click Courses in the sidebar. 2) Open the semester, open the course. ' +
+  '3) On the Files tab, click "+ Upload" or drag-and-drop. Allowed: PDF, TXT, DOCX, PNG, JPG. Max 25 MB (6 MB for images). ' +
+  '4) Indexing runs automatically; once finished, open the PDF and use the AI panel on the right.\n\n' +
+
+  'PDF VIEWER: toolbar = Page/zoom/Fit/Single-page/Annotate/Download. Right rail = AI chat, Problem solver, Notes, Summary. ' +
+  'Open a second PDF tab to enter split view (each pane has its own controls; Annotate + Download stay shared). ' +
+  'Annotate popover: Pen / Highlight / Text / Eraser, six colours + custom, thickness, Undo, Clear, Save, Upload back to course.\n\n' +
+
+  'PROBLEM SOLVER MODES (AI panel "Problem" button): Hint (nudge), Setup (Given/Required/Formula), Check (verify student work), Solve (full solution), Practice (similar problem).\n\n' +
+
+  'GENERATING STUDY MATERIAL: inside a course, the Notes / Summaries / Quiz / Flashcards tabs each have a "Generate" button — pick source file(s) and options. ' +
+  'SHORTCUT: while inside a course, simply typing "cheatsheet", "summary", or "notes" (or e.g. "make a summary") in this chat auto-generates it right away — no need to navigate to the tab.\n\n' +
+
+  'STYLE: Numbered steps. Name the exact UI element. Suggest the next action. ' +
+  'Never claim you don\'t know which website you\'re in — you ARE Minallo AI on Minallo. ' +
+  'If a feature does NOT exist in the map above, say so plainly; do not invent one.';
+
 export function _resetScrollFollow(): void {
   _userScrolledUp = false;
   const el = document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
@@ -93,9 +361,17 @@ export function _resetScrollFollow(): void {
 export async function pdfToImages(maxPages?: number): Promise<string[]> {
   const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
   if (!pdfDoc) return [];
+  const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+  return pdfDocToImages(pdfDoc, currentPage, maxPages);
+}
+
+async function pdfDocToImages(
+  pdfDoc: PdfDocLike,
+  currentPage: number = 1,
+  maxPages?: number
+): Promise<string[]> {
   const limit = maxPages || 6;
   const total = pdfDoc.numPages;
-  const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
   const half = Math.floor(limit / 2);
   let startPage = Math.max(1, currentPage - half);
   const endPage = Math.min(total, startPage + limit - 1);
@@ -123,14 +399,14 @@ export function addTyping(): HTMLElement | null {
   const aiMsgs = document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
   if (!aiMsgs) return null;
   _ensureScrollTracker();
-  const wrap = document.createElement('div');
-  wrap.className = 'ai-msg-wrap typing-wrap';
-  wrap.innerHTML =
-    '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-    '<div class="typing-bubble"><span></span><span></span><span></span></div>';
-  aiMsgs.appendChild(wrap);
+  const thinking = createAIThinkingStatus({
+    context: 'general',
+    host: aiMsgs,
+    surface: 'panel',
+    compact: true
+  });
   _autoScroll(aiMsgs);
-  return wrap;
+  return thinking?.el || null;
 }
 
 // ── Per-course chat history (localStorage) ──────────────────────────────────
@@ -141,104 +417,337 @@ interface HistoryPair {
   q: string;
   a: string;
   ts?: number;
+  // Cited sources of the answer, so the "Sources (N)" dropdown survives the
+  // panel being closed/reopened. Local-only: the chat_history table has no
+  // sources column, so cross-device restores fall back to no dropdown.
+  sources?: SourceItem[];
 }
 
-function _historyKey(courseId?: string | null): string {
-  return _HISTORY_PREFIX + (courseId || 'default');
+// A chatKey is `course:<courseId>:file:<fileId>:sidepanel` (see chat-key.ts).
+// Pairs with no fileId (no file open) are never persisted — see callers below,
+// which all bail out early when getAiChatKey() returns null.
+function _historyKey(chatKey: string): string {
+  return _HISTORY_PREFIX + chatKey;
 }
-function _loadCourseHistory(courseId?: string | null): HistoryPair[] {
-  try { return JSON.parse(localStorage.getItem(_historyKey(courseId)) || '[]'); } catch { return []; }
+// Chat keys (course+file pairs) cleared this session. The clear button deletes
+// the chat_history rows asynchronously (fire-and-forget fetch), but the AI
+// panel re-opens ~100ms later and restoreCourseHistory() would read the
+// not-yet-deleted rows and repopulate — so "Clear chat" looked like it did
+// nothing. This tombstone suppresses the restore for a cleared chat until a
+// new question is asked (which removes the tombstone via _appendCourseHistory).
+const _clearedChats = new Set<string>();
+
+// Race guard: every restore call is tagged with the chatKey it was requested
+// for. If the user switches files before the fetch/localStorage read resolves,
+// `_currentChatKey` will have moved on by the time it completes, and the stale
+// result is dropped instead of rendering into the wrong file's panel.
+let _currentChatKey: string | null = null;
+
+/** Clears the visible message list and marks the panel as belonging to no
+ * chat. Called whenever the active course/file changes, BEFORE the new
+ * chat's history (if any) is loaded — so a file switch never shows a flash
+ * of the previous file's messages. */
+export function resetAiPanelChat(): void {
+  _currentChatKey = null;
+  const aiMsgs = document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
+  if (!aiMsgs) return;
+  aiMsgs.querySelectorAll('.ai-msg-wrap, .ai-sel-banner').forEach((el) => el.remove());
 }
-function _saveCourseHistory(courseId: string | null | undefined, pairs: HistoryPair[]): void {
+
+function _loadCourseHistory(chatKey: string): HistoryPair[] {
+  try { return JSON.parse(localStorage.getItem(_historyKey(chatKey)) || '[]'); } catch { return []; }
+}
+function _saveCourseHistory(chatKey: string, pairs: HistoryPair[]): void {
   try {
     let trimmed = pairs;
     if (trimmed.length > _HISTORY_MAX) trimmed = trimmed.slice(trimmed.length - _HISTORY_MAX);
-    localStorage.setItem(_historyKey(courseId), JSON.stringify(trimmed));
+    localStorage.setItem(_historyKey(chatKey), JSON.stringify(trimmed));
   } catch { /* quota */ }
 }
-function _appendCourseHistory(courseId: string | null | undefined, question: string, answer: string): void {
-  const pairs = _loadCourseHistory(courseId);
-  pairs.push({ q: question, a: answer, ts: Date.now() });
-  _saveCourseHistory(courseId, pairs);
+function _appendCourseHistory(
+  courseId: string | null | undefined,
+  fileId: string | null | undefined,
+  question: string,
+  answer: string,
+  sources?: SourceItem[]
+): void {
+  // Never persist a fully blank turn — it restores as empty sender labels
+  // and, with a blank question, dedup collapses ALL such turns into one
+  // ghost entry that can shadow the real history.
+  if (!(question || '').trim() && !(answer || '').trim()) return;
+  // No file open: this is a temporary no-file chat. Never save it under any
+  // file's history (and there's nothing to fall back to — don't reuse the
+  // last file's key).
+  const chatKey = getAiChatKey(courseId, fileId);
+  if (!chatKey) return;
+  // A new turn means this chat has live history again — lift any clear tombstone.
+  _clearedChats.delete(chatKey);
+  const pairs = _loadCourseHistory(chatKey);
+  // Cap per-pair sources so a long history can't crowd localStorage.
+  const src = sources && sources.length ? sources.slice(0, 8) : undefined;
+  // If the most recent pair has the same question, this is a regenerate —
+  // replace its answer instead of appending a duplicate pair. Without this,
+  // restoring history after a regenerate renders both the old and the new
+  // answer back-to-back.
+  const last = pairs.length ? pairs[pairs.length - 1] : null;
+  if (last && (last.q || '').trim() === (question || '').trim()) {
+    last.a = answer;
+    last.ts = Date.now();
+    last.sources = src;
+  } else {
+    pairs.push({ q: question, a: answer, ts: Date.now(), ...(src ? { sources: src } : {}) });
+  }
+  _saveCourseHistory(chatKey, pairs);
+  const _ps = (window as unknown as { _progressSync?: { syncCourseAiSessions?: (id: string, n: number) => void } })._progressSync;
+  if (courseId) _ps?.syncCourseAiSessions?.(courseId, pairs.length);
+
+  // Also persist to the chat_history table (RLS-scoped to the user) so history
+  // survives a refresh and syncs across devices. This write was missing on the
+  // python-ai /ask-stream path, so the rail used to only save locally.
+  // Best-effort — never block or throw on failure. The per-file restore below
+  // reads localStorage only (the table has no document_id column to scope by
+  // file), so this is a cross-device backup, not the source of truth for
+  // per-file isolation.
+  try {
+    const supaUrl = window._SUPA || '';
+    const tok = window._sbToken || '';
+    const uid =
+      (window._currentUser && (window._currentUser.id || window._currentUser.sub)) || '';
+    if (supaUrl && tok && uid && courseId) {
+      void fetch(supaUrl + '/rest/v1/chat_history', {
+        method: 'POST',
+        headers: {
+          apikey: window._SAKEY || '',
+          Authorization: 'Bearer ' + tok,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ user_id: uid, course_id: courseId, question, answer }),
+      }).catch(() => {});
+    }
+  } catch {
+    /* best-effort persistence — localStorage above is the fallback */
+  }
+}
+
+function _dedupPairs(pairs: HistoryPair[] | null): HistoryPair[] {
+  // Collapse repeated asks of the same question to the LATEST answer, keeping
+  // first-seen order. The chat_history table inserts a row per ask with no
+  // dedup, so a question asked/regenerated N times would otherwise stack N
+  // answers on restore. Pairs arrive oldest-first, so the last write wins.
+  if (!pairs || !pairs.length) return [];
+  const byQ = new Map<string, HistoryPair>();
+  const order: string[] = [];
+  for (const p of pairs) {
+    // Question-less turns (problem-solver style) must not all collapse into
+    // one '' bucket — key them by their answer instead.
+    const key =
+      (p.q || '').trim().toLowerCase() ||
+      'a:' + (p.a || '').trim().slice(0, 80).toLowerCase();
+    if (!byQ.has(key)) order.push(key);
+    // The DB copy of a turn has no sources column — when it collides with the
+    // local copy of the same question, keep the local pair's sources so the
+    // restored answer doesn't lose its dropdown.
+    const prev = byQ.get(key);
+    const merged = prev?.sources?.length && !p.sources?.length ? { ...p, sources: prev.sources } : p;
+    byQ.set(key, merged);
+  }
+  return order.map((k) => byQ.get(k)!);
 }
 
 function _renderHistoryPairs(pairs: HistoryPair[] | null, aiMsgs: HTMLElement): void {
-  if (!pairs || !pairs.length) return;
-  pairs.forEach((pair) => {
-    const uWrap = window.addUserMsg ? (window.addUserMsg as (text: string, skipSave?: boolean) => HTMLElement | null)(pair.q, true) : null;
+  // Blank turns (aborted/odd flows can save empty q+a) restore as a wall of
+  // empty sender labels that looks like a broken panel — drop them, and only
+  // wipe the greeting when something visible will replace it.
+  const visible = (pairs || []).filter(
+    (p) => (p.q || '').trim() || (p.a || '').trim()
+  );
+  if (!visible.length) return;
+  // We only reach here when there's no in-progress user conversation (see the
+  // guard in restoreCourseHistory). Clear any lone welcome greeting so the
+  // restored history becomes the panel's content instead of sitting below it.
+  aiMsgs.querySelectorAll('.ai-msg-wrap:not(.typing-wrap)').forEach((el) => el.remove());
+  visible.forEach((pair) => {
+    const uWrap =
+      (pair.q || '').trim() && window.addUserMsg
+        ? (window.addUserMsg as (text: string, skipSave?: boolean) => HTMLElement | null)(pair.q, true)
+        : null;
     if (uWrap) uWrap.setAttribute('data-restored', 'true');
+    // Question-only turn: don't append an empty AI bubble for it.
+    if (!(pair.a || '').trim()) return;
     const wrap = document.createElement('div');
     wrap.className = 'ai-msg-wrap';
     wrap.setAttribute('data-restored', 'true');
+    // Mirror addBotMsg: copy button in the meta row, and the export/download
+    // action bar below — so restored answers look and behave like live ones.
     wrap.innerHTML =
       '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-      '<div class="msg-body"><div class="ai-bubble bot restored-answer"></div></div>';
+      '<div class="msg-body">' +
+      '<div class="ai-bubble bot restored-answer" dir="auto"></div>' +
+      '<div class="msg-meta">' +
+      '<button class="msg-action-btn" data-action="copy">' +
+      (window._t ? window._t('copy_btn') : 'Copy') +
+      '</button>' +
+      '</div>' +
+      '</div>';
     const bubble = wrap.querySelector<HTMLElement>('.ai-bubble.bot');
     if (bubble) {
-      bubble.setAttribute('data-raw', pair.a);
+      // Answers saved before the clean-opening fix may still start with the
+      // old source preface / self-intro — scrub at render time.
+      const restoredAnswer = stripAnswerIntro(pair.a);
+      bubble.setAttribute('data-raw', restoredAnswer);
+      let renderFallback = 0;
       const _doRender = (): void => {
-        bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(pair.a) : escapeHtml(pair.a);
+        window.clearTimeout(renderFallback);
+        bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(restoredAnswer) : escapeHtml(restoredAnswer);
+        // Markdown is only half the job — LaTeX (\(…\), \frac, …) and code
+        // blocks need their own passes, exactly like the live message path.
+        if (window._renderMath) window._renderMath(bubble);
+        if (window._renderCode) window._renderCode(bubble);
+        // After the innerHTML write, like the live path — appending earlier
+        // would be wiped by this render (or by the 4s watchdog re-render).
+        appendSourcesDropdown(bubble, pair.sources);
       };
-      if (window._ssEnsureKatex) {
+      // Watchdog: the bridge import / KaTeX CDN load below can stall without
+      // settling (AV interception, tracking prevention) — never leave the
+      // bubble blank; plain-markdown after 4s beats empty forever.
+      renderFallback = window.setTimeout(_doRender, 4000);
+      const _renderState = window as unknown as {
+        _ensureAiRenderBridge?: () => Promise<unknown>;
+        _minalloRenderMarkdownReady?: boolean;
+      };
+      if (!_renderState._minalloRenderMarkdownReady && _renderState._ensureAiRenderBridge) {
+        _renderState._ensureAiRenderBridge()
+          .then(() => (window._ssEnsureKatex ? window._ssEnsureKatex().then(_doRender).catch(_doRender) : _doRender()))
+          .catch(_doRender);
+      } else if (window._ssEnsureKatex) {
         window._ssEnsureKatex().then(_doRender).catch(_doRender);
       } else {
         _doRender();
       }
+    }
+    bindMessageActionButtons(wrap);
+    const msgBody = wrap.querySelector<HTMLElement>('.msg-body');
+    if (msgBody && typeof window._aiResponseActions === 'function') {
+      const actions = window._aiResponseActions(pair.a, 'panel') as Node | null;
+      if (actions) msgBody.appendChild(actions);
     }
     aiMsgs.appendChild(wrap);
   });
   aiMsgs.scrollTop = aiMsgs.scrollHeight;
 }
 
-export function restoreCourseHistory(courseId: string | null | undefined): void {
-  if (!courseId) return;
+/**
+ * Loads and renders the side panel's chat history for the given course+file
+ * pair. courseId/fileId must both be set — when no file is open (fileId is
+ * null/undefined/not loaded yet), this clears the panel to empty and does NOT
+ * fall back to any previously loaded file's history.
+ */
+export function restoreCourseHistory(
+  courseId: string | null | undefined,
+  fileId?: string | null
+): void {
+  const chatKey = getAiChatKey(courseId, fileId);
   const aiMsgs = document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
   if (!aiMsgs) return;
-  if (aiMsgs.querySelectorAll('.ai-msg-wrap:not(.typing-wrap)').length > 0) return;
 
-  const supaUrl = window._SUPA || '';
-  const tok = window._sbToken || '';
-  if (supaUrl && tok) {
-    fetch(
-      supaUrl + '/rest/v1/chat_history?course_id=eq.' + encodeURIComponent(courseId) +
-        '&order=created_at.asc&limit=40',
-      {
-        headers: {
-          apikey: window._SAKEY || '',
-          Authorization: 'Bearer ' + tok,
-        },
-      }
-    )
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((rows: Array<{ question: string; answer: string }> | null) => {
-        if (rows && rows.length) {
-          const pairs = rows.map((r) => ({ q: r.question, a: r.answer }));
-          _renderHistoryPairs(pairs, aiMsgs);
-        } else {
-          _renderHistoryPairs(_loadCourseHistory(courseId), aiMsgs);
-        }
-      })
-      .catch(() => {
-        _renderHistoryPairs(_loadCourseHistory(courseId), aiMsgs);
-      });
-  } else {
-    _renderHistoryPairs(_loadCourseHistory(courseId), aiMsgs);
+  if (!chatKey) {
+    // No file selected — start empty, never reuse a previous file's chat.
+    resetAiPanelChat();
+    return;
   }
+
+  // Reset before loading so a file switch never flashes the previous file's
+  // messages while the new chat's history is fetched.
+  if (_currentChatKey !== chatKey) resetAiPanelChat();
+  _currentChatKey = chatKey;
+
+  // Just-cleared chat: don't repopulate from local data left over from before
+  // the clear. Stays suppressed until the student asks something new.
+  if (_clearedChats.has(chatKey)) return;
+
+  // Only skip restore if a real conversation is already present (a user
+  // message) FOR THIS CHAT KEY. A lone bot greeting must NOT block restore —
+  // otherwise the boot-time welcome message permanently hides saved history.
+  if (aiMsgs.querySelector('.ai-msg-wrap.user')) return;
+
+  // Per-file isolation: restore from localStorage only. The chat_history
+  // table has no document_id column, so a course-wide DB merge here would
+  // leak every file's messages into each other's panel — see
+  // _appendCourseHistory's comment on why the table is write-only for now.
+  const myChatKey = chatKey;
+  const pairs = _loadCourseHistory(chatKey);
+  // Defer one tick so a same-tick file switch (which bumps _currentChatKey)
+  // can cancel this render before it touches the DOM.
+  Promise.resolve().then(() => {
+    if (_currentChatKey !== myChatKey) return;
+    _renderHistoryPairs(_dedupPairs(pairs), aiMsgs);
+  });
 }
 
-export function clearCourseHistory(courseId: string): void {
-  try { localStorage.removeItem(_historyKey(courseId)); } catch { /* ignore */ }
+/** Clears the side panel's chat for the given course+file pair, both locally
+ * and (best-effort) the synced chat_history rows for that course. */
+export function clearCourseHistory(courseId: string, fileId?: string | null): void {
+  const chatKey = getAiChatKey(courseId, fileId);
+  if (chatKey) {
+    // Tombstone so the panel's re-open (openAI → restoreCourseHistory) doesn't
+    // bring the cleared chat back from localStorage.
+    _clearedChats.add(chatKey);
+    try { localStorage.removeItem(_historyKey(chatKey)); } catch { /* ignore */ }
+  }
+  // Also delete the rows synced to chat_history for this course. RLS scopes
+  // the delete to this user's rows for this course — the table isn't
+  // per-file, so this clears the cross-device backup for the whole course.
+  try {
+    const supaUrl = window._SUPA || '';
+    const tok = window._sbToken || '';
+    if (supaUrl && tok && courseId) {
+      void fetch(
+        supaUrl + '/rest/v1/chat_history?course_id=eq.' + encodeURIComponent(courseId),
+        {
+          method: 'DELETE',
+          headers: {
+            apikey: window._SAKEY || '',
+            Authorization: 'Bearer ' + tok,
+            Prefer: 'return=minimal',
+          },
+        }
+      ).catch(() => {});
+    }
+  } catch { /* best-effort — localStorage is already cleared above */ }
+  // Also drop the active Problem Solver context — a wiped chat shouldn't
+  // inherit the previous session's PS overlay on its first new turn.
+  try {
+    const _w = window as unknown as { _activePsContext?: unknown };
+    if (_w._activePsContext) _w._activePsContext = undefined;
+  } catch { /* ignore */ }
 }
 
 export function initAskAI(
   state: AskAiState
-): (question: string, skipUserBubble?: boolean, opts?: { forceRefresh?: boolean }) => unknown {
+): (
+  question: string,
+  skipUserBubble?: boolean,
+  opts?: { forceRefresh?: boolean; problemSolver?: ProblemSolverOptions }
+) => unknown {
   return function askAI(
     question: string,
     skipUserBubble?: boolean,
-    opts?: { forceRefresh?: boolean }
+    opts?: { forceRefresh?: boolean; problemSolver?: ProblemSolverOptions }
   ): unknown {
     if (!question) return;
+    // Persist Problem Solver context across follow-up turns. The first
+    // submission from document-rail.ts arrives with opts.problemSolver
+    // set; the student's reply ("I don't know") goes through the plain
+    // chat input which calls askAI(q) with no opts. Without this, the
+    // backend would see no problem_mode on turn 2 and fall back to
+    // STRONG mode (full worked solution), breaking the Hint Ladder.
+    const _w = window as unknown as { _activePsContext?: ProblemSolverOptions };
+    if (opts?.problemSolver) {
+      _w._activePsContext = opts.problemSolver;
+    } else if (_w._activePsContext) {
+      opts = { ...(opts || {}), problemSolver: _w._activePsContext };
+    }
     if (window._abortCurrentStream) window._abortCurrentStream();
     state.generationStopped = false;
     state.currentGenId++;
@@ -248,6 +757,15 @@ export function initAskAI(
 
     const _chatHistory = window.serializeChatDOM ? window.serializeChatDOM() : [];
     if (!skipUserBubble && window.addUserMsg) window.addUserMsg(question);
+
+    if (isInternalTechnicalQuestion(question)) {
+      const refusal = _technicalRefusalMsg();
+      if (window.addBotMsg) window.addBotMsg(refusal);
+      const courseId = window.activeCourseId || window.currentCourseId || '';
+      const fileId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
+      if (courseId) _appendCourseHistory(courseId, fileId, question, refusal);
+      return { content: [{ text: refusal }] };
+    }
 
     const _aiSendBtn = document.getElementById('aiSend') as HTMLButtonElement | null;
     const _stopBtn = document.getElementById('stopBtn') as StopButton | null;
@@ -263,39 +781,70 @@ export function initAskAI(
     }
 
     const aiMsgs = document.getElementById('aiMsgs')!;
-    const aiPanel = document.getElementById('aiPanel');
     _ensureScrollTracker();
     _userScrolledUp = false;
+    const _isProblemSolver = !!opts?.problemSolver;
 
-    const thinkWrap = document.createElement('div');
-    thinkWrap.className = 'ai-msg-wrap typing-wrap';
-    thinkWrap.innerHTML =
-      '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-      '<div class="typing-bubble"><span></span><span></span><span></span></div>';
-    aiMsgs.appendChild(thinkWrap);
-    aiMsgs.scrollTop = aiMsgs.scrollHeight;
+    const initialThinkingContext = getThinkingContext({
+      problemSolver: opts?.problemSolver,
+      courseId: window.activeCourseId || window.currentCourseId || '',
+      selectedCourseId: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null,
+      selectedSourceCount: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId ? 1 : 0,
+      hasCourseMaterial: !!(window.pdfFullText || window.activeFileName),
+      question
+    });
+    let thinking: AIThinkingStatus | null = createAIThinkingStatus({
+      context: initialThinkingContext,
+      status: getInitialAssistantStatus({
+        problemSolver: opts?.problemSolver,
+        courseId: window.activeCourseId || window.currentCourseId || '',
+        selectedCourseId: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null,
+        selectedSourceCount: (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId ? 1 : 0,
+        hasCourseMaterial: !!(window.pdfFullText || window.activeFileName),
+        question
+      }),
+      host: aiMsgs,
+      surface: 'panel',
+      compact: true
+    });
+    const thinkWrap = thinking?.el || document.createElement('div');
+    function removeThinking(immediate = false): void {
+      if (thinking) {
+        thinking.remove(immediate);
+        thinking = null;
+      } else if (thinkWrap && thinkWrap.parentNode) {
+        thinkWrap.remove();
+      }
+    }
 
     const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
     let pdfFullText = window.pdfFullText || '';
-    const _lang = window._lang || localStorage.getItem('ss_lang') || 'en';
+    const _compareName = _isProblemSolver ? null : getCompareFileName();
+    let _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
+    const _comparePdfDoc = _compareName
+      ? (getPane('right').pdfDoc as PdfDocLike | null)
+      : null;
     const activeFileName = window.activeFileName || '';
     const currentCourseShort = window.currentCourseShort || '';
     const _MATH_PROMPT = (window as unknown as { _MATH_PROMPT?: string })._MATH_PROMPT || '';
+    const _docList = _compareName
+      ? '"' + activeFileName + '" AND "' + _compareName + '" (a second document the student is comparing against)'
+      : '"' + activeFileName + '"';
     let sysPrompt =
       (window._userType === 'learner'
         ? 'You are Minallo, a German language tutor helping a student prepare for ' +
           (window._germanTest || 'a German exam') +
           (window._germanLevel ? ' at level ' + window._germanLevel : '') +
-          '. Always reply in ' + (_lang === 'de' ? 'German' : 'English') +
-          '. The student is reading "' + activeFileName +
-          '". ALWAYS base your answers on the actual document content below. Be thorough but concise.'
-        : 'You are Minallo, a friendly tutor for TU Braunschweig engineering students. Always reply in ' +
-          (_lang === 'de' ? 'German' : 'English') +
-          '. The student is reading "' + activeFileName + '" from ' + currentCourseShort +
+          '. Reply in the language of the student\'s latest question, regardless of the document, pasted text, previous messages, or interface language. Support any language and script, including Arabic and other right-to-left scripts. ' +
+          'The student is reading ' + _docList +
+          '. ALWAYS base your answers on the actual document content below. Be thorough but concise.'
+        : 'You are Minallo, a friendly tutor for TU Braunschweig engineering students. Reply in the language of the student\'s latest question, regardless of the document, pasted text, previous messages, or interface language. Support any language and script, including Arabic and other right-to-left scripts. ' +
+          'The student is reading ' + _docList + ' from ' + currentCourseShort +
           '. ALWAYS base your answers on the actual document content provided below. Do not use general knowledge when the document covers the topic. Be thorough but concise.') +
+      MINALLO_APP_CONTEXT +
       _MATH_PROMPT;
 
-    const _textReady =
+    const _leftTextReady =
       pdfDoc && !pdfFullText.trim()
         ? extractPdfText(pdfDoc, 30).then((t) => {
             if (t) {
@@ -304,9 +853,42 @@ export function initAskAI(
             }
           })
         : Promise.resolve();
+    // Same on-demand extraction for the right (compare) pane. Without this,
+    // a question asked right after toggling split runs before pdf-compare's
+    // deferred extractText() completes, so the AI gets DOCUMENT 2 = "" and
+    // silently answers from DOCUMENT 1 only.
+    const _rightTextReady =
+      _compareName && _comparePdfDoc && !_compareText.trim()
+        ? extractPdfText(_comparePdfDoc, 30).then((t) => {
+            if (t) {
+              getPane('right').pdfFullText = t;
+              _compareText = t;
+            }
+          })
+        : Promise.resolve();
+    const _textReady = Promise.all([_leftTextReady, _rightTextReady]);
+    const _asksAboutVisibleSolution =
+      shouldAttachVisiblePdfPage(question) ||
+      /\b(how|why)\b[\s\S]{0,80}\b(prof(?:essor)?|solution|answer(?:ed)?|worked|solved)\b/i.test(question) ||
+      /\b(explain|walk me through)\b[\s\S]{0,80}\b(answer|solution|working|rechnung|l[oö]sung)\b/i.test(question) ||
+      /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question) ||
+      /\b(?:task|exercise|problem|question|aufgabe|[uü]bung)\s*\d+(?:\.\d+)?\b/i.test(question);
 
     _textReady
-      .then(() => (pdfDoc ? pdfToImages(8) : []))
+      .then(() => {
+        if (!pdfDoc) return [];
+        const _pp = window.pdfPage as number | undefined;
+        const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts;
+        const _currentPageText = _pp && _ppt ? (_ppt[_pp] || '') : '';
+        const _visibleTextWeak =
+          pdfFullText.trim().length < 500 ||
+          !_currentPageText.trim() ||
+          _currentPageText.trim().length < 80;
+        // Requests about how a displayed solution was answered depend on the
+        // exact working visible on the page (often inside a drawing/solution
+        // box that PDF text extraction scrambles). Always attach that page.
+        return _visibleTextWeak || _asksAboutVisibleSolution ? pdfToImages(1) : [];
+      })
       .then(async (pageImages: string[]) => {
         let userContent: unknown;
         const isHandwritten = pdfFullText.trim().length < 100;
@@ -321,20 +903,42 @@ export function initAskAI(
             }))
           );
         } else {
-          sysPrompt +=
-            '\n\nDOCUMENT CONTENT:\n' + (pdfFullText || '(document text not yet extracted)');
+          if (_compareText) {
+            sysPrompt +=
+              '\n\nDOCUMENT 1 — "' + activeFileName + '":\n' + (pdfFullText || '(document text not yet extracted)') +
+              '\n\nDOCUMENT 2 — "' + _compareName + '":\n' + _compareText;
+          } else {
+            sysPrompt +=
+              '\n\nDOCUMENT CONTENT:\n' + (pdfFullText || '(document text not yet extracted)');
+          }
           userContent = question;
         }
 
         const _courseId = window.activeCourseId || window.currentCourseId || '';
-        let _hasRag = false;
-        const _activeDocId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
+        let _activeDocId = (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null;
+        // In split view, resolve the compare-pane doc ID too. The backend
+        // treats documentIds as preference hints, while still searching the
+        // whole course for professor lecture/formula support.
+        let _compareDocId: string | null = null;
         if (_courseId) {
           try {
             const _docs: CourseDocument[] = await listCourseDocuments(_courseId);
             const _readyDocs = _docs.filter((d) => d.processing_status === 'ready');
-            _hasRag = _readyDocs.length > 0;
-          } catch { _hasRag = false; }
+            // If the user is reading a specific file, resolve its UUID so the
+            // backend can boost that PDF without ignoring other course files.
+            if (!_activeDocId && activeFileName) {
+              const _open = _readyDocs.find(
+                (d) => (d.file_name || '').toLowerCase() === activeFileName.toLowerCase()
+              );
+              if (_open?.id) _activeDocId = _open.id;
+            }
+            if (_compareName) {
+              const _cmp = _readyDocs.find(
+                (d) => (d.file_name || '').toLowerCase() === _compareName.toLowerCase()
+              );
+              if (_cmp?.id) _compareDocId = _cmp.id;
+            }
+          } catch { /* keep IDs as-is; backend will search the whole course */ }
         }
 
         // Extract a focused excerpt from the open PDF around the mentioned exercise/topic.
@@ -389,7 +993,7 @@ export function initAskAI(
             }
             if (_idx >= 0) {
               (window as unknown as { _lastExerciseIdx?: number })._lastExerciseIdx = _idx;
-              _openFileCtx = _rawText.slice(Math.max(0, _idx - 200), _idx + 3000);
+              _openFileCtx = _rawText.slice(Math.max(0, _idx - 600), _idx + 8000);
             }
           }
           const _lastExerciseIdx = (window as unknown as { _lastExerciseIdx?: number })._lastExerciseIdx;
@@ -401,117 +1005,249 @@ export function initAskAI(
               : -1;
             if (_subqRel > 0) {
               const _subqAbs = _lastExerciseIdx + _subqRel;
-              _openFileCtx = _rawText.slice(Math.max(0, _subqAbs - 300), _subqAbs + 2500);
+              _openFileCtx = _rawText.slice(Math.max(0, _subqAbs - 600), _subqAbs + 6000);
             } else {
-              _openFileCtx = _rawText.slice(Math.max(0, _lastExerciseIdx - 200), _lastExerciseIdx + 3000);
+              _openFileCtx = _rawText.slice(Math.max(0, _lastExerciseIdx - 600), _lastExerciseIdx + 8000);
             }
           }
-          if (!_openFileCtx) _openFileCtx = _rawText.slice(0, 3000);
+          if (!_openFileCtx) {
+            // No exercise term matched — fall back to the page the user is
+            // currently looking at, since their question is most likely about
+            // what's on screen. pdfPageTexts is populated per page as it
+            // renders (or pre-extracted up front by pdf-viewer). Falls all
+            // the way back to the document start only as a last resort.
+            const _pp = window.pdfPage as number | undefined;
+            const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts;
+            const _pageParts: string[] = [];
+            if (_pp && _ppt) {
+              [_pp - 1, _pp, _pp + 1].forEach((pageNo) => {
+                const pageText = _ppt[pageNo];
+                if (pageNo > 0 && pageText && pageText.trim().length > 30) {
+                  _pageParts.push('[PDF page ' + pageNo + ']\n' + pageText.trim());
+                }
+              });
+            }
+            const _currentPageText = _pageParts.join('\n\n');
+            if (_currentPageText && _currentPageText.trim().length > 60) {
+              _openFileCtx = _currentPageText.slice(0, 12000);
+            } else {
+              _openFileCtx = _rawText.slice(0, 12000);
+            }
+          }
+        }
+        const _currentPageNo = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+        const _visibleTextWeak =
+          !!pdfDoc &&
+          (
+            isHandwritten ||
+            !_openFileCtx ||
+            _openFileCtx.trim().length < 500
+          );
+        let _openFileImages = (_visibleTextWeak || _asksAboutVisibleSolution) && pageImages[0]
+          ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
+          : undefined;
+        // Keep a recent user attachment available for anaphoric follow-ups
+        // such as "this one", "the image", or "where did that 100 come from?".
+        // Text-only previousTurns cannot carry the pixels themselves.
+        const _recentImageCtx = (window as unknown as {
+          _lastAiImageContext?: {
+            images?: Array<{ mediaType: string; data: string }>;
+            courseId?: string;
+            fileName?: string;
+            timestamp?: number;
+          };
+        })._lastAiImageContext;
+        const _currentCourseId = window.activeCourseId || window.currentCourseId || '';
+        const _refersToRecentVisual =
+          /\b(this|that|it|one|image|picture|screenshot|photo|formula|equation|shown|above)\b/i.test(question);
+        const _recentVisualMatches =
+          !!_recentImageCtx?.images?.length &&
+          _refersToRecentVisual &&
+          Date.now() - (_recentImageCtx.timestamp || 0) < 15 * 60 * 1000 &&
+          (!_recentImageCtx.courseId || _recentImageCtx.courseId === _currentCourseId) &&
+          (!_recentImageCtx.fileName || _recentImageCtx.fileName === activeFileName);
+        if (_recentVisualMatches) {
+          const _attachmentImages = _recentImageCtx!.images!.slice(-2).map((img) => ({
+            mediaType: img.mediaType,
+            data: img.data,
+            page: _currentPageNo
+          }));
+          _openFileImages = [..._attachmentImages, ...(_openFileImages || [])].slice(0, 2);
+          sysPrompt +=
+            '\n\nThe user recently attached the image(s) included with this request. ' +
+            'When they refer to "this", "that", "the image", or "this one", inspect those images directly and keep the prior conversation topic.';
+        }
+        let _streamActiveFileName = activeFileName;
+        let _streamOpenFileCtx = _openFileCtx;
+        if (_compareName) {
+          const _leftExcerpt = (_openFileCtx || pdfFullText || '').slice(0, 9500);
+          const _rightExcerpt = _compareText.slice(0, 9500);
+          const _rightPane = getPane('right');
+          const _rightPageNo = _rightPane.pdfPage && _rightPane.pdfPage >= 1 ? _rightPane.pdfPage : 1;
+          const _rightTextWeak = !_rightExcerpt || _rightExcerpt.trim().length < 500;
+          let _splitImages = _openFileImages ? [..._openFileImages] : [];
+          if (_rightTextWeak && _comparePdfDoc) {
+            const _rightImages = await pdfDocToImages(_comparePdfDoc, _rightPageNo, 1);
+            if (_rightImages[0]) {
+              _splitImages.push({ mediaType: 'image/jpeg', data: _rightImages[0], page: _rightPageNo });
+            }
+          }
+          if (_splitImages.length) _openFileImages = _splitImages.slice(0, 2);
+          _streamActiveFileName = activeFileName
+            ? activeFileName + ' + ' + _compareName
+            : _compareName;
+          _streamOpenFileCtx =
+            'SPLIT VIEW: the student has two PDFs open and is asking about both. ' +
+            'Use BOTH documents when the question asks what they contain, to compare them, or to use both as sources.\n\n' +
+            'DOCUMENT 1 — "' + (activeFileName || 'left PDF') + '":\n' +
+            (_leftExcerpt || '(left PDF text not yet extracted)') +
+            '\n\nDOCUMENT 2 — "' + _compareName + '":\n' +
+            (_rightExcerpt || '(right PDF text not yet extracted)');
         }
 
-        if (_hasRag) {
+        // RAG-first routing: any question with a course_id goes through
+        // /ask-stream so the Phase-1 verification + math-template gating +
+        // confidence-from-verification on the Python backend always apply.
+        // The previous gate (`if (_hasRag)`) let questions fall through to
+        // free-form Claude whenever the course had zero ready docs or
+        // listCourseDocuments() failed transiently — bypassing all grounding
+        // and letting the model invent textbook formulas. /ask-stream
+        // handles the "no chunks" case correctly (returns the weak prompt
+        // with low confidence) so it's safe to always prefer it.
+        if (_courseId) {
           const _modeToggle = document.getElementById('aiModeStrict') as HTMLInputElement | null;
           const _ragMode = !_modeToggle || _modeToggle.checked ? 'strict' : 'general';
 
           return new Promise<AiResponse>((resolve) => {
-            const token = window._sbToken || '';
-
             let ansWrap: HTMLElement | null = null;
             let bubble: HTMLElement | null = null;
             let rawText = '';
             const metaPattern = /<!--META-->[\s\S]*?<!--\/META-->/g;
-            const _tokenQueue: string[] = [];
-            let _renderTimer: ReturnType<typeof setTimeout> | null = null;
+            let _renderTimer: number | null = null;
+            let _lastPaintedStable: string | null = null;
             let _pendingMeta: SseDoneEvent | null | undefined = undefined;
-            const CFG = window.AI_TYPING || ({} as Partial<NonNullable<Window['AI_TYPING']>>);
-            const TOKEN_INTERVAL = CFG.streamTokenInterval || 38;
+            // ChatGPT-style batching: paint at most once per interval instead
+            // of per token, and paint RENDERED markdown+math — never raw text.
+            const STREAM_RENDER_INTERVAL = 60;
 
-            let _renderedBlockCount = 0;
+            // Both `evt.done` and the reader's `result.done` can race to call
+            // finalize() — guard so history/feedback bar aren't doubled.
+            let _finalized = false;
+            let _recoveryStarted = false;
+            const _recoveryState = { started: false };
+            let _activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+            let _finalizeWaitingForThinking = false;
 
-            function splitBlocks(text: string): string[] {
-              const blocks: string[] = [];
-              const lines = text.split('\n');
-              let buf: string[] = [];
-              let inCode = false;
-              let inMath = false;
-              let inLatex = false;
-              for (let i = 0; i < lines.length; i++) {
-                const line = lines[i] ?? '';
-                if (!inCode && /^```/.test(line)) inCode = true;
-                else if (inCode && /^```/.test(line)) { buf.push(line); inCode = false; blocks.push(buf.join('\n')); buf = []; continue; }
-                if (!inLatex && /^\s*\\\[/.test(line)) inLatex = true;
-                else if (inLatex && /\\\]/.test(line)) { buf.push(line); inLatex = false; blocks.push(buf.join('\n')); buf = []; continue; }
-                if (!inMath && /^\s*\$\$/.test(line) && !/\$\$.*\$\$/.test(line)) inMath = true;
-                else if (inMath && /\$\$/.test(line)) { buf.push(line); inMath = false; blocks.push(buf.join('\n')); buf = []; continue; }
-                if (!inCode && !inMath && !inLatex && line.trim() === '' && buf.length) {
-                  blocks.push(buf.join('\n'));
-                  buf = [];
-                } else {
-                  buf.push(line);
+            // Load KaTeX from the FIRST token, not at finalize. renderMarkdown
+            // falls back to raw `\(...\)` delimiters while window.katex is
+            // missing — that fallback is exactly the raw-LaTeX flash + visible
+            // repaint this pipeline removes, so the first paint waits for KaTeX
+            // (capped, so a dead CDN can't hold the answer hostage).
+            let _katexSettled = !!window.katex;
+            let _katexResolve: (() => void) | null = null;
+            const _katexReady: Promise<void> = _katexSettled
+              ? Promise.resolve()
+              : new Promise((res) => { _katexResolve = res; });
+            if (!_katexSettled) {
+              const settleKatex = (): void => {
+                if (_katexSettled) return;
+                _katexSettled = true;
+                if (_katexResolve) _katexResolve();
+              };
+              const ensure = window._ssEnsureKatex ? window._ssEnsureKatex() : null;
+              if (ensure) {
+                ensure.then(settleKatex).catch(settleKatex);
+                window.setTimeout(settleKatex, 4000);
+              } else {
+                settleKatex();
+              }
+            }
+
+            /** Stable/tail splitter: prefer the versioned ai-markdown module's
+             *  implementation; fall back to a conservative display-math-only
+             *  check so an old cached bridge can't crash the stream. */
+            function splitStable(display: string): { stable: string; tail: string } {
+              if (typeof window._ssSplitStableStream === 'function') {
+                return window._ssSplitStableStream(display);
+              }
+              // Conservative fallback (bridge not ready): hold back from the
+              // last display-math opener that has no closer yet.
+              if ((display.split('$$').length - 1) % 2 === 1) {
+                const idx = display.lastIndexOf('$$');
+                return { stable: display.slice(0, idx), tail: display.slice(idx) };
+              }
+              const lastOpen = Math.max(display.lastIndexOf('\\['), display.lastIndexOf('\\('));
+              if (lastOpen !== -1) {
+                const closer = display.charAt(lastOpen + 1) === '[' ? '\\]' : '\\)';
+                if (display.indexOf(closer, lastOpen) === -1) {
+                  return { stable: display.slice(0, lastOpen), tail: display.slice(lastOpen) };
                 }
               }
-              if (buf.length) blocks.push(buf.join('\n'));
-              return blocks.filter((b) => b.trim());
+              return { stable: display, tail: '' };
             }
 
-            function renderBlock(_text: string): HTMLElement {
-              const div = document.createElement('div');
-              div.className = 'ss-rendered-block';
-              div.style.opacity = '0';
-              div.style.transition = 'opacity 0.2s ease';
-              return div;
-            }
-
-            function applyKatexToBlock(div: HTMLElement, text: string): void {
-              const done = (): void => {
-                div.innerHTML = window.renderMarkdown ? window.renderMarkdown(text) : escapeHtml(text);
-                div.style.opacity = '1';
-                _autoScroll(aiMsgs);
-              };
-              if (window._ssEnsureKatex) {
-                window._ssEnsureKatex().then(done).catch(() => {
-                  div.innerHTML = window.renderMarkdown ? window.renderMarkdown(text) : escapeHtml(text);
-                  div.style.opacity = '1';
-                });
-              } else {
-                done();
-              }
-            }
-
-            function updateBlockRender(): void {
+            function updateWritingTail(tail: string): void {
               if (!bubble) return;
-              const display = rawText.replace(metaPattern, '').trimEnd();
-              const blocks = splitBlocks(display);
-
-              let typingSpan = bubble.querySelector<HTMLElement>('.ss-typing-span');
-              if (!typingSpan) {
-                typingSpan = document.createElement('span');
-                typingSpan.className = 'ss-typing-span';
-                typingSpan.style.whiteSpace = 'pre-wrap';
-                bubble.appendChild(typingSpan);
+              const existing = bubble.querySelector<HTMLElement>('.ai-writing-tail');
+              // Only show the indicator while actual math is in flight; a
+              // couple of held-back chars don't deserve a placeholder.
+              if (/\$\$|\\\[|\\\(|\$/.test(tail)) {
+                if (existing) {
+                  bubble.appendChild(existing); // keep it after the newest content
+                  return;
+                }
+                const el = document.createElement('span');
+                el.className = 'ai-writing-tail';
+                el.textContent = 'Writing equation…';
+                bubble.appendChild(el);
+              } else if (existing) {
+                existing.remove();
               }
-
-              const completedCount = blocks.length - 1;
-              while (_renderedBlockCount < completedCount) {
-                const blockText = blocks[_renderedBlockCount] || '';
-                const div = renderBlock(blockText);
-                bubble.insertBefore(div, typingSpan);
-                applyKatexToBlock(div, blockText);
-                _renderedBlockCount++;
-              }
-
-              const typingText = (blocks[blocks.length - 1] || '').replace(/<!--META-->[\s\S]*$/, '');
-              typingSpan.textContent = typingText;
-              _autoScroll(aiMsgs);
             }
 
-            function fullRender(text: string): void {
+            function paintStreaming(): void {
+              if (_finalized || !bubble) return;
+              // Keep data-raw current with the accumulated stream so serializers
+              // (per-file save in chat.js, per-course in ai-message-actions.ts)
+              // can persist the in-progress text properly. Without this, if a
+              // save fires mid-stream (panel close, course switch, page unload),
+              // serializeChatDOM falls back to textContent which flattens the
+              // rendered KaTeX/markdown HTML and produces a cropped/corrupted
+              // answer on reload.
+              bubble.setAttribute('data-raw', rawText);
+              const display = stripSourceMarkersLive(rawText.replace(metaPattern, '').trimEnd());
+              if (!display) return;
+              const split = splitStable(display);
+              if (split.stable !== _lastPaintedStable && split.stable) {
+                _lastPaintedStable = split.stable;
+                let renderSrc = split.stable;
+                // Auto-close an in-progress code fence so the partial block
+                // renders as code instead of swallowing the rest of the text.
+                if (((renderSrc.match(/```/g) || []).length) % 2 === 1) renderSrc += '\n```';
+                bubble.innerHTML = window.renderMarkdown
+                  ? window.renderMarkdown(renderSrc)
+                  : escapeHtml(renderSrc);
+              }
+              updateWritingTail(split.tail);
+              _scheduleAutoScroll(aiMsgs);
+            }
+
+            function fullRender(text: string, opts?: { keepMarkers?: boolean; sources?: SourceItem[] }): void {
               if (!bubble) return;
-              const display = text.replace(metaPattern, '').trim();
+              const cleaned = stripAnswerIntro(text.replace(metaPattern, '').trim());
+              // For the final render we KEEP [Source N] so they can be linkified
+              // into clickable chips; mid-stream renders still strip them.
+              const display = opts?.keepMarkers ? cleaned : stripSourceMarkers(cleaned);
               if (!display) return;
               const _doFullRender = (): void => {
                 if (!bubble) return;
                 bubble.innerHTML = window.renderMarkdown ? window.renderMarkdown(display) : escapeHtml(display);
+                if (opts?.keepMarkers) linkifySourceCitations(bubble, opts.sources);
+                // Must happen AFTER the innerHTML write above: this render is
+                // deferred behind the KaTeX promise, so a dropdown appended by
+                // the caller beforehand would be wiped by it (the bug that made
+                // the Sources block vanish from finished answers).
+                appendSourcesDropdown(bubble, opts?.sources);
                 _autoScroll(aiMsgs);
               };
               if (window._ssEnsureKatex) {
@@ -521,74 +1257,188 @@ export function initAskAI(
               }
             }
 
-            function drainQueue(): void {
-              if (!_tokenQueue.length) {
+            function schedulePaint(): void {
+              if (_renderTimer != null || _finalized) return;
+              _renderTimer = window.setTimeout(() => {
                 _renderTimer = null;
-                if (_pendingMeta !== undefined) finalize(_pendingMeta);
-                return;
-              }
-              const tok = _tokenQueue.shift()!;
-              rawText += tok;
-              if (bubble) updateBlockRender();
-              _renderTimer = setTimeout(drainQueue, TOKEN_INTERVAL);
+                paintStreaming();
+              }, STREAM_RENDER_INTERVAL);
             }
 
             function queueToken(tok: string): void {
-              _tokenQueue.push(tok);
-              if (!_renderTimer) _renderTimer = setTimeout(drainQueue, TOKEN_INTERVAL);
+              if (myGenId !== state.currentGenId || _recoveryStarted) return;
+              rawText += tok;
+              if (document.hidden) {
+                if (!ansWrap) ensureBubble();
+                if (bubble) bubble.setAttribute('data-raw', rawText);
+                return;
+              }
+              if (ansWrap) schedulePaint();
+              else beginStreamingWhenReady();
             }
 
             window._activeStreamRender = function (): void {
-              if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
-              while (_tokenQueue.length) rawText += _tokenQueue.shift()!;
+              if (_renderTimer != null) { window.clearTimeout(_renderTimer); _renderTimer = null; }
+              _lastPaintedStable = null;
               fullRender(rawText);
             };
 
             function ensureBubble(): void {
               if (ansWrap) return;
-              thinkWrap.style.transition = 'opacity .15s';
-              thinkWrap.style.opacity = '0';
-              setTimeout(() => thinkWrap.remove(), 160);
+              removeThinking(true);
 
               ansWrap = document.createElement('div');
               ansWrap.className = 'ai-msg-wrap';
               ansWrap.innerHTML =
                 '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-                '<div class="msg-body"><div class="ai-bubble bot" style="min-height:20px"></div></div>';
+                '<div class="msg-body"><div class="ai-bubble bot ai-bubble-streaming" dir="auto" style="min-height:20px"></div></div>';
               aiMsgs.appendChild(ansWrap);
               _autoScroll(aiMsgs);
               bubble = ansWrap.querySelector<HTMLElement>('.ai-bubble.bot');
+              // Mark the bubble as actively streaming so serializers know to
+              // either skip it or persist its data-raw value rather than the
+              // partially-rendered DOM contents.
+              if (bubble) bubble.setAttribute('data-streaming', 'true');
+            }
+
+            let _streamStartScheduled = false;
+            function beginStreamingWhenReady(): void {
+              if (ansWrap || _streamStartScheduled) return;
+              _streamStartScheduled = true;
+              // Hold the thinking dots until BOTH the minimum dwell time and
+              // KaTeX are ready — the first visible paint must already contain
+              // rendered math, never raw LaTeX that gets repainted later.
+              const ready = Promise.all([
+                thinking ? thinking.waitMinimum() : Promise.resolve(),
+                _katexReady,
+              ]);
+              ready.then(() => {
+                _streamStartScheduled = false;
+                // signal.aborted: the user stopped the stream while the dots
+                // were still up — don't materialise a bubble for a dead answer.
+                if (ansWrap || _finalized || _streamController.signal.aborted) return;
+                if (!rawText) return;
+                ensureBubble();
+                paintStreaming();
+              }).catch(() => {
+                _streamStartScheduled = false;
+              });
             }
 
             const _streamController = new AbortController();
             window._abortCurrentStream = (): void => _streamController.abort();
 
-            // (prevQuestion lookup retained from JS for parity — currently unused in payload)
+            // Collect recent file-scoped messages so the backend can
+            // resolve follow-up references like "explain the formula above"
+            // without having to re-derive them from retrieval alone. Backend
+            // apply its own per-turn and total character caps.
+            let _previousTurns: Array<{ role: string; text: string }> = [];
             try {
-              const _chatMsgs = typeof window.serializeChatDOM === 'function' ? window.serializeChatDOM() : [];
-              for (let _ci = _chatMsgs.length - 1; _ci >= 0; _ci--) {
-                const m = _chatMsgs[_ci]!;
-                if (m.role === 'user' && m.text !== question) break;
+              // Captured before addUserMsg(question), so repeated questions are
+              // preserved correctly and the current turn is never included.
+              const _allMsgs = _chatHistory;
+              const _prior: Array<{ role: string; text: string }> = [];
+              for (let _ci = _allMsgs.length - 1; _ci >= 0; _ci--) {
+                const m = _allMsgs[_ci]!;
+                const _txt = (m.text || '').trim();
+                if (!_txt) continue;
+                _prior.unshift({ role: m.role, text: _txt });
+                if (_prior.length >= 20) break;
               }
-            } catch { /* ignore */ }
+              _previousTurns = _prior;
+            } catch { /* ignore — sending [] is safe */ }
 
             const _aiHost = (window.AI_SERVICE_URL || '').replace(/\/$/, '');
             if (!_aiHost) { fallbackToRag(); return; }
 
-            fetch(_aiHost + '/ask-stream', {
+            const _viewerSelection = window.getSelection();
+            const _viewerWrap = document.getElementById('pdfViewerWrap');
+            const _selectionAnchor = _viewerSelection?.anchorNode || null;
+            const _selectionFocus = _viewerSelection?.focusNode || null;
+            const _selectedPdfText =
+              _viewerWrap &&
+              _selectionAnchor &&
+              _selectionFocus &&
+              _viewerWrap.contains(_selectionAnchor) &&
+              _viewerWrap.contains(_selectionFocus)
+                ? (_viewerSelection?.toString() || '').trim().slice(0, 12000)
+                : '';
+            const _visiblePage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : undefined;
+            // The browser does not possess the server's content SHA. A
+            // course/doc/name/page-count tuple is not a document revision and
+            // must never be presented as one. The backend binds the selection
+            // to the stored PDF SHA after authorization and rejects a storage
+            // object that no longer matches its indexed revision.
+            const _viewerRevision = '';
+            const _selectedRegion = regionFromSelection(
+              _viewerSelection,
+              _viewerWrap,
+              _viewerRevision,
+            );
+
+            const _conversationId = getAiChatKey(
+              _courseId,
+              _activeDocId || undefined,
+            );
+            authenticatedFetch(_aiHost + '/ask-stream', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+              headers: { 'Content-Type': 'application/json' },
               signal: _streamController.signal,
               body: JSON.stringify({
+                // documentIds is a preference hint for answer quality. Even
+                // in split view, the backend still searches the whole course
+                // so professor lecture/formula PDFs can support the answer.
                 courseId: _courseId,
                 question: question,
-                documentIds: _activeDocId ? [_activeDocId] : undefined,
+                documentIds:
+                  _activeDocId && _compareDocId
+                    ? [_activeDocId, _compareDocId]
+                    : undefined,
+                activeDocumentId: _activeDocId || undefined,
+                visiblePage: _visiblePage,
+                selectedText: _selectedPdfText || undefined,
+                selectedRegion: _selectedRegion || undefined,
+                viewerRevision: _viewerRevision,
+                conversationId: _conversationId,
+                conversationGeneration: myGenId,
+                // Tell the backend which file the user is reading and give it
+                // a slice of the actually-visible text. Without this the model
+                // sees only retrieved chunks, which can miss the section the
+                // user is pointing at when they say "this question".
+                activeFileName: _streamActiveFileName || undefined,
+                openFileContext: _streamOpenFileCtx || undefined,
+                openFileImages: _openFileImages,
+                // Recent chat history so the model can resolve anaphoric
+                // references ("the formula above", "explain that again").
+                previousTurns: _previousTurns.length ? _previousTurns : undefined,
+                // Problem Solver modes carry their own behavior contract.
+                // Keep the base mode direct so "Solve" can produce the full
+                // answer instead of inheriting the Socratic tutor overlay.
+                tutorMode: 'explain',
+                problemSolver: opts?.problemSolver || undefined,
                 bypassCache: opts && opts.forceRefresh ? true : undefined,
+                // Where the student is in the UI right now (page, course tab,
+                // open document) — feeds the backend's live-workspace block.
+                pageContext: buildPageContext() || undefined,
               }),
-            })
-              .then((res) => {
-                if (!res.ok || !res.body || !res.body.getReader) { fallbackToRag(); return; }
+            }, { safeToRetry: true })
+              .then(async (res) => {
+                if (!res.ok) {
+                  if (res.status === 503 || res.status === 429) {
+                    let detail = 'AI retrieval is temporarily unavailable. Please try again later.';
+                    try {
+                      const data = await res.json() as { detail?: string };
+                      detail = data.detail || detail;
+                    } catch { /* keep fallback detail */ }
+                    resolve({ content: [{ text: friendlyAiErrorMessage(detail) }] });
+                    return;
+                  }
+                  fallbackToRag();
+                  return;
+                }
+                if (!res.body || !res.body.getReader) { fallbackToRag(); return; }
                 const reader = res.body.getReader();
+                _activeReader = reader;
                 const decoder = new TextDecoder();
                 let sseBuffer = '';
                 function read(): void {
@@ -600,14 +1450,27 @@ export function initAskAI(
                     lines.forEach((line) => {
                       if (!line.startsWith('data: ')) return;
                       try {
-                        const evt = JSON.parse(line.slice(6)) as Partial<SseDoneEvent> & { t?: string; error?: unknown };
+                        const evt = JSON.parse(line.slice(6)) as SseStreamEvent;
+                        if (myGenId !== state.currentGenId || _recoveryStarted) return;
+                        if (evt.status && thinking) {
+                          thinking.set(evt.status);
+                        }
+                        if (evt.meta && thinking) {
+                          const answerMode = String(evt.answerMode || '');
+                          if (answerMode === 'math' || _isProblemSolver) {
+                            thinking.set('preparing_step_solution');
+                          } else if (answerMode === 'app') {
+                            thinking.set('checking_app_context');
+                          } else {
+                            thinking.set('writing_answer');
+                          }
+                        }
                         if (evt.t) {
-                          ensureBubble();
                           queueToken(evt.t);
                         }
                         if (evt.done) {
                           _pendingMeta = evt as SseDoneEvent;
-                          if (!_renderTimer && !_tokenQueue.length) finalize(_pendingMeta);
+                          finalize(_pendingMeta);
                         }
                         if (evt.error) fallbackToRag();
                       } catch { /* ignore malformed line */ }
@@ -619,7 +1482,16 @@ export function initAskAI(
               })
               .catch((err: unknown) => {
                 if (err && (err as { name?: string }).name === 'AbortError') {
-                  if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
+                  removeThinking();
+                  // Drop a partial streaming bubble entirely instead of letting
+                  // its cropped contents get persisted by saveChatForFile on
+                  // the next unload/showPortal trigger. The user explicitly
+                  // aborted — don't overwrite the prior complete answer (which
+                  // still lives in localStorage / Supabase) with a half-stream.
+                  if (ansWrap && ansWrap.querySelector('.ai-bubble.bot[data-streaming="true"]')) {
+                    ansWrap.remove();
+                    ansWrap = null;
+                  }
                   const _sb = document.getElementById('aiSend') as HTMLButtonElement | null;
                   if (_sb) _sb.disabled = false;
                   const _st = document.getElementById('stopBtn');
@@ -631,79 +1503,77 @@ export function initAskAI(
               });
 
             function fallbackToRag(): void {
+              if (!beginSafeStreamRecovery(_recoveryState, _activeReader, _streamController)) return;
+              _recoveryStarted = true;
+              _finalized = true;
               if (ansWrap) ansWrap.remove();
-              if (thinkWrap && !thinkWrap.parentNode) {
-                thinkWrap.className = 'ai-msg-wrap typing-wrap';
-                thinkWrap.innerHTML =
-                  '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
-                  '<div class="typing-bubble"><span></span><span></span><span></span></div>';
-                aiMsgs.appendChild(thinkWrap);
-              }
-              sendRagRequest(
-                _courseId,
-                question,
-                _ragMode,
-                _activeDocId || undefined,
-                activeFileName || undefined,
-                _openFileCtx || undefined
-              )
-                .then((data: RagAskResponse) => {
-                  if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
-                  let answer = data.answer || 'No answer found.';
-                  const confEmoji =
-                    data.confidence === 'high' ? '🟢' : data.confidence === 'medium' ? '🟡' : '🔴';
-                  if (data.sources && data.sources.length) {
-                    answer += '\n\n**Sources:**\n' +
-                      data.sources.map((s) => {
-                        let l = '- ' + (s.file_name || '');
-                        if (s.pages) l += ', p.' + s.pages;
-                        if (s.section) l += ' · *' + s.section + '*';
-                        return l;
-                      }).join('\n');
-                  }
-                  answer += '\n\n' + confEmoji + ' Confidence: ' + (data.confidence || 'medium');
-                  resolve({ content: [{ text: answer }], _ragData: data as unknown as AiResponse['_ragData'] });
-                })
-                .catch((err: unknown) => {
-                  if (thinkWrap && thinkWrap.parentNode) thinkWrap.remove();
-                  const msg = err instanceof Error ? ' (' + err.message + ')' : '';
-                  resolve({ content: [{ text: '❌ Could not reach the AI' + msg + '. Please try again.' }] });
-                });
+              ansWrap = null;
+              removeThinking();
+              const lang = (document.documentElement.lang || 'en').toLowerCase().slice(0, 2);
+              const retryText = ({
+                de: 'Die sichere Dokumentprüfung wurde unterbrochen. Deine Frage bleibt erhalten – bitte versuche es erneut.',
+                fr: 'La vérification sécurisée du document a été interrompue. Votre question est conservée — veuillez réessayer.',
+                es: 'La verificación segura del documento se interrumpió. Tu pregunta se ha conservado; inténtalo de nuevo.',
+                it: 'La verifica sicura del documento è stata interrotta. La domanda è stata conservata — riprova.',
+                ar: 'توقّف التحقق الآمن من المستند. تم الاحتفاظ بسؤالك — يُرجى المحاولة مرة أخرى.',
+                en: 'The grounded document check was interrupted. Your question is preserved — please retry.'
+              } as Record<string, string>)[lang] ||
+                'The grounded document check was interrupted. Your question is preserved — please retry.';
+              resolve({ content: [{ text: retryText }] });
             }
 
             function finalize(meta: SseDoneEvent | null | undefined): void {
+              if (_finalized) return;
+              if (myGenId !== state.currentGenId) {
+                _finalized = true;
+                removeThinking();
+                if (ansWrap) {
+                  ansWrap.remove();
+                  ansWrap = null;
+                }
+                return;
+              }
+              if (!ansWrap && thinking && !_finalizeWaitingForThinking) {
+                _finalizeWaitingForThinking = true;
+                thinking.waitMinimum().then(() => {
+                  if (rawText) ensureBubble();
+                  finalize(meta);
+                }).catch(() => finalize(meta));
+                return;
+              }
+              _finalized = true;
+              // rawText always holds the FULL raw markdown received (tokens are
+              // appended on arrival, the 60ms timer only controls painting), so
+              // there is nothing to flush — just stop any pending paint.
+              if (_renderTimer != null) {
+                window.clearTimeout(_renderTimer);
+                _renderTimer = null;
+              }
               window._activeStreamRender = null;
               const sources = (meta && meta.sources) || [];
-              const confidence = (meta && meta.confidence) || 'medium';
               const unsupported = !!(meta && meta.unsupported);
 
-              const cleanText = rawText.replace(metaPattern, '').trim();
+              const markedText = rawText.replace(metaPattern, '').trim();
+              const cleanText = stripSourceMarkers(markedText);
               if (!cleanText) {
                 if (ansWrap) { ansWrap.remove(); ansWrap = null; }
                 fallbackToRag();
                 return;
               }
 
-              const confEmoji = confidence === 'high' ? '🟢' : confidence === 'medium' ? '🟡' : '🔴';
-              let footer = confEmoji + ' Confidence: ' + confidence;
-              if (_ragMode === 'general') footer += ' · 🌐 general mode';
-
+              // displayText keeps [Source N] (linkified on render); fullAnswer is
+              // the clean version stored in history / data-raw (export stays tidy).
+              let displayText = markedText;
               let fullAnswer = cleanText;
               if (unsupported && !sources.length) {
-                fullAnswer =
-                  '⚠️ *No matching course materials found — answering from general knowledge.*\n\n' +
-                  fullAnswer;
+                const note = '⚠️ *No matching course materials found — answering from general knowledge.*\n\n';
+                displayText = note + displayText;
+                fullAnswer = note + fullAnswer;
               }
-              if (sources.length) {
-                fullAnswer += '\n\n**Sources:**\n' +
-                  sources.map((s) => {
-                    let line = '- ' + (s.file_name || '');
-                    if (s.pages) line += ', p.' + s.pages;
-                    if (s.section) line += ' · *' + s.section + '*';
-                    return line;
-                  }).join('\n');
+              if (_ragMode === 'general') {
+                displayText += '\n\n🌐 general mode';
+                fullAnswer += '\n\n🌐 general mode';
               }
-              fullAnswer += '\n\n' + footer;
 
               const _cacheId = (meta && meta.answerCacheId) || null;
               (window as unknown as { _lastRagMeta?: RagMeta })._lastRagMeta = {
@@ -712,11 +1582,18 @@ export function initAskAI(
                 answerCacheId: _cacheId,
               };
 
-              _appendCourseHistory(_courseId, question, fullAnswer);
+              _appendCourseHistory(_courseId, _activeDocId, question, fullAnswer, sources);
 
-              if (bubble) bubble.setAttribute('data-raw', fullAnswer);
+              if (bubble) {
+                bubble.setAttribute('data-raw', fullAnswer);
+                bubble.removeAttribute('data-streaming');
+                bubble.classList.remove('ai-bubble-streaming');
+              }
 
-              fullRender(fullAnswer);
+              // The dropdown is appended inside fullRender's deferred pass —
+              // appending it here, before that pass replaces the bubble's
+              // innerHTML, would lose it.
+              fullRender(displayText, { keepMarkers: true, sources });
 
               if (ansWrap && !ansWrap.querySelector('.rag-feedback-bar')) {
                 const _mb = ansWrap.querySelector<HTMLElement>('.msg-body');
@@ -748,27 +1625,38 @@ export function initAskAI(
 
         return sendAiRequest({ max_tokens: 1024, system: sysPrompt, messages });
       })
-      .then((data: unknown) => {
+      .then(async (data: unknown) => {
         const d = data as AiResponse;
         if (myGenId !== state.currentGenId) {
-          if (!d._streamWrap) thinkWrap.remove();
+          if (!d._streamWrap) removeThinking();
           return;
         }
 
         if (d._streamWrap) {
           const streamBubble = d._streamWrap.querySelector<HTMLElement>('.ai-bubble.bot');
           const rawFinal = d.content ? d.content.map((b) => b.text || '').join('') : '';
+          // The stop button must outlive the NETWORK stream and persist until
+          // the answer is visually complete. The final render defers behind
+          // the (CDN-loaded) KaTeX pass — hiding the button before that pass
+          // made it vanish while the response was still painting.
+          const _finishStreamControls = (): void => {
+            const _sb0 = document.getElementById('aiSend') as HTMLButtonElement | null;
+            if (_sb0) _sb0.disabled = false;
+            const _st0 = document.getElementById('stopBtn');
+            if (_st0) _st0.style.display = 'none';
+            if (window.spawnConfetti) window.spawnConfetti();
+            _autoScroll(aiMsgs);
+          };
+          let _controlsDeferred = false;
           if (streamBubble) {
-            const _typingSpan = streamBubble.querySelector('.ss-typing-span');
+            const _typingSpan = streamBubble.querySelector('.ai-writing-tail, .ss-stream-live, .ss-typing-span');
             if (_typingSpan) _typingSpan.remove();
             if (window._ssEnsureKatex) {
+              _controlsDeferred = true;
               window._ssEnsureKatex().then(() => {
-                if (window._renderMath && streamBubble) window._renderMath(streamBubble);
-                streamBubble.querySelectorAll<HTMLElement>('.ss-rendered-block').forEach((sd) => {
-                  sd.style.opacity = '1';
-                });
-                _autoScroll(aiMsgs);
-              }).catch(() => {});
+                if (window._renderCode && streamBubble) window._renderCode(streamBubble);
+                _finishStreamControls();
+              }).catch(() => { _finishStreamControls(); });
             }
           }
           if (window._aiResponseActions && rawFinal && !d._streamWrap.querySelector('.ai-action-bar')) {
@@ -778,20 +1666,12 @@ export function initAskAI(
               if (actions) mb.appendChild(actions);
             }
           }
-          const _sb0 = document.getElementById('aiSend') as HTMLButtonElement | null;
-          if (_sb0) _sb0.disabled = false;
-          const _st0 = document.getElementById('stopBtn');
-          if (_st0) _st0.style.display = 'none';
-          if (window.spawnConfetti) window.spawnConfetti();
-          _autoScroll(aiMsgs);
+          if (!_controlsDeferred) _finishStreamControls();
           return;
         }
 
-        if (thinkWrap && thinkWrap.parentNode) {
-          thinkWrap.style.transition = 'opacity .3s';
-          thinkWrap.style.opacity = '0';
-          setTimeout(() => thinkWrap.remove(), 320);
-        }
+        if (thinking) await thinking.waitMinimum();
+        removeThinking(true);
 
         const _ragMeta: RagMeta | null = d._ragData
           ? {
@@ -802,10 +1682,26 @@ export function initAskAI(
           : null;
 
         const rawTextLocal = d.error
-          ? '❌ Error: ' + (d.error.message || JSON.stringify(d.error))
+          ? _isSubscriptionError(d.error.message || '')
+            ? _subscriptionMsg()
+            : '❌ Error: ' + (d.error.message || JSON.stringify(d.error))
           : d.content
             ? d.content.map((b) => b.text || '').join('')
             : 'No response';
+        const displayTextLocal = d._ragData ? stripSourceMarkers(rawTextLocal) : rawTextLocal;
+
+        // Persist non-RAG answers too. The RAG/stream path saves history inside
+        // finalize(); without this the non-RAG branch silently dropped chat
+        // history on reload for users with no indexed course docs.
+        if (!d.error && displayTextLocal && displayTextLocal !== 'No response') {
+          _appendCourseHistory(
+            window.activeCourseId || window.currentCourseId || '',
+            (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId || null,
+            question,
+            displayTextLocal,
+            (d._ragData as RagAskResponse | undefined)?.sources
+          );
+        }
 
         const ansWrap = document.createElement('div');
         ansWrap.className = 'ai-msg-wrap';
@@ -813,7 +1709,7 @@ export function initAskAI(
         ansWrap.innerHTML =
           '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
           '<div class="msg-body">' +
-          '<div class="ai-bubble bot" style="min-height:20px"></div>' +
+          '<div class="ai-bubble bot" dir="auto" style="min-height:20px"></div>' +
           '<div class="msg-meta" style="display:none">' +
           '<span class="msg-time">' + tNow + '</span>' +
           '<button class="msg-action-btn" data-action="copy">' +
@@ -829,71 +1725,49 @@ export function initAskAI(
           const bubble = ansWrap.querySelector<HTMLElement>('.ai-bubble.bot');
           const meta = ansWrap.querySelector<HTMLElement>('.msg-meta');
           if (!bubble || !meta) return;
-          const tokens = rawTextLocal.match(/\S+\s*/g) || [];
-          let idx = 0;
-          let displayed = '';
-          const _fbCfg = window.AI_TYPING || ({} as Partial<NonNullable<Window['AI_TYPING']>>);
-          const WORDS_PER_FRAME = _fbCfg.fallbackWordsPerFrame || 1;
-          const FRAME_INTERVAL = _fbCfg.fallbackFrameInterval || 38;
 
-          function frame(): void {
-            if (state.generationStopped || myGenId !== state.currentGenId) {
-              bubble!.innerHTML = window.renderMarkdown
-                ? window.renderMarkdown(displayed)
-                : displayed;
-              meta!.style.display = 'flex';
-              const eb = ansWrap.querySelector('.ai-action-bar');
-              if (!eb && displayed.trim() && window._aiResponseActions) {
-                const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
-                const actions = window._aiResponseActions(displayed, 'panel') as Node | null;
-                if (mb && actions) mb.appendChild(actions);
-              }
-              return;
+          // One stable paint after KaTeX is ready: markdown + math render
+          // together — no raw-text pass, no per-word typewriter, no visible
+          // repaint. (The old word-by-word loop re-rendered the whole bubble
+          // every 24ms AND left LaTeX raw until a final _renderMath pass.)
+          const finishFallbackRender = (): void => {
+            bubble.innerHTML = window.renderMarkdown
+              ? window.renderMarkdown(displayTextLocal)
+              : escapeHtml(displayTextLocal);
+            bubble.classList.add('ai-bubble-soft-in');
+            appendSourcesDropdown(bubble, (d._ragData as RagAskResponse | undefined)?.sources);
+            if (window._renderMath) window._renderMath(bubble); // mops up only if KaTeX never loaded
+            if (window._renderCode) window._renderCode(bubble);
+            meta.style.display = 'flex';
+            if (!ansWrap.querySelector('.ai-action-bar') && window._aiResponseActions) {
+              const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
+              const actions = window._aiResponseActions(displayTextLocal, 'panel') as Node | null;
+              if (mb && actions) mb.appendChild(actions);
             }
-            if (idx >= tokens.length) {
-              bubble!.innerHTML = window.renderMarkdown ? window.renderMarkdown(rawTextLocal) : escapeHtml(rawTextLocal);
-              if (window._renderMath) window._renderMath(bubble);
-              meta!.style.display = 'flex';
-              if (!ansWrap.querySelector('.ai-action-bar') && window._aiResponseActions) {
-                const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
-                const actions = window._aiResponseActions(rawTextLocal, 'panel') as Node | null;
-                if (mb && actions) mb.appendChild(actions);
-              }
-              if (_ragMeta && !ansWrap.querySelector('.rag-feedback-bar')) {
-                const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
-                if (mb) mb.appendChild(_buildRagFeedbackBar(_ragMeta));
-              }
-              const _sb1 = document.getElementById('aiSend') as HTMLButtonElement | null;
-              if (_sb1) _sb1.disabled = false;
-              const _st1 = document.getElementById('stopBtn');
-              if (_st1) _st1.style.display = 'none';
-              if (window.spawnConfetti) window.spawnConfetti();
-              state.activeTypeTimer = null;
-              return;
+            if (_ragMeta && !ansWrap.querySelector('.rag-feedback-bar')) {
+              const mb = ansWrap.querySelector<HTMLElement>('.msg-body');
+              if (mb) mb.appendChild(_buildRagFeedbackBar(_ragMeta));
             }
-            const appEl = document.getElementById('app');
-            const panelHidden =
-              document.hidden ||
-              !!(appEl && appEl.style.display === 'none') ||
-              !aiPanel!.classList.contains('visible');
-            const batch = panelHidden ? tokens.length : WORDS_PER_FRAME;
-            for (let w = 0; w < batch && idx < tokens.length; w++) displayed += tokens[idx++];
-            bubble!.innerHTML =
-              (window.renderMarkdown ? window.renderMarkdown(displayed) : escapeHtml(displayed)) +
-              (idx < tokens.length ? '<span class="stream-cursor">▋</span>' : '');
-            if (!panelHidden && aiMsgs.scrollHeight - aiMsgs.scrollTop - aiMsgs.clientHeight < 80) {
-              aiMsgs.scrollTop = aiMsgs.scrollHeight;
-            }
-            state.activeTypeTimer = setTimeout(frame, panelHidden ? 0 : FRAME_INTERVAL);
+            const _sb1 = document.getElementById('aiSend') as HTMLButtonElement | null;
+            if (_sb1) _sb1.disabled = false;
+            const _st1 = document.getElementById('stopBtn');
+            if (_st1) _st1.style.display = 'none';
+            if (window.spawnConfetti) window.spawnConfetti();
+            state.activeTypeTimer = null;
+            _autoScroll(aiMsgs);
+          };
+          if (window._ssEnsureKatex) {
+            window._ssEnsureKatex().then(finishFallbackRender).catch(finishFallbackRender);
+          } else {
+            finishFallbackRender();
           }
-
-          state.activeTypeTimer = setTimeout(frame, FRAME_INTERVAL);
         }, 60);
       })
       .catch((e: unknown) => {
-        thinkWrap.remove();
+        removeThinking();
         const msg = e instanceof Error ? e.message : String(e);
-        if (window.addBotMsg) window.addBotMsg('❌ Error: ' + msg);
+        if (window.addBotMsg)
+          window.addBotMsg(_isSubscriptionError(msg) ? _subscriptionMsg() : '❌ Error: ' + msg);
         const _sb2 = document.getElementById('aiSend') as HTMLButtonElement | null;
         if (_sb2) _sb2.disabled = false;
         const _st2 = document.getElementById('stopBtn');

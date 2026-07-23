@@ -29,6 +29,7 @@ declare global {
     _activeSemesterId?: string;
     activeCourseId?: string | null;
     activeFileName?: string | null;
+    activeStorageName?: string | null;
     activeCourseRef?: LegacyCourse | null;
     activeCourseSection?: string;
 
@@ -39,9 +40,12 @@ declare global {
     renderCourses?: () => void;
     sdRenderCourses?: () => void;
     showPortalSection?: (section: string) => void;
+    _ssLoadPortalFeature?: (name: string) => Promise<void>;
+    _ssLoadFeatureSection?: (name: string) => Promise<void>;
+    _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+    _ncbHtmlPromise?: Promise<string>;
+    _ncbShellPromise?: Promise<void>;
     forceCloseAI?: () => void;
-    _aiBubbleClose?: () => void;
-    _aiBubbleSendMessage?: (text: string) => void;
     _statsStopFile?: () => void;
     _stRunning?: boolean;
     _glOpenSkill?: (skill: string) => void;
@@ -49,12 +53,21 @@ declare global {
     _saveUserCourses?: () => void;
     _setAiChipsVisible?: (visible: boolean) => void;
     _generateStudyTool?: (...args: unknown[]) => unknown;
-    mountQuiz?: (el: HTMLElement, course: LegacyCourse, opts: { generate: unknown }) => void;
     mountFlashcards?: (el: HTMLElement, course: LegacyCourse, opts: { generate: unknown }) => void;
+    mountExamForge?: (el: HTMLElement, course: LegacyCourse, opts: { generate?: unknown }) => void;
+    mountCheatsheet?: (el: HTMLElement, course: LegacyCourse, opts?: { generate?: unknown }) => void;
+    mountDeepLearn?: (el: HTMLElement, course: LegacyCourse, opts?: { generate?: unknown }) => void;
 
     // ── i18n + toasts ──────────────────────────────────────────────────
     _t?: (key: string) => string;
     showToast?: (title: string, sub?: string) => void;
+
+    // Open a cited AI source (set by features/pdf-viewer/source-link). Lets
+    // non-module views (ExamForge) open the PDF popup at the cited page.
+    openCitedSource?: (
+      src: { fileName?: string | null; documentId?: string | null; page?: number | null },
+      surface: 'sidebar' | 'popup'
+    ) => void;
 
     // ── Auth bridge ────────────────────────────────────────────────────
     _onLoginSuccess?: () => void;
@@ -89,6 +102,7 @@ declare global {
     // ── AI typing config (set by ai-typing-config) ─────────────────────
     AI_TYPING?: {
       streamTokenInterval: number;
+      streamCharsPerFrame: number;
       fallbackWordsPerFrame: number;
       fallbackFrameInterval: number;
       chatbotCharInterval: number;
@@ -159,17 +173,36 @@ declare global {
     setNavActive?: (id: string) => void;
 
     // ── ai-ask bridge ──────────────────────────────────────────────────
-    askAI?: (q: string, skipUserBubble?: boolean, opts?: { forceRefresh?: boolean }) => unknown;
+    askAI?: (
+      q: string,
+      skipUserBubble?: boolean,
+      opts?: {
+        forceRefresh?: boolean;
+        problemSolver?: {
+          mode: string;
+          problem: string;
+          studentWork?: string;
+        };
+      }
+    ) => unknown;
     addBotMsg?: (text: string) => HTMLElement | null;
     _legacyAskAI?: (q: string) => unknown;
     addTyping?: () => unknown;
     _pdfToImages?: (maxPages?: number) => Promise<string[]>;
     stopGeneration?: () => void;
-    restoreCourseHistory?: (courseId?: string | null) => void;
-    clearCourseHistory?: (courseId: string) => void;
+    restoreCourseHistory?: (courseId?: string | null, fileId?: string | null) => void;
+    clearCourseHistory?: (courseId: string, fileId?: string | null) => void;
+    resetAiPanelChat?: () => void;
+    activeRagDocumentId?: string | null;
     _abortCurrentStream?: () => void;
     _activeStreamRender?: (() => void) | null;
     _attachedImages?: unknown[];
+    _lastAiImageContext?: {
+      images: Array<{ data: string; mediaType: string }>;
+      courseId: string;
+      fileName: string;
+      timestamp: number;
+    };
 
     // ── KaTeX (cdn-loaded math renderer) ───────────────────────────────
     katex?: {
@@ -178,7 +211,15 @@ declare global {
     _ssEnsureKatex?: () => Promise<unknown>;
     _ssScheduleKatexRender?: () => void;
     renderMarkdown?: (text: string) => string;
+    /** Streaming-safe splitter (set by ai-render-bridge from the versioned
+     *  ai-markdown module): stable markdown prefix vs unclosed-math tail. */
+    _ssSplitStableStream?: (input: string) => { stable: string; tail: string };
     _renderMath?: (el: Element | null) => void;
+    _renderCode?: (el: Element | null) => void;
+    _ensureAiRenderBridge?: () => Promise<unknown>;
+    _minalloRenderMarkdownReady?: boolean;
+    _ssEnsureHljs?: () => Promise<void>;
+    hljs?: { highlightElement: (el: Element) => void };
     renderMathInElement?: (el: Element, opts: unknown) => void;
 
     // ── Message-actions extras (set by ai-message-actions.ts) ──────────
@@ -207,6 +248,7 @@ declare global {
     _dwLoadAndRender?: () => void;
     _userVertiefung?: string;
     _userMajor?: string;
+    _userUniversity?: string;
     _chatUsername?: string;
     _userType?: string;
     _germanTest?: string;
@@ -227,6 +269,7 @@ declare global {
     // ── course-folders state ───────────────────────────────────────────
     _openFolders?: Set<string>;
     _selectedFiles?: Array<{ name: string; folder: string | null; sname: string | null }>;
+    _updateMultiBar?: () => void;
     _ufDeleteRemote?: (
       uid: string,
       course: LegacyCourse,
@@ -257,6 +300,11 @@ declare global {
     pdfTotal?: number;
     pdfShowAll?: boolean;
     pdfScale?: number;
+    /** Scale the PDF canvases were last rasterised at; the live Ctrl+wheel CSS
+     *  zoom multiplier is pdfScale ÷ this. Set by renderPages. */
+    _pdfRenderedScale?: number;
+    _pdfRenderedWidth?: number;
+    _refitPdfWidth?: () => void;
     saveState?: () => void;
     _ssPushHistory?: (state: unknown, hash?: string) => void;
     _ssReplaceHistory?: (state: unknown, hash?: string) => void;
@@ -306,7 +354,10 @@ declare global {
 
     // ── course-files extras ────────────────────────────────────────────
     openAI?: () => void;
-    downloadFile?: (fname: string) => unknown;
+    downloadFile?: (
+      fname: string,
+      opts?: { storageName?: string | null; folder?: string | null; course?: LegacyCourse | null }
+    ) => unknown;
     _ufDelete?: (
       course: LegacyCourse,
       name: string,
@@ -322,12 +373,17 @@ declare global {
       toFolder: string | null,
       sname: string | null
     ) => Promise<unknown>;
+    _ufRenameFolder?: (
+      uid: string,
+      course: LegacyCourse,
+      oldName: string,
+      newName: string
+    ) => Promise<unknown>;
     _showFolderPickerPopup?: (
       anchor: HTMLElement,
       folders: string[],
       onPick: (chosen: string | null) => void
     ) => void;
-    resetQuizToGrid?: (panel: HTMLElement) => void;
     resetFlashcardsToGrid?: (panel: HTMLElement) => void;
   }
 }

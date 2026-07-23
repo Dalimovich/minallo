@@ -8,13 +8,11 @@ import { initStatePersistence } from './core/state-persistence.js';
 import { bindIf as _bindIf } from './core/portal-ui.js';
 import { initSettingsBridge, t as _t } from './features/settings/settings-bridge.js';
 import { initLandingAuthBridge } from './features/auth/landing-auth-bridge.js';
-import { initAiRenderBridge } from './features/ai-chat/ai-render-bridge.js';
-import { initAiExportBridge } from './features/ai-chat/ai-export-bridge.js';
-import { initAiAskBridge } from './features/ai-chat/ai-ask-bridge.js';
 import { initAiChipsBridge } from './features/ai-chat/ai-chips-bridge.js';
 import { initAiConfettiBridge, spawnConfetti } from './features/ai-chat/ai-confetti-bridge.js';
 import { initAiPanelEffects } from './features/ai-chat/ai-panel-effects.js';
 import { initAiPanelBridge } from './features/ai-chat/ai-panel-bridge.js';
+import { attachMessageNavigator } from './features/message-navigator/message-navigator.js';
 import {
   copyBubble as _copyBubble,
   fallbackCopy as _fallbackCopy,
@@ -43,6 +41,7 @@ import {
   renderCourses as _renderCourses,
   sdRenderCourses as _sdRenderCourses,
 } from './features/courses/courses-render.js';
+import { initCoursesLayout } from './features/courses/courses-layout.js';
 import { initCourseSearch } from './features/courses/course-search.js';
 import { initAuthBridge } from './features/auth/auth-bridge.js';
 import {
@@ -55,10 +54,15 @@ import {
   downloadFile as _downloadFile,
 } from './services/pdf-service.js';
 import { openFile as _openFile } from './features/pdf-viewer/pdf-viewer.js';
-import { runMultiSummary as _runMultiSummary } from './features/ai-chat/multi-summary.js';
+import { initPdfTabs } from './features/pdf-viewer/pdf-tabs.js';
 import {
   createCheckoutSession as _createCheckoutSession,
   createPortalSession as _createPortalSession,
+  pauseSubscription as _pauseSubscription,
+  resumeSubscription as _resumeSubscription,
+  cancelSubscription as _cancelSubscription,
+  reactivateSubscription as _reactivateSubscription,
+  applyRetentionDiscount as _applyRetentionDiscount,
   verifyPayment as _verifyPayment,
   activatePayPalSubscription as _activatePayPalSubscription,
   loadBillingConfig as _loadBillingConfig,
@@ -102,7 +106,18 @@ window.addUserMsg = (text: string) => _addUserMsg(text);
 window._setAiChipsVisible = _setAiChipsVisible;
 
 // ── GLOBAL STUBS (reassigned after init) ────────────────────────────────
-let askAI: (q: string, skipUserBubble?: boolean, opts?: { forceRefresh?: boolean }) => unknown =
+let askAI: (
+  q: string,
+  skipUserBubble?: boolean,
+  opts?: {
+    forceRefresh?: boolean;
+    problemSolver?: {
+      mode: string;
+      problem: string;
+      studentWork?: string;
+    };
+  }
+) => unknown =
   (_q): void => { console.warn('AI not ready yet'); };
 let openAI: () => void = (): void => {};
 let closeAI: () => void = (): void => {};
@@ -129,7 +144,29 @@ function _ssReplaceHistory(_state?: unknown, _hash?: string): void { /* replaced
 window._showFilesView = (): void => { _showFilesView(); };
 
 function showStudip(): void { _showStudip(); }
-function showPortal(): void { _showPortal(); }
+function suppressAuthModalIfAppActive(): void {
+  try {
+    const hasAppSession =
+      sessionStorage.getItem('ss_logged_in') === 'true' ||
+      sessionStorage.getItem('ss_force_app') === 'true' ||
+      !!(window as unknown as { _currentUser?: unknown })._currentUser;
+    if (!hasAppSession) return;
+    document.body.classList.add('minallo-app-active');
+    const modal = document.getElementById('authModal');
+    if (modal) {
+      modal.style.display = 'none';
+      modal.style.pointerEvents = 'none';
+      modal.setAttribute('aria-hidden', 'true');
+    }
+  } catch {
+    /* storage can be unavailable; portal navigation still works */
+  }
+}
+
+function showPortal(): void {
+  _showPortal();
+  suppressAuthModalIfAppActive();
+}
 function hideStudip(): void {
   _hideStudip(typeof _stRunning !== 'undefined' ? _stRunning : false);
 }
@@ -141,6 +178,11 @@ function setNavActive(id: string): void { _setNavActive(id); }
 function showPortalSection(sec: string): void { _showPortalSection(sec); }
 window.showPortalSection = showPortalSection;
 window.showPortal = showPortal;
+
+new MutationObserver(() => suppressAuthModalIfAppActive()).observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+});
 window.showStudip = showStudip;
 window.hideStudip = hideStudip;
 window.setNavActive = setNavActive;
@@ -175,7 +217,31 @@ function _fetchPdfBytes(path: string, cb: (b: Uint8Array) => void, onError?: (e:
 }
 function openFile(f: unknown, course: LegacyCourse): void {
   _clearResumeFile();
+  _recordCourseFileOpen(course, f as { name?: string } | null | undefined);
   _openFile(f as Parameters<typeof _openFile>[0], course);
+}
+
+// Per-course set of file names the user has opened at least once. Stored in
+// localStorage as a JSON array (Set isn't JSON-serializable). Caller is the
+// only writer; readers (e.g. the courses grid) compute opened/total from this.
+const _OPENED_MAX = 500;
+function _recordCourseFileOpen(course: LegacyCourse | null | undefined, file: { name?: string } | null | undefined): void {
+  if (!course || !course.id || !file || !file.name) return;
+  try {
+    localStorage.setItem('ss_lastopen_' + course.id, String(Date.now()));
+  } catch { /* quota */ }
+  const key = 'ss_opened_' + course.id;
+  try {
+    const raw = localStorage.getItem(key);
+    const arr: string[] = raw ? JSON.parse(raw) : [];
+    if (arr.includes(file.name)) return;
+    arr.push(file.name);
+    if (arr.length > _OPENED_MAX) arr.splice(0, arr.length - _OPENED_MAX);
+    localStorage.setItem(key, JSON.stringify(arr));
+    const ts = Number(localStorage.getItem('ss_lastopen_' + course.id)) || Date.now();
+    const ps = (window as unknown as { _progressSync?: { syncCourseProgress?: (id: string, f: string[], ms: number) => void } })._progressSync;
+    ps?.syncCourseProgress?.(course.id, arr, ts);
+  } catch { /* corrupted entry or quota — skip silently */ }
 }
 function downloadFile(fname: string): unknown { return _downloadFile(fname); }
 window._fetchPdfBytes = _fetchPdfBytes;
@@ -183,7 +249,7 @@ window.openFile = openFile;
 window.downloadFile = downloadFile;
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let activeSemId = 'ws2526';
+let activeSemId = 'ss2526';
 let activeCourseId: string | null = null;
 let activeFileName: string | null = null;
 let currentCourseShort = '';
@@ -274,14 +340,29 @@ publishLegacyGlobals({
 });
 
 // ── COURSES DASHBOARD ─────────────────────────────────────────────────────
-let sdActiveSemId = 'ws2526';
+let sdActiveSemId = 'ss2526';
+try {
+  const saved = sessionStorage.getItem('ss_sd_sem');
+  if (saved && SEMS[saved]) sdActiveSemId = saved;
+} catch { /* storage unavailable */ }
 (window as unknown as { sdActiveSemId: string }).sdActiveSemId = sdActiveSemId;
 exposeLegacyVar('sdActiveSemId', () => sdActiveSemId, (v: string) => {
   sdActiveSemId = v;
   (window as unknown as { sdActiveSemId: string }).sdActiveSemId = v;
+  try { sessionStorage.setItem('ss_sd_sem', v); } catch { /* */ }
 });
 
 initCourseSearch({
+  getUserUniversity: () => window._userUniversity || localStorage.getItem('ss_university') || '',
+  getUserUniversityName: () => {
+    try {
+      const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
+      const cached = uid ? JSON.parse(localStorage.getItem('profile_cache_' + uid) || 'null') : null;
+      return String(cached?.university_name || cached?.university || window._userUniversity || '');
+    } catch {
+      return window._userUniversity || '';
+    }
+  },
   getUserMajor: () => _userMajor,
   getUserVertiefung: () => _userVertiefung,
   getSubjectList: () => SUBJECT_LIST,
@@ -290,6 +371,7 @@ initCourseSearch({
   saveUserCourses: () => { _saveUserCourses(); },
   renderCourses: () => { sdRenderCourses(); },
 });
+initCoursesLayout();
 
 // Studip semester dropdown
 const sdSemBtn = document.getElementById('sdSemBtn');
@@ -308,7 +390,10 @@ sdSemBtn?.addEventListener('click', (e: Event) => {
 sdSemDD?.querySelectorAll<HTMLElement>('.sem-opt').forEach((o) => {
   o.addEventListener('click', () => {
     const sid = o.getAttribute('data-sid');
-    if (sid) sdActiveSemId = sid;
+    if (sid) {
+      sdActiveSemId = sid;
+      try { sessionStorage.setItem('ss_sd_sem', sid); } catch { /* */ }
+    }
     if (sdSemLabel) sdSemLabel.textContent = (o.textContent || '').trim();
     const col = o.getAttribute('data-col');
     if (sdSemDot && col) sdSemDot.style.background = col;
@@ -368,7 +453,9 @@ document.getElementById('msmSaveBtn')?.addEventListener('click', async () => {
 });
 
 function runMultiSummary(fnames: string[], course: LegacyCourse): unknown {
-  return _runMultiSummary(fnames, course as unknown as Parameters<typeof _runMultiSummary>[1]);
+  return import(
+    /* @vite-ignore */ atob('Li9mZWF0dXJlcy9haS1jaGF0L211bHRpLXN1bW1hcnkuanM=')
+  ).then((mod) => mod.runMultiSummary(fnames, course));
 }
 (window as unknown as { runMultiSummary: typeof runMultiSummary }).runMultiSummary = runMultiSummary;
 
@@ -377,9 +464,11 @@ exposeLegacyVar('msmCurrentText', () => msmCurrentText, (v: string) => { msmCurr
 exposeLegacyVar('msmCurrentTitle', () => msmCurrentTitle, (v: string) => { msmCurrentTitle = v; });
 
 // ── PDF ───────────────────────────────────────────────────────────────────
+initPdfTabs();
+
 function updateZoomPct(): void {
-  const el = document.getElementById('pdfZoomPct');
-  if (el) el.textContent = Math.round(pdfScale * 100) + '%';
+  const el = document.getElementById('pdfZoomPct') as HTMLInputElement | null;
+  if (el && document.activeElement !== el) el.value = Math.round(pdfScale * 100) + '%';
 }
 
 document.getElementById('pdfBody')?.addEventListener('mouseup', () => {
@@ -389,11 +478,15 @@ document.getElementById('pdfBody')?.addEventListener('mouseup', () => {
   }, 30);
 });
 
-let _pdfScrollTimer: ReturnType<typeof setTimeout> | null = null;
+let _pdfScrollFrame: number | null = null;
 document.getElementById('pdfBody')?.addEventListener('scroll', () => {
   if (!pdfShowAll) return;
-  if (_pdfScrollTimer) clearTimeout(_pdfScrollTimer);
-  _pdfScrollTimer = setTimeout(updatePageInfo, 80);
+  if (_pdfScrollFrame !== null) cancelAnimationFrame(_pdfScrollFrame);
+  _pdfScrollFrame = requestAnimationFrame(() => {
+    _pdfScrollFrame = null;
+    pdfPage = _pdfVisiblePage();
+    updatePageInfo();
+  });
 });
 document.getElementById('pdfPrev')?.addEventListener('click', () => {
   if (pdfPage > 1) {
@@ -427,9 +520,9 @@ document.getElementById('pdfNext')?.addEventListener('click', () => {
     const n = parseInt(this.value, 10);
     if (n >= 1 && n <= pdfTotal && pdfTotal > 0) {
       pdfPage = n;
-      pdfShowAll = false;
       updatePageInfo();
-      renderPages();
+      if (pdfShowAll) _pdfScrollToPage(n);
+      else renderPages();
     } else {
       this.value = String(pdfShowAll ? _pdfVisiblePage() : pdfPage);
     }
@@ -460,29 +553,173 @@ function _pdfScrollToPage(num: number): void {
   if (wrap) body.scrollTop = wrap.offsetTop;
 }
 
-document.getElementById('pdfZoomIn')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = Math.min(Math.round((pdfScale + 0.1) * 10) / 10, 3);
+// Zoom by scaling the already-rendered pages live via a CSS `zoom` multiplier
+// instead of re-rendering the canvases — so the document never reloads, blanks
+// or flashes; it just grows/shrinks smoothly. pdfScale stays the single source
+// of truth (the multiplier is pdfScale ÷ the scale we last rendered at), and
+// renderPages resets the multiplier so page-change/show-all re-renders stay
+// crisp. The viewport's top content is kept anchored as the page reflows.
+function _applyPdfZoom(targetScale: number): void {
+  const body = document.getElementById('pdfBody');
+  const rendered = window._pdfRenderedScale || 0.9;
+  // The multiplier also folds in a width factor so a column-width change
+  // (e.g. the AI rail opening) that was fitted via _refitPdfWidth survives a
+  // subsequent zoom instead of snapping back to the rendered width.
+  const widthFactor =
+    body && window._pdfRenderedWidth ? body.clientWidth / window._pdfRenderedWidth : 1;
+  const prevMul = (pdfScale / rendered) * widthFactor;
+  pdfScale = Math.min(4, Math.max(0.2, Math.round(targetScale * 100) / 100));
+  const newMul = (pdfScale / rendered) * widthFactor;
+  if (body) {
+    const prevTop = body.scrollTop;
+    body.style.setProperty('--pdf-wheel-zoom', String(newMul));
+    if (prevMul > 0) body.scrollTop = prevTop * (newMul / prevMul);
+  }
   updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+}
+
+// Re-fit the PDF to the current column width WITHOUT re-rendering. Used when the
+// document rail opens/closes and the PDF column changes width: re-rendering would
+// blank the page, reset the scroll position and drop any text selection, whereas
+// scaling the already-rendered pages via the same CSS `zoom` multiplier keeps all
+// of that intact (the canvas just downscales/upscales to fit).
+function _refitPdfWidth(): void {
+  const body = document.getElementById('pdfBody');
+  if (!body || !window._pdfRenderedWidth) return;
+  const rendered = window._pdfRenderedScale || 0.9;
+  const widthFactor = body.clientWidth / window._pdfRenderedWidth;
+  const newMul = (pdfScale / rendered) * widthFactor;
+  const prevRaw = parseFloat(getComputedStyle(body).getPropertyValue('--pdf-wheel-zoom'));
+  const prevMul = Number.isFinite(prevRaw) && prevRaw > 0 ? prevRaw : pdfScale / rendered;
+  const prevTop = body.scrollTop;
+  body.style.setProperty('--pdf-wheel-zoom', String(newMul));
+  if (prevMul > 0) body.scrollTop = prevTop * (newMul / prevMul);
+}
+window._refitPdfWidth = _refitPdfWidth;
+
+document.getElementById('pdfZoomIn')?.addEventListener('click', () => {
+  _applyPdfZoom(Math.round((pdfScale + 0.1) * 10) / 10);
 });
 document.getElementById('pdfZoomOut')?.addEventListener('click', () => {
-  const pg = _pdfVisiblePage();
-  pdfScale = Math.max(Math.round((pdfScale - 0.1) * 10) / 10, 0.2);
-  updateZoomPct();
-  renderPages();
-  setTimeout(() => _pdfScrollToPage(pg), 120);
+  _applyPdfZoom(Math.round((pdfScale - 0.1) * 10) / 10);
 });
 document.getElementById('pdfFit')?.addEventListener('click', () => {
+  _applyPdfZoom(0.9);
+});
+
+(function (): void {
+  const inp = document.getElementById('pdfZoomPct') as HTMLInputElement | null;
+  if (!inp) return;
+  inp.addEventListener('focus', function (this: HTMLInputElement) {
+    this.value = String(Math.round(pdfScale * 100));
+    this.select();
+  });
+  inp.addEventListener('keydown', function (this: HTMLInputElement, e: KeyboardEvent) {
+    if (e.key === 'Enter') { this.blur(); return; }
+    if (e.key === 'Escape') {
+      this.value = Math.round(pdfScale * 100) + '%';
+      this.blur();
+    }
+  });
+  inp.addEventListener('blur', function (this: HTMLInputElement) {
+    const percentage = Number.parseFloat(this.value.replace('%', '').trim());
+    if (Number.isFinite(percentage) && percentage >= 20 && percentage <= 400) {
+      _applyPdfZoom(percentage / 100);
+    }
+    this.value = Math.round(pdfScale * 100) + '%';
+  });
+})();
+
+// Ctrl/Cmd + mouse wheel zoom, like a browser or native PDF reader.
+// preventDefault stops the browser's own page zoom.
+document.getElementById('pdfBody')?.addEventListener(
+  'wheel',
+  (e: WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    _applyPdfZoom(pdfScale * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+  },
+  { passive: false }
+);
+// Fullscreen reading mode. We request native fullscreen on <html> (so the
+// browser tabs + address bar disappear), and apply layout classes so that
+// INSIDE the fullscreen the sidebar + header are covered while the document
+// rail (#drRoot, a separate fixed element) stays visible and usable. Driving
+// the classes off `fullscreenchange` keeps them in sync no matter how the user
+// enters/exits (button, Esc, F11). If the browser blocks fullscreen we fall
+// back to the in-app maximize (classes only).
+function _applyPdfMax(on: boolean): void {
+  const wrap = document.getElementById('pdfViewerWrap');
+  if (!wrap) return;
   const pg = _pdfVisiblePage();
-  pdfScale = 0.9;
-  updateZoomPct();
+  wrap.classList.toggle('is-maximized', on);
+  document.body.classList.toggle('pdf-maximized', on);
+  const mbtn = document.getElementById('pdfMaximize');
+  if (mbtn) {
+    mbtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    mbtn.setAttribute('title', on ? 'Exit fullscreen (Esc)' : 'Fullscreen');
+    mbtn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Fullscreen');
+  }
   renderPages();
   setTimeout(() => _pdfScrollToPage(pg), 120);
+}
+function _pdfIsMax(): boolean {
+  return (
+    !!document.fullscreenElement ||
+    !!document.getElementById('pdfViewerWrap')?.classList.contains('is-maximized')
+  );
+}
+function _togglePdfMaximize(): void {
+  if (_pdfIsMax()) {
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else _applyPdfMax(false);
+    return;
+  }
+  // Fullscreen <html> so the rail (a sibling of the PDF) stays on screen too.
+  const req = document.documentElement.requestFullscreen?.();
+  if (req && typeof req.then === 'function') {
+    req.catch(() => _applyPdfMax(true)); // success → fullscreenchange handles it
+  } else {
+    _applyPdfMax(true);
+  }
+}
+document.getElementById('pdfMaximize')?.addEventListener('click', _togglePdfMaximize);
+document.getElementById('pdfMaximizeBoth')?.addEventListener('click', _togglePdfMaximize);
+// Native enter/exit (button, Esc, F11) all route through here.
+document.addEventListener('fullscreenchange', () => {
+  _applyPdfMax(!!document.fullscreenElement);
+});
+// Esc also exits the in-app fallback when no native fullscreen is active.
+document.addEventListener('keydown', (e) => {
+  if (
+    e.key === 'Escape' &&
+    !document.fullscreenElement &&
+    document.getElementById('pdfViewerWrap')?.classList.contains('is-maximized')
+  ) {
+    _applyPdfMax(false);
+  }
 });
 document.getElementById('pdfDownload')?.addEventListener('click', () => {
   if (activeFileName) downloadFile(activeFileName);
+});
+document.getElementById('pdfBack')?.addEventListener('click', () => {
+  // Leaving the reader: exit fullscreen + drop maximize so the next view isn't
+  // stuck fixed.
+  if (document.fullscreenElement) void document.exitFullscreen?.();
+  document.body.classList.remove('pdf-maximized');
+  document.getElementById('pdfViewerWrap')?.classList.remove('is-maximized');
+  const w = window as unknown as {
+    activeCourseRef?: { id?: string } & Record<string, unknown>;
+    showCourseSection?: (course: unknown, section: string) => void;
+    showPortalSection?: (section: string) => void;
+  };
+  if (w.activeCourseRef && typeof w.showCourseSection === 'function') {
+    w.showCourseSection(w.activeCourseRef, 'files');
+    return;
+  }
+  // 'studip' is the internal portal-section id; 'courses' is a URL alias only,
+  // and passing it to showPortalSection blanks the page (no psec-courses node).
+  if (typeof w.showPortalSection === 'function') w.showPortalSection('studip');
 });
 document.getElementById('pdfAll')?.addEventListener('click', () => {
   pdfShowAll = !pdfShowAll;
@@ -490,13 +727,99 @@ document.getElementById('pdfAll')?.addEventListener('click', () => {
   if (btn) btn.textContent = pdfShowAll ? 'Single page' : 'All pages';
   renderPages();
 });
+// In-toolbar Study button — delegates to the existing topbar trigger so the
+// Focus Session popup, click-outside guard, and timer state all stay in sync.
+document.getElementById('pdfStudyBtn')?.addEventListener('click', () => {
+  const stBtn = document.getElementById('studyTechBtn') as HTMLButtonElement | null;
+  if (stBtn) stBtn.click();
+});
 
 // ── AI PANEL ──────────────────────────────────────────────────────────────
 const aiPanel = document.getElementById('aiPanel');
 const aiMsgs = document.getElementById('aiMsgs');
 
-initAiRenderBridge();
+if (typeof window.renderMarkdown !== 'function') {
+  window.renderMarkdown = (text: string): string => escapeHtml(text);
+}
+
+// Cache-bust with ?v=<assetVersion> exactly like main.ts's lazyImportEncoded:
+// these feature chunks (and their nested static imports, e.g. ai-markdown.js) are
+// served immutable for a year, so without the version a returning browser keeps
+// the OLD renderer forever and never sees fixes (tables, KaTeX, etc).
+function _versionedImport(encodedPath: string): Promise<Record<string, unknown>> {
+  const path = atob(encodedPath);
+  const v = window.MinalloConfig?.assetVersion;
+  const url = v ? path + (path.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(String(v)) : path;
+  return import(/* @vite-ignore */ url);
+}
+
+let _aiRenderBridgePromise: Promise<unknown> | null = null;
+function _ensureAiRenderBridge(): Promise<unknown> {
+  if (_aiRenderBridgePromise) return _aiRenderBridgePromise;
+  _aiRenderBridgePromise = _versionedImport('Li9mZWF0dXJlcy9haS1jaGF0L2FpLXJlbmRlci1icmlkZ2UuanM=')
+    .then((mod) => (mod.initAiRenderBridge as () => unknown)())
+    .catch((err: unknown) => {
+      // Never cache the failed import — markdown/KaTeX rendering would stay
+      // broken for the whole session after one network blip.
+      _aiRenderBridgePromise = null;
+      throw err;
+    });
+  return _aiRenderBridgePromise;
+}
+(window as unknown as { _ensureAiRenderBridge?: () => Promise<unknown> })._ensureAiRenderBridge =
+  _ensureAiRenderBridge;
+
+let _aiExportBridgePromise: Promise<unknown> | null = null;
+function _ensureAiExportBridge(): Promise<unknown> {
+  if (_aiExportBridgePromise) return _aiExportBridgePromise;
+  _aiExportBridgePromise = _versionedImport('Li9mZWF0dXJlcy9haS1jaGF0L2FpLWV4cG9ydC1icmlkZ2UuanM=')
+    .then((mod) => (mod.initAiExportBridge as () => unknown)());
+  return _aiExportBridgePromise;
+}
+
 initAiPanelEffects({ aiMsgs, aiPanel });
+// Compact message minimap on the right edge of the side-panel chat. The
+// component is DOM-driven (MutationObserver on #aiMsgs), so it tracks both
+// the floating panel and its document-rail-hosted (.dr-host-ai) incarnation.
+if (aiPanel && aiMsgs) {
+  attachMessageNavigator({
+    host: aiPanel,
+    scroller: aiMsgs,
+    container: aiMsgs,
+    // User turns only (ChatGPT-style) — AI replies would double the list.
+    messageSelector: '.ai-msg-wrap.user',
+    isUser: () => true,
+    snippetSource: (row) => row.querySelector<HTMLElement>('.ai-bubble') || row,
+    // The document-rail's fixed button rail (z-index 9500) covers the
+    // drawer's right edge, so an edge overlay would hide behind it. When a
+    // vertical rail is on screen, mount the track INSIDE it (below the
+    // buttons) instead; it grows taller than the button stack and scrolls
+    // internally past the height cap. No rail → normal edge overlay.
+    inlineMount: () => {
+      const rail = document.querySelector<HTMLElement>('.dr-rail');
+      if (!rail) return null;
+      const r = rail.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return null;
+      // Mobile flips the rail horizontal at the bottom — no room for a
+      // vertical track there (the navigator is display:none <720px anyway).
+      if (r.width > r.height) return null;
+      return rail;
+    },
+    // Overlay-mode fallback: if the rail exists but inlineMount declined it,
+    // still keep the track clear of any horizontal overlap.
+    rightInset: () => {
+      const rail = document.querySelector<HTMLElement>('.dr-rail');
+      if (!rail) return 0;
+      const r = rail.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return 0;
+      const s = aiMsgs.getBoundingClientRect();
+      if (r.bottom < s.top || r.top > s.bottom) return 0;
+      return Math.max(0, s.right - r.left);
+    },
+    compact: true,
+    minMessages: 3,
+  });
+}
 const _aiPanelBridge = initAiPanelBridge({
   aiPanel, aiClose: document.getElementById('aiClose'), aiMsgs,
   t: _t, escapeHtml,
@@ -506,11 +829,19 @@ const _aiPanelBridge = initAiPanelBridge({
   getAiOpen: () => aiOpen,
   setAiOpen: (v: boolean) => { aiOpen = v; },
 });
-openAI = _aiPanelBridge.openAI;
+openAI = (): void => {
+  void _ensureAiRenderBridge();
+  void _ensureAiExportBridge();
+  _aiPanelBridge.openAI();
+};
 closeAI = _aiPanelBridge.closeAI;
 forceCloseAI = _aiPanelBridge.forceCloseAI;
 pinAI = _aiPanelBridge.pinAI;
-showSelectionBanner = _aiPanelBridge.showSelectionBanner;
+showSelectionBanner = (txt: string): void => {
+  void _ensureAiRenderBridge();
+  void _ensureAiExportBridge();
+  _aiPanelBridge.showSelectionBanner(txt);
+};
 
 (window as unknown as { _aiPanelBridge: typeof _aiPanelBridge })._aiPanelBridge = _aiPanelBridge;
 (window as unknown as { _aiMsgs: HTMLElement | null })._aiMsgs = aiMsgs;
@@ -519,8 +850,6 @@ window.openAI = openAI;
 window.forceCloseAI = forceCloseAI;
 window.pinAI = pinAI;
 window.showSelectionBanner = showSelectionBanner;
-
-initAiExportBridge();
 
 // Welcome message
 setTimeout(() => {
@@ -542,24 +871,156 @@ const _aiState = {
   set activeThinkTimer(v: ReturnType<typeof setInterval> | null) { activeThinkTimer = v; },
 };
 
-const _aiAskBridge = initAiAskBridge(_aiState as unknown as Parameters<typeof initAiAskBridge>[0]);
-askAI = _aiAskBridge.askAI as typeof askAI;
+let _aiAskBridgeReady = false;
+let _aiAskBridgePromise: Promise<{ askAI: typeof askAI; stopGeneration: () => void }> | null = null;
+function _ensureAiAskBridge(): Promise<{ askAI: typeof askAI; stopGeneration: () => void }> {
+  if (_aiAskBridgePromise) return _aiAskBridgePromise;
+  _aiAskBridgePromise = import(
+    /* @vite-ignore */ atob('Li9mZWF0dXJlcy9haS1jaGF0L2FpLWFzay1icmlkZ2UuanM=')
+  ).then((mod) => {
+    const bridge = mod.initAiAskBridge(_aiState);
+    askAI = bridge.askAI as typeof askAI;
+    _aiAskBridgeReady = true;
+    return bridge as { askAI: typeof askAI; stopGeneration: () => void };
+  });
+  return _aiAskBridgePromise;
+}
+
+askAI = ((q: string, skipUserBubble?: boolean, opts?: Parameters<typeof askAI>[2]) => {
+  return Promise.all([_ensureAiRenderBridge(), _ensureAiExportBridge()])
+    .then(() => _ensureAiAskBridge())
+    .then((bridge) => bridge.askAI(q, skipUserBubble, opts));
+}) as typeof askAI;
+window.askAI = askAI;
+window.stopGeneration = (): void => {
+  void _ensureAiAskBridge().then((bridge) => bridge.stopGeneration());
+};
+window.restoreCourseHistory = (courseId?: string | null, fileId?: string | null): void => {
+  // Ensure the render + export bridges too (not just ask) — otherwise restored
+  // history renders with renderMarkdown/_renderMath/_aiResponseActions missing,
+  // so answers come back as raw markdown/LaTeX with no export buttons.
+  void Promise.all([_ensureAiRenderBridge(), _ensureAiExportBridge()])
+    .then(() => _ensureAiAskBridge())
+    .then(() => {
+      if (typeof window.restoreCourseHistory === 'function') window.restoreCourseHistory(courseId, fileId);
+    });
+};
+window.clearCourseHistory = (courseId: string, fileId?: string | null): void => {
+  void _ensureAiAskBridge().then(() => {
+    if (typeof window.clearCourseHistory === 'function') window.clearCourseHistory(courseId, fileId);
+  });
+};
+window.resetAiPanelChat = (): void => {
+  void _ensureAiAskBridge().then(() => {
+    if (typeof window.resetAiPanelChat === 'function') window.resetAiPanelChat();
+  });
+};
+
+function _sendAiFromDomAfterBridge(): void {
+  const input = document.getElementById('aiInput') as HTMLTextAreaElement | null;
+  const q = (input?.value || '').trim();
+  const hasImages = !!(window._attachedImages && window._attachedImages.length > 0);
+  if (!q && !hasImages) return;
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
+  }
+  const count = document.getElementById('aiCharCount');
+  if (count) count.textContent = '0 / 2000';
+  void _ensureAiAskBridge().then((bridge) => {
+    if (hasImages && typeof window._legacyAskAI === 'function') {
+      window._legacyAskAI(q || 'What do you see in this image?');
+      return;
+    }
+    bridge.askAI(q || 'What do you see in this image?');
+  });
+}
+
+function _primeAiAskBridge(): void {
+  void _ensureAiAskBridge().catch((err) => {
+    console.error('[ai] failed to load ask bridge:', err);
+  });
+}
+
+const _aiSendBtn = document.getElementById('aiSend') as HTMLButtonElement | null;
+const _aiInput = document.getElementById('aiInput') as HTMLTextAreaElement | null;
+_aiSendBtn?.addEventListener('click', (e) => {
+  if (_aiAskBridgeReady) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (_aiSendBtn.classList.contains('is-stop')) {
+    window.stopGeneration?.();
+    return;
+  }
+  if (_aiSendBtn.disabled) return;
+  _sendAiFromDomAfterBridge();
+}, true);
+_aiInput?.addEventListener('focus', _primeAiAskBridge, { once: true });
+_aiInput?.addEventListener('keydown', (e) => {
+  if (_aiAskBridgeReady || e.key !== 'Enter' || e.shiftKey) return;
+  e.preventDefault();
+  _sendAiFromDomAfterBridge();
+}, true);
 
 initAiChipsBridge();
 initAiConfettiBridge();
 
-// Apply cached profile & courses instantly before auth completes
-(function (): void {
-  try {
-    const lastUid = localStorage.getItem('ss_last_uid');
-    if (!lastUid) return;
-    const cp = JSON.parse(localStorage.getItem('profile_cache_' + lastUid) || 'null');
-    if (cp) {
-      if (cp.full_name && typeof applyProfile === 'function') applyProfile(cp);
-      if (cp.courses && typeof _loadUserCourses === 'function') _loadUserCourses(cp.courses);
+// Two-phase cache application for instant perceived speed:
+//
+// Phase 1 (SYNC, now): apply cached PROFILE only — just DOM updates
+// (name, avatar, university). Pure local work, no network. Gives the
+// user a fully-styled shell on first paint instead of an empty header.
+//
+// Phase 2 (DEFERRED until ss-ready): apply cached COURSES via
+// _loadUserCourses. That call triggers restoreState → _ufMerge → storage
+// list, which can saturate the connection pool before ai.js loads. Keep
+// it after ss-ready so the boot chain isn't blocked by a storage fetch.
+let _cpCached: Record<string, unknown> | null = null;
+try {
+  const lastUid = localStorage.getItem('ss_last_uid');
+  if (lastUid) {
+    _cpCached = JSON.parse(localStorage.getItem('profile_cache_' + lastUid) || 'null');
+    if (_cpCached && _cpCached.full_name && typeof applyProfile === 'function') {
+      applyProfile(_cpCached);
     }
-  } catch { /* corrupted cache */ }
-})();
+  }
+} catch { /* corrupted cache — ignore */ }
+
+// The Profile form is lazy-loaded (views/profile/profile.html). The applyProfile
+// above runs at boot — before that HTML exists — so the fields stay empty until a
+// network refresh, which is why Profile appears to "load late". Re-apply the
+// cached profile the instant the section HTML is injected so fields fill
+// immediately. (loadUserData keeps profile_cache_<uid> fresh after its fetch, and
+// still re-applies on the network response if the user is already on the page.)
+try {
+  const _bus = (window as unknown as {
+    Minallo?: { on?: (name: string, handler: (p: { id?: string }) => void) => void };
+  }).Minallo;
+  _bus?.on?.('feature:html-loaded', (p) => {
+    if (!p || p.id !== 'psec-profile') return;
+    try {
+      const u = localStorage.getItem('ss_last_uid');
+      const cp = u
+        ? (JSON.parse(localStorage.getItem('profile_cache_' + u) || 'null') as Record<
+            string,
+            unknown
+          > | null)
+        : null;
+      if (cp && cp.full_name && typeof applyProfile === 'function') applyProfile(cp);
+    } catch {
+      /* corrupted cache — ignore */
+    }
+  });
+} catch {
+  /* bus not ready — ignore */
+}
+
+function _applyCachedCoursesNow(): void {
+  if (_cpCached && _cpCached.courses && typeof _loadUserCourses === 'function') {
+    _loadUserCourses(_cpCached.courses);
+  }
+}
+_applyCachedCoursesNow();
 renderCourses();
 renderTT();
 renderMails();
@@ -626,14 +1087,256 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   const scrim = document.getElementById('mobScrim');
   const sb = document.querySelector<HTMLElement>('#portal .sidebar');
   if (!ham || !scrim || !sb) return;
-  function openMobSb(): void { sb!.classList.add('mob-open'); scrim!.classList.add('show'); }
-  function closeMobSb(): void { sb!.classList.remove('mob-open'); scrim!.classList.remove('show'); }
-  ham.addEventListener('click', openMobSb);
-  scrim.addEventListener('click', closeMobSb);
+  function openMobSb(ev?: Event): void {
+    ev?.preventDefault();
+    sb!.classList.add('mob-open');
+    scrim!.classList.add('show');
+    ham!.setAttribute('aria-expanded', 'true');
+  }
+  function closeMobSb(ev?: Event): void {
+    ev?.preventDefault();
+    sb!.classList.remove('mob-open');
+    scrim!.classList.remove('show');
+    ham!.setAttribute('aria-expanded', 'false');
+  }
+  function bindTap(el: HTMLElement, fn: (ev: Event) => void): void {
+    el.addEventListener('click', fn);
+    el.addEventListener('pointerup', fn);
+    el.addEventListener('touchend', fn, { passive: false });
+  }
+  bindTap(ham, openMobSb);
+  bindTap(scrim, closeMobSb);
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) closeMobSb();
+  });
   sb.addEventListener('click', (e: Event) => {
     const target = e.target as Element | null;
     if (window.innerWidth <= 768 && target && target.closest('.sb-item')) closeMobSb();
   });
+})();
+
+// ── Sidebar expand / collapse toggle ──────────────────────────────────────
+// Click-to-expand (hover-expand was removed). State is sticky across reloads
+// and restored without animating so the rail never grows on its own.
+(function (): void {
+  const sb = document.querySelector<HTMLElement>('#portal .sidebar');
+  const btn = document.getElementById('sbToggle');
+  if (!sb || !btn) return;
+  const KEY = 'ss_sb_expanded';
+
+  // Collapsed rail shows icons only, so give each nav item a native tooltip
+  // (hover-to-expand is gone — this keeps the icons discoverable).
+  sb.querySelectorAll<HTMLElement>('.sb-item').forEach((item) => {
+    if (item.title) return;
+    const label = item.querySelector('span:not(.sb-item-badge)')?.textContent?.trim();
+    if (label) item.title = label;
+  });
+
+  function setExpanded(on: boolean, animate = true): void {
+    // Skip transitions when restoring saved state on load, so the rail never
+    // auto-grows on its own — only a deliberate click animates.
+    if (!animate) sb!.classList.add('sb-no-anim');
+    sb!.classList.toggle('expanded', on);
+    btn!.setAttribute('aria-expanded', on ? 'true' : 'false');
+    btn!.setAttribute('aria-label', on ? 'Collapse sidebar' : 'Expand sidebar');
+    btn!.setAttribute('title', on ? 'Collapse menu' : 'Expand menu');
+    if (!animate) {
+      void sb!.offsetWidth; // force reflow so the class change applies instantly
+      sb!.classList.remove('sb-no-anim');
+    }
+    try {
+      localStorage.setItem(KEY, on ? '1' : '0');
+    } catch {
+      /* storage may be blocked — toggle still works for the session */
+    }
+  }
+
+  setExpanded(localStorage.getItem(KEY) === '1', false);
+  btn.addEventListener('click', () => setExpanded(!sb!.classList.contains('expanded')));
+})();
+
+// Accessible singleton tooltip for the compact sidebar. A fixed element avoids
+// clipping by the scrollable navigation column and never adds icon containers.
+(function (): void {
+  const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
+  if (!sidebar) return;
+  const targets = Array.from(
+    sidebar.querySelectorAll<HTMLElement>('.sb-item, .sb-toggle, .sb-user, .sb-night-btn')
+  );
+  const tooltip = document.createElement('div');
+  tooltip.id = 'sidebarTooltip';
+  tooltip.className = 'sb-tooltip';
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+  let timer: number | null = null;
+  let active: HTMLElement | null = null;
+
+  function labelFor(target: HTMLElement): string {
+    if (target.classList.contains('sb-toggle')) {
+      return sidebar!.classList.contains('expanded') ? 'Collapse sidebar' : 'Expand sidebar';
+    }
+    if (target.classList.contains('sb-user')) return 'Profile';
+    if (target.classList.contains('sb-night-btn')) {
+      return document.body.classList.contains('night') ? 'Light mode' : 'Night mode';
+    }
+    return (
+      target.querySelector<HTMLElement>('span[data-i18n], span:not(.sb-item-badge)')?.textContent?.trim() ||
+      target.getAttribute('aria-label') ||
+      ''
+    );
+  }
+
+  function hide(): void {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = null;
+    active?.removeAttribute('aria-describedby');
+    active = null;
+    tooltip.classList.remove('is-visible');
+    tooltip.hidden = true;
+  }
+
+  function show(target: HTMLElement): void {
+    if (sidebar!.classList.contains('expanded') || window.innerWidth <= 768) return;
+    hide();
+    timer = window.setTimeout(() => {
+      const label = labelFor(target);
+      if (!label || sidebar!.classList.contains('expanded')) return;
+      active = target;
+      target.setAttribute('aria-label', label);
+      tooltip.textContent = label;
+      tooltip.hidden = false;
+      const rect = target.getBoundingClientRect();
+      const top = Math.min(window.innerHeight - 18, Math.max(18, rect.top + rect.height / 2));
+      tooltip.style.left = `${Math.round(rect.right + 10)}px`;
+      tooltip.style.top = `${Math.round(top)}px`;
+      target.setAttribute('aria-describedby', tooltip.id);
+      requestAnimationFrame(() => tooltip.classList.add('is-visible'));
+      timer = null;
+    }, 200);
+  }
+
+  targets.forEach((target) => {
+    const label = labelFor(target);
+    if (label) target.setAttribute('aria-label', label);
+    target.removeAttribute('title');
+    if (!/^(BUTTON|A)$/.test(target.tagName)) {
+      target.setAttribute('role', 'button');
+      target.tabIndex = 0;
+      target.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          target.click();
+        }
+      });
+    }
+    target.addEventListener('pointerenter', () => show(target));
+    target.addEventListener('pointerleave', hide);
+    target.addEventListener('focus', () => show(target));
+    target.addEventListener('blur', hide);
+    target.addEventListener('click', hide);
+  });
+  sidebar.addEventListener('transitionstart', hide);
+  window.addEventListener('resize', hide);
+  window.addEventListener('scroll', hide, true);
+})();
+
+// Compact PDF toolbar: the existing page/zoom/fullscreen controls are reused
+// in the floating collapsed pill, so their state and listeners stay canonical.
+(function (): void {
+  const toolbar = document.getElementById('pdfToolbar');
+  const toggle = document.getElementById('pdfToolbarCollapse');
+  const dragHandle = document.getElementById('pdfToolbarDragHandle');
+  const pdfView = document.getElementById('pdfView');
+  if (!toolbar || !toggle || !dragHandle || !pdfView) return;
+  const toolbarEl = toolbar;
+  const toggleEl = toggle;
+  const dragHandleEl = dragHandle;
+  const pdfViewEl = pdfView;
+
+  function bounds(): { left: number; right: number; top: number; bottom: number } {
+    const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
+    const sidebarRight = sidebar?.getBoundingClientRect().right || 0;
+    const rect = toolbarEl.getBoundingClientRect();
+    const gap = 10;
+    const left = Math.max(gap, sidebarRight + gap);
+    return {
+      left,
+      right: Math.max(left, window.innerWidth - rect.width - gap),
+      top: gap,
+      bottom: Math.max(gap, window.innerHeight - rect.height - gap)
+    };
+  }
+
+  function place(left: number, top: number): void {
+    const limit = bounds();
+    toolbarEl.style.left = `${Math.round(Math.min(limit.right, Math.max(limit.left, left)))}px`;
+    toolbarEl.style.top = `${Math.round(Math.min(limit.bottom, Math.max(limit.top, top)))}px`;
+    toolbarEl.style.right = 'auto';
+  }
+
+  function keepClearOfSidebar(): void {
+    if (!toolbarEl.classList.contains('is-collapsed')) return;
+    const rect = toolbarEl.getBoundingClientRect();
+    place(rect.left, rect.top);
+  }
+
+  function setCollapsed(collapsed: boolean): void {
+    toolbarEl.classList.toggle('is-collapsed', collapsed);
+    toggleEl.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggleEl.setAttribute('aria-label', collapsed ? 'Expand PDF toolbar' : 'Collapse PDF toolbar');
+    toggleEl.setAttribute('title', collapsed ? 'Expand toolbar' : 'Collapse toolbar');
+    if (!collapsed) {
+      toolbarEl.style.removeProperty('left');
+      toolbarEl.style.removeProperty('top');
+      toolbarEl.style.removeProperty('right');
+    }
+  }
+
+  toggleEl.addEventListener('click', () => setCollapsed(!toolbarEl.classList.contains('is-collapsed')));
+  dragHandleEl.addEventListener('pointerdown', (event: PointerEvent) => {
+    if (!toolbarEl.classList.contains('is-collapsed')) return;
+    event.preventDefault();
+    dragHandleEl.setPointerCapture(event.pointerId);
+    const start = toolbarEl.getBoundingClientRect();
+    const offsetX = event.clientX - start.left;
+    const offsetY = event.clientY - start.top;
+    toolbarEl.classList.add('is-dragging');
+
+    const move = (moveEvent: PointerEvent): void => {
+      place(moveEvent.clientX - offsetX, moveEvent.clientY - offsetY);
+    };
+    const finish = (): void => {
+      dragHandleEl.removeEventListener('pointermove', move);
+      dragHandleEl.removeEventListener('pointerup', finish);
+      dragHandleEl.removeEventListener('pointercancel', finish);
+      toolbarEl.classList.remove('is-dragging');
+      const rect = toolbarEl.getBoundingClientRect();
+      const limit = bounds();
+      const distances = [
+        { edge: 'left', value: Math.abs(rect.left - limit.left) },
+        { edge: 'right', value: Math.abs(rect.left - limit.right) },
+        { edge: 'top', value: Math.abs(rect.top - limit.top) },
+        { edge: 'bottom', value: Math.abs(rect.top - limit.bottom) }
+      ].sort((a, b) => a.value - b.value);
+      const edge = distances[0]?.edge;
+      place(
+        edge === 'left' ? limit.left : edge === 'right' ? limit.right : rect.left,
+        edge === 'top' ? limit.top : edge === 'bottom' ? limit.bottom : rect.top
+      );
+    };
+    dragHandleEl.addEventListener('pointermove', move);
+    dragHandleEl.addEventListener('pointerup', finish);
+    dragHandleEl.addEventListener('pointercancel', finish);
+  });
+  window.addEventListener('resize', keepClearOfSidebar);
+  const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
+  if (sidebar && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(keepClearOfSidebar).observe(sidebar);
+  }
+  new MutationObserver(() => {
+    if (pdfViewEl.style.display !== 'none') setCollapsed(false);
+  }).observe(pdfViewEl, { attributes: true, attributeFilter: ['style'] });
 })();
 
 // Dashboard cards
@@ -648,7 +1351,11 @@ _bindIf('pcStudip', 'click', () => {
       localStorage.setItem('ss_last_section', 'studip');
     } catch { /* ignore */ }
     try {
-      history.pushState({ view: 'portal', section: 'studip' }, '', '#portal=courses');
+      // Bug 3 fix: guard against duplicate history entries when the hash is
+      // already #portal=courses (e.g. clicking the sidebar item twice).
+      if (location.hash !== '#portal=courses') {
+        history.pushState({ view: 'portal', section: 'studip' }, '', '#portal=courses');
+      }
     } catch { /* ignore */ }
   }
 });
@@ -679,6 +1386,11 @@ initLandingAuthBridge({ authBridge: _authBridge });
 (window as unknown as { _subService: Record<string, unknown> })._subService = {
   createCheckoutSession: _createCheckoutSession,
   createPortalSession: _createPortalSession,
+  pauseSubscription: _pauseSubscription,
+  resumeSubscription: _resumeSubscription,
+  cancelSubscription: _cancelSubscription,
+  reactivateSubscription: _reactivateSubscription,
+  applyRetentionDiscount: _applyRetentionDiscount,
   verifyPayment: _verifyPayment,
   activatePayPalSubscription: _activatePayPalSubscription,
   loadBillingConfig: _loadBillingConfig,
