@@ -23,6 +23,7 @@ import {
 import { getAiChatKey } from './chat-key.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { beginSafeStreamRecovery } from './stream-recovery.js';
 
 /** The subscription gate (HTTP 402 / "subscription required") should read as a
  * calm upgrade prompt, not a raw server error. */
@@ -1133,6 +1134,7 @@ export function initAskAI(
             // finalize() — guard so history/feedback bar aren't doubled.
             let _finalized = false;
             let _recoveryStarted = false;
+            const _recoveryState = { started: false };
             let _activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
             let _finalizeWaitingForThinking = false;
 
@@ -1362,12 +1364,12 @@ export function initAskAI(
                 ? (_viewerSelection?.toString() || '').trim().slice(0, 12000)
                 : '';
             const _visiblePage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : undefined;
-            const _viewerRevision = [
-              window.activeCourseId || '',
-              _activeDocId || '',
-              window.activeStorageName || activeFileName || '',
-              String((window.pdfDoc as PdfDocLike | null | undefined)?.numPages || '')
-            ].join(':');
+            // The browser does not possess the server's content SHA. A
+            // course/doc/name/page-count tuple is not a document revision and
+            // must never be presented as one. The backend binds the selection
+            // to the stored PDF SHA after authorization and rejects a storage
+            // object that no longer matches its indexed revision.
+            const _viewerRevision = '';
             const _selectedRegion = regionFromSelection(
               _viewerSelection,
               _viewerWrap,
@@ -1501,24 +1503,22 @@ export function initAskAI(
               });
 
             function fallbackToRag(): void {
-              if (_recoveryStarted) return;
+              if (!beginSafeStreamRecovery(_recoveryState, _activeReader, _streamController)) return;
               _recoveryStarted = true;
               _finalized = true;
-              _activeReader?.cancel().catch(() => undefined);
-              _streamController.abort();
               if (ansWrap) ansWrap.remove();
               ansWrap = null;
               removeThinking();
               const lang = (document.documentElement.lang || 'en').toLowerCase().slice(0, 2);
               const retryText = ({
-                de: 'Die sichere DokumentprÃ¼fung wurde unterbrochen. Deine Frage bleibt erhalten â€“ bitte versuche es erneut.',
-                fr: 'La vÃ©rification sÃ©curisÃ©e du document a Ã©tÃ© interrompue. Votre question est conservÃ©e â€” veuillez rÃ©essayer.',
-                es: 'La verificaciÃ³n segura del documento se interrumpiÃ³. Tu pregunta se ha conservado; intÃ©ntalo de nuevo.',
-                it: 'La verifica sicura del documento Ã¨ stata interrotta. La domanda Ã¨ stata conservata â€” riprova.',
+                de: 'Die sichere Dokumentprüfung wurde unterbrochen. Deine Frage bleibt erhalten – bitte versuche es erneut.',
+                fr: 'La vérification sécurisée du document a été interrompue. Votre question est conservée — veuillez réessayer.',
+                es: 'La verificación segura del documento se interrumpió. Tu pregunta se ha conservado; inténtalo de nuevo.',
+                it: 'La verifica sicura del documento è stata interrotta. La domanda è stata conservata — riprova.',
                 ar: 'توقّف التحقق الآمن من المستند. تم الاحتفاظ بسؤالك — يُرجى المحاولة مرة أخرى.',
-                en: 'The grounded document check was interrupted. Your question is preserved â€” please retry.'
+                en: 'The grounded document check was interrupted. Your question is preserved — please retry.'
               } as Record<string, string>)[lang] ||
-                'The grounded document check was interrupted. Your question is preserved â€” please retry.';
+                'The grounded document check was interrupted. Your question is preserved — please retry.';
               resolve({ content: [{ text: retryText }] });
             }
 

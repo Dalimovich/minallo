@@ -323,29 +323,6 @@ _CODE_FENCE_RE = re.compile(
 
 
 # Vision models reliably misread italic lowercase Latin "a" as Greek α in
-# engineering fonts (the glyph shapes are nearly identical). Prompt rule
-# #9 catches most cases but the visual perception is too strong for some
-# variables (`a_A` Anziehfaktor / tightening factor reproducibly comes
-# back as `\alpha_A` or `\alpha_a`). This regex narrowly rewrites
-# `\alpha_X = <plain dimensionless number>` → `a_X = ...` where:
-#   * the assignment is to a unitless decimal (no trailing unit letters / "/")
-#   * no other Greek-math signal nearby
-# A real `\alpha` assigned to a dimensionless angle would still be wrong
-# but those don't appear in our corpus. If a false positive surfaces in
-# the eval, narrow the lookahead further.
-_LATIN_ALPHA_RE = re.compile(
-    r"\\alpha(_[A-Za-z])\s*=\s*([0-9]+(?:[,.][0-9]+)?)"
-    r"(?!\s*[A-Za-z/])"  # negative lookahead: no unit / Greek letter after
-)
-
-
-def _post_process_latin_alpha(text: str) -> str:
-    """Rewrite `\\alpha_X = <plain number>` to Latin `a_X` when the value
-    has no unit. Targets the well-known OCR misread of italic lowercase
-    Latin 'a' as Greek alpha (see comment above)."""
-    return _LATIN_ALPHA_RE.sub(r"a\1 = \2", text)
-
-
 def _strip_outer_code_fence(text: str) -> str:
     """If the vision response is wrapped in an outer ```markdown ... ```
     code fence, return the inner content. No-op for already-bare Markdown."""
@@ -623,6 +600,101 @@ _OCR_MIN_LETTERS = 80         # below this: scanned / near-empty → always OCR
 _OCR_SPARSE_LETTERS = 300     # 80..300 letters → candidate, decided by ink
 _OCR_INK_DENSE_PCT = 2.5      # rendered dark-pixel % above which it's a figure
 _OCR_INK_DPI = 72             # cheap render just for the ink measurement
+
+_EDUCATIONAL_RE = re.compile(
+    r"\b(?:aufgabe|übung|uebung|exercise|question|task|problem|solution|lösung|"
+    r"loesung|example|beispiel|definition|theorem|satz|proof|beweis|formula|"
+    r"gleichung|diagram|figure|abbildung|table|tabelle)\b",
+    re.IGNORECASE,
+)
+_FRONT_MATTER_RE = re.compile(
+    r"\b(?:table of contents|inhaltsverzeichnis|copyright|all rights reserved|"
+    r"welcome|willkommen|learning objectives|lernziele|impressum|publisher|"
+    r"course overview|module overview)\b",
+    re.IGNORECASE,
+)
+_UNIT_RE = re.compile(
+    r"\b\d+(?:[.,]\d+)?\s*(?:mm|cm|m|km|µm|μm|kg|g|s|min|h|N|kN|Pa|MPa|"
+    r"GPa|J|W|V|A|Hz|m/s|m/min|%)\b",
+    re.IGNORECASE,
+)
+_FORMULA_RE = re.compile(r"(?:=|≤|≥|≈|∑|∫|√|\\frac|\\sum|\\int|[A-Za-z]\^\d)")
+
+
+@dataclass(frozen=True)
+class OcrPagePriority:
+    page_index: int
+    score: float
+    classification: str
+    reasons: tuple[str, ...]
+    ink_coverage: float | None = None
+
+
+def rank_ocr_candidates(
+    pages: list[str],
+    candidate_indices: Iterable[int],
+    pdf_bytes: bytes | None = None,
+) -> list[OcrPagePriority]:
+    """Rank the automatic paid-OCR candidates across the whole document.
+
+    The configured page cap is applied *after* this ranking. A low-text page
+    with rendered ink is treated as a likely diagram/formula page, not filler.
+    """
+    indices = sorted({i for i in candidate_indices if 0 <= i < len(pages)})
+    ink = _page_ink_coverage(pdf_bytes, indices) if pdf_bytes and indices else {}
+    ranked: list[OcrPagePriority] = []
+    for index in indices:
+        text = (pages[index] or "").strip()
+        lower = text.casefold()
+        reasons: list[str] = []
+        score = 0.0
+        educational = len(_EDUCATIONAL_RE.findall(text))
+        formulae = len(_FORMULA_RE.findall(text))
+        units = len(_UNIT_RE.findall(text))
+        numbers = len(re.findall(r"\d+(?:[.,]\d+)?", text))
+        ink_pct = ink.get(index)
+        if educational:
+            score += min(24.0, educational * 8.0)
+            reasons.append("educational_identifier")
+        if formulae:
+            score += min(28.0, formulae * 4.0)
+            reasons.append("formula_or_operator")
+        if units or numbers >= 2:
+            score += min(20.0, units * 5.0 + numbers * 1.5)
+            reasons.append("numerical_technical_content")
+        if ink_pct is not None and ink_pct > _OCR_INK_DENSE_PCT:
+            score += 26.0
+            reasons.append("diagram_or_table_ink")
+        if _looks_structurally_garbled(text):
+            score += 24.0
+            reasons.append("corrupted_technical_text")
+        if not text and ink_pct and ink_pct > 0.5:
+            score += 18.0
+            reasons.append("scanned_content")
+        front_matter = bool(_FRONT_MATTER_RE.search(lower))
+        if front_matter and not (formulae or units or educational >= 2):
+            score -= 35.0
+            reasons.append("probable_front_matter")
+        if len(text) < 20 and not ink_pct:
+            score -= 8.0
+            reasons.append("blank_or_near_blank")
+        # Later pages win ties so a front-loaded document does not spend the
+        # entire budget on physical pages 1..20.
+        score += min(2.0, index / max(1, len(pages)))
+        if front_matter and score < 0:
+            classification = "skipped_probable_front_matter"
+        elif score >= 18:
+            classification = "pending_on_demand_ocr"
+        else:
+            classification = "weak_or_ambiguous"
+        ranked.append(OcrPagePriority(
+            page_index=index,
+            score=round(score, 3),
+            classification=classification,
+            reasons=tuple(reasons),
+            ink_coverage=round(ink_pct, 3) if ink_pct is not None else None,
+        ))
+    return sorted(ranked, key=lambda item: (-item.score, item.page_index))
 
 
 def _page_ink_coverage(pdf_bytes: bytes, page_indices: list[int]) -> dict[int, float]:

@@ -25,6 +25,7 @@ from typing import Any, Generator
 from lingua import Language, LanguageDetectorBuilder
 
 from .openai_client import get_openai_client
+from .llm_json import _token_limit_param
 
 from ..config import get_settings
 from ..supabase_client import get_supabase
@@ -471,7 +472,7 @@ def _answer_matches_question_language(question: str, answer: str) -> bool:
 
 def answer_matches_resolved_language(answer: str, language_code: str | None) -> bool:
     """Validate output against the server's sticky language decision."""
-    if not language_code or len((answer or "").strip()) < 40:
+    if not language_code or not (answer or "").strip():
         return True
     targets = {
         "en": Language.ENGLISH,
@@ -487,6 +488,64 @@ def answer_matches_resolved_language(answer: str, language_code: str | None) -> 
     cleaned = re.sub(r"\[Source\s+\d+\]|https?://\S+|[`$\\{}_^]", " ", answer or "")
     actual = _LANGUAGE_DETECTOR.detect_language_of(cleaned)
     return actual is None or actual == expected
+
+
+def rewrite_answer_in_resolved_language(
+    answer: str,
+    language_code: str,
+    *,
+    evidence: str,
+) -> str:
+    """One faithful language-only rewrite using the same verified evidence."""
+    language_names = {
+        "en": "English",
+        "de": "German",
+        "fr": "French",
+        "es": "Spanish",
+        "it": "Italian",
+        "ar": "Arabic",
+    }
+    target = language_names.get((language_code or "").lower())
+    if not target or not answer.strip():
+        return ""
+    from .openai_client import get_openai_client
+
+    model = get_settings().openai_generate_model
+    response = get_openai_client().chat.completions.create(
+        model=model,
+        temperature=0,
+        **_token_limit_param(model, 4096),
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    f"Rewrite the supplied answer in {target}. Preserve every number, "
+                    "sign, decimal separator, exponent, unit, variable, formula, exercise "
+                    "identifier, and [Source N] citation exactly. Do not add facts or solve "
+                    "a different question. Return only the rewritten answer."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "VERIFIED EVIDENCE (comparison only; do not quote unless already used):\n"
+                    + evidence[:12000]
+                    + "\n\nANSWER TO REWRITE:\n"
+                    + answer[:24000]
+                ),
+            },
+        ],
+    )
+    from .usage_meter import record_usage, usage_from_response
+
+    record_usage(
+        feature="answer_language_rewrite",
+        model=model,
+        **usage_from_response(response),
+    )
+    choice = response.choices[0] if response.choices else None
+    message = choice.message if choice else None
+    return ((message.content if message else "") or "").strip()
 
 
 def _language_rewrite_followup_overlay(

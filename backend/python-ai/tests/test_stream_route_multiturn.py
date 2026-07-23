@@ -11,7 +11,13 @@ from app.services.tutor_state import TutorState
 
 def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
     from app.routers import stream
-    from app.services import cache, mastery, retrieval, tutor_state_store
+    from app.services import (
+        cache,
+        mastery,
+        pdf_region_evidence,
+        retrieval,
+        tutor_state_store,
+    )
 
     user_id = "00000000-0000-4000-8000-000000000001"
     document_id = "00000000-0000-4000-8000-000000000002"
@@ -24,8 +30,17 @@ def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
     monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
     monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
     monkeypatch.setattr(
-        stream, "_verify_user_owns_documents",
-        lambda *_: {document_id: "Exam A.pdf"},
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id,
+                "user_id": user_id,
+                "course_id": "course-1",
+                "file_name": "Exam A.pdf",
+                "storage_path": "synthetic/exam.pdf",
+                "document_hash": "rev-2",
+            }
+        },
     )
     monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
     monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
@@ -48,6 +63,28 @@ def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
     monkeypatch.setattr(retrieval, "retrieve_exercise_block", lambda **_: None)
     monkeypatch.setattr(retrieval, "retrieve_formula_block", lambda **_: [])
     monkeypatch.setattr(retrieval, "retrieve_chunks", lambda **_: [selected_chunk])
+    monkeypatch.setattr(
+        pdf_region_evidence,
+        "verify_pdf_region",
+        lambda **kwargs: pdf_region_evidence.PdfRegionEvidence(
+            document_id=document_id,
+            document_revision="rev-2",
+            page=33,
+            bbox=kwargs["bbox"],
+            text="Aufgabe 13.11\nvc = 560 m/min\nCorrect answer: 11",
+            critical_tokens=("13.11", "vc", "560", "m/min", "11"),
+            exercise_id="13.11",
+            crop_sha256="server-crop",
+            evidence_sha256=f"server-evidence-{latest_generation}",
+            text_confidence=0.98,
+            region_confidence=0.98,
+            client_text_agreement=1.0,
+            vision_text="Aufgabe 13.11 vc = 560 m/min Correct answer: 11",
+            vision_confidence=0.98,
+            vision_model="deterministic-eval",
+            vision_cache_hit=False,
+        ),
+    )
 
     def claim(_uid, _conversation, _course, generation):
         nonlocal latest_generation
@@ -125,10 +162,11 @@ def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
             selectedText="Aufgabe 13.11\nvc = 560 m/min\nCorrect answer: 11",
             selectedRegion=stream.SelectedRegionPayload(
                 page=33, x=0.1, y=0.1, width=0.5, height=0.2,
-                id=f"region-{generation}",
-                documentRevision=revision,
-                cropHash=f"crop-{generation}",
-            ),
+                    id=f"region-{generation}",
+                    documentRevision=revision,
+                    cropHash=f"crop-{generation}",
+                    coordinateSpace="normalized_pdf_page",
+                ),
             viewerRevision=revision,
             visiblePage=33,
             conversationId=conversation_id,
@@ -147,7 +185,7 @@ def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
         assert persisted.document_id == document_id
         assert persisted.document_revision == "rev-2"
         assert persisted.active_page == 33
-        assert persisted.active_region_id == f"region-{generation}"
+        assert persisted.active_region_id.startswith("pdf-region:")
         assert persisted.active_question == "13.11"
         assert persisted.response_language in {"en", "de"}
         assert all(
@@ -158,7 +196,7 @@ def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
     assert any(item.status == "rejected" for item in persisted.results.values()) or persisted.corrections
     assert persisted.corrections
     assert all(
-        context.startswith("AUTHORITATIVE SELECTED PDF EVIDENCE (Source 0):")
+        context.startswith("SERVER-VERIFIED SELECTED PDF EVIDENCE (Source 0):")
         for context in generated_source_zero
     )
 

@@ -26,6 +26,9 @@ class _Result:
     def __init__(self, data: Any) -> None:
         self.data = data
 
+    def execute(self):
+        return self
+
 
 class _Query:
     def __init__(self, table: str, store: dict) -> None:
@@ -55,6 +58,13 @@ class _Query:
         self._store["inserts"].append((self._table, rows))
         return self
 
+    def upsert(self, rows, **_kwargs):  # noqa: ANN001
+        self._store["inserts"].append((self._table, rows))
+        return self
+
+    def in_(self, *a, **k):  # noqa: ANN002
+        return self
+
     def execute(self):
         return _Result(self._store["data"].get(self._table, []))
 
@@ -65,6 +75,9 @@ class _FakeSB:
 
     def table(self, name: str) -> _Query:
         return _Query(name, self.store)
+
+    def rpc(self, _name: str, _params: dict) -> _Result:
+        return _Result(True)
 
 
 @pytest.fixture()
@@ -97,12 +110,18 @@ def test_reindex_orders_and_gap_fills_pages(monkeypatch, _stub_pipeline) -> None
         "documents": [{
             "id": _DOC_ID, "user_id": "u", "course_id": "c",
             "source_type": "lecture", "file_name": "notes.pdf",
+            "active_index_revision": "rev-1",
         }],
         # Deliberately out of order, and missing page 2 (a gap).
         "document_pages": [
-            {"page_number": 3, "cleaned_text": "Third page introduces the bending moment diagram and its sign convention."},
-            {"page_number": 1, "cleaned_text": "First page covers static equilibrium of a simply supported beam under load."},
+            {"document_id": _DOC_ID, "user_id": "u", "course_id": "c", "index_revision": "rev-1", "page_number": 3, "cleaned_text": "Third page introduces the bending moment diagram and its sign convention."},
+            {"document_id": _DOC_ID, "user_id": "u", "course_id": "c", "index_revision": "rev-1", "page_number": 1, "cleaned_text": "First page covers static equilibrium of a simply supported beam under load."},
         ],
+        "document_page_corrections": [{
+            "id": "correction-1",
+            "page_number": 1,
+            "corrected_text": "First page covers corrected static equilibrium.",
+        }],
     }
     sb = _FakeSB(data)
     monkeypatch.setattr(indexing, "get_supabase", lambda: sb)
@@ -123,19 +142,28 @@ def test_reindex_orders_and_gap_fills_pages(monkeypatch, _stub_pipeline) -> None
 
 
 def test_correct_document_page_writes_and_recounts_unclear(monkeypatch) -> None:
-    data = {"document_pages": [{"page_number": 2}]}  # update().execute() returns truthy
+    data = {
+        "documents": [{
+            "user_id": "u", "course_id": "c",
+            "active_index_revision": "rev-1",
+        }],
+        "document_pages": [{"page_number": 2}],
+    }
     sb = _FakeSB(data)
     monkeypatch.setattr(indexing, "get_supabase", lambda: sb)
 
     unclear = indexing.correct_document_page(_DOC_ID, 2, "F = m a [unclear] still [UNCLEAR]")
 
     assert unclear == 2
-    page_updates = [p for (t, p) in sb.store["updates"] if t == "document_pages"]
-    assert page_updates, "expected a document_pages update"
-    upd = page_updates[-1]
-    assert upd["ocr_needs_review"] is False
-    assert upd["ocr_unclear_count"] == 2
-    assert "F = m a" in upd["cleaned_text"]
+    correction_inserts = [
+        p for (t, p) in sb.store["inserts"]
+        if t == "document_page_corrections"
+    ]
+    assert correction_inserts, "expected a pending correction upsert"
+    pending = correction_inserts[-1]
+    assert pending["status"] == "pending"
+    assert pending["base_index_revision"] == "rev-1"
+    assert "F = m a" in pending["corrected_text"]
 
 
 def test_correct_document_page_rejects_empty(monkeypatch) -> None:
@@ -146,7 +174,13 @@ def test_correct_document_page_rejects_empty(monkeypatch) -> None:
 
 
 def test_correct_document_page_missing_page_raises(monkeypatch) -> None:
-    sb = _FakeSB({"document_pages": []})  # update().execute() returns falsy
+    sb = _FakeSB({
+        "documents": [{
+            "user_id": "u", "course_id": "c",
+            "active_index_revision": "rev-1",
+        }],
+        "document_pages": [],
+    })
     monkeypatch.setattr(indexing, "get_supabase", lambda: sb)
     with pytest.raises(indexing.IndexingError):
         indexing.correct_document_page(_DOC_ID, 9, "some text")

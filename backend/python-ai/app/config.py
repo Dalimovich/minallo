@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     vision_ocr_enabled: bool = Field(True, alias="MINALLO_VISION_OCR_ENABLED")
     vision_ocr_model: str = Field("gpt-4o-mini", alias="MINALLO_VISION_OCR_MODEL")
     vision_ocr_max_pages: int = Field(20, alias="MINALLO_VISION_OCR_MAX_PAGES")
+    region_ocr_monthly_cap: int = Field(
+        200, alias="MINALLO_REGION_OCR_MONTHLY_CAP"
+    )
     vision_ocr_render_dpi: int = Field(150, alias="MINALLO_VISION_OCR_DPI")
     # Handwritten notes need a little more raster detail than printed pages,
     # but usually not the full Mathpix/formula-sheet DPI.

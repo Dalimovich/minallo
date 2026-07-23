@@ -138,18 +138,44 @@ def _deduplicate_chunks(chunks: list[Any]) -> list[Any]:
     return kept
 
 
-def _verify_user_owns_documents(user_id: str, course_id: str, document_ids: list[str] | None) -> dict[str, str]:
+def _load_authorized_documents(
+    user_id: str,
+    course_id: str,
+    document_ids: list[str] | None,
+) -> dict[str, dict[str, Any]]:
     if not document_ids:
         return {}
     sb = get_supabase()
-    resp = sb.table("documents").select("id, user_id, course_id, file_name").in_("id", document_ids).execute()
+    unique_ids = list(dict.fromkeys(document_ids))
+    resp = (
+        sb.table("documents")
+        .select(
+            "id, user_id, course_id, file_name, storage_path, document_hash, "
+            "processing_status, page_count, updated_at, active_index_revision"
+        )
+        .in_("id", unique_ids)
+        .execute()
+    )
     rows = resp.data or []
-    if len(rows) != len(document_ids):
+    if len(rows) != len(unique_ids):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     for row in rows:
         if row["user_id"] != user_id or row["course_id"] != course_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
-    return {row["id"]: row["file_name"] for row in rows}
+    return {row["id"]: row for row in rows}
+
+
+def _verify_user_owns_documents(
+    user_id: str,
+    course_id: str,
+    document_ids: list[str] | None,
+) -> dict[str, str]:
+    return {
+        document_id: str(row.get("file_name") or "")
+        for document_id, row in _load_authorized_documents(
+            user_id, course_id, document_ids
+        ).items()
+    }
 
 
 def _resolve_document_ids_by_name(user_id: str, course_id: str, names: list[str] | None) -> list[str]:
@@ -328,7 +354,7 @@ def _requires_verified_buffering(
         "continue_next_question", "continue_from_step", "answer_all_requested",
     }
     formula_or_number = bool(re.search(
-        r"(?:\d|=|[+\-*/^]|\\(?:frac|sqrt|sum|int)|[Â²Â³âˆšâˆ‘âˆ«])",
+        r"(?:\d|=|[+\-*/^]|\\(?:frac|sqrt|sum|int)|[²³√∑∫])",
         question or "",
     ))
     short_symbolic_followup = bool(
@@ -365,9 +391,9 @@ def _selection_is_stale(
 def _wrong_language_message(language: str) -> str:
     return {
         "de": "Die Antwort wurde in der falschen Sprache erzeugt und deshalb nicht angezeigt. Bitte versuche es erneut.",
-        "fr": "La rÃ©ponse a Ã©tÃ© produite dans la mauvaise langue et n'a donc pas Ã©tÃ© affichÃ©e. Veuillez rÃ©essayer.",
-        "es": "La respuesta se generÃ³ en el idioma equivocado y no se mostrÃ³. IntÃ©ntalo de nuevo.",
-        "it": "La risposta Ã¨ stata generata nella lingua sbagliata e non Ã¨ stata mostrata. Riprova.",
+        "fr": "La réponse a été produite dans la mauvaise langue et n'a donc pas été affichée. Veuillez réessayer.",
+        "es": "La respuesta se generó en el idioma equivocado y no se mostró. Inténtalo de nuevo.",
+        "it": "La risposta è stata generata nella lingua sbagliata e non è stata mostrata. Riprova.",
         "ar": "تم إنشاء الإجابة بلغة خاطئة، لذلك لم يتم عرضها. يُرجى المحاولة مرة أخرى.",
     }.get(
         language,
@@ -567,13 +593,17 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         resolved_ids = await run_in_threadpool(
             lambda: _resolve_document_ids_by_name(user_id, payload.courseId, payload.documentNames)
         )
-    preflight_doc_names = await run_in_threadpool(
-        lambda: _verify_user_owns_documents(user_id, payload.courseId, resolved_ids)
+    preflight_documents = await run_in_threadpool(
+        lambda: _load_authorized_documents(user_id, payload.courseId, resolved_ids)
     )
     if payload.activeDocumentId:
-        preflight_doc_names.update(await run_in_threadpool(
-            lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
+        preflight_documents.update(await run_in_threadpool(
+            lambda: _load_authorized_documents(user_id, payload.courseId, [payload.activeDocumentId])
         ))
+    preflight_doc_names = {
+        document_id: str(row.get("file_name") or "")
+        for document_id, row in preflight_documents.items()
+    }
     preflight_ms = (time.perf_counter() - started) * 1000
 
     async def early_stream():
@@ -611,7 +641,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             prepared_task = asyncio.create_task(
                 _prepare_ask_stream_response(
                     payload, user, status_queue.put_nowait, request_id,
-                    {"resolved_document_ids": resolved_ids, "doc_name_map": preflight_doc_names},
+                    {
+                        "resolved_document_ids": resolved_ids,
+                        "doc_name_map": preflight_doc_names,
+                        "documents": preflight_documents,
+                    },
                 )
             )
             while not prepared_task.done():
@@ -760,8 +794,57 @@ async def _prepare_ask_stream_response(
         visible_page=payload.visiblePage,
         viewer_revision=payload.viewerRevision,
     )
-    selected_region_id = selected_region.id if selected_region and not selection_stale else None
-    selected_text = payload.selectedText if not selection_stale else None
+    verified_region = None
+    region_error_code: str | None = "stale_selection" if selection_stale else None
+    if selected_region and not selection_stale:
+        if (
+            not payload.activeDocumentId
+            or selected_region.coordinateSpace != "normalized_pdf_page"
+            or selected_region.page != payload.visiblePage
+        ):
+            region_error_code = "invalid_selection"
+        else:
+            from ..services.pdf_region_evidence import (  # noqa: WPS433
+                RegionEvidenceError,
+                verify_pdf_region,
+            )
+
+            document_row = dict(
+                ((preflight or {}).get("documents") or {}).get(
+                    payload.activeDocumentId
+                )
+                or {}
+            )
+            try:
+                verified_region = await run_in_threadpool(
+                    lambda: verify_pdf_region(
+                        document=document_row,
+                        page=selected_region.page,
+                        bbox=(
+                            selected_region.x,
+                            selected_region.y,
+                            selected_region.x + selected_region.width,
+                            selected_region.y + selected_region.height,
+                        ),
+                        claimed_revision=(
+                            selected_region.documentRevision
+                            or payload.viewerRevision
+                        ),
+                        client_text=payload.selectedText,
+                        page_rotation=selected_region.pageRotation or 0,
+                    )
+                )
+            except RegionEvidenceError as exc:
+                log.warning(
+                    "pdf_region_rejected request_id=%s code=%s document=%s page=%s",
+                    request_id,
+                    exc.code,
+                    bool(payload.activeDocumentId),
+                    selected_region.page,
+                )
+                region_error_code = exc.code
+    selected_region_id = verified_region.id if verified_region else None
+    selected_text = verified_region.prompt_text() if verified_region else None
     reference = resolve_question_reference(
         question=resolved_question,
         course_id=payload.courseId,
@@ -780,11 +863,11 @@ async def _prepare_ask_stream_response(
         question=resolved_question,
         has_history=bool(previous_turns_payload),
     )
-    if selection_stale:
+    if region_error_code:
         evidence_decision.can_answer = False
         evidence_decision.action = "clarify"
-        evidence_decision.recovery_code = "stale_selection"
-        evidence_decision.missing_information = ["current PDF selection"]
+        evidence_decision.recovery_code = region_error_code
+        evidence_decision.missing_information = ["verified current PDF selection"]
     log.info(
         "grounding_preflight request_id=%s reference_status=%s confidence=%.2f "
         "candidate_count=%d evidence_action=%s recovery_code=%s language=%s dialogue_act=%s "
@@ -812,7 +895,9 @@ async def _prepare_ask_stream_response(
     )
 
     if tutor_state:
-        active_revision = payload.viewerRevision or (
+        active_revision = (
+            verified_region.document_revision if verified_region else None
+        ) or payload.viewerRevision or (
             selected_region.documentRevision if selected_region else None
         ) or ""
         if payload.activeDocumentId and active_revision:
@@ -820,7 +905,7 @@ async def _prepare_ask_stream_response(
         tutor_state.active_page = payload.visiblePage
         tutor_state.active_region_id = selected_region_id
         tutor_state.region_revision = (
-            selected_region.documentRevision if selected_region else None
+            verified_region.document_revision if verified_region else None
         )
         tutor_state.active_question = (
             reference.resolved_question_number or dialogue.active_question
@@ -855,15 +940,10 @@ async def _prepare_ask_stream_response(
         )
         if variant:
             tutor_state.exam_variant = variant.group(1).upper()
-        if selected_region_id and selected_text:
-            tutor_state.evidence_dependencies[selected_region_id] = {
-                "status": "verified",
-                "document_id": payload.activeDocumentId,
-                "document_revision": active_revision,
-                "page": payload.visiblePage,
-                "crop_hash": selected_region.cropHash if selected_region else None,
-                "origin": selected_region.origin if selected_region else "text_selection",
-            }
+        if selected_region_id and verified_region:
+            tutor_state.evidence_dependencies[selected_region_id] = (
+                verified_region.provenance()
+            )
         if dialogue.invalidate_previous_answer:
             tutor_state.invalidate(
                 rejected_result_ids={
@@ -1051,7 +1131,11 @@ async def _prepare_ask_stream_response(
     # avoid returning a previous answer composed against a different page.
     version_hash = ""
     cached = None
-    has_open_ctx = bool(payload.openFileContext and payload.openFileContext.strip()) or bool(open_file_images)
+    has_open_ctx = (
+        bool(payload.openFileContext and payload.openFileContext.strip())
+        or bool(open_file_images)
+        or verified_region is not None
+    )
     # Cache only makes sense for the legacy 'explain' mode. 'solve' is
     # conversational and 'quiz' is generative, so we never want to serve
     # a stale answer for either. Also bypass cache for deictic questions and
@@ -1100,8 +1184,7 @@ async def _prepare_ask_stream_response(
         "workspace_fingerprint": ws_fingerprint or None,
         "visible_page": payload.visiblePage,
         "selected_region_fingerprint": (
-            json.dumps(payload.selectedRegion.model_dump(), sort_keys=True)
-            if payload.selectedRegion else None
+            verified_region.evidence_sha256 if verified_region else None
         ),
         "response_language": language_context.requested_response_language,
         "viewer_revision": payload.viewerRevision,
@@ -1503,7 +1586,7 @@ async def _prepare_ask_stream_response(
         source_zero_context = (selected_text or "").strip()
         if source_zero_context:
             source_zero_context = (
-                "AUTHORITATIVE SELECTED PDF EVIDENCE (Source 0):\n"
+                "SERVER-VERIFIED SELECTED PDF EVIDENCE (Source 0):\n"
                 + source_zero_context
             )
         generation_open_context = "\n\n".join(
@@ -1613,24 +1696,113 @@ async def _prepare_ask_stream_response(
                             "action": "retry_when_available",
                         }
                     elif high_risk_validation and wrong_language:
-                        safe_text = _wrong_language_message(
-                            language_context.requested_response_language
+                        if payload.conversationId and generation is not None:
+                            from ..services.tutor_state_store import (  # noqa: WPS433
+                                current_persisted_generation,
+                            )
+                            if current_persisted_generation(
+                                user_id, payload.conversationId
+                            ) != generation:
+                                pending_token_events.clear()
+                                return
+                        from ..services.answer_stream import (  # noqa: WPS433
+                            rewrite_answer_in_resolved_language,
                         )
-                        full_text_buf.clear()
-                        full_text_buf.append(safe_text)
-                        pending_token_events.clear()
-                        yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
-                        evt["answerMode"] = "language_rejected"
-                        evt["confidence"] = "low"
-                        evt["unsupported"] = True
-                        evt["recovery"] = {
-                            "code": "wrong_output_language",
-                            "action": "retry_same_evidence",
-                        }
-                        log.warning(
-                            "wrong_language_output_blocked request_id=%s expected=%s",
-                            request_id, language_context.requested_response_language,
+                        rewrite_evidence = "\n\n".join(
+                            [
+                                generation_open_context,
+                                *[
+                                    str(getattr(chunk, "text", "") or "")
+                                    for chunk in chunks
+                                ],
+                            ]
                         )
+                        try:
+                            rewritten = rewrite_answer_in_resolved_language(
+                                "".join(full_text_buf),
+                                language_context.requested_response_language,
+                                evidence=rewrite_evidence,
+                            )
+                        except Exception:
+                            log.exception(
+                                "language_rewrite_failed request_id=%s",
+                                request_id,
+                            )
+                            rewritten = ""
+                        rewrite_valid = answer_matches_resolved_language(
+                            rewritten,
+                            language_context.requested_response_language,
+                        )
+                        rewritten_verification = None
+                        if rewrite_valid:
+                            try:
+                                from ..services.verification import verify_answer  # noqa: WPS433
+
+                                rewritten_verification = verify_answer(
+                                    answer_text=rewritten,
+                                    chunk_texts=[
+                                        generation_open_context,
+                                        *[
+                                            str(
+                                                getattr(chunk, "text", "") or ""
+                                            )
+                                            for chunk in chunks
+                                        ],
+                                    ],
+                                    question=resolved_question,
+                                    answer_mode=str(
+                                        evt.get("answerMode") or "math"
+                                    ),
+                                    allowed_filenames=[
+                                        name
+                                        for name in doc_name_map.values()
+                                        if name
+                                    ],
+                                ).to_api()
+                            except Exception:
+                                log.exception(
+                                    "language_rewrite_verification_failed request_id=%s",
+                                    request_id,
+                                )
+                        if (
+                            rewrite_valid
+                            and rewritten_verification
+                            and _verification_is_cacheable(
+                                rewritten_verification
+                            )
+                        ):
+                            full_text_buf.clear()
+                            full_text_buf.append(rewritten)
+                            pending_token_events.clear()
+                            yield _sse_bytes(json.dumps({
+                                "t": rewritten,
+                            }, ensure_ascii=False))
+                            evt["verification"] = rewritten_verification
+                            verification_payload = rewritten_verification
+                            wrong_language = False
+                            evt["languageRewritten"] = True
+                        else:
+                            safe_text = _wrong_language_message(
+                                language_context.requested_response_language
+                            )
+                            full_text_buf.clear()
+                            full_text_buf.append(safe_text)
+                            pending_token_events.clear()
+                            yield _sse_bytes(json.dumps({
+                                "t": safe_text,
+                            }, ensure_ascii=False))
+                            evt["answerMode"] = "language_rejected"
+                            evt["confidence"] = "low"
+                            evt["unsupported"] = True
+                            evt["recovery"] = {
+                                "code": "wrong_output_language",
+                                "action": "retry_same_evidence",
+                            }
+                            log.warning(
+                                "wrong_language_output_blocked request_id=%s expected=%s",
+                                request_id,
+                                language_context.requested_response_language,
+                            )
                     elif high_risk_validation and critical_reject:
                         safe_text = recovery_message(
                             "critical_numerical_mismatch",
@@ -1701,25 +1873,86 @@ async def _prepare_ask_stream_response(
                                 return
                         from ..services.tutor_state import VerifiedResult  # noqa: WPS433
                         from ..services.tutor_state_store import save_tutor_state  # noqa: WPS433
-                        result_id = tutor_state.active_question or f"turn:{generation}"
-                        tutor_state.add_verified_result(VerifiedResult(
-                            id=result_id,
-                            document_id=(
-                                tutor_state.document_id or payload.activeDocumentId or ""
-                            ),
-                            document_revision=(
-                                tutor_state.document_revision or payload.viewerRevision or ""
-                            ),
-                            exam_variant=tutor_state.exam_variant,
-                            question_id=tutor_state.active_question or result_id,
-                            value="".join(full_text_buf).strip(),
-                            derived_from_evidence_ids=(
-                                (selected_region_id,) if selected_region_id else ()
-                            ),
-                            source_priority=(
-                                "selected_region" if selected_region_id else "active_question"
-                            ),
-                        ))
+                        structured_results = (
+                            verification_payload.get("verifiedResults")
+                            if isinstance(verification_payload, dict)
+                            else None
+                        ) or []
+                        for position, raw_result in enumerate(structured_results):
+                            if not isinstance(raw_result, dict):
+                                continue
+                            value = str(raw_result.get("value") or "").strip()
+                            if not value:
+                                continue
+                            result_id = str(
+                                raw_result.get("id")
+                                or (
+                                    f"{tutor_state.active_question or 'turn'}:"
+                                    f"{raw_result.get('quantity') or position}"
+                                )
+                            )
+                            tutor_state.add_verified_result(VerifiedResult(
+                                id=result_id,
+                                document_id=(
+                                    tutor_state.document_id
+                                    or payload.activeDocumentId
+                                    or ""
+                                ),
+                                document_revision=(
+                                    tutor_state.document_revision
+                                    or payload.viewerRevision
+                                    or ""
+                                ),
+                                exam_variant=tutor_state.exam_variant,
+                                question_id=(
+                                    tutor_state.active_question or result_id
+                                ),
+                                value=value,
+                                unit=(
+                                    str(raw_result.get("unit")).strip()
+                                    if raw_result.get("unit") is not None
+                                    else None
+                                ),
+                                formula=(
+                                    str(raw_result.get("formula")).strip()
+                                    if raw_result.get("formula") is not None
+                                    else None
+                                ),
+                                quantity=(
+                                    str(raw_result.get("quantity")).strip()
+                                    if raw_result.get("quantity") is not None
+                                    else None
+                                ),
+                                assumptions=tuple(
+                                    str(item)
+                                    for item in (
+                                        raw_result.get("assumptions") or []
+                                    )
+                                    if str(item).strip()
+                                ),
+                                verification={
+                                    "status": verification_payload.get("status"),
+                                    "details": verification_payload.get("details"),
+                                },
+                                derived_from_evidence_ids=(
+                                    (selected_region_id,)
+                                    if selected_region_id
+                                    else ()
+                                ),
+                                derived_from_result_ids=tuple(
+                                    str(item)
+                                    for item in (
+                                        raw_result.get(
+                                            "derivedFromResultIds"
+                                        ) or []
+                                    )
+                                ),
+                                source_priority=(
+                                    "selected_region"
+                                    if selected_region_id
+                                    else "active_question"
+                                ),
+                            ))
                         tutor_state.model_version = str(evt.get("model") or "") or None
                         try:
                             save_tutor_state(user_id, payload.courseId, tutor_state)
@@ -1739,7 +1972,21 @@ async def _prepare_ask_stream_response(
                     # Translate sources for the JS frontend shape (mirrors
                     # the cached-stream branch above).
                     sources_js = []
+                    if verified_region and payload.activeDocumentId:
+                        sources_js.append(
+                            verified_region.citation(
+                                doc_name_map.get(payload.activeDocumentId)
+                                or payload.activeFileName
+                                or "Selected PDF"
+                            )
+                        )
                     for s in (evt.get("sources") or []):
+                        if (
+                            verified_region
+                            and isinstance(s, dict)
+                            and s.get("index") == 0
+                        ):
+                            continue
                         page_start = s.get("pageStart") if isinstance(s, dict) else None
                         page_end = s.get("pageEnd") if isinstance(s, dict) else None
                         pages = s.get("pages") if isinstance(s, dict) else None

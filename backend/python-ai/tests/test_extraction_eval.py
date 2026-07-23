@@ -26,7 +26,7 @@ from app.services.document_intelligence import classify_document, measure_ocr_ne
 from app.services.extraction import extract_pages_text
 from app.services.markdown_indexing import page_to_markdown
 
-_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "extraction_eval"
+_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "public_eval"
 
 
 def _discover() -> list[tuple[Path, Path]]:
@@ -115,11 +115,12 @@ def _check(extracted: _Extracted, expected: dict) -> list[str]:
     return errors
 
 
-@pytest.mark.skipif(not _PAIRS, reason="no extraction_eval fixture PDFs present")
 @pytest.mark.parametrize("pdf_path, json_path", _PAIRS, ids=[p.stem for p, _ in _PAIRS])
 def test_extraction_fixture(pdf_path: Path, json_path: Path) -> None:
-    if not json_path.is_file():
-        pytest.skip(f"missing expectations file {json_path.name} for {pdf_path.name}")
+    assert json_path.is_file(), (
+        f"missing version-controlled expectations file {json_path.name} "
+        f"for {pdf_path.name}"
+    )
 
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     extracted = _Extracted(pdf_path.read_bytes(), pdf_path.name)

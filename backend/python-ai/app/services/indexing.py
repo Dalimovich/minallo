@@ -180,6 +180,15 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         _set_status(sb, document_id, "extracting_text")
         pdf_bytes = download_document_bytes(storage_path)
         content_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        try:
+            sb.table("documents").update({
+                "index_revision_status": "building",
+            }).eq("id", document_id).execute()
+        except Exception:
+            log.warning(
+                "index revision status column unavailable for document %s",
+                document_id,
+            )
 
         # Same-hash skip: avoid pointless re-embedding when only metadata changed.
         if (
@@ -212,6 +221,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             from .vision_ocr import (  # noqa: WPS433
                 choose_ocr_provider,
                 pages_via_vision_results,
+                rank_ocr_candidates,
                 select_handwriting_candidates,
                 select_pages_needing_ocr,
             )
@@ -220,11 +230,37 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             # read) are flagged by rendered ink coverage, not just letter count.
             bad_idx = select_pages_needing_ocr(pages, pdf_bytes)
             if bad_idx:
+                from ..config import get_settings  # noqa: WPS433
+
+                max_ocr_pages = get_settings().vision_ocr_max_pages
+                ranked_candidates = rank_ocr_candidates(pages, bad_idx, pdf_bytes)
+                attempt_idx = [
+                    candidate.page_index
+                    for candidate in ranked_candidates[:max_ocr_pages]
+                ]
+                attempt_set = set(attempt_idx)
+                for candidate in ranked_candidates:
+                    ocr_page_metadata[candidate.page_index] = {
+                        "page_processing_status": (
+                            "processing"
+                            if candidate.page_index in attempt_set
+                            else candidate.classification
+                        ),
+                        "ocr_priority_score": candidate.score,
+                        "ocr_priority_reasons": list(candidate.reasons),
+                        "ocr_needs_review": (
+                            candidate.page_index not in attempt_set
+                            and candidate.classification
+                            != "skipped_probable_front_matter"
+                        ),
+                    }
                 handwriting_idx = select_handwriting_candidates(
-                    doc.get("file_name") or "", pages, bad_idx, pdf_bytes
+                    doc.get("file_name") or "", pages, attempt_idx, pdf_bytes
                 )
                 handwriting_set = set(handwriting_idx)
-                normal_idx = [idx for idx in bad_idx if idx not in handwriting_set]
+                normal_idx = [
+                    idx for idx in attempt_idx if idx not in handwriting_set
+                ]
                 # Phase A: route formula-dense pages to Mathpix when
                 # MINALLO_MATHPIX_ROUTING enables it (off → always OpenAI).
                 # Provider choice sees the full bad-page set for the best
@@ -247,14 +283,11 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 # actually attempted — counting the uncapped bad_idx would
                 # over-report attempts and could falsely demote a fully
                 # successful (but capped) run to "partial" / "weak".
-                from ..config import get_settings  # noqa: WPS433
-
-                max_ocr_pages = get_settings().vision_ocr_max_pages
-                attempt_idx = [*handwriting_idx, *normal_idx][:max_ocr_pages]
                 if len(bad_idx) > len(attempt_idx):
                     log.info(
-                        "indexing.ocr_capped document_id=%s bad_pages=%d cap=%d",
+                        "indexing.ocr_ranked_cap document_id=%s candidates=%d cap=%d selected_pages=%s",
                         document_id, len(bad_idx), max_ocr_pages,
+                        ",".join(str(index + 1) for index in attempt_idx),
                     )
                 ocr_pages_run = len(attempt_idx)
                 handwriting_attempt = [
@@ -291,13 +324,32 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                     ):
                         pages[idx] = result.text
                         ocr_page_metadata[idx] = {
+                            **ocr_page_metadata.get(idx, {}),
                             "ocr_provider": result.provider,
                             "ocr_mode": result.mode,
                             "ocr_confidence": result.confidence,
                             "ocr_needs_review": result.needs_review,
                             "ocr_unclear_count": result.unclear_count,
+                            "page_processing_status": (
+                                "weak_or_ambiguous"
+                                if result.needs_review
+                                else "ocr_complete"
+                            ),
                         }
                         ocr_pages_recovered += 1
+                for idx in attempt_idx:
+                    if ocr_page_metadata.get(idx, {}).get(
+                        "page_processing_status"
+                    ) == "processing":
+                        ocr_page_metadata[idx] = {
+                            **ocr_page_metadata.get(idx, {}),
+                            "page_processing_status": (
+                                "weak_or_ambiguous"
+                                if idx in ocr_results
+                                else "failed"
+                            ),
+                            "ocr_needs_review": True,
+                        }
                 if ocr_pages_recovered:
                     log.info(
                         "vision OCR recovered %d/%d bad pages "
@@ -336,6 +388,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             sb, document_id, user_id, course_id, pages, page_md,
             raw_pages=pdfminer_pages, page_blocks=page_blocks,
             ocr_page_metadata=ocr_page_metadata,
+            index_revision=content_hash,
         )
 
         # Pass the already-built PageMarkdown rather than the raw pdfminer
@@ -389,9 +442,13 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             exercises = detect_exercises(pages_md)
             formulas = detect_formulas(pages_md)
             exercise_id_by_key = _replace_exercises(
-                sb, document_id, user_id, course_id, exercises
+                sb, document_id, user_id, course_id, exercises,
+                index_revision=content_hash,
             )
-            _replace_formulas(sb, document_id, user_id, course_id, formulas)
+            _replace_formulas(
+                sb, document_id, user_id, course_id, formulas,
+                index_revision=content_hash,
+            )
         except Exception:  # noqa: BLE001
             log.exception("block detection failed — continuing without exercise/formula rows")
 
@@ -407,6 +464,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             primary_topics=primary_topics,
             exercise_id_by_key=exercise_id_by_key,
             document_revision=content_hash,
+            index_revision=content_hash,
         )
 
         # Phase 4: classify the document and roll up per-page extraction
@@ -486,7 +544,49 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 ),
             }
 
+        coverage_counts: dict[str, int] = {
+            "embedded_text_reliable": max(
+                0, len(pages) - len(ocr_page_metadata)
+            )
+        }
+        for metadata in ocr_page_metadata.values():
+            page_status = str(
+                metadata.get("page_processing_status")
+                or "weak_or_ambiguous"
+            )
+            coverage_counts[page_status] = coverage_counts.get(page_status, 0) + 1
+        ocr_assessment_json = {
+            **(ocr_assessment_json or {}),
+            "embedded_text_analyzed": len(pages),
+            "total_pages": len(pages),
+            "automatic_vision_cap": _get_settings().vision_ocr_max_pages,
+            "page_status_counts": coverage_counts,
+            "vision_fully_processed": all(
+                status in {"embedded_text_reliable", "ocr_complete"}
+                for status in (
+                    metadata.get("page_processing_status")
+                    for metadata in ocr_page_metadata.values()
+                )
+            ),
+        }
+
         now = datetime.now(timezone.utc).isoformat()
+        activated = (
+            sb.rpc("activate_document_index_revision", {
+                "p_document_id": document_id,
+                "p_user_id": user_id,
+                "p_revision": content_hash,
+                "p_expected_pages": len(pages),
+                "p_expected_chunks": len(chunks),
+            }).execute().data
+        )
+        if not activated:
+            _mark_failed(
+                sb,
+                document_id,
+                "candidate index revision failed coverage validation",
+            )
+            raise IndexingError("index revision activation failed")
         update_payload: dict[str, Any] = {
             "processing_status": "ready",
             "processing_error": None,
@@ -587,10 +687,9 @@ def correct_document_page(
 ) -> int:
     """Persist a student's correction to one OCR'd page (no re-embed).
 
-    Updates the page's ``cleaned_text``/``cleaned_markdown`` to the corrected
-    transcription, clears ``ocr_needs_review`` (the student has reviewed it),
-    and recomputes the ``[unclear]`` marker count. The PDF/raw_text/bbox layer
-    is left untouched. Returns the new ``[unclear]`` count.
+    Stores a pending correction against the active index revision. The active
+    page remains untouched until a complete corrected revision is built,
+    validated and atomically activated. Returns the new ``[unclear]`` count.
 
     This is the fast, synchronous half of a correction — the caller should run
     :func:`reindex_chunks_from_pages` afterwards (typically in the background)
@@ -601,38 +700,58 @@ def correct_document_page(
         raise IndexingError("corrected text is empty")
 
     sb = get_supabase()
-    md = page_to_markdown(text, page_number)
     unclear = text.lower().count("[unclear]")
-    update = {
-        "cleaned_text": text,
-        "cleaned_markdown": md.markdown,
-        "extraction_quality": md.quality,
-        "ocr_needs_review": False,
-        "ocr_unclear_count": unclear,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    resp = (
-        sb.table("document_pages")
-        .update(update)
-        .eq("document_id", document_id)
-        .eq("page_number", page_number)
+    docs = (
+        sb.table("documents")
+        .select("user_id, course_id, active_index_revision")
+        .eq("id", document_id)
+        .limit(1)
         .execute()
-    )
-    if not (resp.data or []):
+    ).data or []
+    if not docs:
+        raise IndexingError(f"document {document_id} not found")
+    doc = docs[0]
+    active_revision = str(doc.get("active_index_revision") or "")
+    pages = (
+        sb.table("document_pages")
+        .select("page_number")
+        .eq("document_id", document_id)
+        .eq("index_revision", active_revision)
+        .eq("page_number", page_number)
+        .limit(1)
+        .execute()
+    ).data or []
+    if not pages:
         raise IndexingError(
             f"page {page_number} not found for document {document_id}"
         )
+    (
+        sb.table("document_page_corrections")
+        .upsert({
+            "user_id": doc["user_id"],
+            "course_id": doc["course_id"],
+            "document_id": document_id,
+            "base_index_revision": active_revision,
+            "page_number": page_number,
+            "corrected_text": text,
+            "status": "pending",
+            "applied_index_revision": None,
+            "applied_at": None,
+        }, on_conflict=(
+            "user_id,document_id,base_index_revision,page_number"
+        ))
+        .execute()
+    )
     return unclear
 
 
 def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
     """Re-chunk + re-embed a document from its stored ``document_pages`` rows.
 
-    Used after a student corrects an OCR'd page: the corrected text is already
-    in ``document_pages``, so we rebuild the chunk/embedding layer from the
-    stored page text WITHOUT re-downloading the PDF or re-running OCR (which
-    would overwrite the correction). Exercises/formulas are rebuilt from the
-    same stored text; the PDF/raw_text/bbox layer is left untouched.
+    Used after a student submits an OCR correction. A candidate revision clones
+    the active pages, overlays pending corrections, rebuilds every derived
+    artifact, validates counts, and atomically activates. The prior revision
+    remains available for rollback.
     """
     sb = get_supabase()
     doc = _load_document(sb, document_id)
@@ -643,15 +762,33 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
     course_id = doc["course_id"]
     source_type = doc.get("source_type") or "lecture"
 
+    base_revision = str(doc.get("active_index_revision") or "")
     page_rows = (
         sb.table("document_pages")
-        .select("page_number, cleaned_text")
+        .select("*")
         .eq("document_id", document_id)
+        .eq("index_revision", base_revision)
         .order("page_number")
         .execute()
     ).data or []
     if not page_rows:
         raise IndexingError("no stored pages to reindex")
+
+    corrections = (
+        sb.table("document_page_corrections")
+        .select("id, page_number, corrected_text")
+        .eq("user_id", user_id)
+        .eq("document_id", document_id)
+        .eq("base_index_revision", base_revision)
+        .eq("status", "pending")
+        .execute()
+    ).data or []
+    correction_by_page = {
+        int(row["page_number"]): str(row.get("corrected_text") or "")
+        for row in corrections
+    }
+    if not correction_by_page:
+        raise IndexingError("no pending page corrections")
 
     # Build a dense, page-number-ordered text list (gaps → empty page). The
     # original indexer fed pdfminer/OCR text through page_to_markdown; the
@@ -661,7 +798,49 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
     for r in page_rows:
         n = int(r["page_number"])
         if 1 <= n <= max_page:
-            texts[n - 1] = r.get("cleaned_text") or ""
+            texts[n - 1] = (
+                correction_by_page.get(n)
+                or r.get("cleaned_text")
+                or ""
+            )
+
+    revision_material = "\n".join(
+        [base_revision, *[f"{index + 1}:{text}" for index, text in enumerate(texts)]]
+    )
+    new_revision = hashlib.sha256(
+        revision_material.encode("utf-8")
+    ).hexdigest()
+    (
+        sb.table("document_pages").delete()
+        .eq("document_id", document_id)
+        .eq("index_revision", new_revision)
+        .execute()
+    )
+    cloned_rows: list[dict[str, Any]] = []
+    for source in page_rows:
+        row = {
+            key: value
+            for key, value in source.items()
+            if key not in {"id", "created_at", "updated_at"}
+        }
+        page_number = int(row["page_number"])
+        row["index_revision"] = new_revision
+        if page_number in correction_by_page:
+            corrected = correction_by_page[page_number]
+            markdown = page_to_markdown(corrected, page_number)
+            row.update({
+                "cleaned_text": corrected,
+                "cleaned_markdown": markdown.markdown,
+                "extraction_quality": markdown.quality,
+                "ocr_needs_review": False,
+                "ocr_unclear_count": corrected.lower().count("[unclear]"),
+                "page_processing_status": "ocr_complete",
+            })
+        cloned_rows.append(row)
+    for start in range(0, len(cloned_rows), 100):
+        sb.table("document_pages").insert(
+            cloned_rows[start:start + 100]
+        ).execute()
 
     page_md = [page_to_markdown(t, i + 1) for i, t in enumerate(texts)]
     chunks = chunk_pages(page_md)
@@ -691,9 +870,13 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
         exercises = detect_exercises(pages_md)
         formulas = detect_formulas(pages_md)
         exercise_id_by_key = _replace_exercises(
-            sb, document_id, user_id, course_id, exercises
+            sb, document_id, user_id, course_id, exercises,
+            index_revision=new_revision,
         )
-        _replace_formulas(sb, document_id, user_id, course_id, formulas)
+        _replace_formulas(
+            sb, document_id, user_id, course_id, formulas,
+            index_revision=new_revision,
+        )
     except Exception:  # noqa: BLE001
         log.exception("block detection failed during reindex — continuing")
 
@@ -709,9 +892,29 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
         primary_topics=primary_topics,
         exercise_id_by_key=exercise_id_by_key,
         document_revision=doc.get("document_revision") or doc.get("document_hash"),
+        index_revision=new_revision,
     )
 
     now = datetime.now(timezone.utc).isoformat()
+    activated = sb.rpc("activate_document_index_revision", {
+        "p_document_id": document_id,
+        "p_user_id": user_id,
+        "p_revision": new_revision,
+        "p_expected_pages": len(page_rows),
+        "p_expected_chunks": len(chunks),
+    }).execute().data
+    if not activated:
+        raise IndexingError("corrected index revision activation failed")
+    (
+        sb.table("document_page_corrections")
+        .update({
+            "status": "applied",
+            "applied_index_revision": new_revision,
+            "applied_at": now,
+        })
+        .in_("id", [row["id"] for row in corrections])
+        .execute()
+    )
     sb.table("documents").update(
         {"chunk_count": len(chunks), "indexed_at": now, "updated_at": now}
     ).eq("id", document_id).execute()
@@ -724,6 +927,7 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
         "documentId": document_id,
         "status": "reindexed",
         "chunkCount": len(chunks),
+        "indexRevision": new_revision,
     }
 
 
@@ -735,7 +939,8 @@ def _load_document(sb, document_id: str) -> dict[str, Any] | None:
         sb.table("documents")
         .select(
             "id, user_id, course_id, file_name, storage_path, source_type, processing_status, "
-            "processing_error, document_hash, page_count, chunk_count, indexed_at"
+            "processing_error, document_hash, page_count, chunk_count, indexed_at, "
+            "active_index_revision, previous_index_revision, index_revision_status"
         )
         .eq("id", document_id)
         .limit(1)
@@ -771,13 +976,17 @@ def _replace_pages(
     raw_pages: list[str] | None = None,
     page_blocks: list[list[TextBlock]] | None = None,
     ocr_page_metadata: dict[int, dict[str, Any]] | None = None,
+    index_revision: str = "",
 ) -> None:
-    sb.table("document_pages").delete().eq("document_id", document_id).execute()
+    (
+        sb.table("document_pages").delete()
+        .eq("document_id", document_id)
+        .eq("index_revision", index_revision)
+        .execute()
+    )
     md_by_page = {p.page_number: p for p in (page_md or [])}
     rows: list[dict[str, Any]] = []
     for idx, text in enumerate(pages):
-        if not text or not text.strip():
-            continue
         page_number = idx + 1
         # raw_text = the pdfminer original (so a re-OCR'd page still records
         # what the text layer held); cleaned_text = the final text actually
@@ -806,6 +1015,14 @@ def _replace_pages(
             "ocr_confidence": None,
             "ocr_needs_review": False,
             "ocr_unclear_count": 0,
+            "page_processing_status": (
+                "embedded_text_reliable"
+                if text and text.strip()
+                else "pending_on_demand_ocr"
+            ),
+            "ocr_priority_score": None,
+            "ocr_priority_reasons": [],
+            "index_revision": index_revision,
         }
         md = md_by_page.get(page_number)
         if md is not None:
@@ -845,6 +1062,9 @@ def _replace_pages(
             "ocr_confidence",
             "ocr_needs_review",
             "ocr_unclear_count",
+            "page_processing_status",
+            "ocr_priority_score",
+            "ocr_priority_reasons",
         }
         mentions_optional = any(col in msg for col in optional_page_cols)
         lower = msg.lower()
@@ -886,8 +1106,14 @@ def _replace_chunks(
     primary_topics: list[str | None] | None = None,
     exercise_id_by_key: dict[tuple[str, str | None], str] | None = None,
     document_revision: str | None = None,
+    index_revision: str = "",
 ) -> None:
-    sb.table("document_chunks").delete().eq("document_id", document_id).execute()
+    (
+        sb.table("document_chunks").delete()
+        .eq("document_id", document_id)
+        .eq("index_revision", index_revision)
+        .execute()
+    )
     rows = []
     topics_array = doc_topics or []
     primary = primary_topics or [None] * len(chunks)
@@ -907,6 +1133,7 @@ def _replace_chunks(
             "token_count": chunk.token_count,
             "embedding": embedding,
             "document_revision": document_revision,
+            "index_revision": index_revision,
             "question_number": chunk.exercise_number,
             "parent_question_number": (
                 chunk.exercise_number.split(".")[0]
@@ -971,13 +1198,20 @@ def _replace_exercises(
     user_id: str,
     course_id: str,
     exercises: list[ExerciseBlock],
+    *,
+    index_revision: str = "",
 ) -> dict[tuple[str, str | None], str]:
     """Replace the document's exercise rows and return a ``(exercise_number,
     subpart) → uuid`` map so the caller can stamp the FK on the matching
     chunk rows. Empty map when there are no exercises or the insert returned
     no rows.
     """
-    sb.table("document_exercises").delete().eq("document_id", document_id).execute()
+    (
+        sb.table("document_exercises").delete()
+        .eq("document_id", document_id)
+        .eq("index_revision", index_revision)
+        .execute()
+    )
     if not exercises:
         return {}
     rows = [
@@ -991,6 +1225,7 @@ def _replace_exercises(
             "page_end": ex.page_end,
             "statement_markdown": ex.statement_markdown,
             "solution_markdown": ex.solution_markdown,
+            "index_revision": index_revision,
         }
         for ex in exercises
     ]
@@ -1016,8 +1251,15 @@ def _replace_formulas(
     user_id: str,
     course_id: str,
     formulas: list[FormulaBlock],
+    *,
+    index_revision: str = "",
 ) -> None:
-    sb.table("document_formulas").delete().eq("document_id", document_id).execute()
+    (
+        sb.table("document_formulas").delete()
+        .eq("document_id", document_id)
+        .eq("index_revision", index_revision)
+        .execute()
+    )
     if not formulas:
         return
     rows = [
@@ -1029,6 +1271,7 @@ def _replace_formulas(
             "formula_markdown": f.formula_markdown,
             "symbols": f.symbols,
             "page_number": f.page_number,
+            "index_revision": index_revision,
         }
         for f in formulas
     ]

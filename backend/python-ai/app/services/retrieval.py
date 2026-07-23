@@ -640,6 +640,10 @@ def retrieve_chunks(
     if not rows:
         return []
 
+    rows = _filter_active_revision_rows(sb, rows)
+    if not rows:
+        return []
+
     # Look up extraction_quality for the (document_id, page_start) pairs we
     # actually got back, so the ranker can downweight chunks from weak pages.
     # Best-effort: a query failure leaves the map empty and we score without it.
@@ -747,7 +751,7 @@ def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None
     try:
         resp = (
             sb.table("documents")
-            .select("id, document_type, file_name")
+            .select("id, document_type, file_name, active_index_revision")
             .in_("id", list(set(doc_ids)))
             .execute()
         )
@@ -759,8 +763,60 @@ def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None
         out[r["id"]] = {
             "document_type": r.get("document_type"),
             "file_name":     r.get("file_name"),
+            "active_index_revision": r.get("active_index_revision"),
         }
     return out
+
+
+def _filter_active_revision_rows(
+    sb: Any,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop RPC candidates that do not belong to each document's active index."""
+    chunk_ids = [row.get("id") for row in rows if row.get("id")]
+    document_ids = list({
+        row.get("document_id") for row in rows if row.get("document_id")
+    })
+    if not chunk_ids or not document_ids:
+        return []
+    docs = (
+        sb.table("documents")
+        .select("id, active_index_revision")
+        .in_("id", document_ids)
+        .execute()
+    ).data or []
+    active = {
+        row["id"]: str(row.get("active_index_revision") or "")
+        for row in docs
+    }
+    chunks = (
+        sb.table("document_chunks")
+        .select("id, document_id, index_revision")
+        .in_("id", chunk_ids)
+        .execute()
+    ).data or []
+    allowed = {
+        row["id"]
+        for row in chunks
+        if str(row.get("index_revision") or "")
+        == active.get(row.get("document_id"), "")
+    }
+    return [row for row in rows if row.get("id") in allowed]
+
+
+def _active_revision_map(sb: Any, document_ids: list[str]) -> dict[str, str]:
+    if not document_ids:
+        return {}
+    rows = (
+        sb.table("documents")
+        .select("id, active_index_revision")
+        .in_("id", list(set(document_ids)))
+        .execute()
+    ).data or []
+    return {
+        row["id"]: str(row.get("active_index_revision") or "")
+        for row in rows
+    }
 
 
 def retrieve_visible_page_chunks(
@@ -776,6 +832,18 @@ def retrieve_visible_page_chunks(
         return []
     sb = get_supabase()
     try:
+        doc_rows = (
+            sb.table("documents")
+            .select("active_index_revision")
+            .eq("id", document_id)
+            .eq("user_id", user_id)
+            .eq("course_id", course_id)
+            .limit(1)
+            .execute()
+        ).data or []
+        if not doc_rows:
+            return []
+        active_revision = str(doc_rows[0].get("active_index_revision") or "")
         resp = (
             sb.table("document_chunks")
             .select(
@@ -785,6 +853,7 @@ def retrieve_visible_page_chunks(
             .eq("user_id", user_id)
             .eq("course_id", course_id)
             .eq("document_id", document_id)
+            .eq("index_revision", active_revision)
             .lte("page_start", page_number)
             .gte("page_end", page_number)
             .limit(max(1, min(limit, 12)))
@@ -1103,7 +1172,9 @@ def _load_page_qualities(sb, rows: list[dict[str, Any]]) -> dict[tuple[str, int]
     try:
         resp = (
             sb.table("document_pages")
-            .select("document_id, page_number, extraction_quality")
+            .select(
+                "document_id, page_number, extraction_quality, index_revision"
+            )
             .in_("document_id", doc_ids)
             .in_("page_number", pages)
             .execute()
@@ -1112,7 +1183,12 @@ def _load_page_qualities(sb, rows: list[dict[str, Any]]) -> dict[tuple[str, int]
         log.exception("document_pages extraction_quality lookup failed")
         return {}
     out: dict[tuple[str, int], str] = {}
+    active = _active_revision_map(sb, doc_ids)
     for r in resp.data or []:
+        if str(r.get("index_revision") or "") != active.get(
+            r["document_id"], ""
+        ):
+            continue
         q = r.get("extraction_quality")
         if q:
             out[(r["document_id"], r["page_number"])] = q
@@ -1200,7 +1276,7 @@ def retrieve_exercise_block(
                 sb.table("document_exercises")
                 .select(
                     "document_id, exercise_number, subpart, page_start, page_end, "
-                    "statement_markdown, solution_markdown, created_at"
+                    "statement_markdown, solution_markdown, created_at, index_revision"
                 )
                 .eq("user_id", user_id)
                 .eq("course_id", course_id)
@@ -1214,7 +1290,15 @@ def retrieve_exercise_block(
         except Exception:
             log.exception("document_exercises lookup failed")
             return []
-        return resp.data or []
+        rows = resp.data or []
+        active = _active_revision_map(
+            sb, [row["document_id"] for row in rows]
+        )
+        return [
+            row for row in rows
+            if str(row.get("index_revision") or "")
+            == active.get(row["document_id"], "")
+        ]
 
     def _row_to_hit(r: dict[str, Any]) -> ExerciseHit:
         return ExerciseHit(
@@ -1369,7 +1453,8 @@ def retrieve_formula_block(
     # Avoids brittle PostgREST `or=` compound filters with commas inside
     # ilike patterns and array literals — and keeps the SQL trivially safe.
     select_cols = (
-        "document_id, formula_name, formula_markdown, symbols, page_number"
+        "document_id, formula_name, formula_markdown, symbols, page_number, "
+        "index_revision"
     )
     name_tokens = [t for t in tokens if len(t) >= 4]
     symbol_tokens = list(tokens)
@@ -1407,6 +1492,14 @@ def retrieve_formula_block(
                 log.exception("document_formulas symbols lookup failed")
 
         # De-duplicate by (document_id, page_number) preserving first occurrence.
+        active = _active_revision_map(
+            sb, [row["document_id"] for row in rows]
+        )
+        rows = [
+            row for row in rows
+            if str(row.get("index_revision") or "")
+            == active.get(row["document_id"], "")
+        ]
         seen_local: set[tuple[str, int]] = set()
         out: list[FormulaHit] = []
         for r in rows:

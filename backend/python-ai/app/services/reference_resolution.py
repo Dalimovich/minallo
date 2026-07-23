@@ -319,9 +319,63 @@ def decide_evidence(
 
 
 def recovery_message(code: str | None, language: str) -> str:
+    region_failures = {
+        "critical_token_mismatch",
+        "critical_token_disagreement",
+        "selection_text_mismatch",
+        "region_unreadable",
+        "renderer_unavailable",
+        "render_failed",
+        "crop_failed",
+        "region_too_small",
+        "invalid_region",
+        "invalid_selection",
+        "document_replaced",
+        "document_unavailable",
+        "page_not_found",
+        "invalid_pdf_geometry",
+        "region_ocr_disabled",
+        "region_ocr_in_progress",
+        "region_ocr_failed",
+        "region_ocr_ambiguous",
+        "region_ocr_cache_invalid",
+        "region_ocr_budget_exhausted",
+    }
+    if code in region_failures:
+        return {
+            "de": (
+                "Ich konnte die markierte PDF-Stelle nicht sicher mit der gespeicherten "
+                "Dokumentversion abgleichen. Bitte markiere den Wert und seine Einheit "
+                "erneut etwas großzügiger."
+            ),
+            "fr": (
+                "Je n’ai pas pu vérifier avec certitude la zone sélectionnée dans la "
+                "version PDF enregistrée. Sélectionnez à nouveau la valeur et son unité "
+                "dans une zone légèrement plus large."
+            ),
+            "es": (
+                "No pude verificar con seguridad la zona seleccionada en la versión "
+                "guardada del PDF. Vuelve a seleccionar el valor y su unidad usando "
+                "un área un poco más amplia."
+            ),
+            "it": (
+                "Non ho potuto verificare con certezza l’area selezionata nella versione "
+                "PDF salvata. Seleziona di nuovo il valore e l’unità usando un’area "
+                "leggermente più ampia."
+            ),
+            "ar": (
+                "تعذر التحقق بثقة من المنطقة المحددة في نسخة PDF المحفوظة. حدّد القيمة "
+                "ووحدتها مرة أخرى ضمن منطقة أوسع قليلًا."
+            ),
+        }.get(
+            language,
+            "I could not safely verify the selected region against the stored PDF "
+            "revision. Please select the value and its unit again with a slightly "
+            "larger area.",
+        )
     generic = {
-        "fr": "Je ne peux pas vÃ©rifier cette rÃ©ponse avec les preuves actuelles. SÃ©lectionnez Ã  nouveau la zone actuelle du PDF ou confirmez la valeur ambiguÃ«.",
-        "es": "No puedo verificar esta respuesta con la evidencia actual. Vuelve a seleccionar el Ã¡rea actual del PDF o confirma el valor ambiguo.",
+        "fr": "Je ne peux pas vérifier cette réponse avec les preuves actuelles. Sélectionnez à nouveau la zone actuelle du PDF ou confirmez la valeur ambiguë.",
+        "es": "No puedo verificar esta respuesta con la evidencia actual. Vuelve a seleccionar el área actual del PDF o confirma el valor ambiguo.",
         "it": "Non posso verificare questa risposta con le prove attuali. Seleziona di nuovo l'area corrente del PDF o conferma il valore ambiguo.",
         "ar": "لا أستطيع التحقق من هذه الإجابة بالأدلة الحالية. حدّد منطقة PDF الحالية من جديد أو أكّد القيمة الملتبسة.",
     }

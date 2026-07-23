@@ -7,6 +7,8 @@ phases.
 
 import logging
 import os
+import threading
+from contextlib import asynccontextmanager
 from typing import Any
 
 import anyio
@@ -34,10 +36,32 @@ settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger("minallo-ai")
 
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 64
+
+    def _recover() -> None:
+        try:
+            from .services.indexing import recover_orphaned_indexing
+
+            recover_orphaned_indexing()
+        except Exception:  # noqa: BLE001
+            log.exception("startup indexing recovery failed")
+
+    threading.Thread(
+        target=_recover,
+        name="indexing-recovery",
+        daemon=True,
+    ).start()
+    yield
+
+
 app = FastAPI(
     title="Minallo AI Service",
     version="0.6.0",
     description="PDF indexing, retrieval, and grounded answer generation.",
+    lifespan=_lifespan,
 )
 
 # CORS — the streaming /ask-stream endpoint is called directly from the
@@ -83,29 +107,6 @@ app.include_router(learning_router.router)
 app.include_router(study_planner_router.router)
 app.include_router(suggestions_router.router)
 app.include_router(email_router.router)
-
-
-@app.on_event("startup")
-async def _raise_threadpool_limit() -> None:
-    anyio.to_thread.current_default_thread_limiter().total_tokens = 64
-
-
-@app.on_event("startup")
-async def _recover_orphaned_indexing() -> None:
-    """Re-queue documents a previous (killed/redeployed) process left stuck
-    mid-indexing. Runs in a daemon thread so it never blocks startup or the
-    health probe; the cross-worker claim inside makes it safe to run in every
-    gunicorn worker. Failure here must never stop the app from booting."""
-    import threading
-
-    def _run() -> None:
-        try:
-            from .services.indexing import recover_orphaned_indexing
-            recover_orphaned_indexing()
-        except Exception:  # noqa: BLE001
-            log.exception("startup indexing recovery failed")
-
-    threading.Thread(target=_run, name="indexing-recovery", daemon=True).start()
 
 
 @app.get("/health")

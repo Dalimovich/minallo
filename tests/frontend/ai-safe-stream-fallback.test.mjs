@@ -14,7 +14,7 @@ test('contextual tutoring never silently falls back to the legacy ask route', ()
   );
   assert.equal(fallback.includes('sendRagRequest'), false);
   assert.match(fallback, /_recoveryStarted/);
-  assert.match(fallback, /_activeReader\?\.cancel/);
+  assert.match(fallback, /beginSafeStreamRecovery\(_recoveryState, _activeReader, _streamController\)/);
 });
 
 test('stale generations are rejected before every visible token and event', () => {

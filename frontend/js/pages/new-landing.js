@@ -2079,7 +2079,7 @@
 
   function initProductTourModal() {
     if (!_pvApi) initPreviewModal();
-    return;
+    if (_pvApi) return;
 
     var modal = document.getElementById('nlPreviewModal');
     if (!modal) return;

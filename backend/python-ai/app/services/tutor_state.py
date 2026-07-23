@@ -18,6 +18,10 @@ class VerifiedResult:
     question_id: str
     value: str
     unit: str | None = None
+    formula: str | None = None
+    quantity: str | None = None
+    assumptions: tuple[str, ...] = ()
+    verification: dict[str, Any] = field(default_factory=dict)
     derived_from_evidence_ids: tuple[str, ...] = ()
     derived_from_result_ids: tuple[str, ...] = ()
     status: ResultStatus = "verified"
@@ -189,6 +193,7 @@ class TutorState:
                 raw = dict(raw)
                 raw["derived_from_evidence_ids"] = tuple(raw.get("derived_from_evidence_ids") or ())
                 raw["derived_from_result_ids"] = tuple(raw.get("derived_from_result_ids") or ())
+                raw["assumptions"] = tuple(raw.get("assumptions") or ())
                 state.results[key] = VerifiedResult(**raw)
             except (TypeError, ValueError):
                 continue
