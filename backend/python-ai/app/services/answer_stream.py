@@ -469,6 +469,26 @@ def _answer_matches_question_language(question: str, answer: str) -> bool:
     return actual is None or actual == expected
 
 
+def answer_matches_resolved_language(answer: str, language_code: str | None) -> bool:
+    """Validate output against the server's sticky language decision."""
+    if not language_code or len((answer or "").strip()) < 40:
+        return True
+    targets = {
+        "en": Language.ENGLISH,
+        "de": Language.GERMAN,
+        "fr": Language.FRENCH,
+        "es": Language.SPANISH,
+        "it": Language.ITALIAN,
+        "ar": Language.ARABIC,
+    }
+    expected = targets.get(language_code.lower())
+    if expected is None:
+        return True
+    cleaned = re.sub(r"\[Source\s+\d+\]|https?://\S+|[`$\\{}_^]", " ", answer or "")
+    actual = _LANGUAGE_DETECTOR.detect_language_of(cleaned)
+    return actual is None or actual == expected
+
+
 def _language_rewrite_followup_overlay(
     question: str,
     previous_turns: list[dict[str, str]] | None,

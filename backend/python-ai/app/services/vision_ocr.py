@@ -268,7 +268,9 @@ def _vision_extract(client, model: str, image_bytes: bytes, *, mode: str = "stan
             log.warning(
                 "vision OCR output hit the max_tokens cap — page may be truncated"
             )
-        return _post_process_latin_alpha(_strip_outer_code_fence(raw))
+        # Preserve ambiguous symbols exactly as recognized. Corpus-specific
+        # alpha/a rewrites can silently corrupt legitimate mathematics.
+        return _strip_outer_code_fence(raw)
     except Exception:  # noqa: BLE001
         log.exception("vision OCR call failed")
         return ""

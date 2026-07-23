@@ -1,6 +1,5 @@
 import {
   sendAiRequest,
-  sendRagRequest,
   listCourseDocuments,
   submitRagFeedback,
   type CourseDocument,
@@ -1133,6 +1132,8 @@ export function initAskAI(
             // Both `evt.done` and the reader's `result.done` can race to call
             // finalize() — guard so history/feedback bar aren't doubled.
             let _finalized = false;
+            let _recoveryStarted = false;
+            let _activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
             let _finalizeWaitingForThinking = false;
 
             // Load KaTeX from the FIRST token, not at finalize. renderMarkdown
@@ -1263,6 +1264,7 @@ export function initAskAI(
             }
 
             function queueToken(tok: string): void {
+              if (myGenId !== state.currentGenId || _recoveryStarted) return;
               rawText += tok;
               if (document.hidden) {
                 if (!ansWrap) ensureBubble();
@@ -1434,6 +1436,7 @@ export function initAskAI(
                 }
                 if (!res.body || !res.body.getReader) { fallbackToRag(); return; }
                 const reader = res.body.getReader();
+                _activeReader = reader;
                 const decoder = new TextDecoder();
                 let sseBuffer = '';
                 function read(): void {
@@ -1446,6 +1449,7 @@ export function initAskAI(
                       if (!line.startsWith('data: ')) return;
                       try {
                         const evt = JSON.parse(line.slice(6)) as SseStreamEvent;
+                        if (myGenId !== state.currentGenId || _recoveryStarted) return;
                         if (evt.status && thinking) {
                           thinking.set(evt.status);
                         }
@@ -1497,34 +1501,25 @@ export function initAskAI(
               });
 
             function fallbackToRag(): void {
+              if (_recoveryStarted) return;
+              _recoveryStarted = true;
+              _finalized = true;
+              _activeReader?.cancel().catch(() => undefined);
+              _streamController.abort();
               if (ansWrap) ansWrap.remove();
-              if (!thinking) {
-                thinking = createAIThinkingStatus({
-                  context: _isProblemSolver ? 'exercise-solver' : 'course-qa',
-                  host: aiMsgs,
-                  surface: 'panel',
-                  compact: true
-                });
-              }
-              if (thinking) thinking.set('writing_answer');
-              sendRagRequest(
-                _courseId,
-                question,
-                _ragMode,
-                _activeDocId || undefined,
-                _streamActiveFileName || undefined,
-                _streamOpenFileCtx || undefined
-              )
-                .then(async (data: RagAskResponse) => {
-                  if (thinking) await thinking.waitMinimum();
-                  removeThinking(true);
-                  let answer = stripSourceMarkers(data.answer || 'No answer found.');
-                  resolve({ content: [{ text: answer }], _ragData: data as unknown as AiResponse['_ragData'] });
-                })
-                .catch((err: unknown) => {
-                  removeThinking();
-                  resolve({ content: [{ text: friendlyAiErrorMessage(err) }] });
-                });
+              ansWrap = null;
+              removeThinking();
+              const lang = (document.documentElement.lang || 'en').toLowerCase().slice(0, 2);
+              const retryText = ({
+                de: 'Die sichere DokumentprÃ¼fung wurde unterbrochen. Deine Frage bleibt erhalten â€“ bitte versuche es erneut.',
+                fr: 'La vÃ©rification sÃ©curisÃ©e du document a Ã©tÃ© interrompue. Votre question est conservÃ©e â€” veuillez rÃ©essayer.',
+                es: 'La verificaciÃ³n segura del documento se interrumpiÃ³. Tu pregunta se ha conservado; intÃ©ntalo de nuevo.',
+                it: 'La verifica sicura del documento Ã¨ stata interrotta. La domanda Ã¨ stata conservata â€” riprova.',
+                ar: 'توقّف التحقق الآمن من المستند. تم الاحتفاظ بسؤالك — يُرجى المحاولة مرة أخرى.',
+                en: 'The grounded document check was interrupted. Your question is preserved â€” please retry.'
+              } as Record<string, string>)[lang] ||
+                'The grounded document check was interrupted. Your question is preserved â€” please retry.';
+              resolve({ content: [{ text: retryText }] });
             }
 
             function finalize(meta: SseDoneEvent | null | undefined): void {

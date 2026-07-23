@@ -111,6 +111,42 @@ def test_unsupported_numeric_claim_is_rejected() -> None:
     })
 
 
+def test_structured_risk_buffering_covers_short_multilingual_and_formula_requests() -> None:
+    from app.routers.stream import _requires_verified_buffering
+
+    for question, act in [
+        ("What is x?", "new_question"),
+        ("Find vc.", "new_question"),
+        ("Et b ?", "continue_next_question"),
+        ("استخدم 560", "correct_assistant"),
+        ("x = 560/2", "new_question"),
+    ]:
+        assert _requires_verified_buffering(
+            question=question,
+            dialogue_act=act,
+            has_visual_evidence=False,
+            has_active_numerical_state=False,
+        )
+
+
+def test_selection_from_old_page_or_revision_is_stale() -> None:
+    from app.routers.stream import SelectedRegionPayload, _selection_is_stale
+
+    region = SelectedRegionPayload(
+        page=3, x=0.1, y=0.2, width=0.3, height=0.1,
+        documentRevision="doc:rev-1",
+    )
+    assert not _selection_is_stale(
+        region, visible_page=3, viewer_revision="doc:rev-1",
+    )
+    assert _selection_is_stale(
+        region, visible_page=4, viewer_revision="doc:rev-1",
+    )
+    assert _selection_is_stale(
+        region, visible_page=3, viewer_revision="doc:rev-2",
+    )
+
+
 def test_stream_opens_before_deferred_pipeline(monkeypatch) -> None:
     from app.routers import stream as stream_router
 

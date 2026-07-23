@@ -236,6 +236,11 @@ class SelectedRegionPayload(BaseModel):
     documentRevision: str | None = None
     nearbyQuestionLabel: str | None = None
     cropHash: str | None = None
+    coordinateSpace: str | None = None
+    pageRotation: int | None = None
+    cropBox: list[float] | None = None
+    mediaBox: list[float] | None = None
+    pdfBoundingBox: list[float] | None = None
 
 
 class AskStreamRequest(BaseModel):
@@ -305,6 +310,68 @@ def _verification_is_cacheable(verification: Any) -> bool:
         isinstance(verification, dict)
         and verification.get("status") == "verified"
         and not _verification_requires_rejection(verification)
+    )
+
+
+def _requires_verified_buffering(
+    *,
+    question: str,
+    dialogue_act: str,
+    has_visual_evidence: bool,
+    has_active_numerical_state: bool,
+    source_conflict: bool = False,
+) -> bool:
+    """Classify safety from resolved intent and context, not language keywords."""
+    high_risk_acts = {
+        "correct_assistant", "reject_answer", "verify_previous_answer",
+        "check_answer", "request_result_only", "reuse_verified_result",
+        "continue_next_question", "continue_from_step", "answer_all_requested",
+    }
+    formula_or_number = bool(re.search(
+        r"(?:\d|=|[+\-*/^]|\\(?:frac|sqrt|sum|int)|[Â²Â³âˆšâˆ‘âˆ«])",
+        question or "",
+    ))
+    short_symbolic_followup = bool(
+        len((question or "").split()) <= 5
+        and re.search(r"\b[A-Za-z][A-Za-z0-9_]{0,2}\s*[?.!]*$", question or "")
+    )
+    return bool(
+        has_visual_evidence
+        or has_active_numerical_state
+        or source_conflict
+        or dialogue_act in high_risk_acts
+        or formula_or_number
+        or short_symbolic_followup
+    )
+
+
+def _selection_is_stale(
+    region: SelectedRegionPayload | None,
+    *,
+    visible_page: int | None,
+    viewer_revision: str | None,
+) -> bool:
+    if not region:
+        return False
+    wrong_revision = bool(
+        region.documentRevision
+        and viewer_revision
+        and region.documentRevision != viewer_revision
+    )
+    wrong_page = visible_page is not None and region.page != visible_page
+    return wrong_revision or wrong_page
+
+
+def _wrong_language_message(language: str) -> str:
+    return {
+        "de": "Die Antwort wurde in der falschen Sprache erzeugt und deshalb nicht angezeigt. Bitte versuche es erneut.",
+        "fr": "La rÃ©ponse a Ã©tÃ© produite dans la mauvaise langue et n'a donc pas Ã©tÃ© affichÃ©e. Veuillez rÃ©essayer.",
+        "es": "La respuesta se generÃ³ en el idioma equivocado y no se mostrÃ³. IntÃ©ntalo de nuevo.",
+        "it": "La risposta Ã¨ stata generata nella lingua sbagliata e non Ã¨ stata mostrata. Riprova.",
+        "ar": "تم إنشاء الإجابة بلغة خاطئة، لذلك لم يتم عرضها. يُرجى المحاولة مرة أخرى.",
+    }.get(
+        language,
+        "The answer was generated in the wrong language and was not shown. Please retry.",
     )
 
 
@@ -510,6 +577,29 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     preflight_ms = (time.perf_counter() - started) * 1000
 
     async def early_stream():
+        async def generation_is_current() -> bool:
+            from ..services.request_generation import is_current_generation  # noqa: WPS433
+            if not is_current_generation(
+                user_id, payload.conversationId, payload.conversationGeneration
+            ):
+                return False
+            if not payload.conversationId or payload.conversationGeneration is None:
+                return True
+            from ..services.tutor_state_store import current_persisted_generation  # noqa: WPS433
+            try:
+                persisted = await run_in_threadpool(
+                    lambda: current_persisted_generation(
+                        user_id, payload.conversationId or ""
+                    )
+                )
+            except Exception:
+                log.exception(
+                    "shared_generation_check_failed request_id=%s",
+                    request_id,
+                )
+                return False
+            return persisted == payload.conversationGeneration
+
         first_sse_ms = (time.perf_counter() - started) * 1000
         yield _status_sse("reading_question")
         log.info(
@@ -527,13 +617,24 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             while not prepared_task.done():
                 try:
                     status_key = await asyncio.wait_for(status_queue.get(), timeout=0.1)
+                    if not await generation_is_current():
+                        prepared_task.cancel()
+                        return
                     yield _status_sse(status_key)
                 except asyncio.TimeoutError:
                     continue
             prepared = await prepared_task
             while not status_queue.empty():
+                if not await generation_is_current():
+                    return
                 yield _status_sse(status_queue.get_nowait())
             async for event in prepared.body_iterator:
+                if not await generation_is_current():
+                    log.info(
+                        "stale_generation_stream_stopped request_id=%s generation=%s",
+                        request_id, payload.conversationGeneration,
+                    )
+                    break
                 yield event
         except HTTPException as exc:
             yield _sse_bytes(json.dumps({"error": str(exc.detail), "status": exc.status_code}))
@@ -571,6 +672,28 @@ async def _prepare_ask_stream_response(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
     if len(question) > _MAX_STREAM_QUESTION_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
+
+    conversation_id = (payload.conversationId or "").strip()
+    generation = payload.conversationGeneration
+    tutor_state = None
+    if conversation_id and generation is not None:
+        from ..services.tutor_state_store import (  # noqa: WPS433
+            claim_generation,
+            load_tutor_state,
+        )
+        accepted = await run_in_threadpool(
+            lambda: claim_generation(user_id, conversation_id, payload.courseId, generation)
+        )
+        if not accepted:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "STALE_GENERATION", "retryable": False},
+            )
+        tutor_state = await run_in_threadpool(
+            lambda: load_tutor_state(user_id, conversation_id)
+        )
+        tutor_state.generation = generation
+        tutor_state.course_id = payload.courseId
 
     tutor_mode = normalise_tutor_mode(payload.tutorMode or DEFAULT_TUTOR_MODE)
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
@@ -614,7 +737,10 @@ async def _prepare_ask_stream_response(
     from ..services.dialogue_state import resolve_dialogue  # noqa: WPS433
     language_context = resolve_language_context(
         question,
-        explicit_response_language=payload.responseLanguage,
+        explicit_response_language=(
+            payload.responseLanguage
+            or (tutor_state.response_language if tutor_state else None)
+        ),
         previous_turns=previous_turns_payload,
     )
     dialogue = resolve_dialogue(
@@ -628,7 +754,14 @@ async def _prepare_ask_stream_response(
             requested_response_language=dialogue.response_language,
         )
     resolved_question = dialogue.resolved_request
-    selected_region_id = payload.selectedRegion.id if payload.selectedRegion else None
+    selected_region = payload.selectedRegion
+    selection_stale = _selection_is_stale(
+        selected_region,
+        visible_page=payload.visiblePage,
+        viewer_revision=payload.viewerRevision,
+    )
+    selected_region_id = selected_region.id if selected_region and not selection_stale else None
+    selected_text = payload.selectedText if not selection_stale else None
     reference = resolve_question_reference(
         question=resolved_question,
         course_id=payload.courseId,
@@ -637,7 +770,7 @@ async def _prepare_ask_stream_response(
             doc_name_map.get(payload.activeDocumentId or "") or payload.activeFileName
         ),
         visible_page=payload.visiblePage,
-        selected_text=payload.selectedText,
+        selected_text=selected_text,
         selected_region_id=selected_region_id,
         visible_text=payload.openFileContext,
         has_visible_image=bool(open_file_images),
@@ -647,6 +780,11 @@ async def _prepare_ask_stream_response(
         question=resolved_question,
         has_history=bool(previous_turns_payload),
     )
+    if selection_stale:
+        evidence_decision.can_answer = False
+        evidence_decision.action = "clarify"
+        evidence_decision.recovery_code = "stale_selection"
+        evidence_decision.missing_information = ["current PDF selection"]
     log.info(
         "grounding_preflight request_id=%s reference_status=%s confidence=%.2f "
         "candidate_count=%d evidence_action=%s recovery_code=%s language=%s dialogue_act=%s "
@@ -672,6 +810,77 @@ async def _prepare_ask_stream_response(
         active_document_id=payload.activeDocumentId,
         open_file_context=payload.openFileContext,
     )
+
+    if tutor_state:
+        active_revision = payload.viewerRevision or (
+            selected_region.documentRevision if selected_region else None
+        ) or ""
+        if payload.activeDocumentId and active_revision:
+            tutor_state.change_document(payload.activeDocumentId, active_revision)
+        tutor_state.active_page = payload.visiblePage
+        tutor_state.active_region_id = selected_region_id
+        tutor_state.region_revision = (
+            selected_region.documentRevision if selected_region else None
+        )
+        tutor_state.active_question = (
+            reference.resolved_question_number or dialogue.active_question
+            or tutor_state.active_question
+        )
+        tutor_state.response_language = language_context.requested_response_language
+        tutor_state.response_mode = tutor_mode
+        tutor_state.explanation_level = dialogue.requested_depth
+        tutor_state.dialogue_act = dialogue.dialogue_act.value
+        tutor_state.academic_task = classify_academic_intent(resolved_question).value
+        tutor_state.risk_class = (
+            "high" if _requires_verified_buffering(
+                question=resolved_question,
+                dialogue_act=dialogue.dialogue_act.value,
+                has_visual_evidence=bool(selected_text or open_file_images),
+                has_active_numerical_state=bool(tutor_state.reusable_results()),
+            ) else "low"
+        )
+        tutor_state.pending_clarification = (
+            evidence_decision.recovery_code if not evidence_decision.can_answer else None
+        )
+        tutor_state.prompt_version = "answer-stream-v2026-07-23"
+        tutor_state.retrieval_version = "hybrid-v1"
+        tutor_state.verifier_version = "deterministic-v1"
+        label = tutor_state.active_question or ""
+        subpart = re.search(r"([a-z])$", label, re.IGNORECASE)
+        tutor_state.active_subquestion = subpart.group(1).lower() if subpart else None
+        variant = re.search(
+            r"\b(?:variant|variante)\s+([A-Za-z0-9]+)",
+            selected_text or payload.openFileContext or "",
+            re.IGNORECASE,
+        )
+        if variant:
+            tutor_state.exam_variant = variant.group(1).upper()
+        if selected_region_id and selected_text:
+            tutor_state.evidence_dependencies[selected_region_id] = {
+                "status": "verified",
+                "document_id": payload.activeDocumentId,
+                "document_revision": active_revision,
+                "page": payload.visiblePage,
+                "crop_hash": selected_region.cropHash if selected_region else None,
+                "origin": selected_region.origin if selected_region else "text_selection",
+            }
+        if dialogue.invalidate_previous_answer:
+            tutor_state.invalidate(
+                rejected_result_ids={
+                    item.id for item in tutor_state.results.values()
+                    if item.status == "verified"
+                },
+                status="rejected",
+                turn_id=request_id,
+                reason=dialogue.dialogue_act.value,
+            )
+            # invalidate() increments its logical version; the client generation
+            # remains the shared authority for this request.
+            tutor_state.generation = generation
+        from ..services.tutor_state_store import save_tutor_state  # noqa: WPS433
+        await run_in_threadpool(
+            lambda: save_tutor_state(user_id, payload.courseId, tutor_state)
+        )
 
     if not evidence_decision.can_answer:
         return _stream_static_answer(
@@ -1263,6 +1472,16 @@ async def _prepare_ask_stream_response(
             re.IGNORECASE,
         )
     )
+    high_risk_validation = _requires_verified_buffering(
+        question=resolved_question,
+        dialogue_act=dialogue.dialogue_act.value,
+        has_visual_evidence=bool(
+            open_file_images or selected_text or payload.problemSolver or chunks
+        ),
+        has_active_numerical_state=bool(
+            tutor_state and tutor_state.reusable_results()
+        ),
+    )
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
     # Consulted by gen_with_abort_meter when the stream dies early.
@@ -1281,11 +1500,41 @@ async def _prepare_ask_stream_response(
             yield _status_sse("writing_answer")
         if high_risk_validation:
             yield _status_sse("checking_values")
+        source_zero_context = (selected_text or "").strip()
+        if source_zero_context:
+            source_zero_context = (
+                "AUTHORITATIVE SELECTED PDF EVIDENCE (Source 0):\n"
+                + source_zero_context
+            )
+        generation_open_context = "\n\n".join(
+            item for item in (
+                source_zero_context,
+                (payload.openFileContext or "").strip(),
+            ) if item
+        )
+        state_overlay = ""
+        if tutor_state:
+            reusable = [
+                {
+                    "id": item.id,
+                    "question": item.question_id,
+                    "value": item.value,
+                    "unit": item.unit,
+                }
+                for item in tutor_state.reusable_results()
+            ]
+            state_overlay = (
+                "\nPERSISTED TUTORING STATE (authoritative):\n"
+                f"- Active exercise: {tutor_state.active_question or 'unknown'}\n"
+                f"- Document revision: {tutor_state.document_revision or 'unknown'}\n"
+                f"- Reusable verified results: {json.dumps(reusable, ensure_ascii=False)}\n"
+                "- Never reuse stale or rejected results.\n"
+            )
         gen_iter = stream_answer(
             question=question, chunks=chunks, doc_names=doc_name_map,
             tutor_mode=tutor_mode,
             active_file_name=payload.activeFileName,
-            open_file_context=payload.openFileContext,
+            open_file_context=generation_open_context or None,
             open_file_images=open_file_images,
             weak_topics=weak_topics,
             previous_turns=previous_turns_payload,
@@ -1305,7 +1554,7 @@ async def _prepare_ask_stream_response(
             selected_document_ids=list(retrieval_document_ids) if retrieval_document_ids else None,
             request_id=request_id,
             response_language=language_context.requested_response_language,
-            dialogue_overlay=dialogue.prompt_overlay(),
+            dialogue_overlay=dialogue.prompt_overlay() + state_overlay,
         )
         for chunk_bytes in gen_iter:
             # Decode the SSE event so we can intercept the closing 'done' frame.
@@ -1339,7 +1588,50 @@ async def _prepare_ask_stream_response(
                     evt["dialogueResolution"] = dialogue.to_api()
                     verification_payload = evt.get("verification")
                     critical_reject = _verification_requires_rejection(verification_payload)
-                    if high_risk_validation and critical_reject:
+                    from ..services.answer_stream import answer_matches_resolved_language  # noqa: WPS433
+                    wrong_language = not answer_matches_resolved_language(
+                        "".join(full_text_buf),
+                        language_context.requested_response_language,
+                    )
+                    unsafe_model_downgrade = bool(
+                        high_risk_validation and evt.get("heavyCapped")
+                    )
+                    if unsafe_model_downgrade:
+                        safe_text = recovery_message(
+                            "critical_numerical_mismatch",
+                            language_context.requested_response_language,
+                        )
+                        full_text_buf.clear()
+                        full_text_buf.append(safe_text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
+                        evt["answerMode"] = "strong_model_required"
+                        evt["confidence"] = "low"
+                        evt["unsupported"] = True
+                        evt["recovery"] = {
+                            "code": "strong_model_required",
+                            "action": "retry_when_available",
+                        }
+                    elif high_risk_validation and wrong_language:
+                        safe_text = _wrong_language_message(
+                            language_context.requested_response_language
+                        )
+                        full_text_buf.clear()
+                        full_text_buf.append(safe_text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
+                        evt["answerMode"] = "language_rejected"
+                        evt["confidence"] = "low"
+                        evt["unsupported"] = True
+                        evt["recovery"] = {
+                            "code": "wrong_output_language",
+                            "action": "retry_same_evidence",
+                        }
+                        log.warning(
+                            "wrong_language_output_blocked request_id=%s expected=%s",
+                            request_id, language_context.requested_response_language,
+                        )
+                    elif high_risk_validation and critical_reject:
                         safe_text = recovery_message(
                             "critical_numerical_mismatch",
                             language_context.requested_response_language,
@@ -1360,6 +1652,82 @@ async def _prepare_ask_stream_response(
                             yield pending
                         pending_token_events.clear()
                     captured_meta.update(evt)
+                    from ..services.request_generation import is_current_generation  # noqa: WPS433
+                    if not is_current_generation(
+                        user_id, payload.conversationId, payload.conversationGeneration
+                    ):
+                        pending_token_events.clear()
+                        return
+                    if payload.conversationId and generation is not None:
+                        from ..services.tutor_state_store import (  # noqa: WPS433
+                            current_persisted_generation,
+                        )
+                        try:
+                            persisted_generation = current_persisted_generation(
+                                user_id, payload.conversationId
+                            )
+                        except Exception:
+                            log.exception(
+                                "shared_generation_check_failed request_id=%s",
+                                request_id,
+                            )
+                            pending_token_events.clear()
+                            return
+                        if persisted_generation != generation:
+                            pending_token_events.clear()
+                            return
+                    if (
+                        tutor_state
+                        and not wrong_language
+                        and not critical_reject
+                        and not unsafe_model_downgrade
+                        and _verification_is_cacheable(verification_payload)
+                    ):
+                        if payload.activeDocumentId:
+                            try:
+                                _verify_user_owns_documents(
+                                    user_id, payload.courseId, [payload.activeDocumentId]
+                                )
+                            except HTTPException:
+                                pending_token_events.clear()
+                                log.warning(
+                                    "authorization_revoked_before_persistence request_id=%s",
+                                    request_id,
+                                )
+                                yield _sse_bytes(json.dumps({
+                                    "error": "Document access changed during this request.",
+                                    "status": 403,
+                                }))
+                                return
+                        from ..services.tutor_state import VerifiedResult  # noqa: WPS433
+                        from ..services.tutor_state_store import save_tutor_state  # noqa: WPS433
+                        result_id = tutor_state.active_question or f"turn:{generation}"
+                        tutor_state.add_verified_result(VerifiedResult(
+                            id=result_id,
+                            document_id=(
+                                tutor_state.document_id or payload.activeDocumentId or ""
+                            ),
+                            document_revision=(
+                                tutor_state.document_revision or payload.viewerRevision or ""
+                            ),
+                            exam_variant=tutor_state.exam_variant,
+                            question_id=tutor_state.active_question or result_id,
+                            value="".join(full_text_buf).strip(),
+                            derived_from_evidence_ids=(
+                                (selected_region_id,) if selected_region_id else ()
+                            ),
+                            source_priority=(
+                                "selected_region" if selected_region_id else "active_question"
+                            ),
+                        ))
+                        tutor_state.model_version = str(evt.get("model") or "") or None
+                        try:
+                            save_tutor_state(user_id, payload.courseId, tutor_state)
+                        except Exception:
+                            log.exception(
+                                "tutor_state save rejected request_id=%s generation=%s",
+                                request_id, generation,
+                            )
                     record_usage(
                         feature="ask_stream",
                         model=evt.get("model"),

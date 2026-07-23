@@ -319,6 +319,20 @@ def decide_evidence(
 
 
 def recovery_message(code: str | None, language: str) -> str:
+    generic = {
+        "fr": "Je ne peux pas vÃ©rifier cette rÃ©ponse avec les preuves actuelles. SÃ©lectionnez Ã  nouveau la zone actuelle du PDF ou confirmez la valeur ambiguÃ«.",
+        "es": "No puedo verificar esta respuesta con la evidencia actual. Vuelve a seleccionar el Ã¡rea actual del PDF o confirma el valor ambiguo.",
+        "it": "Non posso verificare questa risposta con le prove attuali. Seleziona di nuovo l'area corrente del PDF o conferma il valore ambiguo.",
+        "ar": "لا أستطيع التحقق من هذه الإجابة بالأدلة الحالية. حدّد منطقة PDF الحالية من جديد أو أكّد القيمة الملتبسة.",
+    }
+    if language in generic:
+        return generic[language]
+    if code == "stale_selection":
+        return (
+            "Diese PDF-Auswahl stammt von einer alten Seite oder Dokumentversion. Bitte markiere den aktuellen Bereich erneut."
+            if language == "de" else
+            "That PDF selection is from an older page or document revision. Please select the current area again."
+        )
     de = language == "de"
     if code == "critical_numerical_mismatch":
         return (

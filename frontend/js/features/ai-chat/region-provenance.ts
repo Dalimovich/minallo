@@ -11,6 +11,9 @@ export interface StableRegionProvenance {
   documentRevision: string;
   nearbyQuestionLabel?: string;
   cropHash: string;
+  coordinateSpace: 'normalized_pdf_page';
+  pageRotation: number;
+  pdfBoundingBox: [number, number, number, number];
 }
 
 function hashText(value: string): string {
@@ -66,9 +69,19 @@ export function regionFromSelection(
     id: `selection:${page}:${cropHash}`,
     origin: 'text_selection',
     extractionMethod: 'text',
-    confidence: 1,
+    // Browser text selection is strong provenance, but not independently
+    // verified PDF/OCR evidence; the backend must validate it before Source 0.
+    confidence: 0.85,
     documentRevision,
     nearbyQuestionLabel: label,
     cropHash,
+    coordinateSpace: 'normalized_pdf_page',
+    pageRotation: Number(pageWrap.dataset.rotation || '0') || 0,
+    pdfBoundingBox: [
+      normalized.x,
+      normalized.y,
+      normalized.x + normalized.width,
+      normalized.y + normalized.height,
+    ],
   };
 }
