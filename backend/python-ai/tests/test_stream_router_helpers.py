@@ -102,13 +102,31 @@ def test_critical_unverified_draft_is_rejected_and_not_cacheable() -> None:
     assert _verification_is_cacheable(good)
 
 
-def test_unsupported_numeric_claim_is_rejected() -> None:
-    from app.routers.stream import _verification_requires_rejection
+def test_number_misses_are_advisory_not_fatal() -> None:
+    from app.routers.stream import verification_rejection
 
-    assert _verification_requires_rejection({
+    result = verification_rejection({
         "status": "partially_verified",
-        "details": {"numberMisses": ["580"]},
-    })
+        "details": {
+            "numberMisses": ["6", "7", "8", "9"],
+            "criticalNumericalMismatch": False,
+        },
+    }, task_type="visual_assignment")
+    assert not result.reject
+    assert result.reasons == ("unverified_numbers_advisory",)
+
+
+def test_actual_copied_given_conflict_still_rejects() -> None:
+    from app.routers.stream import verification_rejection
+
+    result = verification_rejection({
+        "details": {
+            "numberMisses": [],
+            "criticalNumericalMismatch": True,
+        },
+    }, task_type="numerical_problem")
+    assert result.reject
+    assert result.code == "critical_numerical_mismatch"
 
 
 def test_structured_risk_buffering_covers_short_multilingual_and_formula_requests() -> None:

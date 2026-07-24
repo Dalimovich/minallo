@@ -24,6 +24,7 @@ import { getAiChatKey } from './chat-key.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { beginSafeStreamRecovery } from './stream-recovery.js';
+import { userFacingStreamError } from './stream-error-message.js';
 import {
   isLikelyVisualAssignmentQuestion,
   shouldReuseRecentVisualContext,
@@ -125,7 +126,11 @@ interface SseDoneEvent {
 
 interface SseStreamEvent extends Partial<SseDoneEvent> {
   t?: string;
-  error?: unknown;
+  error?: boolean | string;
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  requestId?: string;
   meta?: boolean;
   status?: string;
   answerMode?: string;
@@ -1526,11 +1531,16 @@ export function initAskAI(
                           _pendingMeta = evt as SseDoneEvent;
                           finalize(_pendingMeta);
                         }
-                        if (evt.error) fallbackToRag();
+                        if (evt.error) {
+                          handleStreamError(evt);
+                          return;
+                        }
                       } catch { /* ignore malformed line */ }
                     });
-                    read();
-                  }).catch(() => fallbackToRag());
+                    if (!_finalized) read();
+                  }).catch(() => {
+                    if (!_finalized) fallbackToRag();
+                  });
                 }
                 read();
               })
@@ -1555,6 +1565,26 @@ export function initAskAI(
                   fallbackToRag();
                 }
               });
+
+            function handleStreamError(evt: SseStreamEvent): void {
+              if (_finalized) return;
+              _finalized = true;
+              _activeReader?.cancel().catch(() => undefined);
+              _streamController.abort();
+              removeThinking();
+              if (ansWrap) {
+                ansWrap.remove();
+                ansWrap = null;
+              }
+              const message = userFacingStreamError(evt);
+              resolve({
+                content: [{ text: message }],
+                _ragData: {
+                  errorCode: evt.code,
+                  requestId: evt.requestId,
+                },
+              });
+            }
 
             function fallbackToRag(): void {
               if (!beginSafeStreamRecovery(_recoveryState, _activeReader, _streamController)) return;

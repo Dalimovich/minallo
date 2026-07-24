@@ -17,7 +17,7 @@ import json
 import re
 import time
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -317,18 +317,49 @@ def _status_sse(status_key: str) -> bytes:
     return _sse_bytes(json.dumps({"status": status_key}, ensure_ascii=False))
 
 
-def _verification_requires_rejection(verification: Any) -> bool:
-    details = verification.get("details") if isinstance(verification, dict) else {}
-    return bool(
-        isinstance(details, dict)
-        and (
-            details.get("criticalNumericalMismatch")
-            or details.get("numberMisses")
-            or details.get("fabricatedFilenames")
-            or details.get("invalidSourceIndices")
-            or details.get("fakeSolutionPhrases")
-        )
+@dataclass(frozen=True)
+class VerificationRejection:
+    reject: bool
+    code: str | None = None
+    reasons: tuple[str, ...] = ()
+
+
+def verification_rejection(
+    verification: Any,
+    *,
+    task_type: str = "standard_qa",
+) -> VerificationRejection:
+    if not isinstance(verification, dict):
+        return VerificationRejection(False)
+    details = verification.get("details")
+    if not isinstance(details, dict):
+        return VerificationRejection(False)
+    fatal_checks = (
+        ("fabricated_filenames", details.get("fabricatedFilenames")),
+        ("invalid_source_indices", details.get("invalidSourceIndices")),
+        ("fake_solution_phrases", details.get("fakeSolutionPhrases")),
+        ("critical_numerical_mismatch", details.get("criticalNumericalMismatch")),
     )
+    fatal = tuple(code for code, present in fatal_checks if present)
+    advisory = ()
+    if details.get("numberMisses"):
+        advisory = ("unverified_numbers_advisory",)
+    return VerificationRejection(
+        bool(fatal),
+        code=fatal[0] if fatal else None,
+        reasons=(*fatal, *advisory),
+    )
+
+
+def _verification_requires_rejection(
+    verification: Any,
+    *,
+    task_type: str = "standard_qa",
+) -> bool:
+    return verification_rejection(
+        verification,
+        task_type=task_type,
+    ).reject
 
 
 def _verification_is_cacheable(verification: Any) -> bool:
@@ -677,17 +708,39 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     break
                 yield event
         except HTTPException as exc:
-            yield _sse_bytes(json.dumps({"error": str(exc.detail), "status": exc.status_code}))
+            yield _sse_bytes(json.dumps({
+                "error": True,
+                "code": "request_rejected",
+                "message": str(exc.detail),
+                "status": exc.status_code,
+                "retryable": False,
+                "requestId": request_id,
+            }, ensure_ascii=False))
         except Exception:
             log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
-            yield _sse_bytes(json.dumps({"error": "Unable to answer right now. Please try again."}))
+            yield _sse_bytes(json.dumps({
+                "error": True,
+                "code": "internal_error",
+                "message": "Minallo could not complete this grounded answer.",
+                "recoverable": False,
+                "retryable": False,
+                "requestId": request_id,
+            }, ensure_ascii=False))
         finally:
             log.info(
                 "ai_stream_timing request_id=%s phase=total total_ms=%.0f",
                 request_id, (time.perf_counter() - started) * 1000,
             )
 
-    return StreamingResponse(early_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        early_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def _prepare_ask_stream_response(
@@ -1698,11 +1751,22 @@ async def _prepare_ask_stream_response(
                 if evt.get("done"):
                     evt["dialogueResolution"] = dialogue.to_api()
                     verification_payload = evt.get("verification")
-                    critical_reject = _verification_requires_rejection(verification_payload)
+                    task_type = str(evt.get("taskType") or "standard_qa")
+                    critical_reject = _verification_requires_rejection(
+                        verification_payload,
+                        task_type=task_type,
+                    )
                     from ..services.answer_stream import answer_matches_resolved_language  # noqa: WPS433
                     wrong_language = not answer_matches_resolved_language(
                         "".join(full_text_buf),
                         language_context.requested_response_language,
+                        preserve_source_labels=task_type in {
+                            "visual_assignment",
+                            "checkbox_grid",
+                            "labelled_diagram",
+                            "technical_drawing",
+                            "matching_table",
+                        },
                     )
                     unsafe_model_downgrade = bool(
                         high_risk_validation and evt.get("heavyCapped")
@@ -1760,6 +1824,13 @@ async def _prepare_ask_stream_response(
                         rewrite_valid = answer_matches_resolved_language(
                             rewritten,
                             language_context.requested_response_language,
+                            preserve_source_labels=task_type in {
+                                "visual_assignment",
+                                "checkbox_grid",
+                                "labelled_diagram",
+                                "technical_drawing",
+                                "matching_table",
+                            },
                         )
                         rewritten_verification = None
                         if rewrite_valid:

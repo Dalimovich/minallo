@@ -44,6 +44,14 @@ test('correction and formatting follow-ups retain the visual thread', () => {
     ),
     true,
   );
+  assert.equal(
+    shouldReuseRecentVisualContext('try answering it again', context, current, now),
+    true,
+  );
+  assert.equal(
+    shouldReuseRecentVisualContext('explain number 8', context, current, now),
+    true,
+  );
 });
 
 test('a page change prevents stale image reuse', () => {

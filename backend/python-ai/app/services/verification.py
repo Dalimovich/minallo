@@ -486,11 +486,14 @@ def verify_answer(
     cleaned = re.sub(r"pp?\.\s*\d+(?:\s*-\s*\d+)?", " ", cleaned, flags=re.IGNORECASE)
     calc_spans = _calc_section_spans(cleaned)
     number_haystacks = list(chunk_texts) + ([question] if question else [])
+    required_callout_ids = detect_required_callout_range(question or "")
     number_misses: list[str] = []
     derived_numbers: list[str] = []
     seen_numbers: set[str] = set()
     for m in _NUMBER_RE.finditer(cleaned):
         n = m.group(1)
+        if is_callout_list_marker(cleaned, m, required_callout_ids):
+            continue
         if n in seen_numbers:
             continue
         seen_numbers.add(n)
@@ -516,8 +519,17 @@ def verify_answer(
     # an active-question value (560) from a similar example value (580), nor
     # detect a lost sign, exponent or changed unit.
     from .numerical_validation import validate_numerical_claims  # noqa: WPS433
+    numerical_answer_text = text
+    if required_callout_ids:
+        numerical_answer_text = re.sub(
+            r"(?m)^\s*(\d{1,3})\s*[\.\):\-]\s*",
+            lambda match: (
+                "" if int(match.group(1)) in required_callout_ids else match.group(0)
+            ),
+            numerical_answer_text,
+        )
     numerical = validate_numerical_claims(
-        answer_text=text,
+        answer_text=numerical_answer_text,
         source_texts=list(chunk_texts) + ([question] if question else []),
     )
     details["numericalValidation"] = numerical.to_api()
@@ -594,3 +606,36 @@ def verify_answer(
 
 
 __all__ = ("VERIFICATION_STATUSES", "VerificationResult", "verify_answer")
+# Diagram row/callout identifiers are structural labels, not quantities.
+_CALLOUT_RANGE_RE = re.compile(
+    r"\b(?:ziffern?|nummern?|numbers?|labels?|callouts?)\s*"
+    r"(\d+)\s*(?:bis|to|-|–)\s*(\d+)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_required_callout_range(question: str, visible_context: str = "") -> set[int]:
+    match = _CALLOUT_RANGE_RE.search(f"{question}\n{visible_context}")
+    if not match:
+        return set()
+    start, end = int(match.group(1)), int(match.group(2))
+    if start < 0 or end < start or end - start > 100:
+        return set()
+    return set(range(start, end + 1))
+
+
+def is_callout_list_marker(
+    text: str,
+    match: re.Match[str],
+    required_callout_ids: set[int],
+) -> bool:
+    try:
+        value = int(match.group(1))
+    except ValueError:
+        return False
+    if value not in required_callout_ids:
+        return False
+    line_start = text.rfind("\n", 0, match.start()) + 1
+    prefix = text[line_start:match.start()]
+    suffix = text[match.end():match.end() + 3]
+    return not prefix.strip() and bool(re.match(r"\s*[\.\):\-]", suffix))

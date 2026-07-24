@@ -302,9 +302,11 @@ def verify_and_repair_visual_assignment(
         "incorrectAssignments": [],
         "verifiedAssignments": {},
     }
+    verification_available = True
     try:
         response = client.chat.completions.create(
             model=model,
+            timeout=20.0,
             messages=[{
                 "role": "user",
                 "content": [{"type": "text", "text": verifier_prompt}, *image_parts],
@@ -318,6 +320,16 @@ def verify_and_repair_visual_assignment(
             verification.update(parsed)
     except Exception:
         log.exception("visual assignment verification failed")
+        verification_available = False
+        verification.update({
+            "status": "unavailable",
+            "code": "visual_verification_failed",
+            "fatal": False,
+        })
+
+    deterministic_complete = not any(deterministic_issues.values())
+    if not verification_available and deterministic_complete:
+        return answer, {**verification, "repairComplete": None, "repairAttempts": 0}
 
     needs_repair = (
         any(deterministic_issues.values())
@@ -326,7 +338,7 @@ def verify_and_repair_visual_assignment(
         or bool(verification.get("incorrectAssignments"))
     )
     if not needs_repair:
-        return answer, verification
+        return answer, {**verification, "status": "verified", "repairAttempts": 0}
 
     repair_prompt = (
         "Your previous draft failed visual verification. Reinspect the same "
@@ -341,6 +353,7 @@ def verify_and_repair_visual_assignment(
     try:
         repaired = client.chat.completions.create(
             model=model,
+            timeout=25.0,
             messages=[{
                 "role": "user",
                 "content": [{"type": "text", "text": repair_prompt}, *image_parts],
@@ -357,9 +370,19 @@ def verify_and_repair_visual_assignment(
                     + "\n\nRows "
                     + ", ".join(map(str, missing))
                     + " are not visually clear enough in the supplied image.",
-                    {**verification, "repairComplete": False, "missingNumbers": missing},
+                    {
+                        **verification,
+                        "repairComplete": False,
+                        "repairAttempts": 1,
+                        "missingNumbers": missing,
+                    },
                 )
-            return repaired, {**verification, "repairComplete": True}
+            return repaired, {
+                **verification,
+                "status": "verified",
+                "repairComplete": True,
+                "repairAttempts": 1,
+            }
     except Exception:
         log.exception("visual assignment repair failed")
     rows = required or sorted(extract_numbered_assignments(answer))
@@ -369,7 +392,12 @@ def verify_and_repair_visual_assignment(
         + ", ".join(map(str, rows))
         + " are not visually clear enough to verify from the supplied image."
     )
-    return safe_fallback, {**verification, "repairComplete": False}
+    return safe_fallback, {
+        **verification,
+        "status": "unreadable",
+        "repairComplete": False,
+        "repairAttempts": 1,
+    }
 
 # Instruction appended to the user turn when an exercise/figure page image is
 # attached. Deliberately exhaustive: engineering figures pack the bulk of the
@@ -656,7 +684,12 @@ def _answer_matches_question_language(question: str, answer: str) -> bool:
     return actual is None or actual == expected
 
 
-def answer_matches_resolved_language(answer: str, language_code: str | None) -> bool:
+def answer_matches_resolved_language(
+    answer: str,
+    language_code: str | None,
+    *,
+    preserve_source_labels: bool = False,
+) -> bool:
     """Validate output against the server's sticky language decision."""
     if not language_code or not (answer or "").strip():
         return True
@@ -672,6 +705,16 @@ def answer_matches_resolved_language(answer: str, language_code: str | None) -> 
     if expected is None:
         return True
     cleaned = re.sub(r"\[Source\s+\d+\]|https?://\S+|[`$\\{}_^]", " ", answer or "")
+    if preserve_source_labels:
+        # Visual matching answers intentionally preserve source-language terms
+        # before an em dash. Judge the explanatory prose, not those labels.
+        cleaned = re.sub(
+            r"(?m)^\s*\d+\s*[\.\):\-]\s*[^—\n]+(?:—|-)\s*",
+            " ",
+            cleaned,
+        )
+        if len(re.findall(r"\w", cleaned, re.UNICODE)) < 8:
+            return True
     actual = _LANGUAGE_DETECTOR.detect_language_of(cleaned)
     return actual is None or actual == expected
 
@@ -1522,6 +1565,11 @@ def stream_answer(
     visual_assignment_task = is_visual_assignment_task(
         question, open_ctx, has_open_image
     )
+    grounded_task_type = (
+        "checkbox_grid"
+        if visual_assignment_task and _CHECKBOX_GRID_RE.search(f"{question}\n{open_ctx}")
+        else ("technical_drawing" if visual_assignment_task else "standard_qa")
+    )
     required_numbers = required_number_range(question, open_ctx)
     if visual_assignment_task:
         # Generic chunks from another page are plausible-sounding distractors
@@ -2035,6 +2083,11 @@ def stream_answer(
         "unsupported": display_strength != "strong",
         "needsClarification": answer_mode == "clarification",
         "usedGeneralKnowledge": answer_mode == "general",
+        "taskType": grounded_task_type,
+        "visualEvidenceUsed": has_open_image,
+        "visiblePage": visible_page,
+        "imageCount": len(image_parts),
+        "requiredIdentifiers": required_numbers or [],
     })
 
     # No streamed source preface on purpose: sources ride the done-event
@@ -2173,7 +2226,14 @@ def stream_answer(
             # was billed — retract the abort-metering checkpoint. Mid-stream
             # failures keep it: the prompt and partial completion were billed.
             yield _sse({"usageEst": True, "cancel": True})
-        yield _sse({"error": f"{type(e).__name__}: {e}"})
+        yield _sse({
+            "error": True,
+            "code": "internal_error",
+            "message": "Minallo could not complete this grounded answer.",
+            "recoverable": False,
+            "retryable": False,
+            "requestId": request_id,
+        })
         return
 
     # Short answer that never tripped the release condition (no newline and
@@ -2213,6 +2273,13 @@ def stream_answer(
             yield _sse({"t": full_answer[i:i + 1500]})
     elif visual_assignment_task:
         yield _sse({"status": "verifying_visual_answer"})
+        log.info(
+            "ai_stage request_id=%s stage=visual_verification_started "
+            "required_numbers=%s draft_assignments=%d",
+            request_id or "none",
+            required_numbers,
+            len(extract_numbered_assignments(full_answer)),
+        )
         full_answer, visual_verification = verify_and_repair_visual_assignment(
             client=client,
             model=target_model,
@@ -2221,6 +2288,22 @@ def stream_answer(
             required=required_numbers,
             image_parts=image_parts,
             max_tokens=effective_max_tokens,
+        )
+        log.info(
+            "ai_stage request_id=%s stage=visual_verification_completed "
+            "status=%s repair_attempts=%s final_assignments=%d",
+            request_id or "none",
+            (
+                visual_verification.get("status")
+                if isinstance(visual_verification, dict)
+                else "missing"
+            ),
+            (
+                visual_verification.get("repairAttempts")
+                if isinstance(visual_verification, dict)
+                else 0
+            ),
+            len(extract_numbered_assignments(full_answer)),
         )
         for i in range(0, len(full_answer), 1500):
             yield _sse({"t": full_answer[i:i + 1500]})
@@ -2318,19 +2401,47 @@ def stream_answer(
         allowed_filenames.append(active_file_name)
 
     verification: dict[str, Any] = {"status": "missing_context", "reasons": [], "details": {}}
-    try:
-        if answer_mode == "math" or problem_mode in {"setup", "check", "solve"} or has_open_image:
-            yield _sse({"status": "verifying_calculation"})
-        from .verification import verify_answer  # noqa: WPS433
-        verification = verify_answer(
-            answer_text=full_answer,
-            chunk_texts=verification_haystack,
-            question=question,
-            answer_mode=answer_mode,
-            allowed_filenames=allowed_filenames,
-        ).to_api()
-    except Exception:  # noqa: BLE001
-        log.exception("verify_answer (stream) failed — emitting default missing_context")
+    if visual_assignment_task:
+        coverage_issues = (
+            numbered_assignment_issues(full_answer, required_numbers)
+            if required_numbers else {"missing": [], "extras": [], "duplicates": []}
+        )
+        visual_status = (
+            visual_verification.get("status")
+            if isinstance(visual_verification, dict)
+            else "unavailable"
+        )
+        verification = {
+            "status": (
+                "verified"
+                if visual_status == "verified" and not any(coverage_issues.values())
+                else "partially_verified"
+            ),
+            "reasons": (
+                [] if visual_status == "verified"
+                else [f"visual verification {visual_status}"]
+            ),
+            "details": {
+                "taskType": grounded_task_type,
+                "assignmentCoverage": coverage_issues,
+                "criticalNumericalMismatch": False,
+                "numberMisses": [],
+            },
+        }
+    else:
+        try:
+            if answer_mode == "math" or problem_mode in {"setup", "check", "solve"}:
+                yield _sse({"status": "verifying_calculation"})
+            from .verification import verify_answer  # noqa: WPS433
+            verification = verify_answer(
+                answer_text=full_answer,
+                chunk_texts=verification_haystack,
+                question=question,
+                answer_mode=answer_mode,
+                allowed_filenames=allowed_filenames,
+            ).to_api()
+        except Exception:  # noqa: BLE001
+            log.exception("verify_answer (stream) failed — emitting default missing_context")
 
     # Confidence shown to the user is now derived from verification status —
     # NOT from retrieval strength. The old "strong retrieval ⇒ confidence: high"
@@ -2362,6 +2473,14 @@ def stream_answer(
             "used the standard model. The allowance resets on the 1st.*"
         )})
 
+    log.info(
+        "ai_stage request_id=%s stage=done_event_emitted task_type=%s "
+        "visual_evidence=%s assignment_count=%d",
+        request_id or "none",
+        grounded_task_type,
+        has_open_image,
+        len(extract_numbered_assignments(full_answer)),
+    )
     yield _sse({
         "done": True,
         "heavyCapped": heavy_capped,
@@ -2379,4 +2498,25 @@ def stream_answer(
         "completionTokens": completion_tokens,
         "cachedTokens": cached_tokens,
         "visualVerification": visual_verification,
+        "taskType": grounded_task_type,
+        "visualEvidenceUsed": has_open_image,
+        "visiblePage": visible_page,
+        "imageCount": len(image_parts),
+        "requiredIdentifiers": required_numbers or [],
+        "assignmentCount": len(extract_numbered_assignments(full_answer)),
+        "completenessPassed": (
+            not required_numbers
+            or not any(numbered_assignment_issues(full_answer, required_numbers).values())
+        ),
+        "visualVerificationStatus": (
+            visual_verification.get("status")
+            if isinstance(visual_verification, dict)
+            else None
+        ),
+        "repairAttempts": (
+            int(visual_verification.get("repairAttempts") or 0)
+            if isinstance(visual_verification, dict)
+            else 0
+        ),
+        "requestId": request_id,
     })

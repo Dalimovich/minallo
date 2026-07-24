@@ -282,6 +282,21 @@ def test_cached_answer_language_must_match_latest_question() -> None:
     assert not _answer_matches_question_language(question, german)
 
 
+def test_visual_source_labels_do_not_trigger_wrong_language_gate() -> None:
+    from app.services.answer_stream import answer_matches_resolved_language
+
+    answer = (
+        "1. Auswerferseite — This is the side where the moulded part is ejected.\n"
+        "2. Düsenseite — This side faces the injection nozzle.\n"
+        "3. Schließzylinder — This cylinder closes and clamps the mould."
+    )
+    assert answer_matches_resolved_language(
+        answer,
+        "en",
+        preserve_source_labels=True,
+    )
+
+
 # ── Cache key fold-in for previousTurns ─────────────────────────────────────
 
 

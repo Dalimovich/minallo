@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { beginSafeStreamRecovery } from '../../frontend/js/features/ai-chat/stream-recovery.ts';
+import { userFacingStreamError } from '../../frontend/js/features/ai-chat/stream-error-message.ts';
 
 test('stream recovery cancels and aborts exactly once', async () => {
   let cancellations = 0;
@@ -17,4 +18,23 @@ test('stream recovery cancels and aborts exactly once', async () => {
   assert.equal(beginSafeStreamRecovery(state, reader, controller), false);
   await Promise.resolve();
   assert.equal(cancellations, 1);
+});
+
+test('typed visual errors are not collapsed into the generic retry loop', () => {
+  const message = userFacingStreamError({
+    error: true,
+    code: 'visual_verification_timeout',
+    retryable: false,
+  });
+  assert.match(message, /verification-service issue/i);
+  assert.doesNotMatch(message, /question is preserved|please retry/i);
+});
+
+test('typed stream error messages contain no common mojibake sequences', () => {
+  const messages = [
+    userFacingStreamError({ error: true, code: 'visual_evidence_unreadable' }),
+    userFacingStreamError({ error: true, code: 'vision_model_unavailable' }),
+    userFacingStreamError({ error: true, code: 'stream_interrupted' }),
+  ].join('\n');
+  assert.doesNotMatch(messages, /Ãƒ.|Ã¢â‚¬|Ã‚./);
 });

@@ -3,7 +3,9 @@ from app.services.answer_stream import (
     is_visual_assignment_task,
     numbered_assignment_issues,
     required_number_range,
+    verify_and_repair_visual_assignment,
 )
+from app.services.verification import verify_answer
 
 
 def test_required_range_extraction() -> None:
@@ -51,3 +53,42 @@ def test_visual_grid_classifier_requires_pixels() -> None:
     context = "Treffen Sie die Zuordnung. Ziffern 1 bis 9."
     assert is_visual_assignment_task("answer Aufgabe 14.1", context, True)
     assert not is_visual_assignment_task("answer Aufgabe 14.1", context, False)
+
+
+def test_visual_callout_ids_do_not_trigger_number_misses() -> None:
+    question = "Benennen Sie die Teile, die mit den Ziffern 1 bis 9 markiert sind."
+    answer = "\n".join(f"{number}. Label" for number in range(1, 10))
+    result = verify_answer(
+        answer_text=answer,
+        chunk_texts=["visible answer labels"],
+        question=question,
+        answer_mode="strong",
+    )
+    assert result.details["numberMisses"] == []
+    assert result.details["criticalNumericalMismatch"] is False
+
+
+def test_visual_verifier_failure_is_nonfatal_for_complete_draft() -> None:
+    class FailingCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            raise TimeoutError("verifier timed out")
+
+    class Client:
+        class chat:
+            completions = FailingCompletions()
+
+    answer = "\n".join(f"{number}. Label {number}" for number in range(1, 10))
+    final, verification = verify_and_repair_visual_assignment(
+        client=Client(),
+        model="gpt-4o",
+        question="Ziffern 1 bis 9",
+        answer=answer,
+        required=list(range(1, 10)),
+        image_parts=[{"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}],
+        max_tokens=1000,
+    )
+    assert final == answer
+    assert verification["status"] == "unavailable"
+    assert verification["fatal"] is False
+    assert verification["repairAttempts"] == 0
