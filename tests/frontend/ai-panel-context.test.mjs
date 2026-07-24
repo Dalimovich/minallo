@@ -59,8 +59,23 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.match(DOCUMENT_RAIL_CSS, /--dr-rail-w:\s*66px/);
   assert.doesNotMatch(MESSAGE_NAVIGATOR, /width:\s*calc\(var\(--dr-rail-w[^\n]+\+\s*24px\)/);
   assert.match(MESSAGE_NAVIGATOR, /width:\s*var\(--dr-rail-w,\s*66px\)/);
-  assert.match(LOADER, /document-rail\.css\?v=33/);
+  assert.match(LOADER, /document-rail\.css\?v=34/);
   assert.match(INDEX, /loader\.js\?v=47/);
+});
+
+test('AI drawer composer uses the spacious rounded two-row shell', () => {
+  assert.match(
+    DOCUMENT_RAIL_CSS,
+    /\.dr-drawer\.dr-mode-ai \.dr-host-ai \.ai-input-box\s*\{[\s\S]*?margin:\s*10px 10px 12px;[\s\S]*?padding:\s*13px 13px 10px;[\s\S]*?border-radius:\s*28px;/,
+  );
+  assert.match(
+    DOCUMENT_RAIL_CSS,
+    /\.dr-drawer\.dr-mode-ai \.dr-host-ai \.ai-textarea\s*\{[\s\S]*?min-height:\s*48px;[\s\S]*?max-height:\s*116px;/,
+  );
+  assert.match(
+    DOCUMENT_RAIL_CSS,
+    /\.dr-drawer \.dr-host-ai \.ai-bottom-row\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-wrap:\s*nowrap;/,
+  );
 });
 
 test('questions about the visible professor solution attach the visible PDF page', () => {
