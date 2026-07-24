@@ -644,14 +644,28 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     preflight_ms = (time.perf_counter() - started) * 1000
 
     async def early_stream():
-        async def generation_is_current() -> bool:
+        last_shared_generation_check = 0.0
+        last_shared_generation_result = True
+
+        async def generation_is_current(*, check_shared: bool = True) -> bool:
+            nonlocal last_shared_generation_check, last_shared_generation_result
             from ..services.request_generation import is_current_generation  # noqa: WPS433
             if not is_current_generation(
                 user_id, payload.conversationId, payload.conversationGeneration
             ):
                 return False
-            if not payload.conversationId or payload.conversationGeneration is None:
+            if (
+                not check_shared
+                or not payload.conversationId
+                or payload.conversationGeneration is None
+            ):
                 return True
+            # Token/status events can arrive dozens of times per second. The
+            # persisted generation is shared cancellation state, not something
+            # that needs a database round-trip per SSE frame.
+            now = time.monotonic()
+            if now - last_shared_generation_check < 2.0:
+                return last_shared_generation_result
             from ..services.tutor_state_store import current_persisted_generation  # noqa: WPS433
             try:
                 persisted = await run_in_threadpool(
@@ -665,10 +679,16 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     request_id,
                 )
                 return False
-            return persisted == payload.conversationGeneration
+            last_shared_generation_check = now
+            last_shared_generation_result = (
+                persisted == payload.conversationGeneration
+            )
+            return last_shared_generation_result
 
         first_sse_ms = (time.perf_counter() - started) * 1000
         yield _status_sse("reading_question")
+        last_status_key = "reading_question"
+        last_heartbeat = time.monotonic()
         log.info(
             "ai_stream_timing request_id=%s phase=first_sse access_ms=%.0f preflight_ms=%.0f first_sse_ms=%.0f",
             request_id, access_ms, preflight_ms, first_sse_ms,
@@ -688,11 +708,21 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             while not prepared_task.done():
                 try:
                     status_key = await asyncio.wait_for(status_queue.get(), timeout=0.1)
-                    if not await generation_is_current():
+                    # The preparation task claims the persisted generation.
+                    # Checking shared state before that claim races against the
+                    # previous turn after a reload.
+                    if not await generation_is_current(check_shared=False):
                         prepared_task.cancel()
                         return
+                    last_status_key = status_key
+                    last_heartbeat = time.monotonic()
                     yield _status_sse(status_key)
                 except asyncio.TimeoutError:
+                    if time.monotonic() - last_heartbeat >= 10.0:
+                        # Long document scans and map batches must keep the SSE
+                        # connection visibly alive.
+                        yield _status_sse(last_status_key)
+                        last_heartbeat = time.monotonic()
                     continue
             prepared = await prepared_task
             while not status_queue.empty():
@@ -1369,6 +1399,119 @@ async def _prepare_ask_stream_response(
 
     # previous_turns_payload was normalised above (it feeds the cache key too).
 
+    # Exhaustive extraction is a full-document map/reduce task, not semantic
+    # top-k QA. Run it against every stored page of the active document and
+    # keep citation display limits independent from extraction coverage.
+    from ..services.document_extraction import (  # noqa: WPS433
+        classify_document_extraction,
+        extract_document_qa,
+        format_document_extraction,
+    )
+    document_extraction, extraction_correction, extraction_target = (
+        classify_document_extraction(question, previous_turns_payload)
+    )
+    if document_extraction:
+        if not payload.activeDocumentId:
+            return _stream_static_answer(
+                text=(
+                    "Open the exam PDF you want me to scan, then ask again. "
+                    "An exhaustive extraction must be bound to one active document."
+                ),
+                decision=source_decision,
+                answer_mode="clarification",
+                status_key="section_not_found",
+                extra_meta={
+                    "taskType": "document_wide_extraction",
+                    "errorCode": "section_not_found",
+                },
+            )
+        if status_sink:
+            status_sink("scanning_document")
+            status_sink("extracting_items")
+        extraction_started = time.perf_counter()
+        extraction = await run_in_threadpool(
+            lambda: extract_document_qa(
+                user_id=user_id,
+                course_id=payload.courseId,
+                document_id=payload.activeDocumentId or "",
+                target=extraction_target or "questions",
+            )
+        )
+        if status_sink:
+            status_sink("checking_completeness")
+        answer_text = format_document_extraction(
+            extraction,
+            language_context.requested_response_language,
+        )
+        cited_pages = list(dict.fromkeys(
+            [
+                item.question_page
+                for item in extraction.items
+            ]
+            + [
+                item.answer_page
+                for item in extraction.items
+                if item.answer_page
+            ]
+        ))[:5]
+        active_name = (
+            doc_name_map.get(payload.activeDocumentId or "")
+            or payload.activeFileName
+            or "Active document"
+        )
+        extraction_sources = [
+            {
+                "index": index,
+                "documentId": payload.activeDocumentId,
+                "file_name": active_name,
+                "pageStart": page,
+                "pages": str(page),
+                "section": extraction.target,
+            }
+            for index, page in enumerate(cited_pages, start=1)
+        ]
+        log.info(
+            "document_extraction_completed request_id=%s task_type=document_wide_extraction "
+            "document=%s total_pages=%d scanned_pages=%d unreadable_pages=%s "
+            "target=%s items=%d continuation_correction=%s response_language=%s "
+            "language_status=valid_mixed_source coverage_complete=%s elapsed_ms=%.0f",
+            request_id,
+            payload.activeDocumentId,
+            extraction.total_pages,
+            len(extraction.scanned_pages),
+            extraction.unreadable_pages,
+            extraction.target,
+            len(extraction.items),
+            extraction_correction,
+            language_context.requested_response_language,
+            extraction.complete,
+            (time.perf_counter() - extraction_started) * 1000,
+        )
+        return _stream_static_answer(
+            text=answer_text,
+            decision=replace(
+                source_decision,
+                used_document_ids=[payload.activeDocumentId],
+            ),
+            answer_mode="document_wide_extraction",
+            sources=extraction_sources,
+            model=extraction.model,
+            prompt_tokens=extraction.prompt_tokens,
+            completion_tokens=extraction.completion_tokens,
+            status_key="checking_completeness",
+            extra_meta={
+                "taskType": "document_wide_extraction",
+                "targetSection": extraction.target,
+                "totalPages": extraction.total_pages,
+                "pagesScanned": extraction.scanned_pages,
+                "itemsExtracted": len(extraction.items),
+                "coverageComplete": extraction.complete,
+                "unreadablePages": extraction.unreadable_pages,
+                "languageStatus": "valid_mixed_source",
+                "continuationCorrection": extraction_correction,
+            },
+        )
+
     # ── Retrieve ─────────────────────────────────────────────────────────────
     # When the Problem Solver is active, the visible `question` is just a
     # short label ("Problem Solver — Hint mode"). Use the structured problem
@@ -1881,24 +2024,18 @@ async def _prepare_ask_stream_response(
                             wrong_language = False
                             evt["languageRewritten"] = True
                         else:
-                            safe_text = _wrong_language_message(
-                                language_context.requested_response_language
-                            )
-                            full_text_buf.clear()
-                            full_text_buf.append(safe_text)
+                            # Language classification is advisory after the
+                            # repair attempt. Grounded educational answers can
+                            # legitimately contain long source-language quotes;
+                            # never discard that usable answer or trap the user
+                            # in a retry loop solely on detector uncertainty.
+                            for pending in pending_token_events:
+                                yield pending
                             pending_token_events.clear()
-                            yield _sse_bytes(json.dumps({
-                                "t": safe_text,
-                            }, ensure_ascii=False))
-                            evt["answerMode"] = "language_rejected"
-                            evt["confidence"] = "low"
-                            evt["unsupported"] = True
-                            evt["recovery"] = {
-                                "code": "wrong_output_language",
-                                "action": "retry_same_evidence",
-                            }
+                            evt["languageStatus"] = "unverified_mixed_source"
+                            evt["languageRewritten"] = False
                             log.warning(
-                                "wrong_language_output_blocked request_id=%s expected=%s",
+                                "wrong_language_output_allowed request_id=%s expected=%s",
                                 request_id,
                                 language_context.requested_response_language,
                             )

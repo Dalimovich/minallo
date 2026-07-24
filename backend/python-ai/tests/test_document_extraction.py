@@ -1,0 +1,136 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from app.services import document_extraction as extraction
+
+
+def test_all_kurzfragen_classifies_as_document_wide_extraction() -> None:
+    matched, correction, target = extraction.classify_document_extraction(
+        "can you extract all the kurzfragen questions in this exam and their answers?"
+    )
+    assert matched
+    assert not correction
+    assert target.casefold() == "kurzfragen"
+
+
+def test_missing_first_items_continuation_reuses_extraction_scope() -> None:
+    matched, correction, target = extraction.classify_document_extraction(
+        "you missed the first ones, keep extracting the questions",
+        [
+            {
+                "role": "user",
+                "text": "extract all Kurzfragen and their answers from this exam",
+            },
+            {"role": "assistant", "text": "### 9.2\n..."},
+        ],
+    )
+    assert matched
+    assert correction
+    assert target.casefold() == "kurzfragen"
+
+
+def test_full_scan_is_not_limited_by_displayed_source_count(monkeypatch) -> None:
+    pages = [
+        {
+            "page_number": page,
+            "cleaned_text": f"Kurzfragen page {page} " + ("content " * 20),
+            "raw_text": "",
+        }
+        for page in range(1, 9)
+    ]
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 8, "file_name": "exam.pdf"}, pages),
+    )
+
+    def fake_chat_json(*, user: str, **_):
+        page_numbers = [
+            int(line.split()[2])
+            for line in user.splitlines()
+            if line.startswith("--- PAGE ")
+        ]
+        items = []
+        for page in page_numbers:
+            # Fourteen unique items spread over eight pages.
+            count = 2 if page <= 6 else 1
+            items.extend(
+                {
+                    "item_id": f"{page}.{sub}",
+                    "question": f"Deutsche Frage {page}.{sub}?",
+                    "answer": f"Deutsche Antwort {page}.{sub}.",
+                    "question_page": page,
+                    "answer_page": page,
+                    "confidence": 0.9,
+                }
+                for sub in range(1, count + 1)
+            )
+        return SimpleNamespace(
+            data={"items": items},
+            model="test-model",
+            prompt_tokens=10,
+            completion_tokens=10,
+        )
+
+    monkeypatch.setattr(extraction, "chat_json", fake_chat_json)
+    result = extraction.extract_document_qa(
+        user_id="user",
+        course_id="course",
+        document_id="document",
+        target="Kurzfragen",
+    )
+
+    assert len(result.items) == 14
+    assert result.scanned_pages == list(range(1, 9))
+    assert result.complete
+    # Citation display may later show five pages; it cannot truncate results.
+    assert len(result.items) > 5
+
+
+def test_english_framing_preserves_german_source_text() -> None:
+    result = extraction.DocumentExtractionResult(
+        document_id="doc",
+        target="Kurzfragen",
+        total_pages=1,
+        scanned_pages=[1],
+        complete=True,
+        items=[
+            extraction.ExtractedQAItem(
+                item_id="9.2",
+                question="Welche Verfahren polymerisieren die Schichten?",
+                answer="Stereolithografie und Photopolymer Jetting.",
+                question_page=1,
+            )
+        ],
+    )
+    rendered = extraction.format_document_extraction(result, "en")
+    assert "**Question:** Welche Verfahren" in rendered
+    assert "**Answer:** Stereolithografie" in rendered
+    assert "I scanned all 1 pages" in rendered
+
+
+def test_unreadable_pages_prevent_complete_claim(monkeypatch) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: (
+            {"page_count": 3},
+            [{"page_number": 2, "cleaned_text": "Readable " * 20, "raw_text": ""}],
+        ),
+    )
+    monkeypatch.setattr(
+        extraction,
+        "chat_json",
+        lambda **_: SimpleNamespace(
+            data={"items": []},
+            model="test",
+            prompt_tokens=1,
+            completion_tokens=1,
+        ),
+    )
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="Kurzfragen",
+    )
+    assert not result.complete
+    assert result.unreadable_pages == [1, 3]

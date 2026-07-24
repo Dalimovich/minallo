@@ -28,7 +28,10 @@ export type AssistantStatus =
   | 'preparing_summary'
   | 'preparing_deep_explanation'
   | 'preparing_step_solution'
-  | 'checking_app_context';
+  | 'checking_app_context'
+  | 'scanning_document'
+  | 'extracting_items'
+  | 'checking_completeness';
 
 export interface AIThinkingStatus {
   el: HTMLElement;
@@ -100,6 +103,12 @@ export const assistantStatusText: Record<AssistantStatus, string> = {
     "I'm reading the exercise carefully before writing the solution steps.",
   checking_app_context:
     "I'm checking the Minallo workspace context that matches your question.",
+  scanning_document:
+    "I'm scanning every page in the active document.",
+  extracting_items:
+    "I'm extracting the questions and matching their official answers.",
+  checking_completeness:
+    "I'm checking the full document for missing earlier or later items.",
 };
 
 const CONTEXT_INITIAL_STATUS: Record<ThinkingContext, AssistantStatus> = {
