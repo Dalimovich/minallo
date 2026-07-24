@@ -1638,19 +1638,19 @@
 }
 
 .dr-drawer.dr-mode-ai .dr-host-ai .ai-input-box {
-  margin: 10px 10px 12px;
-  padding: 13px 13px 10px;
-  border-radius: 28px;
+  margin: 7px 9px 9px;
+  padding: 9px 11px 7px;
+  border-radius: 26px;
 }
 
 .dr-drawer.dr-mode-ai .dr-host-ai .ai-textarea {
-  min-height: 48px;
-  max-height: 116px;
-  font-size: 0.86rem;
+  min-height: 34px;
+  max-height: 92px;
+  font-size: 0.82rem;
 }
 
 .dr-drawer.dr-mode-ai .dr-host-ai .ai-bottom-row {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .dr-drawer.dr-mode-ai .dr-host-ai .ai-mode-pill {
@@ -1794,15 +1794,15 @@
     linear-gradient(180deg, rgba(2, 6, 23, 0.12), rgba(2, 6, 23, 0.5));
 }
 .dr-drawer .dr-host-ai .ai-input-box {
-  border-radius: 28px;
+  border-radius: 26px;
   border: 1px solid rgba(125, 211, 252, 0.18);
   background:
     linear-gradient(180deg, rgba(15, 23, 42, 0.74), rgba(2, 6, 23, 0.74)),
     rgba(2, 6, 23, 0.58);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  padding: 13px 13px 10px;
-  margin: 10px 10px 12px;
+  padding: 9px 11px 7px;
+  margin: 7px 9px 9px;
   box-shadow: 0 10px 26px rgba(2, 6, 23, 0.28);
 }
 .dr-drawer .dr-host-ai .ai-textarea {
@@ -1810,12 +1810,12 @@
   border: none;
   outline: none;
   color: var(--dr-text-strong);
-  font: 560 0.86rem/1.42 var(--font-main);
+  font: 560 0.82rem/1.42 var(--font-main);
   width: 100%;
   resize: none;
-  padding: 7px 8px 2px;
-  min-height: 48px;
-  max-height: 116px;
+  padding: 4px 6px 0;
+  min-height: 34px;
+  max-height: 92px;
 }
 .dr-drawer .dr-host-ai .ai-textarea::placeholder {
   color: var(--dr-text-faint);
@@ -1826,7 +1826,7 @@
   flex-wrap: nowrap;
   gap: 5px;
   row-gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
   padding: 0 2px 1px;
   min-width: 0;
 }
@@ -2021,9 +2021,9 @@
   }
 
   .dr-drawer.dr-mode-ai .dr-host-ai .ai-input-box {
-    margin: 7px;
-    padding: 10px 10px 8px;
-    border-radius: 24px;
+    margin: 6px 7px 8px;
+    padding: 8px 9px 6px;
+    border-radius: 22px;
   }
 
   .dr-drawer.dr-mode-ai .dr-host-ai .ai-bottom-row {
@@ -2036,4 +2036,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+/* Keep the composer visually unified. Theme/layout rules give focused
+   textareas their own filled rectangle; inside the drawer the shell itself is
+   the only surface, matching the compact capsule composer. */
+body.night #portal #app .dr-drawer .dr-host-ai .ai-textarea,
+body.night #portal #app .dr-drawer .dr-host-ai .ai-textarea:focus {
+  background: transparent !important;
+  box-shadow: none !important;
 }
