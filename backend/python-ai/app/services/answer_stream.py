@@ -185,6 +185,192 @@ _COMPLEX_REASONING_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CHECKBOX_GRID_RE = re.compile(
+    r"\b("
+    r"checkbox|check box|checked|tick|ticked|marked option|multiple choice|"
+    r"matching table|answer grid|kästchen|angekreuzt|markiert|zuordnung|"
+    r"treffen sie die.*zuordnung"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_VISUAL_MATCHING_GRID_OVERLAY = """
+
+VISUAL MATCHING-GRID TASK:
+The visible image contains a diagram or table with rows, columns, checkboxes,
+ticks, green marks, arrows, or other spatial annotations. TRANSCRIBE the marked
+mapping from the image; do not solve it from generic textbook knowledge.
+
+Mandatory procedure:
+1. Read every column heading from left to right.
+2. Read every numbered row from top to bottom.
+3. For each row, locate the visibly marked checkbox and trace it to its heading.
+4. Preserve the exact terminology and language printed in the source.
+5. Verify that every required number is present exactly once, in ascending order.
+6. If one mark is unreadable, identify that specific row instead of guessing.
+
+Evidence priority: visible marks; printed image labels; visible PDF text;
+same-page course chunks; general knowledge. Retrieved descriptions may explain
+the components, but may never alter the visible row-to-column assignments.
+"""
+
+
+def required_number_range(question: str, visible_context: str) -> list[int] | None:
+    combined = f"{question}\n{visible_context}"
+    patterns = (
+        r"\b(?:numbers?|ziffern?|nummern?)\s*(\d+)\s*(?:bis|to|-|–)\s*(\d+)\b",
+        r"\b(\d+)\s*(?:bis|to|-|–)\s*(\d+)\s*(?:markiert|labelled|labeled)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, combined, re.IGNORECASE)
+        if not match:
+            continue
+        start, end = int(match.group(1)), int(match.group(2))
+        if 0 < start <= end and end - start <= 30:
+            return list(range(start, end + 1))
+    return None
+
+
+def extract_numbered_assignments(answer: str) -> dict[int, str]:
+    assignments: dict[int, str] = {}
+    for match in re.finditer(r"(?m)^\s*(\d+)\s*[\.\):\-]\s*(.+?)\s*$", answer):
+        value = match.group(2).strip()
+        if value:
+            assignments[int(match.group(1))] = value
+    return assignments
+
+
+def numbered_assignment_issues(answer: str, required: list[int]) -> dict[str, list[int]]:
+    assignments = extract_numbered_assignments(answer)
+    seen = [
+        int(match.group(1))
+        for match in re.finditer(r"(?m)^\s*(\d+)\s*[\.\):\-]\s*", answer)
+    ]
+    return {
+        "missing": [number for number in required if number not in assignments],
+        "extras": [number for number in assignments if number not in required],
+        "duplicates": sorted({number for number in seen if seen.count(number) > 1}),
+    }
+
+
+def is_visual_assignment_task(
+    question: str,
+    open_context: str,
+    has_open_image: bool,
+) -> bool:
+    if not has_open_image:
+        return False
+    combined = f"{question}\n{open_context}"
+    return bool(
+        _CHECKBOX_GRID_RE.search(combined)
+        or re.search(
+            r"\b(?:ziffern?|nummern?|numbers?)\s*\d+\s*(?:bis|to|-|–)\s*\d+\b",
+            combined,
+            re.IGNORECASE,
+        )
+    )
+
+
+def verify_and_repair_visual_assignment(
+    *,
+    client: Any,
+    model: str,
+    question: str,
+    answer: str,
+    required: list[int] | None,
+    image_parts: list[dict[str, Any]],
+    max_tokens: int,
+) -> tuple[str, dict[str, Any]]:
+    """Verify a marked visual mapping before any answer tokens reach the UI."""
+    deterministic_issues = (
+        numbered_assignment_issues(answer, required) if required else
+        {"missing": [], "extras": [], "duplicates": []}
+    )
+    verifier_prompt = (
+        "Inspect the attached visual answer grid. Compare every proposed "
+        "assignment with the visibly marked checkbox and exact column heading. "
+        "Do not use general knowledge. Return JSON only with keys complete "
+        "(boolean), verified (boolean), missingNumbers (array), "
+        "incorrectAssignments (array), and verifiedAssignments (object).\n\n"
+        f"Original question:\n{question}\n\nRequired numbers: {required or []}\n\n"
+        f"Proposed answer:\n{answer}"
+    )
+    verification: dict[str, Any] = {
+        "complete": not any(deterministic_issues.values()),
+        "verified": False,
+        "missingNumbers": deterministic_issues["missing"],
+        "incorrectAssignments": [],
+        "verifiedAssignments": {},
+    }
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": [{"type": "text", "text": verifier_prompt}, *image_parts],
+            }],
+            response_format={"type": "json_object"},
+            **chat_completion_params(model, 1200, temperature=0),
+        )
+        raw = response.choices[0].message.content or "{}"
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            verification.update(parsed)
+    except Exception:
+        log.exception("visual assignment verification failed")
+
+    needs_repair = (
+        any(deterministic_issues.values())
+        or not verification.get("complete")
+        or not verification.get("verified")
+        or bool(verification.get("incorrectAssignments"))
+    )
+    if not needs_repair:
+        return answer, verification
+
+    repair_prompt = (
+        "Your previous draft failed visual verification. Reinspect the same "
+        "image and return the corrected final answer only. Transcribe the marked "
+        "row-to-column mapping; never substitute generic textbook labels. "
+        f"Required numbers: {required or 'all visibly labelled rows'}. "
+        "Return each required number exactly once in ascending order. If a mark "
+        "is genuinely unreadable, name that row as unreadable instead of guessing."
+        f"\n\nVerification result:\n{json.dumps(verification, ensure_ascii=False)}"
+        f"\n\nPrevious draft:\n{answer}\n\nOriginal question:\n{question}"
+    )
+    try:
+        repaired = client.chat.completions.create(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": [{"type": "text", "text": repair_prompt}, *image_parts],
+            }],
+            **chat_completion_params(model, max_tokens, temperature=0.1),
+        ).choices[0].message.content
+        repaired = (repaired or "").strip()
+        if repaired:
+            if required and any(numbered_assignment_issues(repaired, required).values()):
+                readable = extract_numbered_assignments(repaired)
+                missing = [n for n in required if n not in readable]
+                return (
+                    repaired
+                    + "\n\nRows "
+                    + ", ".join(map(str, missing))
+                    + " are not visually clear enough in the supplied image.",
+                    {**verification, "repairComplete": False, "missingNumbers": missing},
+                )
+            return repaired, {**verification, "repairComplete": True}
+    except Exception:
+        log.exception("visual assignment repair failed")
+    rows = required or sorted(extract_numbered_assignments(answer))
+    safe_fallback = (
+        "I could not visually verify the marked mapping, so I will not present "
+        "the draft as correct. Rows "
+        + ", ".join(map(str, rows))
+        + " are not visually clear enough to verify from the supplied image."
+    )
+    return safe_fallback, {**verification, "repairComplete": False}
+
 # Instruction appended to the user turn when an exercise/figure page image is
 # attached. Deliberately exhaustive: engineering figures pack the bulk of the
 # problem data (every diameter, length, wall thickness, thread, hole size,
@@ -1249,6 +1435,8 @@ def stream_answer(
     user_id: str | None = None,
     selected_file_names: list[str] | None = None,
     selected_document_ids: list[str] | None = None,
+    active_document_id: str | None = None,
+    visible_page: int | None = None,
     request_id: str | None = None,
     response_language: str | None = None,
     dialogue_overlay: str | None = None,
@@ -1331,6 +1519,26 @@ def stream_answer(
         tutor_mode_norm = "explain"
     has_open = bool(open_ctx)
     has_open_image = bool(open_image_parts)
+    visual_assignment_task = is_visual_assignment_task(
+        question, open_ctx, has_open_image
+    )
+    required_numbers = required_number_range(question, open_ctx)
+    if visual_assignment_task:
+        # Generic chunks from another page are plausible-sounding distractors
+        # for a marked grid. Keep only evidence from the exact visible page.
+        used_chunks = [
+            chunk for chunk in used_chunks
+            if (
+                (not active_document_id or chunk.document_id == active_document_id)
+                and (
+                    not visible_page
+                    or (
+                        (chunk.page_start or visible_page) <= visible_page
+                        <= (chunk.page_end or visible_page)
+                    )
+                )
+            )
+        ][:3]
     # A visible-page correction must not compete with vector hits for another
     # same-numbered exercise. Source 0 + recent history are the exact target;
     # retrieved chunks can only pull the answer onto a different task.
@@ -1414,6 +1622,22 @@ def stream_answer(
         )
         if problem_mode:
             system_prompt += _problem_solver_overlay(problem_mode, problem_solver or {})
+        if visual_assignment_task:
+            system_prompt += _VISUAL_MATCHING_GRID_OVERLAY
+            if required_numbers:
+                system_prompt += (
+                    "\nThe task requires exactly these numbered assignments: "
+                    + ", ".join(map(str, required_numbers))
+                    + ". Return each number exactly once."
+                )
+            if (
+                re.search(r"\bgerman\b", question, re.IGNORECASE)
+                and re.search(r"\benglish\b", question, re.IGNORECASE)
+            ):
+                system_prompt += (
+                    "\nUse exactly: <number>. <German source term> — <English explanation>. "
+                    "Keep the German term exactly as printed."
+                )
     wants_diagram = _wants_diagram(question, problem_solver) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks or (has_open and deictic)))
@@ -1748,6 +1972,15 @@ def stream_answer(
             log.info("figure-vision: will_attach_figure was set but no image rendered")
 
     image_parts = [*open_image_parts, *figure_image_parts]
+    log.info(
+        "model_visual_payload request_id=%s model=%s image_parts=%d "
+        "visual_assignment_task=%s required_numbers=%s",
+        request_id or "none",
+        target_model,
+        len(image_parts),
+        visual_assignment_task,
+        required_numbers,
+    )
     user_content: str | list[dict[str, Any]]
     if image_parts:
         user_content = [{"type": "text", "text": user_message}, *image_parts]
@@ -1788,6 +2021,7 @@ def stream_answer(
     # citations the model actually used. The full text isn't known until the
     # stream completes, so the filtering happens just before the 'done' event.
     answer_buf: list[str] = []
+    buffer_for_validation = is_exam_request or visual_assignment_task
 
     # Send an opening "meta" event so the client can render the bubble
     # immediately, even before the first content token arrives.
@@ -1799,6 +2033,8 @@ def stream_answer(
         "tutorMode": tutor_mode_norm,
         "confidence": "high" if display_strength == "strong" else "low",
         "unsupported": display_strength != "strong",
+        "needsClarification": answer_mode == "clarification",
+        "usedGeneralKnowledge": answer_mode == "general",
     })
 
     # No streamed source preface on purpose: sources ride the done-event
@@ -1923,12 +2159,12 @@ def stream_answer(
                             answer_buf.append(cleaned)
                             # Exams are buffered (not streamed live) so they can be
                             # linted + repaired BEFORE the user sees them.
-                            if not is_exam_request:
+                            if not buffer_for_validation:
                                 yield _sse({"t": cleaned})
                         intro_buf = ""
                     continue
                 answer_buf.append(token)
-                if not is_exam_request:
+                if not buffer_for_validation:
                     yield _sse({"t": token})
     except Exception as e:  # noqa: BLE001
         log.exception("stream_answer failed")
@@ -1946,7 +2182,7 @@ def stream_answer(
         cleaned = strip_answer_intro(intro_buf).lstrip("\n")
         if cleaned:
             answer_buf.append(cleaned)
-            if not is_exam_request:
+            if not buffer_for_validation:
                 yield _sse({"t": cleaned})
 
     full_answer = "".join(answer_buf)
@@ -1960,6 +2196,7 @@ def stream_answer(
     # we can lint and (on blocking failures) repair the exam BEFORE the user sees
     # it, then emit the final version. Exams already pause on the reasoning model,
     # so losing live streaming here is an acceptable trade for a validated exam.
+    visual_verification: dict[str, Any] | None = None
     if is_exam_request:
         blocking = exam_lint_blocking(lint_exam_output(full_answer))
         if blocking:
@@ -1972,6 +2209,19 @@ def stream_answer(
                 client=client, model=target_model, max_tokens=effective_max_tokens,
             )
         # Emit the final (possibly repaired) exam in slices the client appends.
+        for i in range(0, len(full_answer), 1500):
+            yield _sse({"t": full_answer[i:i + 1500]})
+    elif visual_assignment_task:
+        yield _sse({"status": "verifying_visual_answer"})
+        full_answer, visual_verification = verify_and_repair_visual_assignment(
+            client=client,
+            model=target_model,
+            question=question,
+            answer=full_answer,
+            required=required_numbers,
+            image_parts=image_parts,
+            max_tokens=effective_max_tokens,
+        )
         for i in range(0, len(full_answer), 1500):
             yield _sse({"t": full_answer[i:i + 1500]})
 
@@ -2121,9 +2371,12 @@ def stream_answer(
         "verification": verification,
         "confidence": confidence_label,
         "unsupported": display_strength != "strong",
+        "needsClarification": answer_mode == "clarification",
+        "usedGeneralKnowledge": answer_mode == "general",
         "sources": filtered_sources,
         "model": target_model,
         "promptTokens": prompt_tokens,
         "completionTokens": completion_tokens,
         "cachedTokens": cached_tokens,
+        "visualVerification": visual_verification,
     })

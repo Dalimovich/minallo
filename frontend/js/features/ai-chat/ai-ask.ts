@@ -24,6 +24,11 @@ import { getAiChatKey } from './chat-key.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { beginSafeStreamRecovery } from './stream-recovery.js';
+import {
+  isLikelyVisualAssignmentQuestion,
+  shouldReuseRecentVisualContext,
+  type LastAiImageContext,
+} from './visual-context.js';
 
 /** The subscription gate (HTTP 402 / "subscription required") should read as a
  * calm upgrade prompt, not a raw server error. */
@@ -358,17 +363,18 @@ export function _resetScrollFollow(): void {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-export async function pdfToImages(maxPages?: number): Promise<string[]> {
+export async function pdfToImages(maxPages?: number, denseVisualTask = false): Promise<string[]> {
   const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
   if (!pdfDoc) return [];
   const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
-  return pdfDocToImages(pdfDoc, currentPage, maxPages);
+  return pdfDocToImages(pdfDoc, currentPage, maxPages, denseVisualTask);
 }
 
 async function pdfDocToImages(
   pdfDoc: PdfDocLike,
   currentPage: number = 1,
-  maxPages?: number
+  maxPages?: number,
+  denseVisualTask = false,
 ): Promise<string[]> {
   const limit = maxPages || 6;
   const total = pdfDoc.numPages;
@@ -380,14 +386,20 @@ async function pdfDocToImages(
   for (let i = startPage; i <= endPage; i++) {
     try {
       const page = await pdfDoc.getPage(i);
-      const vp = page.getViewport({ scale: 1.5 });
+      let scale = denseVisualTask ? 2.25 : 1.5;
+      let vp = page.getViewport({ scale });
+      const maxPixels = 5_500_000;
+      if (vp.width * vp.height > maxPixels) {
+        scale *= Math.sqrt(maxPixels / (vp.width * vp.height));
+        vp = page.getViewport({ scale });
+      }
       const canvas = document.createElement('canvas');
       canvas.width = vp.width;
       canvas.height = vp.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) continue;
       await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      const dataUrl = canvas.toDataURL('image/jpeg', denseVisualTask ? 0.92 : 0.82);
       const b64 = dataUrl.split(',')[1];
       if (b64) imgs.push(b64);
     } catch { /* skip failed page */ }
@@ -721,6 +733,9 @@ export function clearCourseHistory(courseId: string, fileId?: string | null): vo
     const _w = window as unknown as { _activePsContext?: unknown };
     if (_w._activePsContext) _w._activePsContext = undefined;
   } catch { /* ignore */ }
+  try {
+    (window as unknown as { _lastAiImageContext?: LastAiImageContext })._lastAiImageContext = undefined;
+  } catch { /* ignore */ }
 }
 
 export function initAskAI(
@@ -874,6 +889,8 @@ export function initAskAI(
       /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question) ||
       /\b(?:task|exercise|problem|question|aufgabe|[uü]bung)\s*\d+(?:\.\d+)?\b/i.test(question);
 
+    const _denseVisualTask = isLikelyVisualAssignmentQuestion(question);
+
     _textReady
       .then(() => {
         if (!pdfDoc) return [];
@@ -887,7 +904,7 @@ export function initAskAI(
         // Requests about how a displayed solution was answered depend on the
         // exact working visible on the page (often inside a drawing/solution
         // box that PDF text extraction scrambles). Always attach that page.
-        return _visibleTextWeak || _asksAboutVisibleSolution ? pdfToImages(1) : [];
+        return _visibleTextWeak || _asksAboutVisibleSolution ? pdfToImages(1, _denseVisualTask) : [];
       })
       .then(async (pageImages: string[]) => {
         let userContent: unknown;
@@ -1050,22 +1067,22 @@ export function initAskAI(
         // such as "this one", "the image", or "where did that 100 come from?".
         // Text-only previousTurns cannot carry the pixels themselves.
         const _recentImageCtx = (window as unknown as {
-          _lastAiImageContext?: {
-            images?: Array<{ mediaType: string; data: string }>;
-            courseId?: string;
-            fileName?: string;
-            timestamp?: number;
-          };
+          _lastAiImageContext?: LastAiImageContext;
         })._lastAiImageContext;
         const _currentCourseId = window.activeCourseId || window.currentCourseId || '';
-        const _refersToRecentVisual =
-          /\b(this|that|it|one|image|picture|screenshot|photo|formula|equation|shown|above)\b/i.test(question);
-        const _recentVisualMatches =
-          !!_recentImageCtx?.images?.length &&
-          _refersToRecentVisual &&
-          Date.now() - (_recentImageCtx.timestamp || 0) < 15 * 60 * 1000 &&
-          (!_recentImageCtx.courseId || _recentImageCtx.courseId === _currentCourseId) &&
-          (!_recentImageCtx.fileName || _recentImageCtx.fileName === activeFileName);
+        const _currentConversationId =
+          getAiChatKey(_currentCourseId, _activeDocId || activeFileName || null) || undefined;
+        const _recentVisualMatches = shouldReuseRecentVisualContext(
+          question,
+          _recentImageCtx,
+          {
+            courseId: _currentCourseId || undefined,
+            documentId: _activeDocId || undefined,
+            fileName: activeFileName || undefined,
+            page: _currentPageNo,
+            conversationId: _currentConversationId,
+          },
+        );
         if (_recentVisualMatches) {
           const _attachmentImages = _recentImageCtx!.images!.slice(-2).map((img) => ({
             mediaType: img.mediaType,
@@ -1073,9 +1090,10 @@ export function initAskAI(
             page: _currentPageNo
           }));
           _openFileImages = [..._attachmentImages, ...(_openFileImages || [])].slice(0, 2);
+          _recentImageCtx!.remainingTurns -= 1;
           sysPrompt +=
-            '\n\nThe user recently attached the image(s) included with this request. ' +
-            'When they refer to "this", "that", "the image", or "this one", inspect those images directly and keep the prior conversation topic.';
+            '\n\nThis is a continuation of the active image-grounded question. ' +
+            'Inspect the attached pixels again, including diagrams, rows, columns, and marks.';
         }
         let _streamActiveFileName = activeFileName;
         let _streamOpenFileCtx = _openFileCtx;
@@ -1103,6 +1121,29 @@ export function initAskAI(
             (_leftExcerpt || '(left PDF text not yet extracted)') +
             '\n\nDOCUMENT 2 — "' + _compareName + '":\n' +
             (_rightExcerpt || '(right PDF text not yet extracted)');
+        }
+
+        // Any visible PDF render or uploaded screenshot starts/refreshes a
+        // short-lived visual thread. Follow-up corrections must receive the
+        // pixels again because previousTurns contains text only.
+        if (_openFileImages?.length && !_recentVisualMatches) {
+          (window as unknown as { _lastAiImageContext?: LastAiImageContext })._lastAiImageContext = {
+            images: _openFileImages.map((img) => ({
+              mediaType: img.mediaType,
+              data: img.data,
+              page: img.page,
+            })),
+            courseId: _currentCourseId || undefined,
+            documentId: _activeDocId || undefined,
+            fileName: activeFileName || undefined,
+            page: _currentPageNo,
+            conversationId: _currentConversationId,
+            questionThreadId: question.match(
+              /\b(?:aufgabe|exercise|task|problem)\s*\d+(?:[.,]\d+)?/i
+            )?.[0],
+            timestamp: Date.now(),
+            remainingTurns: 4,
+          };
         }
 
         // RAG-first routing: any question with a course_id goes through
@@ -1380,6 +1421,19 @@ export function initAskAI(
               _courseId,
               _activeDocId || undefined,
             );
+            console.info('[AI_VISUAL_CONTEXT]', {
+              question,
+              asksAboutVisibleSolution: _asksAboutVisibleSolution,
+              visibleTextWeak: _visibleTextWeak,
+              currentPage: _currentPageNo,
+              generatedPageImageCount: pageImages.length,
+              openFileImageCount: _openFileImages?.length || 0,
+              recentImageReused: _recentVisualMatches,
+              imageMediaTypes: _openFileImages?.map((img) => img.mediaType) || [],
+              imageByteEstimates: _openFileImages?.map(
+                (img) => Math.floor((img.data.length * 3) / 4)
+              ) || [],
+            });
             authenticatedFetch(_aiHost + '/ask-stream', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1551,7 +1605,7 @@ export function initAskAI(
               }
               window._activeStreamRender = null;
               const sources = (meta && meta.sources) || [];
-              const unsupported = !!(meta && meta.unsupported);
+              const usedGeneralKnowledge = !!(meta && meta.usedGeneralKnowledge);
 
               const markedText = rawText.replace(metaPattern, '').trim();
               const cleanText = stripSourceMarkers(markedText);
@@ -1565,7 +1619,7 @@ export function initAskAI(
               // the clean version stored in history / data-raw (export stays tidy).
               let displayText = markedText;
               let fullAnswer = cleanText;
-              if (unsupported && !sources.length) {
+              if (usedGeneralKnowledge && !sources.length) {
                 const note = '⚠️ *No matching course materials found — answering from general knowledge.*\n\n';
                 displayText = note + displayText;
                 fullAnswer = note + fullAnswer;

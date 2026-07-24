@@ -65,7 +65,7 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
 
 test('questions about the visible professor solution attach the visible PDF page', () => {
   assert.match(AI_ASK, /_asksAboutVisibleSolution/);
-  assert.match(AI_ASK, /_visibleTextWeak \|\| _asksAboutVisibleSolution \? pdfToImages\(1\)/);
+  assert.match(AI_ASK, /_visibleTextWeak \|\| _asksAboutVisibleSolution \? pdfToImages\(1,\s*_denseVisualTask\)/);
   assert.match(AI_ASK, /\(_visibleTextWeak \|\| _asksAboutVisibleSolution\) && pageImages\[0\]/);
   assert.match(AI_ASK, /task\|exercise\|problem\|question\|aufgabe/);
 });

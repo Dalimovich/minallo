@@ -430,7 +430,9 @@ def _stream_static_answer(
 
     def gen():
         confidence = "low" if answer_mode == "clarification" else "high"
-        unsupported = answer_mode == "clarification"
+        needs_clarification = answer_mode == "clarification"
+        used_general_knowledge = answer_mode == "general"
+        unsupported = needs_clarification
         yield _status_sse(status_key)
         meta = {
             "meta": True,
@@ -438,6 +440,8 @@ def _stream_static_answer(
             "answerMode": answer_mode,
             "confidence": confidence,
             "unsupported": unsupported,
+            "needsClarification": needs_clarification,
+            "usedGeneralKnowledge": used_general_knowledge,
             **extra_meta,
             **_source_meta(decision, cache_hit=False),
         }
@@ -450,6 +454,8 @@ def _stream_static_answer(
             "answerMode": answer_mode,
             "confidence": confidence,
             "unsupported": unsupported,
+            "needsClarification": needs_clarification,
+            "usedGeneralKnowledge": used_general_knowledge,
             "sources": sources,
             "cacheHit": False,
             "model": model,
@@ -733,6 +739,16 @@ async def _prepare_ask_stream_response(
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
     open_file_images = _validate_open_file_images(payload.openFileImages)
+    log.info(
+        "visual_context request_id=%s active_document=%s visible_page=%s "
+        "open_image_count=%d selected_region=%s open_text_chars=%d",
+        request_id,
+        bool(payload.activeDocumentId),
+        payload.visiblePage,
+        len(open_file_images),
+        bool(payload.selectedRegion),
+        len((payload.openFileContext or "").strip()),
+    )
     previous_turns_payload: list[dict[str, str]] = [
         {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
     ]
@@ -863,11 +879,21 @@ async def _prepare_ask_stream_response(
         question=resolved_question,
         has_history=bool(previous_turns_payload),
     )
-    if region_error_code:
+    has_current_page_evidence = bool(
+        (payload.openFileContext or "").strip() or open_file_images
+    )
+    if region_error_code and not (
+        region_error_code == "stale_selection" and has_current_page_evidence
+    ):
         evidence_decision.can_answer = False
         evidence_decision.action = "clarify"
         evidence_decision.recovery_code = region_error_code
         evidence_decision.missing_information = ["verified current PDF selection"]
+    elif region_error_code == "stale_selection":
+        log.info(
+            "stale_selection_discarded request_id=%s current_page_evidence=true",
+            request_id,
+        )
     log.info(
         "grounding_preflight request_id=%s reference_status=%s confidence=%.2f "
         "candidate_count=%d evidence_action=%s recovery_code=%s language=%s dialogue_act=%s "
@@ -1635,6 +1661,8 @@ async def _prepare_ask_stream_response(
                 doc_name_map[i] for i in (retrieval_document_ids or []) if i in doc_name_map
             ] or None,
             selected_document_ids=list(retrieval_document_ids) if retrieval_document_ids else None,
+            active_document_id=payload.activeDocumentId,
+            visible_page=payload.visiblePage,
             request_id=request_id,
             response_language=language_context.requested_response_language,
             dialogue_overlay=dialogue.prompt_overlay() + state_overlay,

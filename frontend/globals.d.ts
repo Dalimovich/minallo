@@ -198,10 +198,15 @@ declare global {
     _activeStreamRender?: (() => void) | null;
     _attachedImages?: unknown[];
     _lastAiImageContext?: {
-      images: Array<{ data: string; mediaType: string }>;
-      courseId: string;
-      fileName: string;
+      images: Array<{ data: string; mediaType: string; page?: number }>;
+      courseId?: string;
+      documentId?: string;
+      fileName?: string;
+      page?: number;
+      conversationId?: string;
+      questionThreadId?: string;
       timestamp: number;
+      remainingTurns: number;
     };
 
     // ── KaTeX (cdn-loaded math renderer) ───────────────────────────────

@@ -78,8 +78,11 @@ let askAI = function (question, skipUserBubble) {
     window._lastAiImageContext = {
       images: _imgs.slice(-2),
       courseId: window.activeCourseId || window.currentCourseId || '',
+      documentId: window.activeRagDocumentId || '',
       fileName: window.activeFileName || '',
-      timestamp: Date.now()
+      page: window.pdfPage || undefined,
+      timestamp: Date.now(),
+      remainingTurns: 4
     };
   }
 
