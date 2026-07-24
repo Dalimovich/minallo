@@ -134,3 +134,67 @@ def test_unreadable_pages_prevent_complete_claim(monkeypatch) -> None:
     )
     assert not result.complete
     assert result.unreadable_pages == [1, 3]
+
+
+def test_suspicious_initial_gap_requires_review() -> None:
+    assert extraction.identify_suspicious_numbering_gaps(
+        ["9.2", "9.3", "10.1", "10.2", "11.1"]
+    ) == ["9.1"]
+
+
+def test_missing_first_items_requests_backward_rescan() -> None:
+    assert extraction.infer_extraction_rescan_direction(
+        "you missed the first ones"
+    ) == "earlier"
+
+
+def test_normalised_ids_pair_distant_question_and_solution() -> None:
+    merged = extraction._merge_items([
+        extraction.ExtractedQAItem(
+            item_id="Aufgabe 9.2",
+            question="Welche Verfahren polymerisieren die Schichten?",
+            answer="",
+            question_page=3,
+        ),
+        extraction.ExtractedQAItem(
+            item_id="9.2",
+            question="Welche Verfahren polymerisieren die Schichten?",
+            answer="Stereolithografie und Photopolymer Jetting.",
+            question_page=30,
+            answer_page=30,
+        ),
+    ])
+    assert len(merged) == 1
+    assert merged[0].question_page == 3
+    assert merged[0].answer_page == 30
+
+
+def test_unanswered_item_prevents_complete_status(monkeypatch) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: (
+            {"page_count": 1},
+            [{"page_number": 1, "cleaned_text": "Kurzfragen " * 20, "raw_text": ""}],
+        ),
+    )
+    monkeypatch.setattr(
+        extraction,
+        "chat_json",
+        lambda **_: SimpleNamespace(
+            data={"items": [{
+                "item_id": "1.1",
+                "question": "Frage?",
+                "answer": "",
+                "question_page": 1,
+            }]},
+            model="test",
+            prompt_tokens=1,
+            completion_tokens=1,
+        ),
+    )
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="Kurzfragen",
+    )
+    assert not result.complete
+    assert result.unanswered_item_ids == ["1.1"]

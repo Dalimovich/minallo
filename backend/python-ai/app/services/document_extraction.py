@@ -84,10 +84,56 @@ class DocumentExtractionResult:
     scanned_pages: list[int] = field(default_factory=list)
     unreadable_pages: list[int] = field(default_factory=list)
     items: list[ExtractedQAItem] = field(default_factory=list)
+    unanswered_item_ids: list[str] = field(default_factory=list)
+    duplicate_item_ids: list[str] = field(default_factory=list)
+    suspicious_numbering_gaps: list[str] = field(default_factory=list)
+    all_relevant_pages_scanned: bool = False
+    all_items_have_answers: bool = False
     complete: bool = False
     model: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+
+
+def normalise_item_id(item_id: str) -> str:
+    return re.sub(r"[^0-9.]", "", item_id or "").strip(".")
+
+
+def infer_extraction_rescan_direction(follow_up: str) -> str:
+    if re.search(
+        r"\b(first ones|earlier ones|beginning|before|die ersten|früheren|am anfang)\b",
+        follow_up or "",
+        re.IGNORECASE,
+    ):
+        return "earlier"
+    if re.search(
+        r"\b(more|continue|next|later ones|weiter|mehr|nächsten)\b",
+        follow_up or "",
+        re.IGNORECASE,
+    ):
+        return "later"
+    return "full"
+
+
+def identify_suspicious_numbering_gaps(item_ids: list[str]) -> list[str]:
+    """Return review candidates; gaps trigger review but are not proof of loss."""
+    by_section: dict[str, set[int]] = {}
+    for item_id in item_ids:
+        normal = normalise_item_id(item_id)
+        match = re.fullmatch(r"(\d+)\.(\d+)", normal)
+        if match:
+            by_section.setdefault(match.group(1), set()).add(int(match.group(2)))
+    gaps: list[str] = []
+    for section, numbers in by_section.items():
+        if numbers and min(numbers) > 1:
+            gaps.extend(f"{section}.{number}" for number in range(1, min(numbers)))
+        if len(numbers) >= 2:
+            gaps.extend(
+                f"{section}.{number}"
+                for number in range(min(numbers), max(numbers) + 1)
+                if number not in numbers
+            )
+    return gaps
 
 
 def _load_document_pages(
@@ -168,7 +214,7 @@ def _item_sort_key(item: ExtractedQAItem) -> tuple[int, tuple[Any, ...]]:
 def _merge_items(items: list[ExtractedQAItem]) -> list[ExtractedQAItem]:
     merged: dict[str, ExtractedQAItem] = {}
     for item in items:
-        key = item.item_id.casefold()
+        key = normalise_item_id(item.item_id) or item.item_id.casefold()
         existing = merged.get(key)
         if existing is None:
             merged[key] = item
@@ -272,11 +318,37 @@ def extract_document_qa(
             document_id, index, len(groups), [p for p, _ in group], len(raw_items),
         )
 
+    questions_by_id: dict[str, set[str]] = {}
+    for item in all_items:
+        normal_id = normalise_item_id(item.item_id)
+        if normal_id and item.question.strip():
+            questions_by_id.setdefault(normal_id, set()).add(
+                re.sub(r"\W+", "", item.question.casefold())
+            )
+    result.duplicate_item_ids = sorted(
+        item_id for item_id, questions in questions_by_id.items()
+        if len(questions) > 1
+    )
     result.items = _merge_items(all_items)
-    result.complete = bool(
+    result.unanswered_item_ids = [
+        item.item_id for item in result.items if not item.answer.strip()
+    ]
+    result.suspicious_numbering_gaps = identify_suspicious_numbering_gaps(
+        [item.item_id for item in result.items]
+    )
+    result.all_relevant_pages_scanned = bool(
         total_pages
         and len(result.scanned_pages) + len(result.unreadable_pages) >= total_pages
         and not result.unreadable_pages
+    )
+    result.all_items_have_answers = bool(
+        result.items and not result.unanswered_item_ids
+    )
+    result.complete = bool(
+        result.all_relevant_pages_scanned
+        and result.all_items_have_answers
+        and not result.duplicate_item_ids
+        and not result.suspicious_numbering_gaps
     )
     return result
 
@@ -321,4 +393,7 @@ __all__ = [
     "classify_document_extraction",
     "extract_document_qa",
     "format_document_extraction",
+    "identify_suspicious_numbering_gaps",
+    "infer_extraction_rescan_direction",
+    "normalise_item_id",
 ]

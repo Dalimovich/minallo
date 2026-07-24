@@ -147,6 +147,50 @@ interface PdfDocLike {
   getPage: (n: number) => Promise<PdfPage>;
 }
 
+type ClientStreamFailureCode =
+  | 'missing_response_body'
+  | 'network_failure'
+  | 'stream_closed_without_terminal_event'
+  | 'malformed_sse'
+  | 'request_aborted'
+  | 'missing_backend_host'
+  | 'unknown_transport_error';
+
+function clientFailureMessage(code: ClientStreamFailureCode): string {
+  switch (code) {
+    case 'network_failure':
+      return 'The connection to Minallo AI failed before the answer completed.';
+    case 'stream_closed_without_terminal_event':
+      return 'The answer stream ended unexpectedly before completion.';
+    case 'missing_response_body':
+      return 'The AI server returned an empty response stream.';
+    case 'malformed_sse':
+      return 'The AI response stream contained invalid data.';
+    case 'missing_backend_host':
+      return 'The AI backend is not configured correctly.';
+    case 'request_aborted':
+      return 'The request was cancelled.';
+    default:
+      return 'Minallo AI could not complete the request.';
+  }
+}
+
+export interface RenderedPdfPage {
+  mediaType: 'image/png' | 'image/jpeg';
+  data: string;
+  page: number;
+  region: 'full_page' | 'formula_area' | 'drawing_area' | 'answer_grid';
+}
+
+function isDenseTechnicalVisualQuestion(question: string): boolean {
+  return (
+    isLikelyVisualAssignmentQuestion(question) ||
+    /\b(formula|equation|expression|derivation|substitution|term|symbol|fraction|exponent|unit|technical drawing|dimension|tolerance)\b/i.test(question) ||
+    /\b(formel|gleichung|herleitung|einsetzen|term|symbol|bruch|exponent|einheit|technische zeichnung|bema(?:ß|ss)ung|toleranz)\b/i.test(question) ||
+    /\b(explain|decompose|break down|why|how)\b[\s\S]{0,120}\b(formula|equation|calculation|solution|drawing)\b/i.test(question)
+  );
+}
+
 function _getTime(): string {
   const d = new Date();
   return (
@@ -368,7 +412,7 @@ export function _resetScrollFollow(): void {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-export async function pdfToImages(maxPages?: number, denseVisualTask = false): Promise<string[]> {
+export async function pdfToImages(maxPages?: number, denseVisualTask = false): Promise<RenderedPdfPage[]> {
   const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
   if (!pdfDoc) return [];
   const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
@@ -380,20 +424,20 @@ async function pdfDocToImages(
   currentPage: number = 1,
   maxPages?: number,
   denseVisualTask = false,
-): Promise<string[]> {
+): Promise<RenderedPdfPage[]> {
   const limit = maxPages || 6;
   const total = pdfDoc.numPages;
   const half = Math.floor(limit / 2);
   let startPage = Math.max(1, currentPage - half);
   const endPage = Math.min(total, startPage + limit - 1);
   if (endPage - startPage + 1 < limit) startPage = Math.max(1, endPage - limit + 1);
-  const imgs: string[] = [];
+  const imgs: RenderedPdfPage[] = [];
   for (let i = startPage; i <= endPage; i++) {
     try {
       const page = await pdfDoc.getPage(i);
-      let scale = denseVisualTask ? 2.25 : 1.5;
+      let scale = denseVisualTask ? 2.4 : 1.5;
       let vp = page.getViewport({ scale });
-      const maxPixels = 5_500_000;
+      const maxPixels = denseVisualTask ? 6_000_000 : 5_500_000;
       if (vp.width * vp.height > maxPixels) {
         scale *= Math.sqrt(maxPixels / (vp.width * vp.height));
         vp = page.getViewport({ scale });
@@ -404,9 +448,42 @@ async function pdfDocToImages(
       const ctx = canvas.getContext('2d');
       if (!ctx) continue;
       await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      const dataUrl = canvas.toDataURL('image/jpeg', denseVisualTask ? 0.92 : 0.82);
+      const mediaType = denseVisualTask ? 'image/png' : 'image/jpeg';
+      const dataUrl = denseVisualTask
+        ? canvas.toDataURL('image/png')
+        : canvas.toDataURL('image/jpeg', 0.88);
       const b64 = dataUrl.split(',')[1];
-      if (b64) imgs.push(b64);
+      if (b64) imgs.push({ mediaType, data: b64, page: i, region: 'full_page' });
+      if (denseVisualTask) {
+        const crops = [
+          { region: 'formula_area' as const, x: 0.07, y: 0.18, width: 0.86, height: 0.62 },
+          { region: 'answer_grid' as const, x: 0.05, y: 0.68, width: 0.9, height: 0.28 },
+        ];
+        for (const spec of crops) {
+          const crop = document.createElement('canvas');
+          crop.width = Math.floor(canvas.width * spec.width);
+          crop.height = Math.floor(canvas.height * spec.height);
+          const cropCtx = crop.getContext('2d');
+          if (!cropCtx) continue;
+          cropCtx.drawImage(
+            canvas,
+            Math.floor(canvas.width * spec.x),
+            Math.floor(canvas.height * spec.y),
+            crop.width,
+            crop.height,
+            0, 0, crop.width, crop.height,
+          );
+          const cropData = crop.toDataURL('image/png').split(',')[1];
+          if (cropData) {
+            imgs.push({
+              mediaType: 'image/png',
+              data: cropData,
+              page: i,
+              region: spec.region,
+            });
+          }
+        }
+      }
     } catch { /* skip failed page */ }
   }
   return imgs;
@@ -899,7 +976,7 @@ export function initAskAI(
       /\b(wie|warum)\b[\s\S]{0,80}\b(prof(?:essor)?|beantwortet|gel[oö]st|rechnung|l[oö]sung)\b/i.test(question) ||
       /\b(?:task|exercise|problem|question|aufgabe|[uü]bung)\s*\d+(?:\.\d+)?\b/i.test(question);
 
-    const _denseVisualTask = isLikelyVisualAssignmentQuestion(question);
+    const _denseVisualTask = isDenseTechnicalVisualQuestion(question);
 
     _textReady
       .then(() => {
@@ -916,7 +993,7 @@ export function initAskAI(
         // box that PDF text extraction scrambles). Always attach that page.
         return _visibleTextWeak || _asksAboutVisibleSolution ? pdfToImages(1, _denseVisualTask) : [];
       })
-      .then(async (pageImages: string[]) => {
+      .then(async (pageImages: RenderedPdfPage[]) => {
         let userContent: unknown;
         const isHandwritten = pdfFullText.trim().length < 100;
         if (pageImages.length) {
@@ -924,9 +1001,9 @@ export function initAskAI(
             ? '\n\nThis document is handwritten or scanned. Pages are provided as images — read all handwritten text, equations, and diagrams carefully.'
             : '\n\nThe open PDF pages are included as images below. The document may contain handwritten solutions, diagrams, or worked examples alongside printed text. Read both the extracted text AND the images — if the images show a worked solution with specific values, use those exact values.';
           userContent = ([{ type: 'text', text: question }] as Array<Record<string, unknown>>).concat(
-            pageImages.map((b64) => ({
+            pageImages.map((image) => ({
               type: 'image_url',
-              image_url: { url: 'data:image/jpeg;base64,' + b64 },
+              image_url: { url: `data:${image.mediaType};base64,${image.data}` },
             }))
           );
         } else {
@@ -1002,8 +1079,21 @@ export function initAskAI(
                 .replace(/Ü/g, 'Ue').replace(/Ö/g, 'Oe').replace(/Ä/g, 'Ae')
                 .replace(/ß/g, 'ss').toLowerCase();
             const _normTerm = _normDe(_matchTerm);
+            const _pp = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+            const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts || {};
+            const _visiblePageText = (_ppt[_pp] || '').trim();
+            const _normVisibleText = _normDe(_visiblePageText);
+            let _idx = -1;
+            if (_visiblePageText && (
+              _normVisibleText.includes(_normTerm) ||
+              _normVisibleText.replace(/\s+/g, '').includes(_normTerm.replace(/\s+/g, ''))
+            )) {
+              _openFileCtx =
+                `CURRENTLY VISIBLE PDF PAGE ${_pp} (Source 0):\n` +
+                _visiblePageText.slice(0, 16000);
+            }
             const _normText = _normDe(_rawText);
-            let _idx = _normText.indexOf(_normTerm);
+            if (!_openFileCtx) _idx = _normText.indexOf(_normTerm);
             if (_idx < 0) {
               const _compactTerm = _normTerm.replace(/\s+/g, '');
               const _compactText = _normText.replace(/\s+/g, '');
@@ -1018,7 +1108,7 @@ export function initAskAI(
                 _idx = _rawIdx;
               }
             }
-            if (_idx >= 0) {
+            if (!_openFileCtx && _idx >= 0) {
               (window as unknown as { _lastExerciseIdx?: number })._lastExerciseIdx = _idx;
               _openFileCtx = _rawText.slice(Math.max(0, _idx - 600), _idx + 8000);
             }
@@ -1071,7 +1161,7 @@ export function initAskAI(
             _openFileCtx.trim().length < 500
           );
         let _openFileImages = (_visibleTextWeak || _asksAboutVisibleSolution) && pageImages[0]
-          ? [{ mediaType: 'image/jpeg', data: pageImages[0], page: _currentPageNo }]
+          ? pageImages.slice(0, _denseVisualTask ? 3 : 1)
           : undefined;
         // Keep a recent user attachment available for anaphoric follow-ups
         // such as "this one", "the image", or "where did that 100 come from?".
@@ -1095,11 +1185,12 @@ export function initAskAI(
         );
         if (_recentVisualMatches) {
           const _attachmentImages = _recentImageCtx!.images!.slice(-2).map((img) => ({
-            mediaType: img.mediaType,
+            mediaType: img.mediaType as 'image/png' | 'image/jpeg',
             data: img.data,
-            page: _currentPageNo
+            page: _currentPageNo,
+            region: 'full_page' as const,
           }));
-          _openFileImages = [..._attachmentImages, ...(_openFileImages || [])].slice(0, 2);
+          _openFileImages = [..._attachmentImages, ...(_openFileImages || [])].slice(0, 3);
           _recentImageCtx!.remainingTurns -= 1;
           sysPrompt +=
             '\n\nThis is a continuation of the active image-grounded question. ' +
@@ -1117,10 +1208,10 @@ export function initAskAI(
           if (_rightTextWeak && _comparePdfDoc) {
             const _rightImages = await pdfDocToImages(_comparePdfDoc, _rightPageNo, 1);
             if (_rightImages[0]) {
-              _splitImages.push({ mediaType: 'image/jpeg', data: _rightImages[0], page: _rightPageNo });
+              _splitImages.push(_rightImages[0]);
             }
           }
-          if (_splitImages.length) _openFileImages = _splitImages.slice(0, 2);
+          if (_splitImages.length) _openFileImages = _splitImages.slice(0, 3);
           _streamActiveFileName = activeFileName
             ? activeFileName + ' + ' + _compareName
             : _compareName;
@@ -1400,7 +1491,7 @@ export function initAskAI(
             } catch { /* ignore — sending [] is safe */ }
 
             const _aiHost = (window.AI_SERVICE_URL || '').replace(/\/$/, '');
-            if (!_aiHost) { fallbackToRag(); return; }
+            if (!_aiHost) { handleClientStreamFailure('missing_backend_host'); return; }
 
             const _viewerSelection = window.getSelection();
             const _viewerWrap = document.getElementById('pdfViewerWrap');
@@ -1415,6 +1506,14 @@ export function initAskAI(
                 ? (_viewerSelection?.toString() || '').trim().slice(0, 12000)
                 : '';
             const _visiblePage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : undefined;
+            const _visiblePageTexts =
+              (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts || {};
+            const _currentVisiblePageText =
+              (_visiblePage ? _visiblePageTexts[_visiblePage] : '') || '';
+            const _visualEvidenceExpected =
+              shouldAttachVisiblePdfPage(question) ||
+              /\b(this|that|shown|visible|here|above)\b[\s\S]{0,100}\b(formula|equation|solution|drawing|diagram|table|page)\b/i.test(question) ||
+              /\b(diese?|das|hier|oben|gezeigt)\b[\s\S]{0,100}\b(formel|gleichung|lösung|zeichnung|diagramm|tabelle|seite)\b/i.test(question);
             // The browser does not possess the server's content SHA. A
             // course/doc/name/page-count tuple is not a document revision and
             // must never be presented as one. The backend binds the selection
@@ -1472,6 +1571,15 @@ export function initAskAI(
                 activeFileName: _streamActiveFileName || undefined,
                 openFileContext: _streamOpenFileCtx || undefined,
                 openFileImages: _openFileImages,
+                visualEvidenceExpected: _visualEvidenceExpected,
+                visualContextMeta: {
+                  renderAttempted: Boolean(pdfDoc),
+                  renderedPage: _visiblePage,
+                  renderedImageCount: _openFileImages?.length || 0,
+                  currentPageTextChars: _currentVisiblePageText.trim().length,
+                  activeDocumentId: _activeDocId || undefined,
+                  activeFileName: _streamActiveFileName || undefined,
+                },
                 // Recent chat history so the model can resolve anaphoric
                 // references ("the formula above", "explain that again").
                 previousTurns: _previousTurns.length ? _previousTurns : undefined,
@@ -1497,17 +1605,24 @@ export function initAskAI(
                     resolve({ content: [{ text: friendlyAiErrorMessage(detail) }] });
                     return;
                   }
-                  fallbackToRag();
+                  handleClientStreamFailure('unknown_transport_error');
                   return;
                 }
-                if (!res.body || !res.body.getReader) { fallbackToRag(); return; }
+                if (!res.body || !res.body.getReader) {
+                  handleClientStreamFailure('missing_response_body');
+                  return;
+                }
                 const reader = res.body.getReader();
                 _activeReader = reader;
                 const decoder = new TextDecoder();
                 let sseBuffer = '';
                 function read(): void {
                   reader.read().then((result) => {
-                    if (result.done) { finalize(_pendingMeta || null); return; }
+                    if (result.done) {
+                      if (_pendingMeta) finalize(_pendingMeta);
+                      else handleClientStreamFailure('stream_closed_without_terminal_event');
+                      return;
+                    }
                     sseBuffer += decoder.decode(result.value, { stream: true });
                     const lines = sseBuffer.split('\n');
                     sseBuffer = lines.pop() || '';
@@ -1540,11 +1655,13 @@ export function initAskAI(
                           handleStreamError(evt);
                           return;
                         }
-                      } catch { /* ignore malformed line */ }
+                      } catch {
+                        handleClientStreamFailure('malformed_sse');
+                      }
                     });
                     if (!_finalized) read();
                   }).catch(() => {
-                    if (!_finalized) fallbackToRag();
+                    if (!_finalized) handleClientStreamFailure('network_failure');
                   });
                 }
                 read();
@@ -1567,7 +1684,7 @@ export function initAskAI(
                   if (_st) _st.style.display = 'none';
                   resolve({ content: [{ text: '' }] });
                 } else {
-                  fallbackToRag();
+                  handleClientStreamFailure('network_failure', err);
                 }
               });
 
@@ -1591,24 +1708,26 @@ export function initAskAI(
               });
             }
 
-            function fallbackToRag(): void {
+            function handleClientStreamFailure(
+              code: ClientStreamFailureCode,
+              error?: unknown,
+            ): void {
               if (!beginSafeStreamRecovery(_recoveryState, _activeReader, _streamController)) return;
               _recoveryStarted = true;
               _finalized = true;
               if (ansWrap) ansWrap.remove();
               ansWrap = null;
               removeThinking();
-              const lang = (document.documentElement.lang || 'en').toLowerCase().slice(0, 2);
-              const retryText = ({
-                de: 'Die sichere Dokumentprüfung wurde unterbrochen. Deine Frage bleibt erhalten – bitte versuche es erneut.',
-                fr: 'La vérification sécurisée du document a été interrompue. Votre question est conservée — veuillez réessayer.',
-                es: 'La verificación segura del documento se interrumpió. Tu pregunta se ha conservado; inténtalo de nuevo.',
-                it: 'La verifica sicura del documento è stata interrotta. La domanda è stata conservata — riprova.',
-                ar: 'توقّف التحقق الآمن من المستند. تم الاحتفاظ بسؤالك — يُرجى المحاولة مرة أخرى.',
-                en: 'The grounded document check was interrupted. Your question is preserved — please retry.'
-              } as Record<string, string>)[lang] ||
-                'The grounded document check was interrupted. Your question is preserved — please retry.';
-              resolve({ content: [{ text: retryText }] });
+              console.error('[AI_STREAM_FAILURE]', { code, error });
+              resolve({
+                content: [{ text: clientFailureMessage(code) }],
+                _ragData: {
+                  errorCode: code,
+                  retryable:
+                    code === 'network_failure' ||
+                    code === 'stream_closed_without_terminal_event',
+                },
+              });
             }
 
             function finalize(meta: SseDoneEvent | null | undefined): void {
@@ -1646,7 +1765,7 @@ export function initAskAI(
               const cleanText = stripSourceMarkers(markedText);
               if (!cleanText) {
                 if (ansWrap) { ansWrap.remove(); ansWrap = null; }
-                fallbackToRag();
+                handleClientStreamFailure('stream_closed_without_terminal_event');
                 return;
               }
 

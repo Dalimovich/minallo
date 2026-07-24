@@ -78,9 +78,15 @@ _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
 _MAX_STREAM_OPEN_FILE_CTX_CHARS = 20000
-_MAX_OPEN_FILE_IMAGES = 2
+_MAX_OPEN_FILE_IMAGES = 3
 _MAX_OPEN_FILE_IMAGE_BASE64_CHARS = 2_500_000
 _ALLOWED_OPEN_FILE_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+_FALSE_VISUAL_DENIAL_RE = re.compile(
+    r"\b(?:cannot see|can't see|could not see|please open the pdf|open the page|"
+    r"upload the (?:image|page|diagram)|paste the (?:formula|equation|text)|"
+    r"formula (?:is|was) not provided|diagram (?:is|was) missing)\b",
+    re.IGNORECASE,
+)
 # Mirror backend/lib/rate-limit.ts INTERACTIVE_MONTHLY_CAP. /ask-stream is an
 # interactive RAG call (cheap per request on gpt-4o-mini) so it lives in the
 # interactive bucket alongside /api/ai/ask and the writing coach.
@@ -237,6 +243,16 @@ class OpenFileImagePayload(BaseModel):
     mediaType: str = "image/jpeg"
     data: str
     page: int | None = None
+    region: str = "full_page"
+
+
+class VisualContextMeta(BaseModel):
+    renderAttempted: bool = False
+    renderedPage: int | None = None
+    renderedImageCount: int = 0
+    currentPageTextChars: int = 0
+    activeDocumentId: str | None = None
+    activeFileName: str | None = None
 
 
 class PageContextPayload(BaseModel):
@@ -291,6 +307,8 @@ class AskStreamRequest(BaseModel):
     responseLanguage: str | None = None
     openFileContext: str | None = None
     openFileImages: list[OpenFileImagePayload] | None = None
+    visualEvidenceExpected: bool = False
+    visualContextMeta: VisualContextMeta | None = None
     # Tutor-mode overlay: explain | solve | quiz. Defaults to 'explain'.
     tutorMode: str | None = None
     sourceMode: str | None = "auto"
@@ -315,6 +333,21 @@ def _sse_bytes(payload: str) -> bytes:
 
 def _status_sse(status_key: str) -> bytes:
     return _sse_bytes(json.dumps({"status": status_key}, ensure_ascii=False))
+
+
+def _error_sse(*, code: str, message: str, retryable: bool, request_id: str) -> bytes:
+    return _sse_bytes(json.dumps({
+        "error": True,
+        "code": code,
+        "message": message,
+        "retryable": retryable,
+        "requestId": request_id,
+    }, ensure_ascii=False))
+
+
+def _is_terminal_sse(event: bytes | str) -> bool:
+    raw = event.decode("utf-8", errors="ignore") if isinstance(event, bytes) else event
+    return bool(re.search(r'"(?:done|error)"\s*:\s*true', raw))
 
 
 @dataclass(frozen=True)
@@ -517,7 +550,15 @@ def _validate_open_file_images(images: list[OpenFileImagePayload] | None) -> lis
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileImages data is too long")
         if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", data):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileImages data must be base64")
-        normalised.append({"mediaType": media_type, "data": data, "page": img.page})
+        region = (img.region or "full_page").strip().lower()
+        if region not in {"full_page", "formula_area", "drawing_area", "answer_grid"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unsupported image region")
+        normalised.append({
+            "mediaType": media_type,
+            "data": data,
+            "page": img.page,
+            "region": region,
+        })
     return normalised
 
 
@@ -623,7 +664,19 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="selectedText is too long")
     if payload.visiblePage is not None and payload.visiblePage < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visiblePage must be positive")
-    _validate_open_file_images(payload.openFileImages)
+    validated_images = _validate_open_file_images(payload.openFileImages)
+    if payload.visualEvidenceExpected and not validated_images:
+        async def missing_visual_stream():
+            yield _error_sse(
+                code="visible_page_capture_failed",
+                message=(
+                    "The current PDF page could not be captured. "
+                    "Minallo did not continue with unrelated sources."
+                ),
+                retryable=True,
+                request_id=request_id,
+            )
+        return StreamingResponse(missing_visual_stream(), media_type="text/event-stream")
 
     resolved_ids = list(payload.documentIds) if payload.documentIds else []
     if not resolved_ids and payload.documentNames:
@@ -644,6 +697,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     preflight_ms = (time.perf_counter() - started) * 1000
 
     async def early_stream():
+        terminal_event_sent = False
         last_shared_generation_check = 0.0
         last_shared_generation_result = True
 
@@ -713,6 +767,13 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     # previous turn after a reload.
                     if not await generation_is_current(check_shared=False):
                         prepared_task.cancel()
+                        terminal_event_sent = True
+                        yield _error_sse(
+                            code="request_superseded",
+                            message="This request was replaced by a newer question.",
+                            retryable=False,
+                            request_id=request_id,
+                        )
                         return
                     last_status_key = status_key
                     last_heartbeat = time.monotonic()
@@ -735,28 +796,44 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                         "stale_generation_stream_stopped request_id=%s generation=%s",
                         request_id, payload.conversationGeneration,
                     )
+                    terminal_event_sent = True
+                    yield _error_sse(
+                        code="request_superseded",
+                        message="This request was replaced by a newer question.",
+                        retryable=False,
+                        request_id=request_id,
+                    )
                     break
+                if _is_terminal_sse(event):
+                    terminal_event_sent = True
                 yield event
         except HTTPException as exc:
-            yield _sse_bytes(json.dumps({
-                "error": True,
-                "code": "request_rejected",
-                "message": str(exc.detail),
-                "status": exc.status_code,
-                "retryable": False,
-                "requestId": request_id,
-            }, ensure_ascii=False))
+            terminal_event_sent = True
+            yield _error_sse(
+                code="request_rejected",
+                message=str(exc.detail),
+                retryable=False,
+                request_id=request_id,
+            )
+        except asyncio.CancelledError:
+            log.info("stream_cancelled request_id=%s", request_id)
+            raise
         except Exception:
             log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
-            yield _sse_bytes(json.dumps({
-                "error": True,
-                "code": "internal_error",
-                "message": "Minallo could not complete this grounded answer.",
-                "recoverable": False,
-                "retryable": False,
-                "requestId": request_id,
-            }, ensure_ascii=False))
+            if not terminal_event_sent:
+                terminal_event_sent = True
+                yield _error_sse(
+                    code="internal_error",
+                    message="Minallo could not complete this grounded answer.",
+                    retryable=False,
+                    request_id=request_id,
+                )
         finally:
+            log.info(
+                "stream_closed request_id=%s terminal_event_sent=%s",
+                request_id,
+                terminal_event_sent,
+            )
             log.info(
                 "ai_stream_timing request_id=%s phase=total total_ms=%.0f",
                 request_id, (time.perf_counter() - started) * 1000,
@@ -823,12 +900,20 @@ async def _prepare_ask_stream_response(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
     open_file_images = _validate_open_file_images(payload.openFileImages)
     log.info(
-        "visual_context request_id=%s active_document=%s visible_page=%s "
-        "open_image_count=%d selected_region=%s open_text_chars=%d",
+        "visual_evidence_path request_id=%s expected=%s active_document=%s "
+        "visible_page=%s frontend_rendered=%s validated_images=%d "
+        "image_formats=%s image_regions=%s selected_region=%s open_text_chars=%d",
         request_id,
+        payload.visualEvidenceExpected,
         bool(payload.activeDocumentId),
         payload.visiblePage,
+        (
+            payload.visualContextMeta.renderedImageCount
+            if payload.visualContextMeta else None
+        ),
         len(open_file_images),
+        [image["mediaType"] for image in open_file_images],
+        [image["region"] for image in open_file_images],
         bool(payload.selectedRegion),
         len((payload.openFileContext or "").strip()),
     )
@@ -1914,7 +1999,28 @@ async def _prepare_ask_stream_response(
                     unsafe_model_downgrade = bool(
                         high_risk_validation and evt.get("heavyCapped")
                     )
-                    if unsafe_model_downgrade:
+                    false_visual_denial = bool(
+                        open_file_images
+                        and _FALSE_VISUAL_DENIAL_RE.search("".join(full_text_buf))
+                    )
+                    if false_visual_denial:
+                        safe_text = (
+                            "The current page image was attached, but Minallo "
+                            "could not read the requested visual content reliably."
+                        )
+                        full_text_buf.clear()
+                        full_text_buf.append(safe_text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
+                        evt["confidence"] = "low"
+                        evt["unsupported"] = True
+                        evt["visualDenialGuard"] = "replaced"
+                        log.warning(
+                            "false_visual_denial_blocked request_id=%s visible_page=%s",
+                            request_id,
+                            payload.visiblePage,
+                        )
+                    elif unsafe_model_downgrade:
                         safe_text = recovery_message(
                             "critical_numerical_mismatch",
                             language_context.requested_response_language,

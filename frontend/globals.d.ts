@@ -188,7 +188,12 @@ declare global {
     addBotMsg?: (text: string) => HTMLElement | null;
     _legacyAskAI?: (q: string) => unknown;
     addTyping?: () => unknown;
-    _pdfToImages?: (maxPages?: number) => Promise<string[]>;
+    _pdfToImages?: (maxPages?: number, denseVisualTask?: boolean) => Promise<Array<{
+      mediaType: 'image/png' | 'image/jpeg';
+      data: string;
+      page: number;
+      region: 'full_page' | 'formula_area' | 'drawing_area' | 'answer_grid';
+    }>>;
     stopGeneration?: () => void;
     restoreCourseHistory?: (courseId?: string | null, fileId?: string | null) => void;
     clearCourseHistory?: (courseId: string, fileId?: string | null) => void;
