@@ -22,6 +22,11 @@ test('PDF text selections send stable normalized region provenance', () => {
 
 test('each request sends a conversation generation and stale finalizers are ignored', () => {
   assert.match(askSource, /conversationGeneration:\s*myGenId/);
+  assert.match(
+    askSource,
+    /state\.currentGenId\s*=\s*Math\.max\(state\.currentGenId\s*\+\s*1,\s*Date\.now\(\)\)/,
+  );
+  assert.doesNotMatch(askSource, /state\.currentGenId\+\+;/);
   assert.match(askSource, /myGenId !== state\.currentGenId/);
   assert.match(askSource, /window\._abortCurrentStream\(\)/);
 });

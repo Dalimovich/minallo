@@ -770,7 +770,12 @@ export function initAskAI(
     }
     if (window._abortCurrentStream) window._abortCurrentStream();
     state.generationStopped = false;
-    state.currentGenId++;
+    // The backend persists this value per PDF conversation. A page reload
+    // recreates the in-memory state at zero, so a simple increment would make
+    // every subsequent request look stale forever. Use an epoch-backed
+    // monotonic value: it remains newer across reloads while still advancing
+    // when two requests start during the same millisecond.
+    state.currentGenId = Math.max(state.currentGenId + 1, Date.now());
     const myGenId = state.currentGenId;
 
     if (window.pinAI) window.pinAI();
