@@ -79,6 +79,33 @@ def test_exact_11_does_not_match_visible_13_11() -> None:
     assert ref.status == "not_found"
 
 
+def test_typoed_aufgabe_reference_reaches_current_page_vision() -> None:
+    question = "and for Aufgae 14.4, why did the prof choose that long formula?"
+    ref = _resolve(
+        question,
+        "The PDF text layer does not contain the scanned exercise heading.",
+        image=True,
+    )
+    decision = decide_evidence(ref, question=question, has_history=True)
+
+    assert ref.user_requested_label == "14.4"
+    assert ref.resolved_question_number == "14.4"
+    assert ref.status == "resolved"
+    assert any(item.kind == "visible_image_label_to_confirm" for item in ref.evidence)
+    assert decision.can_answer
+
+
+def test_unmatched_label_without_page_image_remains_unresolved() -> None:
+    ref = _resolve(
+        "Explain Aufgabe 14.4.",
+        "Aufgabe 13.4\nA different exercise",
+        image=False,
+    )
+
+    assert ref.resolved_question_number is None
+    assert ref.status == "not_found"
+
+
 def test_language_context_is_independent_from_document_language() -> None:
     english = resolve_language_context(
         "Explain the marked question 11.",

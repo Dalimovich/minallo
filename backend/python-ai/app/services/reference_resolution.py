@@ -17,7 +17,9 @@ EvidenceAction = Literal["answer", "clarify", "report_missing_evidence"]
 
 
 _EXPLICIT_LABEL_RE = re.compile(
-    r"\b(?:aufgabe|übungsaufgabe|uebungsaufgabe|übung|uebung|"
+    # Repair common transpositions in the label word only. The numerical
+    # exercise identifier remains exact and is never fuzzily rewritten.
+    r"\b(?:aufgabe|aufgae|aufagbe|übungsaufgabe|uebungsaufgabe|übung|uebung|"
     r"question|exercise|problem|task|ex)\s*"
     r"(\d+(?:[.,]\d+){0,3}(?:\s*(?:[.(]\s*)?[a-z]\s*\)?)?)(?!\w)",
     re.IGNORECASE,
@@ -58,7 +60,7 @@ def normalize_question_label(value: str | None) -> str | None:
         return None
     raw = value.strip().lower().replace(",", ".")
     raw = re.sub(
-        r"^(?:aufgabe|übungsaufgabe|uebungsaufgabe|übung|uebung|"
+        r"^(?:aufgabe|aufgae|aufagbe|übungsaufgabe|uebungsaufgabe|übung|uebung|"
         r"question|exercise|problem|task|ex)\s*",
         "",
         raw,
@@ -253,7 +255,19 @@ def resolve_question_reference(
         elif len(exact) > 1:
             ref.status = "ambiguous"
             ref.confidence = 0.45
-        elif active_document_id and visible_page and (page_text or has_visible_image):
+        elif active_document_id and visible_page and has_visible_image:
+            # A scanned exam page can have an incomplete text layer. The
+            # currently rendered page is authoritative evidence, so allow the
+            # vision stage to confirm the requested label instead of rejecting
+            # the request before the model can inspect the image.
+            ref.resolved_question_number = requested
+            ref.question_text = page_text or None
+            ref.status = "resolved"
+            ref.confidence = 0.78
+            ref.evidence.append(
+                ReferenceEvidence("visible_image_label_to_confirm", requested, visible_page)
+            )
+        elif active_document_id and visible_page and page_text:
             ref.status = "not_found"
             ref.confidence = 0.25
         else:
