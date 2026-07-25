@@ -61,6 +61,8 @@ test('widgets launcher mounts selected dashboard widgets in an animated anchored
   assert.match(moduleSource, /widgetOrigin\.parentNode\.insertBefore\(mountedWidget, widgetOrigin\)/);
   assert.match(moduleSource, /if \(!launcher\.contains\(event\.target as Node\)\) closeAll\(\)/);
   assert.match(css, /\.ncb-widget-menu, \.ncb-widget-float[\s\S]*backdrop-filter:\s*blur\(28px/);
+  assert.match(css, /\.ncb-widget-menu, \.ncb-widget-float[\s\S]*left:\s*calc\(100% \+ 34px\)/);
+  assert.match(css, /data-collapsed="true"\] \.ncb-widget-menu,[\s\S]*left:\s*116px/);
   assert.match(css, /@keyframes ncb-float-pop/);
 });
 

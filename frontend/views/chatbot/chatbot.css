@@ -620,7 +620,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   box-shadow: 0 14px 30px rgba(2, 9, 21, 0.24), 0 0 22px rgba(37, 99, 235, 0.1);
 }
 .ncb-widget-menu, .ncb-widget-float {
-  position: absolute; z-index: 180; top: calc(100% + 10px); left: 0; width: 244px;
+  position: absolute; z-index: 180; top: 0; left: calc(100% + 34px); width: 244px;
   border: 1px solid rgba(191, 219, 254, 0.18); border-top-color: rgba(219, 234, 254, 0.3); border-radius: 18px;
   background: radial-gradient(circle at 20% 0%, rgba(96, 165, 250, 0.13), transparent 40%), rgba(8, 22, 40, 0.84);
   box-shadow: 0 24px 60px rgba(0, 5, 16, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.065);
@@ -4383,7 +4383,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-sidebar[data-collapsed="true"] .ncb-widget-launcher { align-self: center; }
 .ncb-sidebar[data-collapsed="true"] .ncb-widgets-btn { width: 48px; height: 48px; padding: 0; border-radius: 14px; }
 .ncb-sidebar[data-collapsed="true"] .ncb-widget-menu,
-.ncb-sidebar[data-collapsed="true"] .ncb-widget-float { position: fixed; top: 86px; left: 82px; }
+.ncb-sidebar[data-collapsed="true"] .ncb-widget-float { position: fixed; top: 86px; left: 116px; }
 .ncb-sidebar[data-collapsed="true"] .ncb-account { width: 100%; flex-direction: column; gap: 8px; }
 .ncb-sidebar[data-collapsed="true"] .ncb-notification-trigger,
 .ncb-sidebar[data-collapsed="true"] .ncb-account-trigger { width: 44px; height: 44px; flex-basis: 44px; }
