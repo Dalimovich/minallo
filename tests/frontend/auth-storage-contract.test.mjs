@@ -66,6 +66,17 @@ test('authenticated boot mounts the chatbot before revealing the application', (
   assert.match(LOADER_TS, /Minallo could not open\.[\s\S]*Retry/);
 });
 
+test('automatic boot recovery preserves the authenticated session', () => {
+  const recoverStart = AUTH_BOOTSTRAP.indexOf("if (qp.get('recover') === '1')");
+  const fullResetStart = AUTH_BOOTSTRAP.indexOf("if (qp.get('reset') === '1')");
+  assert.ok(recoverStart >= 0 && fullResetStart > recoverStart);
+  const automaticRecovery = AUTH_BOOTSTRAP.slice(recoverStart, fullResetStart);
+  assert.doesNotMatch(automaticRecovery, /sb_sess_token|sb_sess_refresh|ss_logged_in/);
+  assert.match(automaticRecovery, /ss_last_section', 'aipage'/);
+  assert.match(AUTH_BOOTSTRAP, /window\.location\.replace\(window\.location\.pathname \+ '\?recover=1'\)/);
+  assert.doesNotMatch(AUTH_BOOTSTRAP, /window\.location\.replace\(window\.location\.pathname \+ '\?reset=1'\)/);
+});
+
 // ── no path writes the legacy sb_token / sb_refresh keys ───────────────────
 function assertNoLegacyWrites(name, source) {
   // Reading the legacy keys is fine (for cleanup/migration); WRITING them is

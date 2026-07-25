@@ -55,15 +55,19 @@ function _ssForceSplashOff(reason) {
   if (reason) console.error('[watchdog] ' + reason);
 }
 
-// Escape hatch for state-restore hangs: visit /?reset=1 to wipe the
-// localStorage keys that drive boot-time course/file restore, then
-// reload to a clean slate. Strips the query AND the hash (the hash is
-// restored from ss_state, but if we don't drop it now the router still
-// reads it as a deep-link target). Sets ss_reset_done so the watchdog
-// doesn't immediately re-fire and re-redirect into an infinite loop.
+// Recovery paths for state-restore hangs. `recover=1` is automatic and
+// session-safe: it clears stale UI routing only. `reset=1` remains the
+// explicit full-reset escape hatch that also clears authentication.
 (function () {
   try {
     var qp = new URLSearchParams(window.location.search);
+    if (qp.get('recover') === '1') {
+      try { localStorage.removeItem('ss_state'); } catch (e) {}
+      try { localStorage.setItem('ss_last_section', 'aipage'); } catch (e) {}
+      try { sessionStorage.setItem('ss_portal_tab', 'aipage'); } catch (e) {}
+      try { sessionStorage.setItem('ss_reset_done', '1'); } catch (e) {}
+      history.replaceState(null, '', window.location.pathname + '#portal=aipage');
+    }
     if (qp.get('reset') === '1') {
       try { localStorage.removeItem('ss_state'); } catch (e) {}
       try { localStorage.removeItem('ss_last_section'); } catch (e) {}
@@ -84,8 +88,8 @@ function _ssForceSplashOff(reason) {
 
 // Splash watchdog: if ss-ready hasn't fired 15s after boot, the app is
 // hung — most often on a state-restore (e.g. #course=... pointing at a
-// course whose data fails to load). Redirect to ?reset=1 to break the
-// cycle instead of leaving the user stuck on the splash forever.
+// Automatic recovery reloads through `recover=1`, which preserves the
+// authenticated session while clearing only stale UI routing state.
 // One-shot per tab via sessionStorage so we never loop: if a reset has
 // already happened this tab and we're STILL hung, escalate to a hard
 // landing-page bounce instead of redirecting in circles.
@@ -108,8 +112,8 @@ function _ssForceSplashOff(reason) {
       _ssForceSplashOff('ss-ready never fired after reset — forcing splash off.');
       return;
     }
-    if (window.location.search.indexOf('reset=1') !== -1) return;
-    window.location.replace(window.location.pathname + '?reset=1');
+    if (window.location.search.indexOf('recover=1') !== -1) return;
+    window.location.replace(window.location.pathname + '?recover=1');
   }, 15000);
 
   // Last local guard. loader.js also has a 35s hard fallback, but this file
