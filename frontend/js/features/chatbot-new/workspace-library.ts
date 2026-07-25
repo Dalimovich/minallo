@@ -67,7 +67,16 @@ function saveWorkspacePdfSession(course: LibraryCourse, file: CourseFile): void 
       size: file.size
     }
   };
-  try { sessionStorage.setItem(PDF_SESSION_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+  try {
+    sessionStorage.setItem(PDF_SESSION_KEY, JSON.stringify(state));
+    sessionStorage.setItem('ss_portal_tab', 'aipage');
+  } catch { /* ignore */ }
+  try {
+    localStorage.setItem('ss_last_section', 'aipage');
+    // A stale legacy Courses/PDF state otherwise overrides ss_portal_tab in
+    // the auth bootstrap and prevents the chatbot shell from loading at all.
+    localStorage.removeItem('ss_state');
+  } catch { /* ignore */ }
 }
 
 function readWorkspacePdfSession(): WorkspacePdfSession | null {
@@ -241,12 +250,17 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
 
   bindAccountMenu(root);
   renderCourses(coursePanel);
-  void restoreWorkspacePdf(root, coursePanel);
+  restoreWorkspacePdf(root, coursePanel);
 }
 
-async function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement): Promise<void> {
+function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement, attempt = 0): void {
   const saved = readWorkspacePdfSession();
   if (!saved) return;
+  const viewerReady = !!document.getElementById('pdfViewerWrap') && typeof window.openFile === 'function';
+  if (!viewerReady) {
+    if (attempt < 80) window.setTimeout(() => restoreWorkspacePdf(root, coursePanel, attempt + 1), 100);
+    return;
+  }
   const course = courses().find((item) => item.id === saved.course.id) || {
     id: saved.course.id,
     name: saved.course.name || 'Course',
@@ -255,7 +269,6 @@ async function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement):
     userFolders: []
   } as LibraryCourse;
 
-  await renderCourseDetail(coursePanel, course);
   const folderFiles = saved.file.folder
     ? (course.userFolders || []).find((folder) => folder.name === saved.file.folder)?.files || []
     : course.files || [];
@@ -270,6 +283,11 @@ async function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement):
     size: saved.file.size,
     _course: course
   };
+  // Reopen from the saved file identity immediately. Course hydration can
+  // involve a remote storage listing and must never block refresh restore.
+  // renderCourseDetail updates the hidden origin panel in the background so
+  // Back still returns to the fully refreshed course once it is ready.
+  void renderCourseDetail(coursePanel, course);
   openWorkspacePdf(root, file, course);
 }
 

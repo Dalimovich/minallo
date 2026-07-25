@@ -161,10 +161,18 @@ test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF
 test('refresh restores the chatbot PDF and Back restores its originating course', () => {
   assert.match(moduleSource, /const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf'/);
   assert.match(moduleSource, /sessionStorage\.setItem\(PDF_SESSION_KEY/);
-  assert.match(moduleSource, /void restoreWorkspacePdf\(root, coursePanel\)/);
-  assert.match(moduleSource, /await renderCourseDetail\(coursePanel, course\)/);
+  assert.match(moduleSource, /sessionStorage\.setItem\('ss_portal_tab', 'aipage'\)/);
+  assert.match(moduleSource, /localStorage\.setItem\('ss_last_section', 'aipage'\)/);
+  assert.match(moduleSource, /localStorage\.removeItem\('ss_state'\)/);
+  assert.match(moduleSource, /restoreWorkspacePdf\(root, coursePanel\)/);
+  assert.match(moduleSource, /attempt < 80/);
+  assert.match(moduleSource, /setTimeout\(\(\) => restoreWorkspacePdf\(root, coursePanel, attempt \+ 1\), 100\)/);
+  assert.doesNotMatch(moduleSource, /await renderCourseDetail\(coursePanel, course\)/);
   assert.match(moduleSource, /openWorkspacePdf\(root, file, course\)/);
   assert.match(moduleSource, /const currentCourse = courses\(\)\.find/);
   assert.match(moduleSource, /renderCourseDetail\(coursePanel, currentCourse\)/);
   assert.match(moduleSource, /sessionStorage\.removeItem\(PDF_SESSION_KEY\)/);
+  const backgroundCourse = moduleSource.indexOf('void renderCourseDetail(coursePanel, course)');
+  const immediatePdf = moduleSource.indexOf('openWorkspacePdf(root, file, course)', backgroundCourse);
+  assert.ok(backgroundCourse >= 0 && immediatePdf > backgroundCourse);
 });
