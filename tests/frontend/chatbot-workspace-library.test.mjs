@@ -199,7 +199,10 @@ test('workspace PDF toolbar stays movable and keeps annotation controls visible'
   assert.match(appSource, /placeAnnotationToolbar\(\);[\s\S]*function keepClearOfSidebar/);
   assert.match(css, /--annot-arrow-left/);
   assert.match(appSource, /document\.querySelector<HTMLElement>\('\.ncb-pdf-host'\)/);
-  assert.match(appSource, /clampedLeft - \(containingRect\?\.left \|\| 0\)/);
+  assert.match(appSource, /const useViewportCoordinates = maximized \|\| !workspaceOpen/);
+  assert.match(appSource, /setProperty\('position', useViewportCoordinates \? 'fixed' : 'absolute', 'important'\)/);
+  assert.match(appSource, /setProperty\('right', 'auto', 'important'\)/);
+  assert.match(appSource, /setProperty\('transform', 'none', 'important'\)/);
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar\.is-collapsed[\s\S]*position:\s*absolute/);
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfAnnotateToggle[\s\S]*place-items:\s*center/);
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfAnnotateToggle svg[\s\S]*display:\s*block/);

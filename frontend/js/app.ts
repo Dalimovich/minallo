@@ -1327,10 +1327,22 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     const clampedLeft = Math.min(limit.right, Math.max(limit.left, left));
     const clampedTop = Math.min(limit.bottom, Math.max(limit.top, top));
     const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
-    const containingRect = workspaceOpen ? pdfViewEl.getBoundingClientRect() : null;
-    toolbarEl.style.left = `${Math.round(clampedLeft - (containingRect?.left || 0))}px`;
-    toolbarEl.style.top = `${Math.round(clampedTop - (containingRect?.top || 0))}px`;
-    toolbarEl.style.right = 'auto';
+    const maximized = document.body.classList.contains('pdf-maximized');
+    const useViewportCoordinates = maximized || !workspaceOpen;
+    const containingRect = !useViewportCoordinates ? pdfViewEl.getBoundingClientRect() : null;
+    toolbarEl.style.setProperty('position', useViewportCoordinates ? 'fixed' : 'absolute', 'important');
+    toolbarEl.style.setProperty(
+      'left',
+      `${Math.round(clampedLeft - (containingRect?.left || 0))}px`,
+      'important'
+    );
+    toolbarEl.style.setProperty(
+      'top',
+      `${Math.round(clampedTop - (containingRect?.top || 0))}px`,
+      'important'
+    );
+    toolbarEl.style.setProperty('right', 'auto', 'important');
+    toolbarEl.style.setProperty('transform', 'none', 'important');
     placeAnnotationToolbar();
   }
 
@@ -1347,9 +1359,11 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     toggleEl.setAttribute('aria-label', collapsed ? 'Expand PDF toolbar' : 'Collapse PDF toolbar');
     toggleEl.setAttribute('title', collapsed ? 'Expand toolbar' : 'Collapse toolbar');
     if (!collapsed) {
+      toolbarEl.style.removeProperty('position');
       toolbarEl.style.removeProperty('left');
       toolbarEl.style.removeProperty('top');
       toolbarEl.style.removeProperty('right');
+      toolbarEl.style.removeProperty('transform');
     }
     if (collapsed) requestAnimationFrame(keepClearOfSidebar);
   }
@@ -1359,6 +1373,7 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   dragHandleEl.addEventListener('pointerdown', (event: PointerEvent) => {
     if (!toolbarEl.classList.contains('is-collapsed')) return;
     event.preventDefault();
+    event.stopPropagation();
     dragHandleEl.setPointerCapture(event.pointerId);
     const start = toolbarEl.getBoundingClientRect();
     const offsetX = event.clientX - start.left;
@@ -1366,6 +1381,7 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     toolbarEl.classList.add('is-dragging');
 
     const move = (moveEvent: PointerEvent): void => {
+      moveEvent.preventDefault();
       place(moveEvent.clientX - offsetX, moveEvent.clientY - offsetY);
     };
     const finish = (): void => {
