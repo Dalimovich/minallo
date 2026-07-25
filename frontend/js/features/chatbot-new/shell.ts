@@ -26,6 +26,7 @@ import {
 } from '../../services/study-service.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { initWorkspaceLibrary } from './workspace-library.js';
 
 /** Returns today's date as YYYY-MM-DD in the local timezone. */
 function todayLocalDateStr(): string {
@@ -96,6 +97,7 @@ export function initNewChatbotShell(): void {
   initKeyboardShortcuts(newRoot);
   initTutorModes(newRoot);
   initSourceControls(newRoot);
+  initWorkspaceLibrary(newRoot);
   initFullbleed();
 
   renderSidebar(newRoot);

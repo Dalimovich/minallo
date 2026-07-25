@@ -76,6 +76,23 @@
               Answers can be restricted to uploaded lectures, exercises, and course files.
             </p>
           </div>
+
+          <div class="ncb-account">
+            <button type="button" class="ncb-account-trigger" aria-haspopup="menu" aria-expanded="false" data-testid="chatbot-account-menu">
+              <span class="ncb-account-avatar">?</span>
+              <span class="ncb-account-copy">
+                <strong class="ncb-account-name">Account</strong>
+                <small>Profile &amp; settings</small>
+              </span>
+              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <div class="ncb-account-menu" role="menu" hidden>
+              <button type="button" role="menuitem" data-account-view="profile">Profile</button>
+              <button type="button" role="menuitem" data-account-view="subscription">Subscription</button>
+              <button type="button" role="menuitem" data-account-view="lounge">Study Lounge</button>
+              <button type="button" role="menuitem" data-account-view="settings">Settings</button>
+            </div>
+          </div>
         </aside>
 
         <section class="ncb-center ncb-no-scrollbar">
@@ -308,82 +325,49 @@
               </button>
             </div>
 
-            <div class="ncb-mini-tabs">
-              <button type="button" class="ncb-mini-tab ncb-mini-tab--active">
+            <div class="ncb-library-tabs" role="tablist" aria-label="Study library">
+              <button type="button" class="ncb-library-tab ncb-library-tab--active" role="tab" aria-selected="true" data-library-tab="courses">
                 <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
                   <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
                   <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
                 </svg>
-                <span data-i18n="cb_tab_files">Files</span>
+                <span>Courses</span>
               </button>
-              <button type="button" class="ncb-mini-tab">
-                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-                  <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-                  <path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>
-                </svg>
-                <span data-i18n="cb_tab_sources">Sources</span>
-              </button>
-              <button type="button" class="ncb-mini-tab">
+              <button type="button" class="ncb-library-tab" role="tab" aria-selected="false" data-library-tab="saved">
                 <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>
                   <rect width="16" height="20" x="4" y="2" rx="2"/>
                   <path d="M16 2v20"/>
                 </svg>
-                <span data-i18n="cb_tab_notes">Notes</span>
+                <span>Saved</span>
               </button>
             </div>
 
-            <section class="ncb-notes-card" hidden>
-              <div class="ncb-context-card-head">
-                <h3 class="ncb-context-card-title" data-i18n="cb_notes_card_title">Saved replies</h3>
-                <span class="ncb-files-pill ncb-notes-count">0</span>
-              </div>
-              <div class="ncb-notes-list">
-                <p class="ncb-notes-empty" data-i18n="cb_notes_empty">
-                  Save useful AI replies here by tapping the Save to notes button under any reply.
-                </p>
-              </div>
+            <section class="ncb-library-panel" data-library-panel="courses">
+              <div class="ncb-library-status">Loading courses&hellip;</div>
             </section>
 
-            <section class="ncb-context-card ncb-sources-card">
-              <div class="ncb-context-card-head">
-                <h3 class="ncb-context-card-title" data-i18n="cb_sources_card_title">Sources used</h3>
-                <!-- Count is owned by renderSourcesCard(); no data-i18n here or the
-                     localized refresh would clobber the live "N selected" value back to "0 files". -->
-                <span class="ncb-files-pill ncb-sources-count">0 selected</span>
-              </div>
-              <!-- Populated by renderSourcesCard() from chat.attachedFolders. -->
-              <div class="ncb-source-list"></div>
-            </section>
-
-            <section class="ncb-context-card">
-              <h3 class="ncb-context-card-title" data-i18n="cb_tools_title">AI tools</h3>
-              <div class="ncb-tools-grid">
-                <button type="button" class="ncb-tool-btn" data-tool="quiz" data-i18n="cb_tool_quiz">Quiz me</button>
-                <button type="button" class="ncb-tool-btn" data-tool="flashcards" data-i18n="cb_tool_flashcards">Flashcards</button>
-                <button type="button" class="ncb-tool-btn" data-tool="summary" data-i18n="cb_tool_summary">Summary</button>
-                <button type="button" class="ncb-tool-btn" data-tool="export" data-i18n="cb_tool_export">Export</button>
-              </div>
-            </section>
-
-            <section class="ncb-streak-card">
-              <div class="ncb-streak-head">
-                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <path d="M12 6v6l4 2"/>
-                </svg>
-                <h3 class="ncb-streak-title" data-i18n="cb_streak_title">Study streak</h3>
-              </div>
-              <p class="ncb-streak-text" data-i18n="cb_streak_text">
-                You are one focused session away from keeping today&rsquo;s streak alive.
-              </p>
+            <section class="ncb-library-panel" data-library-panel="saved" hidden>
+              <div class="ncb-library-status">Choose Saved to load your resources.</div>
             </section>
           </div>
         </aside>
       </div>
     </main>
+  </div>
+
+  <div class="ncb-workspace-overlay" data-workspace-overlay hidden aria-hidden="true">
+    <div class="ncb-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="ncbWorkspaceTitle">
+      <header class="ncb-workspace-head">
+        <div>
+          <p class="ncb-eyebrow">Minallo workspace</p>
+          <h2 id="ncbWorkspaceTitle">Preview</h2>
+        </div>
+        <button type="button" class="ncb-workspace-close" aria-label="Close popup">&times;</button>
+      </header>
+      <div class="ncb-workspace-body"></div>
+    </div>
   </div>
 </div>
 <!-- /ncbRoot -->

@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const html = fs.readFileSync('frontend/views/chatbot/chatbot.html', 'utf8');
+const moduleSource = fs.readFileSync(
+  'frontend/js/features/chatbot-new/workspace-library.ts',
+  'utf8'
+);
+
+test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
+  assert.match(html, /data-library-tab="courses"/);
+  assert.match(html, /data-library-tab="saved"/);
+  assert.match(html, /data-library-panel="courses"/);
+  assert.match(html, /data-library-panel="saved"/);
+});
+
+test('course drawer reuses the real course registry, hydration, and file opener', () => {
+  assert.match(moduleSource, /window\.SEMS \|\| window\._SEMS/);
+  assert.match(moduleSource, /window\._ufMerge/);
+  assert.match(moduleSource, /window\.openFile\?\.\(file, course\)/);
+});
+
+test('Saved is grouped by resource function and course', () => {
+  for (const kind of ['notes', 'summaries', 'flashcards', 'cheatsheets', 'exams']) {
+    assert.match(moduleSource, new RegExp(`${kind}:`));
+  }
+  assert.match(moduleSource, /allCourses\.map\(\(course\)/);
+  assert.match(moduleSource, /ofKind\.filter\(\(item\) => item\.course\.id === course\.id\)/);
+});
+
+test('saved resources and account destinations use the workspace overlay', () => {
+  assert.match(html, /data-workspace-overlay/);
+  assert.match(moduleSource, /openSaved\(root, item\)/);
+  assert.match(moduleSource, /openPortalView\(root, button\.dataset\.accountView/);
+  assert.match(html, /data-account-view="profile"/);
+  assert.match(html, /data-account-view="subscription"/);
+  assert.match(html, /data-account-view="lounge"/);
+  assert.match(html, /data-account-view="settings"/);
+});
