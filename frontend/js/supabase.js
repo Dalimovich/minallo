@@ -672,12 +672,10 @@ function _enterApp(user) {
   );
   var _appEl = document.getElementById('app');
   var _portalEl = document.getElementById('portal');
-  // Determine which section to restore before anything else changes the state
-  var _restoreSec = null;
-  try {
-    _restoreSec =
-      sessionStorage.getItem('ss_portal_tab') || localStorage.getItem('ss_last_section');
-  } catch (e) {}
+  // The chatbot workspace is now the only authenticated top-level page.
+  // Feature sections remain loadable inside its popups, but old portal state
+  // must never take over the screen during auth/session restoration.
+  var _restoreSec = 'aipage';
   // If ss_state says the user was inside a file/course view (inApp=true),
   // force _restoreSec='studip' so nav lands on Courses regardless of what
   // ss_portal_tab happens to say — covers entry points (e.g. deep-link to
@@ -691,9 +689,7 @@ function _enterApp(user) {
   var _savedSt = null;
   try {
     _savedSt = JSON.parse(localStorage.getItem('ss_state') || 'null');
-    if (_savedSt && _savedSt.inApp === true) {
-      _restoreSec = 'studip';
-    }
+    if (_savedSt && _savedSt.inApp === true) _savedSt = null;
   } catch (e) {}
 
   if (!_inAppAlready) {
@@ -706,8 +702,9 @@ function _enterApp(user) {
       _portalEl.style.zIndex = '200';
     }
   }
-  // Always restore the last section, falling back to dashboard
-  var _targetSec = _restoreSec && _restoreSec !== 'dashboard' ? _restoreSec : 'dashboard';
+  // Always enter the chatbot; Courses, Saved, settings, and other features
+  // are now reached through the chatbot workspace itself.
+  var _targetSec = 'aipage';
   if (typeof setNavActive === 'function')
     setNavActive(
       {
@@ -726,9 +723,7 @@ function _enterApp(user) {
         admin: 'psbAdmin'
       }[_targetSec] || 'psbDashboard'
     );
-  var _resumePdfImmediately = !!(
-    _savedSt && _savedSt.inApp === true && _savedSt.courseId && _savedSt.fileName
-  );
+  var _resumePdfImmediately = false;
   if (_resumePdfImmediately) {
     // Do not flash the Courses dashboard while course/storage data hydrates.
     // The cached file metadata will start the real open in _loadUserCourses;

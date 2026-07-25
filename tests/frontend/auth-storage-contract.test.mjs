@@ -46,6 +46,13 @@ test('auth-bootstrap treats sb_sess_refresh as "logged in" for boot routing', ()
   );
 });
 
+test('authenticated boot and successful sign-in always enter the chatbot workspace', () => {
+  assert.match(AUTH_BOOTSTRAP, /if \(loggedIn\) \{[\s\S]*sessionStorage\.setItem\('ss_portal_tab', 'aipage'\)/);
+  assert.match(AUTH_BOOTSTRAP, /window\.location\.replace\(window\.location\.pathname \+ '#portal=aipage'\)/);
+  assert.match(SUPABASE_JS, /var _targetSec = 'aipage'/);
+  assert.match(SUPABASE_JS, /var _resumePdfImmediately = false/);
+});
+
 // ── no path writes the legacy sb_token / sb_refresh keys ───────────────────
 function assertNoLegacyWrites(name, source) {
   // Reading the legacy keys is fine (for cleanup/migration); WRITING them is

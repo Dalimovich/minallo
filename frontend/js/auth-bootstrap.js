@@ -174,6 +174,20 @@ function _ssForceSplashOff(reason) {
   }
 
   window._ssIsLoggedIn = loggedIn;
+  // The chatbot workspace is Minallo's single authenticated entry point.
+  // Keep the underlying portal sections available for chatbot popups/widgets,
+  // but never restore the retired dashboard/Courses UI as the top-level page.
+  if (loggedIn) {
+    try {
+      sessionStorage.setItem('ss_portal_tab', 'aipage');
+      localStorage.setItem('ss_last_section', 'aipage');
+      localStorage.removeItem('ss_state');
+      var _isOAuthCallback = window.location.hash && window.location.hash.indexOf('access_token') !== -1;
+      if (!_isOAuthCallback && window.location.hash !== '#portal=aipage') {
+        history.replaceState({ view: 'portal', section: 'aipage' }, '', '#portal=aipage');
+      }
+    } catch (e) {}
+  }
   if (window.Minallo) {
     window.Minallo.setState({ bootLoggedIn: loggedIn });
     window.Minallo.emit('auth:boot-route', { loggedIn: loggedIn });
@@ -217,9 +231,12 @@ window._onLoginSuccess = function () {
   try {
     sessionStorage.setItem('ss_logged_in', 'true');
     sessionStorage.setItem('ss_last_active', Date.now());
+    sessionStorage.setItem('ss_portal_tab', 'aipage');
+    localStorage.setItem('ss_last_section', 'aipage');
+    localStorage.removeItem('ss_state');
   } catch (e) {}
   if (window.Minallo) window.Minallo.emit('auth:login-success', {});
-  window.location.reload();
+  window.location.replace(window.location.pathname + '#portal=aipage');
 };
 
 var _CFG = window.MinalloConfig || {};
