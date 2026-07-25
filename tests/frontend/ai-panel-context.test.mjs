@@ -39,8 +39,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260726-pdf-floating-controls-v1['"]/);
-  assert.match(INDEX, /config\.js\?v=20260726-pdf-floating-controls-v1/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260726-chatbot-only-boot-v1['"]/);
+  assert.match(INDEX, /config\.js\?v=20260726-chatbot-only-boot-v1/);
 });
 
 test('Manrope is the single shared interface font while technical text stays monospace', () => {
@@ -71,7 +71,7 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.doesNotMatch(MESSAGE_NAVIGATOR, /width:\s*calc\(var\(--dr-rail-w[^\n]+\+\s*24px\)/);
   assert.match(MESSAGE_NAVIGATOR, /width:\s*var\(--dr-rail-w,\s*66px\)/);
   assert.match(LOADER, /document-rail\.css\?v=35/);
-  assert.match(INDEX, /loader\.js\?v=47/);
+  assert.match(INDEX, /loader\.js\?v=48/);
 });
 
 test('AI drawer composer uses the compact rounded two-row shell', () => {

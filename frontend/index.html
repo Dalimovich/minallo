@@ -169,14 +169,14 @@
          relies on the in-order execution `defer` guarantees. -->
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
-    <script src="js/config.js?v=20260726-pdf-floating-controls-v1" defer></script>
+    <script src="js/config.js?v=20260726-chatbot-only-boot-v1" defer></script>
     <!-- AI chat typing config — only read inside the dashboard chat
          features, never on the public landing. `async` removes it from
          the critical-request chain so it loads in parallel without
          sequencing against loader.js. -->
     <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=5"></script>
-    <script src="js/auth-bootstrap.js?v=6" defer></script>
+    <script src="js/auth-bootstrap.js?v=7" defer></script>
     <script src="js/supabase.js?v=7" defer></script>
-    <script type="module" src="js/loader.js?v=47"></script>
+    <script type="module" src="js/loader.js?v=48"></script>
   </body>
 </html>

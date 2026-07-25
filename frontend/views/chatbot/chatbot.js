@@ -30,7 +30,7 @@
       attempts++;
       var s = document.createElement('script');
       s.type = 'module';
-      s.src = 'js/features/chatbot-new/shell.js?v=8&av=' + encodeURIComponent(av);
+    s.src = 'js/features/chatbot-new/shell.js?v=9&av=' + encodeURIComponent(av);
       s.onload = function () { resolve(); };
       s.onerror = function () {
         s.remove();
@@ -66,7 +66,7 @@
     return fetchHtml(2);
   });
 
-  Promise.all([
+  window._ncbMountPromise = Promise.all([
     htmlPromise,
     shellPromise,
   ])
@@ -76,14 +76,17 @@
       }
       if (typeof window.initNewChatbotShell === 'function') {
         window.initNewChatbotShell();
+        return true;
       } else {
         console.error('initNewChatbotShell missing after shell load');
         // Let a later navigation retry the whole thing rather than stay blank.
         window._ncbShellPromise = null;
+        throw new Error('chatbot shell initializer missing');
       }
     })
     .catch(function (err) {
       console.error('chatbot load failed:', err);
       window._ncbShellPromise = null;
+      throw err;
     });
 })();

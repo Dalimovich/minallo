@@ -618,7 +618,7 @@ interface LandingTranslation {
             ],
             dashboardCalendar: ['views/dashboard/dashboard-calendar.js'],
             chat: ['views/chat/chat.js'],
-            aipage: ['views/chatbot/chatbot.js?v=8'],
+            aipage: ['views/chatbot/chatbot.js?v=9'],
             german: ['views/practice/practice.js'],
             notes: ['views/lecturenotes/lecturenotes.js'],
             profile: ['views/profile/profile.js'],
@@ -763,6 +763,35 @@ interface LandingTranslation {
               console.warn('[loader] route prewarm failed:', name, err);
             });
           };
+
+          async function mountAuthenticatedChatbotHome(): Promise<void> {
+            const bootGuard = document.getElementById('minalloChatbotBootGuard');
+            try {
+              await loadPortalRoute('aipage');
+              const mountPromise = (window as unknown as {
+                _ncbMountPromise?: Promise<unknown>;
+              })._ncbMountPromise;
+              if (!mountPromise) throw new Error('chatbot mount did not start');
+              await mountPromise;
+              const navigate = (window as unknown as {
+                _navigatePortal?: (section: string) => void;
+              })._navigatePortal;
+              if (typeof navigate === 'function') navigate('aipage');
+              else {
+                window.showPortalSection?.('aipage');
+                window.setNavActive?.('psbAIPage');
+              }
+              document.body.classList.remove('minallo-chatbot-booting');
+              bootGuard?.remove();
+            } catch (error) {
+              console.error('[loader] chatbot home failed to mount', error);
+              if (bootGuard) {
+                bootGuard.innerHTML = '<div><span>Minallo could not open.</span><button type="button">Retry</button></div>';
+                bootGuard.querySelector('button')?.addEventListener('click', () => window.location.reload());
+              }
+            }
+          }
+          void mountAuthenticatedChatbotHome();
 
           function setupNavIntentPrewarm(): void {
             const rootNav = document.querySelector('#portal .sb-nav');

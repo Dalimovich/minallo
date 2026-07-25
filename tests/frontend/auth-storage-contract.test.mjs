@@ -25,6 +25,8 @@ const AUTH_MODAL = read('frontend/js/features/auth/auth-modal.ts');
 const ONBOARDING_TS = read('frontend/js/features/auth/onboarding.ts');
 const SETTINGS_VIEW_JS = read('frontend/views/settings/settings.js');
 const USER_DATA_TS = read('frontend/js/features/auth/user-data.ts');
+const LOADER_TS = read('frontend/js/loader.ts');
+const CHATBOT_DISPATCHER = read('frontend/views/chatbot/chatbot.js');
 
 test('free accounts are not shown the paywall automatically during login', () => {
   assert.doesNotMatch(
@@ -51,6 +53,17 @@ test('authenticated boot and successful sign-in always enter the chatbot workspa
   assert.match(AUTH_BOOTSTRAP, /window\.location\.replace\(window\.location\.pathname \+ '#portal=aipage'\)/);
   assert.match(SUPABASE_JS, /var _targetSec = 'aipage'/);
   assert.match(SUPABASE_JS, /var _resumePdfImmediately = false/);
+});
+
+test('authenticated boot mounts the chatbot before revealing the application', () => {
+  assert.match(AUTH_BOOTSTRAP, /document\.body\.classList\.add\('minallo-chatbot-booting'\)/);
+  assert.match(AUTH_BOOTSTRAP, /id = 'minalloChatbotBootGuard'/);
+  assert.match(CHATBOT_DISPATCHER, /window\._ncbMountPromise = Promise\.all/);
+  assert.match(LOADER_TS, /await loadPortalRoute\('aipage'\)/);
+  assert.match(LOADER_TS, /await mountPromise/);
+  assert.match(LOADER_TS, /navigate\('aipage'\)/);
+  assert.match(LOADER_TS, /document\.body\.classList\.remove\('minallo-chatbot-booting'\)/);
+  assert.match(LOADER_TS, /Minallo could not open\.[\s\S]*Retry/);
 });
 
 // ── no path writes the legacy sb_token / sb_refresh keys ───────────────────
