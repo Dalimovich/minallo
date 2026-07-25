@@ -7,6 +7,7 @@ const moduleSource = fs.readFileSync(
   'frontend/js/features/chatbot-new/workspace-library.ts',
   'utf8'
 );
+const css = fs.readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
 
 test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
   assert.match(html, /data-library-tab="courses"/);
@@ -46,4 +47,17 @@ test('saved resources and account destinations use the workspace overlay', () =>
   assert.match(html, /data-account-view="subscription"/);
   assert.match(html, /data-account-view="lounge"/);
   assert.match(html, /data-account-view="settings"/);
+});
+
+test('account overlays load both the real section HTML and its feature scripts', () => {
+  assert.match(moduleSource, /window\._ssLoadFeatureSection\?\.\(view\)/);
+  assert.match(moduleSource, /window\._ssLoadPortalFeature\?\.\(view\)/);
+  assert.match(moduleSource, /Promise\.all/);
+});
+
+test('account overlays are opaque and desktop sidebars are floating rounded surfaces', () => {
+  assert.match(css, /\.ncb-workspace-dialog[\s\S]*background:\s*#0a1729/);
+  assert.match(css, /\.ncb-workspace-body[\s\S]*background:\s*#0b192c/);
+  assert.match(css, /\.ncb-workspace-body > \.portal-section[\s\S]*background:\s*#0d1d32 !important/);
+  assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar,[\s\S]*\.ncb-context[\s\S]*border-radius:\s*24px/);
 });

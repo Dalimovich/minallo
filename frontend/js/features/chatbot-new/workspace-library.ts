@@ -344,7 +344,10 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
   if (!body) return;
   body.innerHTML = '<div class="ncb-library-status">Opening&hellip;</div>';
   if (view !== 'lounge') {
-    await window._ssLoadPortalFeature?.(view);
+    await Promise.all([
+      window._ssLoadFeatureSection?.(view),
+      window._ssLoadPortalFeature?.(view)
+    ]);
   }
   const section = document.getElementById('psec-' + view);
   if (!section) {

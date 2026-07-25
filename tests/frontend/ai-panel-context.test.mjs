@@ -37,8 +37,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260725-chat-workspace-library-v1['"]/);
-  assert.match(INDEX, /config\.js\?v=20260725-chat-workspace-library-v1/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260725-chat-workspace-library-v2['"]/);
+  assert.match(INDEX, /config\.js\?v=20260725-chat-workspace-library-v2/);
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {
