@@ -42,7 +42,7 @@ test('course library has glass cards and persists a larger most-recent course', 
 
 test('chatbot removes the legacy icon rail and uses a slimmer AI chats sidebar', () => {
   assert.match(css, /body\.ncb-fullbleed #portal \.sidebar \{ display:\s*none !important; \}/);
-  assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar \{ width:\s*274px;/);
+  assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar \{ width:\s*252px;/);
 });
 
 test('course drawer reuses the real course registry, hydration, and file opener', () => {
@@ -117,7 +117,9 @@ test('workspace popups have no separate header and use a floating close control'
 });
 
 test('the original square navigation item opens notifications in the workspace popup', () => {
-  assert.doesNotMatch(html, /class="ncb-notification-trigger"/);
+  assert.match(html, /class="ncb-notification-trigger"/);
+  assert.match(moduleSource, /querySelector<HTMLButtonElement>\('\.ncb-notification-trigger'\)/);
+  assert.match(moduleSource, /openPortalView\(root, 'notifications'\)/);
   assert.match(moduleSource, /getElementById\('psbNotifications'\)/);
   assert.match(moduleSource, /event\.stopImmediatePropagation\(\)/);
   assert.match(moduleSource, /openPortalView\(root, 'notifications'\)/);

@@ -4351,7 +4351,35 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 10px;
 }
+
+.ncb-notification-trigger {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(147, 197, 253, 0.18);
+  border-radius: 15px;
+  color: #c9dcf5;
+  background: linear-gradient(145deg, rgba(28, 54, 88, 0.76), rgba(12, 28, 49, 0.86));
+  box-shadow: 0 10px 24px rgba(2, 9, 21, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.ncb-notification-trigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.38);
+  color: #eff6ff;
+  background: linear-gradient(145deg, rgba(37, 72, 116, 0.82), rgba(14, 34, 59, 0.9));
+}
+
+.ncb-notification-trigger svg { width: 20px; height: 20px; }
 
 .ncb-account-trigger {
   width: 48px;
@@ -5328,7 +5356,7 @@ body.ncb-pdf-workspace-open #drDrawer {
       inset 0 1px 0 rgba(255, 255, 255, 0.035);
   }
 
-  .ncb-sidebar { width: 274px; margin-left: 14px; }
+  .ncb-sidebar { width: 252px; margin-left: 14px; }
   .ncb-context { margin-right: 14px; }
 
   .ncb-center {

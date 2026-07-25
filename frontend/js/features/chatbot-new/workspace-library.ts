@@ -644,6 +644,11 @@ function bindAccountMenu(root: HTMLElement): void {
       void openPortalView(root, button.dataset.accountView || '');
     });
   });
+  root.querySelector<HTMLButtonElement>('.ncb-notification-trigger')?.addEventListener('click', () => {
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    void openPortalView(root, 'notifications');
+  });
   const notificationNav = document.getElementById('psbNotifications');
   if (notificationNav && notificationNav.dataset.ncbPopupBound !== '1') {
     notificationNav.dataset.ncbPopupBound = '1';
