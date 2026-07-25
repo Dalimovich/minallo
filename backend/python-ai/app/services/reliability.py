@@ -22,6 +22,14 @@ class VisualTaskKind(StrEnum):
     VISUAL_TRANSCRIPTION = "visual_transcription"
 
 
+class CalculationContext(StrEnum):
+    TEXT_ONLY = "text_only"
+    CURRENT_PAGE = "current_page"
+    DIAGRAM_BASED = "diagram_based"
+    CHECKBOX_BASED = "checkbox_based"
+    TECHNICAL_DRAWING = "technical_drawing"
+
+
 @dataclass(frozen=True)
 class TaskTraits:
     visual_kind: VisualTaskKind
@@ -31,6 +39,7 @@ class TaskTraits:
     requires_complete_mapping: bool
     requires_pre_display_verification: bool
     allows_text_fallback: bool
+    calculation_context: CalculationContext | None = None
 
 
 _CALCULATION_RE = re.compile(
@@ -43,7 +52,7 @@ _CHECKBOX_RE = re.compile(
     re.IGNORECASE,
 )
 _MAPPING_RE = re.compile(
-    r"\b(label(?:led)? diagram|callouts?|numbers?\s+\d+\s*(?:to|-|–)\s*\d+|"
+    r"\b(label(?:led)? diagram|callouts?|(?:numbers?|labels?)\s+\d+\s*(?:to|-|–)\s*\d+|"
     r"beschrifte|zuordnen|ziffern?\s+\d+\s*(?:bis|-|–)\s*\d+)\b",
     re.IGNORECASE,
 )
@@ -52,7 +61,24 @@ _FORMULA_RE = re.compile(r"\b(formula|equation|symbol|variable|formel|gleichung)
 _TRANSCRIBE_RE = re.compile(r"\b(transcribe|read exactly|abschreiben|wortlaut)\b", re.IGNORECASE)
 
 
-def classify_task_traits(question: str) -> TaskTraits:
+_VISIBLE_REFERENCE_RE = re.compile(
+    r"\b(this|that|shown|above|current page|visible page|hier|diese[rmns]?|"
+    r"gezeigt|oben|aktuelle[rmns]?\s+seite)\b",
+    re.IGNORECASE,
+)
+_EXERCISE_WITH_NUMBER_RE = re.compile(
+    r"\b(?:Aufgabe|Exercise|Question|Problem)\s+\d+(?:\.\d+)*\b",
+    re.IGNORECASE,
+)
+
+
+def classify_task_traits(
+    question: str,
+    *,
+    visible_text: str = "",
+    has_visible_image: bool = False,
+    active_document_id: str | None = None,
+) -> TaskTraits:
     """Classify independent risk traits; an attached image is not itself risk."""
     text = question or ""
     if _CHECKBOX_RE.search(text):
@@ -64,8 +90,32 @@ def classify_task_traits(question: str) -> TaskTraits:
             VisualTaskKind.TECHNICAL_DRAWING_MAPPING, True, True, False, True, True, False,
         )
     if _CALCULATION_RE.search(text):
+        visible_dependency = bool(
+            has_visible_image
+            or _VISIBLE_REFERENCE_RE.search(text)
+            or (
+                active_document_id
+                and _EXERCISE_WITH_NUMBER_RE.search(text)
+            )
+            or (
+                active_document_id
+                and visible_text.strip()
+                and _EXERCISE_REFERENCE_RE.search(text)
+            )
+        )
         return TaskTraits(
-            VisualTaskKind.NUMERICAL_CALCULATION, True, True, True, False, True, True,
+            VisualTaskKind.NUMERICAL_CALCULATION,
+            visible_dependency,
+            False,
+            True,
+            False,
+            True,
+            True,
+            (
+                CalculationContext.CURRENT_PAGE
+                if visible_dependency
+                else CalculationContext.TEXT_ONLY
+            ),
         )
     if _TRANSCRIBE_RE.search(text):
         return TaskTraits(
@@ -243,26 +293,193 @@ class GroundingMismatch(StrEnum):
     PAGE = "source_page_mismatch"
     ANSWER_OPTION = "answer_option_mismatch"
     VISIBLE_LABEL = "visible_label_mismatch"
+    MISSING_DRAFT_DOMAIN = "missing_draft_domain"
+    MISSING_REQUESTED_QUANTITY = "missing_requested_quantity_answer"
+    MISSING_ANSWER_OPTION = "missing_answer_option"
+
+
+class IdentityComparisonState(StrEnum):
+    MATCH = "match"
+    MISMATCH = "mismatch"
+    MISSING_REQUIRED_FIELD = "missing_required_field"
+    UNKNOWN = "unknown"
+
+
+MIN_IDENTITY_CONFIDENCE = 0.72
+
+
+@dataclass(frozen=True)
+class RetrievalScope:
+    document_ids: list[str] | None
+    preferred_pages: list[int]
+    exercise_reference: str | None
+    allow_course_fallback: bool
+
+
+@dataclass(frozen=True)
+class AnswerObligation:
+    obligation_type: str
+    expected_values: list[str]
+    satisfied: bool
+
+
+@dataclass(frozen=True)
+class RepairedAnswerValidation:
+    accepted: bool
+    mismatches: list[GroundingMismatch]
+    obligations: list[AnswerObligation]
+    verification_rejected: bool = False
 
 
 def compare_task_identities(
     source: GroundedTaskIdentity,
     draft: DraftTaskIdentity,
+    *,
+    traits: TaskTraits | None = None,
 ) -> list[GroundingMismatch]:
     mismatches: list[GroundingMismatch] = []
     if source.exercise_reference and draft.exercise_reference:
         if source.exercise_reference.casefold() != draft.exercise_reference.casefold():
             mismatches.append(GroundingMismatch.EXERCISE_REFERENCE)
-    if source.domain and draft.domain and source.domain.casefold() != draft.domain.casefold():
-        mismatches.append(GroundingMismatch.DOMAIN)
+    if source.domain:
+        if draft.domain and source.domain.casefold() != draft.domain.casefold():
+            mismatches.append(GroundingMismatch.DOMAIN)
+        elif source.source_confidence >= 0.8 and not draft.domain:
+            mismatches.append(GroundingMismatch.MISSING_DRAFT_DOMAIN)
     requested = {item.casefold() for item in source.requested_quantities}
     answered = {item.casefold() for item in draft.answered_quantities}
     if requested and answered and not requested.intersection(answered):
         mismatches.append(GroundingMismatch.REQUESTED_QUANTITY)
+    elif requested and traits and traits.requires_numerical_validation and not answered:
+        mismatches.append(GroundingMismatch.MISSING_REQUESTED_QUANTITY)
     if source.task_kind.startswith("checkbox") and draft.answer_type:
         if "checkbox" not in draft.answer_type.casefold() and "option" not in draft.answer_type.casefold():
             mismatches.append(GroundingMismatch.ANSWER_TYPE)
+    if (
+        source.task_kind.startswith("checkbox")
+        and source.visible_answer_options
+        and (not draft.answer_type or draft.answer_type == "narrative")
+    ):
+        mismatches.append(GroundingMismatch.MISSING_ANSWER_OPTION)
     return mismatches
+
+
+def identity_is_sufficient(
+    identity: GroundedTaskIdentity,
+    *,
+    traits: TaskTraits,
+) -> bool:
+    if identity.source_confidence < MIN_IDENTITY_CONFIDENCE:
+        return False
+    if identity.exercise_reference and not identity.document_id:
+        return False
+    if (
+        traits.requires_numerical_validation
+        and traits.calculation_context is not CalculationContext.TEXT_ONLY
+        and not identity.requested_quantities
+    ):
+        return False
+    if traits.requires_complete_mapping and not identity.visible_answer_options:
+        return False
+    return True
+
+
+def build_retrieval_scope(
+    *,
+    active_document_id: str | None,
+    visible_page: int | None,
+    identity: GroundedTaskIdentity,
+    traits: TaskTraits,
+    fallback_document_ids: list[str] | None,
+) -> RetrievalScope:
+    exact_active_task = bool(
+        active_document_id
+        and (
+            identity.exercise_reference
+            or traits.requires_visual_evidence
+            or visible_page
+        )
+    )
+    pages = (
+        [page for page in (visible_page - 1, visible_page, visible_page + 1) if page >= 1]
+        if visible_page else []
+    )
+    return RetrievalScope(
+        document_ids=[active_document_id] if exact_active_task else fallback_document_ids,
+        preferred_pages=pages,
+        exercise_reference=identity.exercise_reference,
+        allow_course_fallback=not exact_active_task,
+    )
+
+
+def answer_obligations(
+    *,
+    answer: str,
+    identity: GroundedTaskIdentity,
+    traits: TaskTraits,
+    required_identifiers: list[str] | None = None,
+) -> list[AnswerObligation]:
+    folded = (answer or "").casefold()
+    obligations: list[AnswerObligation] = []
+    if identity.requested_quantities:
+        obligations.append(AnswerObligation(
+            "requested_quantity",
+            identity.requested_quantities,
+            any(value.casefold() in folded for value in identity.requested_quantities),
+        ))
+    if identity.visible_answer_options and identity.task_kind.startswith("checkbox"):
+        obligations.append(AnswerObligation(
+            "visible_answer_option",
+            identity.visible_answer_options,
+            any(value.casefold() in folded for value in identity.visible_answer_options),
+        ))
+    identifiers = required_identifiers or []
+    if traits.requires_complete_mapping and identifiers:
+        obligations.append(AnswerObligation(
+            "complete_mapping",
+            identifiers,
+            all(re.search(rf"\b{re.escape(value)}\b", answer or "") for value in identifiers),
+        ))
+    if traits.visual_kind is VisualTaskKind.FORMULA_EXPLANATION and identity.visible_values:
+        symbols = [
+            match.group(1) for value in identity.visible_values
+            if (match := _ASSIGNMENT_VALUE_RE.search(value))
+        ]
+        obligations.append(AnswerObligation(
+            "formula_symbols",
+            symbols,
+            bool(symbols and any(symbol.casefold() in folded for symbol in symbols)),
+        ))
+    return obligations
+
+
+def validate_repaired_answer(
+    *,
+    answer: str,
+    identity: GroundedTaskIdentity,
+    traits: TaskTraits,
+    required_identifiers: list[str] | None = None,
+    verification_rejected: bool = False,
+) -> RepairedAnswerValidation:
+    draft = identify_draft_task(answer)
+    mismatches = compare_task_identities(identity, draft, traits=traits)
+    obligations = answer_obligations(
+        answer=answer,
+        identity=identity,
+        traits=traits,
+        required_identifiers=required_identifiers,
+    )
+    return RepairedAnswerValidation(
+        accepted=bool(
+            answer.strip()
+            and not mismatches
+            and all(item.satisfied for item in obligations)
+            and not verification_rejected
+        ),
+        mismatches=mismatches,
+        obligations=obligations,
+        verification_rejected=verification_rejected,
+    )
 
 
 _EXERCISE_REFERENCE_RE = re.compile(
@@ -304,6 +521,22 @@ def identify_grounded_task(
     )
     if sought:
         requested.append(sought.group(1))
+    for match in re.finditer(
+        r"\b([A-Za-z][A-Za-z0-9_{}]*)\s*=\s*\?",
+        evidence,
+    ):
+        requested.append(match.group(1))
+    for match in re.finditer(
+        r"\b(?:calculate|compute|determine|berechnen|bestimmen|ermitteln)"
+        r"\b[^\n.:;]{0,80}\b([A-Za-z][A-Za-z0-9_{}]*)\b",
+        evidence,
+        re.IGNORECASE,
+    ):
+        candidate = match.group(1)
+        if candidate.casefold() not in {
+            "the", "a", "an", "sie", "den", "die", "das", "value", "wert",
+        }:
+            requested.append(candidate)
     domain = None
     domain_patterns = {
         "injection_moulding": r"\b(injection mould|spritzguss|spritzgie|V_Spritz)\b",
@@ -330,6 +563,20 @@ def identify_grounded_task(
         bool(exercise),
         bool((current_page_text or "").strip()),
     ]
+    visible_options = [
+        match.group(1).strip()
+        for match in re.finditer(
+            r"(?m)^\s*(?:[☐☑✓✔]|\[\s?[xX✓]?\s?\]|\([A-Da-d]\))\s*(.+)$",
+            current_page_text or "",
+        )
+        if match.group(1).strip()
+    ]
+    resolved_kind = kind_map.get(visual_traits.visual_kind, "short_answer")
+    if (
+        visual_traits.visual_kind is VisualTaskKind.NUMERICAL_CALCULATION
+        and visible_options
+    ):
+        resolved_kind = "checkbox_calculation"
     return GroundedTaskIdentity(
         document_id=document_id,
         filename=filename,
@@ -337,8 +584,9 @@ def identify_grounded_task(
         exercise_reference=exercise.group(1) if exercise else None,
         domain=domain,
         requested_quantities=list(dict.fromkeys(requested)),
-        task_kind=kind_map.get(visual_traits.visual_kind, "short_answer"),
+        task_kind=resolved_kind,
         visible_values=[match.group(0) for match in assignments],
+        visible_answer_options=visible_options,
         source_confidence=sum(confidence_parts) / len(confidence_parts),
     )
 
@@ -346,6 +594,13 @@ def identify_grounded_task(
 def identify_draft_task(draft: str) -> DraftTaskIdentity:
     exercise = _EXERCISE_REFERENCE_RE.search(draft or "")
     assignments = [match.group(1) for match in _ASSIGNMENT_VALUE_RE.finditer(draft or "")]
+    assignments.extend(
+        match.group(1)
+        for match in re.finditer(
+            r"\b([A-Za-z][A-Za-z0-9_{}]*_[A-Za-z0-9_{}]+)\b",
+            draft or "",
+        )
+    )
     checkbox = bool(re.search(r"\b(?:checkbox|option|angekreuzt|kästchen)\b", draft or "", re.I))
     domain = None
     for candidate, pattern in {
@@ -372,6 +627,7 @@ def task_aware_cache_key(
     document_revision: str | None,
     visible_page_text: str,
     image_hashes: list[str],
+    task_traits: TaskTraits | None = None,
 ) -> str:
     payload: dict[str, Any] = {
         "taskType": task_type,
@@ -381,25 +637,45 @@ def task_aware_cache_key(
         "documentRevision": document_revision,
         "visiblePageTextHash": hashlib.sha256(visible_page_text.encode()).hexdigest(),
         "imageHashes": image_hashes,
+        "taskTraits": (
+            {
+                **asdict(task_traits),
+                "visual_kind": task_traits.visual_kind.value,
+                "calculation_context": (
+                    task_traits.calculation_context.value
+                    if task_traits.calculation_context else None
+                ),
+            }
+            if task_traits else None
+        ),
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 __all__ = [
     "ClassifiedNumber",
+    "CalculationContext",
+    "AnswerObligation",
     "DraftTaskIdentity",
     "GroundedTaskIdentity",
     "GroundingMismatch",
+    "IdentityComparisonState",
     "NumberRole",
     "TaskTraits",
+    "RetrievalScope",
+    "RepairedAnswerValidation",
     "VisualTaskKind",
     "assess_text_quality",
+    "answer_obligations",
+    "build_retrieval_scope",
     "classify_number_roles",
     "classify_task_traits",
     "compare_task_identities",
     "evidence_requirement",
     "identify_draft_task",
     "identify_grounded_task",
+    "identity_is_sufficient",
     "numerical_role_metadata",
     "task_aware_cache_key",
+    "validate_repaired_answer",
 ]

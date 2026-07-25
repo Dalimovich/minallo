@@ -48,8 +48,10 @@ from ..services.retrieval import retrieve_chunks, retrieve_exercise_block, retri
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.reliability import (
     assess_text_quality,
+    build_retrieval_scope,
     classify_task_traits,
     evidence_requirement,
+    identity_is_sufficient,
 )
 from ..services.source_router import (
     CourseFileScope,
@@ -404,10 +406,15 @@ def _verification_is_cacheable(
     verification: Any,
     *,
     task_type: str = "standard_qa",
+    task_identity=None,
 ) -> bool:
     return bool(
         isinstance(verification, dict)
         and verification.get("status") == "verified"
+        and (
+            task_identity is None
+            or float(getattr(task_identity, "source_confidence", 0.0)) >= 0.72
+        )
         and not _verification_requires_rejection(
             verification,
             task_type=task_type,
@@ -671,7 +678,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     if payload.visiblePage is not None and payload.visiblePage < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visiblePage must be positive")
     validated_images = _validate_open_file_images(payload.openFileImages)
-    task_traits = classify_task_traits(question)
+    task_traits = classify_task_traits(
+        question,
+        visible_text=payload.openFileContext or "",
+        has_visible_image=bool(validated_images),
+        active_document_id=payload.activeDocumentId,
+    )
     text_quality = assess_text_quality(payload.openFileContext or "")
     requirement = evidence_requirement(
         traits=task_traits,
@@ -1356,7 +1368,12 @@ async def _prepare_ask_stream_response(
         identify_grounded_task,
         task_aware_cache_key,
     )
-    preliminary_traits = classify_task_traits(resolved_question)
+    preliminary_traits = classify_task_traits(
+        resolved_question,
+        visible_text=payload.openFileContext or "",
+        has_visible_image=bool(open_file_images),
+        active_document_id=payload.activeDocumentId,
+    )
     grounded_identity = identify_grounded_task(
         question=resolved_question,
         current_page_text=payload.openFileContext or "",
@@ -1364,6 +1381,20 @@ async def _prepare_ask_stream_response(
         filename=payload.activeFileName,
         page=payload.visiblePage,
         traits=preliminary_traits,
+    )
+    observer.event(
+        "task_classified",
+        visualKind=preliminary_traits.visual_kind.value,
+        numericalValidation=preliminary_traits.requires_numerical_validation,
+        preDisplayVerification=preliminary_traits.requires_pre_display_verification,
+        textFallbackAllowed=preliminary_traits.allows_text_fallback,
+    )
+    observer.event(
+        "task_identity_resolved",
+        exerciseReference=grounded_identity.exercise_reference,
+        taskType=grounded_identity.task_kind,
+        visiblePage=grounded_identity.page,
+        sourceConfidence=grounded_identity.source_confidence,
     )
     reliability_cache_fingerprint = task_aware_cache_key(
         task_type=grounded_identity.task_kind,
@@ -1376,6 +1407,7 @@ async def _prepare_ask_stream_response(
             hashlib.sha256(str(image.get("data") or "").encode()).hexdigest()
             for image in open_file_images
         ],
+        task_traits=preliminary_traits,
     )
     ws_fingerprint = hashlib.sha256(
         f"{ws_fingerprint}:{reliability_cache_fingerprint}".encode()
@@ -1414,6 +1446,19 @@ async def _prepare_ask_stream_response(
         and payload.problemSolver is None
         and not has_open_ctx
         and not generative_request
+        and (
+            not (
+                payload.activeDocumentId
+                and (
+                    grounded_identity.exercise_reference
+                    or preliminary_traits.requires_visual_evidence
+                )
+            )
+            or identity_is_sufficient(
+                grounded_identity,
+                traits=preliminary_traits,
+            )
+        )
     )
     # Normalise previousTurns once — folded into the cache key (two students
     # asking "explain that again" in different sessions must not collide) and
@@ -1428,6 +1473,22 @@ async def _prepare_ask_stream_response(
         document_ids=resolved_document_ids,
         active_document_id=payload.activeDocumentId,
         course_file_scope=course_file_scope,
+    )
+    retrieval_scope = build_retrieval_scope(
+        active_document_id=payload.activeDocumentId,
+        visible_page=payload.visiblePage,
+        identity=grounded_identity,
+        traits=preliminary_traits,
+        fallback_document_ids=retrieval_document_ids,
+    )
+    retrieval_document_ids = retrieval_scope.document_ids
+    observer.event(
+        "retrieval_scope_resolved",
+        activeDocumentId=payload.activeDocumentId,
+        documentCount=len(retrieval_document_ids or []),
+        preferredPages=retrieval_scope.preferred_pages,
+        exerciseReference=retrieval_scope.exercise_reference,
+        allowCourseFallback=retrieval_scope.allow_course_fallback,
     )
     cache_key_kwargs = {
         "tutor_mode": tutor_mode,
@@ -1666,6 +1727,11 @@ async def _prepare_ask_stream_response(
                 (extraction_context.scanned_pages if extraction_context else [])
                 + extraction.scanned_pages
             ))
+            item_pages = [
+                item.question_page
+                for item in extraction.paired_items
+                if item.question_page is not None
+            ]
             persisted_extraction_context = DocumentExtractionContext(
                 conversation_id=payload.conversationId,
                 document_id=payload.activeDocumentId or "",
@@ -1681,6 +1747,10 @@ async def _prepare_ask_stream_response(
                 unresolved_pages=extraction.unreadable_pages,
                 earliest_source_page=min(scanned) if scanned else None,
                 latest_source_page=max(scanned) if scanned else None,
+                earliest_scanned_page=min(scanned) if scanned else None,
+                latest_scanned_page=max(scanned) if scanned else None,
+                earliest_item_page=min(item_pages) if item_pages else None,
+                latest_item_page=max(item_pages) if item_pages else None,
                 complete=extraction.complete,
             )
             save_extraction_context(persisted_extraction_context)
@@ -1698,6 +1768,27 @@ async def _prepare_ask_stream_response(
             extraction,
             language_context.requested_response_language,
         )
+        if extraction_correction:
+            if extraction.status == "no_pages_in_requested_direction":
+                answer_text = (
+                    "The extracted section already starts on the first relevant "
+                    "page. I found no earlier pages to scan."
+                    if direction == "earlier"
+                    else "There are no later pages left to scan for this section."
+                )
+            elif extraction.new_item_count:
+                answer_text = (
+                    f"I found {extraction.new_item_count} "
+                    f"{'earlier' if direction == 'earlier' else 'additional'} "
+                    f"{extraction.target} and merged them into the list.\n\n"
+                    + answer_text
+                )
+            elif pages_to_scan:
+                answer_text = (
+                    f"I rescanned pages {min(pages_to_scan)}–{max(pages_to_scan)} "
+                    f"and did not find additional {extraction.target}.\n\n"
+                    + answer_text
+                )
         cited_pages = list(dict.fromkeys(
             [
                 item.question_page
@@ -1847,6 +1938,78 @@ async def _prepare_ask_stream_response(
                     page_number=payload.visiblePage or 1,
                 )
             )
+        identity_gate_required = bool(
+            payload.activeDocumentId
+            and (
+                grounded_identity.exercise_reference
+                or preliminary_traits.requires_visual_evidence
+            )
+        )
+        if identity_gate_required and not identity_is_sufficient(
+            grounded_identity,
+            traits=preliminary_traits,
+        ):
+            regrounding_text = "\n".join(
+                [
+                    payload.openFileContext or "",
+                    *[
+                        str(getattr(chunk, "text", "") or "")
+                        for chunk in visible_page_chunks
+                    ],
+                ]
+            )
+            if open_file_images:
+                from ..services.visual_repair import generate_visual_repair  # noqa: WPS433
+                try:
+                    visual_identity_text = await run_in_threadpool(
+                        lambda: generate_visual_repair(
+                            prompt=(
+                                "Identify only the active task from this PDF page. "
+                                "Return the exercise reference, domain, requested "
+                                "quantity, visible values, and answer options. Do not solve it."
+                            ),
+                            images=open_file_images,
+                            model=get_settings().openai_generate_model,
+                        )
+                    )
+                    regrounding_text += "\n" + visual_identity_text
+                except Exception:
+                    log.exception(
+                        "task_identity_visual_reground_failed request_id=%s",
+                        request_id,
+                    )
+            grounded_identity = identify_grounded_task(
+                question=resolved_question,
+                current_page_text=regrounding_text,
+                document_id=payload.activeDocumentId,
+                filename=payload.activeFileName,
+                page=payload.visiblePage,
+                traits=preliminary_traits,
+            )
+            observer.event(
+                "task_identity_regrounded",
+                sourceConfidence=grounded_identity.source_confidence,
+                requestedQuantities=grounded_identity.requested_quantities,
+            )
+            if not identity_is_sufficient(
+                grounded_identity,
+                traits=preliminary_traits,
+            ):
+                return _stream_static_answer(
+                    text=(
+                        "I found the active exercise, but could not reliably identify "
+                        "the requested quantity or required answer options from the "
+                        "current page. The task was not sent to broad course retrieval."
+                    ),
+                    decision=source_decision,
+                    answer_mode="clarification",
+                    status_key="identifying_question",
+                    extra_meta={
+                        "taskType": grounded_identity.task_kind,
+                        "errorCode": "task_identity_insufficient",
+                        "terminalEvent": "done",
+                    },
+                )
         if status_sink:
             status_sink("searching_course_material")
         # Scale retrieval breadth with the number of explicitly-selected
@@ -1857,6 +2020,10 @@ async def _prepare_ask_stream_response(
         broad_retrieval = generative_request or bool(_BROAD_RETRIEVAL_RE.search(question))
         stream_top_k = _retrieval_limit(question, _sel_doc_count, generative_request)
         retrieval_started = time.perf_counter()
+        observer.event(
+            "primary_retrieval_started",
+            documentCount=len(retrieval_document_ids or []),
+        )
         try:
             exercise_task = run_in_threadpool(
                 lambda: retrieve_exercise_block(
@@ -2030,32 +2197,7 @@ async def _prepare_ask_stream_response(
     full_text_buf: list[str] = []
     captured_meta: dict[str, Any] = {}
     pending_token_events: list[bytes] = []
-    task_traits = classify_task_traits(resolved_question)
-    observer.event(
-        "task_classified",
-        visualKind=task_traits.visual_kind.value,
-        numericalValidation=task_traits.requires_numerical_validation,
-        preDisplayVerification=task_traits.requires_pre_display_verification,
-        textFallbackAllowed=task_traits.allows_text_fallback,
-    )
-    observer.event(
-        "task_identity_resolved",
-        exerciseReference=grounded_identity.exercise_reference,
-        taskType=grounded_identity.task_kind,
-        visiblePage=grounded_identity.page,
-        sourceConfidence=grounded_identity.source_confidence,
-    )
-    # Exact/deictic exercise work starts inside the active document. Wider
-    # course material is supporting evidence only after the task identity is
-    # known, so it cannot replace the current exercise with a namesake.
-    if (
-        payload.activeDocumentId
-        and (
-            grounded_identity.exercise_reference
-            or preliminary_traits.requires_visual_evidence
-        )
-    ):
-        retrieval_document_ids = [payload.activeDocumentId]
+    task_traits = preliminary_traits
     high_risk_validation = _requires_verified_buffering(
         question=resolved_question,
         dialogue_act=dialogue.dialogue_act.value,
@@ -2208,6 +2350,7 @@ async def _prepare_ask_stream_response(
                     semantic_mismatches = compare_task_identities(
                         grounded_identity,
                         draft_identity,
+                        traits=task_traits,
                     )
                     if semantic_mismatches and high_risk_validation:
                         from ..services.visual_repair import (  # noqa: WPS433
@@ -2225,6 +2368,7 @@ async def _prepare_ask_stream_response(
                             compare_task_identities(
                                 grounded_identity,
                                 identify_draft_task(regrounded),
+                                traits=task_traits,
                             )
                             if regrounded else semantic_mismatches
                         )
@@ -2270,9 +2414,55 @@ async def _prepare_ask_stream_response(
                             open_context=generation_open_context,
                             image_parts=open_file_images,
                         )
+                        repaired_verification = None
+                        if repaired:
+                            try:
+                                from ..services.verification import verify_answer  # noqa: WPS433
+                                repaired_verification = verify_answer(
+                                    answer_text=repaired,
+                                    chunk_texts=[
+                                        generation_open_context,
+                                        *[
+                                            str(getattr(chunk, "text", "") or "")
+                                            for chunk in chunks
+                                        ],
+                                    ],
+                                    question=resolved_question,
+                                    answer_mode=str(evt.get("answerMode") or "math"),
+                                    allowed_filenames=[
+                                        name for name in doc_name_map.values() if name
+                                    ],
+                                ).to_api()
+                            except Exception:
+                                log.exception(
+                                    "visual_repair_verification_unavailable request_id=%s",
+                                    request_id,
+                                )
+                        from ..services.answer_stream import required_number_range  # noqa: WPS433
+                        from ..services.reliability import validate_repaired_answer  # noqa: WPS433
+                        required_range = required_number_range(
+                            resolved_question,
+                            generation_open_context,
+                        )
+                        repair_validation = validate_repaired_answer(
+                            answer=repaired or "",
+                            identity=grounded_identity,
+                            traits=task_traits,
+                            required_identifiers=[
+                                str(value) for value in (required_range or [])
+                            ],
+                            verification_rejected=bool(
+                                repaired_verification
+                                and _verification_requires_rejection(
+                                    repaired_verification,
+                                    task_type=task_type,
+                                )
+                            ),
+                        )
                         repair_succeeded = bool(
                             repaired
                             and not _FALSE_VISUAL_DENIAL_RE.search(repaired)
+                            and repair_validation.accepted
                         )
                         safe_text = repaired if repair_succeeded else (
                             "The current page image was attached, but Minallo "
@@ -2288,6 +2478,20 @@ async def _prepare_ask_stream_response(
                             "repaired" if repair_succeeded else "repair_failed"
                         )
                         evt["repairAttempts"] = 1
+                        evt["repairValidation"] = {
+                            "accepted": repair_validation.accepted,
+                            "mismatches": [
+                                item.value for item in repair_validation.mismatches
+                            ],
+                            "unsatisfiedObligations": [
+                                item.obligation_type
+                                for item in repair_validation.obligations
+                                if not item.satisfied
+                            ],
+                        }
+                        if repair_succeeded and repaired_verification:
+                            evt["verification"] = repaired_verification
+                            verification_payload = repaired_verification
                         observer.event(
                             "repair_completed",
                             repairAttempts=1,
@@ -2397,6 +2601,7 @@ async def _prepare_ask_stream_response(
                             and _verification_is_cacheable(
                                 rewritten_verification,
                                 task_type=task_type,
+                                task_identity=grounded_identity,
                             )
                         ):
                             full_text_buf.clear()
@@ -2492,6 +2697,7 @@ async def _prepare_ask_stream_response(
                         and _verification_is_cacheable(
                             verification_payload,
                             task_type=task_type,
+                            task_identity=grounded_identity,
                         )
                     ):
                         if payload.activeDocumentId:
@@ -2673,6 +2879,7 @@ async def _prepare_ask_stream_response(
         cache_verified = _verification_is_cacheable(
             cached_verification,
             task_type=str(captured_meta.get("taskType") or "standard_qa"),
+            task_identity=grounded_identity,
         )
         if (
             version_hash

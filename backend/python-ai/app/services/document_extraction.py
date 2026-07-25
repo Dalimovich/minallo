@@ -130,6 +130,8 @@ class NumberingGap:
     item_id: str
     status: GapStatus = GapStatus.POTENTIAL
     reviewed_pages: list[int] = field(default_factory=list)
+    search_performed: bool = False
+    evidence_pages: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -148,6 +150,10 @@ class DocumentExtractionContext:
     unresolved_pages: list[int] = field(default_factory=list)
     earliest_source_page: int | None = None
     latest_source_page: int | None = None
+    earliest_scanned_page: int | None = None
+    latest_scanned_page: int | None = None
+    earliest_item_page: int | None = None
+    latest_item_page: int | None = None
     complete: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -182,6 +188,9 @@ class DocumentExtractionResult:
     model: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    status: str = "completed"
+    message: str | None = None
+    new_item_count: int = 0
 
 
 _EXTRACTION_CONTEXTS: dict[tuple[str, str], DocumentExtractionContext] = {}
@@ -297,10 +306,16 @@ def extraction_pages_for_direction(
     section_start_page: int,
     section_end_page: int,
 ) -> list[int]:
-    if direction == "earlier" and context.earliest_source_page is not None:
-        return list(range(section_start_page, context.earliest_source_page))
-    if direction == "later" and context.latest_source_page is not None:
-        return list(range(context.latest_source_page + 1, section_end_page + 1))
+    earliest_item = context.earliest_item_page
+    latest_item = context.latest_item_page
+    if earliest_item is None:
+        earliest_item = context.earliest_source_page
+    if latest_item is None:
+        latest_item = context.latest_source_page
+    if direction == "earlier" and earliest_item is not None:
+        return list(range(section_start_page, earliest_item))
+    if direction == "later" and latest_item is not None:
+        return list(range(latest_item + 1, section_end_page + 1))
     return context.unresolved_pages or list(range(section_start_page, section_end_page + 1))
 
 
@@ -399,17 +414,33 @@ def review_numbering_gap(
     reviewed_pages: list[int],
 ) -> NumberingGap:
     """Classify a potential gap after one targeted neighbouring-page review."""
+    variants = (
+        re.escape(item_id),
+        re.escape(f"Aufgabe {item_id}"),
+        re.escape(f"Frage {item_id}"),
+    )
     if re.search(
         r"\b(cancelled|omitted|not used|variant|entf[aä]llt|gestrichen|variante)\b",
         neighbouring_text or "",
         re.IGNORECASE,
     ):
         status = GapStatus.INTENTIONAL
+    elif any(
+        re.search(rf"(?<![\d.]){variant}(?![\d.])", neighbouring_text, re.I)
+        for variant in variants
+    ):
+        status = GapStatus.CONFIRMED_MISSING
     elif reviewed_pages:
         status = GapStatus.REVIEWED_NOT_FOUND
     else:
         status = GapStatus.UNRESOLVED
-    return NumberingGap(item_id=item_id, status=status, reviewed_pages=reviewed_pages)
+    return NumberingGap(
+        item_id=item_id,
+        status=status,
+        reviewed_pages=reviewed_pages,
+        search_performed=True,
+        evidence_pages=reviewed_pages if status is GapStatus.CONFIRMED_MISSING else [],
+    )
 
 
 def _load_document_pages(
@@ -550,6 +581,56 @@ def _normalise_item(raw: Any, fallback_page: int) -> ExtractedQAItem | None:
     )
 
 
+def _normalise_question(raw: Any, fallback_page: int) -> ExtractedQuestion | None:
+    item = _normalise_item(raw, fallback_page)
+    if item is None:
+        return None
+    return ExtractedQuestion(
+        item_id=item.item_id,
+        normalized_item_id=normalise_item_id(item.item_id),
+        question_text=item.question,
+        question_page=item.question_page,
+        section=str(raw.get("section") or "").strip() or None,
+        question_fingerprint=question_fingerprint(item.question),
+        confidence=item.confidence,
+    )
+
+
+def _normalise_solution(
+    raw: Any,
+    fallback_page: int,
+) -> ExtractedSolutionEvidence | None:
+    if not isinstance(raw, dict):
+        return None
+    answer = str(raw.get("answer_text") or raw.get("answer") or "").strip()
+    if not answer:
+        return None
+    item_id = str(raw.get("item_id") or raw.get("number") or "").strip() or None
+    try:
+        answer_page = int(raw.get("answer_page") or fallback_page)
+    except (TypeError, ValueError):
+        answer_page = fallback_page
+    referenced = str(
+        raw.get("referenced_question_text") or raw.get("question") or ""
+    ).strip() or None
+    try:
+        confidence = max(0.0, min(1.0, float(raw.get("confidence") or 0.7)))
+    except (TypeError, ValueError):
+        confidence = 0.7
+    return ExtractedSolutionEvidence(
+        item_id=item_id,
+        normalized_item_id=normalise_item_id(item_id or "") or None,
+        answer_text=answer,
+        answer_page=answer_page,
+        evidence_type=str(raw.get("evidence_type") or "printed_answer"),
+        referenced_question_text=referenced,
+        question_fingerprint=(
+            question_fingerprint(referenced) if referenced else None
+        ),
+        confidence=confidence,
+    )
+
+
 def _item_sort_key(item: ExtractedQAItem) -> tuple[int, tuple[Any, ...]]:
     parts: list[Any] = []
     for token in re.findall(r"\d+|[a-z]+", item.item_id.casefold()):
@@ -591,17 +672,57 @@ def extract_document_qa(
         user_id=user_id, course_id=course_id, document_id=document_id,
     )
     total_pages = int(document.get("page_count") or len(page_rows) or 0)
-    if pages_to_scan is not None:
-        requested_pages = set(pages_to_scan)
-        page_rows = [
-            row for row in page_rows
-            if int(row.get("page_number") or 0) in requested_pages
-        ]
+    target_pages = (
+        list(range(1, total_pages + 1))
+        if pages_to_scan is None
+        else list(pages_to_scan)
+    )
     result = DocumentExtractionResult(
         document_id=document_id,
         target=target or "questions",
         total_pages=total_pages,
     )
+    if not target_pages:
+        result.status = "no_pages_in_requested_direction"
+        result.message = (
+            "There are no pages left to scan in the requested direction."
+        )
+        result.items = list(previous_items or [])
+        result.extracted_questions = [
+            ExtractedQuestion(
+                item_id=item.item_id,
+                normalized_item_id=normalise_item_id(item.item_id),
+                question_text=item.question,
+                question_page=item.question_page,
+                question_fingerprint=question_fingerprint(item.question),
+                confidence=item.confidence,
+            )
+            for item in result.items
+        ]
+        result.solution_evidence = [
+            ExtractedSolutionEvidence(
+                item_id=item.item_id,
+                normalized_item_id=normalise_item_id(item.item_id),
+                answer_text=item.answer,
+                answer_page=item.answer_page or item.question_page,
+                evidence_type="printed_answer",
+                referenced_question_text=item.question,
+                question_fingerprint=question_fingerprint(item.question),
+                confidence=item.confidence,
+            )
+            for item in result.items
+            if item.answer
+        ]
+        result.paired_items = pair_questions_and_solutions(
+            result.extracted_questions,
+            result.solution_evidence,
+        )
+        return result
+    requested_pages = set(target_pages)
+    page_rows = [
+        row for row in page_rows
+        if int(row.get("page_number") or 0) in requested_pages
+    ]
     usable: list[tuple[int, str]] = []
     weak_pages: list[int] = []
     seen_pages: set[int] = set()
@@ -624,12 +745,36 @@ def extract_document_qa(
             result.scanned_pages.append(page)
     result.unreadable_pages.extend(
         page
-        for page in (pages_to_scan or range(1, total_pages + 1))
+        for page in target_pages
         if page not in seen_pages
     )
     result.unreadable_pages = sorted(set(result.unreadable_pages))
 
-    all_items: list[ExtractedQAItem] = list(previous_items or [])
+    extracted_questions: list[ExtractedQuestion] = [
+        ExtractedQuestion(
+            item_id=item.item_id,
+            normalized_item_id=normalise_item_id(item.item_id),
+            question_text=item.question,
+            question_page=item.question_page,
+            question_fingerprint=question_fingerprint(item.question),
+            confidence=item.confidence,
+        )
+        for item in (previous_items or [])
+    ]
+    solution_evidence: list[ExtractedSolutionEvidence] = [
+        ExtractedSolutionEvidence(
+            item_id=item.item_id,
+            normalized_item_id=normalise_item_id(item.item_id),
+            answer_text=item.answer,
+            answer_page=item.answer_page or item.question_page,
+            evidence_type="printed_answer",
+            referenced_question_text=item.question,
+            question_fingerprint=question_fingerprint(item.question),
+            confidence=item.confidence,
+        )
+        for item in (previous_items or [])
+        if item.answer.strip()
+    ]
     for page in weak_pages:
         try:
             visual_items = _extract_visual_page(
@@ -645,7 +790,40 @@ def extract_document_qa(
             )
             visual_items = []
         if visual_items:
-            all_items.extend(visual_items)
+            extracted_questions.extend(
+                question
+                for question in (
+                    _normalise_question(
+                        {
+                            "item_id": item.item_id,
+                            "question": item.question,
+                            "question_page": item.question_page,
+                            "confidence": item.confidence,
+                        },
+                        page,
+                    )
+                    for item in visual_items
+                )
+                if question is not None
+            )
+            solution_evidence.extend(
+                solution
+                for solution in (
+                    _normalise_solution(
+                        {
+                            "item_id": item.item_id,
+                            "question": item.question,
+                            "answer": item.answer,
+                            "answer_page": item.answer_page or page,
+                            "evidence_type": "visual_mark",
+                            "confidence": item.confidence,
+                        },
+                        page,
+                    )
+                    for item in visual_items
+                )
+                if solution is not None
+            )
             result.scanned_pages.append(page)
         else:
             result.unreadable_pages.append(page)
@@ -672,50 +850,114 @@ def extract_document_qa(
         page_block = "\n\n".join(
             f"--- PAGE {page} ---\n{text}" for page, text in group
         )
-        response = chat_json(
+        question_response = chat_json(
             model=settings.openai_generate_model,
             max_tokens=5000,
             system=(
-                "You extract exam question/answer pairs from source pages. "
+                "You extract exam QUESTIONS ONLY from source pages. "
                 f"Target only the section/category {target!r}. Scan every supplied page; "
                 "do not cap the number of items. Preserve German or other source wording "
-                "exactly. Prefer printed/official solutions and checked options. Never "
-                "invent an answer. Return JSON {\"items\":[{\"item_id\":\"9.2\","
-                "\"question\":\"...\",\"answer\":\"...\",\"question_page\":9,"
-                "\"answer_page\":20,\"confidence\":0.9}]}. An answer may be empty when "
-                "it is not present in this batch. Ignore unrelated long calculations."
+                "exactly. Do not extract, infer, or invent answers. Return JSON "
+                "{\"questions\":[{\"item_id\":\"9.2\",\"question\":\"...\","
+                "\"question_page\":9,\"section\":\"Kurzfragen\",\"confidence\":0.9}]}. "
+                "Ignore solution-only content and unrelated long calculations."
             ),
             user=page_block,
         )
-        result.model = response.model
-        result.prompt_tokens += int(response.prompt_tokens or 0)
-        result.completion_tokens += int(response.completion_tokens or 0)
-        raw_items = response.data.get("items", []) if isinstance(response.data, dict) else []
+        solution_response = chat_json(
+            model=settings.openai_generate_model,
+            max_tokens=5000,
+            system=(
+                "You extract SOLUTION EVIDENCE ONLY from source pages. Do not create "
+                "question records. Detect printed answers, checked options, worked "
+                "solutions, annotations, green ticks, and visual marks. Preserve exact "
+                "source wording and never invent missing evidence. Return JSON "
+                "{\"solutions\":[{\"item_id\":\"9.2\",\"answer_text\":\"...\","
+                "\"answer_page\":20,\"evidence_type\":\"checked_option\","
+                "\"referenced_question_text\":null,\"confidence\":0.9}]}."
+            ),
+            user=page_block,
+        )
+        result.model = solution_response.model or question_response.model
+        result.prompt_tokens += int(question_response.prompt_tokens or 0)
+        result.prompt_tokens += int(solution_response.prompt_tokens or 0)
+        result.completion_tokens += int(question_response.completion_tokens or 0)
+        result.completion_tokens += int(solution_response.completion_tokens or 0)
+        question_data = (
+            question_response.data if isinstance(question_response.data, dict) else {}
+        )
+        solution_data = (
+            solution_response.data if isinstance(solution_response.data, dict) else {}
+        )
+        raw_questions = question_data.get("questions", question_data.get("items", []))
+        raw_solutions = solution_data.get("solutions", solution_data.get("items", []))
         fallback_page = group[0][0]
-        all_items.extend(
-            item
-            for item in (_normalise_item(raw, fallback_page) for raw in raw_items)
-            if item is not None
+        extracted_questions.extend(
+            question
+            for question in (
+                _normalise_question(raw, fallback_page) for raw in raw_questions
+            )
+            if question is not None
+        )
+        solution_evidence.extend(
+            solution
+            for solution in (
+                _normalise_solution(raw, fallback_page) for raw in raw_solutions
+            )
+            if solution is not None
         )
         log.info(
-            "document_extraction_batch document=%s batch=%d/%d pages=%s items=%d",
-            document_id, index, len(groups), [p for p, _ in group], len(raw_items),
+            "document_extraction_batch document=%s batch=%d/%d pages=%s "
+            "questions=%d solutions=%d",
+            document_id, index, len(groups), [p for p, _ in group],
+            len(raw_questions), len(raw_solutions),
         )
 
     questions_by_id: dict[str, set[str]] = {}
-    for item in all_items:
-        normal_id = normalise_item_id(item.item_id)
-        if normal_id and item.question.strip():
+    for item in extracted_questions:
+        normal_id = item.normalized_item_id
+        if normal_id and item.question_text.strip():
             questions_by_id.setdefault(normal_id, set()).add(
-                re.sub(r"\W+", "", item.question.casefold())
+                re.sub(r"\W+", "", item.question_text.casefold())
             )
     result.duplicate_item_ids = sorted(
         item_id for item_id, questions in questions_by_id.items()
         if len(questions) > 1
     )
-    result.items = _merge_items(all_items)
+    # Deduplicate the independent passes, then pair them deterministically.
+    unique_questions: dict[str, ExtractedQuestion] = {}
+    for item in extracted_questions:
+        key = item.normalized_item_id or item.question_fingerprint
+        existing = unique_questions.get(key)
+        if existing is None or len(item.question_text) > len(existing.question_text):
+            unique_questions[key] = item
+    unique_solutions: dict[tuple[str, int, str], ExtractedSolutionEvidence] = {}
+    for item in solution_evidence:
+        key = (
+            item.normalized_item_id or item.question_fingerprint or "",
+            item.answer_page,
+            item.answer_text,
+        )
+        unique_solutions[key] = item
+    result.extracted_questions = list(unique_questions.values())
+    result.solution_evidence = list(unique_solutions.values())
+    result.paired_items = pair_questions_and_solutions(
+        result.extracted_questions,
+        result.solution_evidence,
+    )
+    result.items = [
+        ExtractedQAItem(
+            item_id=item.item_id,
+            question=item.question_text,
+            answer=item.answer_text or "",
+            question_page=item.question_page,
+            answer_page=item.answer_page,
+            confidence=item.pairing_confidence,
+        )
+        for item in result.paired_items
+    ]
     result.unanswered_item_ids = [
-        item.item_id for item in result.items if not item.answer.strip()
+        item.item_id for item in result.paired_items if not item.answer_text
     ]
     result.suspicious_numbering_gaps = identify_suspicious_numbering_gaps(
         [item.item_id for item in result.items]
@@ -740,36 +982,8 @@ def extract_document_qa(
             reviewed_pages=reviewed_pages,
         ))
 
-    result.extracted_questions = [
-        ExtractedQuestion(
-            item_id=item.item_id,
-            normalized_item_id=normalise_item_id(item.item_id),
-            question_text=item.question,
-            question_page=item.question_page,
-            question_fingerprint=question_fingerprint(item.question),
-            confidence=item.confidence,
-        )
-        for item in result.items
-    ]
-    result.solution_evidence = [
-        ExtractedSolutionEvidence(
-            item_id=item.item_id,
-            normalized_item_id=normalise_item_id(item.item_id),
-            answer_text=item.answer,
-            answer_page=item.answer_page or item.question_page,
-            evidence_type="printed_answer",
-            referenced_question_text=item.question,
-            question_fingerprint=question_fingerprint(item.question),
-            confidence=item.confidence,
-        )
-        for item in result.items
-        if item.answer.strip()
-    ]
-    result.paired_items = pair_questions_and_solutions(
-        result.extracted_questions,
-        result.solution_evidence,
-    )
-    expected_pages = set(pages_to_scan or range(1, total_pages + 1))
+    result.new_item_count = max(0, len(result.items) - len(previous_items or []))
+    expected_pages = set(target_pages)
     result.all_relevant_pages_scanned = bool(
         expected_pages
         and expected_pages.issubset(set(result.scanned_pages) | set(result.unreadable_pages))
