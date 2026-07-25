@@ -37,8 +37,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260722-thin-drawer-controls-v4['"]/);
-  assert.match(INDEX, /config\.js\?v=20260722-thin-drawer-controls-v4/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260725-rag-reliability-v1['"]/);
+  assert.match(INDEX, /config\.js\?v=20260725-rag-reliability-v1/);
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {

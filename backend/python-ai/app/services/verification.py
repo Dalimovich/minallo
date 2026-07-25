@@ -489,10 +489,32 @@ def verify_answer(
     required_callout_ids = detect_required_callout_range(question or "")
     number_misses: list[str] = []
     derived_numbers: list[str] = []
+    ignored_identifiers: list[dict[str, str]] = []
     seen_numbers: set[str] = set()
+    from .reliability import NumberRole, classify_number_roles  # noqa: WPS433
+    classified_roles = {
+        (item.start, item.end): item
+        for item in classify_number_roles(cleaned)
+    }
     for m in _NUMBER_RE.finditer(cleaned):
         n = m.group(1)
+        classified = classified_roles.get(m.span(1))
         if is_callout_list_marker(cleaned, m, required_callout_ids):
+            ignored_identifiers.append({
+                "value": n,
+                "role": NumberRole.CALLOUT_IDENTIFIER.value,
+            })
+            continue
+        if (
+            classified is not None
+            and classified.role not in {NumberRole.QUANTITY, NumberRole.DERIVED_RESULT}
+            and not _number_is_derived(cleaned, m.start())
+        ):
+            if classified.role is not NumberRole.UNKNOWN:
+                ignored_identifiers.append({
+                    "value": n,
+                    "role": classified.role.value,
+                })
             continue
         if n in seen_numbers:
             continue
@@ -512,6 +534,11 @@ def verify_answer(
     details["numberCount"]      = len(seen_numbers)
     details["numberMisses"]     = number_misses
     details["derivedNumbers"]   = derived_numbers
+    details["ignoredIdentifiers"] = ignored_identifiers
+    details["verifiedQuantities"] = [
+        value for value in seen_numbers if value not in number_misses
+    ]
+    details["unverifiedQuantities"] = number_misses
     if number_misses:
         reasons.append(f"{len(number_misses)} number(s) not found in context or question")
 

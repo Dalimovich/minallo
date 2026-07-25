@@ -139,7 +139,14 @@ interface SseStreamEvent extends Partial<SseDoneEvent> {
 interface PdfPage {
   getViewport: (opts: { scale: number }) => { width: number; height: number };
   render: (opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
-  getTextContent: () => Promise<{ items: Array<{ str: string }> }>;
+  getTextContent: () => Promise<{
+    items: Array<{
+      str: string;
+      transform?: number[];
+      width?: number;
+      height?: number;
+    }>;
+  }>;
 }
 
 interface PdfDocLike {
@@ -180,6 +187,106 @@ export interface RenderedPdfPage {
   data: string;
   page: number;
   region: 'full_page' | 'formula_area' | 'drawing_area' | 'answer_grid';
+}
+
+interface DetectedVisualRegion {
+  region: 'formula_area' | 'drawing_area' | 'answer_grid';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+}
+
+function clampRegion(region: DetectedVisualRegion): DetectedVisualRegion {
+  const x = Math.max(0, Math.min(0.98, region.x));
+  const y = Math.max(0, Math.min(0.98, region.y));
+  return {
+    ...region,
+    x,
+    y,
+    width: Math.max(0.02, Math.min(1 - x, region.width)),
+    height: Math.max(0.02, Math.min(1 - y, region.height))
+  };
+}
+
+async function coordinateAwareRegions(
+  page: PdfPage,
+  canvas: HTMLCanvasElement,
+  viewport: { width: number; height: number }
+): Promise<DetectedVisualRegion[]> {
+  const content = await page.getTextContent();
+  const formulaItems = content.items.filter((item) =>
+    /(?:=|[πΣ∫√]|\\frac|\b[A-Za-z][A-Za-z0-9_]*\s*[=+\-*/^])/u.test(item.str || '')
+  );
+  const regions: DetectedVisualRegion[] = [];
+  if (formulaItems.length) {
+    const boxes = formulaItems
+      .filter((item) => item.transform && item.transform.length >= 6)
+      .map((item) => {
+        const transform = item.transform as number[];
+        const x = transform[4]! / viewport.width;
+        const height = Math.max(item.height || Math.abs(transform[3]!) || 10, 10);
+        const width = Math.max(item.width || 20, 20);
+        const y = 1 - transform[5]! / viewport.height - height / viewport.height;
+        return { x, y, width: width / viewport.width, height: height / viewport.height };
+      });
+    if (boxes.length) {
+      const x0 = Math.min(...boxes.map((box) => box.x));
+      const y0 = Math.min(...boxes.map((box) => box.y));
+      const x1 = Math.max(...boxes.map((box) => box.x + box.width));
+      const y1 = Math.max(...boxes.map((box) => box.y + box.height));
+      regions.push(
+        clampRegion({
+          region: 'formula_area',
+          x: x0 - 0.04,
+          y: y0 - 0.06,
+          width: x1 - x0 + 0.08,
+          height: y1 - y0 + 0.12,
+          confidence: 0.88
+        })
+      );
+    }
+  }
+
+  // Layout-independent ink-density fallback: locate the densest horizontal
+  // band. Repeated square/row grids remain detectable whether they are at the
+  // top, middle, or bottom and on portrait or landscape pages.
+  const sampleWidth = Math.min(canvas.width, 900);
+  const sampleHeight = Math.max(1, Math.round((canvas.height * sampleWidth) / canvas.width));
+  const sample = document.createElement('canvas');
+  sample.width = sampleWidth;
+  sample.height = sampleHeight;
+  const sampleContext = sample.getContext('2d', { willReadFrequently: true });
+  if (sampleContext) {
+    sampleContext.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
+    const pixels = sampleContext.getImageData(0, 0, sampleWidth, sampleHeight).data;
+    const bands = 24;
+    const density = new Array<number>(bands).fill(0);
+    for (let y = 0; y < sampleHeight; y += 2) {
+      const band = Math.min(bands - 1, Math.floor((y / sampleHeight) * bands));
+      for (let x = 0; x < sampleWidth; x += 2) {
+        const offset = (y * sampleWidth + x) * 4;
+        if (pixels[offset]! + pixels[offset + 1]! + pixels[offset + 2]! < 570) {
+          density[band] = density[band]! + 1;
+        }
+      }
+    }
+    const peak = density.indexOf(Math.max(...density));
+    if (density[peak]! > 0) {
+      regions.push(
+        clampRegion({
+          region: 'answer_grid',
+          x: 0.03,
+          y: Math.max(0, peak / bands - 0.12),
+          width: 0.94,
+          height: Math.min(0.4, 1 / bands + 0.24),
+          confidence: 0.62
+        })
+      );
+    }
+  }
+  return regions;
 }
 
 function isDenseTechnicalVisualQuestion(question: string): boolean {
@@ -455,10 +562,7 @@ async function pdfDocToImages(
       const b64 = dataUrl.split(',')[1];
       if (b64) imgs.push({ mediaType, data: b64, page: i, region: 'full_page' });
       if (denseVisualTask) {
-        const crops = [
-          { region: 'formula_area' as const, x: 0.07, y: 0.18, width: 0.86, height: 0.62 },
-          { region: 'answer_grid' as const, x: 0.05, y: 0.68, width: 0.9, height: 0.28 },
-        ];
+        const crops = await coordinateAwareRegions(page, canvas, vp);
         for (const spec of crops) {
           const crop = document.createElement('canvas');
           crop.width = Math.floor(canvas.width * spec.width);

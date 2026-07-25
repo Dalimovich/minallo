@@ -40,6 +40,20 @@ class CorrectionRecord:
 
 
 @dataclass
+class VerifiedGroundedContext:
+    document_id: str
+    page: int | None
+    exercise_reference: str | None
+    domain: str | None
+    requested_quantities: list[str]
+    task_kind: str
+    source_fingerprint: str
+    verified: bool
+    verification_status: str
+    needs_regrounding: bool = False
+
+
+@dataclass
 class TutorState:
     conversation_id: str
     user_id: str | None = None
@@ -69,6 +83,7 @@ class TutorState:
     corrections: list[CorrectionRecord] = field(default_factory=list)
     evidence_dependencies: dict[str, dict[str, Any]] = field(default_factory=dict)
     pending_questions: list[str] = field(default_factory=list)
+    grounded_context: VerifiedGroundedContext | None = None
 
     def add_verified_result(self, result: VerifiedResult) -> None:
         if result.status != "verified":
@@ -170,6 +185,22 @@ class TutorState:
             reusable.append(candidate)
         return reusable
 
+    def reusable_grounded_context(self) -> VerifiedGroundedContext | None:
+        context = self.grounded_context
+        if not context or not context.verified or context.needs_regrounding:
+            return None
+        if self.document_id and context.document_id != self.document_id:
+            return None
+        if self.active_page and context.page and context.page != self.active_page:
+            return None
+        return context
+
+    def invalidate_grounded_context(self, reason: str) -> None:
+        if self.grounded_context:
+            self.grounded_context.verified = False
+            self.grounded_context.needs_regrounding = True
+            self.grounded_context.verification_status = reason
+
     def to_api(self) -> dict[str, Any]:
         data = asdict(self)
         data["results"] = {key: value.to_api() for key, value in self.results.items()}
@@ -185,9 +216,16 @@ class TutorState:
             "risk_class", "pending_clarification", "prompt_version", "model_version",
             "retrieval_version", "verifier_version", "evidence_dependencies",
             "pending_questions",
+            "grounded_context",
         }
         kwargs = {key: data[key] for key in allowed if key in data}
+        raw_grounded = kwargs.pop("grounded_context", None)
         state = cls(conversation_id=conversation_id, **kwargs)
+        if isinstance(raw_grounded, dict):
+            try:
+                state.grounded_context = VerifiedGroundedContext(**raw_grounded)
+            except (TypeError, ValueError):
+                state.grounded_context = None
         for key, raw in (data.get("results") or {}).items():
             try:
                 raw = dict(raw)
@@ -210,4 +248,9 @@ class TutorState:
         return state
 
 
-__all__ = ["CorrectionRecord", "TutorState", "VerifiedResult"]
+__all__ = [
+    "CorrectionRecord",
+    "TutorState",
+    "VerifiedGroundedContext",
+    "VerifiedResult",
+]

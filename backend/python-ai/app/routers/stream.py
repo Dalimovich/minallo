@@ -46,6 +46,11 @@ from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
 from ..services.retrieval import retrieve_chunks, retrieve_exercise_block, retrieve_formula_block
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
+from ..services.reliability import (
+    assess_text_quality,
+    classify_task_traits,
+    evidence_requirement,
+)
 from ..services.source_router import (
     CourseFileScope,
     SourceDecision,
@@ -395,11 +400,18 @@ def _verification_requires_rejection(
     ).reject
 
 
-def _verification_is_cacheable(verification: Any) -> bool:
+def _verification_is_cacheable(
+    verification: Any,
+    *,
+    task_type: str = "standard_qa",
+) -> bool:
     return bool(
         isinstance(verification, dict)
         and verification.get("status") == "verified"
-        and not _verification_requires_rejection(verification)
+        and not _verification_requires_rejection(
+            verification,
+            task_type=task_type,
+        )
     )
 
 
@@ -410,8 +422,15 @@ def _requires_verified_buffering(
     has_visual_evidence: bool,
     has_active_numerical_state: bool,
     source_conflict: bool = False,
+    task_traits=None,
 ) -> bool:
     """Classify safety from resolved intent and context, not language keywords."""
+    if task_traits is not None:
+        return bool(
+            task_traits.requires_pre_display_verification
+            or task_traits.requires_numerical_validation
+            or source_conflict
+        )
     high_risk_acts = {
         "correct_assistant", "reject_answer", "verify_previous_answer",
         "check_answer", "request_result_only", "reuse_verified_result",
@@ -450,19 +469,6 @@ def _selection_is_stale(
     )
     wrong_page = visible_page is not None and region.page != visible_page
     return wrong_revision or wrong_page
-
-
-def _wrong_language_message(language: str) -> str:
-    return {
-        "de": "Die Antwort wurde in der falschen Sprache erzeugt und deshalb nicht angezeigt. Bitte versuche es erneut.",
-        "fr": "La réponse a été produite dans la mauvaise langue et n'a donc pas été affichée. Veuillez réessayer.",
-        "es": "La respuesta se generó en el idioma equivocado y no se mostró. Inténtalo de nuevo.",
-        "it": "La risposta è stata generata nella lingua sbagliata e non è stata mostrata. Riprova.",
-        "ar": "تم إنشاء الإجابة بلغة خاطئة، لذلك لم يتم عرضها. يُرجى المحاولة مرة أخرى.",
-    }.get(
-        language,
-        "The answer was generated in the wrong language and was not shown. Please retry.",
-    )
 
 
 def _source_debug_enabled() -> bool:
@@ -665,7 +671,23 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     if payload.visiblePage is not None and payload.visiblePage < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visiblePage must be positive")
     validated_images = _validate_open_file_images(payload.openFileImages)
-    if payload.visualEvidenceExpected and not validated_images:
+    task_traits = classify_task_traits(question)
+    text_quality = assess_text_quality(payload.openFileContext or "")
+    requirement = evidence_requirement(
+        traits=task_traits,
+        current_page_text=payload.openFileContext or "",
+        text_quality=text_quality,
+        image_count=len(validated_images),
+    )
+    has_capture_candidate = bool(validated_images or payload.selectedRegion)
+    if (
+        requirement == "image_required"
+        and not has_capture_candidate
+    ) or (
+        requirement == "image_preferred"
+        and not has_capture_candidate
+        and text_quality < 0.80
+    ):
         async def missing_visual_stream():
             yield _error_sse(
                 code="visible_page_capture_failed",
@@ -856,6 +878,9 @@ async def _prepare_ask_stream_response(
 ):
     request_started = time.perf_counter()
     request_id = request_id or uuid.uuid4().hex
+    from ..services.pipeline_observability import PipelineObserver  # noqa: WPS433
+    observer = PipelineObserver(request_id)
+    observer.event("request_received")
     user_id = user["id"]
     from ..services.request_generation import register_generation  # noqa: WPS433
     register_generation(user_id, payload.conversationId, payload.conversationGeneration)
@@ -899,6 +924,16 @@ async def _prepare_ask_stream_response(
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
     open_file_images = _validate_open_file_images(payload.openFileImages)
+    observer.event(
+        "payload_validated",
+        activeDocumentId=payload.activeDocumentId,
+        visiblePage=payload.visiblePage,
+    )
+    observer.event(
+        "visual_evidence_validated",
+        imageCount=len(open_file_images),
+        imageRegions=[image["region"] for image in open_file_images],
+    )
     log.info(
         "visual_evidence_path request_id=%s expected=%s active_document=%s "
         "visible_page=%s frontend_rendered=%s validated_images=%d "
@@ -1488,9 +1523,15 @@ async def _prepare_ask_stream_response(
     # top-k QA. Run it against every stored page of the active document and
     # keep citation display limits independent from extraction coverage.
     from ..services.document_extraction import (  # noqa: WPS433
+        DocumentExtractionContext,
+        ExtractedQAItem,
         classify_document_extraction,
+        extraction_pages_for_direction,
         extract_document_qa,
         format_document_extraction,
+        infer_extraction_rescan_direction,
+        load_extraction_context,
+        save_extraction_context,
     )
     document_extraction, extraction_correction, extraction_target = (
         classify_document_extraction(question, previous_turns_payload)
@@ -1513,6 +1554,55 @@ async def _prepare_ask_stream_response(
         if status_sink:
             status_sink("scanning_document")
             status_sink("extracting_items")
+        active_document = dict(
+            ((preflight or {}).get("documents") or {}).get(
+                payload.activeDocumentId or "",
+                {},
+            )
+        )
+        document_revision = str(
+            active_document.get("active_index_revision")
+            or active_document.get("updated_at")
+            or ""
+        ) or None
+        source_fingerprint = str(
+            active_document.get("document_hash")
+            or document_revision
+            or payload.activeDocumentId
+        )
+        extraction_context = (
+            load_extraction_context(
+                payload.conversationId or "",
+                payload.activeDocumentId or "",
+                source_fingerprint=source_fingerprint,
+                target_section=extraction_target or "questions",
+            )
+            if extraction_correction and payload.conversationId
+            else None
+        )
+        pages_to_scan = None
+        previous_items = None
+        direction = "full"
+        if extraction_context:
+            direction = infer_extraction_rescan_direction(question)
+            total_pages = int(active_document.get("page_count") or 0)
+            pages_to_scan = extraction_pages_for_direction(
+                direction,
+                context=extraction_context,
+                section_start_page=1,
+                section_end_page=total_pages,
+            )
+            previous_items = [
+                ExtractedQAItem(
+                    item_id=item.item_id,
+                    question=item.question_text,
+                    answer=item.answer_text or "",
+                    question_page=item.question_page,
+                    answer_page=item.answer_page,
+                    confidence=item.pairing_confidence,
+                )
+                for item in extraction_context.paired_items
+            ]
         extraction_started = time.perf_counter()
         extraction = await run_in_threadpool(
             lambda: extract_document_qa(
@@ -1520,8 +1610,32 @@ async def _prepare_ask_stream_response(
                 course_id=payload.courseId,
                 document_id=payload.activeDocumentId or "",
                 target=extraction_target or "questions",
+                pages_to_scan=pages_to_scan,
+                previous_items=previous_items,
             )
         )
+        if payload.conversationId:
+            scanned = sorted(set(
+                (extraction_context.scanned_pages if extraction_context else [])
+                + extraction.scanned_pages
+            ))
+            save_extraction_context(DocumentExtractionContext(
+                conversation_id=payload.conversationId,
+                document_id=payload.activeDocumentId or "",
+                document_revision=document_revision,
+                source_fingerprint=source_fingerprint,
+                target_section=extraction_target or "questions",
+                requested_scope="complete_document",
+                scanned_pages=scanned,
+                extracted_questions=extraction.extracted_questions,
+                solution_evidence=extraction.solution_evidence,
+                paired_items=extraction.paired_items,
+                unresolved_item_ids=extraction.unanswered_item_ids,
+                unresolved_pages=extraction.unreadable_pages,
+                earliest_source_page=min(scanned) if scanned else None,
+                latest_source_page=max(scanned) if scanned else None,
+                complete=extraction.complete,
+            ))
         if status_sink:
             status_sink("checking_completeness")
         answer_text = format_document_extraction(
@@ -1559,7 +1673,8 @@ async def _prepare_ask_stream_response(
             "document_extraction_completed request_id=%s task_type=document_wide_extraction "
             "document=%s total_pages=%d scanned_pages=%d unreadable_pages=%s "
             "target=%s items=%d continuation_correction=%s response_language=%s "
-            "language_status=valid_mixed_source coverage_complete=%s elapsed_ms=%.0f",
+            "rescan_direction=%s reused_context=%s language_status=valid_mixed_source "
+            "coverage_complete=%s elapsed_ms=%.0f",
             request_id,
             payload.activeDocumentId,
             extraction.total_pages,
@@ -1569,6 +1684,8 @@ async def _prepare_ask_stream_response(
             len(extraction.items),
             extraction_correction,
             language_context.requested_response_language,
+            direction,
+            bool(extraction_context),
             extraction.complete,
             (time.perf_counter() - extraction_started) * 1000,
         )
@@ -1745,6 +1862,12 @@ async def _prepare_ask_stream_response(
             "ai_stream_timing request_id=%s phase=dedup input_chunks=%d output_chunks=%d",
             request_id, before_dedup, len(chunks),
         )
+        observer.event(
+            "primary_retrieval_completed",
+            activeDocumentId=payload.activeDocumentId,
+            exerciseReference=grounded_identity.exercise_reference,
+            chunkCount=len(chunks),
+        )
 
     retrieved_doc_ids = list(dict.fromkeys(
         c.document_id for c in chunks
@@ -1851,17 +1974,42 @@ async def _prepare_ask_stream_response(
     full_text_buf: list[str] = []
     captured_meta: dict[str, Any] = {}
     pending_token_events: list[bytes] = []
-    high_risk_validation = bool(
-        open_file_images
-        or payload.problemSolver
-        or re.search(
-            r"\b(calculate|compute|solve|result|how many|marked|checked|selected|"
-            r"berechne|bestimme|ermittle|löse|loese|ergebnis|wie viele|"
-            r"markiert|angekreuzt)\b",
-            question,
-            re.IGNORECASE,
-        )
+    task_traits = classify_task_traits(resolved_question)
+    observer.event(
+        "task_classified",
+        visualKind=task_traits.visual_kind.value,
+        numericalValidation=task_traits.requires_numerical_validation,
+        preDisplayVerification=task_traits.requires_pre_display_verification,
+        textFallbackAllowed=task_traits.allows_text_fallback,
     )
+    from ..services.reliability import identify_grounded_task  # noqa: WPS433
+    preliminary_traits = classify_task_traits(resolved_question)
+    grounded_identity = identify_grounded_task(
+        question=resolved_question,
+        current_page_text=payload.openFileContext or "",
+        document_id=payload.activeDocumentId,
+        filename=payload.activeFileName,
+        page=payload.visiblePage,
+        traits=preliminary_traits,
+    )
+    observer.event(
+        "task_identity_resolved",
+        exerciseReference=grounded_identity.exercise_reference,
+        taskType=grounded_identity.task_kind,
+        visiblePage=grounded_identity.page,
+        sourceConfidence=grounded_identity.source_confidence,
+    )
+    # Exact/deictic exercise work starts inside the active document. Wider
+    # course material is supporting evidence only after the task identity is
+    # known, so it cannot replace the current exercise with a namesake.
+    if (
+        payload.activeDocumentId
+        and (
+            grounded_identity.exercise_reference
+            or preliminary_traits.requires_visual_evidence
+        )
+    ):
+        retrieval_document_ids = [payload.activeDocumentId]
     high_risk_validation = _requires_verified_buffering(
         question=resolved_question,
         dialogue_act=dialogue.dialogue_act.value,
@@ -1871,6 +2019,7 @@ async def _prepare_ask_stream_response(
         has_active_numerical_state=bool(
             tutor_state and tutor_state.reusable_results()
         ),
+        task_traits=task_traits,
     )
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
@@ -1882,6 +2031,7 @@ async def _prepare_ask_stream_response(
 
     def gen():
         import json
+        observer.start("draft_generated")
         if app_or_workspace:
             yield _status_sse("checking_app_context")
         elif chunks:
@@ -1977,12 +2127,17 @@ async def _prepare_ask_stream_response(
                         pending_token_events.append(chunk_bytes)
                         continue
                 if evt.get("done"):
+                    observer.finish("draft_generated")
                     evt["dialogueResolution"] = dialogue.to_api()
                     verification_payload = evt.get("verification")
                     task_type = str(evt.get("taskType") or "standard_qa")
                     critical_reject = _verification_requires_rejection(
                         verification_payload,
                         task_type=task_type,
+                    )
+                    observer.event(
+                        "deterministic_validation_completed",
+                        result="failed" if critical_reject else "passed",
                     )
                     from ..services.answer_stream import answer_matches_resolved_language  # noqa: WPS433
                     wrong_language = not answer_matches_resolved_language(
@@ -1999,14 +2154,53 @@ async def _prepare_ask_stream_response(
                     unsafe_model_downgrade = bool(
                         high_risk_validation and evt.get("heavyCapped")
                     )
+                    from ..services.reliability import (  # noqa: WPS433
+                        compare_task_identities,
+                        identify_draft_task,
+                    )
+                    draft_identity = identify_draft_task("".join(full_text_buf))
+                    semantic_mismatches = compare_task_identities(
+                        grounded_identity,
+                        draft_identity,
+                    )
+                    if semantic_mismatches and high_risk_validation:
+                        from ..services.visual_repair import (  # noqa: WPS433
+                            generate_grounded_repair_sync,
+                        )
+                        regrounded = generate_grounded_repair_sync(
+                            request_id=request_id,
+                            question=resolved_question,
+                            incorrect_draft="".join(full_text_buf),
+                            source_context=generation_open_context,
+                            image_parts=open_file_images,
+                            mismatch_codes=[item.value for item in semantic_mismatches],
+                        )
+                        repaired_mismatches = (
+                            compare_task_identities(
+                                grounded_identity,
+                                identify_draft_task(regrounded),
+                            )
+                            if regrounded else semantic_mismatches
+                        )
+                        if regrounded and not repaired_mismatches:
+                            full_text_buf.clear()
+                            full_text_buf.append(regrounded)
+                            pending_token_events.clear()
+                            yield _sse_bytes(json.dumps({"t": regrounded}, ensure_ascii=False))
+                            evt["semanticRepair"] = True
+                            evt["repairAttempts"] = int(evt.get("repairAttempts") or 0) + 1
+                            semantic_mismatches = []
+                        evt["semanticMismatch"] = (
+                            [item.value for item in semantic_mismatches] or None
+                        )
                     false_visual_denial = bool(
                         open_file_images
                         and _FALSE_VISUAL_DENIAL_RE.search("".join(full_text_buf))
                     )
-                    if false_visual_denial:
+                    if semantic_mismatches and high_risk_validation:
                         safe_text = (
-                            "The current page image was attached, but Minallo "
-                            "could not read the requested visual content reliably."
+                            "Minallo could not reliably match the draft to the active "
+                            "exercise and requested quantity. The draft was not shown."
                         )
                         full_text_buf.clear()
                         full_text_buf.append(safe_text)
@@ -2014,16 +2208,55 @@ async def _prepare_ask_stream_response(
                         yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
                         evt["confidence"] = "low"
                         evt["unsupported"] = True
-                        evt["visualDenialGuard"] = "replaced"
+                        evt["recovery"] = {
+                            "code": "task_identity_mismatch",
+                            "action": "reground_active_document",
+                        }
+                    elif false_visual_denial:
+                        from ..services.visual_repair import (  # noqa: WPS433
+                            repair_false_visual_denial_sync,
+                        )
+                        repaired = repair_false_visual_denial_sync(
+                            request_id=request_id,
+                            question=resolved_question,
+                            draft="".join(full_text_buf),
+                            visible_page=payload.visiblePage,
+                            open_context=generation_open_context,
+                            image_parts=open_file_images,
+                        )
+                        repair_succeeded = bool(
+                            repaired
+                            and not _FALSE_VISUAL_DENIAL_RE.search(repaired)
+                        )
+                        safe_text = repaired if repair_succeeded else (
+                            "The current page image was attached, but Minallo "
+                            "could not read the requested visual content reliably."
+                        )
+                        full_text_buf.clear()
+                        full_text_buf.append(safe_text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
+                        evt["confidence"] = evt.get("confidence") if repair_succeeded else "low"
+                        evt["unsupported"] = not repair_succeeded
+                        evt["visualDenialGuard"] = (
+                            "repaired" if repair_succeeded else "repair_failed"
+                        )
+                        evt["repairAttempts"] = 1
+                        observer.event(
+                            "repair_completed",
+                            repairAttempts=1,
+                            success=repair_succeeded,
+                        )
                         log.warning(
-                            "false_visual_denial_blocked request_id=%s visible_page=%s",
+                            "false_visual_denial_repair request_id=%s visible_page=%s success=%s",
                             request_id,
                             payload.visiblePage,
+                            repair_succeeded,
                         )
                     elif unsafe_model_downgrade:
-                        safe_text = recovery_message(
-                            "critical_numerical_mismatch",
-                            language_context.requested_response_language,
+                        safe_text = (
+                            "This technical question requires Minallo's stronger "
+                            "visual verification model, which is temporarily unavailable."
                         )
                         full_text_buf.clear()
                         full_text_buf.append(safe_text)
@@ -2116,7 +2349,8 @@ async def _prepare_ask_stream_response(
                             rewrite_valid
                             and rewritten_verification
                             and _verification_is_cacheable(
-                                rewritten_verification
+                                rewritten_verification,
+                                task_type=task_type,
                             )
                         ):
                             full_text_buf.clear()
@@ -2166,6 +2400,20 @@ async def _prepare_ask_stream_response(
                             yield pending
                         pending_token_events.clear()
                     captured_meta.update(evt)
+                    observer.event(
+                        "semantic_contradiction_check_completed",
+                        semanticMismatch=evt.get("semanticMismatch"),
+                    )
+                    observer.event(
+                        "visual_verification_completed",
+                        result=(
+                            verification_payload.get("status")
+                            if isinstance(verification_payload, dict)
+                            else "unavailable"
+                        ),
+                    )
+                    observer.event("final_answer_emitted")
+                    observer.event("terminal_event_emitted", terminalEvent="done")
                     from ..services.request_generation import is_current_generation  # noqa: WPS433
                     if not is_current_generation(
                         user_id, payload.conversationId, payload.conversationGeneration
@@ -2195,7 +2443,10 @@ async def _prepare_ask_stream_response(
                         and not wrong_language
                         and not critical_reject
                         and not unsafe_model_downgrade
-                        and _verification_is_cacheable(verification_payload)
+                        and _verification_is_cacheable(
+                            verification_payload,
+                            task_type=task_type,
+                        )
                     ):
                         if payload.activeDocumentId:
                             try:
@@ -2213,7 +2464,10 @@ async def _prepare_ask_stream_response(
                                     "status": 403,
                                 }))
                                 return
-                        from ..services.tutor_state import VerifiedResult  # noqa: WPS433
+                        from ..services.tutor_state import (  # noqa: WPS433
+                            VerifiedGroundedContext,
+                            VerifiedResult,
+                        )
                         from ..services.tutor_state_store import save_tutor_state  # noqa: WPS433
                         structured_results = (
                             verification_payload.get("verifiedResults")
@@ -2296,6 +2550,19 @@ async def _prepare_ask_stream_response(
                                 ),
                             ))
                         tutor_state.model_version = str(evt.get("model") or "") or None
+                        tutor_state.grounded_context = VerifiedGroundedContext(
+                            document_id=payload.activeDocumentId or "",
+                            page=payload.visiblePage,
+                            exercise_reference=grounded_identity.exercise_reference,
+                            domain=grounded_identity.domain,
+                            requested_quantities=grounded_identity.requested_quantities,
+                            task_kind=grounded_identity.task_kind,
+                            source_fingerprint=grounded_identity.fingerprint(),
+                            verified=True,
+                            verification_status=str(
+                                verification_payload.get("status") or "verified"
+                            ),
+                        )
                         try:
                             save_tutor_state(user_id, payload.courseId, tutor_state)
                         except Exception:
@@ -2357,7 +2624,10 @@ async def _prepare_ask_stream_response(
         # allowance notice in the token stream — replaying either next month
         # (or to the same user mid-month) would be wrong.
         cached_verification = captured_meta.get("verification")
-        cache_verified = _verification_is_cacheable(cached_verification)
+        cache_verified = _verification_is_cacheable(
+            cached_verification,
+            task_type=str(captured_meta.get("taskType") or "standard_qa"),
+        )
         if (
             version_hash
             and full_text_buf

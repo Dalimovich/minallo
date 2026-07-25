@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import logging
 import re
+import hashlib
+import base64
+import json
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any, Awaitable, Callable
 
 from ..config import get_settings
 from ..supabase_client import get_supabase
@@ -77,6 +82,85 @@ class ExtractedQAItem:
 
 
 @dataclass
+class ExtractedQuestion:
+    item_id: str
+    normalized_item_id: str
+    question_text: str
+    question_page: int
+    section: str | None = None
+    question_fingerprint: str = ""
+    confidence: float = 0.0
+
+
+@dataclass
+class ExtractedSolutionEvidence:
+    item_id: str | None
+    normalized_item_id: str | None
+    answer_text: str
+    answer_page: int
+    evidence_type: str
+    referenced_question_text: str | None = None
+    question_fingerprint: str | None = None
+    confidence: float = 0.0
+
+
+@dataclass
+class PairedQAItem:
+    item_id: str
+    question_text: str
+    answer_text: str | None
+    question_page: int
+    answer_page: int | None
+    pairing_method: str | None
+    pairing_confidence: float
+    answer_evidence_type: str | None
+
+
+class GapStatus(StrEnum):
+    POTENTIAL = "potential"
+    REVIEWED_NOT_FOUND = "reviewed_not_found"
+    CONFIRMED_MISSING = "confirmed_missing"
+    INTENTIONAL = "intentional"
+    UNRESOLVED = "unresolved"
+
+
+@dataclass
+class NumberingGap:
+    item_id: str
+    status: GapStatus = GapStatus.POTENTIAL
+    reviewed_pages: list[int] = field(default_factory=list)
+
+
+@dataclass
+class DocumentExtractionContext:
+    conversation_id: str
+    document_id: str
+    document_revision: str | None
+    source_fingerprint: str
+    target_section: str
+    requested_scope: str
+    scanned_pages: list[int] = field(default_factory=list)
+    extracted_questions: list[ExtractedQuestion] = field(default_factory=list)
+    solution_evidence: list[ExtractedSolutionEvidence] = field(default_factory=list)
+    paired_items: list[PairedQAItem] = field(default_factory=list)
+    unresolved_item_ids: list[str] = field(default_factory=list)
+    unresolved_pages: list[int] = field(default_factory=list)
+    earliest_source_page: int | None = None
+    latest_source_page: int | None = None
+    complete: bool = False
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass
+class PageExtractionResult:
+    page_number: int
+    questions: list[ExtractedQuestion] = field(default_factory=list)
+    solutions: list[ExtractedSolutionEvidence] = field(default_factory=list)
+    extraction_methods: list[str] = field(default_factory=list)
+
+
+@dataclass
 class DocumentExtractionResult:
     document_id: str
     target: str
@@ -87,6 +171,10 @@ class DocumentExtractionResult:
     unanswered_item_ids: list[str] = field(default_factory=list)
     duplicate_item_ids: list[str] = field(default_factory=list)
     suspicious_numbering_gaps: list[str] = field(default_factory=list)
+    gaps: list[NumberingGap] = field(default_factory=list)
+    extracted_questions: list[ExtractedQuestion] = field(default_factory=list)
+    solution_evidence: list[ExtractedSolutionEvidence] = field(default_factory=list)
+    paired_items: list[PairedQAItem] = field(default_factory=list)
     all_relevant_pages_scanned: bool = False
     all_items_have_answers: bool = False
     complete: bool = False
@@ -95,8 +183,146 @@ class DocumentExtractionResult:
     completion_tokens: int = 0
 
 
+_EXTRACTION_CONTEXTS: dict[tuple[str, str], DocumentExtractionContext] = {}
+
+
 def normalise_item_id(item_id: str) -> str:
     return re.sub(r"[^0-9.]", "", item_id or "").strip(".")
+
+
+def question_fingerprint(text: str) -> str:
+    normalized = re.sub(r"\W+", " ", text or "").casefold().strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+
+
+def pair_questions_and_solutions(
+    questions: list[ExtractedQuestion],
+    solutions: list[ExtractedSolutionEvidence],
+) -> list[PairedQAItem]:
+    """Deterministically pair exact IDs first, then fingerprints/text."""
+    unused = list(solutions)
+    paired: list[PairedQAItem] = []
+    for question in questions:
+        candidate = next(
+            (
+                item for item in unused
+                if item.normalized_item_id
+                and item.normalized_item_id == question.normalized_item_id
+            ),
+            None,
+        )
+        method = "normalized_item_id" if candidate else None
+        if candidate is None and question.question_fingerprint:
+            candidate = next(
+                (
+                    item for item in unused
+                    if item.question_fingerprint == question.question_fingerprint
+                ),
+                None,
+            )
+            method = "question_fingerprint" if candidate else None
+        if candidate is None:
+            question_tokens = set(re.findall(r"\w+", question.question_text.casefold()))
+            scored = [
+                (
+                    len(question_tokens.intersection(set(re.findall(
+                        r"\w+", (item.referenced_question_text or "").casefold(),
+                    )))) / max(1, len(question_tokens)),
+                    item,
+                )
+                for item in unused
+                if item.referenced_question_text
+            ]
+            if scored:
+                score, possible = max(scored, key=lambda value: value[0])
+                if score >= 0.72:
+                    candidate, method = possible, "referenced_question_similarity"
+        if candidate:
+            unused.remove(candidate)
+        paired.append(PairedQAItem(
+            item_id=question.item_id,
+            question_text=question.question_text,
+            answer_text=candidate.answer_text if candidate else None,
+            question_page=question.question_page,
+            answer_page=candidate.answer_page if candidate else None,
+            pairing_method=method,
+            pairing_confidence=min(question.confidence, candidate.confidence) if candidate else 0.0,
+            answer_evidence_type=candidate.evidence_type if candidate else None,
+        ))
+    return paired
+
+
+async def extract_page_with_fallback(
+    *,
+    document_id: str,
+    page_number: int,
+    page_text: str,
+    extract_from_text: Callable[..., Awaitable[PageExtractionResult]],
+    render_page_image: Callable[..., Awaitable[Any]],
+    extract_from_page_image: Callable[..., Awaitable[PageExtractionResult]],
+) -> PageExtractionResult:
+    from .reliability import assess_text_quality
+
+    text_result = await extract_from_text(
+        page_text=page_text,
+        page_number=page_number,
+    )
+    if assess_text_quality(page_text) >= 0.75:
+        return text_result
+    page_image = await render_page_image(
+        document_id=document_id,
+        page_number=page_number,
+        dpi=260,
+        format="png",
+    )
+    visual_result = await extract_from_page_image(
+        image=page_image,
+        page_number=page_number,
+    )
+    return PageExtractionResult(
+        page_number=page_number,
+        questions=text_result.questions + visual_result.questions,
+        solutions=text_result.solutions + visual_result.solutions,
+        extraction_methods=list(dict.fromkeys(
+            text_result.extraction_methods + visual_result.extraction_methods
+        )),
+    )
+
+
+def extraction_pages_for_direction(
+    direction: str,
+    *,
+    context: DocumentExtractionContext,
+    section_start_page: int,
+    section_end_page: int,
+) -> list[int]:
+    if direction == "earlier" and context.earliest_source_page is not None:
+        return list(range(section_start_page, context.earliest_source_page))
+    if direction == "later" and context.latest_source_page is not None:
+        return list(range(context.latest_source_page + 1, section_end_page + 1))
+    return context.unresolved_pages or list(range(section_start_page, section_end_page + 1))
+
+
+def save_extraction_context(context: DocumentExtractionContext) -> None:
+    context.updated_at = datetime.now(UTC)
+    _EXTRACTION_CONTEXTS[(context.conversation_id, context.document_id)] = context
+
+
+def load_extraction_context(
+    conversation_id: str,
+    document_id: str,
+    *,
+    source_fingerprint: str | None = None,
+    target_section: str | None = None,
+) -> DocumentExtractionContext | None:
+    context = _EXTRACTION_CONTEXTS.get((conversation_id, document_id))
+    if context is None:
+        return None
+    if source_fingerprint and context.source_fingerprint != source_fingerprint:
+        return None
+    if target_section and context.target_section.casefold() != target_section.casefold():
+        return None
+    return context
 
 
 def infer_extraction_rescan_direction(follow_up: str) -> str:
@@ -136,13 +362,33 @@ def identify_suspicious_numbering_gaps(item_ids: list[str]) -> list[str]:
     return gaps
 
 
+def review_numbering_gap(
+    item_id: str,
+    *,
+    neighbouring_text: str,
+    reviewed_pages: list[int],
+) -> NumberingGap:
+    """Classify a potential gap after one targeted neighbouring-page review."""
+    if re.search(
+        r"\b(cancelled|omitted|not used|variant|entf[aä]llt|gestrichen|variante)\b",
+        neighbouring_text or "",
+        re.IGNORECASE,
+    ):
+        status = GapStatus.INTENTIONAL
+    elif reviewed_pages:
+        status = GapStatus.REVIEWED_NOT_FOUND
+    else:
+        status = GapStatus.UNRESOLVED
+    return NumberingGap(item_id=item_id, status=status, reviewed_pages=reviewed_pages)
+
+
 def _load_document_pages(
     *, user_id: str, course_id: str, document_id: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sb = get_supabase()
     doc_response = (
         sb.table("documents")
-        .select("id,file_name,page_count,active_index_revision")
+        .select("id,file_name,page_count,active_index_revision,storage_path")
         .eq("id", document_id)
         .eq("user_id", user_id)
         .eq("course_id", course_id)
@@ -172,6 +418,76 @@ def _load_document_pages(
             break
         offset += page_size
     return dict(docs[0]), rows
+
+
+def _extract_visual_page(
+    *,
+    document: dict[str, Any],
+    page_number: int,
+    target: str,
+) -> list[ExtractedQAItem]:
+    """Render and inspect a weak/scanned page for marks, questions and answers."""
+    storage_path = str(document.get("storage_path") or "")
+    if not storage_path:
+        return []
+    from .openai_client import get_openai_client
+    from .storage import download_document_bytes
+    from .vision_ocr import _render_page_to_png, _try_import_pypdfium2
+
+    pdfium = _try_import_pypdfium2()
+    if pdfium is None:
+        return []
+    png = _render_page_to_png(
+        pdfium,
+        download_document_bytes(storage_path),
+        page_number - 1,
+        260,
+    )
+    if not png:
+        return []
+    response = get_openai_client().chat.completions.create(
+        model=get_settings().openai_generate_model,
+        temperature=0,
+        max_tokens=3000,
+        response_format={"type": "json_object"},
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Extract {target!r} questions and separate solution evidence from "
+                        f"this scanned PDF page {page_number}. Detect IDs, exact question "
+                        "text, printed answers, worked solutions, checked boxes, green "
+                        "checkmarks and annotations. Never invent missing text. Return "
+                        '{"items":[{"item_id":"...","question":"...","answer":"...",'
+                        '"question_page":1,"answer_page":1,"evidence_type":"checked_option",'
+                        '"confidence":0.9}]}.'
+                    ),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,"
+                        + base64.b64encode(png).decode("ascii"),
+                        "detail": "high",
+                    },
+                },
+            ],
+        }],
+    )
+    try:
+        data = json.loads(str(response.choices[0].message.content or "{}"))
+    except (TypeError, ValueError):
+        return []
+    return [
+        item
+        for item in (
+            _normalise_item(raw, page_number)
+            for raw in (data.get("items", []) if isinstance(data, dict) else [])
+        )
+        if item is not None
+    ]
 
 
 def _normalise_item(raw: Any, fallback_page: int) -> ExtractedQAItem | None:
@@ -238,17 +554,26 @@ def extract_document_qa(
     document_id: str,
     target: str,
     status: Callable[[str], None] | None = None,
+    pages_to_scan: list[int] | None = None,
+    previous_items: list[ExtractedQAItem] | None = None,
 ) -> DocumentExtractionResult:
     document, page_rows = _load_document_pages(
         user_id=user_id, course_id=course_id, document_id=document_id,
     )
     total_pages = int(document.get("page_count") or len(page_rows) or 0)
+    if pages_to_scan is not None:
+        requested_pages = set(pages_to_scan)
+        page_rows = [
+            row for row in page_rows
+            if int(row.get("page_number") or 0) in requested_pages
+        ]
     result = DocumentExtractionResult(
         document_id=document_id,
         target=target or "questions",
         total_pages=total_pages,
     )
     usable: list[tuple[int, str]] = []
+    weak_pages: list[int] = []
     seen_pages: set[int] = set()
     for row in page_rows:
         page = int(row.get("page_number") or 0)
@@ -256,17 +581,46 @@ def extract_document_qa(
             continue
         seen_pages.add(page)
         text = str(row.get("cleaned_text") or row.get("raw_text") or "").strip()
-        if len(text) < 20:
-            result.unreadable_pages.append(page)
+        try:
+            stored_quality = float(row.get("extraction_quality") or 0.0)
+        except (TypeError, ValueError):
+            stored_quality = 0.0
+        if len(text) < 20 or (stored_quality and stored_quality < 0.75):
+            weak_pages.append(page)
+            if text:
+                usable.append((page, text))
         else:
             usable.append((page, text))
             result.scanned_pages.append(page)
     result.unreadable_pages.extend(
-        page for page in range(1, total_pages + 1) if page not in seen_pages
+        page
+        for page in (pages_to_scan or range(1, total_pages + 1))
+        if page not in seen_pages
     )
     result.unreadable_pages = sorted(set(result.unreadable_pages))
 
-    all_items: list[ExtractedQAItem] = []
+    all_items: list[ExtractedQAItem] = list(previous_items or [])
+    for page in weak_pages:
+        try:
+            visual_items = _extract_visual_page(
+                document=document,
+                page_number=page,
+                target=target,
+            )
+        except Exception:
+            log.exception(
+                "document_visual_fallback_failed document=%s page=%s",
+                document_id,
+                page,
+            )
+            visual_items = []
+        if visual_items:
+            all_items.extend(visual_items)
+            result.scanned_pages.append(page)
+        else:
+            result.unreadable_pages.append(page)
+    result.scanned_pages = sorted(set(result.scanned_pages))
+    result.unreadable_pages = sorted(set(result.unreadable_pages))
     # Keep every map prompt bounded while scanning all pages in order.
     groups: list[list[tuple[int, str]]] = []
     current: list[tuple[int, str]] = []
@@ -336,10 +690,60 @@ def extract_document_qa(
     result.suspicious_numbering_gaps = identify_suspicious_numbering_gaps(
         [item.item_id for item in result.items]
     )
+    text_by_page = {page: text for page, text in usable}
+    for item_id in result.suspicious_numbering_gaps:
+        section_match = re.match(r"(\d+)\.", item_id)
+        related_items = [
+            item for item in result.items
+            if section_match and normalise_item_id(item.item_id).startswith(section_match.group(1) + ".")
+        ]
+        reviewed_pages = sorted({
+            page
+            for item in related_items
+            for page in range(max(1, item.question_page - 1), min(total_pages, item.question_page + 1) + 1)
+            if page in text_by_page
+        })
+        neighbouring_text = "\n".join(text_by_page[page] for page in reviewed_pages)
+        result.gaps.append(review_numbering_gap(
+            item_id,
+            neighbouring_text=neighbouring_text,
+            reviewed_pages=reviewed_pages,
+        ))
+
+    result.extracted_questions = [
+        ExtractedQuestion(
+            item_id=item.item_id,
+            normalized_item_id=normalise_item_id(item.item_id),
+            question_text=item.question,
+            question_page=item.question_page,
+            question_fingerprint=question_fingerprint(item.question),
+            confidence=item.confidence,
+        )
+        for item in result.items
+    ]
+    result.solution_evidence = [
+        ExtractedSolutionEvidence(
+            item_id=item.item_id,
+            normalized_item_id=normalise_item_id(item.item_id),
+            answer_text=item.answer,
+            answer_page=item.answer_page or item.question_page,
+            evidence_type="printed_answer",
+            referenced_question_text=item.question,
+            question_fingerprint=question_fingerprint(item.question),
+            confidence=item.confidence,
+        )
+        for item in result.items
+        if item.answer.strip()
+    ]
+    result.paired_items = pair_questions_and_solutions(
+        result.extracted_questions,
+        result.solution_evidence,
+    )
+    expected_pages = set(pages_to_scan or range(1, total_pages + 1))
     result.all_relevant_pages_scanned = bool(
-        total_pages
-        and len(result.scanned_pages) + len(result.unreadable_pages) >= total_pages
-        and not result.unreadable_pages
+        expected_pages
+        and expected_pages.issubset(set(result.scanned_pages) | set(result.unreadable_pages))
+        and not set(result.unreadable_pages).intersection(expected_pages)
     )
     result.all_items_have_answers = bool(
         result.items and not result.unanswered_item_ids
@@ -348,7 +752,10 @@ def extract_document_qa(
         result.all_relevant_pages_scanned
         and result.all_items_have_answers
         and not result.duplicate_item_ids
-        and not result.suspicious_numbering_gaps
+        and not any(
+            gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
+            for gap in result.gaps
+        )
     )
     return result
 
@@ -377,23 +784,68 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
             f"Ich habe alle {result.total_pages} Seiten geprüft und {len(result.items)} Einträge gefunden."
         )
     else:
-        pages = ", ".join(map(str, result.unreadable_pages))
-        blocks.append(
-            f"I scanned the document and found {len(result.items)} items, but pages {pages} "
-            "were unreadable, so completeness is not guaranteed."
+        reasons: list[str] = []
+        if result.unreadable_pages:
+            pages = ", ".join(map(str, result.unreadable_pages))
+            reasons.append(
+                f"Unreadable pages: {pages}" if english else f"Unlesbare Seiten: {pages}"
+            )
+        if result.unanswered_item_ids:
+            item_ids = ", ".join(result.unanswered_item_ids)
+            reasons.append(
+                f"Answers were not found for: {item_ids}"
+                if english else f"Keine Antworten gefunden für: {item_ids}"
+            )
+        if result.duplicate_item_ids:
+            item_ids = ", ".join(result.duplicate_item_ids)
+            reasons.append(
+                f"Duplicate or conflicting items: {item_ids}"
+                if english else f"Doppelte oder widersprüchliche Einträge: {item_ids}"
+            )
+        unresolved = [
+            gap.item_id for gap in result.gaps
+            if gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
+        ]
+        if unresolved:
+            item_ids = ", ".join(unresolved)
+            reasons.append(
+                f"Possible missing items: {item_ids}"
+                if english else f"Möglicherweise fehlende Einträge: {item_ids}"
+            )
+        if not reasons:
+            reasons.append(
+                "The extraction did not satisfy all completeness checks."
+                if english else "Die Extraktion erfüllte nicht alle Vollständigkeitsprüfungen."
+            )
+        intro = (
+            "I scanned the document, but I cannot guarantee that the extraction is complete:"
             if english else
-            f"Ich habe {len(result.items)} Einträge gefunden; die Seiten {pages} waren "
-            "jedoch unlesbar, daher ist die Vollständigkeit nicht garantiert."
+            "Ich habe das Dokument geprüft, kann die Vollständigkeit aber nicht garantieren:"
         )
+        blocks.append(intro + "\n- " + "\n- ".join(reasons))
     return "\n\n".join(blocks)
 
 
 __all__ = [
+    "DocumentExtractionContext",
     "DocumentExtractionResult",
+    "ExtractedQuestion",
+    "ExtractedSolutionEvidence",
+    "GapStatus",
+    "NumberingGap",
+    "PageExtractionResult",
+    "PairedQAItem",
     "classify_document_extraction",
+    "extract_page_with_fallback",
     "extract_document_qa",
+    "extraction_pages_for_direction",
     "format_document_extraction",
     "identify_suspicious_numbering_gaps",
     "infer_extraction_rescan_direction",
+    "load_extraction_context",
     "normalise_item_id",
+    "pair_questions_and_solutions",
+    "question_fingerprint",
+    "review_numbering_gap",
+    "save_extraction_context",
 ]
