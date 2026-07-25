@@ -20,6 +20,7 @@
    icon column) is intentionally preserved for cross-section navigation. */
 body.ncb-fullbleed #portal .main .topbar { display: none !important; }
 body.ncb-fullbleed #portal .main .main-scroll { padding: 0 !important; }
+body.ncb-fullbleed #portal .sidebar { display: none !important; }
 body.ncb-fullbleed #psec-aipage {
   height: 100dvh !important;
   min-height: 0 !important;
@@ -4716,9 +4717,60 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-course-row {
   min-height: 64px;
   padding: 13px;
-  border-color: rgba(148, 163, 184, 0.08);
-  border-radius: 15px;
-  background: #102139;
+  border-color: rgba(148, 163, 184, 0.13);
+  border-top-color: rgba(219, 234, 254, 0.19);
+  border-radius: 17px;
+  background:
+    linear-gradient(145deg, rgba(30, 58, 94, 0.72), rgba(12, 29, 51, 0.82)),
+    rgba(15, 34, 58, 0.72);
+  box-shadow:
+    0 10px 26px rgba(1, 8, 20, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.ncb-course-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(96, 165, 250, 0.34);
+  background: linear-gradient(145deg, rgba(36, 74, 121, 0.78), rgba(14, 36, 63, 0.88));
+  box-shadow: 0 15px 34px rgba(1, 8, 20, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.ncb-course-row--recent {
+  min-height: 88px;
+  margin-bottom: 7px;
+  padding: 17px 15px;
+  border-color: rgba(96, 165, 250, 0.42);
+  background:
+    radial-gradient(circle at 12% 15%, rgba(96, 165, 250, 0.18), transparent 42%),
+    linear-gradient(145deg, rgba(31, 72, 122, 0.88), rgba(13, 35, 62, 0.92));
+  box-shadow:
+    0 18px 42px rgba(2, 12, 28, 0.32),
+    0 0 26px rgba(37, 99, 235, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.ncb-course-row--recent .ncb-library-icon {
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+  border-radius: 13px;
+  background: rgba(37, 99, 235, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.ncb-course-row--recent strong { font-size: 0.88rem; }
+.ncb-course-row em {
+  width: fit-content;
+  margin-bottom: 1px;
+  color: #93c5fd;
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .ncb-saved-kind-results { margin-top: 12px; }
@@ -4746,10 +4798,14 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 }
 
 .ncb-folder {
-  margin-bottom: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.055);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  margin-bottom: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-top-color: rgba(219, 234, 254, 0.18);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(29, 53, 83, 0.62), rgba(11, 27, 47, 0.78));
+  box-shadow: 0 10px 26px rgba(2, 9, 21, 0.17), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
   overflow: hidden;
 }
 
@@ -4757,7 +4813,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px;
+  min-height: 60px;
+  padding: 12px;
   color: #dbeafe;
   cursor: pointer;
   list-style: none;
@@ -4765,10 +4822,31 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-folder summary::-webkit-details-marker { display: none; }
 .ncb-folder summary > span { display: grid; gap: 2px; }
-.ncb-folder summary strong { font-size: 0.76rem; }
-.ncb-folder summary small { color: #7286a0; font-size: 0.65rem; }
+.ncb-folder summary strong { font-size: 0.81rem; }
+.ncb-folder summary small { color: #8298b4; font-size: 0.68rem; }
 .ncb-folder > div { padding: 0 6px 6px 16px; }
 .ncb-library-muted { color: #7286a0; font-size: 0.7rem; }
+
+.ncb-file-row {
+  min-height: 62px;
+  margin-bottom: 8px;
+  padding: 12px;
+  border-color: rgba(148, 163, 184, 0.11);
+  border-top-color: rgba(219, 234, 254, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(27, 50, 79, 0.6), rgba(10, 25, 44, 0.78));
+  box-shadow: 0 9px 24px rgba(2, 9, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.ncb-file-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(96, 165, 250, 0.34);
+  background: linear-gradient(145deg, rgba(35, 67, 106, 0.7), rgba(12, 31, 54, 0.84));
+  box-shadow: 0 14px 30px rgba(2, 9, 21, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
 
 .ncb-saved-function { margin-bottom: 22px; }
 .ncb-saved-function > h3 {
@@ -5250,7 +5328,7 @@ body.ncb-pdf-workspace-open #drDrawer {
       inset 0 1px 0 rgba(255, 255, 255, 0.035);
   }
 
-  .ncb-sidebar { margin-left: 14px; }
+  .ncb-sidebar { width: 274px; margin-left: 14px; }
   .ncb-context { margin-right: 14px; }
 
   .ncb-center {

@@ -42,6 +42,7 @@ let pdfOriginCourse: LibraryCourse | null = null;
 
 const PDF_WIDTH_KEY = 'minallo:chatbot-pdf-width';
 const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf';
+const RECENT_COURSE_KEY = 'minallo:chatbot-recent-course';
 
 type WorkspacePdfSession = {
   course: { id: string; name?: string; short?: string };
@@ -88,6 +89,14 @@ function readWorkspacePdfSession(): WorkspacePdfSession | null {
 
 function clearWorkspacePdfSession(): void {
   try { sessionStorage.removeItem(PDF_SESSION_KEY); } catch { /* ignore */ }
+}
+
+function recentCourseId(): string {
+  try { return localStorage.getItem(RECENT_COURSE_KEY) || ''; } catch { return ''; }
+}
+
+function rememberCourse(course: LibraryCourse): void {
+  try { localStorage.setItem(RECENT_COURSE_KEY, course.id); } catch { /* ignore */ }
 }
 
 function refitWorkspacePdf(): void {
@@ -297,13 +306,16 @@ function renderCourses(panel: HTMLElement): void {
     panel.innerHTML = '<div class="ncb-library-empty"><strong>No courses yet</strong><span>Create a course from the Courses page to see it here.</span></div>';
     return;
   }
+  const recentId = recentCourseId();
+  const recent = all.find((course) => course.id === recentId);
+  const ordered = recent ? [recent, ...all.filter((course) => course.id !== recent.id)] : all;
   panel.innerHTML =
     '<div class="ncb-library-section-head"><div><strong>Courses</strong><span>Select a course to browse its material.</span></div></div>' +
     '<div class="ncb-course-list">' +
-    all.map((course) => `
-      <button type="button" class="ncb-course-row" data-course-id="${escapeHtml(course.id)}">
+    ordered.map((course) => `
+      <button type="button" class="ncb-course-row${course.id === recent?.id ? ' ncb-course-row--recent' : ''}" data-course-id="${escapeHtml(course.id)}">
         ${icon('course')}
-        <span><strong>${escapeHtml(course.name || 'Untitled course')}</strong><small>${fileCount(course)} files</small></span>
+        <span>${course.id === recent?.id ? '<em>Last opened</em>' : ''}<strong>${escapeHtml(course.name || 'Untitled course')}</strong><small>${fileCount(course)} files</small></span>
         <b aria-hidden="true">›</b>
       </button>`).join('') +
     '</div>';
@@ -312,6 +324,7 @@ function renderCourses(panel: HTMLElement): void {
     row.addEventListener('click', () => {
       const course = all.find((item) => item.id === row.dataset.courseId);
       if (!course) return;
+      rememberCourse(course);
       void renderCourseDetail(panel, course);
     });
   });
@@ -399,6 +412,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   const inner = context?.querySelector<HTMLElement>('.ncb-context-inner');
   const wrap = document.getElementById('pdfViewerWrap');
   if (!context || !inner || !wrap || !window.openFile) return;
+  rememberCourse(course);
   pdfOriginCourse = course;
   saveWorkspacePdfSession(course, file);
 

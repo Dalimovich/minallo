@@ -29,6 +29,22 @@ test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
   assert.match(html, /data-library-panel="saved"/);
 });
 
+test('course library has glass cards and persists a larger most-recent course', () => {
+  assert.match(moduleSource, /const RECENT_COURSE_KEY = 'minallo:chatbot-recent-course'/);
+  assert.match(moduleSource, /localStorage\.setItem\(RECENT_COURSE_KEY, course\.id\)/);
+  assert.match(moduleSource, /const ordered = recent \? \[recent, \.\.\.all\.filter/);
+  assert.match(moduleSource, /ncb-course-row--recent/);
+  assert.match(css, /\.ncb-course-row--recent\s*\{[\s\S]*min-height:\s*88px/);
+  assert.match(css, /\.ncb-course-row\s*\{[\s\S]*backdrop-filter:\s*blur\(18px\)/);
+  assert.match(css, /\.ncb-file-row\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/);
+  assert.match(css, /\.ncb-folder\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/);
+});
+
+test('chatbot removes the legacy icon rail and uses a slimmer AI chats sidebar', () => {
+  assert.match(css, /body\.ncb-fullbleed #portal \.sidebar \{ display:\s*none !important; \}/);
+  assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar \{ width:\s*274px;/);
+});
+
 test('course drawer reuses the real course registry, hydration, and file opener', () => {
   assert.match(moduleSource, /window\.SEMS \|\| window\._SEMS/);
   assert.match(moduleSource, /window\._ufMerge/);
