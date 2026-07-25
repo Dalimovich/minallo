@@ -70,6 +70,8 @@ test('account menu closes on outside click and workspace dialogs float on glass'
   assert.match(moduleSource, /if \(!root\.querySelector<HTMLElement>\('\.ncb-account'\)\?\.contains\(event\.target as Node\)\)/);
   assert.match(html, /data-admin-page hidden>Admin page<\/button>/);
   assert.match(moduleSource, /checkAdminStatus\(\)/);
+  assert.match(moduleSource, /localStorage\.getItem\('sb_sess_token'\)[\s\S]*sessionStorage\.getItem\('sb_sess_token'\)/);
+  assert.match(moduleSource, /if \(open\) await resolveAdminAccess\?\.\(\)/);
   assert.match(moduleSource, /window\.location\.assign\('\/admin\.html'\)/);
   assert.match(css, /\.ncb-account-menu[\s\S]*backdrop-filter:\s*blur\(28px\) saturate\(145%\)/);
   assert.match(css, /\.ncb-workspace-dialog[\s\S]*backdrop-filter:\s*blur\(34px\) saturate\(140%\)/);

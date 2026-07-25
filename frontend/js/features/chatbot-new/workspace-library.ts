@@ -728,16 +728,35 @@ function bindAccountMenu(root: HTMLElement): void {
   if (label) label.textContent = name;
 
   const adminButton = menu.querySelector<HTMLButtonElement>('[data-admin-page]');
+  let resolveAdminAccess: (() => Promise<boolean>) | null = null;
   if (adminButton) {
     const revealAdminButton = (isAdmin: boolean): void => {
       adminButton.hidden = !isAdmin;
     };
     revealAdminButton(window._userIsAdmin === true);
-    if (window._userIsAdmin !== true) {
-      void checkAdminStatus()
-        .then((status) => revealAdminButton(Boolean((status as { isAdmin?: boolean } | null)?.isAdmin)))
-        .catch(() => revealAdminButton(false));
-    }
+    resolveAdminAccess = async (): Promise<boolean> => {
+      if (window._userIsAdmin === true) {
+        revealAdminButton(true);
+        return true;
+      }
+      if (!window._sbToken) {
+        window._sbToken = localStorage.getItem('sb_sess_token')
+          || sessionStorage.getItem('sb_sess_token')
+          || localStorage.getItem('sb_token')
+          || undefined;
+      }
+      try {
+        const status = await checkAdminStatus();
+        const isAdmin = Boolean((status as { isAdmin?: boolean } | null)?.isAdmin);
+        window._userIsAdmin = isAdmin;
+        revealAdminButton(isAdmin);
+        return isAdmin;
+      } catch {
+        revealAdminButton(false);
+        return false;
+      }
+    };
+    void resolveAdminAccess();
     adminButton.addEventListener('click', () => {
       menu.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
@@ -745,8 +764,9 @@ function bindAccountMenu(root: HTMLElement): void {
     });
   }
 
-  trigger.addEventListener('click', () => {
+  trigger.addEventListener('click', async () => {
     const open = menu.hidden;
+    if (open) await resolveAdminAccess?.();
     menu.hidden = !open;
     trigger.setAttribute('aria-expanded', String(open));
   });
