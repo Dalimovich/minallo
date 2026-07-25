@@ -1248,11 +1248,33 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   const toggle = document.getElementById('pdfToolbarCollapse');
   const dragHandle = document.getElementById('pdfToolbarDragHandle');
   const pdfView = document.getElementById('pdfView');
+  const annotateToggle = document.getElementById('pdfAnnotateToggle');
+  const annotateToolbar = document.getElementById('annotToolbar');
   if (!toolbar || !toggle || !dragHandle || !pdfView) return;
   const toolbarEl = toolbar;
   const toggleEl = toggle;
   const dragHandleEl = dragHandle;
   const pdfViewEl = pdfView;
+
+  function placeAnnotationToolbar(): void {
+    if (!annotateToggle || !annotateToolbar || annotateToolbar.style.display === 'none') return;
+    const buttonRect = annotateToggle.getBoundingClientRect();
+    const popoverRect = annotateToolbar.getBoundingClientRect();
+    const gap = 10;
+    const viewportGap = 12;
+    const maxLeft = Math.max(viewportGap, window.innerWidth - popoverRect.width - viewportGap);
+    const idealLeft = buttonRect.left + buttonRect.width / 2 - popoverRect.width / 2;
+    const left = Math.min(maxLeft, Math.max(viewportGap, idealLeft));
+    annotateToolbar.style.position = 'fixed';
+    annotateToolbar.style.left = `${Math.round(left)}px`;
+    annotateToolbar.style.right = 'auto';
+    annotateToolbar.style.top = `${Math.round(buttonRect.bottom + gap)}px`;
+    annotateToolbar.style.transform = 'none';
+    annotateToolbar.style.setProperty(
+      '--annot-arrow-left',
+      `${Math.round(buttonRect.left + buttonRect.width / 2 - left - 7)}px`
+    );
+  }
 
   function bounds(): { left: number; right: number; top: number; bottom: number } {
     const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
@@ -1273,6 +1295,7 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     toolbarEl.style.left = `${Math.round(Math.min(limit.right, Math.max(limit.left, left)))}px`;
     toolbarEl.style.top = `${Math.round(Math.min(limit.bottom, Math.max(limit.top, top)))}px`;
     toolbarEl.style.right = 'auto';
+    placeAnnotationToolbar();
   }
 
   function keepClearOfSidebar(): void {
@@ -1282,6 +1305,7 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   }
 
   function setCollapsed(collapsed: boolean): void {
+    if (document.body.classList.contains('ncb-pdf-workspace-open')) collapsed = true;
     toolbarEl.classList.toggle('is-collapsed', collapsed);
     toggleEl.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     toggleEl.setAttribute('aria-label', collapsed ? 'Expand PDF toolbar' : 'Collapse PDF toolbar');
@@ -1294,6 +1318,7 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   }
 
   toggleEl.addEventListener('click', () => setCollapsed(!toolbarEl.classList.contains('is-collapsed')));
+  annotateToggle?.addEventListener('click', () => requestAnimationFrame(placeAnnotationToolbar));
   dragHandleEl.addEventListener('pointerdown', (event: PointerEvent) => {
     if (!toolbarEl.classList.contains('is-collapsed')) return;
     event.preventDefault();
@@ -1329,13 +1354,18 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     dragHandleEl.addEventListener('pointerup', finish);
     dragHandleEl.addEventListener('pointercancel', finish);
   });
-  window.addEventListener('resize', keepClearOfSidebar);
+  window.addEventListener('resize', () => {
+    keepClearOfSidebar();
+    placeAnnotationToolbar();
+  });
   const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
   if (sidebar && typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(keepClearOfSidebar).observe(sidebar);
   }
   new MutationObserver(() => {
-    if (pdfViewEl.style.display !== 'none') setCollapsed(false);
+    if (pdfViewEl.style.display !== 'none') {
+      setCollapsed(document.body.classList.contains('ncb-pdf-workspace-open'));
+    }
   }).observe(pdfViewEl, { attributes: true, attributeFilter: ['style'] });
 })();
 

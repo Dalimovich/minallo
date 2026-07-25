@@ -19,6 +19,7 @@ const pdfViewerSource = fs.readFileSync(
   'frontend/js/features/pdf-viewer/pdf-viewer.ts',
   'utf8'
 );
+const appSource = fs.readFileSync('frontend/js/app.ts', 'utf8');
 const portalHtml = fs.readFileSync('frontend/pages/portal.html', 'utf8');
 
 test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
@@ -129,6 +130,16 @@ test('workspace PDF is resizable and reflows its rendered page content', () => {
   assert.match(moduleSource, /new ResizeObserver/);
   assert.match(css, /\.ncb-pdf-resize\s*\{[\s\S]*cursor:\s*ew-resize/);
   assert.match(css, /\.ncb-context\.ncb-pdf-resizing[\s\S]*transition:\s*none !important/);
+});
+
+test('workspace PDF keeps only a compact movable toolbar with annotation tools anchored below it', () => {
+  assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar \.pdf-toolbar-top[\s\S]*display:\s*none !important/);
+  assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar\.is-collapsed #pdfFit/);
+  assert.match(appSource, /if \(document\.body\.classList\.contains\('ncb-pdf-workspace-open'\)\) collapsed = true/);
+  assert.match(appSource, /function placeAnnotationToolbar/);
+  assert.match(appSource, /buttonRect\.bottom \+ gap/);
+  assert.match(appSource, /placeAnnotationToolbar\(\);[\s\S]*function keepClearOfSidebar/);
+  assert.match(css, /--annot-arrow-left/);
 });
 
 test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF', () => {

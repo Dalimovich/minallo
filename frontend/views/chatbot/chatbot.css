@@ -5155,18 +5155,47 @@ body.ncb-pdf-workspace-open #pdfToolbar {
 }
 
 body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed {
-  position: absolute;
-  top: 12px !important;
-  right: 12px !important;
-  left: auto !important;
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  left: auto;
 }
 
+body.ncb-pdf-workspace-open #pdfToolbar .pdf-toolbar-top {
+  display: none !important;
+}
+
+body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed #pdfFit,
+body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed #pdfAll,
 body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed .pdf-controls-right {
   display: flex !important;
 }
 
+body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed .pdf-toolbar-controls {
+  gap: 6px;
+  padding: 5px;
+  border-radius: 15px;
+}
+
+body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed #pdfDownload {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  font-size: 0;
+}
+
 body.ncb-pdf-workspace-open #pdfToolbarCollapse {
   display: none !important;
+}
+
+body.ncb-pdf-workspace-open #annotToolbar {
+  z-index: 10020;
+  max-width: calc(100vw - 24px);
+}
+
+body.ncb-pdf-workspace-open #annotToolbar::before {
+  right: auto;
+  left: var(--annot-arrow-left, 50%);
 }
 
 body.ncb-pdf-workspace-open #pdfAnnotateToggle {
