@@ -140,6 +140,11 @@ test('workspace PDF keeps only a compact movable toolbar with annotation tools a
   assert.match(appSource, /buttonRect\.bottom \+ gap/);
   assert.match(appSource, /placeAnnotationToolbar\(\);[\s\S]*function keepClearOfSidebar/);
   assert.match(css, /--annot-arrow-left/);
+  assert.match(appSource, /document\.querySelector<HTMLElement>\('\.ncb-pdf-host'\)/);
+  assert.match(appSource, /clampedLeft - \(containingRect\?\.left \|\| 0\)/);
+  assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar\.is-collapsed[\s\S]*position:\s*absolute/);
+  assert.match(css, /body\.ncb-pdf-workspace-open #pdfAnnotateToggle[\s\S]*place-items:\s*center/);
+  assert.match(css, /body\.ncb-pdf-workspace-open #pdfAnnotateToggle svg[\s\S]*display:\s*block/);
 });
 
 test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF', () => {

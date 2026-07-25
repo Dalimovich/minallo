@@ -1261,14 +1261,22 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     const buttonRect = annotateToggle.getBoundingClientRect();
     const popoverRect = annotateToolbar.getBoundingClientRect();
     const gap = 10;
+    const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
+    const surface = workspaceOpen ? document.querySelector<HTMLElement>('.ncb-pdf-host') : null;
+    const surfaceRect = surface?.getBoundingClientRect();
     const viewportGap = 12;
-    const maxLeft = Math.max(viewportGap, window.innerWidth - popoverRect.width - viewportGap);
+    const minLeft = surfaceRect ? surfaceRect.left + viewportGap : viewportGap;
+    const maxLeft = Math.max(
+      minLeft,
+      (surfaceRect?.right || window.innerWidth) - popoverRect.width - viewportGap
+    );
     const idealLeft = buttonRect.left + buttonRect.width / 2 - popoverRect.width / 2;
-    const left = Math.min(maxLeft, Math.max(viewportGap, idealLeft));
-    annotateToolbar.style.position = 'fixed';
-    annotateToolbar.style.left = `${Math.round(left)}px`;
+    const left = Math.min(maxLeft, Math.max(minLeft, idealLeft));
+    const containingRect = workspaceOpen ? pdfViewEl.getBoundingClientRect() : null;
+    annotateToolbar.style.position = workspaceOpen ? 'absolute' : 'fixed';
+    annotateToolbar.style.left = `${Math.round(left - (containingRect?.left || 0))}px`;
     annotateToolbar.style.right = 'auto';
-    annotateToolbar.style.top = `${Math.round(buttonRect.bottom + gap)}px`;
+    annotateToolbar.style.top = `${Math.round(buttonRect.bottom + gap - (containingRect?.top || 0))}px`;
     annotateToolbar.style.transform = 'none';
     annotateToolbar.style.setProperty(
       '--annot-arrow-left',
@@ -1277,23 +1285,34 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   }
 
   function bounds(): { left: number; right: number; top: number; bottom: number } {
+    const workspaceSurface = document.body.classList.contains('ncb-pdf-workspace-open')
+      ? document.querySelector<HTMLElement>('.ncb-pdf-host')
+      : null;
+    const surfaceRect = workspaceSurface?.getBoundingClientRect();
     const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
     const sidebarRight = sidebar?.getBoundingClientRect().right || 0;
     const rect = toolbarEl.getBoundingClientRect();
     const gap = 10;
-    const left = Math.max(gap, sidebarRight + gap);
+    const left = surfaceRect ? surfaceRect.left + gap : Math.max(gap, sidebarRight + gap);
     return {
       left,
-      right: Math.max(left, window.innerWidth - rect.width - gap),
-      top: gap,
-      bottom: Math.max(gap, window.innerHeight - rect.height - gap)
+      right: Math.max(left, (surfaceRect?.right || window.innerWidth) - rect.width - gap),
+      top: surfaceRect ? surfaceRect.top + gap : gap,
+      bottom: Math.max(
+        surfaceRect ? surfaceRect.top + gap : gap,
+        (surfaceRect?.bottom || window.innerHeight) - rect.height - gap
+      )
     };
   }
 
   function place(left: number, top: number): void {
     const limit = bounds();
-    toolbarEl.style.left = `${Math.round(Math.min(limit.right, Math.max(limit.left, left)))}px`;
-    toolbarEl.style.top = `${Math.round(Math.min(limit.bottom, Math.max(limit.top, top)))}px`;
+    const clampedLeft = Math.min(limit.right, Math.max(limit.left, left));
+    const clampedTop = Math.min(limit.bottom, Math.max(limit.top, top));
+    const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
+    const containingRect = workspaceOpen ? pdfViewEl.getBoundingClientRect() : null;
+    toolbarEl.style.left = `${Math.round(clampedLeft - (containingRect?.left || 0))}px`;
+    toolbarEl.style.top = `${Math.round(clampedTop - (containingRect?.top || 0))}px`;
     toolbarEl.style.right = 'auto';
     placeAnnotationToolbar();
   }
@@ -1315,6 +1334,7 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
       toolbarEl.style.removeProperty('top');
       toolbarEl.style.removeProperty('right');
     }
+    if (collapsed) requestAnimationFrame(keepClearOfSidebar);
   }
 
   toggleEl.addEventListener('click', () => setCollapsed(!toolbarEl.classList.contains('is-collapsed')));
