@@ -120,6 +120,17 @@ test('course files replace the right drawer with the canonical rounded PDF viewe
   assert.doesNotMatch(portalHtml, /<\/svg>\s*Annotate\s*<\/button>/);
 });
 
+test('workspace PDF is resizable and reflows its rendered page content', () => {
+  assert.match(moduleSource, /class="ncb-pdf-resize"/);
+  assert.match(moduleSource, /addEventListener\('pointermove', onMove\)/);
+  assert.match(moduleSource, /context\.style\.flexBasis = `\$\{next\}px`/);
+  assert.match(moduleSource, /_refitPdfWidth\?: \(\) => void/);
+  assert.match(moduleSource, /localStorage\.setItem\(PDF_WIDTH_KEY/);
+  assert.match(moduleSource, /new ResizeObserver/);
+  assert.match(css, /\.ncb-pdf-resize\s*\{[\s\S]*cursor:\s*ew-resize/);
+  assert.match(css, /\.ncb-context\.ncb-pdf-resizing[\s\S]*transition:\s*none !important/);
+});
+
 test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF', () => {
   assert.match(pdfViewerSource, /const inChatbotWorkspace = !!window\._ncbPdfWorkspaceActive/);
   assert.match(pdfViewerSource, /if \(!inChatbotWorkspace\) \{[\s\S]*selectTopLevelView\('file'/);

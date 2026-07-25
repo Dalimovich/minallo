@@ -37,6 +37,117 @@ let pdfOrigin: Comment | null = null;
 let pdfHost: HTMLElement | null = null;
 let pdfContextInner: HTMLElement | null = null;
 let pdfAiDisplay = '';
+let pdfResizeCleanup: (() => void) | null = null;
+
+const PDF_WIDTH_KEY = 'minallo:chatbot-pdf-width';
+
+function refitWorkspacePdf(): void {
+  const viewer = window as typeof window & {
+    _refitPdfWidth?: () => void;
+    renderPages?: () => void;
+  };
+  if (typeof viewer._refitPdfWidth === 'function') viewer._refitPdfWidth();
+  else viewer.renderPages?.();
+}
+
+function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
+  pdfResizeCleanup?.();
+  const handle = host.querySelector<HTMLElement>('.ncb-pdf-resize');
+  if (!handle) return;
+
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+  let pendingWidth = 0;
+  let frame = 0;
+
+  const widthBounds = (): { min: number; max: number } => {
+    const card = context.closest<HTMLElement>('.ncb-card');
+    const sidebar = card?.querySelector<HTMLElement>('.ncb-sidebar');
+    const cardWidth = card?.clientWidth || window.innerWidth;
+    const max = Math.max(360, Math.min(900, cardWidth - (sidebar?.offsetWidth || 0) - 420));
+    return { min: Math.min(360, max), max };
+  };
+
+  const applyWidth = (width: number): void => {
+    const bounds = widthBounds();
+    const next = Math.round(Math.min(bounds.max, Math.max(bounds.min, width)));
+    context.style.width = `${next}px`;
+    context.style.flexBasis = `${next}px`;
+    pendingWidth = next;
+    refitWorkspacePdf();
+  };
+
+  const scheduleWidth = (width: number): void => {
+    pendingWidth = width;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      applyWidth(pendingWidth);
+    });
+  };
+
+  const onMove = (event: PointerEvent): void => {
+    if (dragging) scheduleWidth(startWidth + startX - event.clientX);
+  };
+
+  const finish = (): void => {
+    if (!dragging) return;
+    dragging = false;
+    if (frame) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    }
+    applyWidth(pendingWidth);
+    context.classList.remove('ncb-pdf-resizing');
+    handle.classList.remove('is-active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', finish);
+    window.removeEventListener('pointercancel', finish);
+    try { localStorage.setItem(PDF_WIDTH_KEY, String(pendingWidth)); } catch { /* ignore */ }
+  };
+
+  const start = (event: PointerEvent): void => {
+    if (event.button !== 0 || window.matchMedia('(max-width: 1024px)').matches) return;
+    dragging = true;
+    startX = event.clientX;
+    startWidth = context.getBoundingClientRect().width;
+    pendingWidth = startWidth;
+    context.classList.add('ncb-pdf-resizing');
+    handle.classList.add('is-active');
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    handle.setPointerCapture?.(event.pointerId);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    event.preventDefault();
+  };
+
+  handle.addEventListener('pointerdown', start);
+  const observer = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => scheduleWidth(context.getBoundingClientRect().width))
+    : null;
+  observer?.observe(context);
+
+  try {
+    const saved = Number.parseFloat(localStorage.getItem(PDF_WIDTH_KEY) || '');
+    if (Number.isFinite(saved)) applyWidth(saved);
+  } catch { /* ignore */ }
+
+  pdfResizeCleanup = () => {
+    handle.removeEventListener('pointerdown', start);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', finish);
+    window.removeEventListener('pointercancel', finish);
+    observer?.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+}
 
 function courses(): LibraryCourse[] {
   const sems = window.SEMS || window._SEMS || {};
@@ -166,6 +277,8 @@ function rootFor(node: HTMLElement): HTMLElement {
 }
 
 function closeWorkspacePdf(root: HTMLElement): void {
+  pdfResizeCleanup?.();
+  pdfResizeCleanup = null;
   const wrap = document.getElementById('pdfViewerWrap');
   if (wrap && pdfOrigin?.parentNode) pdfOrigin.parentNode.insertBefore(wrap, pdfOrigin);
   pdfOrigin?.remove();
@@ -174,6 +287,12 @@ function closeWorkspacePdf(root: HTMLElement): void {
   pdfHost = null;
   if (pdfContextInner) pdfContextInner.hidden = false;
   pdfContextInner = null;
+  const context = root.querySelector<HTMLElement>('.ncb-context');
+  context?.classList.remove('ncb-pdf-resizing');
+  if (context) {
+    context.style.removeProperty('width');
+    context.style.removeProperty('flex-basis');
+  }
   const aiPanel = document.getElementById('aiPanel');
   if (aiPanel) aiPanel.style.display = pdfAiDisplay;
   delete document.body.dataset.ncbPdfWorkspace;
@@ -196,6 +315,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
     pdfHost = document.createElement('div');
     pdfHost.className = 'ncb-pdf-host';
     pdfHost.innerHTML =
+      '<div class="ncb-pdf-resize" role="separator" aria-orientation="vertical" aria-label="Resize PDF viewer"></div>' +
       '<button type="button" class="ncb-pdf-close" aria-label="Close PDF viewer">&lsaquo;</button>';
     pdfHost.querySelector<HTMLButtonElement>('.ncb-pdf-close')?.addEventListener('click', () => {
       closeWorkspacePdf(root);
@@ -222,6 +342,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   document.body.classList.add('ncb-pdf-workspace-open');
   window._ncbPdfWorkspaceActive = true;
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
+  bindWorkspacePdfResize(context, pdfHost);
   window.selectChatbotPdfSource?.(course, file);
   window.openFile(file, course);
 }

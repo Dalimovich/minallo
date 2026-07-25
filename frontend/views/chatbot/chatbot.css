@@ -5091,6 +5091,41 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
 
 .ncb-pdf-host #aiPanel { display: none !important; }
 
+.ncb-pdf-resize {
+  position: absolute;
+  z-index: 150;
+  top: 72px;
+  bottom: 24px;
+  left: -7px;
+  width: 14px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.ncb-pdf-resize::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 4px;
+  height: 72px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.28);
+  transform: translateY(-50%);
+  transition: height 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.ncb-pdf-resize:hover::before,
+.ncb-pdf-resize.is-active::before {
+  height: 96px;
+  background: #60a5fa;
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.48);
+}
+
+.ncb-context.ncb-pdf-resizing {
+  transition: none !important;
+}
+
 .ncb-pdf-close {
   position: absolute;
   z-index: 140;
@@ -5203,8 +5238,10 @@ body.ncb-pdf-workspace-open #drDrawer {
 
 @media (max-width: 1024px) {
   .ncb-account-menu { position: fixed; left: 72px; right: auto; bottom: 18px; width: 210px; }
+  .ncb-pdf-resize { display: none; }
   body.ncb-pdf-workspace-open .ncb-card[data-context-open="true"] .ncb-context {
     width: min(760px, 96vw);
+    flex-basis: auto;
   }
 }
 
