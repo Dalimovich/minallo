@@ -4501,10 +4501,12 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-course-detail-head span { color: #7286a0; font-size: 0.7rem; }
 
 .ncb-course-list { display: grid; gap: 6px; }
+.ncb-saved-kind-list { display: grid; gap: 8px; }
 
 .ncb-course-row,
 .ncb-file-row,
-.ncb-saved-row {
+.ncb-saved-row,
+.ncb-saved-kind-btn {
   width: 100%;
   display: flex;
   align-items: center;
@@ -4521,6 +4523,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-course-row:hover,
 .ncb-file-row:hover,
 .ncb-saved-row:hover,
+.ncb-saved-kind-btn:hover,
 .ncb-course-row--active {
   border-color: rgba(96, 165, 250, 0.22);
   background: rgba(37, 99, 235, 0.1);
@@ -4528,7 +4531,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-course-row > span:not(.ncb-library-icon),
 .ncb-file-row > span:not(.ncb-library-icon),
-.ncb-saved-row > span:not(.ncb-library-icon) {
+.ncb-saved-row > span:not(.ncb-library-icon),
+.ncb-saved-kind-btn > span:not(.ncb-library-icon) {
   min-width: 0;
   flex: 1;
   display: grid;
@@ -4537,7 +4541,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-course-row strong,
 .ncb-file-row strong,
-.ncb-saved-row strong {
+.ncb-saved-row strong,
+.ncb-saved-kind-btn strong {
   overflow: hidden;
   color: #dbeafe;
   font-size: 0.78rem;
@@ -4547,7 +4552,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-course-row small,
 .ncb-file-row small,
-.ncb-saved-row small {
+.ncb-saved-row small,
+.ncb-saved-kind-btn small {
   overflow: hidden;
   color: #7589a3;
   font-size: 0.67rem;
@@ -4557,7 +4563,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-course-row > b,
 .ncb-file-row > b,
-.ncb-saved-row > b {
+.ncb-saved-row > b,
+.ncb-saved-kind-btn > b {
   color: #8a9db5;
   font-size: 0.67rem;
   font-weight: 700;
@@ -4583,10 +4590,72 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-library-icon--exams { color: #fda4af; background: rgba(225, 29, 72, 0.12); }
 
 .ncb-course-detail {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 12px;
 }
+
+.ncb-library-drill-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ncb-library-drill-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.ncb-library-drill-head strong {
+  overflow: hidden;
+  color: #e5efff;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ncb-library-drill-head span {
+  color: #7286a0;
+  font-size: 0.7rem;
+}
+
+.ncb-library-back {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 10px;
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.1);
+  font: inherit;
+  font-size: 1.45rem;
+  cursor: pointer;
+}
+
+.ncb-library-back:hover { background: rgba(37, 99, 235, 0.2); }
+
+.ncb-course-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.ncb-saved-kind-btn {
+  min-height: 58px;
+  padding: 12px;
+}
+
+.ncb-saved-kind-btn .ncb-library-icon {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+}
+
+.ncb-saved-kind-results { margin-top: 12px; }
 
 .ncb-course-manage {
   padding: 6px 10px;
@@ -4732,13 +4801,16 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 body:not(.night) .ncb-account-trigger,
 body:not(.night) .ncb-course-row,
 body:not(.night) .ncb-file-row,
-body:not(.night) .ncb-saved-row { color: #1e293b; }
+body:not(.night) .ncb-saved-row,
+body:not(.night) .ncb-saved-kind-btn { color: #1e293b; }
 body:not(.night) .ncb-account-copy strong,
 body:not(.night) .ncb-course-row strong,
 body:not(.night) .ncb-file-row strong,
 body:not(.night) .ncb-saved-row strong,
+body:not(.night) .ncb-saved-kind-btn strong,
 body:not(.night) .ncb-library-section-head strong,
-body:not(.night) .ncb-course-detail-head strong { color: #172033; }
+body:not(.night) .ncb-course-detail-head strong,
+body:not(.night) .ncb-library-drill-head strong { color: #172033; }
 body:not(.night) .ncb-account-menu,
 body:not(.night) .ncb-workspace-dialog { background: rgba(248, 250, 252, 0.97); }
 body:not(.night) .ncb-account-menu button { color: #1e293b; }

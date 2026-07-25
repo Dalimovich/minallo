@@ -26,7 +26,16 @@ test('Saved is grouped by resource function and course', () => {
     assert.match(moduleSource, new RegExp(`${kind}:`));
   }
   assert.match(moduleSource, /allCourses\.map\(\(course\)/);
-  assert.match(moduleSource, /ofKind\.filter\(\(item\) => item\.course\.id === course\.id\)/);
+  assert.match(moduleSource, /items\.filter\(\(item\) => item\.course\.id === course\.id\)/);
+});
+
+test('courses and saved resources use replacement-style drill-down navigation', () => {
+  assert.match(moduleSource, /renderCourseDetail\(panel, course\)/);
+  assert.match(moduleSource, /renderCourses\(panel\)/);
+  assert.match(moduleSource, /class="ncb-saved-kind-btn"/);
+  assert.match(moduleSource, /renderSavedKind\(panel, root, items, allCourses, kind\)/);
+  assert.match(moduleSource, /renderSavedKinds\(panel, root, items, allCourses\)/);
+  assert.match(moduleSource, /class="ncb-library-back"/);
 });
 
 test('saved resources and account destinations use the workspace overlay', () => {

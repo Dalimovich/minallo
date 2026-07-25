@@ -94,23 +94,26 @@ function renderCourses(panel: HTMLElement): void {
         <span><strong>${escapeHtml(course.name || 'Untitled course')}</strong><small>${fileCount(course)} files</small></span>
         <b aria-hidden="true">›</b>
       </button>`).join('') +
-    '</div><div class="ncb-course-detail"></div>';
+    '</div>';
 
   panel.querySelectorAll<HTMLButtonElement>('.ncb-course-row').forEach((row) => {
     row.addEventListener('click', () => {
       const course = all.find((item) => item.id === row.dataset.courseId);
       if (!course) return;
-      panel.querySelectorAll('.ncb-course-row').forEach((item) => item.classList.remove('ncb-course-row--active'));
-      row.classList.add('ncb-course-row--active');
       void renderCourseDetail(panel, course);
     });
   });
 }
 
 async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Promise<void> {
-  const detail = panel.querySelector<HTMLElement>('.ncb-course-detail');
-  if (!detail) return;
-  detail.innerHTML = '<div class="ncb-library-status">Loading files and folders&hellip;</div>';
+  panel.innerHTML = `
+    <div class="ncb-library-drill-head">
+      <button type="button" class="ncb-library-back" aria-label="Back to all courses">&lsaquo;</button>
+      <div><strong>${escapeHtml(course.name || 'Course')}</strong><span>Loading files and folders&hellip;</span></div>
+    </div>
+    <div class="ncb-course-detail"><div class="ncb-library-status">Loading files and folders&hellip;</div></div>`;
+  panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => renderCourses(panel));
+  const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   try {
     await hydrate(course);
   } catch {
@@ -119,11 +122,10 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
   }
   const folders = (course.userFolders || []) as CourseFolder[];
   const files = (course.files || []) as CourseFile[];
+  const drillMeta = panel.querySelector<HTMLElement>('.ncb-library-drill-head span');
+  if (drillMeta) drillMeta.textContent = `${fileCount(course)} files`;
   detail.innerHTML = `
-    <div class="ncb-course-detail-head">
-      <div><strong>${escapeHtml(course.name || 'Course')}</strong><span>${fileCount(course)} files</span></div>
-      <button type="button" class="ncb-course-manage">Manage</button>
-    </div>
+    <div class="ncb-course-detail-actions"><button type="button" class="ncb-course-manage">Manage course</button></div>
     ${folders.length ? `<div class="ncb-library-group"><h3>Folders</h3>${folders.map((folder) => `
       <details class="ncb-folder">
         <summary>${icon('folder')}<span><strong>${escapeHtml(folder.name)}</strong><small>${(folder.files || []).length} files</small></span></summary>
@@ -187,28 +189,68 @@ async function renderSaved(panel: HTMLElement, root: HTMLElement): Promise<void>
     }));
     const items = groups.flat();
     panel.dataset.loaded = '1';
-    panel.innerHTML = savedHtml(items, allCourses);
-    bindSaved(panel, root, items);
+    renderSavedKinds(panel, root, items, allCourses);
   } catch {
     panel.innerHTML = '<div class="ncb-library-error">Saved resources could not be loaded. Check your connection and try again.</div>';
   }
 }
 
-function savedHtml(items: SavedItem[], allCourses: LibraryCourse[]): string {
-  if (!items.length) return '<div class="ncb-library-empty"><strong>Nothing saved yet</strong><span>Your notes, summaries, flashcards, cheatsheets and exams will appear here.</span></div>';
-  return (Object.keys(kindLabels) as SavedKind[]).map((kind) => {
-    const ofKind = items.filter((item) => item.kind === kind);
-    if (!ofKind.length) return '';
-    return `<section class="ncb-saved-function"><h3>${kindLabels[kind]} <span>${ofKind.length}</span></h3>${
-      allCourses.map((course) => {
-        const grouped = ofKind.filter((item) => item.course.id === course.id);
-        if (!grouped.length) return '';
-        return `<div class="ncb-saved-course"><h4>${escapeHtml(course.name || 'Course')}</h4>${grouped.map((item) => `
-          <button type="button" class="ncb-saved-row" data-saved-kind="${item.kind}" data-saved-id="${escapeHtml(item.id)}">
-            ${icon(item.kind)}<span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.meta)}</small></span><b>Open</b>
-          </button>`).join('')}</div>`;
-      }).join('')
-    }</section>`;
+function renderSavedKinds(
+  panel: HTMLElement,
+  root: HTMLElement,
+  items: SavedItem[],
+  allCourses: LibraryCourse[]
+): void {
+  panel.innerHTML = `
+    <div class="ncb-library-section-head"><div><strong>Saved</strong><span>Choose what you want to open.</span></div></div>
+    <div class="ncb-saved-kind-list">${(Object.keys(kindLabels) as SavedKind[]).map((kind) => {
+      const count = items.filter((item) => item.kind === kind).length;
+      return `<button type="button" class="ncb-saved-kind-btn" data-saved-kind="${kind}">
+        ${icon(kind)}
+        <span><strong>${kindLabels[kind]}</strong><small>${count} saved</small></span>
+        <b aria-hidden="true">&rsaquo;</b>
+      </button>`;
+    }).join('')}</div>`;
+  panel.querySelectorAll<HTMLButtonElement>('.ncb-saved-kind-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      const kind = button.dataset.savedKind as SavedKind | undefined;
+      if (kind) renderSavedKind(panel, root, items, allCourses, kind);
+    });
+  });
+}
+
+function renderSavedKind(
+  panel: HTMLElement,
+  root: HTMLElement,
+  items: SavedItem[],
+  allCourses: LibraryCourse[],
+  kind: SavedKind
+): void {
+  const ofKind = items.filter((item) => item.kind === kind);
+  panel.innerHTML = `
+    <div class="ncb-library-drill-head">
+      <button type="button" class="ncb-library-back" aria-label="Back to saved categories">&lsaquo;</button>
+      <div><strong>${kindLabels[kind]}</strong><span>${ofKind.length} saved</span></div>
+    </div>
+    <div class="ncb-saved-kind-results">${
+      ofKind.length
+        ? savedKindHtml(ofKind, allCourses)
+        : `<div class="ncb-library-empty"><strong>No ${kindLabels[kind].toLowerCase()} yet</strong><span>Saved ${kindLabels[kind].toLowerCase()} will appear here.</span></div>`
+    }</div>`;
+  panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => {
+    renderSavedKinds(panel, root, items, allCourses);
+  });
+  bindSaved(panel, root, ofKind);
+}
+
+function savedKindHtml(items: SavedItem[], allCourses: LibraryCourse[]): string {
+  return allCourses.map((course) => {
+    const grouped = items.filter((item) => item.course.id === course.id);
+    if (!grouped.length) return '';
+    return `<div class="ncb-saved-course"><h4>${escapeHtml(course.name || 'Course')}</h4>${grouped.map((item) => `
+      <button type="button" class="ncb-saved-row" data-saved-kind="${item.kind}" data-saved-id="${escapeHtml(item.id)}">
+        ${icon(item.kind)}<span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.meta)}</small></span><b>Open</b>
+      </button>`).join('')}</div>`;
   }).join('');
 }
 
