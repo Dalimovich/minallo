@@ -1716,6 +1716,9 @@ body.pdf-maximized #pdfToolbar {
   -webkit-backdrop-filter: none;
   padding: 0;
 }
+body.pdf-maximized #pdfToolbar.is-collapsed {
+  transform: none;
+}
 @media (min-width: 769px) {
   body.pdf-maximized.dr-pdf-split-open #pdfToolbar,
   body.pdf-maximized:has(#drDrawer.is-open:not(.dr-sheet)) #pdfToolbar {
@@ -3099,6 +3102,14 @@ body.pdf-maximized .annotate-popover {
   border-top: 1px solid rgba(147, 197, 253, 0.30);
   border-left: 1px solid rgba(147, 197, 253, 0.30);
   background: rgba(18, 26, 49, 0.94);
+}
+.annotate-popover[data-placement="top"]::before {
+  top: auto;
+  bottom: -8px;
+  border-top: 0;
+  border-left: 0;
+  border-right: 1px solid rgba(147, 197, 253, 0.30);
+  border-bottom: 1px solid rgba(147, 197, 253, 0.30);
 }
 @keyframes annotPopIn {
   from { opacity: 0; }

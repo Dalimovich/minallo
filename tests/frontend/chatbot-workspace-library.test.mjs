@@ -8,6 +8,7 @@ const moduleSource = fs.readFileSync(
   'utf8'
 );
 const css = fs.readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
+const globalCss = fs.readFileSync('frontend/css/styles.css', 'utf8');
 const subscriptionHtml = fs.readFileSync('frontend/views/subscription/subscription.html', 'utf8');
 const subscriptionJs = fs.readFileSync('frontend/views/subscription/subscription.js', 'utf8');
 const notificationsTs = fs.readFileSync(
@@ -183,12 +184,16 @@ test('workspace PDF is resizable and reflows its rendered page content', () => {
   assert.match(css, /\.ncb-context\.ncb-pdf-resizing[\s\S]*transition:\s*none !important/);
 });
 
-test('workspace PDF keeps only a compact movable toolbar with annotation tools anchored below it', () => {
+test('workspace PDF toolbar stays movable and keeps annotation controls visible', () => {
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar \.pdf-toolbar-top[\s\S]*display:\s*none !important/);
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar\.is-collapsed #pdfFit/);
   assert.match(appSource, /if \(document\.body\.classList\.contains\('ncb-pdf-workspace-open'\)\) collapsed = true/);
   assert.match(appSource, /function placeAnnotationToolbar/);
   assert.match(appSource, /buttonRect\.bottom \+ gap/);
+  assert.match(appSource, /const opensAbove = belowTop \+ popoverRect\.height > maxBottom/);
+  assert.match(appSource, /document\.getElementById\('pdfViewerWrap'\)/);
+  assert.match(appSource, /new MutationObserver\(refreshFloatingControls\)\.observe\(document\.body/);
+  assert.match(appSource, /new ResizeObserver\(refreshFloatingControls\)\.observe\(workspaceHost\)/);
   assert.match(appSource, /placeAnnotationToolbar\(\);[\s\S]*function keepClearOfSidebar/);
   assert.match(css, /--annot-arrow-left/);
   assert.match(appSource, /document\.querySelector<HTMLElement>\('\.ncb-pdf-host'\)/);
@@ -196,6 +201,8 @@ test('workspace PDF keeps only a compact movable toolbar with annotation tools a
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfToolbar\.is-collapsed[\s\S]*position:\s*absolute/);
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfAnnotateToggle[\s\S]*place-items:\s*center/);
   assert.match(css, /body\.ncb-pdf-workspace-open #pdfAnnotateToggle svg[\s\S]*display:\s*block/);
+  assert.match(globalCss, /body\.pdf-maximized #pdfToolbar\.is-collapsed[\s\S]*transform:\s*none/);
+  assert.match(globalCss, /\.annotate-popover\[data-placement="top"\]::before/);
 });
 
 test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF', () => {

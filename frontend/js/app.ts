@@ -1262,7 +1262,12 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     const popoverRect = annotateToolbar.getBoundingClientRect();
     const gap = 10;
     const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
-    const surface = workspaceOpen ? document.querySelector<HTMLElement>('.ncb-pdf-host') : null;
+    const maximized = document.body.classList.contains('pdf-maximized');
+    const surface = maximized
+      ? document.getElementById('pdfViewerWrap')
+      : workspaceOpen
+        ? document.querySelector<HTMLElement>('.ncb-pdf-host')
+        : null;
     const surfaceRect = surface?.getBoundingClientRect();
     const viewportGap = 12;
     const minLeft = surfaceRect ? surfaceRect.left + viewportGap : viewportGap;
@@ -1272,12 +1277,20 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     );
     const idealLeft = buttonRect.left + buttonRect.width / 2 - popoverRect.width / 2;
     const left = Math.min(maxLeft, Math.max(minLeft, idealLeft));
+    const minTop = surfaceRect ? surfaceRect.top + viewportGap : viewportGap;
+    const maxBottom = (surfaceRect?.bottom || window.innerHeight) - viewportGap;
+    const belowTop = buttonRect.bottom + gap;
+    const aboveTop = buttonRect.top - gap - popoverRect.height;
+    const opensAbove = belowTop + popoverRect.height > maxBottom && aboveTop >= minTop;
+    const idealTop = opensAbove ? aboveTop : belowTop;
+    const top = Math.min(Math.max(minTop, maxBottom - popoverRect.height), Math.max(minTop, idealTop));
     const containingRect = workspaceOpen ? pdfViewEl.getBoundingClientRect() : null;
     annotateToolbar.style.position = workspaceOpen ? 'absolute' : 'fixed';
     annotateToolbar.style.left = `${Math.round(left - (containingRect?.left || 0))}px`;
     annotateToolbar.style.right = 'auto';
-    annotateToolbar.style.top = `${Math.round(buttonRect.bottom + gap - (containingRect?.top || 0))}px`;
+    annotateToolbar.style.top = `${Math.round(top - (containingRect?.top || 0))}px`;
     annotateToolbar.style.transform = 'none';
+    annotateToolbar.dataset.placement = opensAbove ? 'top' : 'bottom';
     annotateToolbar.style.setProperty(
       '--annot-arrow-left',
       `${Math.round(buttonRect.left + buttonRect.width / 2 - left - 7)}px`
@@ -1285,9 +1298,13 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   }
 
   function bounds(): { left: number; right: number; top: number; bottom: number } {
-    const workspaceSurface = document.body.classList.contains('ncb-pdf-workspace-open')
-      ? document.querySelector<HTMLElement>('.ncb-pdf-host')
-      : null;
+    const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
+    const maximized = document.body.classList.contains('pdf-maximized');
+    const workspaceSurface = maximized
+      ? document.getElementById('pdfViewerWrap')
+      : workspaceOpen
+        ? document.querySelector<HTMLElement>('.ncb-pdf-host')
+        : null;
     const surfaceRect = workspaceSurface?.getBoundingClientRect();
     const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
     const sidebarRight = sidebar?.getBoundingClientRect().right || 0;
@@ -1378,9 +1395,28 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     keepClearOfSidebar();
     placeAnnotationToolbar();
   });
+  const refreshFloatingControls = (): void => {
+    requestAnimationFrame(() => {
+      keepClearOfSidebar();
+      placeAnnotationToolbar();
+      requestAnimationFrame(() => {
+        keepClearOfSidebar();
+        placeAnnotationToolbar();
+      });
+    });
+  };
+  document.addEventListener('fullscreenchange', refreshFloatingControls);
+  new MutationObserver(refreshFloatingControls).observe(document.body, {
+    attributes: true,
+    attributeFilter: ['class']
+  });
   const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
   if (sidebar && typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(keepClearOfSidebar).observe(sidebar);
+  }
+  const workspaceHost = document.querySelector<HTMLElement>('.ncb-pdf-host');
+  if (workspaceHost && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(refreshFloatingControls).observe(workspaceHost);
   }
   new MutationObserver(() => {
     if (pdfViewEl.style.display !== 'none') {
