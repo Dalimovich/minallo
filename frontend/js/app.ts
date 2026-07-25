@@ -1263,12 +1263,12 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
     const gap = 10;
     const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
     const maximized = document.body.classList.contains('pdf-maximized');
-    const surface = maximized
-      ? document.getElementById('pdfViewerWrap')
-      : workspaceOpen
-        ? document.querySelector<HTMLElement>('.ncb-pdf-host')
-        : null;
-    const surfaceRect = surface?.getBoundingClientRect();
+    const surface = workspaceOpen && !maximized
+      ? document.querySelector<HTMLElement>('.ncb-pdf-host')
+      : null;
+    const surfaceRect = maximized
+      ? { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight }
+      : surface?.getBoundingClientRect();
     const viewportGap = 12;
     const minLeft = surfaceRect ? surfaceRect.left + viewportGap : viewportGap;
     const maxLeft = Math.max(
@@ -1300,12 +1300,12 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
   function bounds(): { left: number; right: number; top: number; bottom: number } {
     const workspaceOpen = document.body.classList.contains('ncb-pdf-workspace-open');
     const maximized = document.body.classList.contains('pdf-maximized');
-    const workspaceSurface = maximized
-      ? document.getElementById('pdfViewerWrap')
-      : workspaceOpen
-        ? document.querySelector<HTMLElement>('.ncb-pdf-host')
-        : null;
-    const surfaceRect = workspaceSurface?.getBoundingClientRect();
+    const workspaceSurface = workspaceOpen && !maximized
+      ? document.querySelector<HTMLElement>('.ncb-pdf-host')
+      : null;
+    const surfaceRect = maximized
+      ? { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight }
+      : workspaceSurface?.getBoundingClientRect();
     const sidebar = document.querySelector<HTMLElement>('#portal .sidebar');
     const sidebarRight = sidebar?.getBoundingClientRect().right || 0;
     const rect = toolbarEl.getBoundingClientRect();
@@ -1374,18 +1374,9 @@ _bindIf('nightBtn', 'click', function (this: HTMLElement) {
       dragHandleEl.removeEventListener('pointercancel', finish);
       toolbarEl.classList.remove('is-dragging');
       const rect = toolbarEl.getBoundingClientRect();
-      const limit = bounds();
-      const distances = [
-        { edge: 'left', value: Math.abs(rect.left - limit.left) },
-        { edge: 'right', value: Math.abs(rect.left - limit.right) },
-        { edge: 'top', value: Math.abs(rect.top - limit.top) },
-        { edge: 'bottom', value: Math.abs(rect.top - limit.bottom) }
-      ].sort((a, b) => a.value - b.value);
-      const edge = distances[0]?.edge;
-      place(
-        edge === 'left' ? limit.left : edge === 'right' ? limit.right : rect.left,
-        edge === 'top' ? limit.top : edge === 'bottom' ? limit.bottom : rect.top
-      );
+      // Keep the toolbar exactly where the user releases it. The old nearest-
+      // edge snap made horizontal movement look broken, especially fullscreen.
+      place(rect.left, rect.top);
     };
     dragHandleEl.addEventListener('pointermove', move);
     dragHandleEl.addEventListener('pointerup', finish);

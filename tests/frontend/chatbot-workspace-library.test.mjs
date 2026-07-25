@@ -191,7 +191,9 @@ test('workspace PDF toolbar stays movable and keeps annotation controls visible'
   assert.match(appSource, /function placeAnnotationToolbar/);
   assert.match(appSource, /buttonRect\.bottom \+ gap/);
   assert.match(appSource, /const opensAbove = belowTop \+ popoverRect\.height > maxBottom/);
-  assert.match(appSource, /document\.getElementById\('pdfViewerWrap'\)/);
+  assert.match(appSource, /left:\s*0, right:\s*window\.innerWidth, top:\s*0, bottom:\s*window\.innerHeight/);
+  assert.match(appSource, /place\(rect\.left, rect\.top\)/);
+  assert.doesNotMatch(appSource, /const distances = \[[\s\S]*edge:\s*'left'/);
   assert.match(appSource, /new MutationObserver\(refreshFloatingControls\)\.observe\(document\.body/);
   assert.match(appSource, /new ResizeObserver\(refreshFloatingControls\)\.observe\(workspaceHost\)/);
   assert.match(appSource, /placeAnnotationToolbar\(\);[\s\S]*function keepClearOfSidebar/);
