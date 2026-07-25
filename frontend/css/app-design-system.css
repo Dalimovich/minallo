@@ -153,7 +153,7 @@ body.night #psec-profile .dash-greeting {
 body.night #psec-profile .dash-greeting h1 {
   font-size: 1.85rem;
   font-weight: 700;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   letter-spacing: -0.02em;
   color: #fff;
   margin: 0 0 4px;
@@ -192,7 +192,7 @@ body.night #psec-profile .ph-avatar {
   border: 1px solid rgba(96, 165, 250, 0.4);
 }
 body.night #psec-profile .ph-info h2 {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1.4rem;
   font-weight: 700;
   color: #fff;
@@ -215,7 +215,7 @@ body.night #psec-profile .widget-card {
   margin-bottom: 18px;
 }
 body.night #psec-profile .widget-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -278,7 +278,7 @@ body.night #psec-settings .dash-greeting {
 body.night #psec-settings .dash-greeting h1 {
   font-size: 1.85rem;
   font-weight: 700;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   letter-spacing: -0.02em;
   color: #fff;
   margin: 0 0 4px;
@@ -300,7 +300,7 @@ body.night #psec-settings .settings-block {
   margin-bottom: 18px;
 }
 body.night #psec-settings .settings-block-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -409,7 +409,7 @@ body.night #psec-dashboard .dash-empty-glyph {
   opacity: 0.55;
 }
 body.night #psec-dashboard .dash-empty-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1.1rem;
   font-weight: 700;
   color: #fff;
@@ -441,7 +441,7 @@ body.night #psec-dashboard .dash-widget {
   -webkit-backdrop-filter: blur(22px);
 }
 body.night #psec-dashboard .widget-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 0.95rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -465,7 +465,7 @@ body.night #widgetPanel {
   -webkit-backdrop-filter: blur(24px);
 }
 body.night #widgetPanel .wp-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1rem;
   font-weight: 700;
   color: #fff;
@@ -488,7 +488,7 @@ body.night #widgetPanel .wp-close:hover {
 /* ── SUBSCRIPTION (#psec-subscription) ──────────────────────────────────── */
 
 body.night #psec-subscription .dash-greeting h1 {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1.85rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -523,7 +523,7 @@ body.night #psec-subscription .sub-badge {
   text-transform: none !important;
 }
 body.night #psec-subscription .sub-name {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1.4rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -585,7 +585,7 @@ body.night #psec-notifications .notif-selected {
 body.night #psec-notifications .notif-title,
 body.night #psec-notifications .notif-pinned-title,
 body.night #psec-notifications .notif-selected-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.01em;
@@ -765,7 +765,7 @@ body.night #psec-games .chess-mode-btn:hover {
   transform: translateY(-2px);
 }
 body.night #psec-games .chess-mode-name {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -791,7 +791,7 @@ body.night #psec-games .chess-panel {
 /* ── STUDY LOUNGE (#psec-lounge) ────────────────────────────────────────── */
 
 body.night #psec-lounge .dash-greeting h1 {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-size: 1.85rem !important;
   font-weight: 700 !important;
   letter-spacing: -0.02em;
@@ -876,12 +876,12 @@ body.night #paywallModal > div {
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) h1,
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) h2,
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) h3 {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.015em;
 }
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
 }
 
 /* ============================================================================
@@ -914,13 +914,13 @@ body.night #psec-editor .ed-hub-card > div > div:first-child,
 body.night #psec-editor .ed-hub-card-blue > div > div:first-child,
 body.night #psec-editor .ed-hub-card-purple > div > div:first-child,
 body.night #psec-editor .ed-hub-card-green > div > div:first-child {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.005em !important;
 }
 body.night #psec-editor #editorHub > div:first-child > div:first-child {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   -webkit-text-fill-color: #fff !important;
   background: none !important;
   font-weight: 700 !important;
@@ -957,7 +957,7 @@ body.night #psec-lounge .lounge-streak-flame {
   filter: drop-shadow(0 0 14px rgba(251, 146, 60, 0.55));
 }
 body.night #psec-lounge .lounge-streak-val {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-size: 2rem !important;
   font-weight: 800 !important;
   color: #fff !important;
@@ -1010,7 +1010,7 @@ body.night #psec-lounge .lounge-stat-icon {
   margin-bottom: 10px;
 }
 body.night #psec-lounge .lounge-stat-val {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-size: 1.7rem !important;
   font-weight: 800 !important;
   color: #fff !important;
@@ -1032,7 +1032,7 @@ body.night #psec-lounge .lounge-stat-sub {
   font-weight: 400 !important;
 }
 body.night #psec-lounge .lounge-section-hdr {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-size: 1rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -1076,13 +1076,13 @@ body.night #psec-lounge .settings-danger-btn {
   background: rgba(239, 68, 68, 0.1) !important;
   color: #fecaca !important;
   font-weight: 600 !important;
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
 }
 
 /* ── GAMES HUB — gh-card grid ───────────────────────────────────────────── */
 
 body.night #psec-games .games-hub-hero-title {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-size: 1.6rem !important;
   font-weight: 700 !important;
   color: #fff !important;
@@ -1107,7 +1107,7 @@ body.night #psec-games .gh-card:hover {
   transform: translateY(-3px);
 }
 body.night #psec-games .gh-card-name {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.005em !important;
@@ -1143,7 +1143,7 @@ body.night #psec-games .lvl-hero {
   backdrop-filter: blur(22px);
 }
 body.night #psec-games .lvl-hero-title {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.015em !important;
@@ -1183,7 +1183,7 @@ body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-btn {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   color: rgba(226, 232, 240, 0.95) !important;
   font-weight: 600 !important;
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
 }
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-btn:hover,
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-btn:hover {
@@ -1217,7 +1217,7 @@ body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study
 }
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .fc-study-deck-name,
 body.night #portal .portal-section:not(#psec-studip):not(#psec-aipage) .qz-study-name {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.01em !important;
@@ -1259,7 +1259,7 @@ body.night #psec-chat .dc-sidebar {
   -webkit-backdrop-filter: blur(20px);
 }
 body.night #psec-chat .dc-sidebar-title {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.01em !important;
@@ -1304,7 +1304,7 @@ body.night #psec-chat .dc-main-hdr {
   backdrop-filter: blur(16px);
 }
 body.night #psec-chat .dc-main-room-name {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-weight: 700 !important;
   color: #fff !important;
   letter-spacing: -0.01em !important;
@@ -1329,7 +1329,7 @@ body.night #psec-chat .dc-text-input {
   background: transparent !important;
   border: none !important;
   color: rgba(226, 232, 240, 0.95) !important;
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
 }
 body.night #psec-chat .dc-send-btn {
   border-radius: 12px !important;
@@ -1344,7 +1344,7 @@ body.night #psec-chat .dc-members-panel {
   backdrop-filter: blur(16px);
 }
 body.night #psec-chat .dc-members-label {
-  font-family: 'Inter', system-ui, sans-serif !important;
+  font-family: var(--font-main), system-ui, sans-serif !important;
   font-size: 0.74rem !important;
   font-weight: 700 !important;
   color: rgba(226, 232, 240, 0.55) !important;
@@ -1388,4 +1388,35 @@ body.night .modal-card {
   box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45) !important;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
+}
+
+/* Manrope hierarchy: calm interface controls and refined section titles. */
+button,
+.btn,
+.nav-item,
+.sidebar-item,
+.tab,
+label,
+input,
+textarea,
+select {
+  font-family: var(--font-main) !important;
+}
+
+button,
+.btn,
+.nav-item,
+.sidebar-item,
+.tab,
+label {
+  font-weight: 500 !important;
+  line-height: 1.2;
+}
+
+.card-title,
+.section-title,
+.modal-title,
+.course-title {
+  font-weight: 600 !important;
+  letter-spacing: -0.025em;
 }

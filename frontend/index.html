@@ -72,7 +72,7 @@
   <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
   <meta name="theme-color" content="#0b1220" />
 
-  <!-- Inter served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
+  <!-- Manrope served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
        GDPR-friendly drop-in replacement for Google Fonts that does not log
        IPs — the privacy-conscious workaround for LG Muenchen I
        (3 O 17493/20). One narrow domain in the CSP.
@@ -82,7 +82,7 @@
   <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
   <link
     rel="stylesheet"
-    href="https://fonts.bunny.net/css?family=inter:400,600,700,800&display=swap"
+    href="https://fonts.bunny.net/css?family=manrope:400,500,600,700,800&display=swap"
   />
   <!-- Preload the two woff2 weights the hero/LCP element actually uses.
        Starts the font fetch in parallel with the Bunny CSS parse instead
@@ -90,9 +90,9 @@
        stable; if Bunny ever rotates them the preload becomes a no-op
        (browser falls back to fetching from the CSS rule). -->
   <link rel="preload" as="font" type="font/woff2" crossorigin
-        href="https://fonts.bunny.net/inter/files/inter-latin-400-normal.woff2" />
+        href="https://fonts.bunny.net/manrope/files/manrope-latin-400-normal.woff2" />
   <link rel="preload" as="font" type="font/woff2" crossorigin
-        href="https://fonts.bunny.net/inter/files/inter-latin-800-normal.woff2" />
+        href="https://fonts.bunny.net/manrope/files/manrope-latin-700-normal.woff2" />
 
   <!-- Google Sign-In client moved out of index.html — loader.js injects it
        after the landing partial renders so it no longer blocks first paint.
@@ -103,7 +103,7 @@
        are the only render-blocking stylesheets here. auth.css is dynamically
        injected by loader.js (it's only needed once the landing renders),
        and dashboard CSS is injected post-auth. -->
-  <link rel="stylesheet" href="/css/typography.css?v=1" />
+  <link rel="stylesheet" href="/css/typography.css?v=2" />
   <link rel="stylesheet" href="/css/new-landing.css?v=23" />
   <link rel="stylesheet" href="/css/performance.css?v=4" />
   <style>
@@ -169,7 +169,7 @@
          relies on the in-order execution `defer` guarantees. -->
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
-    <script src="js/config.js?v=20260725-subscription-view-v1" defer></script>
+    <script src="js/config.js?v=20260725-manrope-v1" defer></script>
     <!-- AI chat typing config — only read inside the dashboard chat
          features, never on the public landing. `async` removes it from
          the critical-request chain so it loads in parallel without

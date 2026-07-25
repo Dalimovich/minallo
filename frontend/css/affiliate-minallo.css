@@ -1,7 +1,7 @@
 /* Minallo dashboard palette — separate asset path avoids immutable legacy CSS caches. */
 :root { color-scheme:dark; --ink:rgba(255,255,255,.92); --muted:rgba(255,255,255,.52); --line:rgba(255,255,255,.14); --accent:#60a5fa; --accent-strong:#3b82f6; --panel:rgba(255,255,255,.07); }
 * { box-sizing:border-box; }
-body { margin:0; min-height:100vh; background:#0f172a; color:var(--ink); font-family:Inter,Arial,sans-serif; }
+body { margin:0; min-height:100vh; background:#0f172a; color:var(--ink); font-family:var(--font-main); }
 .af-pending .af-shell { visibility:hidden; }
 body::before { content:""; position:fixed; inset:0; pointer-events:none; background:radial-gradient(circle at 75% 0,rgba(59,130,246,.2),transparent 34%),radial-gradient(circle at 8% 85%,rgba(14,165,233,.1),transparent 28%); }
 .af-shell { width:min(1180px,calc(100% - 40px)); margin:auto; padding:28px 0 64px; position:relative; }

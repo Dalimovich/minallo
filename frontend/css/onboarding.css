@@ -2,7 +2,7 @@
  * Onboarding modal — matches the portal/courses-redesign visual language.
  *
  * Tokens borrowed from courses-redesign.css and theme.css:
- *   - Inter for body, Fredoka One reserved for the single hero title
+ *   - Manrope for body and the hero title
  *   - Pure-blue accents (no cyan blend), weight cap at 700
  *   - Pill buttons (border-radius: 999px), card chrome with soft white borders
  *   - Background follows --dp-modal so the modal feels native to the portal
@@ -20,7 +20,7 @@
   display: none;
   align-items: center;
   justify-content: center;
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-main), system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.005em;
   contain: layout paint style;
@@ -365,7 +365,7 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-weight: 600;
   font-size: 0.76rem;
   color: rgba(255, 255, 255, 0.45);

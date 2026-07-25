@@ -11,6 +11,8 @@ const DOCUMENT_RAIL = read('frontend/js/features/document-rail/document-rail.ts'
 const MAIN = read('frontend/js/main.ts');
 const CONFIG = read('frontend/js/config.js');
 const INDEX = read('frontend/index.html');
+const TYPOGRAPHY = read('frontend/css/typography.css');
+const STYLES = read('frontend/css/styles.css');
 const PORTAL = read('frontend/pages/portal.html');
 const LOADER = read('frontend/js/loader.ts');
 const AI_ASK = read('frontend/js/features/ai-chat/ai-ask.ts');
@@ -37,8 +39,17 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260725-subscription-view-v1['"]/);
-  assert.match(INDEX, /config\.js\?v=20260725-subscription-view-v1/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260725-manrope-v1['"]/);
+  assert.match(INDEX, /config\.js\?v=20260725-manrope-v1/);
+});
+
+test('Manrope is the single shared interface font while technical text stays monospace', () => {
+  assert.match(INDEX, /family=manrope:400,500,600,700,800&display=swap/);
+  assert.match(TYPOGRAPHY, /--font-main:\s*'Manrope',\s*system-ui/);
+  assert.match(STYLES, /--font-main:\s*'Manrope',\s*system-ui/);
+  assert.match(TYPOGRAPHY, /--font-mono:\s*'JetBrains Mono'/);
+  assert.match(TYPOGRAPHY, /code,[\s\S]*pre,[\s\S]*font-family:\s*var\(--font-mono\)/);
+  assert.doesNotMatch(TYPOGRAPHY, /'Inter'/);
 });
 
 test('AI drawer exposes a persisted typography menu beside its header actions', () => {

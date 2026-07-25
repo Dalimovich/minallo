@@ -18,7 +18,7 @@ button,
 input,
 select,
 textarea {
-  font-family: 'Inter', var(--font-main);
+  font-family: var(--font-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'cv11', 'ss01';
@@ -31,7 +31,7 @@ textarea {
 .co-inner-v2 .co-hero-title,
 .co-inner-v2 .co-panel-title,
 .co-inner-v2 .co-next-steps-title {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-main), system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -1760,7 +1760,7 @@ body.minallo-in-course .topbar {
   margin-bottom: 2px;
 }
 .st-popup.st-popup-v2 .st-popup-title {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-main), sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
   color: #fff;

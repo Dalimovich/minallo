@@ -404,15 +404,15 @@ interface LandingTranslation {
     [
       'css/base.css?v=7',
       'css/theme.css?v=7',
-      'css/styles.css?v=44',
-      'css/courses-redesign.css?v=45',
+      'css/styles.css?v=45',
+      'css/courses-redesign.css?v=46',
       'views/daily-mission/daily-mission.css?v=11',
-      'css/app-design-system.css?v=6',
+      'css/app-design-system.css?v=7',
       'css/layout.css?v=16',
       'css/document-rail.css?v=35',
       'css/mobile-responsive.css?v=4',
       'css/auth.css?v=6',
-      'css/onboarding.css?v=1',
+      'css/onboarding.css?v=2',
       'views/toast/toast.css',
       'views/games/games.css',
       // Light-mode polish loads LAST so it wins source-order ties
@@ -639,7 +639,7 @@ interface LandingTranslation {
           const lazyCssMap: Record<string, string[]> = {
             dashboard: ['views/dashboard/dashboard.css?v=6'],
             chat: ['views/chat/chat.css?v=2'],
-            aipage: ['views/chatbot/chatbot.css?v=18'],
+            aipage: ['views/chatbot/chatbot.css?v=19'],
             german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
             notes: ['views/lecturenotes/lecturenotes.css'],
             profile: ['views/profile/profile.css'],

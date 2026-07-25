@@ -4994,3 +4994,37 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
   .ncb-resource-document { padding: 22px 18px; }
   .ncb-popup-flashcards { grid-template-columns: 1fr; }
 }
+
+/* Shared Manrope hierarchy for the chatbot, library drawers, and overlays. */
+.ncb-root,
+.ncb-root button,
+.ncb-root input,
+.ncb-root textarea,
+.ncb-root select {
+  font-family: var(--font-main);
+}
+
+.ncb-root button,
+.ncb-library-tab,
+.ncb-sidebar-item,
+.ncb-saved-kind-btn,
+.ncb-account-item {
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.ncb-bubble--ai,
+.ncb-bubble--ai .ncb-bubble-text {
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+.ncb-empty-title,
+.ncb-library-section-head strong,
+.ncb-library-drill-head strong,
+.ncb-workspace-body h1,
+.ncb-workspace-body h2,
+.ncb-workspace-body h3 {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
