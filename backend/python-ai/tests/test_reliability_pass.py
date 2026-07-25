@@ -5,12 +5,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.services import document_extraction as extraction
+from app.services import visual_repair as visual_repair_service
 from app.services.document_extraction import (
     DocumentExtractionContext,
     ExtractedQuestion,
     ExtractedSolutionEvidence,
     ExtractionPageKind,
     GapReviewResult,
+    GapSearchCoverage,
     GapStatus,
     extraction_pages_for_direction,
     extraction_context_from_api,
@@ -18,13 +20,18 @@ from app.services.document_extraction import (
     pair_questions_and_solutions,
     review_numbering_gap,
     classify_extraction_page,
+    classify_extraction_page_result,
 )
 from app.services.reliability import (
     CalculationContext,
+    CheckboxGeometry,
     DraftTaskIdentity,
     GroundedTaskIdentity,
     GroundingMismatch,
     NumberRole,
+    IdentityResolutionMethod,
+    LayoutTextSpan,
+    VisibleAnswerOption,
     VisualTaskKind,
     assess_text_quality,
     classify_number_roles,
@@ -35,9 +42,20 @@ from app.services.reliability import (
     identity_is_sufficient,
     identify_draft_task,
     identify_grounded_task,
+    extract_text_visible_options,
+    merge_grounded_task_identity,
+    pair_coordinate_answer_options,
+    selected_result_matches_visible_option,
+    source_label_matches,
+    build_allowed_mapping_labels,
     validate_repaired_answer,
 )
-from app.services.visual_repair import repair_false_visual_denial
+from app.services.visual_repair import (
+    VisualAnswerOptionResult,
+    VisualTaskIdentityResult,
+    generate_visual_task_identity,
+    repair_false_visual_denial,
+)
 
 
 def test_visual_task_traits_separate_explanation_checkbox_and_calculation() -> None:
@@ -499,3 +517,191 @@ def test_obsolete_wrong_language_refusal_is_absent_from_production_paths() -> No
                 if needle in file.read_text(encoding="utf-8", errors="ignore"):
                     matches.append(file)
     assert matches == []
+
+
+def test_structured_visual_identity_merges_without_prose_reparse() -> None:
+    user = GroundedTaskIdentity(document_id="doc", page=39, exercise_reference="14.4")
+    text = identify_grounded_task(
+        question="Solve Aufgabe 14.4 on this page",
+        current_page_text="Aufgabe 14.4 Spritzguss",
+        document_id="doc", filename="exam.pdf", page=39,
+    )
+    visual = VisualTaskIdentityResult(
+        exercise_reference="14.4",
+        domain="injection_moulding",
+        requested_quantities=["V_Spritz"],
+        visible_values=["t = 3.73 mm", "V_Spritz = 191 cm³"],
+        visible_answer_options=[VisualAnswerOptionResult(
+            text="V_Spritz = 191 cm³", selected=True, page=39,
+            confidence=0.98,
+        )],
+        visible_formula_symbols=["V_Spritz", "t"],
+        task_kind="checkbox_calculation",
+        evidence_page=39,
+        confidence=0.97,
+    )
+    merged = merge_grounded_task_identity(
+        user_identity=user, text_identity=text, visual_identity=visual,
+    )
+    assert merged.requested_quantities == ["V_Spritz"]
+    assert merged.option_texts() == ["V_Spritz = 191 cm³"]
+    assert merged.visible_answer_options[0].selected is True
+    assert merged.identity_resolution_method is IdentityResolutionMethod.CURRENT_PAGE_VISION
+    assert merged.identity_evidence_pages == [39]
+    assert merged.exercise_visible_on_page
+
+
+def test_page_bound_exercise_requires_exact_page_evidence() -> None:
+    traits = classify_task_traits("Solve Aufgabe 14.4 on this page")
+    user_only = GroundedTaskIdentity(
+        document_id="doc", page=39, exercise_reference="14.4",
+        domain="injection_moulding", requested_quantities=["V_Spritz"],
+        source_confidence=1.0,
+    )
+    assert not identity_is_sufficient(
+        user_only, traits=traits, page_bound_request=True,
+    )
+    user_only.exercise_visible_on_page = True
+    user_only.identity_evidence_pages = [39]
+    assert identity_is_sufficient(
+        user_only, traits=traits, page_bound_request=True,
+    )
+
+
+def test_selected_region_has_identity_priority_and_provenance() -> None:
+    identity = identify_grounded_task(
+        question="Solve Aufgabe 14.4 here",
+        selected_region_text="Aufgabe 14.4: Gesucht V_Spritz = ?\n[X] 191 cm³",
+        current_page_text="Lecture footer and unrelated page text",
+        document_id="doc", filename="exam.pdf", page=39,
+    )
+    assert identity.exercise_visible_on_page
+    assert identity.identity_resolution_method is IdentityResolutionMethod.SELECTED_REGION
+    assert identity.identity_evidence_pages == [39]
+    assert identity.option_texts() == ["191 cm³"]
+
+
+def test_mapping_aliases_are_tolerant_but_not_semantic_guessing() -> None:
+    allowed = build_allowed_mapping_labels(["Anguss/Angusskanal", "Granulat-Zufuhr"])
+    assert source_label_matches("Angusskanal", allowed[0])
+    assert source_label_matches("Anguss", allowed[0])
+    assert source_label_matches("der Angusskanal", allowed[0])
+    assert source_label_matches(
+        "Angusskanal, through which the melt enters", allowed[0],
+    )
+    assert source_label_matches("Granulatzufuhr", allowed[1])
+    assert not source_label_matches("generic machine component", allowed[0])
+
+
+def test_calculation_obligations_require_value_unit_and_visible_option() -> None:
+    traits = classify_task_traits("Calculate and select the correct checkbox")
+    identity = GroundedTaskIdentity(
+        requested_quantities=["V_Spritz"],
+        task_kind="checkbox_calculation",
+        visible_values=["V_Spritz = 191 cm³"],
+        visible_answer_options=[VisibleAnswerOption(text="191 cm³", selected=True, page=39)],
+    )
+    assert not validate_repaired_answer(
+        answer="The requested quantity is V_Spritz.", identity=identity, traits=traits,
+    ).accepted
+    assert not validate_repaired_answer(
+        answer="For V_Spritz, the given thickness is t = 3.73 mm.",
+        identity=identity, traits=traits,
+    ).accepted
+    valid = validate_repaired_answer(
+        answer="[X] V_Spritz ≈ 191 cm3", identity=identity, traits=traits,
+    )
+    assert valid.accepted
+    assert selected_result_matches_visible_option(
+        answer="V_Spritz = 191 cm3", options=identity.visible_answer_options,
+    )
+    assert not selected_result_matches_visible_option(
+        answer="V_Spritz = 177 cm³", options=identity.visible_answer_options,
+    )
+
+
+def test_coordinate_separated_checkbox_and_text_are_paired() -> None:
+    paired = pair_coordinate_answer_options(
+        checkboxes=[CheckboxGeometry(10, 100, 20, 110, True)],
+        text_spans=[LayoutTextSpan("V_Spritz = 191 cm³", 28, 99, 150, 112)],
+        page=39,
+    )
+    assert len(paired) == 1
+    assert paired[0].selected is True
+    assert paired[0].text == "V_Spritz = 191 cm³"
+    assert paired[0].source == "coordinate_pairing"
+
+
+def test_leading_and_trailing_checkbox_options_keep_selection_state() -> None:
+    options = extract_text_visible_options(
+        "[ ] 177 cm³\n[X] 191 cm³\n205 cm³ ☐\n222 cm³ ✓", 39,
+    )
+    by_text = {option.text: option for option in options}
+    assert by_text["177 cm³"].selected is False
+    assert by_text["191 cm³"].selected is True
+    assert by_text["205 cm³"].selected is False
+    assert by_text["222 cm³"].selected is True
+
+
+def test_gap_review_requires_full_document_coverage() -> None:
+    incomplete = review_numbering_gap(
+        "9.1", neighbouring_text="", reviewed_pages=[3],
+        review_result=GapReviewResult(
+            exact_text_search_performed=True,
+            full_section_search_performed=True,
+            solution_section_search_performed=True,
+            coverage=GapSearchCoverage(full_document_text_searched=False),
+        ),
+    )
+    assert incomplete.status is GapStatus.UNRESOLVED
+    complete = review_numbering_gap(
+        "9.1", neighbouring_text="", reviewed_pages=list(range(1, 31)),
+        review_result=GapReviewResult(
+            exact_text_search_performed=True,
+            full_section_search_performed=True,
+            solution_section_search_performed=True,
+            coverage=GapSearchCoverage(
+                full_document_text_searched=True,
+                existing_visual_results_reviewed=True,
+            ),
+        ),
+    )
+    assert complete.status is GapStatus.REVIEWED_NOT_FOUND
+
+
+def test_page_classification_weak_solution_word_is_uncertain() -> None:
+    result = classify_extraction_page_result(
+        "This formula sheet discusses the correct unit and the right method in a long lecture paragraph.",
+        "Kurzfragen",
+    )
+    assert result.kind is ExtractionPageKind.UNCERTAIN
+    assert result.confidence < 0.8
+
+
+def test_visual_identity_schema_retries_invalid_json_once(monkeypatch) -> None:
+    calls = 0
+
+    class Completions:
+        def create(self, **_):
+            nonlocal calls
+            calls += 1
+            content = "not-json" if calls == 1 else (
+                '{"exercise_reference":"14.1","domain":"injection_moulding",'
+                '"requested_quantities":[],"visible_values":[],"visible_answer_options":[],'
+                '"visible_mapping_labels":["Anguss/Angusskanal"],'
+                '"visible_formula_symbols":[],"task_kind":"diagram_labelling",'
+                '"task_summary":"Map labels","evidence_page":38,"confidence":0.98}'
+            )
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content=content),
+            )])
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.setattr(visual_repair_service, "get_openai_client", lambda: client)
+    result = generate_visual_task_identity(
+        prompt="identify", images=[{"mediaType": "image/png", "data": "abc"}],
+        model="test",
+    )
+    assert calls == 2
+    assert result.exercise_reference == "14.1"
+    assert result.visible_mapping_labels == ["Anguss/Angusskanal"]

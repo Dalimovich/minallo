@@ -47,11 +47,16 @@ from ..services.general_answer import generate_general_answer
 from ..services.retrieval import retrieve_chunks, retrieve_exercise_block, retrieve_formula_block
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.reliability import (
+    GroundedRequestContext,
     assess_text_quality,
+    answer_obligations,
+    build_allowed_mapping_labels,
     build_retrieval_scope,
     classify_task_traits,
     evidence_requirement,
     identity_is_sufficient,
+    is_page_bound_request,
+    merge_grounded_task_identity,
 )
 from ..services.source_router import (
     CourseFileScope,
@@ -1382,6 +1387,11 @@ async def _prepare_ask_stream_response(
         has_visible_image=bool(open_file_images),
         active_document_id=payload.activeDocumentId,
     )
+    page_bound_request = is_page_bound_request(
+        resolved_question,
+        has_selected_region=verified_region is not None,
+        active_document_id=payload.activeDocumentId,
+    )
     grounded_identity = identify_grounded_task(
         question=resolved_question,
         current_page_text=payload.openFileContext or "",
@@ -1389,6 +1399,7 @@ async def _prepare_ask_stream_response(
         filename=payload.activeFileName,
         page=payload.visiblePage,
         traits=preliminary_traits,
+        selected_region_text=selected_text or "",
     )
     observer.event(
         "task_classified",
@@ -1402,6 +1413,9 @@ async def _prepare_ask_stream_response(
         exerciseReference=grounded_identity.exercise_reference,
         taskType=grounded_identity.task_kind,
         visiblePage=grounded_identity.page,
+        identityResolutionMethod=grounded_identity.identity_resolution_method.value,
+        identityEvidencePages=grounded_identity.identity_evidence_pages,
+        exerciseVisibleOnPage=grounded_identity.exercise_visible_on_page,
         sourceConfidence=grounded_identity.source_confidence,
     )
     reliability_cache_fingerprint = task_aware_cache_key(
@@ -1465,6 +1479,7 @@ async def _prepare_ask_stream_response(
             or identity_is_sufficient(
                 grounded_identity,
                 traits=preliminary_traits,
+                page_bound_request=page_bound_request,
             )
         )
     )
@@ -1491,6 +1506,24 @@ async def _prepare_ask_stream_response(
         question=resolved_question,
         has_valid_selected_region=bool(verified_region),
     )
+    cache_obligations = answer_obligations(
+        answer="", identity=grounded_identity, traits=preliminary_traits,
+    )
+    cache_grounding_payload = json.dumps({
+        "retrievalScope": {
+            "documentIds": retrieval_scope.document_ids,
+            "preferredPages": retrieval_scope.preferred_pages,
+            "exerciseReference": retrieval_scope.exercise_reference,
+            "allowCourseFallback": retrieval_scope.allow_course_fallback,
+        },
+        "answerObligations": [
+            {"type": item.obligation_type, "expected": item.expected_values}
+            for item in cache_obligations
+        ],
+    }, sort_keys=True, ensure_ascii=False)
+    ws_fingerprint = hashlib.sha256(
+        f"{ws_fingerprint}:{cache_grounding_payload}".encode()
+    ).hexdigest()
     retrieval_document_ids = retrieval_scope.document_ids
     observer.event(
         "retrieval_scope_resolved",
@@ -1623,7 +1656,6 @@ async def _prepare_ask_stream_response(
     # keep citation display limits independent from extraction coverage.
     from ..services.document_extraction import (  # noqa: WPS433
         DocumentExtractionContext,
-        ExtractedQAItem,
         classify_document_extraction,
         extraction_context_from_api,
         extraction_context_to_api,
@@ -1637,6 +1669,14 @@ async def _prepare_ask_stream_response(
         classify_document_extraction(question, previous_turns_payload)
     )
     if document_extraction:
+        if not payload.conversationId or tutor_state is None:
+            return _stream_static_answer(
+                text="A durable conversation is required before starting a full-document extraction.",
+                decision=source_decision,
+                answer_mode="clarification",
+                status_key="checking_completeness",
+                extra_meta={"errorCode": "persistent_extraction_state_required"},
+            )
         if not payload.activeDocumentId:
             return _stream_static_answer(
                 text=(
@@ -1699,17 +1739,6 @@ async def _prepare_ask_stream_response(
                 section_start_page=1,
                 section_end_page=total_pages,
             )
-            previous_items = [
-                ExtractedQAItem(
-                    item_id=item.item_id,
-                    question=item.question_text,
-                    answer=item.answer_text or "",
-                    question_page=item.question_page,
-                    answer_page=item.answer_page,
-                    confidence=item.pairing_confidence,
-                )
-                for item in extraction_context.paired_items
-            ]
         extraction_started = time.perf_counter()
         extraction = await run_in_threadpool(
             lambda: extract_document_qa(
@@ -1719,6 +1748,7 @@ async def _prepare_ask_stream_response(
                 target=extraction_target or "questions",
                 pages_to_scan=pages_to_scan,
                 previous_items=previous_items,
+                previous_context=extraction_context,
             )
         )
         if payload.conversationId:
@@ -1744,6 +1774,7 @@ async def _prepare_ask_stream_response(
                 paired_items=extraction.paired_items,
                 unresolved_item_ids=extraction.unanswered_item_ids,
                 unresolved_pages=extraction.unreadable_pages,
+                conflicting_item_ids=extraction.conflicting_item_ids,
                 earliest_source_page=min(scanned) if scanned else None,
                 latest_source_page=max(scanned) if scanned else None,
                 earliest_scanned_page=min(scanned) if scanned else None,
@@ -1947,6 +1978,7 @@ async def _prepare_ask_stream_response(
         if identity_gate_required and not identity_is_sufficient(
             grounded_identity,
             traits=preliminary_traits,
+            page_bound_request=page_bound_request,
         ):
             regrounding_text = "\n".join(
                 [
@@ -1957,33 +1989,41 @@ async def _prepare_ask_stream_response(
                     ],
                 ]
             )
+            visual_identity = None
             if open_file_images:
-                from ..services.visual_repair import generate_visual_repair  # noqa: WPS433
+                from ..services.visual_repair import generate_visual_task_identity  # noqa: WPS433
                 try:
-                    visual_identity_text = await run_in_threadpool(
-                        lambda: generate_visual_repair(
+                    visual_identity = await run_in_threadpool(
+                        lambda: generate_visual_task_identity(
                             prompt=(
                                 "Identify only the active task from this PDF page. "
-                                "Return the exercise reference, domain, requested "
-                                "quantity, visible values, and answer options. Do not solve it."
+                                "Extract exact exercise reference, domain, requested quantities, "
+                                "values, answer options with selected state, mapping labels, formula "
+                                "symbols, task kind, evidence page and confidence. Do not solve it."
                             ),
                             images=open_file_images,
                             model=get_settings().openai_generate_model,
                         )
                     )
-                    regrounding_text += "\n" + visual_identity_text
                 except Exception:
+                    visual_identity = None
                     log.exception(
                         "task_identity_visual_reground_failed request_id=%s",
                         request_id,
                     )
-            grounded_identity = identify_grounded_task(
+            text_identity = identify_grounded_task(
                 question=resolved_question,
                 current_page_text=regrounding_text,
                 document_id=payload.activeDocumentId,
                 filename=payload.activeFileName,
                 page=payload.visiblePage,
                 traits=preliminary_traits,
+                selected_region_text=selected_text or "",
+            )
+            grounded_identity = merge_grounded_task_identity(
+                user_identity=grounded_identity,
+                text_identity=text_identity,
+                visual_identity=visual_identity,
             )
             observer.event(
                 "task_identity_regrounded",
@@ -1993,6 +2033,7 @@ async def _prepare_ask_stream_response(
             if not identity_is_sufficient(
                 grounded_identity,
                 traits=preliminary_traits,
+                page_bound_request=page_bound_request,
             ):
                 return _stream_static_answer(
                     text=(
@@ -2197,6 +2238,35 @@ async def _prepare_ask_stream_response(
     captured_meta: dict[str, Any] = {}
     pending_token_events: list[bytes] = []
     task_traits = preliminary_traits
+    grounded_request_context = GroundedRequestContext(
+        request_id=request_id,
+        task_traits=task_traits,
+        task_identity=grounded_identity,
+        retrieval_scope=retrieval_scope,
+        evidence_requirement=evidence_requirement(
+            traits=task_traits,
+            current_page_text=payload.openFileContext or "",
+            text_quality=assess_text_quality(payload.openFileContext or ""),
+            image_count=len(open_file_images),
+        ),
+        answer_obligations=cache_obligations,
+        allowed_mapping_labels=build_allowed_mapping_labels(
+            grounded_identity.visible_mapping_labels
+        ),
+        visible_answer_options=grounded_identity.visible_answer_options,
+        source_fingerprint=reliability_cache_fingerprint,
+    )
+    observer.event(
+        "grounded_request_context_created",
+        exerciseReference=grounded_identity.exercise_reference,
+        identityResolutionMethod=grounded_identity.identity_resolution_method.value,
+        identityEvidencePages=grounded_identity.identity_evidence_pages,
+        exerciseVisibleOnPage=grounded_identity.exercise_visible_on_page,
+        visibleOptionCount=len(grounded_identity.visible_answer_options),
+        mappingLabelCount=len(grounded_identity.visible_mapping_labels),
+        identityConfidence=grounded_identity.source_confidence,
+        obligations=[item.obligation_type for item in grounded_request_context.answer_obligations],
+    )
     high_risk_validation = _requires_verified_buffering(
         question=resolved_question,
         dialogue_act=dialogue.dialogue_act.value,
@@ -2283,7 +2353,11 @@ async def _prepare_ask_stream_response(
             visible_page=payload.visiblePage,
             request_id=request_id,
             response_language=language_context.requested_response_language,
-            dialogue_overlay=dialogue.prompt_overlay() + state_overlay,
+            dialogue_overlay=(
+                dialogue.prompt_overlay()
+                + state_overlay
+                + grounded_request_context.prompt_overlay()
+            ),
         )
         for chunk_bytes in gen_iter:
             # Decode the SSE event so we can intercept the closing 'done' frame.
@@ -2344,6 +2418,11 @@ async def _prepare_ask_stream_response(
                     from ..services.reliability import (  # noqa: WPS433
                         compare_task_identities,
                         identify_draft_task,
+                        validate_repaired_answer,
+                    )
+                    from ..services.answer_stream import required_number_range  # noqa: WPS433
+                    required_range = required_number_range(
+                        resolved_question, generation_open_context,
                     )
                     draft_identity = identify_draft_task("".join(full_text_buf))
                     semantic_mismatches = compare_task_identities(
@@ -2351,7 +2430,21 @@ async def _prepare_ask_stream_response(
                         draft_identity,
                         traits=task_traits,
                     )
-                    if semantic_mismatches and high_risk_validation:
+                    draft_contract = validate_repaired_answer(
+                        answer="".join(full_text_buf),
+                        identity=grounded_request_context.task_identity,
+                        traits=grounded_request_context.task_traits,
+                        required_identifiers=[str(value) for value in (required_range or [])],
+                        allowed_source_labels=(
+                            [item.canonical for item in grounded_request_context.allowed_mapping_labels]
+                            or grounded_request_context.task_identity.option_texts()
+                        ),
+                    )
+                    obligation_failures = [
+                        item.obligation_type for item in draft_contract.obligations
+                        if not item.satisfied
+                    ]
+                    if (semantic_mismatches or obligation_failures) and high_risk_validation:
                         from ..services.visual_repair import (  # noqa: WPS433
                             generate_grounded_repair_sync,
                         )
@@ -2359,9 +2452,15 @@ async def _prepare_ask_stream_response(
                             request_id=request_id,
                             question=resolved_question,
                             incorrect_draft="".join(full_text_buf),
-                            source_context=generation_open_context,
                             image_parts=open_file_images,
-                            mismatch_codes=[item.value for item in semantic_mismatches],
+                            source_context=(
+                                generation_open_context
+                                + grounded_request_context.prompt_overlay()
+                            ),
+                            mismatch_codes=(
+                                [item.value for item in semantic_mismatches]
+                                + obligation_failures
+                            ),
                         )
                         repaired_mismatches = (
                             compare_task_identities(
@@ -2371,7 +2470,17 @@ async def _prepare_ask_stream_response(
                             )
                             if regrounded else semantic_mismatches
                         )
-                        if regrounded and not repaired_mismatches:
+                        repaired_contract = validate_repaired_answer(
+                            answer=regrounded or "",
+                            identity=grounded_request_context.task_identity,
+                            traits=grounded_request_context.task_traits,
+                            required_identifiers=[str(value) for value in (required_range or [])],
+                            allowed_source_labels=(
+                                [item.canonical for item in grounded_request_context.allowed_mapping_labels]
+                                or grounded_request_context.task_identity.option_texts()
+                            ),
+                        )
+                        if regrounded and not repaired_mismatches and repaired_contract.accepted:
                             full_text_buf.clear()
                             full_text_buf.append(regrounded)
                             pending_token_events.clear()
@@ -2379,14 +2488,16 @@ async def _prepare_ask_stream_response(
                             evt["semanticRepair"] = True
                             evt["repairAttempts"] = int(evt.get("repairAttempts") or 0) + 1
                             semantic_mismatches = []
+                            obligation_failures = []
                         evt["semanticMismatch"] = (
                             [item.value for item in semantic_mismatches] or None
                         )
+                        evt["unsatisfiedObligations"] = obligation_failures or None
                     false_visual_denial = bool(
                         open_file_images
                         and _FALSE_VISUAL_DENIAL_RE.search("".join(full_text_buf))
                     )
-                    if semantic_mismatches and high_risk_validation:
+                    if (semantic_mismatches or obligation_failures) and high_risk_validation:
                         safe_text = (
                             "Minallo could not reliably match the draft to the active "
                             "exercise and requested quantity. The draft was not shown."
@@ -2437,20 +2548,17 @@ async def _prepare_ask_stream_response(
                                     "visual_repair_verification_unavailable request_id=%s",
                                     request_id,
                                 )
-                        from ..services.answer_stream import required_number_range  # noqa: WPS433
-                        from ..services.reliability import validate_repaired_answer  # noqa: WPS433
-                        required_range = required_number_range(
-                            resolved_question,
-                            generation_open_context,
-                        )
                         repair_validation = validate_repaired_answer(
                             answer=repaired or "",
-                            identity=grounded_identity,
-                            traits=task_traits,
+                            identity=grounded_request_context.task_identity,
+                            traits=grounded_request_context.task_traits,
                             required_identifiers=[
                                 str(value) for value in (required_range or [])
                             ],
-                            allowed_source_labels=grounded_identity.visible_answer_options,
+                            allowed_source_labels=(
+                                [item.canonical for item in grounded_request_context.allowed_mapping_labels]
+                                or grounded_request_context.task_identity.option_texts()
+                            ),
                             verification_rejected=bool(
                                 repaired_verification
                                 and _verification_requires_rejection(

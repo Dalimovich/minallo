@@ -133,6 +133,24 @@ class ExtractionPageKind(StrEnum):
     UNCERTAIN = "uncertain"
 
 
+@dataclass(frozen=True)
+class PageClassificationResult:
+    kind: ExtractionPageKind
+    confidence: float
+    signals: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GapSearchCoverage:
+    nearby_pages_searched: list[int] = field(default_factory=list)
+    question_section_pages_searched: list[int] = field(default_factory=list)
+    solution_section_pages_searched: list[int] = field(default_factory=list)
+    full_document_text_searched: bool = False
+    existing_visual_results_reviewed: bool = False
+    targeted_visual_pages_required: list[int] = field(default_factory=list)
+    targeted_visual_pages_searched: list[int] = field(default_factory=list)
+
+
 @dataclass
 class GapReviewResult:
     exact_text_search_performed: bool = False
@@ -142,6 +160,7 @@ class GapReviewResult:
     exact_matches: list[int] = field(default_factory=list)
     intentional_omission_pages: list[int] = field(default_factory=list)
     reviewed_pages: list[int] = field(default_factory=list)
+    coverage: GapSearchCoverage = field(default_factory=GapSearchCoverage)
 
 
 @dataclass
@@ -154,6 +173,7 @@ class NumberingGap:
     full_section_search_performed: bool = False
     solution_section_search_performed: bool = False
     visual_search_performed: bool = False
+    coverage: GapSearchCoverage = field(default_factory=GapSearchCoverage)
 
 
 @dataclass
@@ -170,6 +190,7 @@ class DocumentExtractionContext:
     paired_items: list[PairedQAItem] = field(default_factory=list)
     unresolved_item_ids: list[str] = field(default_factory=list)
     unresolved_pages: list[int] = field(default_factory=list)
+    conflicting_item_ids: list[str] = field(default_factory=list)
     earliest_source_page: int | None = None
     latest_source_page: int | None = None
     earliest_scanned_page: int | None = None
@@ -199,6 +220,7 @@ class DocumentExtractionResult:
     items: list[ExtractedQAItem] = field(default_factory=list)
     unanswered_item_ids: list[str] = field(default_factory=list)
     duplicate_item_ids: list[str] = field(default_factory=list)
+    conflicting_item_ids: list[str] = field(default_factory=list)
     suspicious_numbering_gaps: list[str] = field(default_factory=list)
     gaps: list[NumberingGap] = field(default_factory=list)
     extracted_questions: list[ExtractedQuestion] = field(default_factory=list)
@@ -437,11 +459,7 @@ def review_numbering_gap(
     review_result: GapReviewResult | None = None,
 ) -> NumberingGap:
     """Classify a gap only after explicit, appropriately broad searches."""
-    variants = (
-        re.escape(item_id),
-        re.escape(f"Aufgabe {item_id}"),
-        re.escape(f"Frage {item_id}"),
-    )
+    variants = tuple(re.escape(value) for value in gap_id_variants(item_id))
     explicit = review_result or GapReviewResult(
         exact_text_search_performed=True,
         full_section_search_performed=False,
@@ -463,6 +481,10 @@ def review_numbering_gap(
         explicit.exact_text_search_performed
         and explicit.full_section_search_performed
         and explicit.solution_section_search_performed
+        and explicit.coverage.full_document_text_searched
+        and set(explicit.coverage.targeted_visual_pages_required).issubset(
+            explicit.coverage.targeted_visual_pages_searched
+        )
     ):
         status = GapStatus.REVIEWED_NOT_FOUND
     else:
@@ -476,32 +498,57 @@ def review_numbering_gap(
         full_section_search_performed=explicit.full_section_search_performed,
         solution_section_search_performed=explicit.solution_section_search_performed,
         visual_search_performed=explicit.visual_search_performed,
+        coverage=explicit.coverage,
     )
 
 
-def classify_extraction_page(text: str, target: str) -> ExtractionPageKind:
-    """Cheap deterministic routing before invoking either extraction model."""
+def gap_id_variants(item_id: str) -> list[str]:
+    return list(dict.fromkeys([
+        item_id, f"Aufgabe {item_id}", f"Frage {item_id}", f"Nr. {item_id}",
+        item_id.replace(".", ""), item_id.replace(".", " "),
+    ]))
+
+
+def classify_extraction_page_result(text: str, target: str) -> PageClassificationResult:
+    """Route conservatively: weak answer words alone never imply a solution page."""
     value = text or ""
-    question = bool(re.search(
-        rf"\b(?:{re.escape(target)}|kurzfragen?|fragen?|aufgaben?|question)\b|\?",
-        value,
-        re.IGNORECASE,
-    ))
-    solution = bool(re.search(
-        r"\b(?:lösung(?:en)?|loesung(?:en)?|musterlösung|solution|antwort(?:en)?|"
-        r"richtig|korrekt)\b|[\u2611\u2713\u2714]|\[[xX]\]",
-        value,
-        re.IGNORECASE,
-    ))
-    if question and solution:
-        return ExtractionPageKind.MIXED
-    if question:
-        return ExtractionPageKind.QUESTION
-    if solution:
-        return ExtractionPageKind.SOLUTION
-    if len(value.strip()) < 40:
-        return ExtractionPageKind.IRRELEVANT
-    return ExtractionPageKind.UNCERTAIN
+    if not value.strip():
+        return PageClassificationResult(ExtractionPageKind.IRRELEVANT, 0.95, [])
+    signals: list[str] = []
+    if re.search(rf"\b(?:{re.escape(target)}|kurzfragen?|fragen?|aufgaben?|question)\b|\?", value, re.I):
+        signals.append("question_structure")
+    if re.search(r"\b(?:musterl(?:ö|oe|Ã¶)sung|l(?:ö|oe|Ã¶)sung(?:en)?|answer key|solutions?)\b", value, re.I):
+        signals.append("solution_heading")
+    if re.search(r"[\u2611\u2713\u2714]|\[[xX]\]", value):
+        signals.append("selected_options")
+    if len(re.findall(r"(?m)^\s*\d+(?:\.\d+)+\s*(?::|[-.)])", value)) >= 2:
+        signals.append("repeated_answer_patterns")
+    if len(re.findall(r"(?:=|â‰ˆ)\s*[+âˆ’-]?\d+(?:[.,]\d+)?\s*(?:mm|cm|m|N|Pa)", value, re.I)) >= 2:
+        signals.append("completed_calculations")
+    if re.search(r"\b(?:antwort|richtig|korrekt)\b", value, re.I):
+        signals.append("weak_solution_word")
+    question = "question_structure" in signals
+    solution_score = (
+        (2 if "solution_heading" in signals else 0)
+        + (1 if "selected_options" in signals else 0)
+        + (1 if "repeated_answer_patterns" in signals else 0)
+        + (1 if "completed_calculations" in signals else 0)
+        + (0.5 if "weak_solution_word" in signals else 0)
+    )
+    strong_solution = solution_score >= 2
+    if question and strong_solution:
+        return PageClassificationResult(ExtractionPageKind.MIXED, 0.9, signals)
+    if question and not any(signal in signals for signal in (
+        "solution_heading", "selected_options", "completed_calculations",
+    )):
+        return PageClassificationResult(ExtractionPageKind.QUESTION, 0.88, signals)
+    if strong_solution:
+        return PageClassificationResult(ExtractionPageKind.SOLUTION, 0.88, signals)
+    return PageClassificationResult(ExtractionPageKind.UNCERTAIN, 0.55, signals)
+
+
+def classify_extraction_page(text: str, target: str) -> ExtractionPageKind:
+    return classify_extraction_page_result(text, target).kind
 
 
 def _load_document_pages(
@@ -728,10 +775,18 @@ def extract_document_qa(
     status: Callable[[str], None] | None = None,
     pages_to_scan: list[int] | None = None,
     previous_items: list[ExtractedQAItem] | None = None,
+    previous_context: DocumentExtractionContext | None = None,
 ) -> DocumentExtractionResult:
     document, page_rows = _load_document_pages(
         user_id=user_id, course_id=course_id, document_id=document_id,
     )
+    all_text_by_page = {
+        int(row.get("page_number") or 0): str(
+            row.get("cleaned_text") or row.get("raw_text") or ""
+        ).strip()
+        for row in page_rows
+        if int(row.get("page_number") or 0) >= 1
+    }
     total_pages = int(document.get("page_count") or len(page_rows) or 0)
     target_pages = (
         list(range(1, total_pages + 1))
@@ -748,6 +803,19 @@ def extract_document_qa(
         result.message = (
             "There are no pages left to scan in the requested direction."
         )
+        if previous_context:
+            result.extracted_questions = list(previous_context.extracted_questions)
+            result.solution_evidence = list(previous_context.solution_evidence)
+            result.paired_items = list(previous_context.paired_items)
+            result.items = [ExtractedQAItem(
+                item_id=item.item_id,
+                question=item.question_text,
+                answer=item.answer_text or "",
+                question_page=item.question_page,
+                answer_page=item.answer_page,
+                confidence=item.pairing_confidence,
+            ) for item in result.paired_items]
+            return result
         result.items = list(previous_items or [])
         result.extracted_questions = [
             ExtractedQuestion(
@@ -811,7 +879,9 @@ def extract_document_qa(
     )
     result.unreadable_pages = sorted(set(result.unreadable_pages))
 
-    extracted_questions: list[ExtractedQuestion] = [
+    extracted_questions: list[ExtractedQuestion] = list(
+        previous_context.extracted_questions if previous_context else []
+    ) + [
         ExtractedQuestion(
             item_id=item.item_id,
             normalized_item_id=normalise_item_id(item.item_id),
@@ -822,7 +892,9 @@ def extract_document_qa(
         )
         for item in (previous_items or [])
     ]
-    solution_evidence: list[ExtractedSolutionEvidence] = [
+    solution_evidence: list[ExtractedSolutionEvidence] = list(
+        previous_context.solution_evidence if previous_context else []
+    ) + [
         ExtractedSolutionEvidence(
             item_id=item.item_id,
             normalized_item_id=normalise_item_id(item.item_id),
@@ -836,6 +908,7 @@ def extract_document_qa(
         for item in (previous_items or [])
         if item.answer.strip()
     ]
+    visual_item_pages_by_id: dict[str, set[int]] = {}
     for page in weak_pages:
         try:
             visual_items = _extract_visual_page(
@@ -851,6 +924,10 @@ def extract_document_qa(
             )
             visual_items = []
         if visual_items:
+            for item in visual_items:
+                visual_item_pages_by_id.setdefault(
+                    normalise_item_id(item.item_id), set()
+                ).add(page)
             extracted_questions.extend(
                 question
                 for question in (
@@ -1025,6 +1102,15 @@ def extract_document_qa(
         unique_solutions[key] = item
     result.extracted_questions = list(unique_questions.values())
     result.solution_evidence = list(unique_solutions.values())
+    answers_by_id: dict[str, set[str]] = {}
+    for evidence in result.solution_evidence:
+        if evidence.normalized_item_id:
+            answers_by_id.setdefault(evidence.normalized_item_id, set()).add(
+                re.sub(r"\s+", " ", evidence.answer_text.casefold()).strip()
+            )
+    result.conflicting_item_ids = sorted(
+        item_id for item_id, answers in answers_by_id.items() if len(answers) > 1
+    )
     result.paired_items = pair_questions_and_solutions(
         result.extracted_questions,
         result.solution_evidence,
@@ -1075,43 +1161,83 @@ def extract_document_qa(
                 re.IGNORECASE,
             )
         )
-        search_pages = sorted(set(nearby_pages + section_pages + solution_pages))
-        variants = (
-            re.escape(item_id),
-            re.escape(f"Aufgabe {item_id}"),
-            re.escape(f"Frage {item_id}"),
-        )
+        # Final deterministic pass scans every available text page, independent
+        # of imperfect section classification.
+        full_document_pages = sorted(all_text_by_page)
+        search_pages = sorted(set(
+            nearby_pages + section_pages + solution_pages + full_document_pages
+        ))
+        variants = tuple(re.escape(value) for value in gap_id_variants(item_id))
         exact_matches = [
             page for page in search_pages
-            if any(re.search(rf"(?<![\d.]){variant}(?![\d.])", text_by_page[page], re.I)
+            if any(re.search(rf"(?<![\d.]){variant}(?![\d.])", all_text_by_page.get(page, ""), re.I)
                    for variant in variants)
         ]
+        targeted_visual_pages: list[int] = []
+        if not exact_matches:
+            for page in weak_pages:
+                try:
+                    targeted_items = _extract_visual_page(
+                        document=document,
+                        page_number=page,
+                        target=(
+                            f"Find exact item {item_id!r}. Return it only if the ID is "
+                            "visibly present; do not infer nearby numbering."
+                        ),
+                    )
+                    targeted_visual_pages.append(page)
+                except Exception:
+                    log.exception(
+                        "document_gap_visual_search_failed document=%s gap=%s page=%s",
+                        document_id, item_id, page,
+                    )
+                    continue
+                for item in targeted_items:
+                    if normalise_item_id(item.item_id) == normalise_item_id(item_id):
+                        visual_item_pages_by_id.setdefault(
+                            normalise_item_id(item_id), set()
+                        ).add(page)
+        visual_matches = sorted(visual_item_pages_by_id.get(normalise_item_id(item_id), set()))
+        exact_matches = sorted(set(exact_matches + visual_matches))
         intentional_pages = [
             page for page in search_pages
             if re.search(
                 rf"(?<![\d.]){re.escape(item_id)}(?![\d.]).{{0,80}}"
                 r"(?:entfällt|gestrichen|omitted|cancelled|not used)",
-                text_by_page[page],
+                all_text_by_page.get(page, ""),
                 re.IGNORECASE,
             )
         ]
-        neighbouring_text = "\n".join(text_by_page[page] for page in search_pages)
+        neighbouring_text = "\n".join(all_text_by_page.get(page, "") for page in search_pages)
+        coverage = GapSearchCoverage(
+            nearby_pages_searched=nearby_pages,
+            question_section_pages_searched=section_pages,
+            solution_section_pages_searched=solution_pages,
+            full_document_text_searched=True,
+            existing_visual_results_reviewed=True,
+            targeted_visual_pages_required=weak_pages,
+            targeted_visual_pages_searched=targeted_visual_pages,
+        )
         result.gaps.append(review_numbering_gap(
             item_id,
             neighbouring_text=neighbouring_text,
             reviewed_pages=search_pages,
             review_result=GapReviewResult(
                 exact_text_search_performed=True,
-                full_section_search_performed=bool(section_pages),
-                solution_section_search_performed=bool(solution_pages),
-                visual_search_performed=bool(weak_pages),
+                full_section_search_performed=True,
+                solution_section_search_performed=True,
+                visual_search_performed=bool(targeted_visual_pages),
                 exact_matches=exact_matches,
                 intentional_omission_pages=intentional_pages,
                 reviewed_pages=search_pages,
+                coverage=coverage,
             ),
         ))
 
-    result.new_item_count = max(0, len(result.items) - len(previous_items or []))
+    previous_count = (
+        len(previous_context.paired_items) if previous_context else len(previous_items or [])
+    )
+    result.new_item_count = max(0, len(result.items) - previous_count)
     expected_pages = set(target_pages)
     result.all_relevant_pages_scanned = bool(
         expected_pages
@@ -1125,6 +1251,7 @@ def extract_document_qa(
         result.all_relevant_pages_scanned
         and result.all_items_have_answers
         and not result.duplicate_item_ids
+        and not result.conflicting_item_ids
         and not any(
             gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
             for gap in result.gaps
@@ -1205,19 +1332,23 @@ __all__ = [
     "ExtractedQuestion",
     "ExtractedSolutionEvidence",
     "ExtractionPageKind",
+    "GapSearchCoverage",
     "GapReviewResult",
     "GapStatus",
     "NumberingGap",
     "PageExtractionResult",
+    "PageClassificationResult",
     "PairedQAItem",
     "classify_document_extraction",
     "classify_extraction_page",
+    "classify_extraction_page_result",
     "extract_page_with_fallback",
     "extract_document_qa",
     "extraction_pages_for_direction",
     "extraction_context_from_api",
     "extraction_context_to_api",
     "format_document_extraction",
+    "gap_id_variants",
     "identify_suspicious_numbering_gaps",
     "infer_extraction_rescan_direction",
     "load_extraction_context",

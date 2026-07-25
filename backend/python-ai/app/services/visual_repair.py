@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Callable
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..config import get_settings
 from .openai_client import get_openai_client
@@ -14,6 +17,81 @@ log = logging.getLogger(__name__)
 
 VISUAL_DENIAL_REPAIR_TIMEOUT_SECONDS = 25
 MAX_VISUAL_DENIAL_REPAIRS = 1
+MAX_VISUAL_IDENTITY_ATTEMPTS = 2
+
+
+class VisualAnswerOptionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str | None = None
+    text: str
+    selected: bool | None = None
+    page: int | None = None
+    source: str = "vision"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class VisualTaskIdentityResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    exercise_reference: str | None = None
+    domain: str | None = None
+    requested_quantities: list[str] = Field(default_factory=list)
+    visible_values: list[str] = Field(default_factory=list)
+    visible_answer_options: list[VisualAnswerOptionResult] = Field(default_factory=list)
+    visible_mapping_labels: list[str] = Field(default_factory=list)
+    visible_formula_symbols: list[str] = Field(default_factory=list)
+    task_kind: str | None = None
+    task_summary: str | None = None
+    evidence_page: int | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+def generate_visual_task_identity(
+    *, prompt: str, images: list[dict[str, object]], model: str,
+) -> VisualTaskIdentityResult:
+    """Return schema-validated visual identity, with one bounded repair retry."""
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+    for image in images:
+        data = str(image.get("data") or "")
+        if data:
+            media_type = str(image.get("mediaType") or "image/png")
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{data}", "detail": "high"},
+            })
+    client = get_openai_client()
+    last_error: Exception | None = None
+    messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
+    schema = VisualTaskIdentityResult.model_json_schema()
+    for attempt in range(MAX_VISUAL_IDENTITY_ATTEMPTS):
+        if attempt:
+            messages.append({
+                "role": "user",
+                "content": "Return only valid JSON conforming exactly to the supplied schema.",
+            })
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0,
+                max_tokens=1800,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "visual_task_identity",
+                        # Pydantic defaults make several fields optional in the
+                        # JSON Schema. OpenAI strict mode requires every schema
+                        # property to be listed as required, so validation is
+                        # enforced locally below for cross-SDK compatibility.
+                        "strict": False,
+                        "schema": schema,
+                    },
+                },
+            )
+            raw = str(response.choices[0].message.content or "").strip()
+            return VisualTaskIdentityResult.model_validate(json.loads(raw))
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            last_error = exc
+    raise ValueError("visual identity did not match schema") from last_error
 
 
 def generate_visual_repair(
@@ -188,7 +266,10 @@ Incorrect draft (for contradiction diagnosis only):
 __all__ = [
     "MAX_VISUAL_DENIAL_REPAIRS",
     "VISUAL_DENIAL_REPAIR_TIMEOUT_SECONDS",
+    "VisualAnswerOptionResult",
+    "VisualTaskIdentityResult",
     "generate_visual_repair",
+    "generate_visual_task_identity",
     "generate_grounded_repair_sync",
     "repair_false_visual_denial",
     "repair_false_visual_denial_sync",
