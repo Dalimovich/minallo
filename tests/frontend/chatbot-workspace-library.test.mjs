@@ -61,3 +61,10 @@ test('account overlays are opaque and desktop sidebars are floating rounded surf
   assert.match(css, /\.ncb-workspace-body > \.portal-section[\s\S]*background:\s*#0d1d32 !important/);
   assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar,[\s\S]*\.ncb-context[\s\S]*border-radius:\s*24px/);
 });
+
+test('saved category buttons are large full-width cards with separated content', () => {
+  assert.match(css, /\.ncb-saved-kind-list[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(css, /\.ncb-saved-kind-btn\s*\{[\s\S]*min-height:\s*78px/);
+  assert.match(css, /\.ncb-saved-kind-btn \.ncb-library-icon[\s\S]*width:\s*46px/);
+  assert.match(css, /\.ncb-saved-kind-btn > b[\s\S]*flex:\s*0 0 30px/);
+});

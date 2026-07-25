@@ -602,7 +602,7 @@
                 const lazyCssMap = {
                     dashboard: ['views/dashboard/dashboard.css?v=6'],
                     chat: ['views/chat/chat.css?v=2'],
-                    aipage: ['views/chatbot/chatbot.css?v=16'],
+                    aipage: ['views/chatbot/chatbot.css?v=17'],
                     german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
                     notes: ['views/lecturenotes/lecturenotes.css'],
                     profile: ['views/profile/profile.css'],

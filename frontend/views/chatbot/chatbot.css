@@ -4501,7 +4501,11 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-course-detail-head span { color: #7286a0; font-size: 0.7rem; }
 
 .ncb-course-list { display: grid; gap: 6px; }
-.ncb-saved-kind-list { display: grid; gap: 8px; }
+.ncb-saved-kind-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
 
 .ncb-course-row,
 .ncb-file-row,
@@ -4645,14 +4649,71 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 }
 
 .ncb-saved-kind-btn {
-  min-height: 58px;
-  padding: 12px;
+  min-height: 78px;
+  gap: 14px;
+  padding: 15px 16px;
+  border-color: rgba(148, 163, 184, 0.11);
+  border-radius: 16px;
+  background: #12243b;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.ncb-saved-kind-btn:hover {
+  transform: translateY(-2px);
+  border-color: rgba(96, 165, 250, 0.38);
+  background: #162d49;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .ncb-saved-kind-btn .ncb-library-icon {
-  width: 36px;
-  height: 36px;
-  flex-basis: 36px;
+  width: 46px;
+  height: 46px;
+  flex-basis: 46px;
+  border-radius: 13px;
+  font-size: 0.68rem;
+}
+
+.ncb-saved-kind-btn > span:not(.ncb-library-icon) {
+  gap: 5px;
+}
+
+.ncb-saved-kind-btn strong {
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.ncb-saved-kind-btn small {
+  font-size: 0.73rem;
+  line-height: 1.2;
+}
+
+.ncb-saved-kind-btn > b {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.12);
+  font-size: 1rem;
+}
+
+.ncb-course-row {
+  min-height: 64px;
+  padding: 13px;
+  border-color: rgba(148, 163, 184, 0.08);
+  border-radius: 15px;
+  background: #102139;
 }
 
 .ncb-saved-kind-results { margin-top: 12px; }
@@ -4835,6 +4896,14 @@ body:not(.night) .ncb-workspace-body { background: #eef2f7; }
 body:not(.night) .ncb-workspace-body > .portal-section { background: #f8fafc !important; }
 body:not(.night) .ncb-workspace-body > .portal-section .widget-card,
 body:not(.night) .ncb-workspace-body > .portal-section .profile-hero { background: #fff; }
+body:not(.night) .ncb-saved-kind-btn,
+body:not(.night) .ncb-course-row {
+  border-color: rgba(15, 23, 42, 0.09);
+  background: #fff;
+  box-shadow: 0 9px 22px rgba(15, 23, 42, 0.08);
+}
+body:not(.night) .ncb-saved-kind-btn:hover,
+body:not(.night) .ncb-course-row:hover { background: #f3f7fc; }
 
 /* Desktop rails are separate floating surfaces, not rectangular edges of one card. */
 @media (min-width: 1025px) {
