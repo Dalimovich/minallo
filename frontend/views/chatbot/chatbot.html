@@ -78,14 +78,23 @@
           </div>
 
           <div class="ncb-account">
-            <button type="button" class="ncb-account-trigger" aria-haspopup="menu" aria-expanded="false" data-testid="chatbot-account-menu">
-              <span class="ncb-account-avatar">?</span>
-              <span class="ncb-account-copy">
-                <strong class="ncb-account-name">Account</strong>
-                <small>Profile &amp; settings</small>
-              </span>
-              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+            <div class="ncb-account-actions">
+              <button type="button" class="ncb-notification-trigger" aria-label="Open notifications" data-testid="chatbot-notifications">
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10.27 21a2 2 0 0 0 3.46 0"/>
+                  <path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"/>
+                </svg>
+                <span class="ncb-notification-badge" data-notification-badge hidden>0</span>
+              </button>
+              <button type="button" class="ncb-account-trigger" aria-haspopup="menu" aria-expanded="false" data-testid="chatbot-account-menu">
+                <span class="ncb-account-avatar">?</span>
+                <span class="ncb-account-copy">
+                  <strong class="ncb-account-name">Account</strong>
+                  <small>Profile &amp; settings</small>
+                </span>
+                <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+              </button>
+            </div>
             <div class="ncb-account-menu" role="menu" hidden>
               <button type="button" role="menuitem" data-account-view="profile">Profile</button>
               <button type="button" role="menuitem" data-account-view="subscription">Subscription</button>

@@ -3,7 +3,15 @@ import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import type { LegacyCourse } from '../../../globals.js';
 
-type CourseFile = { name: string; _storageName?: string; _folder?: string | null; size?: string };
+type CourseFile = {
+  name: string;
+  _storageName?: string;
+  _folder?: string | null;
+  _uploaded?: boolean;
+  _uid?: string;
+  _course?: LibraryCourse;
+  size?: string;
+};
 type CourseFolder = { name: string; files?: CourseFile[] };
 type LibraryCourse = LegacyCourse & { files?: CourseFile[]; userFolders?: CourseFolder[] };
 type SavedKind = 'notes' | 'summaries' | 'flashcards' | 'cheatsheets' | 'exams';
@@ -24,6 +32,11 @@ const kindLabels: Record<SavedKind, string> = {
   cheatsheets: 'Cheatsheets',
   exams: 'Practice exams'
 };
+
+let pdfOrigin: Comment | null = null;
+let pdfHost: HTMLElement | null = null;
+let pdfContextInner: HTMLElement | null = null;
+let pdfAiDisplay = '';
 
 function courses(): LibraryCourse[] {
   const sems = window.SEMS || window._SEMS || {};
@@ -139,13 +152,78 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
   detail.querySelectorAll<HTMLButtonElement>('[data-library-file]').forEach((button) => {
     button.addEventListener('click', () => {
       const folder = button.dataset.folder || null;
-      const collection = folder
+      const collection = (folder
         ? (course.userFolders || []).find((item) => item.name === folder)?.files || []
-        : course.files || [];
+        : course.files || []) as CourseFile[];
       const file = collection.find((item) => item.name === button.dataset.libraryFile);
-      if (file) window.openFile?.(file, course);
+      if (file) openWorkspacePdf(rootFor(panel), file, course);
     });
   });
+}
+
+function rootFor(node: HTMLElement): HTMLElement {
+  return node.closest<HTMLElement>('.ncb-root') || document.getElementById('ncbRoot')!;
+}
+
+function closeWorkspacePdf(root: HTMLElement): void {
+  const wrap = document.getElementById('pdfViewerWrap');
+  if (wrap && pdfOrigin?.parentNode) pdfOrigin.parentNode.insertBefore(wrap, pdfOrigin);
+  pdfOrigin?.remove();
+  pdfOrigin = null;
+  pdfHost?.remove();
+  pdfHost = null;
+  if (pdfContextInner) pdfContextInner.hidden = false;
+  pdfContextInner = null;
+  const aiPanel = document.getElementById('aiPanel');
+  if (aiPanel) aiPanel.style.display = pdfAiDisplay;
+  delete document.body.dataset.ncbPdfWorkspace;
+  document.body.classList.remove('ncb-pdf-workspace-open');
+  window._ncbPdfWorkspaceActive = false;
+  root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
+}
+
+function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCourse): void {
+  const context = root.querySelector<HTMLElement>('.ncb-context');
+  const inner = context?.querySelector<HTMLElement>('.ncb-context-inner');
+  const wrap = document.getElementById('pdfViewerWrap');
+  if (!context || !inner || !wrap || !window.openFile) return;
+
+  if (!pdfOrigin) {
+    pdfOrigin = document.createComment('ncb-pdf-origin');
+    wrap.parentNode?.insertBefore(pdfOrigin, wrap);
+  }
+  if (!pdfHost) {
+    pdfHost = document.createElement('div');
+    pdfHost.className = 'ncb-pdf-host';
+    pdfHost.innerHTML =
+      '<button type="button" class="ncb-pdf-close" aria-label="Close PDF viewer">&lsaquo;</button>';
+    pdfHost.querySelector<HTMLButtonElement>('.ncb-pdf-close')?.addEventListener('click', () => {
+      closeWorkspacePdf(root);
+    });
+    context.appendChild(pdfHost);
+  }
+
+  pdfContextInner = inner;
+  inner.hidden = true;
+  pdfHost.appendChild(wrap);
+  wrap.style.display = 'flex';
+  const aiPanel = document.getElementById('aiPanel');
+  if (aiPanel) {
+    pdfAiDisplay = aiPanel.style.display;
+    aiPanel.style.display = 'none';
+  }
+  const toolbar = document.getElementById('pdfToolbar');
+  toolbar?.classList.add('is-collapsed');
+  const collapse = document.getElementById('pdfToolbarCollapse');
+  collapse?.setAttribute('aria-expanded', 'false');
+  collapse?.setAttribute('aria-label', 'PDF controls are collapsed');
+
+  document.body.dataset.ncbPdfWorkspace = 'true';
+  document.body.classList.add('ncb-pdf-workspace-open');
+  window._ncbPdfWorkspaceActive = true;
+  root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
+  window.selectChatbotPdfSource?.(course, file);
+  window.openFile(file, course);
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
@@ -336,10 +414,19 @@ function bindAccountMenu(root: HTMLElement): void {
       void openPortalView(root, button.dataset.accountView || '');
     });
   });
+  root.querySelector<HTMLButtonElement>('.ncb-notification-trigger')?.addEventListener('click', () => {
+    void openPortalView(root, 'notifications');
+  });
 }
 
 async function openPortalView(root: HTMLElement, view: string): Promise<void> {
-  const titles: Record<string, string> = { profile: 'Profile', subscription: 'Subscription', lounge: 'Study Lounge', settings: 'Settings' };
+  const titles: Record<string, string> = {
+    profile: 'Profile',
+    subscription: 'Subscription',
+    lounge: 'Study Lounge',
+    settings: 'Settings',
+    notifications: 'Notifications'
+  };
   const body = openOverlay(root, titles[view] || 'Minallo');
   if (!body) return;
   const overlay = body.closest<HTMLElement>('[data-workspace-overlay]');
@@ -365,6 +452,9 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
   body.closest<HTMLElement>('[data-workspace-overlay]')!.dataset.movedSection = view;
   (body.closest<HTMLElement>('[data-workspace-overlay]') as HTMLElement & { _origin?: Comment })._origin = placeholder;
   if (view === 'subscription') await window.refreshSubscriptionView?.();
+  if (view === 'notifications') {
+    window.renderNotifications?.();
+  }
 }
 
 function openOverlay(root: HTMLElement, title: string): HTMLElement | null {

@@ -148,19 +148,24 @@ function _unreadCount(list: Notif[]): number {
 
 function _updateBadge(unread: number): void {
   const item = document.getElementById('psbNotifications');
-  if (!item) return;
-  let badge = item.querySelector('.sb-badge') as HTMLElement | null;
-  if (unread > 0) {
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.className = 'sb-badge';
-      item.appendChild(badge);
+  if (item) {
+    let badge = item.querySelector('.sb-badge') as HTMLElement | null;
+    if (unread > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'sb-badge';
+        item.appendChild(badge);
+      }
+      badge.textContent = unread > 9 ? '9+' : String(unread);
+      badge.style.display = '';
+    } else if (badge) {
+      badge.style.display = 'none';
     }
-    badge.textContent = unread > 9 ? '9+' : String(unread);
-    badge.style.display = '';
-  } else if (badge) {
-    badge.style.display = 'none';
   }
+  document.querySelectorAll<HTMLElement>('[data-notification-badge]').forEach((badge) => {
+    badge.textContent = unread > 9 ? '9+' : String(unread);
+    badge.hidden = unread === 0;
+  });
 }
 
 function _matchesTab(x: Notif, tab: Tab): boolean {

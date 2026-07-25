@@ -4350,6 +4350,54 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.ncb-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ncb-account-trigger { flex: 1; min-width: 0; }
+
+.ncb-notification-trigger {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(147, 197, 253, 0.22);
+  border-radius: 50%;
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.1);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.ncb-notification-trigger:hover {
+  background: rgba(37, 99, 235, 0.2);
+  transform: translateY(-1px);
+}
+
+.ncb-notification-badge {
+  position: absolute;
+  top: -3px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #0b192c;
+  border-radius: 999px;
+  color: #fff;
+  background: #ef4444;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ncb-notification-badge[hidden] { display: none; }
+
 .ncb-account-trigger {
   width: 100%;
   display: flex;
@@ -4919,6 +4967,110 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
   height: min(760px, 90vh);
 }
 
+.ncb-workspace-overlay[data-workspace-view="notifications"] .ncb-workspace-dialog {
+  width: min(1040px, 94vw);
+  height: min(760px, 90vh);
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-page-header {
+  display: none;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .ncb-workspace-body > .portal-section {
+  padding-top: 28px;
+}
+
+/* Canonical PDF viewer hosted in place of the course/saved context drawer. */
+.ncb-pdf-host {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #081528;
+}
+
+.ncb-pdf-host #pdfViewerWrap {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #081528;
+}
+
+.ncb-pdf-host #centreContent,
+.ncb-pdf-host #pdfView,
+.ncb-pdf-host #pdfBodies,
+.ncb-pdf-host #pdfBody {
+  min-width: 0;
+  min-height: 0;
+}
+
+.ncb-pdf-host #aiPanel { display: none !important; }
+
+.ncb-pdf-close {
+  position: absolute;
+  z-index: 140;
+  top: 12px;
+  left: 12px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(147, 197, 253, 0.24);
+  border-radius: 12px;
+  color: #dbeafe;
+  background: rgba(12, 27, 49, 0.94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  font-size: 1.55rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.ncb-pdf-workspace-open .ncb-context {
+  width: min(50vw, 760px);
+  flex-basis: min(50vw, 760px);
+}
+
+body.ncb-pdf-workspace-open #pdfToolbar {
+  border-radius: 15px;
+}
+
+body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed {
+  position: absolute;
+  top: 12px !important;
+  right: 12px !important;
+  left: auto !important;
+}
+
+body.ncb-pdf-workspace-open #pdfToolbar.is-collapsed .pdf-controls-right {
+  display: flex !important;
+}
+
+body.ncb-pdf-workspace-open #pdfToolbarCollapse {
+  display: none !important;
+}
+
+body.ncb-pdf-workspace-open #pdfAnnotateToggle {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  font-size: 0;
+}
+
+body.ncb-pdf-workspace-open #pdfAnnotateToggle svg {
+  width: 17px;
+  height: 17px;
+}
+
+body.ncb-pdf-workspace-open #drRail,
+body.ncb-pdf-workspace-open #drDrawer {
+  display: none !important;
+}
+
 .ncb-workspace-overlay[data-workspace-view="profile"] .ncb-workspace-body > .portal-section {
   padding-inline: 34px;
 }
@@ -4974,6 +5126,11 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
   .ncb-account-trigger { justify-content: center; }
   .ncb-account-trigger > svg { display: none; }
   .ncb-account-menu { position: fixed; left: 72px; right: auto; bottom: 18px; width: 210px; }
+  .ncb-account-actions { flex-direction: column-reverse; }
+  .ncb-notification-trigger { width: 42px; height: 42px; flex-basis: 42px; }
+  body.ncb-pdf-workspace-open .ncb-card[data-context-open="true"] .ncb-context {
+    width: min(760px, 96vw);
+  }
 }
 
 @media (max-width: 768px) {

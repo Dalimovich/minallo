@@ -251,6 +251,12 @@ declare global {
     restoreState?: () => void;
     applySubscription?: (sub: unknown) => void;
     refreshSubscriptionView?: () => Promise<void>;
+    renderNotifications?: () => void;
+    _ncbPdfWorkspaceActive?: boolean;
+    selectChatbotPdfSource?: (
+      course: { id: string; name?: string; short?: string },
+      file: { name: string }
+    ) => void;
     _userIsAdmin?: boolean;
     _userIsPro?: boolean;
     _showPaywall?: () => void;

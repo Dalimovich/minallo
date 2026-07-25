@@ -106,19 +106,26 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
 
   // Top-level switch first — guarantees portal sections and studip view are
   // hidden so no ghost page lingers under the PDF.
-  selectTopLevelView('file', { stRunning: !!(window as unknown as { _stRunning?: boolean })._stRunning });
+  const inChatbotWorkspace = !!window._ncbPdfWorkspaceActive;
+  if (!inChatbotWorkspace) {
+    selectTopLevelView('file', {
+      stRunning: !!(window as unknown as { _stRunning?: boolean })._stRunning
+    });
+  }
   // The PDF viewer lives under the Courses route — reflect that in the sidebar so
   // whichever section the user opened the file from (e.g. Dashboard) doesn't stay
   // highlighted.
-  setNavActive('pcStudip');
+  if (!inChatbotWorkspace) setNavActive('pcStudip');
   panelHide(document.getElementById('welcomeState'));
   panelHide(document.getElementById('courseOverview'));
   const pv = document.getElementById('pdfView');
   panelShow(pv, true);
-  (window as unknown as {
-    __minalloDocRail?: { setRouteVisibility: (route: 'pdf' | 'courses' | 'other') => void };
-  }).__minalloDocRail?.setRouteVisibility('pdf');
-  if (typeof window.saveState === 'function') window.saveState();
+  if (!inChatbotWorkspace) {
+    (window as unknown as {
+      __minalloDocRail?: { setRouteVisibility: (route: 'pdf' | 'courses' | 'other') => void };
+    }).__minalloDocRail?.setRouteVisibility('pdf');
+  }
+  if (!inChatbotWorkspace && typeof window.saveState === 'function') window.saveState();
 
   const pdfFileName = document.getElementById('pdfFileName');
   if (pdfFileName) pdfFileName.textContent = f.name;
@@ -168,17 +175,19 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
       .then((bytes: Uint8Array) => {
         if (mySeq !== window._pdfOpenSeq) return;
         try {
-          window.saveState?.();
-          window._ssPushHistory?.(
-            {
-              view: 'file',
-              courseId: (f._course || course).id || null,
-              courseShort: (f._course || course).short || null,
-              fileName: f.name || null,
-              section: window.activeCourseSection || 'files',
-            },
-            '#file=' + encodeURIComponent(f.name || '')
-          );
+          if (!inChatbotWorkspace) {
+            window.saveState?.();
+            window._ssPushHistory?.(
+              {
+                view: 'file',
+                courseId: (f._course || course).id || null,
+                courseShort: (f._course || course).short || null,
+                fileName: f.name || null,
+                section: window.activeCourseSection || 'files',
+              },
+              '#file=' + encodeURIComponent(f.name || '')
+            );
+          }
         } catch { /* ignore */ }
 
         // Split mode is a PDF-vs-PDF concept. If the user opens a non-PDF
@@ -365,13 +374,15 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
           );
         }
         window.activeCourseSection = 'files';
-        try { window.saveState?.(); } catch { /* ignore */ }
-        try {
-          window._ssReplaceHistory?.(
-            { view: 'course', courseId: (f._course || course).id, section: 'files' },
-            '#course=' + encodeURIComponent((f._course || course).id || '')
-          );
-        } catch { /* ignore */ }
+        if (!inChatbotWorkspace) {
+          try { window.saveState?.(); } catch { /* ignore */ }
+          try {
+            window._ssReplaceHistory?.(
+              { view: 'course', courseId: (f._course || course).id, section: 'files' },
+              '#course=' + encodeURIComponent((f._course || course).id || '')
+            );
+          } catch { /* ignore */ }
+        }
         if (typeof window.renderCourses === 'function') window.renderCourses();
         pdfBody.innerHTML =
           '<div style="color:#fff;padding:40px;text-align:center;line-height:1.5">' +

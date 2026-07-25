@@ -4033,6 +4033,30 @@ function addToSourceLibraryAndSelect(
   updateContextPill(root);
 }
 
+export function selectChatbotPdfSource(
+  course: { id: string; name?: string; short?: string },
+  file: { name: string }
+): void {
+  const root = document.getElementById('ncbRoot');
+  if (!root || !course?.id || !file?.name) return;
+  const sourceId = 'workspace-pdf:' + course.id + ':' + file.name;
+  const active = chatStore.getActive();
+  active.selectedSourceIds = [sourceId];
+  active.sourceMode = 'course_files';
+  active.courseFileScope = 'specific_files';
+  addToSourceLibraryAndSelect(
+    root,
+    [{
+      id: sourceId,
+      name: file.name,
+      count: 'Open PDF',
+      documents: [{ name: file.name, text: '' }]
+    }],
+    course.id,
+    course.name || course.short || course.id
+  );
+}
+
 // Reflect the active chat's selected sources in the header context pill.
 function updateContextPill(root: HTMLElement): void {
   const pill = root.querySelector<HTMLElement>('.ncb-chat-context-pill');
@@ -5893,4 +5917,10 @@ function initKeyboardShortcuts(root: HTMLElement): void {
   });
 }
 
-(window as unknown as { initNewChatbotShell?: () => void }).initNewChatbotShell = initNewChatbotShell;
+(window as unknown as {
+  initNewChatbotShell?: () => void;
+  selectChatbotPdfSource?: typeof selectChatbotPdfSource;
+}).initNewChatbotShell = initNewChatbotShell;
+(window as unknown as {
+  selectChatbotPdfSource?: typeof selectChatbotPdfSource;
+}).selectChatbotPdfSource = selectChatbotPdfSource;

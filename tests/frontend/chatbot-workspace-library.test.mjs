@@ -10,6 +10,16 @@ const moduleSource = fs.readFileSync(
 const css = fs.readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
 const subscriptionHtml = fs.readFileSync('frontend/views/subscription/subscription.html', 'utf8');
 const subscriptionJs = fs.readFileSync('frontend/views/subscription/subscription.js', 'utf8');
+const notificationsTs = fs.readFileSync(
+  'frontend/js/features/notifications/notifications.ts',
+  'utf8'
+);
+const shellSource = fs.readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+const pdfViewerSource = fs.readFileSync(
+  'frontend/js/features/pdf-viewer/pdf-viewer.ts',
+  'utf8'
+);
+const portalHtml = fs.readFileSync('frontend/pages/portal.html', 'utf8');
 
 test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
   assert.match(html, /data-library-tab="courses"/);
@@ -21,7 +31,7 @@ test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
 test('course drawer reuses the real course registry, hydration, and file opener', () => {
   assert.match(moduleSource, /window\.SEMS \|\| window\._SEMS/);
   assert.match(moduleSource, /window\._ufMerge/);
-  assert.match(moduleSource, /window\.openFile\?\.\(file, course\)/);
+  assert.match(moduleSource, /window\.openFile\(file, course\)/);
 });
 
 test('Saved is grouped by resource function and course', () => {
@@ -87,4 +97,33 @@ test('workspace popups have no separate header and use a floating close control'
   assert.match(html, /class="ncb-workspace-close"/);
   assert.match(css, /\.ncb-workspace-close\s*\{[\s\S]*position:\s*absolute/);
   assert.match(moduleSource, /dialog\.setAttribute\('aria-label', title\)/);
+});
+
+test('notification bell opens the real notifications section in the workspace popup', () => {
+  assert.match(html, /class="ncb-notification-trigger"/);
+  assert.match(html, /data-notification-badge/);
+  assert.match(moduleSource, /openPortalView\(root, 'notifications'\)/);
+  assert.match(moduleSource, /window\.renderNotifications\?\.\(\)/);
+  assert.match(notificationsTs, /querySelectorAll<HTMLElement>\('\[data-notification-badge\]'\)/);
+});
+
+test('course files replace the right drawer with the canonical rounded PDF viewer', () => {
+  assert.match(moduleSource, /function openWorkspacePdf/);
+  assert.match(moduleSource, /pdfHost\.appendChild\(wrap\)/);
+  assert.match(moduleSource, /toolbar\?\.classList\.add\('is-collapsed'\)/);
+  assert.match(moduleSource, /aiPanel\.style\.display = 'none'/);
+  assert.match(css, /\.ncb-pdf-host #pdfViewerWrap[\s\S]*border-radius:\s*inherit/);
+  assert.match(css, /body\.ncb-pdf-workspace-open #drRail,[\s\S]*#drDrawer/);
+  assert.doesNotMatch(portalHtml, /<\/svg>\s*Annotate\s*<\/button>/);
+});
+
+test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF', () => {
+  assert.match(pdfViewerSource, /const inChatbotWorkspace = !!window\._ncbPdfWorkspaceActive/);
+  assert.match(pdfViewerSource, /if \(!inChatbotWorkspace\) \{[\s\S]*selectTopLevelView\('file'/);
+  assert.match(pdfViewerSource, /if \(!inChatbotWorkspace\) \{[\s\S]*window\._ssPushHistory\?\.\(/);
+  assert.match(moduleSource, /window\.selectChatbotPdfSource\?\.\(course, file\)/);
+  assert.match(shellSource, /export function selectChatbotPdfSource/);
+  assert.match(shellSource, /active\.sourceMode = 'course_files'/);
+  assert.match(shellSource, /active\.courseFileScope = 'specific_files'/);
+  assert.match(shellSource, /documents: \[\{ name: file\.name, text: '' \}\]/);
 });
