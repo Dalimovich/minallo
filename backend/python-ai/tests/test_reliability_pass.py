@@ -9,12 +9,15 @@ from app.services.document_extraction import (
     DocumentExtractionContext,
     ExtractedQuestion,
     ExtractedSolutionEvidence,
+    ExtractionPageKind,
+    GapReviewResult,
     GapStatus,
     extraction_pages_for_direction,
     extraction_context_from_api,
     extraction_context_to_api,
     pair_questions_and_solutions,
     review_numbering_gap,
+    classify_extraction_page,
 )
 from app.services.reliability import (
     CalculationContext,
@@ -30,6 +33,8 @@ from app.services.reliability import (
     build_retrieval_scope,
     evidence_requirement,
     identity_is_sufficient,
+    identify_draft_task,
+    identify_grounded_task,
     validate_repaired_answer,
 )
 from app.services.visual_repair import repair_false_visual_denial
@@ -181,6 +186,66 @@ def test_active_exercise_scope_is_resolved_before_retrieval() -> None:
     assert not scope.allow_course_fallback
 
 
+def test_open_pdf_is_preferred_but_does_not_hard_scope_course_question() -> None:
+    traits = classify_task_traits("What loss functions did we study in this course?")
+    scope = build_retrieval_scope(
+        active_document_id="random-exam",
+        visible_page=39,
+        identity=GroundedTaskIdentity(document_id="random-exam", page=39),
+        traits=traits,
+        fallback_document_ids=["lecture-1", "lecture-4", "random-exam"],
+        question="What loss functions did we study in this course?",
+    )
+    assert scope.document_ids == ["lecture-1", "lecture-4", "random-exam"]
+    assert scope.preferred_pages == [38, 39, 40]
+    assert scope.allow_course_fallback
+    identity = identify_grounded_task(
+        question="What loss functions did we study in this course?",
+        current_page_text="Aufgabe 14.4 Spritzguss V_Spritz = ?",
+        document_id="random-exam",
+        filename="exam.pdf",
+        page=39,
+        traits=traits,
+    )
+    assert identity.exercise_reference is None
+
+
+def test_identity_confidence_requires_visible_semantic_evidence() -> None:
+    weak = identify_grounded_task(
+        question="now 14.4",
+        current_page_text="Unrelated readable lecture text",
+        document_id="document",
+        filename="exam.pdf",
+        page=39,
+    )
+    assert weak.source_confidence < 0.72
+    assert not identity_is_sufficient(weak, traits=classify_task_traits("now 14.4"))
+
+    grounded = identify_grounded_task(
+        question="Calculate Aufgabe 14.4",
+        current_page_text="Aufgabe 14.4 Spritzguss: Gesucht: V_Spritz = ?\n191 cm³ [X]",
+        document_id="document",
+        filename="exam.pdf",
+        page=39,
+        traits=classify_task_traits("Calculate Aufgabe 14.4"),
+    )
+    assert grounded.source_confidence >= 0.9
+    assert grounded.visible_answer_options == ["191 cm³"]
+    assert identity_is_sufficient(
+        grounded,
+        traits=classify_task_traits(
+            "Calculate Aufgabe 14.4",
+            visible_text="Aufgabe 14.4 V_Spritz = ?",
+            active_document_id="document",
+        ),
+    )
+
+
+def test_checkbox_marks_are_detected_without_checkbox_word() -> None:
+    assert identify_draft_task("[X] V_Spritz = 191 cm³").answer_type == "checkbox"
+    assert identify_draft_task("✓ V_Spritz = 191 cm³").answer_type == "checkbox"
+
+
 def test_route_resolves_identity_and_scope_before_primary_retrieval() -> None:
     stream_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "stream.py"
     source = stream_path.read_text(encoding="utf-8")
@@ -191,6 +256,9 @@ def test_route_resolves_identity_and_scope_before_primary_retrieval() -> None:
     completed_position = source.index('"primary_retrieval_completed"')
     assert identity_position < scope_position < started_position < retrieval_position
     assert retrieval_position < completed_position
+    assert "extraction_context.document_revision != document_revision" in source
+    route_body = source[source.index("async def _prepare_ask_stream_response"):]
+    assert "load_extraction_context(" not in route_body
 
 
 def test_visual_denial_repair_is_bounded_and_returns_repaired_answer() -> None:
@@ -235,6 +303,24 @@ def test_visual_repair_must_satisfy_identity_and_mapping_obligations() -> None:
         for item in validation.obligations
     )
 
+    invented = validate_repaired_answer(
+        answer="\n".join(f"{number}. Invented Label {number}" for number in range(1, 10)),
+        identity=GroundedTaskIdentity(
+            document_id="document",
+            page=39,
+            exercise_reference="14.1",
+            visible_answer_options=[f"Source Label {number}" for number in range(1, 10)],
+            task_kind="matching",
+            source_confidence=1.0,
+        ),
+        traits=traits,
+        required_identifiers=[str(value) for value in range(1, 10)],
+        allowed_source_labels=[f"Source Label {number}" for number in range(1, 10)],
+    )
+    assert not invented.accepted
+    assert any(item.obligation_type == "allowed_mapping_labels" and not item.satisfied
+               for item in invented.obligations)
+
 
 def test_distant_solution_pairing_gap_review_and_direction() -> None:
     question = ExtractedQuestion(
@@ -262,6 +348,19 @@ def test_distant_solution_pairing_gap_review_and_direction() -> None:
     )
     assert found_gap.status is GapStatus.CONFIRMED_MISSING
     assert found_gap.evidence_pages == [2]
+
+    incomplete_review = review_numbering_gap(
+        "9.1",
+        neighbouring_text="No match here",
+        reviewed_pages=[2],
+        review_result=GapReviewResult(
+            exact_text_search_performed=True,
+            full_section_search_performed=False,
+            solution_section_search_performed=False,
+            reviewed_pages=[2],
+        ),
+    )
+    assert incomplete_review.status is GapStatus.UNRESOLVED
 
     context = DocumentExtractionContext(
         conversation_id="conversation",
@@ -326,7 +425,7 @@ def test_question_and_solution_model_passes_are_independent(monkeypatch) -> None
         "_load_document_pages",
         lambda **_: (
             {"page_count": 1},
-            [{"page_number": 1, "cleaned_text": "Kurzfragen " * 30}],
+            [{"page_number": 1, "cleaned_text": "Kurzfragen Lösung " * 30}],
         ),
     )
     systems: list[str] = []
@@ -367,6 +466,19 @@ def test_question_and_solution_model_passes_are_independent(monkeypatch) -> None
     assert "QUESTIONS ONLY" in systems[0]
     assert "SOLUTION EVIDENCE ONLY" in systems[1]
     assert result.paired_items[0].answer_text == "Antwort."
+
+
+def test_page_classifier_skips_irrelevant_and_routes_specialised_pages() -> None:
+    assert classify_extraction_page("", "Kurzfragen") is ExtractionPageKind.IRRELEVANT
+    assert classify_extraction_page(
+        "Kurzfragen 9.1 Welche Aussage stimmt?", "Kurzfragen",
+    ) is ExtractionPageKind.QUESTION
+    assert classify_extraction_page(
+        "Musterlösung 9.1: Antwort B ist richtig.", "Kurzfragen",
+    ) is ExtractionPageKind.SOLUTION
+    assert classify_extraction_page(
+        "Kurzfragen 9.1? Lösung: B ist richtig.", "Kurzfragen",
+    ) is ExtractionPageKind.MIXED
 
 
 def test_obsolete_wrong_language_refusal_is_absent_from_production_paths() -> None:

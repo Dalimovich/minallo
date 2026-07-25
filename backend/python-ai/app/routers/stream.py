@@ -931,6 +931,14 @@ async def _prepare_ask_stream_response(
         )
         tutor_state.generation = generation
         tutor_state.course_id = payload.courseId
+    elif conversation_id:
+        # Legacy/internal callers may omit a generation. Persistent state is
+        # still authoritative for document-extraction continuations.
+        from ..services.tutor_state_store import load_tutor_state  # noqa: WPS433
+        tutor_state = await run_in_threadpool(
+            lambda: load_tutor_state(user_id, conversation_id)
+        )
+        tutor_state.course_id = payload.courseId
 
     tutor_mode = normalise_tutor_mode(payload.tutorMode or DEFAULT_TUTOR_MODE)
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
@@ -1480,6 +1488,8 @@ async def _prepare_ask_stream_response(
         identity=grounded_identity,
         traits=preliminary_traits,
         fallback_document_ids=retrieval_document_ids,
+        question=resolved_question,
+        has_valid_selected_region=bool(verified_region),
     )
     retrieval_document_ids = retrieval_scope.document_ids
     observer.event(
@@ -1621,7 +1631,6 @@ async def _prepare_ask_stream_response(
         extract_document_qa,
         format_document_extraction,
         infer_extraction_rescan_direction,
-        load_extraction_context,
         save_extraction_context,
     )
     document_extraction, extraction_correction, extraction_target = (
@@ -1673,21 +1682,11 @@ async def _prepare_ask_stream_response(
         if extraction_context and (
             extraction_context.document_id != (payload.activeDocumentId or "")
             or extraction_context.source_fingerprint != source_fingerprint
+            or extraction_context.document_revision != document_revision
             or extraction_context.target_section.casefold()
             != (extraction_target or "questions").casefold()
         ):
             extraction_context = None
-        if (
-            extraction_context is None
-            and extraction_correction
-            and payload.conversationId
-        ):
-            extraction_context = load_extraction_context(
-                payload.conversationId or "",
-                payload.activeDocumentId or "",
-                source_fingerprint=source_fingerprint,
-                target_section=extraction_target or "questions",
-            )
         pages_to_scan = None
         previous_items = None
         direction = "full"
@@ -2451,6 +2450,7 @@ async def _prepare_ask_stream_response(
                             required_identifiers=[
                                 str(value) for value in (required_range or [])
                             ],
+                            allowed_source_labels=grounded_identity.visible_answer_options,
                             verification_rejected=bool(
                                 repaired_verification
                                 and _verification_requires_rejection(

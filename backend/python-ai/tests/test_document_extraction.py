@@ -34,7 +34,7 @@ def test_full_scan_is_not_limited_by_displayed_source_count(monkeypatch) -> None
     pages = [
         {
             "page_number": page,
-            "cleaned_text": f"Kurzfragen page {page} " + ("content " * 20),
+            "cleaned_text": f"Kurzfragen Lösung page {page} " + ("content " * 20),
             "raw_text": "",
         }
         for page in range(1, 9)

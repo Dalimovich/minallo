@@ -62,7 +62,9 @@ _TRANSCRIBE_RE = re.compile(r"\b(transcribe|read exactly|abschreiben|wortlaut)\b
 
 
 _VISIBLE_REFERENCE_RE = re.compile(
-    r"\b(this|that|shown|above|current page|visible page|hier|diese[rmns]?|"
+    r"\b((?:this|that)\s+(?:page|figure|diagram|formula|exercise|problem)|"
+    r"shown|above|current page|visible page|hier|"
+    r"diese[rmns]?\s+(?:seite|abbildung|formel|aufgabe)|"
     r"gezeigt|oben|aktuelle[rmns]?\s+seite)\b",
     re.IGNORECASE,
 )
@@ -373,6 +375,13 @@ def identity_is_sufficient(
         return False
     if identity.exercise_reference and not identity.document_id:
         return False
+    if identity.exercise_reference and not (
+        identity.domain
+        or identity.requested_quantities
+        or identity.visible_answer_options
+        or identity.visible_values
+    ):
+        return False
     if (
         traits.requires_numerical_validation
         and traits.calculation_context is not CalculationContext.TEXT_ONLY
@@ -391,13 +400,24 @@ def build_retrieval_scope(
     identity: GroundedTaskIdentity,
     traits: TaskTraits,
     fallback_document_ids: list[str] | None,
+    question: str = "",
+    has_valid_selected_region: bool = False,
 ) -> RetrievalScope:
+    refers_to_current_page = bool(re.search(
+        r"\b(?:(?:this|that|current|visible|shown)\s+"
+        r"(?:page|figure|diagram|formula|exercise|problem)|above|here|"
+        r"diese[rs]?\s+(?:seite|abbildung|formel|aufgabe)|"
+        r"aktuelle[rs]?\s+seite|sichtbare[rs]?\s+(?:seite|abbildung)|hier)\b",
+        question or "",
+        re.IGNORECASE,
+    ))
     exact_active_task = bool(
         active_document_id
         and (
             identity.exercise_reference
             or traits.requires_visual_evidence
-            or visible_page
+            or refers_to_current_page
+            or has_valid_selected_region
         )
     )
     pages = (
@@ -459,6 +479,7 @@ def validate_repaired_answer(
     identity: GroundedTaskIdentity,
     traits: TaskTraits,
     required_identifiers: list[str] | None = None,
+    allowed_source_labels: list[str] | None = None,
     verification_rejected: bool = False,
 ) -> RepairedAnswerValidation:
     draft = identify_draft_task(answer)
@@ -469,6 +490,24 @@ def validate_repaired_answer(
         traits=traits,
         required_identifiers=required_identifiers,
     )
+    if traits.requires_complete_mapping and allowed_source_labels:
+        def normalise_label(value: str) -> str:
+            return re.sub(r"[^\w]+", " ", value, flags=re.UNICODE).casefold().strip()
+
+        allowed = {normalise_label(value) for value in allowed_source_labels if value.strip()}
+        extracted = [
+            match.group(1).strip(" .;:-")
+            for match in re.finditer(
+                r"(?m)^\s*\d{1,2}\s*(?:[-.):=]|->|\u2192)\s*([^\n|,;]+)",
+                answer or "",
+            )
+        ]
+        invalid = [label for label in extracted if normalise_label(label) not in allowed]
+        obligations.append(AnswerObligation(
+            "allowed_mapping_labels",
+            allowed_source_labels,
+            bool(extracted) and not invalid,
+        ))
     return RepairedAnswerValidation(
         accepted=bool(
             answer.strip()
@@ -504,7 +543,12 @@ def identify_grounded_task(
 ) -> GroundedTaskIdentity:
     """Resolve task identity from active-document evidence before retrieval."""
     evidence = "\n".join([question or "", current_page_text or ""])
-    exercise = _EXERCISE_REFERENCE_RE.search(evidence)
+    exercise = _EXERCISE_REFERENCE_RE.search(question or "")
+    if exercise is None and (
+        _VISIBLE_REFERENCE_RE.search(question or "")
+        or (traits is not None and traits.requires_visual_evidence)
+    ):
+        exercise = _EXERCISE_REFERENCE_RE.search(current_page_text or "")
     assignments = list(_ASSIGNMENT_VALUE_RE.finditer(evidence))
     requested: list[str] = []
     for pattern in (
@@ -557,13 +601,7 @@ def identify_grounded_task(
         VisualTaskKind.FORMULA_EXPLANATION: "explanation",
         VisualTaskKind.DIAGRAM_EXPLANATION: "explanation",
     }
-    confidence_parts = [
-        bool(document_id),
-        bool(page),
-        bool(exercise),
-        bool((current_page_text or "").strip()),
-    ]
-    visible_options = [
+    leading_options = [
         match.group(1).strip()
         for match in re.finditer(
             r"(?m)^\s*(?:[☐☑✓✔]|\[\s?[xX✓]?\s?\]|\([A-Da-d]\))\s*(.+)$",
@@ -571,23 +609,75 @@ def identify_grounded_task(
         )
         if match.group(1).strip()
     ]
+    trailing_options = [
+        match.group(1).strip()
+        for match in re.finditer(
+            r"(?m)^\s*(.+?)\s*(?:[\u2611\u2713\u2714]|"
+            r"\[\s?[xX\u2713\u2714]\s?\])\s*$",
+            current_page_text or "",
+        )
+        if match.group(1).strip()
+    ]
+    visible_options = list(dict.fromkeys(leading_options + trailing_options))
+    if visual_traits.requires_complete_mapping:
+        mapping_labels = [
+            match.group(1).strip()
+            for match in re.finditer(
+                r"(?m)^\s*\d{1,2}\s*(?:[-.):=]|->|\u2192)\s*([^\n|,;]+)",
+                current_page_text or "",
+            )
+            if match.group(1).strip()
+        ]
+        visible_options = list(dict.fromkeys(visible_options + mapping_labels))
     resolved_kind = kind_map.get(visual_traits.visual_kind, "short_answer")
     if (
         visual_traits.visual_kind is VisualTaskKind.NUMERICAL_CALCULATION
         and visible_options
     ):
         resolved_kind = "checkbox_calculation"
+    exercise_reference = exercise.group(1) if exercise else None
+    exercise_visible = bool(
+        exercise_reference
+        and re.search(
+            rf"(?<![\d.]){re.escape(exercise_reference)}(?![\d.])",
+            current_page_text or "",
+        )
+    )
+    confidence = 0.0
+    confidence += 0.10 if document_id else 0.0
+    confidence += 0.10 if page else 0.0
+    confidence += 0.15 if exercise_reference else 0.0
+    confidence += 0.25 if exercise_visible else 0.0
+    confidence += 0.15 if domain else 0.0
+    confidence += 0.15 if requested else 0.0
+    confidence += 0.10 if visible_options else 0.0
+    question_terms = {
+        token for token in re.findall(r"[A-Za-zÄÖÜäöüß_]{4,}", question or "")
+        if token.casefold() not in {
+            "this", "that", "calculate", "compute", "solve", "aufgabe",
+            "exercise", "question", "problem", "please", "explain",
+        }
+    }
+    page_terms = {
+        token.casefold()
+        for token in re.findall(r"[A-Za-zÄÖÜäöüß_]{4,}", current_page_text or "")
+    }
+    semantic_overlap = (
+        len({term.casefold() for term in question_terms}.intersection(page_terms))
+        / max(1, len(question_terms))
+    )
+    confidence += 0.20 if question_terms and semantic_overlap >= 0.25 else 0.0
     return GroundedTaskIdentity(
         document_id=document_id,
         filename=filename,
         page=page,
-        exercise_reference=exercise.group(1) if exercise else None,
+        exercise_reference=exercise_reference,
         domain=domain,
         requested_quantities=list(dict.fromkeys(requested)),
         task_kind=resolved_kind,
         visible_values=[match.group(0) for match in assignments],
         visible_answer_options=visible_options,
-        source_confidence=sum(confidence_parts) / len(confidence_parts),
+        source_confidence=min(1.0, confidence),
     )
 
 
@@ -601,7 +691,12 @@ def identify_draft_task(draft: str) -> DraftTaskIdentity:
             draft or "",
         )
     )
-    checkbox = bool(re.search(r"\b(?:checkbox|option|angekreuzt|kästchen)\b", draft or "", re.I))
+    checkbox = bool(re.search(
+        r"(?:\[[xX\u2713\u2714]\]|[\u2611\u2713\u2714])|"
+        r"\b(?:checkbox|option|angekreuzt|kästchen)\b",
+        draft or "",
+        re.IGNORECASE,
+    ))
     domain = None
     for candidate, pattern in {
         "injection_moulding": r"\b(injection mould|spritzguss|spritzgie|V_Spritz)\b",
