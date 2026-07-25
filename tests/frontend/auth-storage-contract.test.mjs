@@ -24,6 +24,15 @@ const RESET_HTML = read('frontend/reset-password.html');
 const AUTH_MODAL = read('frontend/js/features/auth/auth-modal.ts');
 const ONBOARDING_TS = read('frontend/js/features/auth/onboarding.ts');
 const SETTINGS_VIEW_JS = read('frontend/views/settings/settings.js');
+const USER_DATA_TS = read('frontend/js/features/auth/user-data.ts');
+
+test('free accounts are not shown the paywall automatically during login', () => {
+  assert.doesNotMatch(
+    USER_DATA_TS,
+    /setTimeout\(\s*window\._showPaywall/,
+    'the paywall must only open after an explicit upgrade or gated-feature action'
+  );
+});
 
 // ── stay-signed-in across browser restart ───────────────────────────────────
 test('auth-bootstrap treats sb_sess_refresh as "logged in" for boot routing', () => {

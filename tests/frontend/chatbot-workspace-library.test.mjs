@@ -8,6 +8,8 @@ const moduleSource = fs.readFileSync(
   'utf8'
 );
 const css = fs.readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
+const subscriptionHtml = fs.readFileSync('frontend/views/subscription/subscription.html', 'utf8');
+const subscriptionJs = fs.readFileSync('frontend/views/subscription/subscription.js', 'utf8');
 
 test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
   assert.match(html, /data-library-tab="courses"/);
@@ -53,6 +55,16 @@ test('account overlays load both the real section HTML and its feature scripts',
   assert.match(moduleSource, /window\._ssLoadFeatureSection\?\.\(view\)/);
   assert.match(moduleSource, /window\._ssLoadPortalFeature\?\.\(view\)/);
   assert.match(moduleSource, /Promise\.all/);
+  assert.match(moduleSource, /window\.refreshSubscriptionView\?\.\(\)/);
+});
+
+test('subscription popup refreshes into a current-plan view for Pro accounts', () => {
+  assert.match(subscriptionHtml, /id="subPlanBadge"/);
+  assert.match(subscriptionHtml, /id="subPlanPrice"/);
+  assert.match(subscriptionJs, /window\.refreshSubscriptionView\s*=/);
+  assert.match(subscriptionJs, /Current subscription/);
+  assert.match(subscriptionJs, /everything included with it/);
+  assert.match(subscriptionJs, /legalBlock\.style\.display = paypalResubscribe \? '' : 'none'/);
 });
 
 test('account overlays are opaque and desktop sidebars are floating rounded surfaces', () => {

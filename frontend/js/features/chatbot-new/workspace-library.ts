@@ -364,6 +364,7 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
   body.appendChild(section);
   body.closest<HTMLElement>('[data-workspace-overlay]')!.dataset.movedSection = view;
   (body.closest<HTMLElement>('[data-workspace-overlay]') as HTMLElement & { _origin?: Comment })._origin = placeholder;
+  if (view === 'subscription') await window.refreshSubscriptionView?.();
 }
 
 function openOverlay(root: HTMLElement, title: string): HTMLElement | null {

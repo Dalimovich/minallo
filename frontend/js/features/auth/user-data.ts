@@ -196,28 +196,6 @@ export async function loadUserData(uid: string): Promise<void> {
       });
     }
 
-    // The trial paywall is a conversion surface, not the enforcement layer
-    // (the backend 402s AI usage regardless). Showing it requires a POSITIVE
-    // "this user has no subscription": a timed-out subscriptions query or a
-    // failed admin check is an unknown, and flashing the trial screen at a
-    // paying user on every flaky reload is worse than skipping it once for a
-    // free user. ss_pro_seen_<uid> remembers the last confirmed pro state so
-    // even a known-stale boot doesn't flash the gate; it's cleared the next
-    // time the subscription is positively absent/expired.
-    const subStatusKnown = !timedOut['subscriptions'];
-    const proSeenKey = 'ss_pro_seen_' + uid;
-    const decidePaywall = (isAdmin: boolean, adminKnown: boolean): void => {
-      let cachedPro = false;
-      try { cachedPro = localStorage.getItem(proSeenKey) === '1'; } catch { /* ignore */ }
-      try {
-        if (window._userIsPro || isAdmin || isAffiliate) localStorage.setItem(proSeenKey, '1');
-        else if (subStatusKnown && adminKnown) localStorage.removeItem(proSeenKey);
-      } catch { /* ignore */ }
-      if (!window._userIsPro && !isAdmin && !isAffiliate && subStatusKnown && adminKnown && !cachedPro && window._showPaywall) {
-        setTimeout(window._showPaywall, 800);
-      }
-    };
-
     // Admin accounts bypass the subscription gate.
     checkAdminStatus()
       .then((data: unknown) => {
@@ -240,13 +218,8 @@ export async function loadUserData(uid: string): Promise<void> {
             });
           }
         }
-        // checkAdminStatus resolves null for non-admins (403) — that IS a
-        // known answer. Only a thrown fetch (network) lands in catch below.
-        decidePaywall(isAdmin, true);
       })
-      .catch(() => {
-        decidePaywall(false, false);
-      });
+      .catch(() => undefined);
 
     if (typeof window._dwLoadAndRender === 'function') window._dwLoadAndRender();
     const loadLectureNotes = window._lnLoadFromSupabase || window.lnLoadFromSupabase;

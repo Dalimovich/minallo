@@ -1,13 +1,13 @@
 <div class="dash-greeting">
   <h1 data-i18n="sub_title">&#x2B50; Subscription</h1>
-  <p data-i18n="sub_subtitle">Try Pro free for 7 days, then &#x20AC;11.99/month</p>
+  <p id="subPageSubtitle" data-i18n="sub_subtitle">Try Pro free for 7 days, then &#x20AC;11.99/month</p>
 </div>
 <div class="sub-grid sub-grid-single">
-  <div class="sub-card featured">
-    <div class="sub-badge" data-i18n="sub_badge_popular">&#x1F525; Most popular</div>
-    <div class="sub-name" data-i18n="sub_plan_name">Pro</div>
-    <div class="sub-trial-badge" data-i18n="sub_trial_badge">7-day free trial</div>
-    <div class="sub-price">&#x20AC;11.99 <span data-i18n="sub_price_suffix">/ month after trial</span></div>
+  <div class="sub-card featured" id="subPlanCard">
+    <div class="sub-badge" id="subPlanBadge" data-i18n="sub_badge_popular">&#x1F525; Most popular</div>
+    <div class="sub-name" id="subPlanName" data-i18n="sub_plan_name">Pro</div>
+    <div class="sub-trial-badge" id="subTrialBadge" data-i18n="sub_trial_badge">7-day free trial</div>
+    <div class="sub-price" id="subPlanPrice">&#x20AC;11.99 <span data-i18n="sub_price_suffix">/ month after trial</span></div>
     <div class="sub-features">
       <div class="sub-feat" data-i18n="sub_feat_ai">Generous AI usage (fair-use: 2000 chat &middot; 200 generations / month)</div>
       <div class="sub-feat" data-i18n="sub_feat_pdf">PDF reader</div>
@@ -101,6 +101,7 @@
       <button class="sub-btn sub-btn-current" id="subResumeBtn" type="button" data-i18n="sub_resume_btn">Resume now</button>
     </div>
     <p
+      id="subCancelNote"
       data-i18n="sub_cancel_note"
       style="
         text-align: center;

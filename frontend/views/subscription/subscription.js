@@ -264,6 +264,40 @@ function applySubscription(sub) {
   var pausedUntil = document.getElementById('subPausedUntil');
   var payMethods = document.getElementById('subPayMethods');
   var paypalCont = document.getElementById('paypalButtonContainer');
+  var pageSubtitle = document.getElementById('subPageSubtitle');
+  var planCard = document.getElementById('subPlanCard');
+  var planBadge = document.getElementById('subPlanBadge');
+  var planName = document.getElementById('subPlanName');
+  var trialBadge = document.getElementById('subTrialBadge');
+  var planPrice = document.getElementById('subPlanPrice');
+  var cancelNote = document.getElementById('subCancelNote');
+  var currentPlan = _userIsPro || _userIsPaused;
+  if (planCard) planCard.classList.toggle('sub-card-current', currentPlan);
+  if (planBadge) {
+    planBadge.classList.toggle('sub-badge-current', currentPlan);
+    planBadge.textContent = currentPlan
+      ? _subT('sub_current_subscription', 'Current subscription')
+      : _subT('sub_badge_popular', '🔥 Most popular');
+  }
+  if (planName) planName.textContent = currentPlan ? 'Minallo Pro' : _subT('sub_plan_name', 'Pro');
+  if (trialBadge) trialBadge.style.display = currentPlan ? 'none' : '';
+  if (pageSubtitle) {
+    pageSubtitle.textContent = currentPlan
+      ? _subT('sub_current_subtitle', 'Your current plan and everything included with it.')
+      : _subT('sub_subtitle', 'Try Pro free for 7 days, then €11.99/month');
+  }
+  if (planPrice) {
+    planPrice.innerHTML = managedAccess && currentPlan
+      ? _subT('sub_included_with_account', 'Included <span>with your account</span>')
+      : '€11.99 <span>' + (currentPlan
+          ? _subT('sub_price_current_suffix', '/ month')
+          : _subT('sub_price_suffix', '/ month after trial')) + '</span>';
+  }
+  if (cancelNote) {
+    cancelNote.textContent = currentPlan
+      ? _subT('sub_features_active', 'The features above are included in your current plan.')
+      : _subT('sub_cancel_note', 'Cancel anytime. No charge during trial.');
+  }
   if (_userIsPro) {
     var scheduledCancel = !!(sub && sub.cancel_at_period_end);
     var hasStripeSub = !!(sub && (sub.stripe_subscription_id || _stripeCustomerId));
@@ -312,6 +346,7 @@ function applySubscription(sub) {
     if (payMethods) payMethods.style.display = paypalResubscribe ? '' : 'none';
     if (paypalCont) paypalCont.style.display = paypalResubscribe ? '' : 'none';
   } else if (_userIsPaused) {
+    var pausedLegalBlock = document.getElementById('subLegalBlock');
     if (proStatus) {
       proStatus.style.display = '';
       proStatus.textContent = _subT('sub_paused_status', 'Paused subscription');
@@ -330,7 +365,9 @@ function applySubscription(sub) {
     }
     if (payMethods) payMethods.style.display = 'none';
     if (paypalCont) paypalCont.style.display = 'none';
+    if (pausedLegalBlock) pausedLegalBlock.style.display = 'none';
   } else {
+    var freeLegalBlock = document.getElementById('subLegalBlock');
     if (proStatus) proStatus.style.display = 'none';
     if (upgradeBtn) {
       upgradeBtn.textContent = (_hadTrial || _deviceHadTrial)
@@ -346,6 +383,7 @@ function applySubscription(sub) {
     if (resumePanel) resumePanel.style.display = 'none';
     if (payMethods) payMethods.style.display = '';
     if (paypalCont) paypalCont.style.display = '';
+    if (freeLegalBlock) freeLegalBlock.style.display = '';
   }
   _bindSubscriptionControls();
 }
@@ -1109,6 +1147,15 @@ function _initSubscriptionViewIfActive() {
   }
   attempt();
 }
+window.refreshSubscriptionView = function () {
+  applySubscription(_lastSubscription);
+  _bindSubscriptionControls();
+  _initPayPalButton();
+  _renderAiUsage();
+  return _refreshSubscriptionState().then(function () {
+    _bindSubscriptionControls();
+  });
+};
 window.addEventListener('ss-ready', _initSubscriptionViewIfActive);
 window.addEventListener('hashchange', _initSubscriptionViewIfActive);
 window.addEventListener('ss-profile-updated', _initSubscriptionViewIfActive);

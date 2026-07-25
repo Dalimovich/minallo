@@ -250,6 +250,7 @@ declare global {
     _loadUserCourses?: (data: unknown) => void;
     restoreState?: () => void;
     applySubscription?: (sub: unknown) => void;
+    refreshSubscriptionView?: () => Promise<void>;
     _userIsAdmin?: boolean;
     _userIsPro?: boolean;
     _showPaywall?: () => void;
