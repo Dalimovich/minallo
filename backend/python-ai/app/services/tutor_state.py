@@ -84,6 +84,7 @@ class TutorState:
     evidence_dependencies: dict[str, dict[str, Any]] = field(default_factory=dict)
     pending_questions: list[str] = field(default_factory=list)
     grounded_context: VerifiedGroundedContext | None = None
+    document_extraction_context: dict[str, Any] | None = None
 
     def add_verified_result(self, result: VerifiedResult) -> None:
         if result.status != "verified":
@@ -217,6 +218,7 @@ class TutorState:
             "retrieval_version", "verifier_version", "evidence_dependencies",
             "pending_questions",
             "grounded_context",
+            "document_extraction_context",
         }
         kwargs = {key: data[key] for key in allowed if key in data}
         raw_grounded = kwargs.pop("grounded_context", None)

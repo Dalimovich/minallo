@@ -11,6 +11,7 @@ import re
 import hashlib
 import base64
 import json
+from dataclasses import asdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -306,6 +307,35 @@ def extraction_pages_for_direction(
 def save_extraction_context(context: DocumentExtractionContext) -> None:
     context.updated_at = datetime.now(UTC)
     _EXTRACTION_CONTEXTS[(context.conversation_id, context.document_id)] = context
+
+
+def extraction_context_to_api(context: DocumentExtractionContext) -> dict[str, Any]:
+    data = asdict(context)
+    data["created_at"] = context.created_at.isoformat()
+    data["updated_at"] = context.updated_at.isoformat()
+    return data
+
+
+def extraction_context_from_api(data: Any) -> DocumentExtractionContext | None:
+    if not isinstance(data, dict):
+        return None
+    try:
+        payload = dict(data)
+        payload["created_at"] = datetime.fromisoformat(str(payload["created_at"]))
+        payload["updated_at"] = datetime.fromisoformat(str(payload["updated_at"]))
+        payload["extracted_questions"] = [
+            ExtractedQuestion(**item) for item in payload.get("extracted_questions", [])
+        ]
+        payload["solution_evidence"] = [
+            ExtractedSolutionEvidence(**item)
+            for item in payload.get("solution_evidence", [])
+        ]
+        payload["paired_items"] = [
+            PairedQAItem(**item) for item in payload.get("paired_items", [])
+        ]
+        return DocumentExtractionContext(**payload)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def load_extraction_context(
@@ -839,6 +869,8 @@ __all__ = [
     "extract_page_with_fallback",
     "extract_document_qa",
     "extraction_pages_for_direction",
+    "extraction_context_from_api",
+    "extraction_context_to_api",
     "format_document_extraction",
     "identify_suspicious_numbering_gaps",
     "infer_extraction_rescan_direction",

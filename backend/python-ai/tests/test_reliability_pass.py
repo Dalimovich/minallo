@@ -9,6 +9,8 @@ from app.services.document_extraction import (
     ExtractedSolutionEvidence,
     GapStatus,
     extraction_pages_for_direction,
+    extraction_context_from_api,
+    extraction_context_to_api,
     pair_questions_and_solutions,
     review_numbering_gap,
 )
@@ -152,6 +154,10 @@ def test_distant_solution_pairing_gap_review_and_direction() -> None:
     assert extraction_pages_for_direction(
         "later", context=context, section_start_page=1, section_end_page=30,
     ) == list(range(21, 31))
+    restored = extraction_context_from_api(extraction_context_to_api(context))
+    assert restored is not None
+    assert restored.source_fingerprint == "hash"
+    assert restored.earliest_source_page == 9
 
 
 def test_obsolete_wrong_language_refusal_is_absent_from_production_paths() -> None:

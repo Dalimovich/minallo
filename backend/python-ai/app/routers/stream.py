@@ -1526,6 +1526,8 @@ async def _prepare_ask_stream_response(
         DocumentExtractionContext,
         ExtractedQAItem,
         classify_document_extraction,
+        extraction_context_from_api,
+        extraction_context_to_api,
         extraction_pages_for_direction,
         extract_document_qa,
         format_document_extraction,
@@ -1571,15 +1573,32 @@ async def _prepare_ask_stream_response(
             or payload.activeDocumentId
         )
         extraction_context = (
-            load_extraction_context(
+            extraction_context_from_api(
+                tutor_state.document_extraction_context
+            )
+            if extraction_correction
+            and tutor_state
+            and tutor_state.document_extraction_context
+            else None
+        )
+        if extraction_context and (
+            extraction_context.document_id != (payload.activeDocumentId or "")
+            or extraction_context.source_fingerprint != source_fingerprint
+            or extraction_context.target_section.casefold()
+            != (extraction_target or "questions").casefold()
+        ):
+            extraction_context = None
+        if (
+            extraction_context is None
+            and extraction_correction
+            and payload.conversationId
+        ):
+            extraction_context = load_extraction_context(
                 payload.conversationId or "",
                 payload.activeDocumentId or "",
                 source_fingerprint=source_fingerprint,
                 target_section=extraction_target or "questions",
             )
-            if extraction_correction and payload.conversationId
-            else None
-        )
         pages_to_scan = None
         previous_items = None
         direction = "full"
@@ -1619,7 +1638,7 @@ async def _prepare_ask_stream_response(
                 (extraction_context.scanned_pages if extraction_context else [])
                 + extraction.scanned_pages
             ))
-            save_extraction_context(DocumentExtractionContext(
+            persisted_extraction_context = DocumentExtractionContext(
                 conversation_id=payload.conversationId,
                 document_id=payload.activeDocumentId or "",
                 document_revision=document_revision,
@@ -1635,7 +1654,16 @@ async def _prepare_ask_stream_response(
                 earliest_source_page=min(scanned) if scanned else None,
                 latest_source_page=max(scanned) if scanned else None,
                 complete=extraction.complete,
-            ))
+            )
+            save_extraction_context(persisted_extraction_context)
+            if tutor_state:
+                from ..services.tutor_state_store import save_tutor_state  # noqa: WPS433
+                tutor_state.document_extraction_context = extraction_context_to_api(
+                    persisted_extraction_context
+                )
+                await run_in_threadpool(
+                    lambda: save_tutor_state(user_id, payload.courseId, tutor_state)
+                )
         if status_sink:
             status_sink("checking_completeness")
         answer_text = format_document_extraction(
