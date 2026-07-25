@@ -1352,6 +1352,34 @@ async def _prepare_ask_stream_response(
          "a": account_snapshot, "n": named_course_name}
     ) if workspace_block else ""
     assistant_mode = detect_assistant_mode(question)
+    from ..services.reliability import (  # noqa: WPS433
+        identify_grounded_task,
+        task_aware_cache_key,
+    )
+    preliminary_traits = classify_task_traits(resolved_question)
+    grounded_identity = identify_grounded_task(
+        question=resolved_question,
+        current_page_text=payload.openFileContext or "",
+        document_id=payload.activeDocumentId,
+        filename=payload.activeFileName,
+        page=payload.visiblePage,
+        traits=preliminary_traits,
+    )
+    reliability_cache_fingerprint = task_aware_cache_key(
+        task_type=grounded_identity.task_kind,
+        identity=grounded_identity,
+        active_document=payload.activeDocumentId,
+        visible_page=payload.visiblePage,
+        document_revision=payload.viewerRevision,
+        visible_page_text=payload.openFileContext or "",
+        image_hashes=[
+            hashlib.sha256(str(image.get("data") or "").encode()).hexdigest()
+            for image in open_file_images
+        ],
+    )
+    ws_fingerprint = hashlib.sha256(
+        f"{ws_fingerprint}:{reliability_cache_fingerprint}".encode()
+    ).hexdigest()
 
     # ── Cache check (same logic as /ask) ─────────────────────────────────────
     # When the request carries openFileContext (the user is reading a PDF
@@ -2009,16 +2037,6 @@ async def _prepare_ask_stream_response(
         numericalValidation=task_traits.requires_numerical_validation,
         preDisplayVerification=task_traits.requires_pre_display_verification,
         textFallbackAllowed=task_traits.allows_text_fallback,
-    )
-    from ..services.reliability import identify_grounded_task  # noqa: WPS433
-    preliminary_traits = classify_task_traits(resolved_question)
-    grounded_identity = identify_grounded_task(
-        question=resolved_question,
-        current_page_text=payload.openFileContext or "",
-        document_id=payload.activeDocumentId,
-        filename=payload.activeFileName,
-        page=payload.visiblePage,
-        traits=preliminary_traits,
     )
     observer.event(
         "task_identity_resolved",
