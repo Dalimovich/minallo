@@ -38,8 +38,48 @@ let pdfHost: HTMLElement | null = null;
 let pdfContextInner: HTMLElement | null = null;
 let pdfAiDisplay = '';
 let pdfResizeCleanup: (() => void) | null = null;
+let pdfOriginCourse: LibraryCourse | null = null;
 
 const PDF_WIDTH_KEY = 'minallo:chatbot-pdf-width';
+const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf';
+
+type WorkspacePdfSession = {
+  course: { id: string; name?: string; short?: string };
+  file: {
+    name: string;
+    storageName?: string;
+    folder?: string | null;
+    uploaded?: boolean;
+    uid?: string;
+    size?: string;
+  };
+};
+
+function saveWorkspacePdfSession(course: LibraryCourse, file: CourseFile): void {
+  const state: WorkspacePdfSession = {
+    course: { id: course.id, name: course.name, short: course.short },
+    file: {
+      name: file.name,
+      storageName: file._storageName,
+      folder: file._folder,
+      uploaded: file._uploaded,
+      uid: file._uid,
+      size: file.size
+    }
+  };
+  try { sessionStorage.setItem(PDF_SESSION_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+}
+
+function readWorkspacePdfSession(): WorkspacePdfSession | null {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(PDF_SESSION_KEY) || 'null') as WorkspacePdfSession | null;
+    return parsed?.course?.id && parsed.file?.name ? parsed : null;
+  } catch { return null; }
+}
+
+function clearWorkspacePdfSession(): void {
+  try { sessionStorage.removeItem(PDF_SESSION_KEY); } catch { /* ignore */ }
+}
 
 function refitWorkspacePdf(): void {
   const viewer = window as typeof window & {
@@ -201,6 +241,36 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
 
   bindAccountMenu(root);
   renderCourses(coursePanel);
+  void restoreWorkspacePdf(root, coursePanel);
+}
+
+async function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement): Promise<void> {
+  const saved = readWorkspacePdfSession();
+  if (!saved) return;
+  const course = courses().find((item) => item.id === saved.course.id) || {
+    id: saved.course.id,
+    name: saved.course.name || 'Course',
+    short: saved.course.short || saved.course.name || 'Course',
+    files: [],
+    userFolders: []
+  } as LibraryCourse;
+
+  await renderCourseDetail(coursePanel, course);
+  const folderFiles = saved.file.folder
+    ? (course.userFolders || []).find((folder) => folder.name === saved.file.folder)?.files || []
+    : course.files || [];
+  const file = (folderFiles as CourseFile[]).find((item) =>
+    (saved.file.storageName && item._storageName === saved.file.storageName) || item.name === saved.file.name
+  ) || {
+    name: saved.file.name,
+    _storageName: saved.file.storageName,
+    _folder: saved.file.folder,
+    _uploaded: saved.file.uploaded,
+    _uid: saved.file.uid,
+    size: saved.file.size,
+    _course: course
+  };
+  openWorkspacePdf(root, file, course);
 }
 
 function renderCourses(panel: HTMLElement): void {
@@ -299,6 +369,11 @@ function closeWorkspacePdf(root: HTMLElement): void {
   document.body.classList.remove('ncb-pdf-workspace-open');
   window._ncbPdfWorkspaceActive = false;
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
+  clearWorkspacePdfSession();
+  const coursePanel = root.querySelector<HTMLElement>('[data-library-panel="courses"]');
+  const currentCourse = courses().find((course) => course.id === pdfOriginCourse?.id) || pdfOriginCourse;
+  pdfOriginCourse = null;
+  if (coursePanel && currentCourse) void renderCourseDetail(coursePanel, currentCourse);
 }
 
 function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCourse): void {
@@ -306,6 +381,8 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   const inner = context?.querySelector<HTMLElement>('.ncb-context-inner');
   const wrap = document.getElementById('pdfViewerWrap');
   if (!context || !inner || !wrap || !window.openFile) return;
+  pdfOriginCourse = course;
+  saveWorkspacePdfSession(course, file);
 
   if (!pdfOrigin) {
     pdfOrigin = document.createComment('ncb-pdf-origin');

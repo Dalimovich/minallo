@@ -157,3 +157,14 @@ test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF
   assert.match(shellSource, /active\.courseFileScope = 'specific_files'/);
   assert.match(shellSource, /documents: \[\{ name: file\.name, text: '' \}\]/);
 });
+
+test('refresh restores the chatbot PDF and Back restores its originating course', () => {
+  assert.match(moduleSource, /const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf'/);
+  assert.match(moduleSource, /sessionStorage\.setItem\(PDF_SESSION_KEY/);
+  assert.match(moduleSource, /void restoreWorkspacePdf\(root, coursePanel\)/);
+  assert.match(moduleSource, /await renderCourseDetail\(coursePanel, course\)/);
+  assert.match(moduleSource, /openWorkspacePdf\(root, file, course\)/);
+  assert.match(moduleSource, /const currentCourse = courses\(\)\.find/);
+  assert.match(moduleSource, /renderCourseDetail\(coursePanel, currentCourse\)/);
+  assert.match(moduleSource, /sessionStorage\.removeItem\(PDF_SESSION_KEY\)/);
+});
