@@ -68,3 +68,11 @@ test('saved category buttons are large full-width cards with separated content',
   assert.match(css, /\.ncb-saved-kind-btn \.ncb-library-icon[\s\S]*width:\s*46px/);
   assert.match(css, /\.ncb-saved-kind-btn > b[\s\S]*flex:\s*0 0 30px/);
 });
+
+test('workspace popups have no separate header and use a floating close control', () => {
+  assert.doesNotMatch(html, /ncb-workspace-head/);
+  assert.doesNotMatch(html, /ncbWorkspaceTitle/);
+  assert.match(html, /class="ncb-workspace-close"/);
+  assert.match(css, /\.ncb-workspace-close\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(moduleSource, /dialog\.setAttribute\('aria-label', title\)/);
+});

@@ -342,6 +342,8 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
   const titles: Record<string, string> = { profile: 'Profile', subscription: 'Subscription', lounge: 'Study Lounge', settings: 'Settings' };
   const body = openOverlay(root, titles[view] || 'Minallo');
   if (!body) return;
+  const overlay = body.closest<HTMLElement>('[data-workspace-overlay]');
+  if (overlay) overlay.dataset.workspaceView = view;
   body.innerHTML = '<div class="ncb-library-status">Opening&hellip;</div>';
   if (view !== 'lounge') {
     await Promise.all([
@@ -367,9 +369,10 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
 function openOverlay(root: HTMLElement, title: string): HTMLElement | null {
   const overlay = root.querySelector<HTMLElement>('[data-workspace-overlay]');
   const body = overlay?.querySelector<HTMLElement>('.ncb-workspace-body');
-  const heading = overlay?.querySelector<HTMLElement>('#ncbWorkspaceTitle');
-  if (!overlay || !body || !heading) return null;
-  heading.textContent = title;
+  const dialog = overlay?.querySelector<HTMLElement>('.ncb-workspace-dialog');
+  if (!overlay || !body || !dialog) return null;
+  delete overlay.dataset.workspaceView;
+  dialog.setAttribute('aria-label', title);
   overlay.hidden = false;
   overlay.setAttribute('aria-hidden', 'false');
   document.body.classList.add('ncb-overlay-open');
@@ -399,6 +402,7 @@ function closeOverlay(overlay: HTMLElement): void {
   if (body) body.innerHTML = '';
   delete stateful._origin;
   delete overlay.dataset.movedSection;
+  delete overlay.dataset.workspaceView;
   overlay.hidden = true;
   overlay.setAttribute('aria-hidden', 'true');
   document.body.classList.remove('ncb-overlay-open');
