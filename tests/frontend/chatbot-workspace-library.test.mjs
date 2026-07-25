@@ -99,12 +99,15 @@ test('workspace popups have no separate header and use a floating close control'
   assert.match(moduleSource, /dialog\.setAttribute\('aria-label', title\)/);
 });
 
-test('notification bell opens the real notifications section in the workspace popup', () => {
-  assert.match(html, /class="ncb-notification-trigger"/);
-  assert.match(html, /data-notification-badge/);
+test('the original square navigation item opens notifications in the workspace popup', () => {
+  assert.doesNotMatch(html, /class="ncb-notification-trigger"/);
+  assert.match(moduleSource, /getElementById\('psbNotifications'\)/);
+  assert.match(moduleSource, /event\.stopImmediatePropagation\(\)/);
   assert.match(moduleSource, /openPortalView\(root, 'notifications'\)/);
   assert.match(moduleSource, /window\.renderNotifications\?\.\(\)/);
-  assert.match(notificationsTs, /querySelectorAll<HTMLElement>\('\[data-notification-badge\]'\)/);
+  assert.match(notificationsTs, /item\.querySelector\('\.sb-badge'\)/);
+  assert.match(css, /data-workspace-view="notifications"[\s\S]*background:\s*#091629/);
+  assert.match(css, /\.notif-tab\.active[\s\S]*background:\s*#245ca8 !important/);
 });
 
 test('course files replace the right drawer with the canonical rounded PDF viewer', () => {

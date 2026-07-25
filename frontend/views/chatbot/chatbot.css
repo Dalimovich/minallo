@@ -4350,54 +4350,6 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.ncb-account-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ncb-account-trigger { flex: 1; min-width: 0; }
-
-.ncb-notification-trigger {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(147, 197, 253, 0.22);
-  border-radius: 50%;
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.1);
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
-}
-
-.ncb-notification-trigger:hover {
-  background: rgba(37, 99, 235, 0.2);
-  transform: translateY(-1px);
-}
-
-.ncb-notification-badge {
-  position: absolute;
-  top: -3px;
-  right: -2px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  display: grid;
-  place-items: center;
-  border: 2px solid #0b192c;
-  border-radius: 999px;
-  color: #fff;
-  background: #ef4444;
-  font-size: 0.58rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.ncb-notification-badge[hidden] { display: none; }
-
 .ncb-account-trigger {
   width: 100%;
   display: flex;
@@ -4968,8 +4920,12 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
 }
 
 .ncb-workspace-overlay[data-workspace-view="notifications"] .ncb-workspace-dialog {
-  width: min(1040px, 94vw);
-  height: min(760px, 90vh);
+  width: min(980px, 94vw);
+  height: auto;
+  min-height: 520px;
+  max-height: 86vh;
+  border-color: #21344f;
+  background: #091629;
 }
 
 .ncb-workspace-overlay[data-workspace-view="notifications"] .notif-page-header {
@@ -4977,7 +4933,126 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
 }
 
 .ncb-workspace-overlay[data-workspace-view="notifications"] .ncb-workspace-body > .portal-section {
-  padding-top: 28px;
+  min-height: 0;
+  padding: 20px;
+  background: #091629 !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .ncb-workspace-body {
+  background: #091629;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-page,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-page-content {
+  min-height: 0;
+  background: transparent !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-page-content {
+  gap: 16px;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-wrap,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-pinned,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-selected {
+  border: 1px solid #233651 !important;
+  border-radius: 18px !important;
+  background: #101e33 !important;
+  box-shadow: none !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-header {
+  border-bottom: 1px solid #233651 !important;
+  background: transparent !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-title,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-pinned-title,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-selected-title {
+  color: #e5edf8 !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-count-badge {
+  color: #dbeafe !important;
+  background: #1e3a5f !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-mark-all,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-edit-pins {
+  border-color: #31445f !important;
+  color: #b8c7da !important;
+  background: #18283e !important;
+  box-shadow: none !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-mark-all:hover,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-edit-pins:hover {
+  border-color: #3b82f6 !important;
+  color: #eaf2ff !important;
+  background: #1b3150 !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-tabs {
+  border: 1px solid #233651 !important;
+  background: #0b1728 !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-tab {
+  color: #8fa1b8 !important;
+  background: transparent !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-tab.active {
+  color: #eff6ff !important;
+  background: #245ca8 !important;
+  box-shadow: none !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item {
+  border-color: transparent !important;
+  color: #dce7f5 !important;
+  background: #0d1a2c !important;
+  box-shadow: none !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item:hover,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item.unread,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item.selected {
+  border-color: #315987 !important;
+  background: #142944 !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item-icon {
+  border-color: #315987 !important;
+  color: #bfdbfe !important;
+  background: #18385f !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item-title,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-selected-value {
+  color: #edf4fc !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item-text,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-item-time,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-pinned-sub,
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-selected-label {
+  color: #899cb5 !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-live-badge {
+  border-color: #315987 !important;
+  color: #bfdbfe !important;
+  background: #18385f !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-selected-tile {
+  border-color: #263a56 !important;
+  background: #0d1a2c !important;
+}
+
+.ncb-workspace-overlay[data-workspace-view="notifications"] .notif-pinned-empty-state {
+  display: none !important;
 }
 
 /* Canonical PDF viewer hosted in place of the course/saved context drawer. */
@@ -5126,8 +5201,6 @@ body.ncb-pdf-workspace-open #drDrawer {
   .ncb-account-trigger { justify-content: center; }
   .ncb-account-trigger > svg { display: none; }
   .ncb-account-menu { position: fixed; left: 72px; right: auto; bottom: 18px; width: 210px; }
-  .ncb-account-actions { flex-direction: column-reverse; }
-  .ncb-notification-trigger { width: 42px; height: 42px; flex-basis: 42px; }
   body.ncb-pdf-workspace-open .ncb-card[data-context-open="true"] .ncb-context {
     width: min(760px, 96vw);
   }

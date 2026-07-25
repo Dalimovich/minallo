@@ -414,9 +414,16 @@ function bindAccountMenu(root: HTMLElement): void {
       void openPortalView(root, button.dataset.accountView || '');
     });
   });
-  root.querySelector<HTMLButtonElement>('.ncb-notification-trigger')?.addEventListener('click', () => {
-    void openPortalView(root, 'notifications');
-  });
+  const notificationNav = document.getElementById('psbNotifications');
+  if (notificationNav && notificationNav.dataset.ncbPopupBound !== '1') {
+    notificationNav.dataset.ncbPopupBound = '1';
+    notificationNav.addEventListener('click', (event) => {
+      if (root.hidden || !root.isConnected) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void openPortalView(root, 'notifications');
+    }, true);
+  }
 }
 
 async function openPortalView(root: HTMLElement, view: string): Promise<void> {
