@@ -258,8 +258,102 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   }));
 
   bindAccountMenu(root);
+  bindWidgetLauncher(root);
   renderCourses(coursePanel);
   restoreWorkspacePdf(root, coursePanel);
+}
+
+function bindWidgetLauncher(root: HTMLElement): void {
+  const launcher = root.querySelector<HTMLElement>('.ncb-widget-launcher');
+  const trigger = launcher?.querySelector<HTMLButtonElement>('.ncb-widgets-btn');
+  const menu = launcher?.querySelector<HTMLElement>('.ncb-widget-menu');
+  const floating = launcher?.querySelector<HTMLElement>('.ncb-widget-float');
+  const floatingBody = launcher?.querySelector<HTMLElement>('.ncb-widget-float-body');
+  const closeButton = launcher?.querySelector<HTMLButtonElement>('.ncb-widget-float-close');
+  if (!launcher || !trigger || !menu || !floating || !floatingBody || !closeButton) return;
+
+  let widgetOrigin: Comment | null = null;
+  let mountedWidget: HTMLElement | null = null;
+
+  const restoreWidget = (): void => {
+    if (mountedWidget && widgetOrigin?.parentNode) widgetOrigin.parentNode.insertBefore(mountedWidget, widgetOrigin);
+    widgetOrigin?.remove();
+    widgetOrigin = null;
+    mountedWidget = null;
+    floatingBody.innerHTML = '';
+    floating.hidden = true;
+  };
+
+  const closeAll = (): void => {
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    restoreWidget();
+  };
+
+  const mountWidget = (widget: HTMLElement): void => {
+    restoreWidget();
+    widgetOrigin = document.createComment('ncb-widget-origin');
+    widget.parentNode?.insertBefore(widgetOrigin, widget);
+    mountedWidget = widget;
+    floatingBody.appendChild(widget);
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'true');
+    floating.hidden = false;
+  };
+
+  const populate = (): boolean => {
+    const widgets = Array.from(document.querySelectorAll<HTMLElement>('#dashCanvas .dash-widget'));
+    if (!widgets.length) {
+      menu.innerHTML = '<div class="ncb-widget-empty">No dashboard widgets selected yet.</div>';
+      return false;
+    }
+    menu.innerHTML = widgets.map((widget, index) => {
+      const icon = widget.querySelector<HTMLElement>('.dw-icon')?.textContent || 'W';
+      const title = widget.querySelector<HTMLElement>('.dw-title')?.textContent || `Widget ${index + 1}`;
+      return `<button type="button" role="menuitem" data-widget-index="${index}"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong></button>`;
+    }).join('');
+    menu.querySelectorAll<HTMLButtonElement>('[data-widget-index]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const widget = widgets[Number(button.dataset.widgetIndex || '-1')];
+        if (widget) mountWidget(widget);
+      });
+    });
+    return true;
+  };
+
+  const openPicker = async (): Promise<void> => {
+    restoreWidget();
+    await Promise.all([
+      window._ssLoadFeatureSection?.('dashboard'),
+      window._ssLoadPortalFeature?.('dashboard')
+    ]);
+    window._dwLoadAndRender?.();
+    let attempt = 0;
+    const waitForWidgets = (): void => {
+      const ready = populate();
+      if (!ready && attempt++ < 20) {
+        window.setTimeout(waitForWidgets, 100);
+        return;
+      }
+      menu.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+    };
+    waitForWidgets();
+  };
+
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!menu.hidden || !floating.hidden) closeAll();
+    else void openPicker();
+  });
+  closeButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    closeAll();
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!launcher.contains(event.target as Node)) closeAll();
+  });
 }
 
 function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement, attempt = 0): void {
@@ -636,6 +730,12 @@ function bindAccountMenu(root: HTMLElement): void {
     const open = menu.hidden;
     menu.hidden = !open;
     trigger.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!root.querySelector<HTMLElement>('.ncb-account')?.contains(event.target as Node)) {
+      menu.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+    }
   });
   menu.querySelectorAll<HTMLButtonElement>('[data-account-view]').forEach((button) => {
     button.addEventListener('click', () => {

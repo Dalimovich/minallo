@@ -45,6 +45,32 @@ test('chatbot removes the legacy icon rail and uses a slimmer AI chats sidebar',
   assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar \{ width:\s*252px;/);
 });
 
+test('collapsed sidebar stacks notification and avatar controls without clipping', () => {
+  assert.match(css, /data-collapsed="true"\] \.ncb-account[\s\S]*flex-direction:\s*column/);
+  assert.match(css, /data-collapsed="true"\] \.ncb-notification-trigger,[\s\S]*\.ncb-account-trigger[\s\S]*width:\s*44px/);
+});
+
+test('widgets launcher mounts selected dashboard widgets in an animated anchored popup', () => {
+  assert.match(html, /class="ncb-widgets-btn"/);
+  assert.match(html, /class="ncb-widget-menu"/);
+  assert.match(html, /class="ncb-widget-float"/);
+  assert.match(moduleSource, /function bindWidgetLauncher/);
+  assert.match(moduleSource, /_ssLoadFeatureSection\?\.\('dashboard'\)/);
+  assert.match(moduleSource, /#dashCanvas \.dash-widget/);
+  assert.match(moduleSource, /floatingBody\.appendChild\(widget\)/);
+  assert.match(moduleSource, /widgetOrigin\.parentNode\.insertBefore\(mountedWidget, widgetOrigin\)/);
+  assert.match(moduleSource, /if \(!launcher\.contains\(event\.target as Node\)\) closeAll\(\)/);
+  assert.match(css, /\.ncb-widget-menu, \.ncb-widget-float[\s\S]*backdrop-filter:\s*blur\(28px/);
+  assert.match(css, /@keyframes ncb-float-pop/);
+});
+
+test('account menu closes on outside click and workspace dialogs float on glass', () => {
+  assert.match(moduleSource, /if \(!root\.querySelector<HTMLElement>\('\.ncb-account'\)\?\.contains\(event\.target as Node\)\)/);
+  assert.match(css, /\.ncb-account-menu[\s\S]*backdrop-filter:\s*blur\(28px\) saturate\(145%\)/);
+  assert.match(css, /\.ncb-workspace-dialog[\s\S]*backdrop-filter:\s*blur\(34px\) saturate\(140%\)/);
+  assert.match(css, /@keyframes ncb-dialog-float-in/);
+});
+
 test('course drawer reuses the real course registry, hydration, and file opener', () => {
   assert.match(moduleSource, /window\.SEMS \|\| window\._SEMS/);
   assert.match(moduleSource, /window\._ufMerge/);
@@ -94,10 +120,10 @@ test('subscription popup refreshes into a current-plan view for Pro accounts', (
   assert.match(subscriptionJs, /legalBlock\.style\.display = paypalResubscribe \? '' : 'none'/);
 });
 
-test('account overlays are opaque and desktop sidebars are floating rounded surfaces', () => {
-  assert.match(css, /\.ncb-workspace-dialog[\s\S]*background:\s*#0a1729/);
-  assert.match(css, /\.ncb-workspace-body[\s\S]*background:\s*#0b192c/);
-  assert.match(css, /\.ncb-workspace-body > \.portal-section[\s\S]*background:\s*#0d1d32 !important/);
+test('account overlays are glassy and desktop sidebars are floating rounded surfaces', () => {
+  assert.match(css, /\.ncb-workspace-dialog[\s\S]*rgba\(8, 22, 40, 0\.82\)/);
+  assert.match(css, /\.ncb-workspace-body[\s\S]*background:\s*rgba\(9, 24, 43, 0\.48\)/);
+  assert.match(css, /\.ncb-workspace-body > \.portal-section[\s\S]*background:\s*rgba\(13, 32, 55, 0\.62\) !important/);
   assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar,[\s\S]*\.ncb-context[\s\S]*border-radius:\s*24px/);
 });
 
@@ -125,7 +151,7 @@ test('the original square navigation item opens notifications in the workspace p
   assert.match(moduleSource, /openPortalView\(root, 'notifications'\)/);
   assert.match(moduleSource, /window\.renderNotifications\?\.\(\)/);
   assert.match(notificationsTs, /item\.querySelector\('\.sb-badge'\)/);
-  assert.match(css, /data-workspace-view="notifications"[\s\S]*background:\s*#091629/);
+  assert.match(css, /data-workspace-view="notifications"[\s\S]*rgba\(7, 20, 37, 0\.82\)/);
   assert.match(css, /\.notif-tab\.active[\s\S]*background:\s*#245ca8 !important/);
 });
 
