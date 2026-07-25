@@ -68,6 +68,9 @@ test('widgets launcher mounts selected dashboard widgets in an animated anchored
 
 test('account menu closes on outside click and workspace dialogs float on glass', () => {
   assert.match(moduleSource, /if \(!root\.querySelector<HTMLElement>\('\.ncb-account'\)\?\.contains\(event\.target as Node\)\)/);
+  assert.match(html, /data-admin-page hidden>Admin page<\/button>/);
+  assert.match(moduleSource, /checkAdminStatus\(\)/);
+  assert.match(moduleSource, /window\.location\.assign\('\/admin\.html'\)/);
   assert.match(css, /\.ncb-account-menu[\s\S]*backdrop-filter:\s*blur\(28px\) saturate\(145%\)/);
   assert.match(css, /\.ncb-workspace-dialog[\s\S]*backdrop-filter:\s*blur\(34px\) saturate\(140%\)/);
   assert.match(css, /@keyframes ncb-dialog-float-in/);

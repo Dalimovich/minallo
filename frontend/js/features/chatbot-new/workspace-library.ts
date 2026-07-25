@@ -1,6 +1,7 @@
 import { getNoteById, listCourseNotes, type SavedNote } from '../../services/ai-service.js';
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
+import { checkAdminStatus } from '../../services/admin-service.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 type CourseFile = {
@@ -725,6 +726,24 @@ function bindAccountMenu(root: HTMLElement): void {
   const label = trigger.querySelector<HTMLElement>('.ncb-account-name');
   if (avatar) avatar.textContent = initial;
   if (label) label.textContent = name;
+
+  const adminButton = menu.querySelector<HTMLButtonElement>('[data-admin-page]');
+  if (adminButton) {
+    const revealAdminButton = (isAdmin: boolean): void => {
+      adminButton.hidden = !isAdmin;
+    };
+    revealAdminButton(window._userIsAdmin === true);
+    if (window._userIsAdmin !== true) {
+      void checkAdminStatus()
+        .then((status) => revealAdminButton(Boolean((status as { isAdmin?: boolean } | null)?.isAdmin)))
+        .catch(() => revealAdminButton(false));
+    }
+    adminButton.addEventListener('click', () => {
+      menu.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      window.location.assign('/admin.html');
+    });
+  }
 
   trigger.addEventListener('click', () => {
     const open = menu.hidden;
