@@ -149,6 +149,22 @@ class GapSearchCoverage:
     existing_visual_results_reviewed: bool = False
     targeted_visual_pages_required: list[int] = field(default_factory=list)
     targeted_visual_pages_searched: list[int] = field(default_factory=list)
+    question_section_detected: bool = False
+    solution_section_detected: bool = False
+    visual_search_budget_exhausted: bool = False
+    unsearched_candidate_pages: list[int] = field(default_factory=list)
+    targeted_visual_calls_used: int = 0
+
+
+@dataclass(frozen=True)
+class GapIdVariant:
+    value: str
+    confidence: float
+    requires_question_context: bool
+
+
+MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT = 12
+MAX_TARGETED_VISUAL_PAGES_PER_GAP = 3
 
 
 @dataclass
@@ -459,12 +475,13 @@ def review_numbering_gap(
     review_result: GapReviewResult | None = None,
 ) -> NumberingGap:
     """Classify a gap only after explicit, appropriately broad searches."""
-    variants = tuple(re.escape(value) for value in gap_id_variants(item_id))
+    variants = gap_id_variants(item_id)
     explicit = review_result or GapReviewResult(
         exact_text_search_performed=True,
         full_section_search_performed=False,
         exact_matches=(reviewed_pages if any(
-            re.search(rf"(?<![\d.]){variant}(?![\d.])", neighbouring_text, re.I)
+            variant.confidence >= 0.9
+            and _gap_variant_matches_text(variant, neighbouring_text)
             for variant in variants
         ) else []),
         reviewed_pages=reviewed_pages,
@@ -482,6 +499,7 @@ def review_numbering_gap(
         and explicit.full_section_search_performed
         and explicit.solution_section_search_performed
         and explicit.coverage.full_document_text_searched
+        and not explicit.coverage.visual_search_budget_exhausted
         and set(explicit.coverage.targeted_visual_pages_required).issubset(
             explicit.coverage.targeted_visual_pages_searched
         )
@@ -502,11 +520,33 @@ def review_numbering_gap(
     )
 
 
-def gap_id_variants(item_id: str) -> list[str]:
-    return list(dict.fromkeys([
-        item_id, f"Aufgabe {item_id}", f"Frage {item_id}", f"Nr. {item_id}",
-        item_id.replace(".", ""), item_id.replace(".", " "),
-    ]))
+def gap_id_variants(item_id: str) -> list[GapIdVariant]:
+    return [
+        GapIdVariant(item_id, 1.0, False),
+        GapIdVariant(f"Aufgabe {item_id}", 1.0, False),
+        GapIdVariant(f"Frage {item_id}", 1.0, False),
+        GapIdVariant(f"Nr. {item_id}", 0.95, False),
+        GapIdVariant(item_id.replace(".", " "), 0.55, True),
+        GapIdVariant(item_id.replace(".", ""), 0.35, True),
+    ]
+
+
+_QUESTION_CONTEXT_RE = re.compile(
+    r"\b(?:Aufgabe|Frage|Kurzfrage|question|item|Nr\.)\b", re.IGNORECASE,
+)
+
+
+def _gap_variant_matches_text(variant: GapIdVariant, text: str) -> bool:
+    pattern = re.compile(
+        rf"(?<![\d.]){re.escape(variant.value)}(?![\d.])", re.IGNORECASE,
+    )
+    for match in pattern.finditer(text or ""):
+        if not variant.requires_question_context:
+            return True
+        context = (text or "")[max(0, match.start() - 32):match.end() + 20]
+        if _QUESTION_CONTEXT_RE.search(context):
+            return True
+    return False
 
 
 def classify_extraction_page_result(text: str, target: str) -> PageClassificationResult:
@@ -1133,6 +1173,7 @@ def extract_document_qa(
         [item.item_id for item in result.items]
     )
     text_by_page = {page: text for page, text in usable}
+    gap_visual_calls_used = 0
     for item_id in result.suspicious_numbering_gaps:
         section_match = re.match(r"(\d+)\.", item_id)
         related_items = [
@@ -1167,15 +1208,36 @@ def extract_document_qa(
         search_pages = sorted(set(
             nearby_pages + section_pages + solution_pages + full_document_pages
         ))
-        variants = tuple(re.escape(value) for value in gap_id_variants(item_id))
+        variants = gap_id_variants(item_id)
         exact_matches = [
             page for page in search_pages
-            if any(re.search(rf"(?<![\d.]){variant}(?![\d.])", all_text_by_page.get(page, ""), re.I)
+            if any(variant.confidence >= 0.9 and _gap_variant_matches_text(
+                variant, all_text_by_page.get(page, "")
+            )
                    for variant in variants)
         ]
         targeted_visual_pages: list[int] = []
-        if not exact_matches:
-            for page in weak_pages:
+        existing_visual_matches = sorted(
+            visual_item_pages_by_id.get(normalise_item_id(item_id), set())
+        )
+        ranked_candidates = sorted(
+            weak_pages,
+            key=lambda page: (
+                0 if page in nearby_pages else 1,
+                0 if page in section_pages else 1,
+                min((abs(page - candidate) for candidate in nearby_pages), default=999),
+                page,
+            ),
+        )
+        candidate_pages = ranked_candidates[:MAX_TARGETED_VISUAL_PAGES_PER_GAP]
+        budget_exhausted = False
+        if not exact_matches and not existing_visual_matches:
+            remaining_budget = max(
+                0, MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT - gap_visual_calls_used,
+            )
+            budget_exhausted = remaining_budget < len(candidate_pages)
+            for page in candidate_pages[:remaining_budget]:
+                gap_visual_calls_used += 1
                 try:
                     targeted_items = _extract_visual_page(
                         document=document,
@@ -1215,8 +1277,26 @@ def extract_document_qa(
             solution_section_pages_searched=solution_pages,
             full_document_text_searched=True,
             existing_visual_results_reviewed=True,
-            targeted_visual_pages_required=weak_pages,
+            targeted_visual_pages_required=candidate_pages,
             targeted_visual_pages_searched=targeted_visual_pages,
+            question_section_detected=bool(section_pages),
+            solution_section_detected=bool(solution_pages),
+            visual_search_budget_exhausted=(
+                not exact_matches and not visual_matches and budget_exhausted
+            ),
+            unsearched_candidate_pages=[
+                page for page in ranked_candidates if page not in targeted_visual_pages
+            ],
+            targeted_visual_calls_used=gap_visual_calls_used,
+        )
+        log.info(
+            "document_gap_search document=%s gap=%s visual_calls_used=%s "
+            "visual_call_budget=%s budget_exhausted=%s",
+            document_id,
+            item_id,
+            gap_visual_calls_used,
+            MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT,
+            coverage.visual_search_budget_exhausted,
         )
         result.gaps.append(review_numbering_gap(
             item_id,
@@ -1224,8 +1304,8 @@ def extract_document_qa(
             reviewed_pages=search_pages,
             review_result=GapReviewResult(
                 exact_text_search_performed=True,
-                full_section_search_performed=True,
-                solution_section_search_performed=True,
+                full_section_search_performed=bool(section_pages),
+                solution_section_search_performed=bool(solution_pages),
                 visual_search_performed=bool(targeted_visual_pages),
                 exact_matches=exact_matches,
                 intentional_omission_pages=intentional_pages,
@@ -1333,6 +1413,7 @@ __all__ = [
     "ExtractedSolutionEvidence",
     "ExtractionPageKind",
     "GapSearchCoverage",
+    "GapIdVariant",
     "GapReviewResult",
     "GapStatus",
     "NumberingGap",
@@ -1349,6 +1430,8 @@ __all__ = [
     "extraction_context_to_api",
     "format_document_extraction",
     "gap_id_variants",
+    "MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT",
+    "MAX_TARGETED_VISUAL_PAGES_PER_GAP",
     "identify_suspicious_numbering_gaps",
     "infer_extraction_rescan_direction",
     "load_extraction_context",

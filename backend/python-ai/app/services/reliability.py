@@ -22,6 +22,26 @@ class VisualTaskKind(StrEnum):
     VISUAL_TRANSCRIPTION = "visual_transcription"
 
 
+class GroundedTaskKind(StrEnum):
+    EXPLANATION = "explanation"
+    NUMERICAL_CALCULATION = "numerical_calculation"
+    CHECKBOX_CALCULATION = "checkbox_calculation"
+    CHECKBOX_EXTRACTION = "checkbox_extraction"
+    DIAGRAM_LABELLING = "diagram_labelling"
+    TECHNICAL_DRAWING_MAPPING = "technical_drawing_mapping"
+    FORMULA_EXPLANATION = "formula_explanation"
+    DOCUMENT_EXTRACTION = "document_extraction"
+    SHORT_ANSWER = "short_answer"
+
+
+class VisualIdentityBinding(StrEnum):
+    EXACT_EXERCISE_MATCH = "exact_exercise_match"
+    CURRENT_PAGE_SINGLE_TASK = "current_page_single_task"
+    SELECTED_REGION_BOUND = "selected_region_bound"
+    AMBIGUOUS = "ambiguous"
+    CONFLICTING_EXERCISE = "conflicting_exercise"
+
+
 class CalculationContext(StrEnum):
     TEXT_ONLY = "text_only"
     CURRENT_PAGE = "current_page"
@@ -355,10 +375,12 @@ class GroundedTaskIdentity:
     document_id: str | None = None
     filename: str | None = None
     page: int | None = None
+    visible_page: int | None = None
+    resolved_task_page: int | None = None
     exercise_reference: str | None = None
     domain: str | None = None
     requested_quantities: list[str] = field(default_factory=list)
-    task_kind: str = "short_answer"
+    task_kind: GroundedTaskKind = GroundedTaskKind.SHORT_ANSWER
     task_summary: str | None = None
     visible_values: list[str] = field(default_factory=list)
     visible_answer_options: list[VisibleAnswerOption | str] = field(default_factory=list)
@@ -371,6 +393,8 @@ class GroundedTaskIdentity:
     identity_evidence_pages: list[int] = field(default_factory=list)
     field_evidence: dict[str, list[GroundedFieldEvidence]] = field(default_factory=dict)
     source_confidence: float = 0.0
+    visual_identity_binding: VisualIdentityBinding | None = None
+    regrounding_required: bool = False
 
     def fingerprint(self) -> str:
         payload = json.dumps(asdict(self), sort_keys=True, ensure_ascii=False)
@@ -410,6 +434,55 @@ class IdentityComparisonState(StrEnum):
 
 
 MIN_IDENTITY_CONFIDENCE = 0.72
+
+
+_LEGACY_TASK_KIND_MAP = {
+    "calculation": GroundedTaskKind.NUMERICAL_CALCULATION,
+    "matching": GroundedTaskKind.TECHNICAL_DRAWING_MAPPING,
+    "labelled_diagram": GroundedTaskKind.DIAGRAM_LABELLING,
+    "diagram_labeling": GroundedTaskKind.DIAGRAM_LABELLING,
+    "checkbox-calculation": GroundedTaskKind.CHECKBOX_CALCULATION,
+    "calculation_checkbox": GroundedTaskKind.CHECKBOX_CALCULATION,
+    "multiple_choice_calculation": GroundedTaskKind.CHECKBOX_CALCULATION,
+}
+
+
+def normalise_legacy_task_kind(value: str | None) -> GroundedTaskKind | None:
+    if not value:
+        return None
+    folded = value.strip().casefold().replace(" ", "_")
+    try:
+        return GroundedTaskKind(folded)
+    except ValueError:
+        return _LEGACY_TASK_KIND_MAP.get(folded)
+
+
+def _normalise_exercise_id(value: str | None) -> str:
+    return re.sub(r"[^0-9.]", "", value or "").strip(".")
+
+
+def bind_visual_identity(
+    *,
+    requested_exercise: str | None,
+    visual_identity: Any,
+    visible_page: int | None,
+    has_selected_region: bool,
+    detected_task_count: int | None,
+) -> VisualIdentityBinding:
+    visual_exercise = getattr(visual_identity, "exercise_reference", None)
+    confidence = float(getattr(visual_identity, "confidence", 0.0) or 0.0)
+    evidence_page = getattr(visual_identity, "evidence_page", None)
+    requested = _normalise_exercise_id(requested_exercise)
+    visual = _normalise_exercise_id(visual_exercise)
+    if requested and visual and requested == visual:
+        return VisualIdentityBinding.EXACT_EXERCISE_MATCH
+    if requested and visual and requested != visual:
+        return VisualIdentityBinding.CONFLICTING_EXERCISE
+    if has_selected_region and confidence >= 0.8:
+        return VisualIdentityBinding.SELECTED_REGION_BOUND
+    if not requested and detected_task_count == 1 and evidence_page == visible_page:
+        return VisualIdentityBinding.CURRENT_PAGE_SINGLE_TASK
+    return VisualIdentityBinding.AMBIGUOUS
 
 
 @dataclass(frozen=True)
@@ -510,7 +583,13 @@ def identity_is_sufficient(
     if page_bound_request and identity.exercise_reference:
         if not identity.exercise_visible_on_page:
             return False
-        if identity.page is None or identity.page not in identity.identity_evidence_pages:
+        resolved_page = identity.resolved_task_page or identity.page
+        if resolved_page is None or resolved_page not in identity.identity_evidence_pages:
+            return False
+        if identity.visual_identity_binding in {
+            VisualIdentityBinding.AMBIGUOUS,
+            VisualIdentityBinding.CONFLICTING_EXERCISE,
+        }:
             return False
     if identity.exercise_reference and not (
         identity.domain
@@ -560,9 +639,10 @@ def build_retrieval_scope(
             or has_valid_selected_region
         )
     )
+    task_page = identity.resolved_task_page or identity.page or visible_page
     pages = (
-        [page for page in (visible_page - 1, visible_page, visible_page + 1) if page >= 1]
-        if visible_page else []
+        [page for page in (task_page - 1, task_page, task_page + 1) if page >= 1]
+        if task_page else []
     )
     return RetrievalScope(
         document_ids=[active_document_id] if exact_active_task else fallback_document_ids,
@@ -577,10 +657,76 @@ _GERMAN_ARTICLE_RE = re.compile(
 )
 _EXPLANATION_SEPARATOR_RE = re.compile(r"(?:\s*[\u2013\u2014:,]\s+|\s+\()")
 _QUANTITY_WITH_UNIT_RE = re.compile(
-    r"(?<![\w.])([+\u2212-]?\d+(?:[.,]\d+)?)\s*"
-    r"(mm|cm|m|s|min|N|Pa|MPa)(?:\s*(?:\^?\s*([23])|([\u00b2\u00b3])))?\b",
+    r"(?<![\w.])(?P<value>[+\u2212-]?\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>N\s*/\s*mm\s*(?:\^?\s*2|[Â²])|m\s*/\s*s|1\s*/\s*min|"
+    r"mm(?:\s*(?:\^?\s*[23]|[Â²Â³]))?|cm(?:\s*(?:\^?\s*[23]|[Â²Â³]))?|"
+    r"m(?:\s*(?:\^?\s*[23]|[Â²Â³]))?|kN|N|GPa|MPa|kPa|Pa|kg|g|rpm|"
+    r"kW|W|J|°C|%|min|s)(?=$|[\s,.;:)])",
     re.IGNORECASE,
 )
+
+
+@dataclass(frozen=True)
+class ParsedQuantity:
+    value: float
+    unit_raw: str
+    unit_canonical: str
+    unit_family: str
+    precision: int | None
+    base_value: float
+
+
+_UNIT_DEFINITIONS: dict[str, tuple[str, float]] = {
+    "mm": ("length", 1.0), "cm": ("length", 10.0), "m": ("length", 1000.0),
+    "mm2": ("area", 1.0), "cm2": ("area", 100.0), "m2": ("area", 1_000_000.0),
+    "mm3": ("volume", 1.0), "cm3": ("volume", 1000.0), "m3": ("volume", 1_000_000_000.0),
+    "s": ("time", 1.0), "min": ("time", 60.0),
+    "n": ("force", 1.0), "kn": ("force", 1000.0),
+    "pa": ("pressure", 0.000001), "kpa": ("pressure", 0.001),
+    "mpa": ("pressure", 1.0), "gpa": ("pressure", 1000.0),
+    "n_per_mm2": ("pressure", 1.0),
+    "g": ("mass", 1.0), "kg": ("mass", 1000.0),
+    "m_per_s": ("speed", 1.0), "per_minute": ("rotational_speed", 1.0),
+    "j": ("energy", 1.0), "w": ("power", 1.0), "kw": ("power", 1000.0),
+    "celsius": ("temperature", 1.0), "percent": ("percentage", 1.0),
+}
+
+
+def _canonical_engineering_unit(raw: str) -> str | None:
+    unit = re.sub(r"\s+", "", (raw or "").replace("Â", ""))
+    unit = unit.replace("²", "2").replace("³", "3").replace("^", "")
+    folded = unit.casefold()
+    aliases = {
+        "n/mm2": "n_per_mm2", "m/s": "m_per_s", "1/min": "per_minute",
+        "rpm": "per_minute", "°c": "celsius", "%": "percent",
+    }
+    return aliases.get(folded, folded if folded in _UNIT_DEFINITIONS else None)
+
+
+def parse_engineering_quantities(text: str) -> list[ParsedQuantity]:
+    clean = (text or "").replace("Â", "")
+    parsed: list[ParsedQuantity] = []
+    for match in _QUANTITY_WITH_UNIT_RE.finditer(clean):
+        raw_value = match.group("value").replace("\u2212", "-")
+        canonical = _canonical_engineering_unit(match.group("unit"))
+        if not canonical:
+            continue
+        try:
+            value = float(raw_value.replace(",", "."))
+        except ValueError:
+            continue
+        decimal = re.split(r"[.,]", raw_value.lstrip("+-"), maxsplit=1)
+        precision = len(decimal[1]) if len(decimal) == 2 else 0
+        family, scale = _UNIT_DEFINITIONS[canonical]
+        parsed.append(ParsedQuantity(
+            value=value,
+            unit_raw=match.group("unit"),
+            unit_canonical=canonical,
+            unit_family=family,
+            precision=precision,
+            base_value=value * scale,
+        ))
+    return parsed
 
 
 def normalise_mapping_label(value: str) -> str:
@@ -632,51 +778,39 @@ def source_label_matches(answer_label: str, allowed_label: AllowedMappingLabel |
     return False
 
 
-def _normalise_unit(unit: str, exponent: str | None = None) -> str:
-    suffix = exponent or ""
-    suffix = {"\u00b2": "2", "\u00b3": "3"}.get(suffix, suffix)
-    return unit.casefold() + suffix
-
-
 def _source_unit_families(values: list[str]) -> set[str]:
-    families: set[str] = set()
-    for value in values:
-        for match in _QUANTITY_WITH_UNIT_RE.finditer(value or ""):
-            families.add(_normalise_unit(match.group(2), match.group(3) or match.group(4)))
-    return families
+    return {
+        quantity.unit_family
+        for value in values
+        for quantity in parse_engineering_quantities(value)
+    }
 
 
-def _answer_quantity_values(answer: str) -> list[tuple[float, str]]:
-    result: list[tuple[float, str]] = []
-    for match in _QUANTITY_WITH_UNIT_RE.finditer(answer or ""):
-        try:
-            number = float(match.group(1).replace(",", ".").replace("\u2212", "-"))
-        except ValueError:
-            continue
-        result.append((number, _normalise_unit(
-            match.group(2), match.group(3) or match.group(4)
-        )))
-    return result
+def _answer_quantity_values(answer: str) -> list[ParsedQuantity]:
+    return parse_engineering_quantities(answer)
 
 
 def _has_final_numeric_result(answer: str, identity: GroundedTaskIdentity) -> bool:
+    """Require a requested assignment or an explicitly labelled final-result line."""
     quantity_pattern = "|".join(
         re.escape(value) for value in identity.requested_quantities if value
     )
-    if quantity_pattern and re.search(
-        rf"(?:{quantity_pattern})\b[^\n]{{0,24}}(?:=|\u2248|is|betr(?:ä|ae)gt)\s*"
-        r"[+\u2212-]?\d+(?:[.,]\d+)?\s*(?:mm|cm|m|s|min|N|Pa|MPa)",
-        answer or "", re.IGNORECASE,
-    ):
-        return True
-    if re.search(
-        r"\b(?:final(?: result)?|result|ergebnis|endwert)\b[^\n]{0,24}"
-        r"[+\u2212-]?\d+(?:[.,]\d+)?\s*(?:mm|cm|m|s|min|N|Pa|MPa)",
-        answer or "", re.IGNORECASE,
-    ):
-        return True
+    for line in (answer or "").splitlines():
+        if not parse_engineering_quantities(line):
+            continue
+        has_assignment = bool(re.search(
+            r"(?:=|\u2248|\bis\b|betr(?:ä|ae)gt)", line, re.IGNORECASE,
+        ))
+        has_requested = bool(quantity_pattern and re.search(
+            rf"(?:{quantity_pattern})\b", line, re.IGNORECASE,
+        ))
+        labelled_final = bool(re.search(
+            r"\b(?:final(?: result)?|result|ergebnis|endwert)\b", line, re.IGNORECASE,
+        ))
+        if (has_requested and has_assignment) or labelled_final:
+            return True
     return bool(
-        identity.task_kind.startswith("checkbox")
+        str(identity.task_kind).startswith("checkbox")
         and selected_result_matches_visible_option(
             answer=answer, options=identity.visible_answer_options,
         )
@@ -689,14 +823,26 @@ def selected_result_matches_visible_option(
     answer_values = _answer_quantity_values(answer)
     if not answer_values:
         return False
-    for option in options:
+    matches: set[int] = set()
+    for index, option in enumerate(options):
         text = option.text if isinstance(option, VisibleAnswerOption) else option
         option_values = _answer_quantity_values(text)
-        for answer_number, answer_unit in answer_values:
-            if any(answer_unit == unit and abs(answer_number - number) <= max(1e-9, abs(number) * 1e-6)
-                   for number, unit in option_values):
-                return True
-    return False
+        for answer_quantity in answer_values:
+            for option_quantity in option_values:
+                if answer_quantity.unit_family != option_quantity.unit_family:
+                    continue
+                decimals = option_quantity.precision or 0
+                unit_scale = (
+                    abs(option_quantity.base_value / option_quantity.value)
+                    if option_quantity.value else 1.0
+                )
+                tolerance = max(
+                    0.5 * (10 ** -decimals) * unit_scale,
+                    abs(option_quantity.base_value) * 1e-6,
+                )
+                if abs(answer_quantity.base_value - option_quantity.base_value) <= tolerance:
+                    matches.add(index)
+    return len(matches) == 1
 
 
 def pair_coordinate_answer_options(
@@ -770,7 +916,7 @@ def answer_obligations(
             AnswerObligationType.INCLUDE_COMPATIBLE_UNIT.value,
             sorted(expected_units),
             bool(_source_unit_families([answer]).intersection(expected_units))
-            if expected_units else bool(re.search(r"\b(?:mm|cm|m|s|min|N|Pa|MPa)(?:[Â²Â³23])?\b", answer, re.I)),
+            if expected_units else bool(parse_engineering_quantities(answer)),
         ))
     identifiers = required_identifiers or []
     if traits.requires_complete_mapping and identifiers:
@@ -938,13 +1084,13 @@ def identify_grounded_task(
             break
     visual_traits = traits or classify_task_traits(question)
     kind_map = {
-        VisualTaskKind.NUMERICAL_CALCULATION: "calculation",
-        VisualTaskKind.CHECKBOX_EXTRACTION: "checkbox_calculation",
-        VisualTaskKind.LABELLED_DIAGRAM: "diagram_labelling",
-        VisualTaskKind.TECHNICAL_DRAWING_MAPPING: "matching",
-        VisualTaskKind.TEXT_EXPLANATION: "explanation",
-        VisualTaskKind.FORMULA_EXPLANATION: "explanation",
-        VisualTaskKind.DIAGRAM_EXPLANATION: "explanation",
+        VisualTaskKind.NUMERICAL_CALCULATION: GroundedTaskKind.NUMERICAL_CALCULATION,
+        VisualTaskKind.CHECKBOX_EXTRACTION: GroundedTaskKind.CHECKBOX_EXTRACTION,
+        VisualTaskKind.LABELLED_DIAGRAM: GroundedTaskKind.DIAGRAM_LABELLING,
+        VisualTaskKind.TECHNICAL_DRAWING_MAPPING: GroundedTaskKind.TECHNICAL_DRAWING_MAPPING,
+        VisualTaskKind.TEXT_EXPLANATION: GroundedTaskKind.EXPLANATION,
+        VisualTaskKind.FORMULA_EXPLANATION: GroundedTaskKind.FORMULA_EXPLANATION,
+        VisualTaskKind.DIAGRAM_EXPLANATION: GroundedTaskKind.EXPLANATION,
     }
     leading_options = [
         match.group(1).strip()
@@ -988,12 +1134,12 @@ def identify_grounded_task(
             )
             if match.group(1).strip()
         ]
-    resolved_kind = kind_map.get(visual_traits.visual_kind, "short_answer")
+    resolved_kind = kind_map.get(visual_traits.visual_kind, GroundedTaskKind.SHORT_ANSWER)
     if (
         visual_traits.visual_kind is VisualTaskKind.NUMERICAL_CALCULATION
         and visible_options
     ):
-        resolved_kind = "checkbox_calculation"
+        resolved_kind = GroundedTaskKind.CHECKBOX_CALCULATION
     exercise_reference = exercise.group(1) if exercise else None
     exercise_in_region = bool(
         exercise_reference
@@ -1043,6 +1189,8 @@ def identify_grounded_task(
         document_id=document_id,
         filename=filename,
         page=page,
+        visible_page=page,
+        resolved_task_page=page if exercise_visible else None,
         exercise_reference=exercise_reference,
         domain=domain,
         requested_quantities=list(dict.fromkeys(requested)),
@@ -1086,6 +1234,8 @@ def merge_grounded_task_identity(
     user_identity: GroundedTaskIdentity,
     text_identity: GroundedTaskIdentity,
     visual_identity: Any | None,
+    has_selected_region: bool = False,
+    detected_task_count: int | None = None,
 ) -> GroundedTaskIdentity:
     """Merge identity fields without flattening vision evidence into prose."""
     if visual_identity is None:
@@ -1093,16 +1243,26 @@ def merge_grounded_task_identity(
     visual_page = getattr(visual_identity, "evidence_page", None)
     visual_confidence = float(getattr(visual_identity, "confidence", 0.0) or 0.0)
     visual_exercise = getattr(visual_identity, "exercise_reference", None)
-    text_exercise = text_identity.exercise_reference
-    exercise = text_exercise or visual_exercise or user_identity.exercise_reference
-    visual_matches = bool(
-        visual_exercise and exercise
-        and str(visual_exercise).casefold() == str(exercise).casefold()
+    requested_exercise = (
+        user_identity.exercise_reference or text_identity.exercise_reference
     )
-    use_visual = not visual_exercise or visual_matches
-    current_visual = visual_matches and visual_page == text_identity.page
+    binding = bind_visual_identity(
+        requested_exercise=requested_exercise,
+        visual_identity=visual_identity,
+        visible_page=text_identity.visible_page or text_identity.page,
+        has_selected_region=has_selected_region,
+        detected_task_count=detected_task_count,
+    )
+    trusted = binding in {
+        VisualIdentityBinding.EXACT_EXERCISE_MATCH,
+        VisualIdentityBinding.SELECTED_REGION_BOUND,
+        VisualIdentityBinding.CURRENT_PAGE_SINGLE_TASK,
+    }
+    conflicting = binding is VisualIdentityBinding.CONFLICTING_EXERCISE
+    exercise = requested_exercise or (visual_exercise if trusted else None)
+    current_visual = trusted and visual_page == (text_identity.visible_page or text_identity.page)
     options = list(text_identity.visible_answer_options)
-    for raw in (getattr(visual_identity, "visible_answer_options", []) or []) if use_visual else []:
+    for raw in (getattr(visual_identity, "visible_answer_options", []) or []) if trusted else []:
         option = VisibleAnswerOption(
             text=str(getattr(raw, "text", "") or ""),
             label=getattr(raw, "label", None),
@@ -1118,35 +1278,35 @@ def merge_grounded_task_identity(
             options.append(option)
     labels = list(dict.fromkeys(
         text_identity.visible_mapping_labels
-        + (list(getattr(visual_identity, "visible_mapping_labels", []) or []) if use_visual else [])
+        + (list(getattr(visual_identity, "visible_mapping_labels", []) or []) if trusted else [])
     ))
     values = list(dict.fromkeys(
         text_identity.visible_values
-        + (list(getattr(visual_identity, "visible_values", []) or []) if use_visual else [])
+        + (list(getattr(visual_identity, "visible_values", []) or []) if trusted else [])
     ))
     quantities = list(dict.fromkeys(
         text_identity.requested_quantities
-        + (list(getattr(visual_identity, "requested_quantities", []) or []) if use_visual else [])
+        + (list(getattr(visual_identity, "requested_quantities", []) or []) if trusted else [])
     ))
     symbols = list(dict.fromkeys(
         text_identity.visible_formula_symbols
-        + (list(getattr(visual_identity, "visible_formula_symbols", []) or []) if use_visual else [])
+        + (list(getattr(visual_identity, "visible_formula_symbols", []) or []) if trusted else [])
     ))
     evidence_pages = list(dict.fromkeys(
         text_identity.identity_evidence_pages
-        + ([visual_page] if visual_matches and visual_page is not None else [])
+        + ([visual_page] if trusted and visual_page is not None else [])
     ))
     resolution = text_identity.identity_resolution_method
     if current_visual:
         resolution = IdentityResolutionMethod.CURRENT_PAGE_VISION
-    elif visual_matches:
+    elif trusted:
         resolution = IdentityResolutionMethod.ACTIVE_DOCUMENT_SEARCH
     field_evidence = dict(text_identity.field_evidence)
     if visual_exercise:
         field_evidence.setdefault("exercise_reference", []).append(GroundedFieldEvidence(
             str(visual_exercise), IdentityEvidenceSource.VISION, visual_page, visual_confidence,
         ))
-    if use_visual:
+    if trusted:
         for field_name, values_to_record in (
             ("domain", [getattr(visual_identity, "domain", None)]),
             ("requested_quantities", getattr(visual_identity, "requested_quantities", []) or []),
@@ -1159,30 +1319,49 @@ def merge_grounded_task_identity(
                 )
                 for value in values_to_record if value
             )
-    agreement_bonus = 0.12 if visual_matches else 0.0
+    visual_weight = {
+        VisualIdentityBinding.EXACT_EXERCISE_MATCH: 1.0,
+        VisualIdentityBinding.SELECTED_REGION_BOUND: 0.9,
+        VisualIdentityBinding.CURRENT_PAGE_SINGLE_TASK: 0.75,
+        VisualIdentityBinding.AMBIGUOUS: 0.2,
+        VisualIdentityBinding.CONFLICTING_EXERCISE: 0.0,
+    }[binding]
+    agreement_score = 1.0 if binding is VisualIdentityBinding.EXACT_EXERCISE_MATCH else 0.0
+    combined_confidence = (
+        text_identity.source_confidence * 0.55
+        + visual_confidence * visual_weight * 0.35
+        + agreement_score * 0.10
+    )
+    if binding is VisualIdentityBinding.AMBIGUOUS:
+        combined_confidence = min(combined_confidence, MIN_IDENTITY_CONFIDENCE - 0.01)
+    resolved_page = text_identity.resolved_task_page or text_identity.page
+    if trusted and visual_page is not None:
+        resolved_page = visual_page
     return GroundedTaskIdentity(
         document_id=text_identity.document_id or user_identity.document_id,
         filename=text_identity.filename or user_identity.filename,
-        page=text_identity.page,
+        page=resolved_page,
+        visible_page=text_identity.visible_page or text_identity.page,
+        resolved_task_page=resolved_page,
         exercise_reference=exercise,
-        domain=text_identity.domain or (getattr(visual_identity, "domain", None) if use_visual else None),
+        domain=text_identity.domain or (getattr(visual_identity, "domain", None) if trusted else None),
         requested_quantities=quantities,
-        task_kind=((getattr(visual_identity, "task_kind", None) if use_visual else None)
-                   or text_identity.task_kind),
-        task_summary=(getattr(visual_identity, "task_summary", None) if use_visual else None),
+        task_kind=(normalise_legacy_task_kind(
+            getattr(visual_identity, "task_kind", None) if trusted else None
+        ) or normalise_legacy_task_kind(str(text_identity.task_kind))
+                   or GroundedTaskKind.SHORT_ANSWER),
+        task_summary=(getattr(visual_identity, "task_summary", None) if trusted else None),
         visible_values=values,
         visible_answer_options=options,
         visible_mapping_labels=labels,
         visible_formula_symbols=symbols,
-        exercise_visible_on_page=(text_identity.exercise_visible_on_page or current_visual),
+        exercise_visible_on_page=(text_identity.exercise_visible_on_page or trusted),
         identity_resolution_method=resolution,
         identity_evidence_pages=evidence_pages,
         field_evidence=field_evidence,
-        source_confidence=min(
-            1.0,
-            (max(text_identity.source_confidence, visual_confidence)
-             if use_visual else text_identity.source_confidence) + agreement_bonus,
-        ),
+        source_confidence=min(1.0, combined_confidence),
+        visual_identity_binding=binding,
+        regrounding_required=conflicting,
     )
 
 
@@ -1261,6 +1440,7 @@ __all__ = [
     "AnswerObligation",
     "DraftTaskIdentity",
     "GroundedTaskIdentity",
+    "GroundedTaskKind",
     "GroundedFieldEvidence",
     "GroundedRequestContext",
     "GroundingMismatch",
@@ -1273,10 +1453,13 @@ __all__ = [
     "RetrievalScope",
     "RepairedAnswerValidation",
     "VisualTaskKind",
+    "VisualIdentityBinding",
+    "ParsedQuantity",
     "VisibleAnswerOption",
     "assess_text_quality",
     "answer_obligations",
     "build_retrieval_scope",
+    "bind_visual_identity",
     "build_allowed_mapping_labels",
     "classify_number_roles",
     "classify_task_traits",
@@ -1288,6 +1471,8 @@ __all__ = [
     "identity_is_sufficient",
     "is_page_bound_request",
     "merge_grounded_task_identity",
+    "normalise_legacy_task_kind",
+    "parse_engineering_quantities",
     "numerical_role_metadata",
     "pair_coordinate_answer_options",
     "selected_result_matches_visible_option",

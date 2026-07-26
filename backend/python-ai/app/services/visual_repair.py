@@ -8,10 +8,11 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import get_settings
 from .openai_client import get_openai_client
+from .reliability import GroundedTaskKind, TaskTraits, VisualTaskKind
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +40,55 @@ class VisualTaskIdentityResult(BaseModel):
     visible_answer_options: list[VisualAnswerOptionResult] = Field(default_factory=list)
     visible_mapping_labels: list[str] = Field(default_factory=list)
     visible_formula_symbols: list[str] = Field(default_factory=list)
-    task_kind: str | None = None
+    task_kind: GroundedTaskKind | None = None
     task_summary: str | None = None
     evidence_page: int | None = None
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+def visual_identity_model_for_task(
+    traits: TaskTraits,
+    *,
+    image_count: int,
+    has_mapping_labels: bool,
+) -> str:
+    settings = get_settings()
+    demanding = bool(
+        traits.requires_complete_mapping
+        or traits.requires_spatial_reasoning
+        or has_mapping_labels
+        or image_count > 1
+        or traits.visual_kind in {
+            VisualTaskKind.TECHNICAL_DRAWING_MAPPING,
+            VisualTaskKind.CHECKBOX_EXTRACTION,
+        }
+    )
+    return (
+        settings.openai_generate_model_strong
+        if demanding else settings.openai_generate_model
+    )
+
+
+def _strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Make Pydantic's schema compatible with OpenAI strict structured output."""
+    result = dict(schema)
+    properties = result.get("properties")
+    if isinstance(properties, dict):
+        result["required"] = list(properties)
+        result["additionalProperties"] = False
+        result["properties"] = {
+            key: _strict_json_schema(value) if isinstance(value, dict) else value
+            for key, value in properties.items()
+        }
+    if isinstance(result.get("items"), dict):
+        result["items"] = _strict_json_schema(result["items"])
+    for branch_key in ("$defs", "definitions"):
+        if isinstance(result.get(branch_key), dict):
+            result[branch_key] = {
+                key: _strict_json_schema(value) if isinstance(value, dict) else value
+                for key, value in result[branch_key].items()
+            }
+    return result
 
 
 def generate_visual_task_identity(
@@ -61,7 +107,7 @@ def generate_visual_task_identity(
     client = get_openai_client()
     last_error: Exception | None = None
     messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
-    schema = VisualTaskIdentityResult.model_json_schema()
+    schema = _strict_json_schema(VisualTaskIdentityResult.model_json_schema())
     for attempt in range(MAX_VISUAL_IDENTITY_ATTEMPTS):
         if attempt:
             messages.append({
@@ -78,20 +124,16 @@ def generate_visual_task_identity(
                     "type": "json_schema",
                     "json_schema": {
                         "name": "visual_task_identity",
-                        # Pydantic defaults make several fields optional in the
-                        # JSON Schema. OpenAI strict mode requires every schema
-                        # property to be listed as required, so validation is
-                        # enforced locally below for cross-SDK compatibility.
-                        "strict": False,
+                        "strict": attempt == 0,
                         "schema": schema,
                     },
                 },
             )
             raw = str(response.choices[0].message.content or "").strip()
             return VisualTaskIdentityResult.model_validate(json.loads(raw))
-        except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        except Exception as exc:
             last_error = exc
-    raise ValueError("visual identity did not match schema") from last_error
+    raise ValueError("visual_identity_schema_failure") from last_error
 
 
 def generate_visual_repair(
@@ -270,6 +312,7 @@ __all__ = [
     "VisualTaskIdentityResult",
     "generate_visual_repair",
     "generate_visual_task_identity",
+    "visual_identity_model_for_task",
     "generate_grounded_repair_sync",
     "repair_false_visual_denial",
     "repair_false_visual_denial_sync",

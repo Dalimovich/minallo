@@ -13,6 +13,7 @@ from app.services.document_extraction import (
     ExtractionPageKind,
     GapReviewResult,
     GapSearchCoverage,
+    GapIdVariant,
     GapStatus,
     extraction_pages_for_direction,
     extraction_context_from_api,
@@ -27,12 +28,14 @@ from app.services.reliability import (
     CheckboxGeometry,
     DraftTaskIdentity,
     GroundedTaskIdentity,
+    GroundedTaskKind,
     GroundingMismatch,
     NumberRole,
     IdentityResolutionMethod,
     LayoutTextSpan,
     VisibleAnswerOption,
     VisualTaskKind,
+    VisualIdentityBinding,
     assess_text_quality,
     classify_number_roles,
     classify_task_traits,
@@ -44,6 +47,8 @@ from app.services.reliability import (
     identify_grounded_task,
     extract_text_visible_options,
     merge_grounded_task_identity,
+    normalise_legacy_task_kind,
+    parse_engineering_quantities,
     pair_coordinate_answer_options,
     selected_result_matches_visible_option,
     source_label_matches,
@@ -54,6 +59,7 @@ from app.services.visual_repair import (
     VisualAnswerOptionResult,
     VisualTaskIdentityResult,
     generate_visual_task_identity,
+    visual_identity_model_for_task,
     repair_false_visual_denial,
 )
 
@@ -680,11 +686,13 @@ def test_page_classification_weak_solution_word_is_uncertain() -> None:
 
 def test_visual_identity_schema_retries_invalid_json_once(monkeypatch) -> None:
     calls = 0
+    strict_modes = []
 
     class Completions:
-        def create(self, **_):
+        def create(self, **kwargs):
             nonlocal calls
             calls += 1
+            strict_modes.append(kwargs["response_format"]["json_schema"]["strict"])
             content = "not-json" if calls == 1 else (
                 '{"exercise_reference":"14.1","domain":"injection_moulding",'
                 '"requested_quantities":[],"visible_values":[],"visible_answer_options":[],'
@@ -703,5 +711,159 @@ def test_visual_identity_schema_retries_invalid_json_once(monkeypatch) -> None:
         model="test",
     )
     assert calls == 2
+    assert strict_modes == [True, False]
     assert result.exercise_reference == "14.1"
     assert result.visible_mapping_labels == ["Anguss/Angusskanal"]
+
+
+def test_unbound_visual_identity_cannot_inflate_or_supply_exact_fields() -> None:
+    text = GroundedTaskIdentity(
+        document_id="doc", page=39, visible_page=39,
+        exercise_reference="14.4", source_confidence=0.45,
+    )
+    visual = VisualTaskIdentityResult(
+        exercise_reference=None, domain="machining",
+        requested_quantities=["T_min"], task_kind=GroundedTaskKind.CHECKBOX_CALCULATION,
+        evidence_page=39, confidence=0.99,
+    )
+    merged = merge_grounded_task_identity(
+        user_identity=text, text_identity=text, visual_identity=visual,
+        detected_task_count=2,
+    )
+    assert merged.visual_identity_binding is VisualIdentityBinding.AMBIGUOUS
+    assert merged.domain is None
+    assert merged.requested_quantities == []
+    assert merged.source_confidence < 0.72
+
+
+def test_visual_binding_conflict_and_resolved_page_provenance() -> None:
+    user = GroundedTaskIdentity(document_id="doc", page=39, exercise_reference="14.4")
+    text = GroundedTaskIdentity(
+        document_id="doc", page=39, visible_page=39, exercise_reference="14.4",
+        domain="injection_moulding", source_confidence=0.7,
+    )
+    conflicting = merge_grounded_task_identity(
+        user_identity=user, text_identity=text,
+        visual_identity=VisualTaskIdentityResult(
+            exercise_reference="14.1", domain="injection_moulding",
+            evidence_page=42, confidence=0.98,
+        ),
+    )
+    assert conflicting.visual_identity_binding is VisualIdentityBinding.CONFLICTING_EXERCISE
+    assert conflicting.regrounding_required
+    resolved = merge_grounded_task_identity(
+        user_identity=user, text_identity=text,
+        visual_identity=VisualTaskIdentityResult(
+            exercise_reference="14.4", domain="injection_moulding",
+            requested_quantities=["V_Spritz"], evidence_page=42, confidence=0.98,
+        ),
+    )
+    assert resolved.visual_identity_binding is VisualIdentityBinding.EXACT_EXERCISE_MATCH
+    assert resolved.visible_page == 39
+    assert resolved.resolved_task_page == 42
+    assert resolved.page == 42
+    assert resolved.identity_evidence_pages == [42]
+
+
+def test_selected_region_can_bind_visual_identity_without_number() -> None:
+    text = GroundedTaskIdentity(document_id="doc", page=8, visible_page=8)
+    merged = merge_grounded_task_identity(
+        user_identity=text, text_identity=text,
+        visual_identity=VisualTaskIdentityResult(
+            domain="thermodynamics", evidence_page=8, confidence=0.9,
+        ),
+        has_selected_region=True,
+    )
+    assert merged.visual_identity_binding is VisualIdentityBinding.SELECTED_REGION_BOUND
+    assert merged.domain == "thermodynamics"
+
+
+def test_task_kind_enum_and_legacy_normalisation() -> None:
+    assert normalise_legacy_task_kind("calculation checkbox") is GroundedTaskKind.CHECKBOX_CALCULATION
+    assert normalise_legacy_task_kind("multiple_choice_calculation") is GroundedTaskKind.CHECKBOX_CALCULATION
+    assert normalise_legacy_task_kind("invented_kind") is None
+    try:
+        VisualTaskIdentityResult(task_kind="invented_kind")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsupported visual task kind was accepted")
+
+
+def test_gap_variants_require_structural_context_for_compact_ids() -> None:
+    variants = extraction.gap_id_variants("9.1")
+    assert all(isinstance(item, GapIdVariant) for item in variants)
+    compact = next(item for item in variants if item.value == "91")
+    assert compact.requires_question_context
+    assert not extraction._gap_variant_matches_text(compact, "The result is 91 mm.")
+    assert not extraction._gap_variant_matches_text(compact, "See page 91.")
+    assert extraction._gap_variant_matches_text(compact, "Kurzfrage 91: Was gilt?")
+    review = review_numbering_gap(
+        "9.1", neighbouring_text="Kurzfrage 91: Was gilt?", reviewed_pages=[4],
+    )
+    assert review.status is GapStatus.UNRESOLVED
+
+
+def test_gap_budget_exhaustion_is_never_reported_as_complete() -> None:
+    coverage = GapSearchCoverage(
+        full_document_text_searched=True,
+        existing_visual_results_reviewed=True,
+        targeted_visual_pages_required=[4, 5, 6],
+        targeted_visual_pages_searched=[4],
+        visual_search_budget_exhausted=True,
+        unsearched_candidate_pages=[5, 6],
+        targeted_visual_calls_used=12,
+    )
+    gap = review_numbering_gap(
+        "9.1", neighbouring_text="", reviewed_pages=list(range(1, 20)),
+        review_result=GapReviewResult(
+            exact_text_search_performed=True,
+            full_section_search_performed=True,
+            solution_section_search_performed=True,
+            visual_search_performed=True,
+            coverage=coverage,
+        ),
+    )
+    assert gap.status is GapStatus.UNRESOLVED
+    assert gap.coverage.visual_search_budget_exhausted
+
+
+def test_engineering_quantity_parser_covers_units_and_conversions() -> None:
+    parsed = parse_engineering_quantities(
+        "191 cm³; 191000 mm³; 250 N/mm²; 3000 rpm; 20 °C; 15%; 5 kW"
+    )
+    by_unit = {item.unit_canonical: item for item in parsed}
+    assert by_unit["cm3"].unit_family == "volume"
+    assert by_unit["cm3"].base_value == by_unit["mm3"].base_value
+    assert by_unit["n_per_mm2"].unit_family == "pressure"
+    assert by_unit["per_minute"].value == 3000
+    assert by_unit["celsius"].value == 20
+    assert by_unit["percent"].value == 15
+    assert by_unit["kw"].unit_family == "power"
+
+
+def test_option_matching_is_precision_aware_convertible_and_ambiguity_safe() -> None:
+    assert selected_result_matches_visible_option(
+        answer="V_Spritz = 191.04 cm³", options=["191 cm³", "205 cm³"],
+    )
+    assert selected_result_matches_visible_option(
+        answer="V_Spritz = 191000 mm³", options=["191 cm³", "205 cm³"],
+    )
+    assert not selected_result_matches_visible_option(
+        answer="V = 191.04 cm³", options=["191 cm³", "191.0 cm³"],
+    )
+
+
+def test_visual_identity_model_routes_only_demanding_tasks_to_strong(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        openai_generate_model="standard", openai_generate_model_strong="strong",
+    )
+    monkeypatch.setattr(visual_repair_service, "get_settings", lambda: settings)
+    assert visual_identity_model_for_task(
+        classify_task_traits("Map numbers 1 to 9 on this technical drawing"),
+        image_count=1, has_mapping_labels=True,
+    ) == "strong"
+    assert visual_identity_model_for_task(
+        classify_task_traits("Explain this paragraph"),
+        image_count=1, has_mapping_labels=False,
+    ) == "standard"

@@ -893,7 +893,6 @@ async def _prepare_ask_stream_response(
     payload: AskStreamRequest, user: dict, status_sink=None, request_id: str | None = None,
     preflight: dict[str, Any] | None = None,
 ):
-    request_started = time.perf_counter()
     request_id = request_id or uuid.uuid4().hex
     from ..services.pipeline_observability import PipelineObserver  # noqa: WPS433
     observer = PipelineObserver(request_id)
@@ -1412,9 +1411,14 @@ async def _prepare_ask_stream_response(
         "task_identity_resolved",
         exerciseReference=grounded_identity.exercise_reference,
         taskType=grounded_identity.task_kind,
-        visiblePage=grounded_identity.page,
+        visiblePage=grounded_identity.visible_page or payload.visiblePage,
+        resolvedTaskPage=grounded_identity.resolved_task_page,
         identityResolutionMethod=grounded_identity.identity_resolution_method.value,
         identityEvidencePages=grounded_identity.identity_evidence_pages,
+        visualIdentityBinding=(
+            grounded_identity.visual_identity_binding.value
+            if grounded_identity.visual_identity_binding else None
+        ),
         exerciseVisibleOnPage=grounded_identity.exercise_visible_on_page,
         sourceConfidence=grounded_identity.source_confidence,
     )
@@ -1991,8 +1995,16 @@ async def _prepare_ask_stream_response(
             )
             visual_identity = None
             if open_file_images:
-                from ..services.visual_repair import generate_visual_task_identity  # noqa: WPS433
+                from ..services.visual_repair import (  # noqa: WPS433
+                    generate_visual_task_identity,
+                    visual_identity_model_for_task,
+                )
                 try:
+                    visual_identity_model = visual_identity_model_for_task(
+                        preliminary_traits,
+                        image_count=len(open_file_images),
+                        has_mapping_labels=bool(grounded_identity.visible_mapping_labels),
+                    )
                     visual_identity = await run_in_threadpool(
                         lambda: generate_visual_task_identity(
                             prompt=(
@@ -2002,7 +2014,7 @@ async def _prepare_ask_stream_response(
                                 "symbols, task kind, evidence page and confidence. Do not solve it."
                             ),
                             images=open_file_images,
-                            model=get_settings().openai_generate_model,
+                            model=visual_identity_model,
                         )
                     )
                 except Exception:
@@ -2024,9 +2036,30 @@ async def _prepare_ask_stream_response(
                 user_identity=grounded_identity,
                 text_identity=text_identity,
                 visual_identity=visual_identity,
+                has_selected_region=verified_region is not None,
+                detected_task_count=len(set(re.findall(
+                    r"\b(?:Aufgabe|Exercise|Question|Problem)\s+(\d+(?:\.\d+)*)",
+                    regrounding_text,
+                    re.IGNORECASE,
+                ))) or None,
             )
             observer.event(
                 "task_identity_regrounded",
+                visualIdentityBinding=(
+                    grounded_identity.visual_identity_binding.value
+                    if grounded_identity.visual_identity_binding else None
+                ),
+                visualIdentityExercise=(
+                    getattr(visual_identity, "exercise_reference", None)
+                    if visual_identity else None
+                ),
+                requestedExercise=grounded_identity.exercise_reference,
+                visiblePage=grounded_identity.visible_page,
+                resolvedTaskPage=grounded_identity.resolved_task_page,
+                visualIdentityModel=(visual_identity_model if open_file_images else None),
+                visualIdentityConfidence=(
+                    getattr(visual_identity, "confidence", None) if visual_identity else None
+                ),
                 sourceConfidence=grounded_identity.source_confidence,
                 requestedQuantities=grounded_identity.requested_quantities,
             )
@@ -2259,6 +2292,8 @@ async def _prepare_ask_stream_response(
     observer.event(
         "grounded_request_context_created",
         exerciseReference=grounded_identity.exercise_reference,
+        visiblePage=grounded_identity.visible_page or payload.visiblePage,
+        resolvedTaskPage=grounded_identity.resolved_task_page,
         identityResolutionMethod=grounded_identity.identity_resolution_method.value,
         identityEvidencePages=grounded_identity.identity_evidence_pages,
         exerciseVisibleOnPage=grounded_identity.exercise_visible_on_page,
