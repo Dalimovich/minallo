@@ -41,8 +41,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260726-open-pdf-grounding-v1['"]/);
-  assert.match(INDEX, /config\.js\?v=20260726-open-pdf-grounding-v1/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260726-open-pdf-runtime-v2['"]/);
+  assert.match(INDEX, /config\.js\?v=20260726-open-pdf-runtime-v2/);
 });
 
 test('Manrope is the single shared interface font while technical text stays monospace', () => {
@@ -114,6 +114,13 @@ test('new chatbot sends one stable active-PDF snapshot to ask-stream', () => {
   assert.match(NEW_CHATBOT, /const explicitlyNamed = sourceLibrary\.items\.filter/);
   assert.match(NEW_CHATBOT, /const payloadPdf = useGeneratedArtifact \? null : activePdf/);
   assert.match(NEW_CHATBOT, /region: 'selected_region'/);
+  assert.match(NEW_CHATBOT, /empty_completed_response/);
+  assert.match(NEW_CHATBOT, /stream_ended_without_terminal_event/);
+  assert.match(NEW_CHATBOT, /class AskStreamError extends Error/);
+  assert.match(NEW_CHATBOT, /malformed ask-stream event/);
+  assert.doesNotMatch(NEW_CHATBOT, /stripSourceMarkers\(answerBuf \|\| tStr\('cb_no_response'/);
+  assert.match(NEW_CHATBOT, /case 'active_document':/);
+  assert.match(NEW_CHATBOT, /'Answer source unavailable'/);
   assert.doesNotMatch(NEW_CHATBOT, /if \(\(last\.images \|\| \[\]\)\.length \|\| \(last\.files \|\| \[\]\)\.length\) return null/);
 });
 
@@ -122,6 +129,14 @@ test('active PDF provider retries a page race once and uses canonical viewer sta
   assert.match(ACTIVE_PDF_CONTEXT, /pdfPageTexts\?\.\[visiblePage\]/);
   assert.match(ACTIVE_PDF_CONTEXT, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
   assert.match(ACTIVE_PDF_CONTEXT, /sameViewerPage\(before, after\)/);
-  assert.match(ACTIVE_PDF_CONTEXT, /window\._pdfToImages\(1, true\)/);
-  assert.match(ACTIVE_PDF_CONTEXT, /image\.page === context\.visiblePage/);
+  assert.match(ACTIVE_PDF_CONTEXT, /export async function capturePdfPage/);
+  assert.match(ACTIVE_PDF_CONTEXT, /pdfDoc\.getPage\(request\.page\)/);
+  assert.match(ACTIVE_PDF_CONTEXT, /page: request\.page/);
+  assert.doesNotMatch(ACTIVE_PDF_CONTEXT, /window\._pdfToImages\(/);
+  assert.match(ACTIVE_PDF_CONTEXT, /status: 'unstable'/);
+  assert.match(ACTIVE_PDF_CONTEXT, /status: 'capture_failed'/);
+  assert.match(ACTIVE_PDF_CONTEXT, /pageTextStatus/);
+  assert.match(ACTIVE_PDF_CONTEXT, /'loading'/);
+  assert.match(ACTIVE_PDF_CONTEXT, /'empty_scanned_page'/);
+  assert.match(ACTIVE_PDF_CONTEXT, /'failed'/);
 });

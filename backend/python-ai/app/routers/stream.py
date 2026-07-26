@@ -308,6 +308,9 @@ class VisualContextMeta(BaseModel):
     currentPageTextChars: int = 0
     activeDocumentId: str | None = None
     activeFileName: str | None = None
+    snapshotId: str | None = None
+    pageTextStatus: str | None = None
+    capturedImagePages: list[int] = Field(default_factory=list)
 
 
 class PageContextPayload(BaseModel):
@@ -612,7 +615,9 @@ def _validate_open_file_images(images: list[OpenFileImagePayload] | None) -> lis
         if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", data):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileImages data must be base64")
         region = (img.region or "full_page").strip().lower()
-        if region not in {"full_page", "formula_area", "drawing_area", "answer_grid"}:
+        if region not in {
+            "full_page", "selected_region", "formula_area", "drawing_area", "answer_grid",
+        }:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unsupported image region")
         normalised.append({
             "mediaType": media_type,
@@ -726,6 +731,35 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
     if payload.visiblePage is not None and payload.visiblePage < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visiblePage must be positive")
     validated_images = _validate_open_file_images(payload.openFileImages)
+    visual_meta = payload.visualContextMeta
+    validated_image_pages = [
+        int(image["page"]) for image in validated_images if image.get("page") is not None
+    ]
+    snapshot_mismatch = bool(
+        visual_meta
+        and visual_meta.snapshotId
+        and (
+            visual_meta.activeDocumentId != payload.activeDocumentId
+            or visual_meta.renderedPage != payload.visiblePage
+            or visual_meta.renderedImageCount != len(validated_images)
+            or visual_meta.capturedImagePages != validated_image_pages
+            or any(page != payload.visiblePage for page in validated_image_pages)
+        )
+    )
+    if snapshot_mismatch:
+        async def mismatched_snapshot_stream():
+            yield _error_sse(
+                code="visible_page_snapshot_mismatch",
+                message=(
+                    "The visible PDF evidence did not match the requested page. "
+                    "Please retry."
+                ),
+                retryable=True,
+                request_id=request_id,
+            )
+        return StreamingResponse(
+            mismatched_snapshot_stream(), media_type="text/event-stream"
+        )
     task_traits = classify_task_traits(
         question,
         visible_text=payload.openFileContext or "",
@@ -873,6 +907,13 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
             prepared = await prepared_task
             while not status_queue.empty():
                 if not await generation_is_current():
+                    terminal_event_sent = True
+                    yield _error_sse(
+                        code="request_superseded",
+                        message="This request was replaced by a newer question.",
+                        retryable=False,
+                        request_id=request_id,
+                    )
                     return
                 yield _status_sse(status_queue.get_nowait())
             async for event in prepared.body_iterator:
@@ -892,6 +933,14 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 if _is_terminal_sse(event):
                     terminal_event_sent = True
                 yield event
+            if not terminal_event_sent:
+                terminal_event_sent = True
+                yield _error_sse(
+                    code="stream_ended_without_terminal_event",
+                    message="The AI connection ended before the answer completed.",
+                    retryable=True,
+                    request_id=request_id,
+                )
         except HTTPException as exc:
             terminal_event_sent = True
             yield _error_sse(

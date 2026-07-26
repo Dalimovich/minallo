@@ -1063,6 +1063,7 @@ async function streamAiReply(
     return true;
   } catch (err) {
     thinking?.remove(true);
+    if (isOriginActive()) setBubbleSubtitle(aiRow, undefined, 'failed');
     if (isOriginActive() && bubble) {
       if ((err as Error)?.name === 'AbortError') {
         bubble.innerHTML =
@@ -2560,6 +2561,25 @@ function ragEligibility(
 /** Call the Python `/ask-stream` SSE endpoint. Streams tokens into
  * ``bubble`` as they arrive and resolves with the full answer text once
  * the stream completes. */
+class AskStreamError extends Error {
+  code: string;
+  retryable: boolean;
+  metadata?: Record<string, unknown>;
+
+  constructor(input: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    metadata?: Record<string, unknown>;
+  }) {
+    super(input.message);
+    this.name = 'AskStreamError';
+    this.code = input.code;
+    this.retryable = input.retryable;
+    this.metadata = input.metadata;
+  }
+}
+
 async function streamFromAskStream(
   question: string,
   courseId: string,
@@ -2581,9 +2601,23 @@ async function streamFromAskStream(
     const text = await callGenericAi([{ role: 'user', text: question }], bubble, controller, thinking, null, allowDiagrams);
     return { text, meta: null };
   }
-  const snapshot = activePdfContext
+  const snapshotResult = activePdfContext
     ? await captureStablePdfSnapshot(question, 'active_document')
     : null;
+  if (activePdfContext && snapshotResult?.status !== 'captured') {
+    const unstable = snapshotResult?.status === 'unstable';
+    throw new AskStreamError({
+      code: unstable ? 'visible_page_snapshot_unstable' : 'visible_page_capture_failed',
+      message: unstable
+        ? 'The visible PDF page changed while Minallo was capturing it. Please retry.'
+        : 'Minallo could not capture the visible PDF page. Please retry.',
+      retryable: true,
+      metadata: snapshotResult && snapshotResult.status !== 'no_active_pdf'
+        ? { ...snapshotResult }
+        : undefined,
+    });
+  }
+  const snapshot = snapshotResult?.status === 'captured' ? snapshotResult.snapshot : null;
   const activePdf = snapshot?.activeDocument || null;
   const pastedImages: OpenFileImage[] = userImages.flatMap((image) => {
     const comma = image.dataUrl.indexOf(',');
@@ -2602,6 +2636,9 @@ async function streamFromAskStream(
   const payloadPdf = useGeneratedArtifact ? null : activePdf;
   const currentPageContext = payloadPdf
     ? `[CURRENTLY VISIBLE PDF PAGE]\nFile: ${payloadPdf.fileName}\nPage: ${payloadPdf.visiblePage} of ${payloadPdf.pageCount}\n\n${payloadPdf.pageText}`.slice(0, 16000)
+    : undefined;
+  const snapshotId = payloadPdf
+    ? [payloadPdf.documentId, payloadPdf.visiblePage, payloadPdf.viewerInstanceId || '', snapshot?.capturedAt || 0].join(':')
     : undefined;
   const resp = await authenticatedFetch(aiHost + '/ask-stream', {
     method: 'POST',
@@ -2643,7 +2680,10 @@ async function streamFromAskStream(
           renderedImageCount: openFileImages.length,
           currentPageTextChars: payloadPdf.pageText.length,
           activeDocumentId: payloadPdf.documentId,
-          activeFileName: payloadPdf.fileName
+          activeFileName: payloadPdf.fileName,
+          snapshotId,
+          pageTextStatus: payloadPdf.pageTextStatus,
+          capturedImagePages: openFileImages.map((image) => image.page)
         },
         selectedText: payloadPdf.selectedRegion?.text,
         selectedRegion: payloadPdf.selectedRegion
@@ -2668,6 +2708,7 @@ async function streamFromAskStream(
   let sseBuffer = '';
   let answerBuf = '';
   let doneMeta: Record<string, unknown> | null = null;
+  let streamMeta: Record<string, unknown> = {};
   let liveReveal: ReturnType<typeof createSoftStreamReveal> | null = null;
   let hasLiveReveal = false;
 
@@ -2688,8 +2729,16 @@ async function streamFromAskStream(
     sseBuffer = lines.pop() || '';
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
+      let evt: Record<string, unknown>;
       try {
-        const evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
+        evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
+      } catch (error) {
+        console.warn('[ncb] malformed ask-stream event', {
+          lineLength: line.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
         // Live status: backend pipeline events ("collecting_sources",
         // "writing_answer", …) update the pending bubble's status line before
         // any answer token arrives. Once a token creates the real bubble
@@ -2700,19 +2749,49 @@ async function streamFromAskStream(
           const reveal = await ensureLiveReveal();
           reveal.push(evt.t);
         }
-        if (evt.done) doneMeta = evt;
-        if (evt.error) throw new Error(String(evt.error));
-      } catch {
-        /* ignore malformed line */
+        if (evt.meta === true) streamMeta = { ...streamMeta, ...evt };
+        if (evt.done === true) doneMeta = { ...streamMeta, ...evt };
+        if (evt.error) {
+          throw new AskStreamError({
+            code: typeof evt.errorCode === 'string'
+              ? evt.errorCode
+              : typeof evt.code === 'string' ? evt.code : 'stream_error',
+            message: typeof evt.message === 'string'
+              ? evt.message
+              : typeof evt.error === 'string' ? evt.error : 'The AI request failed.',
+            retryable: evt.retryable === true,
+            metadata: evt,
+          });
+        }
       }
     }
+
+  if (!answerBuf.trim()) {
+    throw new AskStreamError({
+      code: doneMeta?.done === true
+        ? 'empty_completed_response'
+        : 'stream_ended_without_terminal_event',
+      message: doneMeta?.done === true
+        ? 'Minallo completed the request but returned no answer.'
+        : 'The AI connection ended before the answer was completed.',
+      retryable: true,
+      metadata: doneMeta || streamMeta,
+    });
+  }
+  if (!doneMeta?.done) {
+    throw new AskStreamError({
+      code: 'stream_ended_without_terminal_event',
+      message: 'The AI connection ended before the answer was completed.',
+      retryable: true,
+      metadata: streamMeta,
+    });
   }
 
   // Re-render with full markdown now that we have the complete text. Inline
   // [Source N] markers are internal grounding anchors; the user sees sources
   // only in the collapsible footer appended below.
   const displayAnswer = sanitizeChatbotDiagrams(
-    stripSourceMarkers(answerBuf || tStr('cb_no_response', 'No response.')),
+    stripSourceMarkers(answerBuf),
     allowDiagrams
   );
   const revealToFinish = liveReveal as ReturnType<typeof createSoftStreamReveal> | null;
@@ -3118,11 +3197,21 @@ async function callGenericAi(
     throw new Error('Server ' + resp.status + ': ' + errText.slice(0, 200));
   }
   const data = (await resp.json()) as { content?: Array<{ text?: string }>; error?: { message?: string } };
-  const rawResponse = data.error
-    ? friendlyAiErrorMessage(data.error.message || data.error)
-    : data.content
-      ? data.content.map((b) => b.text || '').join('')
-      : tStr('cb_no_response', 'No response.');
+  if (data.error) {
+    throw new AskStreamError({
+      code: 'generic_ai_error',
+      message: data.error.message || 'The AI request failed.',
+      retryable: true,
+    });
+  }
+  const rawResponse = data.content?.map((block) => block.text || '').join('').trim() || '';
+  if (!rawResponse) {
+    throw new AskStreamError({
+      code: 'empty_completed_response',
+      message: 'Minallo completed the request but returned no answer.',
+      retryable: true,
+    });
+  }
   const raw = sanitizeChatbotDiagrams(rawResponse, allowDiagrams);
   // Type into the bubble for the same UX as before.
   if (thinking) await thinking.waitMinimum();
@@ -3202,9 +3291,21 @@ function appendAiBubble(msgs: HTMLElement): HTMLElement {
 // Update the AI bubble's subtitle to reflect the source actually used, so the
 // header never falsely claims "course context" when the answer came from the
 // generic path or general knowledge. Driven by the resolved sourceScope.
-function setBubbleSubtitle(aiRow: HTMLElement, sourceScope: string | undefined): void {
+function setBubbleSubtitle(
+  aiRow: HTMLElement,
+  sourceScope: string | undefined,
+  state: 'pending' | 'completed' | 'failed' = 'completed'
+): void {
   const el = aiRow.querySelector<HTMLElement>('.ncb-bubble-subtitle');
   if (!el) return;
+  if (state === 'pending') {
+    el.textContent = tStr('cb_subtitle_pending_document', 'Checking your document');
+    return;
+  }
+  if (state === 'failed') {
+    el.textContent = tStr('cb_subtitle_document_failed', 'Document request failed');
+    return;
+  }
   let label: string;
   if (sourceScope && sourceScope.startsWith('file:')) {
     const name = sourceScope.slice(5).trim();
@@ -3221,11 +3322,18 @@ function setBubbleSubtitle(aiRow: HTMLElement, sourceScope: string | undefined):
     case 'course_files':
       label = tStr('cb_subtitle_course', 'Answered using your course files');
       break;
+    case 'active_document':
+      label = tStr('cb_subtitle_active_document', 'Answered from the open document');
+      break;
     case 'internet':
       label = tStr('cb_subtitle_internet', 'Answered from the web');
       break;
-    default:
+    case 'general':
+    case 'general_knowledge':
       label = tStr('cb_subtitle_general', 'Answered with general knowledge');
+      break;
+    default:
+      label = tStr('cb_subtitle_source_unavailable', 'Answer source unavailable');
   }
   el.textContent = label;
 }

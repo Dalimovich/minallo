@@ -26,9 +26,17 @@ def test_visual_contract_accepts_png_regions_and_preserves_metadata() -> None:
             page=39,
             region="formula_area",
         ),
+        OpenFileImagePayload(
+            mediaType="image/png",
+            data="YWJjZA==",
+            page=39,
+            region="selected_region",
+        ),
     ])
-    assert [image["mediaType"] for image in images] == ["image/png", "image/png"]
-    assert [image["region"] for image in images] == ["full_page", "formula_area"]
+    assert [image["mediaType"] for image in images] == ["image/png"] * 3
+    assert [image["region"] for image in images] == [
+        "full_page", "formula_area", "selected_region",
+    ]
 
 
 def test_request_carries_expected_visual_evidence_diagnostics() -> None:
@@ -44,11 +52,25 @@ def test_request_carries_expected_visual_evidence_diagnostics() -> None:
             currentPageTextChars=3200,
             activeDocumentId="doc",
             activeFileName="exam.pdf",
+            snapshotId="doc:39:viewer:1",
+            pageTextStatus="ready",
+            capturedImagePages=[39, 39],
         ),
     )
     assert payload.visualEvidenceExpected
     assert payload.visualContextMeta
     assert payload.visualContextMeta.renderedImageCount == 2
+    assert payload.visualContextMeta.capturedImagePages == [39, 39]
+
+
+def test_stream_rejects_snapshot_mismatch_and_guarantees_terminal_error() -> None:
+    route = (
+        Path(__file__).resolve().parents[1] / "app" / "routers" / "stream.py"
+    ).read_text(encoding="utf-8")
+    assert 'code="visible_page_snapshot_mismatch"' in route
+    assert 'code="stream_ended_without_terminal_event"' in route
+    assert "visual_meta.capturedImagePages != validated_image_pages" in route
+    assert "any(page != payload.visiblePage for page in validated_image_pages)" in route
 
 
 def test_terminal_sse_recognises_done_and_error_only() -> None:
