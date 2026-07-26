@@ -2,6 +2,7 @@
 // an action; the chatbot owns confirmation, source resolution and execution.
 
 export type StudyToolIntent =
+  | 'exam_template_generation'
   | 'examforge_create'
   | 'flashcards_create'
   | 'deep_learn_create'
@@ -39,9 +40,10 @@ export const AUTO_OPEN_CONFIGURATION_THRESHOLD = 0.82;
 export const SUGGEST_INTENT_THRESHOLD = 0.58;
 
 export const STUDY_TOOL_INTENT_ALIASES: Record<Exclude<StudyToolIntent, 'unknown'>, string[]> = {
+  exam_template_generation: ['exam template', 'exam document', 'printable exam', 'another exam version', 'similar exam'],
   cheatsheet_create: ['cheatsheet', 'cheat sheet', 'sheet cheat', 'cheetsheet', 'cheet sheet', 'cheatshet', 'cheatsheat', 'formula cheat', 'formula sheet', 'reference sheet', 'exam sheet', 'study sheet', 'summary sheet', 'quick reference', 'spickzettel', 'formelsammlung'],
   flashcards_create: ['flashcards', 'flash cards', 'flashcard', 'flash card', 'flaschcards', 'flashcrads', 'flashcars', 'fcs', 'fc', 'revision cards', 'study cards', 'question answer cards', 'karteikarten', 'lernkarten'],
-  examforge_create: ['examforge', 'exam forge', 'examforg', 'exam fourge', 'practice exam', 'mock exam', 'practice test', 'trial exam', 'test me', 'ubungsklausur', 'übungsklausur', 'prufungsfragen', 'prüfungsfragen'],
+  examforge_create: ['examforge', 'examforge quiz', 'exam forge', 'examforg', 'exam fourge', 'interactive exam', 'interactive quiz', 'practice test', 'test me', 'quiz me'],
   deep_learn_create: ['deeplearn', 'deep learn', 'deep lern', 'deap learn', 'deep lesson', 'full lesson', 'teach deeply', 'professor explanation', 'lern tief', 'ausfuhrlich erklaren', 'ausführlich erklären'],
   notes_generate: ['notes', 'note', 'nots', 'notse', 'study notes', 'lecture notes', 'revision notes', 'class notes', 'notizen', 'lernnotizen', 'vorlesungsnotizen'],
   summary_generate: ['summary', 'summarise', 'summarize', 'overview', 'short overview', 'zusammenfassung', 'uberblick', 'überblick'],
@@ -50,6 +52,9 @@ export const STUDY_TOOL_INTENT_ALIASES: Record<Exclude<StudyToolIntent, 'unknown
 
 const COMMAND_RE = /\b(create|make|generate|build|prepare|give me|put|turn\b.{0,80}\binto|convert\b.{0,80}\binto|i want|i need|open|start|write me|save|add|keep|test me|teach me|erstelle|mach|generiere|baue|gib mir|speicher|schreib)\b/iu;
 const INFORMATION_RE = /^(?:what|why|how|when|where|who|was|warum|wie)\b|\b(?:mentions?|means?|definition|algorithm|metal)\b/iu;
+const EXAM_TEMPLATE_RE = /\b(?:exam|mock exam|prufung|prüfung|klausur)\b.*\b(?:like|similar|same|structure|layout|template|another version|different questions?|different values?|change (?:the )?(?:questions?|numbers?|values?))\b|\b(?:like|similar to|same (?:structure|layout) as|another version of|based on)\b.*\b(?:exam|prufung|prüfung|klausur|open|document|pdf)\b/iu;
+const EXAM_DOCUMENT_RE = /\b(?:create|make|generate|prepare|erstelle|generiere)\b.*\b(?:printable|document|answer sheet|solution sheet|template)\b.*\b(?:exam|prufung|prüfung|klausur)\b/iu;
+const EXPLICIT_INTERACTIVE_EXAM_RE = /\b(?:exam\s*forge(?:\s+quiz)?|interactive\s+(?:exam|quiz|test)|quiz\s+me|test\s+me|start\s+(?:a\s+|an\s+|the\s+)?(?:quiz|practice\s+test)|let me answer\s+(?:questions?|now))\b/iu;
 
 export function normaliseIntentText(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase().replace(/[-_/]+/g, ' ').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -120,6 +125,23 @@ const semantic: Array<[StudyToolIntent, RegExp]> = [
 export function detectStudyIntent(message: string): DetectedStudyIntent {
   const text = normaliseIntentText(message);
   const command = COMMAND_RE.test(text);
+  if (command && (EXAM_TEMPLATE_RE.test(text) || EXAM_DOCUMENT_RE.test(text))) {
+    const openReference = /\b(?:open|this|shown|current)\b/iu.test(text);
+    return {
+      intent: 'exam_template_generation', confidence: 0.98,
+      explicitSourceReference: openReference,
+      sourcePhrase: openReference ? 'open_document' : undefined,
+      extractedParameters: {
+        referenceSource: openReference ? 'open_document' : 'saved_template',
+        preserveStructure: true,
+        changeQuestions: /\b(?:different|new|change|another version)\b.*\bquestions?\b|\banother version\b/iu.test(text),
+        changeValues: /\b(?:different|new|change)\b.*\b(?:values?|numbers?|numerical data)\b/iu.test(text),
+        preserveDifficulty: true, preserveMarks: true, preserveLayout: true,
+      },
+      missingRequiredParameters: [], shouldOpenConfiguration: false,
+      resolutionMethod: 'semantic', matchedPhrase: 'exam structure replication',
+    };
+  }
   const shortCommand = text.split(' ').length <= 3;
   const candidates: Array<{ intent: Exclude<StudyToolIntent, 'unknown'>; score: number; method: IntentResolutionMethod; phrase: string }> = [];
   for (const [intent, aliases] of Object.entries(STUDY_TOOL_INTENT_ALIASES) as Array<[Exclude<StudyToolIntent, 'unknown'>, string[]]>) {
@@ -143,7 +165,11 @@ export function detectStudyIntent(message: string): DetectedStudyIntent {
       }
     }
   }
-  if (command) for (const [intent, pattern] of semantic) if (pattern.test(text)) candidates.push({ intent: intent as Exclude<StudyToolIntent, 'unknown'>, score: 0.88, method: 'semantic', phrase: text.slice(0, 80) });
+  if (command) for (const [intent, pattern] of semantic) {
+    if (pattern.test(text) && (intent !== 'examforge_create' || EXPLICIT_INTERACTIVE_EXAM_RE.test(text))) {
+      candidates.push({ intent: intent as Exclude<StudyToolIntent, 'unknown'>, score: 0.88, method: 'semantic', phrase: text.slice(0, 80) });
+    }
+  }
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
   const ambiguous = best && candidates.some((candidate) => candidate.intent !== best.intent && Math.abs(candidate.score - best.score) < 0.04);

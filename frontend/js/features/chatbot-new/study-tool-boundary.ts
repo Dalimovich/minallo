@@ -52,19 +52,21 @@ function recoverChatbotShell(): void {
   if (!visibleSurface) root.append(recoverableToolError('Minallo recovered from a study-tool display error.'));
 }
 
-const boundaryWindow = window as Window & { __minalloStudyBoundaryInstalled?: boolean };
-if (!boundaryWindow.__minalloStudyBoundaryInstalled) {
-  boundaryWindow.__minalloStudyBoundaryInstalled = true;
-  window.addEventListener('minallo:study-tool-error', recoverChatbotShell);
-  window.addEventListener('error', event => {
+if (typeof window !== 'undefined') {
+  const boundaryWindow = window as Window & { __minalloStudyBoundaryInstalled?: boolean };
+  if (!boundaryWindow.__minalloStudyBoundaryInstalled) {
+    boundaryWindow.__minalloStudyBoundaryInstalled = true;
+    window.addEventListener('minallo:study-tool-error', recoverChatbotShell);
+    window.addEventListener('error', event => {
     if (!String(event.filename || '').includes('chatbot') && !String(event.filename || '').includes('examforge')) return;
     console.error('[study-tool-window-error]', { message: event.message, file: event.filename, line: event.lineno, column: event.colno });
     recoverChatbotShell();
-  });
-  window.addEventListener('unhandledrejection', event => {
+    });
+    window.addEventListener('unhandledrejection', event => {
     const message = event.reason instanceof Error ? event.reason.message : String(event.reason || 'unknown');
     if (!/study|examforge|flashcard|deep.learn/i.test(message)) return;
     console.error('[study-tool-unhandled-rejection]', { message });
     recoverChatbotShell();
-  });
+    });
+  }
 }

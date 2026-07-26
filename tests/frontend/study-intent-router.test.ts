@@ -35,7 +35,7 @@ test('ambiguous sheet wording remains unknown', () => {
 });
 
 test('ExamForge commands route before RAG while explanatory questions do not', () => {
-  for (const input of ['examforge', 'ExamForge', 'exam forge', 'examforg', 'open examforge', 'make me a practice exam', 'test me on this PDF']) {
+  for (const input of ['examforge', 'ExamForge', 'exam forge', 'examforg', 'open examforge', 'start an interactive exam', 'quiz me with 10 questions from this PDF', 'test me on this PDF']) {
     assert.equal(routeStudyIntent(input, 'course-1')?.intent, 'examforge', input);
   }
   for (const input of ['What is ExamForge?', 'How does ExamForge grading work?', 'Why did ExamForge fail?']) {
@@ -44,9 +44,26 @@ test('ExamForge commands route before RAG while explanatory questions do not', (
 });
 
 test('extracts ExamForge configuration parameters', () => {
-  const result = detectStudyIntent('Make a hard German practice exam with 12 MCQ questions');
+  const result = detectStudyIntent('Start a hard German practice test with 12 MCQ questions');
   assert.equal(result.intent, 'examforge_create');
   assert.deepEqual(result.extractedParameters, { count: 12, difficulty: 'hard', language: 'de', mode: 'practice', questionTypes: ['mcq'] });
+});
+
+test('exam replication is distinct from interactive ExamForge Quiz', () => {
+  const result = detectStudyIntent('Create an exam just like the one open but different questions and values');
+  assert.equal(result.intent, 'exam_template_generation');
+  assert.deepEqual(result.extractedParameters, {
+    referenceSource: 'open_document', preserveStructure: true,
+    changeQuestions: true, changeValues: true,
+    preserveDifficulty: true, preserveMarks: true, preserveLayout: true,
+  });
+  assert.equal(routeStudyIntent('Create an exam just like the one open but different questions and values', 'c'), null);
+});
+
+test('bare and document-style exam requests never launch ExamForge', () => {
+  for (const input of ['Create an exam', 'Create an exam like the open PDF', 'Generate another version of this exam', 'Make a mock exam with the same structure', 'Create a printable mock exam from this course', 'Create an exam and answer sheet']) {
+    assert.notEqual(routeStudyIntent(input, 'c')?.intent, 'examforge', input);
+  }
 });
 
 test('routes every interactive tool and preserves multi-intent actions', () => {

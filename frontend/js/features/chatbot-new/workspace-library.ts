@@ -287,7 +287,7 @@ export async function openStudyToolWorkspace(
   const root = activeWorkspaceRoot;
   const course = courses().find((candidate) => candidate.id === courseId);
   if (!root || !course) return false;
-  const body = openOverlay(root, kind === 'examforge' ? 'ExamForge' : kind === 'flashcards' ? 'Flashcards' : 'Deep Learn');
+  const body = openOverlay(root, kind === 'examforge' ? 'ExamForge Quiz' : kind === 'flashcards' ? 'Flashcards' : 'Deep Learn');
   if (!body) return false;
   body.innerHTML = '<div class="ncb-library-status">Opening study tool&hellip;</div>';
   const loaderKind = kind === 'deep_learn' ? 'deeplearn' : kind;

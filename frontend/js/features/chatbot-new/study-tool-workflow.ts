@@ -71,7 +71,7 @@ interface ToolDefinition {
 
 const DEFINITIONS: Record<InlineStudyToolKind, ToolDefinition> = {
   examforge: {
-    title: 'ExamForge', actionLabel: 'Create exam',
+    title: 'ExamForge Quiz', actionLabel: 'Create interactive quiz',
     defaults: { count: 10, difficulty: 'medium', questionTypes: ['mcq', 'true_false', 'short_answer'], language: 'auto', mode: 'exam', display: 'one', topic: '' },
     fields: [
       { key: 'count', label: 'Number of questions', type: 'select', options: [6, 8, 10, 12].map(String).map(value => ({ value, label: value })) },
@@ -206,7 +206,7 @@ async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArti
     const raw = result as { sessionId?: string; id?: string; questions?: unknown[]; error?: string };
     const id = raw.sessionId || raw.id;
     if (!id) throw new Error(raw.error || 'The exam was not persisted.');
-    return { artifactType: 'examforge', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'ExamForge created', summary: `${raw.questions?.length || Number(p.count)} questions · ${String(p.difficulty)} · ${String(p.mode)} mode`, payload: raw as Record<string, unknown> };
+    return { artifactType: 'examforge', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'ExamForge Quiz created', summary: `${raw.questions?.length || Number(p.count)} interactive questions · grading and feedback · ${String(p.mode)} mode`, payload: raw as Record<string, unknown> };
   }
   if (marker.intent === 'flashcards') {
     const seenItems = p.avoidSeen ? await loadSeenFlashcardFronts(marker.courseId) : undefined;
