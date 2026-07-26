@@ -1036,6 +1036,7 @@ async function streamAiReply(
   const nowIso = new Date().toISOString();
   const assistantMessage = options.targetMessage || {
     id: newChatMessageId(), role: 'assistant', text: '', parentUserMessageId: sourceUser?.id,
+    requestId: newChatMessageId(),
     completionState: 'processing', exportable: false, retryable: true,
     createdAt: nowIso, updatedAt: nowIso
   } satisfies ChatMessage;
@@ -6741,6 +6742,7 @@ function regenerateLastReal(aiRow: HTMLElement, root: HTMLElement): void {
   const now = new Date().toISOString();
   const alternative: ChatMessage = {
     id: newChatMessageId(), role: 'assistant', text: '', parentUserMessageId: original.parentUserMessageId,
+    requestId: newChatMessageId(),
     regeneratedFromMessageId: original.id, generationVariant: variants + 2,
     completionState: 'processing', exportable: false, retryable: true, createdAt: now, updatedAt: now
   };

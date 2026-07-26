@@ -55,3 +55,22 @@ test('chat reload repairs orphaned user turns with recovery cards', () => {
   assert.match(shell, /errorCode: 'orphaned_response'/);
   assert.match(shell, /This response did not complete/);
 });
+
+test('regenerate inserts a new stable assistant variant without removing history', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /regeneratedFromMessageId: original\.id/);
+  assert.match(shell, /state\.messages\.splice\(insertionIndex, 0, alternative\)/);
+  assert.match(shell, /previousIds\.some\(\(id\) => !state\.messages\.some/);
+  assert.match(shell, /appendAiBubble\(msgs, alternative\.id, anchorRow \|\| aiRow\)/);
+  assert.doesNotMatch(shell, /state\.messages\.pop\(\)/);
+});
+
+test('every useful assistant variant uses the shared idempotent PDF action', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /dataset\.assistantActions = 'true'/);
+  assert.match(shell, /data-action="download-pdf"/);
+  assert.match(shell, /message\.completionState === 'complete'.*message\.completionState === 'interrupted'/s);
+  assert.match(shell, /activeAssistantPdfExports\.has\(key\)/);
+  assert.match(shell, /learningJourneyPdfText\(message\.learningJourney\)/);
+  assert.match(shell, /appendBubbleActions\(row, m\.text, m\)/);
+});
