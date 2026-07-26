@@ -40,7 +40,8 @@ _CONTINUATION_RE = re.compile(
     re.IGNORECASE,
 )
 _TARGET_RE = re.compile(
-    r"\b(kurzfragen?|wissensfragen?|theoriefragen?|questions?|fragen|aufgaben)\b",
+    r"\b(?:(\d+)\s*\.\s*)?"
+    r"(kurzfragen?|wissensfragen?|theoriefragen?|questions?|fragen|aufgaben)\b",
     re.IGNORECASE,
 )
 _ITEM_ID_RE = re.compile(r"^\s*(\d+(?:\.\d+)*(?:[a-z])?)\s*$", re.IGNORECASE)
@@ -67,8 +68,21 @@ def classify_document_extraction(
             "",
         )
     source = current if exhaustive else prior_request
-    target_match = _TARGET_RE.search(source)
-    target = target_match.group(1) if target_match else None
+    target_matches = list(_TARGET_RE.finditer(source))
+    target_match = max(
+        target_matches,
+        key=lambda match: (
+            bool(match.group(1)),
+            "kurzfrag" in match.group(2).casefold(),
+            match.start(),
+        ),
+        default=None,
+    )
+    target = (
+        f"{target_match.group(1)}. {target_match.group(2)}"
+        if target_match and target_match.group(1)
+        else target_match.group(2) if target_match else None
+    )
     return bool(exhaustive or (correction and prior_request)), correction, target
 
 

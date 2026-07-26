@@ -102,6 +102,27 @@ _FALSE_VISUAL_DENIAL_RE = re.compile(
 # interactive bucket alongside /api/ai/ask and the writing coach.
 _INTERACTIVE_MONTHLY_CAP = 2000
 
+
+def _automatic_context_conversation_id(payload: "AskStreamRequest") -> str:
+    """Stable server-owned tutoring section for clients with local-only chats."""
+    document_keys = sorted(set(
+        [str(item) for item in (payload.documentIds or []) if item]
+        + [str(item).strip().casefold() for item in (payload.documentNames or []) if item]
+        + ([str(payload.activeDocumentId)] if payload.activeDocumentId else [])
+    ))
+    scope = (
+        "document" if len(document_keys) == 1
+        else "document_set" if document_keys
+        else "course" if payload.courseId
+        else "global"
+    )
+    raw = json.dumps({
+        "courseId": payload.courseId or None,
+        "documentKeys": document_keys,
+        "scope": scope,
+    }, sort_keys=True, ensure_ascii=False)
+    return "autoctx:" + hashlib.sha256(raw.encode()).hexdigest()[:32]
+
 _BROAD_RETRIEVAL_RE = re.compile(
     r"\b(whole|entire|complete|all|every|compare|study guide|full course|across)\b|"
     r"\b(gesamte|alle|jeder|vergleiche|lernplan|vollständig)\b",
@@ -896,6 +917,18 @@ async def _prepare_ask_stream_response(
     observer = PipelineObserver(request_id)
     observer.event("request_received")
     user_id = user["id"]
+    automatic_context_section = not bool((payload.conversationId or "").strip())
+    if automatic_context_section:
+        payload.conversationId = _automatic_context_conversation_id(payload)
+        payload.conversationGeneration = 0
+        observer.event(
+            "conversation_context_auto_persisted",
+            contextSectionHash=hashlib.sha256(
+                payload.conversationId.encode()
+            ).hexdigest()[:12],
+            activeDocumentId=payload.activeDocumentId,
+            documentCount=len(payload.documentIds or payload.documentNames or []),
+        )
     from ..services.request_generation import register_generation  # noqa: WPS433
     register_generation(user_id, payload.conversationId, payload.conversationGeneration)
     # Paid feature — verify subscription before doing anything expensive.
@@ -977,6 +1010,15 @@ async def _prepare_ask_stream_response(
     previous_turns_payload: list[dict[str, str]] = [
         {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
     ]
+    if automatic_context_section and tutor_state:
+        # The standalone chatbot has one chronological visible transcript.
+        # For server-created document/course sections, use only that section's
+        # persisted history so pronouns cannot bind to another open file.
+        previous_turns_payload = [
+            {"role": str(turn.get("role") or ""), "text": str(turn.get("text") or "")}
+            for turn in tutor_state.recent_section_turns[-16:]
+            if turn.get("role") in {"user", "assistant"} and turn.get("text")
+        ]
 
     # "Selected file(s)" scope: the chatbot sends file NAMES (it has no document
     # ids), so resolve them to ids here. Fall back to ids the client did send.
@@ -985,6 +1027,10 @@ async def _prepare_ask_stream_response(
         resolved_document_ids = await run_in_threadpool(
             lambda: _resolve_document_ids_by_name(user_id, payload.courseId, payload.documentNames)
         )
+    if not payload.activeDocumentId and len(resolved_document_ids) == 1:
+        # A single selected file is an unambiguous active document even when
+        # the standalone chatbot did not originate from the legacy PDF viewer.
+        payload.activeDocumentId = resolved_document_ids[0]
     # If the chat asked for specific files but none resolved, don't dead-end on
     # a "which file?" clarification — search the whole course instead (it still
     # includes the selected files), so the user always gets a grounded answer.
@@ -1778,11 +1824,17 @@ async def _prepare_ask_stream_response(
     if document_extraction:
         if not payload.conversationId or tutor_state is None:
             return _stream_static_answer(
-                text="A durable conversation is required before starting a full-document extraction.",
+                text=(
+                    "Minallo could not save this conversation, which is required "
+                    "to scan the complete document. Your question is still preserved."
+                ),
                 decision=source_decision,
                 answer_mode="clarification",
                 status_key="checking_completeness",
-                extra_meta={"errorCode": "persistent_extraction_state_required"},
+                extra_meta={
+                    "errorCode": "conversation_creation_failed",
+                    "retryable": True,
+                },
             )
         if not payload.activeDocumentId:
             return _stream_static_answer(
@@ -1896,6 +1948,11 @@ async def _prepare_ask_stream_response(
                 tutor_state.document_extraction_context = extraction_context_to_api(
                     persisted_extraction_context
                 )
+                if automatic_context_section:
+                    tutor_state.recent_section_turns = (
+                        tutor_state.recent_section_turns
+                        + [{"role": "user", "text": question}]
+                    )[-16:]
                 await run_in_threadpool(
                     lambda: save_tutor_state(user_id, payload.courseId, tutor_state)
                 )
@@ -2621,6 +2678,14 @@ async def _prepare_ask_stream_response(
                 if evt.get("done"):
                     observer.finish("draft_generated")
                     evt["dialogueResolution"] = dialogue.to_api()
+                    if tutor_state and automatic_context_section:
+                        section_answer = "".join(full_text_buf).strip()
+                        tutor_state.recent_section_turns = (
+                            tutor_state.recent_section_turns
+                            + [{"role": "user", "text": question}]
+                            + ([{"role": "assistant", "text": section_answer}]
+                               if section_answer else [])
+                        )[-16:]
                     verification_payload = evt.get("verification")
                     task_type = str(evt.get("taskType") or "standard_qa")
                     critical_reject = _verification_requires_rejection(

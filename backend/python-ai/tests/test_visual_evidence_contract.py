@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.routers.stream import (
     AskStreamRequest,
     OpenFileImagePayload,
     VisualContextMeta,
     _is_terminal_sse,
+    _automatic_context_conversation_id,
     _validate_open_file_images,
 )
 
@@ -52,3 +55,31 @@ def test_terminal_sse_recognises_done_and_error_only() -> None:
     assert _is_terminal_sse(b'data: {"done": true}\n\n')
     assert _is_terminal_sse(b'data: {"error": true, "code": "internal_error"}\n\n')
     assert not _is_terminal_sse(b'data: {"status": "reading_question"}\n\n')
+
+
+def test_automatic_context_section_is_stable_and_document_isolated() -> None:
+    first = AskStreamRequest(
+        courseId="course-a",
+        question="Explain it",
+        documentIds=["doc-b", "doc-a"],
+    )
+    reordered = AskStreamRequest(
+        courseId="course-a",
+        question="Continue",
+        documentIds=["doc-a", "doc-b"],
+    )
+    other_document = AskStreamRequest(
+        courseId="course-a",
+        question="Explain it",
+        documentIds=["doc-c"],
+    )
+    assert _automatic_context_conversation_id(first) == _automatic_context_conversation_id(reordered)
+    assert _automatic_context_conversation_id(first) != _automatic_context_conversation_id(other_document)
+
+
+def test_internal_durable_conversation_warning_is_unreachable() -> None:
+    route = (
+        Path(__file__).resolve().parents[1] / "app" / "routers" / "stream.py"
+    ).read_text(encoding="utf-8")
+    assert "A durable conversation is required" not in route
+    assert '"conversation_creation_failed"' in route

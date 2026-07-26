@@ -83,6 +83,7 @@ class TutorState:
     corrections: list[CorrectionRecord] = field(default_factory=list)
     evidence_dependencies: dict[str, dict[str, Any]] = field(default_factory=dict)
     pending_questions: list[str] = field(default_factory=list)
+    recent_section_turns: list[dict[str, str]] = field(default_factory=list)
     grounded_context: VerifiedGroundedContext | None = None
     document_extraction_context: dict[str, Any] | None = None
 
@@ -217,6 +218,7 @@ class TutorState:
             "risk_class", "pending_clarification", "prompt_version", "model_version",
             "retrieval_version", "verifier_version", "evidence_dependencies",
             "pending_questions",
+            "recent_section_turns",
             "grounded_context",
             "document_extraction_context",
         }

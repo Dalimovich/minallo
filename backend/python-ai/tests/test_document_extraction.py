@@ -14,6 +14,15 @@ def test_all_kurzfragen_classifies_as_document_wide_extraction() -> None:
     assert target.casefold() == "kurzfragen"
 
 
+def test_numbered_kurzfragen_section_is_preserved() -> None:
+    matched, correction, target = extraction.classify_document_extraction(
+        "explain every question from 2. Kurzfragen with the correct answer"
+    )
+    assert matched
+    assert not correction
+    assert target == "2. Kurzfragen"
+
+
 def test_missing_first_items_continuation_reuses_extraction_scope() -> None:
     matched, correction, target = extraction.classify_document_extraction(
         "you missed the first ones, keep extracting the questions",
