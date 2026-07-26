@@ -717,7 +717,9 @@ def test_kurzfragen_family_uses_ordered_visual_heading_fallback() -> None:
         {2: "2.1 Frage", 3: "3.1 Frage"},
         total_pages=4,
         visual_headings=[
+            {"page": 1, "number": 1, "heading": "1. Kurzfragen - ...", "title": "...", "position": 0, "confidence": 0.99},
             {"page": 2, "number": 2, "heading": "2. Kurzfragen - Grundlagen", "title": "Grundlagen", "position": 0, "confidence": 0.91},
+            {"page": 2, "number": 2, "heading": "2. Kurzfragen - Fortsetzung", "title": "Fortsetzung", "position": 1, "confidence": 0.99},
             {"page": 3, "number": 3, "heading": "3. Kurzfragen - Urformen", "title": "Urformen", "position": 0, "confidence": 0.89},
             {"page": 4, "number": 4, "heading": "4. Rechenaufgabe", "title": "Rechenaufgabe", "position": 0, "confidence": 0.95},
         ],

@@ -140,6 +140,12 @@ def resolve_section_family(
         heading = str(raw.get("heading") or "").strip()
         title = str(raw.get("title") or "").strip()
         position = int(raw.get("position") or 0)
+        if re.search(
+            r"\.{3}|\b(?:fortsetzung|continuation|thema\s*\d*)\b|\[",
+            title,
+            re.IGNORECASE,
+        ):
+            continue
         exact_top_level = re.match(
             rf"^\s*{re.escape(number)}\s*\.\s+[^\r\n]+$",
             heading,
@@ -1049,7 +1055,7 @@ def _discover_visual_section_headings(
     pdf_bytes = download_document_bytes(storage_path)
     headings: list[dict[str, Any]] = []
     for page_number in range(1, total_pages + 1):
-        png = _render_page_to_png(pdfium, pdf_bytes, page_number - 1, 180)
+        png = _render_page_to_png(pdfium, pdf_bytes, page_number - 1, 240)
         if not png:
             continue
         response = get_openai_client().chat.completions.create(
@@ -1061,20 +1067,25 @@ def _discover_visual_section_headings(
                 "role": "user",
                 "content": [
                     {"type": "text", "text": (
-                        f"Inspect PDF page {page_number} only. Find every visibly printed top-level "
-                        f"section banner, especially the family named by {target!r}. A valid family "
-                        "heading has the exact printed form 'N. Kurzfragen - Topic' (or 'N. Short "
-                        "Questions - Topic') and is normally a large horizontal banner. Never infer "
-                        "a heading from a running page header, nearby content, or question IDs such "
-                        "as 2.1 or 12.20. Transcribe the full banner exactly. Return JSON with "
+                        f"Inspect PDF page {page_number} only. Find every TOP-LEVEL section banner, "
+                        f"especially the family named by {target!r}. Use visual hierarchy, not merely "
+                        "the words: when the page uses wide dark-gray horizontal section bars, only "
+                        "text inside those bars is a top-level banner. Return no heading for ordinary "
+                        "text lines, bold subsection "
+                        "labels, running headers, continuation labels, or question IDs. A valid family "
+                        "banner has the exact printed form 'N. Kurzfragen - Topic' (or 'N. Short "
+                        "Questions - Topic'). Read every digit exactly; 10 and 11 must not become 1. "
+                        "Never infer a banner from nearby content such as 2.1 or 12.20. Transcribe the "
+                        "full banner exactly. Return JSON with "
                         "headings in top-to-bottom order "
                         "as {\"headings\":[{\"number\":2,\"heading\":\"2. Kurzfragen - ...\","
-                        "\"title\":\"...\",\"position\":0,\"confidence\":0.9}]}. "
+                        "\"title\":\"...\",\"position\":0,\"y_position\":0.25,"
+                        "\"confidence\":0.9}]}. "
                         "position is the zero-based top-to-bottom heading order on this page."
                     )},
                     {"type": "image_url", "image_url": {
                         "url": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
-                        "detail": "low",
+                        "detail": "high",
                     }},
                 ],
             }],
