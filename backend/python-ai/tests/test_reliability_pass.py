@@ -651,6 +651,23 @@ def test_question_and_solution_model_passes_are_independent(monkeypatch) -> None
     assert result.paired_items[0].answer_text == "Antwort."
 
 
+def test_selected_document_readiness_requires_complete_active_index() -> None:
+    from app.routers.stream import _selected_document_readiness_issue
+
+    base = {
+        "processing_status": "ready",
+        "page_count": 43,
+        "chunk_count": 120,
+        "active_index_revision": "revision-2",
+    }
+    assert _selected_document_readiness_issue(base) is None
+    assert _selected_document_readiness_issue({**base, "processing_status": "indexing"}) == "indexing"
+    assert _selected_document_readiness_issue({**base, "processing_status": "failed"}) == "failed"
+    assert _selected_document_readiness_issue({**base, "page_count": 0}) == "missing_pages"
+    assert _selected_document_readiness_issue({**base, "chunk_count": 0}) == "missing_chunks"
+    assert _selected_document_readiness_issue({**base, "active_index_revision": None}) == "missing_active_revision"
+
+
 def test_page_classifier_skips_irrelevant_and_routes_specialised_pages() -> None:
     assert classify_extraction_page("", "Kurzfragen") is ExtractionPageKind.IRRELEVANT
     assert classify_extraction_page(

@@ -68,6 +68,10 @@ class ResolvedDocumentSection:
     end_page: int
     expected_item_prefix: str | None
     confidence: float
+    start_position: int = 0
+    end_position: int | None = None
+    discovery_method: str = "text"
+    verification_status: str = "verified"
 
     @property
     def question_pages(self) -> list[int]:
@@ -91,9 +95,10 @@ def resolve_section_family(
     text_by_page: dict[int, str],
     *,
     total_pages: int,
+    visual_headings: list[dict[str, Any]] | None = None,
 ) -> ResolvedSectionFamily | None:
     """Resolve every numbered main section whose heading names one family."""
-    family_match = re.search(r"\b(kurzfragen?|short\s+questions?)\b", target, re.I)
+    family_match = re.search(r"\b(kurzfragen?|short\s+questions?)\b", target, re.IGNORECASE)
     if not family_match or requested_section_number(target):
         return None
     family_name = "Kurzfragen" if "kurz" in family_match.group(1).casefold() else "Short questions"
@@ -105,19 +110,62 @@ def resolve_section_family(
     # Require whitespace after the dot so question IDs such as ``2.1`` are
     # never mistaken for a new top-level document section.
     any_heading_re = re.compile(r"(?im)^\s*(?P<number>\d+)\s*\.\s+[^\n\r]{1,200}$")
-    matches: list[tuple[int, str, str, str]] = []
-    all_headings: list[tuple[int, int, str]] = []
+    matches: list[tuple[int, int, str, str, str, str, float]] = []
+    all_headings: list[tuple[int, int, int, str]] = []
     for page, text in sorted(text_by_page.items()):
         for match in any_heading_re.finditer(text or ""):
-            all_headings.append((page, int(match.group("number")), match.group(0).strip()))
+            all_headings.append((page, match.start(), int(match.group("number")), match.group(0).strip()))
         for match in heading_re.finditer(text or ""):
-            matches.append((page, match.group("number"), match.group("title").strip(), match.group(0).strip()))
+            matches.append((page, match.start(), match.group("number"), match.group("title").strip(), match.group(0).strip(), "text", 0.96))
+    # Text extraction can omit image-only headings.  The caller may supply
+    # document-wide visual/OCR discoveries; keep their page-relative order so
+    # two top-level sections beginning on the same page remain distinct.
+    visual_pages = {
+        int(raw.get("page") or 0)
+        for raw in (visual_headings or [])
+        if isinstance(raw, dict) and str(raw.get("page") or "").isdigit()
+    }
+    if visual_pages:
+        # Visual discovery supplies one coordinate system for the whole page;
+        # do not mix its ordinal positions with OCR character offsets.
+        all_headings = [heading for heading in all_headings if heading[0] not in visual_pages]
+    for raw in visual_headings or []:
+        try:
+            page = int(raw.get("page") or 0)
+            number = str(int(raw.get("number")))
+        except (TypeError, ValueError):
+            continue
+        if page < 1 or page > total_pages:
+            continue
+        heading = str(raw.get("heading") or "").strip()
+        title = str(raw.get("title") or "").strip()
+        position = int(raw.get("position") or 0)
+        all_headings.append((page, position, int(number), heading or f"{number}. {title}"))
+        if re.search(
+            r"\b(?:kurzfragen?|short\s+questions?)\b",
+            f"{heading} {title}",
+            re.IGNORECASE,
+        ):
+            confidence = max(0.0, min(1.0, float(raw.get("confidence") or 0.82)))
+            matches.append((page, position, number, title, heading or f"{number}. {title}", "visual_ocr", confidence))
     if not matches:
         return None
+    # De-duplicate a visual confirmation of a text heading.
+    deduplicated_matches: dict[tuple[int, str], tuple[int, int, str, str, str, str, float]] = {}
+    for value in matches:
+        key = (value[0], value[2])
+        current = deduplicated_matches.get(key)
+        if current is None or value[5] == "text":
+            deduplicated_matches[key] = value
+    matches = list(deduplicated_matches.values())
+    all_headings = sorted(set(all_headings), key=lambda value: (value[0], value[1], value[2]))
     sections: list[ResolvedDocumentSection] = []
-    for page, number, title, heading in matches:
-        later_pages = [candidate_page for candidate_page, _n, _h in all_headings if candidate_page > page]
-        end_page = min(later_pages) - 1 if later_pages else total_pages
+    for page, position, number, title, heading, method, confidence in matches:
+        later = [candidate for candidate in all_headings if (candidate[0], candidate[1]) > (page, position)]
+        next_heading = min(later, default=None, key=lambda value: (value[0], value[1]))
+        # When the next section starts on the same page, both sections include
+        # that page and item-prefix filtering separates their questions.
+        end_page = (next_heading[0] if next_heading and next_heading[0] == page else next_heading[0] - 1) if next_heading else total_pages
         sections.append(ResolvedDocumentSection(
             requested_number=number,
             requested_title=title or family_name,
@@ -125,15 +173,18 @@ def resolve_section_family(
             start_page=page,
             end_page=max(page, end_page),
             expected_item_prefix=f"{number}.",
-            confidence=0.96,
+            confidence=confidence,
+            start_position=position,
+            end_position=(next_heading[1] if next_heading and next_heading[0] == page else None),
+            discovery_method=method,
         ))
     sections.sort(key=lambda section: int(section.requested_number or 0))
     included = {int(section.requested_number or 0) for section in sections}
     excluded = sorted({
-        str(number) for _page, number, _heading in all_headings
+        str(number) for _page, _position, number, _heading in all_headings
         if number not in included
     }, key=int)
-    return ResolvedSectionFamily(family_name, sections, excluded, 0.96)
+    return ResolvedSectionFamily(family_name, sections, excluded, min(section.confidence for section in sections))
 
 
 def resolve_document_section(
@@ -937,6 +988,61 @@ def _extract_visual_page(
     )
 
 
+def _discover_visual_section_headings(
+    *, document: dict[str, Any], total_pages: int, target: str,
+) -> list[dict[str, Any]]:
+    """Discover top-level headings when the stored OCR cannot resolve a family."""
+    storage_path = str(document.get("storage_path") or "")
+    if not storage_path:
+        raise RuntimeError("document storage path is unavailable for heading discovery")
+    from .openai_client import get_openai_client
+    from .storage import download_document_bytes
+    from .vision_ocr import _render_page_to_png, _try_import_pypdfium2
+
+    pdfium = _try_import_pypdfium2()
+    if pdfium is None:
+        raise RuntimeError("PDF renderer is unavailable for heading discovery")
+    pdf_bytes = download_document_bytes(storage_path)
+    headings: list[dict[str, Any]] = []
+    for page_number in range(1, total_pages + 1):
+        png = _render_page_to_png(pdfium, pdf_bytes, page_number - 1, 180)
+        if not png:
+            continue
+        response = get_openai_client().chat.completions.create(
+            model=get_settings().openai_generate_model,
+            temperature=0,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": (
+                        f"Inspect PDF page {page_number} only. Find every top-level numbered "
+                        f"document heading, especially the family named by {target!r}. Do not "
+                        "return question IDs such as 2.1. Return headings in top-to-bottom order "
+                        "as {\"headings\":[{\"number\":2,\"heading\":\"2. Kurzfragen - ...\","
+                        "\"title\":\"...\",\"position\":0,\"confidence\":0.9}]}. "
+                        "position is the zero-based top-to-bottom heading order on this page."
+                    )},
+                    {"type": "image_url", "image_url": {
+                        "url": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
+                        "detail": "low",
+                    }},
+                ],
+            }],
+        )
+        try:
+            payload = json.loads(str(response.choices[0].message.content or "{}"))
+        except (TypeError, ValueError):
+            log.warning("visual_heading_discovery_invalid_json page=%s", page_number)
+            continue
+        for position, raw in enumerate(payload.get("headings", []) if isinstance(payload, dict) else []):
+            if not isinstance(raw, dict):
+                continue
+            headings.append({**raw, "page": page_number, "position": raw.get("position", position)})
+    return headings
+
+
 def _extract_visual_image(
     *,
     image_bytes: bytes,
@@ -1350,9 +1456,32 @@ def extract_document_qa(
         total_pages=total_pages,
     )
     numbered_section = requested_section_number(target)
+    family_requested = bool(
+        not numbered_section
+        and re.search(
+            r"\b(?:kurzfragen?|short\s+questions?)\b", target, re.IGNORECASE,
+        )
+    )
     resolved_family = resolve_section_family(
         target, all_text_by_page, total_pages=total_pages,
     )
+    visual_heading_error: str | None = None
+    enforce_family_resolution = bool(family_requested and document.get("storage_path"))
+    if enforce_family_resolution and resolved_family is None and target_pages:
+        try:
+            visual_headings = _discover_visual_section_headings(
+                document=document, total_pages=total_pages, target=target,
+            )
+            resolved_family = resolve_section_family(
+                target, all_text_by_page, total_pages=total_pages,
+                visual_headings=visual_headings,
+            )
+        except Exception as exc:
+            visual_heading_error = type(exc).__name__
+            log.exception(
+                "document_family_visual_heading_discovery_failed document=%s target=%s",
+                document_id, target,
+            )
     result.resolved_family = resolved_family
     if resolved_family:
         scope_payload = {
@@ -1425,11 +1554,18 @@ def extract_document_qa(
                 expected_item_prefix=f"{numbered_section}.",
                 confidence=0.86,
             )
-    if numbered_section and resolved_section is None:
+    if (numbered_section and resolved_section is None) or (
+        enforce_family_resolution and resolved_family is None and target_pages
+    ):
         result.section_resolved = False
-        result.status = "section_not_found"
+        result.status = (
+            "section_not_found" if numbered_section else
+            "section_heading_verification_failed" if visual_heading_error else
+            "section_family_not_found"
+        )
         result.message = (
-            f'Minallo found the document, but it could not reliably read section "{target}".'
+            f'Minallo found the document, but it could not reliably verify section "{target}". '
+            "No questions were silently omitted."
         )
         result.unprocessed_pages = sorted(
             set(range(1, total_pages + 1)) - set(all_text_by_page)
@@ -2106,6 +2242,13 @@ def extract_document_qa(
         and not set(result.unprocessed_pages).intersection(expected_pages)
         and not result.invalid_item_ids_rejected
         and not result.duplicate_item_ids
+        and (
+            not resolved_family
+            or all(any(
+                item.normalized_item_id.startswith(f"{section.requested_number}.")
+                for item in result.extracted_questions
+            ) for section in resolved_family.matched_sections)
+        )
     )
     result.answer_verification_complete = bool(
         result.items
@@ -2178,6 +2321,14 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
             for item in question_payload
         )
         unresolved = len(question_payload) - verified
+        section_error = None if question_payload else {
+            "code": "section_questions_not_found",
+            "message": (
+                f'Section {number} ("{section.requested_title or family.family_name}") '
+                "was resolved, but no questions were verified in its source range."
+            ),
+            "retryable": section.discovery_method != "visual_ocr",
+        }
         sections.append({
             "sectionId": number,
             "sectionNumber": number,
@@ -2185,7 +2336,18 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
             "pageStart": section.start_page,
             "pageEnd": section.end_page,
             "questions": question_payload,
-            "status": "complete" if question_payload and not unresolved else "partial",
+            "status": (
+                "failed" if not question_payload else
+                "complete" if not unresolved else "partial"
+            ),
+            "error": section_error,
+            "headingVerification": {
+                "status": section.verification_status,
+                "method": section.discovery_method,
+                "confidence": section.confidence,
+                "startPosition": section.start_position,
+                "endPosition": section.end_position,
+            },
             "statistics": {
                 "questionsFound": len(question_payload),
                 "answersVerified": verified,

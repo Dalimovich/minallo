@@ -190,7 +190,7 @@ def _load_authorized_documents(
         sb.table("documents")
         .select(
             "id, user_id, course_id, file_name, storage_path, document_hash, "
-            "processing_status, page_count, updated_at, active_index_revision"
+            "processing_status, page_count, chunk_count, updated_at, active_index_revision"
         )
         .in_("id", unique_ids)
         .execute()
@@ -202,6 +202,25 @@ def _load_authorized_documents(
         if row["user_id"] != user_id or row["course_id"] != course_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     return {row["id"]: row for row in rows}
+
+
+def _selected_document_readiness_issue(row: dict[str, Any]) -> str | None:
+    """Return the precise readiness defect for an explicitly selected source."""
+    status_value = str(row.get("processing_status") or "not_ready").casefold()
+    if status_value != "ready":
+        return status_value
+    try:
+        page_count = int(row.get("page_count") or 0)
+        chunk_count = int(row.get("chunk_count") or 0)
+    except (TypeError, ValueError):
+        return "invalid_index_metadata"
+    if page_count <= 0:
+        return "missing_pages"
+    if chunk_count <= 0:
+        return "missing_chunks"
+    if not str(row.get("active_index_revision") or "").strip():
+        return "missing_active_revision"
+    return None
 
 
 def _verify_user_owns_documents(
@@ -960,6 +979,46 @@ async def ask_stream_endpoint(
         document_id: str(row.get("file_name") or "")
         for document_id, row in preflight_documents.items()
     }
+    explicitly_selected = [
+        preflight_documents[document_id]
+        for document_id in resolved_ids
+        if document_id in preflight_documents
+    ]
+    unready_selected = [
+        row for row in explicitly_selected
+        if _selected_document_readiness_issue(row)
+    ]
+    if unready_selected:
+        blocked = unready_selected[0]
+        file_name = str(blocked.get("file_name") or "the selected document")
+        document_status = _selected_document_readiness_issue(blocked) or "not_ready"
+
+        async def selected_document_not_ready_stream():
+            yield _sse_bytes(json.dumps({
+                "meta": True,
+                "requestId": request_id,
+                "streamProtocolVersion": 2,
+                "selectedDocument": {
+                    "id": blocked.get("id"),
+                    "fileName": file_name,
+                    "status": document_status,
+                },
+            }, ensure_ascii=False))
+            yield _error_sse(
+                code="selected_document_not_ready",
+                message=(
+                    f'"{file_name}" is {document_status} and is not ready for AI questions yet. '
+                    "Minallo did not search any other course files."
+                ),
+                retryable=document_status.casefold() != "failed",
+                request_id=request_id,
+                stage="source_readiness",
+                recoverable=True,
+            )
+
+        return StreamingResponse(
+            selected_document_not_ready_stream(), media_type="text/event-stream",
+        )
     preflight_ms = (time.perf_counter() - started) * 1000
 
     async def persist_request_state(**fields: Any) -> None:

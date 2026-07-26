@@ -690,6 +690,60 @@ def test_kurzfragen_family_resolves_sections_and_excludes_later_tasks() -> None:
     assert family.matched_sections[0].end_page == 2
 
 
+def test_kurzfragen_family_supports_two_headings_on_the_same_page() -> None:
+    from app.services.document_extraction import resolve_section_family
+
+    family = resolve_section_family(
+        "all Kurzfragen",
+        {
+            2: "2. Kurzfragen - Grundlagen\n2.1 Frage\n3. Kurzfragen - Urformen\n3.1 Frage",
+            3: "4. Rechenaufgabe\n4.1 Rechnung",
+        },
+        total_pages=3,
+    )
+    assert family is not None
+    assert family.section_numbers == ["2", "3"]
+    assert family.matched_sections[0].start_page == 2
+    assert family.matched_sections[0].end_page == 2
+    assert family.matched_sections[0].end_position is not None
+    assert family.matched_sections[1].end_page == 2
+
+
+def test_kurzfragen_family_uses_ordered_visual_heading_fallback() -> None:
+    from app.services.document_extraction import resolve_section_family
+
+    family = resolve_section_family(
+        "all Kurzfragen",
+        {2: "2.1 Frage", 3: "3.1 Frage"},
+        total_pages=4,
+        visual_headings=[
+            {"page": 2, "number": 2, "heading": "2. Kurzfragen - Grundlagen", "title": "Grundlagen", "position": 0, "confidence": 0.91},
+            {"page": 3, "number": 3, "heading": "3. Kurzfragen - Urformen", "title": "Urformen", "position": 0, "confidence": 0.89},
+            {"page": 4, "number": 4, "heading": "4. Rechenaufgabe", "title": "Rechenaufgabe", "position": 0, "confidence": 0.95},
+        ],
+    )
+    assert family is not None
+    assert family.section_numbers == ["2", "3"]
+    assert family.matched_sections[0].discovery_method == "visual_ocr"
+    assert family.matched_sections[1].end_page == 3
+    assert family.excluded_sections == ["4"]
+
+
+def test_learning_journey_marks_resolved_empty_section_as_failed() -> None:
+    from app.services import document_extraction as extraction
+
+    family = extraction.ResolvedSectionFamily(
+        "Kurzfragen",
+        [extraction.ResolvedDocumentSection("2", "Grundlagen", "2. Kurzfragen", 2, 2, "2.", 0.9)],
+        [], 0.9,
+    )
+    result = extraction.DocumentExtractionResult("doc", "Kurzfragen", 2, resolved_family=family)
+    journey = extraction.build_learning_journey(result)
+    assert journey is not None
+    assert journey["sections"][0]["status"] == "failed"
+    assert journey["sections"][0]["error"]["code"] == "section_questions_not_found"
+
+
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
     from app.services import document_extraction as extraction
 
