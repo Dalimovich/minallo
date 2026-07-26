@@ -85,6 +85,26 @@ test('course drawer reuses the real course registry, hydration, and file opener'
   assert.match(moduleSource, /window\.openFile\(file, course\)/);
 });
 
+test('course drawer can add subjects and manage course files in place', () => {
+  assert.match(moduleSource, /class="ncb-add-subject"/);
+  assert.match(moduleSource, /id="ncbSubjectSearch" type="search"/);
+  assert.match(moduleSource, /canonicalButton\.click\(\)/);
+  assert.match(moduleSource, /class="ncb-course-action ncb-course-new-folder"/);
+  assert.match(moduleSource, /class="ncb-course-action ncb-course-upload"/);
+  assert.match(moduleSource, /window\._ufCreateFolder/);
+  assert.match(moduleSource, /window\._ufUpload/);
+});
+
+test('course and folder drop targets clearly identify the upload destination', () => {
+  assert.match(moduleSource, /data-drop-folder=/);
+  assert.match(moduleSource, /addEventListener\('dragenter'/);
+  assert.match(moduleSource, /addEventListener\('dragover'/);
+  assert.match(moduleSource, /addEventListener\('dragleave'/);
+  assert.match(moduleSource, /addEventListener\('drop'/);
+  assert.match(moduleSource, /classList\.add\('is-drag-target'\)/);
+  assert.match(css, /\.ncb-root-drop\.is-drag-target,[\s\S]*\.ncb-folder\.is-drag-target[\s\S]*border-color:\s*#60a5fa/);
+});
+
 test('Saved is grouped by resource function and course', () => {
   for (const kind of ['notes', 'summaries', 'flashcards', 'cheatsheets', 'exams']) {
     assert.match(moduleSource, new RegExp(`${kind}:`));

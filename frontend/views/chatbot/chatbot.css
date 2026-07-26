@@ -4600,6 +4600,69 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-library-section-head span,
 .ncb-course-detail-head span { color: #7286a0; font-size: 0.7rem; }
 
+.ncb-subject-add { position: relative; margin: 0 0 12px; }
+.ncb-add-subject {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(96, 165, 250, 0.42);
+  border-radius: 13px;
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.09);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ncb-add-subject span { font-size: 1.05rem; line-height: 1; }
+.ncb-add-subject:hover,
+.ncb-add-subject[aria-expanded="true"] { border-style: solid; background: rgba(37, 99, 235, 0.18); }
+.ncb-subject-popover {
+  position: absolute;
+  z-index: 8;
+  inset: calc(100% + 7px) 0 auto;
+  padding: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 14px;
+  background: rgba(9, 24, 43, 0.97);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+.ncb-subject-popover label { display: block; margin-bottom: 7px; color: #dbeafe; font-size: 0.72rem; font-weight: 800; }
+.ncb-subject-popover > div,
+.ncb-folder-create > div { display: flex; gap: 7px; }
+.ncb-subject-popover input,
+.ncb-folder-create input {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 9px;
+  outline: none;
+  color: #eff6ff;
+  background: rgba(2, 12, 28, 0.52);
+  font: inherit;
+  font-size: 0.73rem;
+}
+.ncb-subject-popover input:focus,
+.ncb-folder-create input:focus { border-color: rgba(96, 165, 250, 0.62); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14); }
+.ncb-subject-popover button,
+.ncb-folder-create button {
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  color: white;
+  background: #2563eb;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ncb-subject-popover small { display: block; margin-top: 7px; color: #7186a0; font-size: 0.64rem; }
+
 .ncb-course-list { display: grid; gap: 6px; }
 .ncb-saved-kind-list {
   display: grid;
@@ -4744,9 +4807,43 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-course-detail-actions {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 4px;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
 }
+
+.ncb-course-action,
+.ncb-course-manage {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.ncb-course-action {
+  flex: 1 1 108px;
+  padding: 6px 9px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 10px;
+  color: #dbeafe;
+  background: rgba(37, 99, 235, 0.12);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ncb-course-action:hover { background: rgba(37, 99, 235, 0.22); }
+.ncb-course-action .ncb-library-icon { width: 23px; height: 23px; flex-basis: 23px; border-radius: 7px; font-size: 0.48rem; }
+.ncb-folder-create {
+  margin-bottom: 10px;
+  padding: 11px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 12px;
+  background: rgba(8, 22, 40, 0.7);
+}
+.ncb-folder-create label { display: block; margin-bottom: 7px; color: #a8bdd8; font-size: 0.68rem; font-weight: 800; }
+.ncb-upload-status { margin: 8px 0; padding: 9px 10px; border-radius: 10px; color: #bfdbfe; background: rgba(37, 99, 235, 0.12); font-size: 0.7rem; }
+.ncb-upload-status.is-error { color: #fecaca; background: rgba(220, 38, 38, 0.12); }
 
 .ncb-saved-kind-btn {
   min-height: 78px;
@@ -4916,10 +5013,30 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-folder summary::-webkit-details-marker { display: none; }
 .ncb-folder summary > span { display: grid; gap: 2px; }
+.ncb-folder summary > b { margin-left: auto; color: transparent; font-size: 0.62rem; white-space: nowrap; transition: color 150ms ease; }
 .ncb-folder summary strong { font-size: 0.81rem; }
 .ncb-folder summary small { color: #8298b4; font-size: 0.68rem; }
 .ncb-folder > div { padding: 0 6px 6px 16px; }
 .ncb-library-muted { color: #7286a0; font-size: 0.7rem; }
+
+.ncb-root-drop {
+  position: relative;
+  min-height: 118px;
+  padding: 12px;
+  border: 1px dashed rgba(96, 165, 250, 0.22);
+  border-radius: 16px;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+.ncb-drop-hint { display: grid; place-items: center; gap: 3px; margin-bottom: 10px; padding: 15px 10px; border-radius: 11px; color: #8ea6c3; background: rgba(37, 99, 235, 0.055); text-align: center; pointer-events: none; }
+.ncb-drop-hint strong { color: #bfdbfe; font-size: 0.74rem; }
+.ncb-drop-hint span { font-size: 0.64rem; }
+.ncb-root-drop.is-drag-target,
+.ncb-folder.is-drag-target {
+  border-color: #60a5fa;
+  background: rgba(37, 99, 235, 0.18);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13), 0 16px 38px rgba(1, 8, 20, 0.3);
+}
+.ncb-folder.is-drag-target summary > b { color: #93c5fd; }
 
 .ncb-file-row {
   min-height: 62px;

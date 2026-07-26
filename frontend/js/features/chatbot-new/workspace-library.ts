@@ -2,6 +2,7 @@ import { getNoteById, listCourseNotes, type SavedNote } from '../../services/ai-
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { checkAdminStatus } from '../../services/admin-service.js';
+import { filterOversizedFiles, warnRejected } from '../courses/upload-validate.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 type CourseFile = {
@@ -397,15 +398,20 @@ function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement, attemp
 
 function renderCourses(panel: HTMLElement): void {
   const all = courses();
-  if (!all.length) {
-    panel.innerHTML = '<div class="ncb-library-empty"><strong>No courses yet</strong><span>Create a course from the Courses page to see it here.</span></div>';
-    return;
-  }
   const recentId = recentCourseId();
   const recent = all.find((course) => course.id === recentId);
   const ordered = recent ? [recent, ...all.filter((course) => course.id !== recent.id)] : all;
   panel.innerHTML =
     '<div class="ncb-library-section-head"><div><strong>Courses</strong><span>Select a course to browse its material.</span></div></div>' +
+    `<div class="ncb-subject-add">
+      <button type="button" class="ncb-add-subject" aria-expanded="false" aria-controls="ncbSubjectPopover"><span aria-hidden="true">+</span> Add subject</button>
+      <div class="ncb-subject-popover" id="ncbSubjectPopover" hidden>
+        <label for="ncbSubjectSearch">Find or create a subject</label>
+        <div><input id="ncbSubjectSearch" type="search" placeholder="Search subjects..." autocomplete="off"><button type="button" class="ncb-subject-confirm">Add</button></div>
+        <small>Type a subject name and press Enter.</small>
+      </div>
+    </div>` +
+    (!ordered.length ? '<div class="ncb-library-empty"><strong>No courses yet</strong><span>Add your first subject above.</span></div>' : '') +
     '<div class="ncb-course-list">' +
     ordered.map((course) => `
       <button type="button" class="ncb-course-row${course.id === recent?.id ? ' ncb-course-row--recent' : ''}" data-course-id="${escapeHtml(course.id)}">
@@ -415,6 +421,8 @@ function renderCourses(panel: HTMLElement): void {
       </button>`).join('') +
     '</div>';
 
+  bindSubjectAdd(panel);
+
   panel.querySelectorAll<HTMLButtonElement>('.ncb-course-row').forEach((row) => {
     row.addEventListener('click', () => {
       const course = all.find((item) => item.id === row.dataset.courseId);
@@ -422,6 +430,45 @@ function renderCourses(panel: HTMLElement): void {
       rememberCourse(course);
       void renderCourseDetail(panel, course);
     });
+  });
+}
+
+function bindSubjectAdd(panel: HTMLElement): void {
+  const trigger = panel.querySelector<HTMLButtonElement>('.ncb-add-subject');
+  const popover = panel.querySelector<HTMLElement>('.ncb-subject-popover');
+  const input = panel.querySelector<HTMLInputElement>('#ncbSubjectSearch');
+  const confirm = panel.querySelector<HTMLButtonElement>('.ncb-subject-confirm');
+  if (!trigger || !popover || !input || !confirm) return;
+
+  const close = (): void => {
+    popover.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+  const add = (): void => {
+    const name = input.value.trim();
+    if (!name) return input.focus();
+    const canonicalInput = document.getElementById('courseSearchInput') as HTMLInputElement | null;
+    const canonicalButton = document.getElementById('courseAddBtn') as HTMLButtonElement | null;
+    if (!canonicalInput || !canonicalButton) {
+      window.showToast?.('Courses unavailable', 'Please try again after the page finishes loading.');
+      return;
+    }
+    canonicalInput.value = name;
+    canonicalInput.dispatchEvent(new Event('input', { bubbles: true }));
+    canonicalButton.click();
+    close();
+    window.setTimeout(() => renderCourses(panel), 0);
+  };
+  trigger.addEventListener('click', () => {
+    const opening = popover.hidden;
+    popover.hidden = !opening;
+    trigger.setAttribute('aria-expanded', String(opening));
+    if (opening) input.focus();
+  });
+  confirm.addEventListener('click', add);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') add();
+    if (event.key === 'Escape') close();
   });
 }
 
@@ -445,17 +492,25 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
   const drillMeta = panel.querySelector<HTMLElement>('.ncb-library-drill-head span');
   if (drillMeta) drillMeta.textContent = `${fileCount(course)} files`;
   detail.innerHTML = `
-    <div class="ncb-course-detail-actions"><button type="button" class="ncb-course-manage">Manage course</button></div>
+    <div class="ncb-course-detail-actions">
+      <input class="ncb-course-upload-input" type="file" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" multiple hidden>
+      <button type="button" class="ncb-course-action ncb-course-new-folder">${icon('folder')}<span>New folder</span></button>
+      <button type="button" class="ncb-course-action ncb-course-upload">${icon('file')}<span>Upload files</span></button>
+      <button type="button" class="ncb-course-manage">Manage</button>
+    </div>
+    <form class="ncb-folder-create" hidden><label for="ncbFolderName">Folder name</label><div><input id="ncbFolderName" maxlength="80" autocomplete="off" placeholder="e.g. Lecture notes"><button type="submit">Create</button></div></form>
+    <div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>
     ${folders.length ? `<div class="ncb-library-group"><h3>Folders</h3>${folders.map((folder) => `
-      <details class="ncb-folder">
-        <summary>${icon('folder')}<span><strong>${escapeHtml(folder.name)}</strong><small>${(folder.files || []).length} files</small></span></summary>
+      <details class="ncb-folder" data-drop-folder="${escapeHtml(folder.name)}">
+        <summary>${icon('folder')}<span><strong>${escapeHtml(folder.name)}</strong><small>${(folder.files || []).length} files</small></span><b>Drop files here</b></summary>
         <div>${(folder.files || []).map((file) => fileButton(file, course, folder.name)).join('') || '<p class="ncb-library-muted">Empty folder</p>'}</div>
       </details>`).join('')}</div>` : ''}
-    <div class="ncb-library-group"><h3>Files</h3>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div>`;
+    <div class="ncb-library-group ncb-root-drop" data-drop-folder=""><h3>Files</h3><div class="ncb-drop-hint"><strong>Drop files here</strong><span>Upload to ${escapeHtml(course.name || 'this course')}</span></div>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div>`;
 
   detail.querySelector<HTMLButtonElement>('.ncb-course-manage')?.addEventListener('click', () => {
     window.openCourse?.(course);
   });
+  bindCourseFileActions(panel, detail, course);
   detail.querySelectorAll<HTMLButtonElement>('[data-library-file]').forEach((button) => {
     button.addEventListener('click', () => {
       const folder = button.dataset.folder || null;
@@ -464,6 +519,109 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
         : course.files || []) as CourseFile[];
       const file = collection.find((item) => item.name === button.dataset.libraryFile);
       if (file) openWorkspacePdf(rootFor(panel), file, course);
+    });
+  });
+}
+
+function currentUid(): string {
+  return String(window._currentUser?.id || window._currentUser?.sub || '');
+}
+
+async function uploadIntoCourse(
+  panel: HTMLElement,
+  detail: HTMLElement,
+  course: LibraryCourse,
+  picked: File[],
+  folder: string | null
+): Promise<void> {
+  const uid = currentUid();
+  if (!uid) return window.showToast?.('Not signed in', 'Sign in to upload files.');
+  if (!window._ufUpload) return window.showToast?.('Upload unavailable', 'Please try again after the page finishes loading.');
+  const { valid, rejected } = filterOversizedFiles(picked);
+  warnRejected(rejected, valid.length === 0);
+  if (!valid.length) return;
+  const status = detail.querySelector<HTMLElement>('.ncb-upload-status');
+  if (status) {
+    status.hidden = false;
+    status.classList.remove('is-error');
+    status.textContent = `Uploading ${valid.length} file${valid.length === 1 ? '' : 's'}${folder ? ` to ${folder}` : ''}...`;
+  }
+  const results = await Promise.allSettled(valid.map((file) => window._ufUpload!(uid, course, file, null, folder)));
+  const failed = results.filter((result) => result.status === 'rejected').length;
+  if (failed === valid.length) {
+    if (status) {
+      status.classList.add('is-error');
+      status.textContent = 'Upload failed. Please try again.';
+    }
+    return;
+  }
+  course.files = ((course.files || []) as CourseFile[]).filter((file) => !file._uploaded);
+  if (folder) course.userFolders = [];
+  await hydrate(course);
+  window.showToast?.(failed ? 'Some files uploaded' : 'Files uploaded', `${valid.length - failed} file${valid.length - failed === 1 ? '' : 's'} added.`);
+  await renderCourseDetail(panel, course);
+}
+
+function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: LibraryCourse): void {
+  const input = detail.querySelector<HTMLInputElement>('.ncb-course-upload-input');
+  const upload = detail.querySelector<HTMLButtonElement>('.ncb-course-upload');
+  const folderButton = detail.querySelector<HTMLButtonElement>('.ncb-course-new-folder');
+  const form = detail.querySelector<HTMLFormElement>('.ncb-folder-create');
+  const folderInput = form?.querySelector<HTMLInputElement>('input');
+  if (input && upload) {
+    upload.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      void uploadIntoCourse(panel, detail, course, Array.from(input.files || []), null);
+      input.value = '';
+    });
+  }
+  folderButton?.addEventListener('click', () => {
+    if (!form) return;
+    form.hidden = !form.hidden;
+    if (!form.hidden) folderInput?.focus();
+  });
+  form?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = folderInput?.value.trim() || '';
+    const uid = currentUid();
+    if (!name || !uid) return;
+    if (!window._ufCreateFolder?.(uid, course, name)) {
+      window.showToast?.('Already exists', 'A folder with that name already exists.');
+      return;
+    }
+    if (!course.userFolders) course.userFolders = [];
+    course.userFolders.push({ name, files: [] });
+    void renderCourseDetail(panel, course);
+  });
+
+  detail.querySelectorAll<HTMLElement>('[data-drop-folder]').forEach((target) => {
+    let depth = 0;
+    const clear = (): void => {
+      depth = 0;
+      target.classList.remove('is-drag-target');
+    };
+    target.addEventListener('dragenter', (event) => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      event.preventDefault();
+      depth++;
+      target.classList.add('is-drag-target');
+    });
+    target.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+    target.addEventListener('dragleave', () => {
+      depth--;
+      if (depth <= 0) clear();
+    });
+    target.addEventListener('drop', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clear();
+      const files = Array.from(event.dataTransfer?.files || []);
+      const folder = target.dataset.dropFolder || null;
+      void uploadIntoCourse(panel, detail, course, files, folder);
     });
   });
 }
