@@ -146,6 +146,22 @@ test('course upload popup indexes uploaded PDFs for chatbot retrieval', () => {
   assert.match(moduleSource, /class="ncb-upload-popup"/);
   assert.match(moduleSource, /\/api\/documents\/index-existing/);
   assert.match(moduleSource, /Upload complete\. Indexing files for AI search/);
+  assert.match(moduleSource, /className = 'ncb-file-row ncb-file-row--pending'/);
+  assert.match(moduleSource, /setPendingFileState\(pendingRow, 'indexing', 'Indexing for AI'\)/);
+  assert.match(moduleSource, /setPendingFileState\(pendingRow, 'ready', 'Indexed'\)/);
+  assert.match(moduleSource, /window\.setTimeout\(\(\) => replacePendingWithFileRow[\s\S]*?, 2200\)/);
+  assert.match(css, /\.ncb-index-state i\s*\{[\s\S]*animation:\s*ncb-index-spin/);
+  const uploadBody = moduleSource.slice(moduleSource.indexOf('async function uploadIntoCourse'), moduleSource.indexOf('function courseCollectionHost'));
+  assert.doesNotMatch(uploadBody, /renderCourseDetail\(/);
+});
+
+test('file and folder deletion update only their affected drawer rows', () => {
+  const fileDelete = moduleSource.slice(moduleSource.indexOf('async function deleteFileCompletely'), moduleSource.indexOf('async function deleteFolderCompletely'));
+  const folderDelete = moduleSource.slice(moduleSource.indexOf('async function deleteFolderCompletely'), moduleSource.indexOf('async function deleteFileCompletelyWithoutConfirm'));
+  assert.match(fileDelete, /row\.remove\(\)/);
+  assert.match(folderDelete, /details\?\.remove\(\)/);
+  assert.doesNotMatch(fileDelete, /renderCourseDetail\(/);
+  assert.doesNotMatch(folderDelete, /renderCourseDetail\(/);
 });
 
 test('tutor modes allow one selection or no selection', () => {

@@ -4724,6 +4724,50 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-course-row-main > b,
 .ncb-file-row-main > b { color: #8a9db5; font-size: 0.67rem; }
 
+.ncb-file-row--pending { border-color: rgba(96, 165, 250, 0.28); }
+.ncb-file-row--pending .ncb-file-row-main { cursor: default; }
+.ncb-index-state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: #91bdf7;
+  font-size: 0.66rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.ncb-index-state i {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border: 2px solid rgba(147, 197, 253, 0.25);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: ncb-index-spin 0.72s linear infinite;
+}
+.ncb-index-state svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ncb-index-state em { font-style: normal; }
+.ncb-index-state.is-ready { color: #4ade80; animation: ncb-index-ready 180ms ease-out both; }
+.ncb-index-state.is-error { color: #fca5a5; }
+@keyframes ncb-index-spin { to { transform: rotate(360deg); } }
+@keyframes ncb-index-ready {
+  from { opacity: 0; transform: scale(0.84); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ncb-index-state i { animation-duration: 1.6s; }
+  .ncb-index-state.is-ready { animation: none; }
+}
+
 .ncb-library-delete {
   width: 30px;
   height: 30px;

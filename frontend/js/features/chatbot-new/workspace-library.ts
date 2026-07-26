@@ -573,16 +573,6 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
     <div class="ncb-library-group ncb-root-drop" data-drop-folder=""><h3>Files</h3><div class="ncb-drop-hint"><strong>Drop files here</strong><span>Upload to ${escapeHtml(course.name || 'this course')}</span></div>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div>`;
 
   bindCourseFileActions(panel, detail, course);
-  detail.querySelectorAll<HTMLButtonElement>('[data-library-file]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const folder = button.dataset.folder || null;
-      const collection = (folder
-        ? (course.userFolders || []).find((item) => item.name === folder)?.files || []
-        : course.files || []) as CourseFile[];
-      const file = collection.find((item) => item.name === button.dataset.libraryFile);
-      if (file) openWorkspacePdf(rootFor(panel), file, course);
-    });
-  });
 }
 
 function currentUid(): string {
@@ -602,6 +592,12 @@ async function uploadIntoCourse(
   const { valid, rejected } = filterOversizedFiles(picked);
   warnRejected(rejected, valid.length === 0);
   if (!valid.length) return;
+  const pendingRows = new Map<string, HTMLElement>();
+  valid.forEach((file) => {
+    const row = appendPendingFileRow(detail, file, folder);
+    if (row) pendingRows.set(file.name, row);
+  });
+  updateCourseDetailCount(panel, course, valid.length);
   const status = detail.querySelector<HTMLElement>('.ncb-upload-status');
   if (status) {
     status.hidden = false;
@@ -610,30 +606,105 @@ async function uploadIntoCourse(
   }
   const results = await Promise.allSettled(valid.map((file) => window._ufUpload!(uid, course, file, null, folder)));
   const failed = results.filter((result) => result.status === 'rejected').length;
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') setPendingFileState(pendingRows.get(valid[index]!.name), 'error', 'Upload failed');
+  });
   if (failed === valid.length) {
     if (status) {
       status.classList.add('is-error');
       status.textContent = 'Upload failed. Please try again.';
     }
+    updateCourseDetailCount(panel, course);
     return;
   }
   course.files = ((course.files || []) as CourseFile[]).filter((file) => !file._uploaded);
   if (folder) course.userFolders = [];
   await hydrate(course);
   if (status) status.textContent = 'Upload complete. Indexing files for AI search...';
-  await Promise.allSettled(valid.map(async (file) => {
+  await Promise.allSettled(valid.map(async (file, index) => {
+    if (results[index]?.status === 'rejected') return;
+    const pendingRow = pendingRows.get(file.name);
+    setPendingFileState(pendingRow, 'indexing', 'Indexing for AI');
     const uploaded = findCourseFile(course, file.name, folder);
-    if (!uploaded?._storageName || !authToken()) throw new Error('Uploaded file could not be indexed');
-    const response = await fetch('/api/documents/index-existing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` },
-      body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'lecture' })
-    });
-    if (!response.ok) throw new Error(`Indexing failed (${response.status})`);
+    try {
+      if (!uploaded?._storageName || !authToken()) throw new Error('Uploaded file could not be indexed');
+      const response = await fetch('/api/documents/index-existing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` },
+        body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'lecture' })
+      });
+      if (!response.ok) throw new Error(`Indexing failed (${response.status})`);
+      setPendingFileState(pendingRow, 'ready', 'Indexed');
+      window.setTimeout(() => replacePendingWithFileRow(panel, detail, course, uploaded, folder, pendingRow), 2200);
+    } catch (error) {
+      setPendingFileState(pendingRow, 'error', 'Indexing failed');
+      throw error;
+    }
   }));
   clearCourseDocumentCache(course.id);
+  updateCourseDetailCount(panel, course);
   window.showToast?.(failed ? 'Some files uploaded' : 'Files uploaded', `${valid.length - failed} file${valid.length - failed === 1 ? '' : 's'} added.`);
-  await renderCourseDetail(panel, course);
+}
+
+function courseCollectionHost(detail: HTMLElement, folder: string | null): HTMLElement | null {
+  if (!folder) return detail.querySelector<HTMLElement>('.ncb-root-drop');
+  return Array.from(detail.querySelectorAll<HTMLElement>('.ncb-folder[data-drop-folder]'))
+    .find((item) => item.dataset.dropFolder === folder)?.querySelector<HTMLElement>(':scope > div') || null;
+}
+
+function appendPendingFileRow(detail: HTMLElement, file: File, folder: string | null): HTMLElement | null {
+  const host = courseCollectionHost(detail, folder);
+  if (!host) return null;
+  host.querySelector('.ncb-library-muted')?.remove();
+  const row = document.createElement('div');
+  row.className = 'ncb-file-row ncb-file-row--pending';
+  row.dataset.pendingFile = file.name;
+  row.dataset.folder = folder || '';
+  row.innerHTML = `<div class="ncb-file-row-main">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>Uploading</small></span><span class="ncb-index-state is-indexing" role="status"><i aria-hidden="true"></i><em>Uploading</em></span></div>`;
+  host.appendChild(row);
+  return row;
+}
+
+function setPendingFileState(row: HTMLElement | undefined, state: 'indexing' | 'ready' | 'error', label: string): void {
+  if (!row) return;
+  const status = row.querySelector<HTMLElement>('.ncb-index-state');
+  const secondary = row.querySelector<HTMLElement>('.ncb-file-row-main small');
+  if (!status) return;
+  status.className = `ncb-index-state is-${state}`;
+  status.innerHTML = state === 'ready'
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><em>Indexed</em>'
+    : state === 'error'
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3h.01"/></svg><em>Failed</em>'
+      : `<i aria-hidden="true"></i><em>${escapeHtml(label)}</em>`;
+  if (secondary) secondary.textContent = label;
+}
+
+function replacePendingWithFileRow(
+  panel: HTMLElement,
+  detail: HTMLElement,
+  course: LibraryCourse,
+  file: CourseFile,
+  folder: string | null,
+  pendingRow: HTMLElement | undefined
+): void {
+  if (!pendingRow?.isConnected) return;
+  const template = document.createElement('template');
+  template.innerHTML = fileButton(file, course, folder);
+  const row = template.content.firstElementChild as HTMLElement | null;
+  if (!row) return;
+  pendingRow.replaceWith(row);
+  bindSingleFileRow(panel, detail, course, row);
+}
+
+function updateCourseDetailCount(panel: HTMLElement, course: LibraryCourse, optimisticDelta = 0): void {
+  const meta = panel.querySelector<HTMLElement>('.ncb-library-drill-head span');
+  if (meta) meta.textContent = `${fileCount(course) + optimisticDelta} files`;
+  ((course.userFolders || []) as CourseFolder[]).forEach((folder) => {
+    const details = Array.from(panel.querySelectorAll<HTMLElement>('.ncb-folder[data-drop-folder]'))
+      .find((item) => item.dataset.dropFolder === folder.name);
+    const count = details?.querySelector<HTMLElement>('summary small');
+    if (count) count.textContent = `${folder.files?.length || 0} files`;
+  });
 }
 
 function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: LibraryCourse): void {
@@ -668,9 +739,7 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
     void renderCourseDetail(panel, course);
   });
 
-  detail.querySelectorAll<HTMLButtonElement>('[data-delete-file]').forEach((button) => {
-    button.addEventListener('click', () => void deleteFileCompletely(panel, course, button.dataset.deleteFile || '', button.dataset.folder || null));
-  });
+  detail.querySelectorAll<HTMLElement>('.ncb-file-row').forEach((row) => bindSingleFileRow(panel, detail, course, row));
   detail.querySelectorAll<HTMLButtonElement>('[data-delete-folder]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault();
@@ -711,6 +780,20 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
   });
 }
 
+function bindSingleFileRow(panel: HTMLElement, detail: HTMLElement, course: LibraryCourse, row: HTMLElement): void {
+  const open = row.querySelector<HTMLButtonElement>('[data-library-file]');
+  open?.addEventListener('click', () => {
+    const folder = open.dataset.folder || null;
+    const collection = (folder
+      ? (course.userFolders || []).find((item) => item.name === folder)?.files || []
+      : course.files || []) as CourseFile[];
+    const file = collection.find((item) => item.name === open.dataset.libraryFile);
+    if (file) openWorkspacePdf(rootFor(panel), file, course);
+  });
+  const remove = row.querySelector<HTMLButtonElement>('[data-delete-file]');
+  remove?.addEventListener('click', () => void deleteFileCompletely(panel, detail, course, remove.dataset.deleteFile || '', remove.dataset.folder || null, row));
+}
+
 function findCourseFile(course: LibraryCourse, name: string, folder: string | null): CourseFile | undefined {
   const folders = (course.userFolders || []) as CourseFolder[];
   const files = (course.files || []) as CourseFile[];
@@ -734,22 +817,32 @@ function openUploadPopup(panel: HTMLElement, course: LibraryCourse): void {
   });
 }
 
-async function deleteFileCompletely(panel: HTMLElement, course: LibraryCourse, name: string, folder: string | null): Promise<void> {
+async function deleteFileCompletely(panel: HTMLElement, detail: HTMLElement, course: LibraryCourse, name: string, folder: string | null, row: HTMLElement): Promise<void> {
   if (!name || !confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
-  const file = findCourseFile(course, name, folder);
-  const docs = await listCourseDocuments(course.id, { force: true });
-  const matches = docs.filter((doc) => String(doc.file_name || doc.fileName) === name);
-  for (const doc of matches) {
-    const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
-    if (!response.ok) throw new Error('Database deletion failed');
+  const deleteButton = row.querySelector<HTMLButtonElement>('[data-delete-file]');
+  if (deleteButton) deleteButton.disabled = true;
+  try {
+    const file = findCourseFile(course, name, folder);
+    const docs = await listCourseDocuments(course.id, { force: true });
+    const matches = docs.filter((doc) => String(doc.file_name || doc.fileName) === name);
+    for (const doc of matches) {
+      const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
+      if (!response.ok) throw new Error('Database deletion failed');
+    }
+    if (file?._uploaded) await window._ufDeleteRemote?.(currentUid(), course, name, folder);
+    if (folder) {
+      const target = ((course.userFolders || []) as CourseFolder[]).find((item) => item.name === folder);
+      if (target) target.files = (target.files || []).filter((item) => item.name !== name);
+    } else course.files = ((course.files || []) as CourseFile[]).filter((item) => item.name !== name);
+    clearCourseDocumentCache(course.id);
+    row.remove();
+    const host = courseCollectionHost(detail, folder);
+    if (host && !host.querySelector('.ncb-file-row')) host.insertAdjacentHTML('beforeend', '<p class="ncb-library-muted">No files here.</p>');
+    updateCourseDetailCount(panel, course);
+  } catch {
+    if (deleteButton) deleteButton.disabled = false;
+    window.showToast?.('Delete failed', 'The file was not removed. Please try again.');
   }
-  if (file?._uploaded) await window._ufDeleteRemote?.(currentUid(), course, name, folder);
-  if (folder) {
-    const target = ((course.userFolders || []) as CourseFolder[]).find((item) => item.name === folder);
-    if (target) target.files = (target.files || []).filter((item) => item.name !== name);
-  } else course.files = ((course.files || []) as CourseFile[]).filter((item) => item.name !== name);
-  clearCourseDocumentCache(course.id);
-  await renderCourseDetail(panel, course);
 }
 
 async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse, name: string): Promise<void> {
@@ -760,7 +853,12 @@ async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse,
   const folders = (course.userFolders || []) as CourseFolder[];
   const folderIndex = folders.findIndex((item) => item.name === name);
   if (folderIndex >= 0) folders.splice(folderIndex, 1);
-  await renderCourseDetail(panel, course);
+  const details = Array.from(panel.querySelectorAll<HTMLElement>('.ncb-folder[data-drop-folder]'))
+    .find((item) => item.dataset.dropFolder === name);
+  const group = details?.closest<HTMLElement>('.ncb-library-group');
+  details?.remove();
+  if (group && !group.querySelector('.ncb-folder')) group.remove();
+  updateCourseDetailCount(panel, course);
 }
 
 async function deleteFileCompletelyWithoutConfirm(course: LibraryCourse, file: CourseFile, folder: string | null): Promise<void> {
