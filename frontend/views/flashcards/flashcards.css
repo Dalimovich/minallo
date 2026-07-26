@@ -497,3 +497,16 @@
   flex: 1.2;
   justify-content: center;
 }
+/* Shared card player: course page, chat artifact and Saved overlay. */
+.embedded-flashcard-player { width:min(100%, 620px); margin:auto; min-height:280px; }
+.fc-embedded-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.flashcard-scene { position:relative; min-height:280px; perspective:1200px; cursor:pointer; outline:none; }
+.flashcard-scene:focus-visible { border-radius:18px; box-shadow:0 0 0 3px rgba(113,91,255,.42); }
+.flashcard-inner { position:absolute; inset:0; transform-style:preserve-3d; transition:transform 420ms ease; }
+.flashcard-inner[data-flipped="true"] { transform:rotateY(180deg); }
+.flashcard-face { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:32px; text-align:center; border:1px solid rgba(255,255,255,.12); border-radius:20px; background:var(--surface-raised, #171823); backface-visibility:hidden; -webkit-backface-visibility:hidden; overflow:auto; }
+.flashcard-face > div { font-size:clamp(1rem, 3vw, 1.35rem); }
+.flashcard-face small,.flashcard-face em { color:var(--text-muted, #9da2b4); }
+.flashcard-back { transform:rotateY(180deg); }
+@media (prefers-reduced-motion: reduce) { .flashcard-inner { transition:none; } }
+@media (max-width:540px) { .embedded-flashcard-player,.flashcard-scene { min-height:240px; } .flashcard-face { padding:22px 16px; } }

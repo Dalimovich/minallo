@@ -252,6 +252,58 @@
     if (root) _initShell(root, course, options);
   };
 
+  // Shared embedded renderer used by chat artifacts and the Saved workspace.
+  // It consumes the persisted deck model directly, so opening a deck never
+  // regenerates it or flattens it into a question/answer list.
+  window.mountFlashcardDeckPlayer = function (target, deck, options) {
+    if (!target) return function () {};
+    options = options || {};
+    var cards = Array.isArray(deck && deck.cards) ? deck.cards : [];
+    var index = Math.max(0, Math.min(Number(deck && deck.study_progress) || 0, Math.max(0, cards.length - 1)));
+    var flipped = false;
+    target.classList.add('embedded-flashcard-player');
+    target.setAttribute('role', 'region');
+    target.setAttribute('aria-label', (deck && deck.name || 'Flashcard deck') + ' study player');
+
+    function cardSide(card, side) {
+      return side === 'front' ? (card.front || card.question || '') : (card.back || card.answer || '');
+    }
+    function persist() {
+      if (!deck || !deck.id) return;
+      _dbUpdateDeck(deck.id, { study_progress: index, last_studied_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    }
+    function render() {
+      var card = cards[index];
+      if (!card) {
+        target.innerHTML = '<div class="fc-card-empty">This deck has no cards.</div>';
+        return;
+      }
+      target.innerHTML =
+        '<div class="fc-embedded-head"><strong>' + _esc(deck.name || 'Flashcards') + '</strong><span>' + cards.length + ' cards</span></div>' +
+        '<div class="flashcard-scene" tabindex="0" aria-label="Card ' + (index + 1) + ' of ' + cards.length + '. Press Space to flip.">' +
+          '<div class="flashcard-inner" data-flipped="' + flipped + '">' +
+            '<article class="flashcard-face flashcard-front"><small>Card ' + (index + 1) + ' of ' + cards.length + '</small><div>' + _fcCardHtml(cardSide(card, 'front')) + '</div><em>Click to reveal</em></article>' +
+            '<article class="flashcard-face flashcard-back"><small>Answer</small><div>' + _fcCardHtml(cardSide(card, 'back')) + '</div></article>' +
+          '</div>' +
+        '</div>' +
+        '<div class="fc-study-progress"><div class="fc-study-progress-track"><div class="fc-study-progress-bar" style="width:' + (((index + 1) / cards.length) * 100) + '%"></div></div><div class="fc-study-progress-label">' + (index + 1) + ' / ' + cards.length + '</div></div>' +
+        '<div class="fc-study-controls"><button class="fc-btn fc-btn-ghost" data-fc-prev type="button" ' + (index === 0 ? 'disabled' : '') + '>Previous</button><button class="fc-btn fc-btn-flip" data-fc-flip type="button">Flip card</button><button class="fc-btn fc-btn-ghost" data-fc-next type="button" ' + (index === cards.length - 1 ? 'disabled' : '') + '>Next</button></div>';
+      var flip = function () { flipped = !flipped; var inner = target.querySelector('.flashcard-inner'); if (inner) inner.setAttribute('data-flipped', String(flipped)); persist(); };
+      target.querySelector('[data-fc-flip]').addEventListener('click', flip);
+      target.querySelector('.flashcard-scene').addEventListener('click', flip);
+      target.querySelector('[data-fc-prev]').addEventListener('click', function () { index -= 1; flipped = false; persist(); render(); });
+      target.querySelector('[data-fc-next]').addEventListener('click', function () { index += 1; flipped = false; persist(); render(); });
+      target.querySelector('.flashcard-scene').addEventListener('keydown', function (event) {
+        if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); flip(); }
+        else if (event.key === 'ArrowLeft' && index > 0) { event.preventDefault(); index -= 1; flipped = false; persist(); render(); }
+        else if (event.key === 'ArrowRight' && index < cards.length - 1) { event.preventDefault(); index += 1; flipped = false; persist(); render(); }
+      });
+      if (window._ssEnsureKatex) window._ssEnsureKatex().then(function () { if (window.renderMathInElement) window.renderMathInElement(target, { throwOnError: false, strict: false }); }).catch(function () {});
+    }
+    render();
+    return function () { target.innerHTML = ''; };
+  };
+
   window.resetFlashcardsToGrid = function (target) {
     if (!target) return;
     var root = target.querySelector('[data-flashcards-root]');
