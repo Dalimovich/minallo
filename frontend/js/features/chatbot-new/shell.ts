@@ -641,6 +641,15 @@ interface ChatMessage {
    *  explicitly asked for a diagram/visual artifact. */
   allowDiagrams?: boolean;
   studyToolConfiguration?: StudyToolConfigurationMarker;
+  learningJourney?: LearningJourneyMarker;
+}
+
+interface LearningJourneyMarker {
+  title: string;
+  totalPages: number;
+  pagesScanned: number;
+  coverageComplete: boolean;
+  unresolvedItems: string[];
 }
 
 interface ConversationState {
@@ -1037,6 +1046,14 @@ async function streamAiReply(
         sourceLabel: streamed.meta?.sourceLabel as string | undefined,
         courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
         sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
+        learningJourney: streamed.meta?.taskType === 'document_wide_extraction' ? {
+          title: String(streamed.meta?.resolvedHeading || streamed.meta?.targetSection || 'Document review'),
+          totalPages: Number(streamed.meta?.totalPages || 0),
+          pagesScanned: Number(streamed.meta?.scannedPageCount || 0),
+          coverageComplete: streamed.meta?.coverageComplete === true,
+          unresolvedItems: Array.isArray(streamed.meta?.unresolvedItems)
+            ? streamed.meta.unresolvedItems.map(String) : [],
+        } : undefined,
       });
       if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
     } else if (normaliseSourceMode(originChat.sourceMode) === 'course_files') {
@@ -3045,6 +3062,15 @@ async function ensureChatCourseFilesLoaded(): Promise<void> {
 /** Render the `done` event meta into the answer bubble: source list only.
  * Verification/confidence status remains internal and is not shown to users. */
 function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>): void {
+  if (meta.taskType === 'document_wide_extraction') {
+    enhanceDocumentLearningJourney(bubble, {
+      title: String(meta.resolvedHeading || meta.targetSection || 'Document review'),
+      totalPages: Number(meta.totalPages || 0),
+      pagesScanned: Number(meta.scannedPageCount || 0),
+      coverageComplete: meta.coverageComplete === true,
+      unresolvedItems: Array.isArray(meta.unresolvedItems) ? meta.unresolvedItems.map(String) : [],
+    });
+  }
   const sources = Array.isArray(meta.sources) ? meta.sources : [];
   const sourceLabel = typeof meta.sourceLabel === 'string' ? meta.sourceLabel : '';
 
@@ -3937,6 +3963,58 @@ function getSbToken(): string | null {
   if (live) return live;
   try { return localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token'); }
   catch { return null; }
+}
+
+function enhanceDocumentLearningJourney(
+  bubble: HTMLElement,
+  marker: LearningJourneyMarker
+): void {
+  if (bubble.querySelector('.ncb-learning-journey')) return;
+  const headings = Array.from(bubble.querySelectorAll<HTMLHeadingElement>('h3'));
+  if (!headings.length) return;
+  const journey = document.createElement('section');
+  journey.className = 'ncb-learning-journey';
+  journey.setAttribute('aria-label', 'Learning Journey');
+  const percent = marker.totalPages > 0
+    ? Math.min(100, Math.round((marker.pagesScanned / marker.totalPages) * 100)) : 0;
+  journey.innerHTML =
+    '<header class="ncb-learning-journey__header">' +
+      '<div><span>Learning Journey</span><h2>' + escapeHtml(marker.title) + '</h2></div>' +
+      '<strong>' + escapeHtml(String(headings.length)) + ' questions</strong>' +
+    '</header>' +
+    '<div class="ncb-learning-journey__progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent + '">' +
+      '<span style="width:' + percent + '%"></span>' +
+    '</div>' +
+    '<p class="ncb-learning-journey__coverage">' +
+      escapeHtml(marker.pagesScanned + ' of ' + marker.totalPages + ' pages processed') +
+      (marker.coverageComplete ? ' · Complete' : ' · Partial coverage') +
+    '</p>';
+  const list = document.createElement('div');
+  list.className = 'ncb-learning-journey__list';
+  headings.forEach((heading, index) => {
+    const details = document.createElement('details');
+    details.className = 'ncb-learning-journey__item';
+    if (index === 0) details.open = true;
+    const summary = document.createElement('summary');
+    summary.innerHTML = '<span class="ncb-learning-journey__status" aria-hidden="true">✓</span>' +
+      '<span>' + escapeHtml(heading.textContent || ('Question ' + (index + 1))) + '</span>';
+    details.appendChild(summary);
+    const content = document.createElement('div');
+    content.className = 'ncb-learning-journey__content';
+    let node = heading.nextSibling;
+    while (node && !(node instanceof HTMLHeadingElement && node.tagName === 'H3')) {
+      const next = node.nextSibling;
+      content.appendChild(node);
+      node = next;
+    }
+    heading.remove();
+    details.appendChild(content);
+    list.appendChild(details);
+  });
+  journey.appendChild(list);
+  const oldTitle = bubble.querySelector('h2');
+  oldTitle?.remove();
+  bubble.prepend(journey);
 }
 
 function escapeHtml(s: string | undefined | null): string {
@@ -5213,6 +5291,10 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     compact.courseFileScope = m.courseFileScope;
     compact.sources = m.sources;
     compact.allowDiagrams = !!m.allowDiagrams;
+    if (m.learningJourney) compact.learningJourney = {
+      ...m.learningJourney,
+      unresolvedItems: m.learningJourney.unresolvedItems.slice(),
+    };
     // Preserve the mission marker verbatim — it's tiny and must survive
     // the storage round-trip so appendStoredMessage can re-fetch the cards.
     if (m.missionMarker) compact.missionMarker = m.missionMarker;
@@ -5733,6 +5815,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // Answers saved before the clean-opening fix may still start with the old
   // source preface / self-intro — scrub at render time.
   if (bubble) renderRichBubble(bubble, stripAnswerIntro(m.text), !!m.allowDiagrams);
+  if (bubble && m.learningJourney) enhanceDocumentLearningJourney(bubble, m.learningJourney);
   if (bubble && (m.sourceLabel || m.sources?.length)) {
     appendAskStreamMeta(bubble, {
       sourceLabel: m.sourceLabel,

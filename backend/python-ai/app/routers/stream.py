@@ -2205,6 +2205,7 @@ async def _prepare_ask_stream_response(
                 previous_items=previous_items,
                 previous_context=extraction_context,
                 checkpoint=extraction_checkpoint,
+                visible_page=payload.visiblePage,
             )
         )
         if payload.conversationId:
@@ -2352,6 +2353,12 @@ async def _prepare_ask_stream_response(
                 "itemsExtracted": len(extraction.items),
                 "coverageComplete": extraction.complete,
                 "unreadablePages": extraction.unreadable_pages,
+                "unprocessedPages": extraction.unprocessed_pages,
+                "sectionResolved": extraction.section_resolved,
+                "resolvedHeading": extraction.resolved_heading,
+                "resolvedStartPage": extraction.resolved_start_page,
+                "resolvedEndPage": extraction.resolved_end_page,
+                "invalidItemIdsRejected": extraction.invalid_item_ids_rejected,
                 "unresolvedItems": extraction.unanswered_item_ids,
                 "languageStatus": "valid_mixed_source",
                 "continuationCorrection": extraction_correction,

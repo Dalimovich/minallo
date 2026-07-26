@@ -23,6 +23,44 @@ def test_numbered_kurzfragen_section_is_preserved() -> None:
     assert target == "2. Kurzfragen"
 
 
+def test_numbered_section_resolution_and_id_filter_are_exact() -> None:
+    resolved = extraction.resolve_document_section(
+        "2. Kurzfragen",
+        {
+            3: "2. Kurzfragen - Grundlagen\n2.1 Welche Aussage ist korrekt?",
+            4: "12. Kurzfragen\n12.21 Welche Aussage ist falsch?",
+        },
+        total_pages=43,
+        visible_page=3,
+    )
+    assert resolved is not None
+    assert resolved.start_page == 3
+    assert resolved.end_page == 3
+    assert extraction.item_belongs_to_requested_section("2.4", "2. Kurzfragen")
+    assert not extraction.item_belongs_to_requested_section("12.21", "2. Kurzfragen")
+    assert not extraction.item_belongs_to_requested_section("14.4", "2. Kurzfragen")
+
+
+def test_unresolved_numbered_section_returns_no_unrelated_items(monkeypatch) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 43}, [{
+            "page_number": 24,
+            "cleaned_text": "12. Kurzfragen\n12.21 Welche Aussage ist korrekt?",
+            "raw_text": "",
+        }]),
+    )
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="2. Kurzfragen",
+    )
+    assert result.status == "section_not_found"
+    assert not result.section_resolved
+    assert result.items == []
+    assert 1 in result.unprocessed_pages
+    assert result.unreadable_pages == []
+
+
 def test_missing_first_items_continuation_reuses_extraction_scope() -> None:
     matched, correction, target = extraction.classify_document_extraction(
         "you missed the first ones, keep extracting the questions",
@@ -146,6 +184,38 @@ def test_sixty_pages_run_as_six_batches_and_checkpoint_coverage(monkeypatch) -> 
     assert result.scanned_pages == list(range(1, 61))
 
 
+def test_document_extraction_visually_processes_every_missing_page_without_ocr_cap(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 43, "storage_path": "exam.pdf"}, []),
+    )
+    visual_pages: list[int] = []
+    monkeypatch.setattr(
+        extraction,
+        "_extract_visual_page",
+        lambda **kwargs: visual_pages.append(kwargs["page_number"]) or [],
+    )
+    monkeypatch.setattr(
+        extraction,
+        "chat_json",
+        lambda **_: SimpleNamespace(
+            data={"questions": [], "solutions": []},
+            model="test",
+            prompt_tokens=0,
+            completion_tokens=0,
+        ),
+    )
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="questions",
+    )
+    assert visual_pages == list(range(1, 44))
+    assert result.scanned_pages == list(range(1, 44))
+    assert result.unprocessed_pages == []
+
+
 def test_resume_only_processes_pages_after_last_checkpoint(monkeypatch) -> None:
     pages = [
         {
@@ -255,7 +325,7 @@ def test_english_framing_preserves_german_source_text() -> None:
     assert "I scanned all 1 pages" in rendered
 
 
-def test_unreadable_pages_prevent_complete_claim(monkeypatch) -> None:
+def test_missing_index_rows_are_unprocessed_not_unreadable(monkeypatch) -> None:
     monkeypatch.setattr(
         extraction,
         "_load_document_pages",
@@ -278,7 +348,8 @@ def test_unreadable_pages_prevent_complete_claim(monkeypatch) -> None:
         user_id="u", course_id="c", document_id="d", target="Kurzfragen",
     )
     assert not result.complete
-    assert result.unreadable_pages == [1, 3]
+    assert result.unreadable_pages == []
+    assert result.unprocessed_pages == [1, 3]
 
 
 def test_suspicious_initial_gap_requires_review() -> None:

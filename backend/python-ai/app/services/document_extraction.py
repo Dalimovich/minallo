@@ -47,6 +47,73 @@ _TARGET_RE = re.compile(
 _ITEM_ID_RE = re.compile(r"^\s*(\d+(?:\.\d+)*(?:[a-z])?)\s*$", re.IGNORECASE)
 
 
+def requested_section_number(target: str) -> str | None:
+    match = re.match(r"^\s*(\d+)\s*\.\s*", target or "")
+    return match.group(1) if match else None
+
+
+def item_belongs_to_requested_section(item_id: str, target: str) -> bool:
+    section = requested_section_number(target)
+    if section is None:
+        return True
+    return normalise_item_id(item_id).startswith(f"{section}.")
+
+
+@dataclass(frozen=True)
+class ResolvedDocumentSection:
+    requested: str
+    heading: str
+    start_page: int
+    end_page: int
+    question_pages: list[int]
+
+
+def resolve_document_section(
+    target: str,
+    text_by_page: dict[int, str],
+    *,
+    total_pages: int,
+    visible_page: int | None = None,
+) -> ResolvedDocumentSection | None:
+    """Resolve a numbered heading without substring matches (section 2 is not 12)."""
+    section = requested_section_number(target)
+    if section is None:
+        return None
+    label = re.sub(r"^\s*\d+\s*\.\s*", "", target).strip()
+    heading_re = re.compile(
+        rf"(?im)^\s*{re.escape(section)}\s*\.\s*"
+        rf"(?P<title>[^\n\r]{{0,160}}\b{re.escape(label)}\b[^\n\r]{{0,160}})$"
+    )
+    matches: list[tuple[int, str]] = []
+    for page, text in text_by_page.items():
+        match = heading_re.search(text or "")
+        if match:
+            matches.append((page, match.group(0).strip()))
+    if not matches:
+        return None
+    start_page, heading = min(
+        matches,
+        key=lambda value: (0 if visible_page == value[0] else 1, value[0]),
+    )
+    next_heading_re = re.compile(r"(?im)^\s*(?P<number>\d+)\s*\.\s*[^\n\r]{0,200}$")
+    boundary_pages = [
+        page for page, text in text_by_page.items()
+        if page > start_page and any(
+            int(match.group("number")) > int(section)
+            for match in next_heading_re.finditer(text or "")
+        )
+    ]
+    end_page = min(boundary_pages) - 1 if boundary_pages else total_pages
+    end_page = max(start_page, end_page)
+    return ResolvedDocumentSection(
+        requested=target,
+        heading=heading,
+        start_page=start_page,
+        end_page=end_page,
+        question_pages=list(range(start_page, end_page + 1)),
+    )
+
+
 def classify_document_extraction(
     question: str,
     previous_turns: list[dict[str, str]] | None = None,
@@ -284,6 +351,12 @@ class DocumentExtractionResult:
     status: str = "completed"
     message: str | None = None
     new_item_count: int = 0
+    section_resolved: bool = True
+    resolved_heading: str | None = None
+    resolved_start_page: int | None = None
+    resolved_end_page: int | None = None
+    invalid_item_ids_rejected: list[str] = field(default_factory=list)
+    unprocessed_pages: list[int] = field(default_factory=list)
 
 
 _EXTRACTION_CONTEXTS: dict[tuple[str, str], DocumentExtractionContext] = {}
@@ -683,14 +756,14 @@ def _extract_visual_page(
     """Render and inspect a weak/scanned page for marks, questions and answers."""
     storage_path = str(document.get("storage_path") or "")
     if not storage_path:
-        return []
+        raise RuntimeError("document storage path is unavailable for visual extraction")
     from .openai_client import get_openai_client
     from .storage import download_document_bytes
     from .vision_ocr import _render_page_to_png, _try_import_pypdfium2
 
     pdfium = _try_import_pypdfium2()
     if pdfium is None:
-        return []
+        raise RuntimeError("PDF renderer is unavailable for visual extraction")
     png = _render_page_to_png(
         pdfium,
         download_document_bytes(storage_path),
@@ -698,7 +771,7 @@ def _extract_visual_page(
         260,
     )
     if not png:
-        return []
+        raise RuntimeError(f"PDF page {page_number} could not be rendered")
     response = get_openai_client().chat.completions.create(
         model=get_settings().openai_generate_model,
         temperature=0,
@@ -733,7 +806,7 @@ def _extract_visual_page(
     try:
         data = json.loads(str(response.choices[0].message.content or "{}"))
     except (TypeError, ValueError):
-        return []
+        raise RuntimeError(f"visual extraction returned invalid JSON for page {page_number}")
     return [
         item
         for item in (
@@ -862,6 +935,7 @@ def extract_document_qa(
     previous_items: list[ExtractedQAItem] | None = None,
     previous_context: DocumentExtractionContext | None = None,
     checkpoint: Callable[[dict[str, Any]], None] | None = None,
+    visible_page: int | None = None,
 ) -> DocumentExtractionResult:
     document, page_rows = _load_document_pages(
         user_id=user_id, course_id=course_id, document_id=document_id,
@@ -884,6 +958,54 @@ def extract_document_qa(
         target=target or "questions",
         total_pages=total_pages,
     )
+    numbered_section = requested_section_number(target)
+    resolved_section = resolve_document_section(
+        target,
+        all_text_by_page,
+        total_pages=total_pages,
+        visible_page=visible_page,
+    ) if numbered_section else None
+    bootstrap_visual_items: list[ExtractedQAItem] = []
+    if numbered_section and resolved_section is None and visible_page:
+        try:
+            bootstrap_visual_items = [
+                item for item in _extract_visual_page(
+                    document=document,
+                    page_number=visible_page,
+                    target=target,
+                )
+                if item_belongs_to_requested_section(item.item_id, target)
+            ]
+        except Exception:
+            log.exception(
+                "document_section_visual_anchor_failed document=%s page=%s target=%s",
+                document_id, visible_page, target,
+            )
+        if bootstrap_visual_items:
+            resolved_section = ResolvedDocumentSection(
+                requested=target,
+                heading=target,
+                start_page=visible_page,
+                end_page=visible_page,
+                question_pages=[visible_page],
+            )
+    if numbered_section and resolved_section is None:
+        result.section_resolved = False
+        result.status = "section_not_found"
+        result.message = (
+            f'Minallo found the document, but it could not reliably read section "{target}".'
+        )
+        result.unprocessed_pages = sorted(
+            set(range(1, total_pages + 1)) - set(all_text_by_page)
+        )
+        return result
+    question_page_scope = set(
+        resolved_section.question_pages if resolved_section else target_pages
+    )
+    if resolved_section:
+        result.resolved_heading = resolved_section.heading
+        result.resolved_start_page = resolved_section.start_page
+        result.resolved_end_page = resolved_section.end_page
     if not target_pages:
         result.status = "no_pages_in_requested_direction"
         result.message = (
@@ -967,14 +1089,13 @@ def extract_document_qa(
             usable.append((page, text))
             result.scanned_pages.append(page)
             result.page_statuses[page] = PageProcessingStatus.TEXT_PROCESSED
-    result.unreadable_pages.extend(
+    # Missing index rows were never processed; do not misreport them as unreadable.
+    result.unprocessed_pages.extend(
         page
         for page in target_pages
         if page not in seen_pages
     )
-    for page in result.unreadable_pages:
-        result.page_statuses[page] = PageProcessingStatus.UNREADABLE
-    result.unreadable_pages = sorted(set(result.unreadable_pages))
+    result.unprocessed_pages = sorted(set(result.unprocessed_pages))
 
     extracted_questions: list[ExtractedQuestion] = list(
         previous_context.extracted_questions if previous_context else []
@@ -989,6 +1110,18 @@ def extract_document_qa(
         )
         for item in (previous_items or [])
     ]
+    extracted_questions.extend(
+        question for question in (
+            _normalise_question({
+                "item_id": item.item_id,
+                "question": item.question,
+                "question_page": item.question_page,
+                "confidence": item.confidence,
+                "section": target,
+            }, visible_page or item.question_page)
+            for item in bootstrap_visual_items
+        ) if question is not None
+    )
     solution_evidence: list[ExtractedSolutionEvidence] = list(
         previous_context.solution_evidence if previous_context else []
     ) + [
@@ -1005,14 +1138,30 @@ def extract_document_qa(
         for item in (previous_items or [])
         if item.answer.strip()
     ]
+    solution_evidence.extend(
+        solution for solution in (
+            _normalise_solution({
+                "item_id": item.item_id,
+                "question": item.question,
+                "answer": item.answer,
+                "answer_page": item.answer_page or item.question_page,
+                "evidence_type": "visible_page_visual_anchor",
+                "confidence": item.confidence,
+            }, visible_page or item.question_page)
+            for item in bootstrap_visual_items if item.answer
+        ) if solution is not None
+    )
     visual_item_pages_by_id: dict[str, set[int]] = {}
-    for page in weak_pages:
+    visual_pages = sorted(set(weak_pages + result.unprocessed_pages))
+    for page in visual_pages:
+        visual_processed = False
         try:
             visual_items = _extract_visual_page(
                 document=document,
                 page_number=page,
                 target=target,
             )
+            visual_processed = True
         except Exception:
             log.exception(
                 "document_visual_fallback_failed document=%s page=%s",
@@ -1059,16 +1208,16 @@ def extract_document_qa(
                 )
                 if solution is not None
             )
+        if visual_processed:
             result.scanned_pages.append(page)
             result.page_statuses[page] = PageProcessingStatus.VISION_PROCESSED
+            if page in result.unprocessed_pages:
+                result.unprocessed_pages.remove(page)
         else:
-            result.unreadable_pages.append(page)
-            result.page_statuses[page] = (
-                PageProcessingStatus.FAILED if any(p == page and text for p, text in usable)
-                else PageProcessingStatus.UNREADABLE
-            )
+            result.page_statuses[page] = PageProcessingStatus.FAILED
     result.scanned_pages = sorted(set(result.scanned_pages))
     result.unreadable_pages = sorted(set(result.unreadable_pages))
+    result.unprocessed_pages = sorted(set(result.unprocessed_pages))
     # Keep every map prompt bounded while scanning all pages in order. The
     # limit controls one map call, never total document coverage.
     groups: list[list[tuple[int, str]]] = []
@@ -1106,6 +1255,7 @@ def extract_document_qa(
                 result.page_statuses[page] = PageProcessingStatus.VERIFIED_IRRELEVANT
         question_pages = [
             (page, text) for page, text, kind in classified
+            if page in question_page_scope
             if kind in {ExtractionPageKind.QUESTION, ExtractionPageKind.MIXED,
                         ExtractionPageKind.UNCERTAIN}
         ]
@@ -1232,6 +1382,23 @@ def extract_document_qa(
         unique_solutions[key] = item
     result.extracted_questions = list(unique_questions.values())
     result.solution_evidence = list(unique_solutions.values())
+    if numbered_section:
+        result.invalid_item_ids_rejected = sorted({
+            item.item_id for item in result.extracted_questions
+            if not item_belongs_to_requested_section(item.item_id, target)
+        })
+        result.extracted_questions = [
+            item for item in result.extracted_questions
+            if item_belongs_to_requested_section(item.item_id, target)
+            and item.question_page in question_page_scope
+        ]
+        allowed_ids = {
+            item.normalized_item_id for item in result.extracted_questions
+        }
+        result.solution_evidence = [
+            item for item in result.solution_evidence
+            if not item.normalized_item_id or item.normalized_item_id in allowed_ids
+        ]
     answers_by_id: dict[str, set[str]] = {}
     for evidence in result.solution_evidence:
         if evidence.normalized_item_id:
@@ -1425,7 +1592,7 @@ def extract_document_qa(
         len(previous_context.paired_items) if previous_context else len(previous_items or [])
     )
     result.new_item_count = max(0, len(result.items) - previous_count)
-    expected_pages = set(target_pages)
+    expected_pages = question_page_scope if numbered_section else set(target_pages)
     result.all_relevant_pages_scanned = bool(
         expected_pages
         and expected_pages.issubset(set(result.scanned_pages) | set(result.unreadable_pages))
@@ -1435,7 +1602,9 @@ def extract_document_qa(
         result.items and not result.unanswered_item_ids
     )
     result.complete = bool(
-        result.all_relevant_pages_scanned
+        result.section_resolved
+        and result.all_relevant_pages_scanned
+        and not result.unprocessed_pages
         and result.all_items_have_answers
         and not result.duplicate_item_ids
         and not result.conflicting_item_ids
@@ -1449,6 +1618,10 @@ def extract_document_qa(
 
 def format_document_extraction(result: DocumentExtractionResult, language: str) -> str:
     english = language != "de"
+    if not result.section_resolved:
+        return result.message or (
+            f'Minallo found the document, but it could not reliably read section "{result.target}".'
+        )
     heading = (
         (f"## All {result.target} and answers" if result.complete else
          f"## Extracted {result.target} and answers")
@@ -1495,6 +1668,12 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
             pages = ", ".join(map(str, result.unreadable_pages))
             reasons.append(
                 f"Unreadable pages: {pages}" if english else f"Unlesbare Seiten: {pages}"
+            )
+        if result.unprocessed_pages:
+            pages = ", ".join(map(str, result.unprocessed_pages))
+            reasons.append(
+                f"Pages not available for processing: {pages}"
+                if english else f"Nicht verarbeitete Seiten: {pages}"
             )
         if result.unanswered_item_ids:
             item_ids = ", ".join(result.unanswered_item_ids)
