@@ -117,6 +117,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   });
 
   const language = body.language;
+  const mode = body.mode === 'practice' ? 'practice' : 'exam';
   const upstream = await forwardToPython<PyExamForgeResponse>('generate-examforge', {
     userId: user.id,
     courseId,
@@ -126,6 +127,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     questionTypes,
     topic: typeof topic === 'string' ? topic : null,
     language: typeof language === 'string' ? language : null,
+    mode,
     save: true,
   });
   if (!upstream.ok) {

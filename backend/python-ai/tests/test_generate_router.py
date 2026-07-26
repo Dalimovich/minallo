@@ -163,6 +163,36 @@ def test_flashcards_forwards_difficulty_language_topic_seen(client: TestClient, 
     assert captured["seen_items"] == ["front a"]
 
 
+def test_examforge_forwards_mode_and_hides_answer_key(client: TestClient, monkeypatch) -> None:
+    captured: dict = {}
+
+    def cap(**kw):
+        captured.update(kw)
+        return {
+            "sessionId": DOC_B, "title": "Umformen", "requestedCount": 1,
+            "actualCount": 1, "mode": kw["mode"], "topicMap": [],
+            "groundedSources": [], "questions": [{
+                "id": DOC_A, "type": "mcq", "question": "Question?",
+                "options": ["One", "Two"], "answer": "A",
+                "explanation": "Private rubric", "points": 1,
+            }],
+        }
+
+    monkeypatch.setattr("app.routers.generate.generate_examforge", cap)
+    response = client.post(
+        "/generate-examforge", headers={"X-Internal-Token": "test-token"},
+        json={"userId": OWNER, "courseId": COURSE, "documentIds": [DOC_A], "requestedCount": 1,
+              "difficulty": "hard", "language": "de", "topic": "Umformen",
+              "questionTypes": ["mcq"], "mode": "practice"},
+    )
+    assert response.status_code == 200
+    assert captured["mode"] == "practice"
+    assert captured["document_ids"] == [DOC_A]
+    assert response.json()["mode"] == "practice"
+    assert "answer" not in response.json()["questions"][0]
+    assert "explanation" not in response.json()["questions"][0]
+
+
 # ── Stage 1: backend-authoritative ready-document resolver ───────────────────
 
 

@@ -29,12 +29,16 @@ _MIN_CONTEXT_CHARS = 160
 class FlashcardGenerationDiagnostics:
     retrieved_chunk_count: int = 0
     context_chars: int = 0
+    unique_document_count: int = 0
+    covered_pages: list[int] | None = None
     shard_calls_started: int = 0
     shard_calls_succeeded: int = 0
     shard_calls_failed: int = 0
     missing_items_arrays: int = 0
     raw_items_received: int = 0
     invalid_item_shape_count: int = 0
+    invalid_front_count: int = 0
+    invalid_back_count: int = 0
     duplicate_count: int = 0
     accepted_count: int = 0
     backfill_attempted: bool = False
@@ -266,18 +270,35 @@ def generate_flashcards(
     # the dedupe set so generation doesn't repeat them.
     seen_avoid = [s.strip() for s in (seen_items or []) if isinstance(s, str) and s.strip()][:100]
 
-    retrieval_query = topic.strip() if topic and topic.strip() else "definitions formulas theorems examples exercises common mistakes important concepts"
-    chunks = retrieve_chunks(
-        user_id=user_id, course_id=course_id,
-        query=retrieval_query,
-        document_ids=document_ids,
-        top_k=max(20, requested * 2),
-    )
+    facets = [
+        "definitions terminology and important concepts",
+        "formulas notation and equations",
+        "worked examples and solution methods",
+        "comparisons conditions and common mistakes",
+    ]
+    queries = [f"{topic.strip()}: {facet}" for facet in facets] if topic and topic.strip() else facets
+    per_facet = max(6, requested // 2)
+    with ThreadPoolExecutor(max_workers=len(queries)) as retrieval_pool:
+        retrieved = list(retrieval_pool.map(lambda query: retrieve_chunks(
+            user_id=user_id, course_id=course_id, query=query,
+            document_ids=document_ids, top_k=per_facet,
+        ), queries))
+    chunks_by_id: dict[str, RetrievedChunk] = {}
+    for facet_chunks in retrieved:
+        for chunk in facet_chunks:
+            current = chunks_by_id.get(chunk.chunk_id)
+            if current is None or chunk.score > current.score:
+                chunks_by_id[chunk.chunk_id] = chunk
+    chunks = sorted(chunks_by_id.values(), key=lambda chunk: chunk.score, reverse=True)[:max(20, requested * 2)]
     # Review-2 finding #5: course-wide flashcards (no documentIds) had
     # empty doc_names → every source labelled "Unknown". Backfill from
     # the chunk set so source-of-truth filenames make it through.
     backfill_doc_names(chunks, doc_names)
-    diag = FlashcardGenerationDiagnostics(retrieved_chunk_count=len(chunks))
+    diag = FlashcardGenerationDiagnostics(
+        retrieved_chunk_count=len(chunks),
+        unique_document_count=len({chunk.document_id for chunk in chunks}),
+        covered_pages=sorted({page for chunk in chunks for page in (chunk.page_start, chunk.page_end) if page}),
+    )
     if not chunks:
         diag.failure_code = "flashcard_retrieval_empty"
         return {
@@ -367,6 +388,10 @@ def generate_flashcards(
             norm = _normalize(raw)
             if not norm:
                 diag.invalid_item_shape_count += 1
+                if not isinstance(raw, dict) or len(str(raw.get("front") or "").strip()) < 3:
+                    diag.invalid_front_count += 1
+                if not isinstance(raw, dict) or len(str(raw.get("back") or "").strip()) < 3:
+                    diag.invalid_back_count += 1
                 continue
             key = re.sub(r"\W+", " ", norm["front"].lower()).strip()
             if not key or key in seen_fronts:
@@ -402,6 +427,10 @@ def generate_flashcards(
                     norm = _normalize(raw)
                     if not norm:
                         diag.invalid_item_shape_count += 1
+                        if not isinstance(raw, dict) or len(str(raw.get("front") or "").strip()) < 3:
+                            diag.invalid_front_count += 1
+                        if not isinstance(raw, dict) or len(str(raw.get("back") or "").strip()) < 3:
+                            diag.invalid_back_count += 1
                         continue
                     key = re.sub(r"\W+", " ", norm["front"].lower()).strip()
                     if not key or key in seen_fronts:

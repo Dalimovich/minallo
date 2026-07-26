@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -134,6 +134,7 @@ class GenerateExamForgeRequest(BaseModel):
     questionTypes: list[str] | None = None
     topic: str | None = None
     language: str | None = None
+    mode: Literal["exam", "practice"] = "exam"
     save: bool = True
 
 
@@ -150,6 +151,8 @@ class GenerateExamForgeResponse(BaseModel):
     model: str | None = None
     promptTokens: int | None = None
     completionTokens: int | None = None
+    mode: Literal["exam", "practice"] = "exam"
+    readiness: dict[str, Any] | None = None
 
 
 class GradeExamForgeAnswerRequest(BaseModel):
@@ -290,18 +293,28 @@ def generate_examforge_endpoint(payload: GenerateExamForgeRequest) -> GenerateEx
     if payload.documentIds:
         for did in payload.documentIds:
             _require_uuid(did, "documentId")
-    doc_names = _verify_user_owns_documents(payload.userId, payload.courseId, payload.documentIds)
+    doc_ids, doc_names = _resolve_ready_document_ids(
+        payload.userId, payload.courseId, payload.documentIds
+    )
+    if not doc_ids:
+        return GenerateExamForgeResponse(
+            title=payload.topic or "ExamForge", requestedCount=payload.requestedCount,
+            actualCount=0, questions=[], mode=payload.mode,
+            error="None of the selected files are ready for ExamForge. Wait for indexing to finish or choose ready files.",
+            readiness={"requestedDocumentCount": len(payload.documentIds or []), "readyDocumentCount": 0},
+        )
 
     out = generate_examforge(
         user_id=payload.userId,
         course_id=payload.courseId,
-        document_ids=payload.documentIds,
+        document_ids=doc_ids,
         requested_count=payload.requestedCount,
         difficulty=payload.difficulty,
         topic=payload.topic,
         question_types=payload.questionTypes,
         doc_names=doc_names,
         language=payload.language,
+        mode=payload.mode,
     )
 
     return GenerateExamForgeResponse(
@@ -309,7 +322,10 @@ def generate_examforge_endpoint(payload: GenerateExamForgeRequest) -> GenerateEx
         title=out.get("title") or "ExamForge",
         requestedCount=out["requestedCount"],
         actualCount=out["actualCount"],
-        questions=out["questions"],
+        questions=[{
+            k: v for k, v in q.items()
+            if k not in {"answer", "correct_answer", "explanation", "rubric"}
+        } for q in out["questions"]],
         topicMap=out.get("topicMap", []),
         groundedSources=out.get("groundedSources", []),
         warning=out.get("warning"),
@@ -317,6 +333,8 @@ def generate_examforge_endpoint(payload: GenerateExamForgeRequest) -> GenerateEx
         model=out.get("model"),
         promptTokens=out.get("promptTokens"),
         completionTokens=out.get("completionTokens"),
+        mode=out.get("mode", payload.mode),
+        readiness={"requestedDocumentCount": len(payload.documentIds or doc_ids), "readyDocumentCount": len(doc_ids)},
     )
 
 

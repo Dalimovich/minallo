@@ -165,10 +165,10 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const docIds = Array.isArray(rawDocumentIds) && rawDocumentIds.length
     ? (rawDocumentIds as string[]).slice(0, MAX_DOCUMENT_IDS)
     : null;
-  const requestedCount = Math.min(
-    Math.max(parseInt(String(count), 10) || (tool === 'flashcards' ? 10 : 8), 1),
-    MAX_REQUESTED_COUNT
-  );
+  const parsedCount = parseInt(String(count), 10) || (tool === 'flashcards' ? 10 : 8);
+  const productMax = tool === 'flashcards' ? 24 : MAX_REQUESTED_COUNT;
+  if (parsedCount < 1 || parsedCount > productMax) return fail(400, `unsupported_requested_count: ${tool} supports 1-${productMax}`);
+  const requestedCount = parsedCount;
   await logSecurityEvent(serviceKey, user.id, 'ai_generate', {
     course_id: courseId,
     tool,

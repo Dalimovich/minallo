@@ -91,8 +91,8 @@
             type: q.question_type || 'mcq',
             question: q.question_text,
             options: normalizeOptions(q.question_type || 'mcq', q.options),
-            answer: q.correct_answer || 'A',
-            explanation: q.explanation || '',
+            answer: '',
+            explanation: '',
             difficulty: q.difficulty || 'medium',
             topic: q.topic || null,
             points: q.points || 1,
@@ -106,8 +106,8 @@
           type: q.type || 'mcq',
           question: q.question || '',
           options: normalizeOptions(q.type || 'mcq', q.options),
-          answer: q.answer || 'A',
-          explanation: q.explanation || '',
+          answer: '',
+          explanation: '',
           difficulty: q.difficulty || 'medium',
           topic: q.topic || null,
           points: q.points || 1,
@@ -544,13 +544,9 @@
         if (answerIsComplete(q, idx)) answered++;
         if (st.marked[idx]) markedCount++;
         var isCorrectQ = false;
-        if (q.type === 'short_answer' && st.grades[idx]) {
+        if (st.grades[idx]) {
           earned += Number(st.grades[idx].score || 0);
           if (st.grades[idx].isCorrect) { correct++; isCorrectQ = true; }
-        } else if (objectiveCorrect(q, idx)) {
-          earned += Number(q.points || 1);
-          correct++;
-          isCorrectQ = true;
         }
         if (isCorrectQ) {
           byType[q.type].correct++;
@@ -691,7 +687,8 @@
           var value = q.type === 'true_false' ? String(opt).toLowerCase() : answerLetter(optIdx);
           var label = q.type === 'true_false' ? (optIdx === 0 ? 'T' : 'F') : answerLetter(optIdx);
           var chosenHit = String(chosen || '').toLowerCase() === String(value).toLowerCase();
-          var answerHit = String(value).toLowerCase() === String(q.answer || '').toLowerCase();
+          var grade = st.grades[idx];
+          var answerHit = !!grade && String(value).toLowerCase() === String(grade.correctAnswer || '').toLowerCase();
           var cls = chosenHit ? ' selected' : '';
           if (st.submitted && answerHit) cls += ' correct';
           if (st.submitted && chosenHit && !answerHit) cls += ' wrong';
@@ -717,11 +714,13 @@
           (q.answer ? '<div class="ef-grade-model"><strong>Model answer:</strong> ' + _esc(q.answer) + '</div>' : '') +
         '</div>';
       }
-      var isCorrect = String(chosen || '').toLowerCase() === String(q.answer || '').toLowerCase();
+      var objectiveGrade = st.grades[idx];
+      if (!objectiveGrade) return '<div class="ef-feedback"><strong>Grading...</strong><span>Your answer is being checked securely.</span></div>';
+      var isCorrect = !!objectiveGrade.isCorrect;
       var isWrong = chosen && !isCorrect;
       return '<div class="ef-feedback ' + (isCorrect ? 'ok' : isWrong ? 'bad' : '') + '">' +
-        '<strong>' + (isCorrect ? '✓ Correct' : '✗ Answer: ' + _esc(String(q.answer || '').toUpperCase())) + '</strong>' +
-        '<span>' + _esc(q.explanation || '') + '</span>' +
+        '<strong>' + (isCorrect ? '✓ Correct' : '✗ Answer: ' + _esc(String(objectiveGrade.correctAnswer || '').toUpperCase())) + '</strong>' +
+        '<span>' + _esc(objectiveGrade.feedback || '') + '</span>' +
       '</div>';
     }
 
@@ -807,7 +806,7 @@
       });
 
       if (!_supaUrl()) return;
-      fetch(_supaUrl() + '/rest/v1/exam_sessions?course_id=eq.' + encodeURIComponent(courseId) + '&select=*,exam_questions(*)&order=created_at.desc&limit=20', {
+      fetch(_supaUrl() + '/rest/v1/exam_sessions?course_id=eq.' + encodeURIComponent(courseId) + '&select=*,exam_questions(id,position,question_type,topic,difficulty,points,question_text,options,source_document_names,source_pages,validation_status,validation_score)&order=created_at.desc&limit=20', {
         headers: _supaHeaders()
       }).then(function (r) { return r.ok ? r.json() : []; })
         .then(function (rows) {
@@ -858,6 +857,7 @@
             questionTypes: selectedQuestionTypes(),
             topic: els.topic && els.topic.value || '',
             language: els.language && els.language.value || 'auto',
+            mode: st.mode,
           });
         }).then(function (res) {
           res = res || {};
@@ -901,7 +901,7 @@
         session.questions.forEach(function (q, idx) {
           if (!q.id || !answers[idx]) return;
           svc.gradeExamForgeAnswer(session.id, q.id, answers[idx]).then(function (grade) {
-            if (q.type === 'short_answer' && grade && grade.ok) {
+            if (grade && grade.ok) {
               st.grades[idx] = grade;
               renderExam();
             }

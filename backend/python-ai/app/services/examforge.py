@@ -361,11 +361,13 @@ def generate_examforge(
     question_types: list[str] | None,
     doc_names: dict[str, str],
     language: str | None = None,
+    mode: str = "exam",
 ) -> dict[str, Any]:
     requested = max(1, min(int(requested_count or 6), 20))
     diff = difficulty if difficulty in ("easy", "medium", "hard", "mixed") else "medium"
     topic_query = (topic or "").strip()
     lang = (language or "auto").strip().lower()
+    exam_mode = mode if mode in ("exam", "practice") else "exam"
     if lang not in ("auto", "de", "en"):
         lang = "auto"
     types = [t for t in (question_types or ["mcq", "true_false", "short_answer"]) if t in _VALID_TYPES]
@@ -443,6 +445,7 @@ def generate_examforge(
             "groundedSources": grounded_sources,
             "warning": warning,
             "error": message,
+            "mode": exam_mode,
             "model": meta.get("model"),
             "promptTokens": meta.get("promptTokens"),
             "completionTokens": meta.get("completionTokens"),
@@ -461,6 +464,7 @@ def generate_examforge(
             "groundedSources": grounded_sources,
             "warning": warning,
             "error": None,
+            "mode": exam_mode,
             "model": meta.get("model"),
             "promptTokens": meta.get("promptTokens"),
             "completionTokens": meta.get("completionTokens"),
@@ -470,7 +474,7 @@ def generate_examforge(
     session_id: str | None = None
     saved_questions: list[dict[str, Any]] = []
     try:
-        session_resp = sb.table("exam_sessions").insert({
+        session_payload = {
             "user_id": user_id,
             "course_id": course_id,
             "title": topic_query or "ExamForge",
@@ -479,9 +483,19 @@ def generate_examforge(
             "question_types": types,
             "source_document_ids": document_ids or None,
             "topic": topic_query or None,
+            "mode": exam_mode,
             "status": "ready",
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).execute()
+        }
+        try:
+            session_resp = sb.table("exam_sessions").insert(session_payload).execute()
+        except Exception:
+            # Rolling-deploy safety while the additive `mode` migration reaches
+            # every environment. The generated response still carries mode;
+            # persistence becomes complete as soon as the migration is applied.
+            log.warning("exam_sessions.mode unavailable; persisting legacy session shape")
+            session_payload.pop("mode", None)
+            session_resp = sb.table("exam_sessions").insert(session_payload).execute()
         session_id = ((session_resp.data or [{}])[0] or {}).get("id")
         if not session_id:
             raise RuntimeError("exam_sessions insert returned no id")
@@ -539,6 +553,7 @@ def generate_examforge(
         "groundedSources": grounded_sources,
         "warning": warning,
         "error": None,
+        "mode": exam_mode,
         "model": meta.get("model"),
         "promptTokens": meta.get("promptTokens"),
         "completionTokens": meta.get("completionTokens"),

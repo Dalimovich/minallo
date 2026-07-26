@@ -2,6 +2,7 @@ import { escapeHtml } from '../../utils/escape-html.js';
 import { listCourseDocuments, type CourseDocument } from '../../services/ai-service.js';
 import { getActivePdfContext, type ActivePdfContext } from '../pdf-viewer/active-pdf-context.js';
 import { openStudyToolWorkspace, type StudyWorkspaceKind } from './workspace-library.js';
+import { mountInlineExamForge } from './examforge-inline.js';
 
 export type InlineStudyToolKind = 'examforge' | 'flashcards' | 'deep_learn';
 export type StudyToolConfigurationStatus = 'collecting_parameters' | 'awaiting_confirmation' | 'generating' | 'failed' | 'completed';
@@ -70,13 +71,14 @@ interface ToolDefinition {
 const DEFINITIONS: Record<InlineStudyToolKind, ToolDefinition> = {
   examforge: {
     title: 'ExamForge', actionLabel: 'Create exam',
-    defaults: { count: 10, difficulty: 'medium', questionTypes: ['mcq', 'true_false', 'short_answer'], language: 'auto', mode: 'exam', topic: '' },
+    defaults: { count: 10, difficulty: 'medium', questionTypes: ['mcq', 'true_false', 'short_answer'], language: 'auto', mode: 'exam', display: 'one', topic: '' },
     fields: [
       { key: 'count', label: 'Number of questions', type: 'select', options: [6, 8, 10, 12].map(String).map(value => ({ value, label: value })) },
       { key: 'difficulty', label: 'Difficulty', type: 'segmented', options: ['easy', 'medium', 'hard', 'mixed'].map(value => ({ value, label: value[0]!.toUpperCase() + value.slice(1) })) },
       { key: 'questionTypes', label: 'Question types', type: 'multi', options: [{ value: 'mcq', label: 'Multiple choice' }, { value: 'true_false', label: 'True / False' }, { value: 'short_answer', label: 'Short answer' }] },
       { key: 'language', label: 'Language', type: 'select', options: [{ value: 'auto', label: 'Same as course' }, { value: 'de', label: 'German' }, { value: 'en', label: 'English' }] },
       { key: 'mode', label: 'Mode', type: 'segmented', options: [{ value: 'exam', label: 'Exam' }, { value: 'practice', label: 'Practice' }] },
+      { key: 'display', label: 'Display', type: 'segmented', options: [{ value: 'one', label: 'One at a time' }, { value: 'all', label: 'All questions' }] },
       { key: 'topic', label: 'Topic', type: 'text', placeholder: 'All topics' }
     ]
   },
@@ -199,7 +201,7 @@ async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArti
   const p = marker.parameters;
   const documentIds = marker.source?.documentIds || marker.documentIds;
   if (marker.intent === 'examforge') {
-    const result = await svc.generateExamForge(marker.courseId, { documentIds, count: Number(p.count), requestedCount: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', questionTypes: p.questionTypes, language: String(p.language || 'auto'), topic: String(p.topic || ''), sourceScope: marker.source?.scope });
+    const result = await svc.generateExamForge(marker.courseId, { documentIds, count: Number(p.count), requestedCount: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', questionTypes: p.questionTypes, language: String(p.language || 'auto'), topic: String(p.topic || ''), mode: String(p.mode || 'exam'), sourceScope: marker.source?.scope });
     const raw = result as { sessionId?: string; id?: string; questions?: unknown[]; error?: string };
     const id = raw.sessionId || raw.id;
     if (!id) throw new Error(raw.error || 'The exam was not persisted.');
@@ -222,9 +224,10 @@ async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArti
 function renderArtifact(host: HTMLElement, marker: StudyToolConfigurationMarker): void {
   const artifact = marker.artifact;
   if (!artifact?.persistedResourceId) return;
-  host.innerHTML = `<section class="ncb-study-artifact" data-study-artifact="${artifact.artifactType}" data-resource-id="${escapeHtml(artifact.persistedResourceId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(DEFINITIONS[artifact.artifactType].title)}</span><h3>${escapeHtml(artifact.title)}</h3></header><p>${escapeHtml(artifact.summary)}</p><p class="ncb-study-artifact-source">Source: ${escapeHtml(marker.sourceLabel)}</p><div class="ncb-study-artifact-preview"></div><div class="ncb-study-artifact-actions"><button type="button" data-open-artifact>${artifact.artifactType === 'examforge' ? 'Start exam' : artifact.artifactType === 'flashcards' ? 'Open full deck' : 'Start lesson'}</button><button type="button" data-adjust>Adjust</button></div></section>`;
+  host.innerHTML = `<section class="ncb-study-artifact" data-study-artifact="${artifact.artifactType}" data-resource-id="${escapeHtml(artifact.persistedResourceId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(DEFINITIONS[artifact.artifactType].title)}</span><h3>${escapeHtml(artifact.title)}</h3></header><p>${escapeHtml(artifact.summary)}</p><p class="ncb-study-artifact-source">Source: ${escapeHtml(marker.sourceLabel)}</p><div class="ncb-study-artifact-preview"></div><div class="ncb-study-artifact-actions"><button type="button" data-open-artifact>${artifact.artifactType === 'examforge' ? 'Open full workspace' : artifact.artifactType === 'flashcards' ? 'Open full deck' : 'Start lesson'}</button><button type="button" data-adjust>Adjust</button></div></section>`;
   const flashcardPlayer = (window as unknown as { mountFlashcardDeckPlayer?: (target: HTMLElement | null, deck: unknown, options: Record<string, unknown>) => void }).mountFlashcardDeckPlayer;
   if (artifact.artifactType === 'flashcards' && typeof flashcardPlayer === 'function') flashcardPlayer(host.querySelector<HTMLElement>('.ncb-study-artifact-preview'), artifact.payload, {});
+  if (artifact.artifactType === 'examforge' && artifact.payload) mountInlineExamForge(host.querySelector<HTMLElement>('.ncb-study-artifact-preview'), artifact.payload, String(marker.parameters.mode) === 'practice' ? 'practice' : 'exam');
   host.querySelector<HTMLButtonElement>('[data-open-artifact]')?.addEventListener('click', () => {
     if (!artifact.persistedResourceId) return;
     void openStudyToolWorkspace(
