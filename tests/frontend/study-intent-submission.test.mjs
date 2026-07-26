@@ -56,3 +56,10 @@ test('source selector supports ready-state multi-selection without resetting par
   assert.match(workflow, /marker\.parameters = \{ \.\.\.definition\.defaults, \.\.\.marker\.parameters \}/);
   assert.match(workflow, /documentIds, count: Number\(p\.count\)/);
 });
+
+test('source selector is a compact collapsible card control', () => {
+  assert.match(workflow, /ncb-source-trigger/);
+  assert.match(workflow, /aria-expanded/);
+  assert.match(workflow, /ncb-source-popover/);
+  assert.match(workflow, /panel\.hidden = !marker\.sourcePickerOpen/);
+});

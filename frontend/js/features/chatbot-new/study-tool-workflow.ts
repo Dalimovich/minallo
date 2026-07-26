@@ -50,6 +50,7 @@ export interface StudyToolConfigurationMarker {
   activePdf?: Pick<ActivePdfContext, 'courseId' | 'documentId' | 'fileName' | 'visiblePage' | 'pageCount'>;
   availableDocuments?: CourseDocumentOption[];
   documentsHydrated?: boolean;
+  sourcePickerOpen?: boolean;
   status?: StudyToolConfigurationStatus;
   validationMessage?: string;
   revision?: number;
@@ -232,8 +233,9 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
   const current = marker.activePdf;
   const currentStatus = current ? (docs.find(doc => doc.documentId === current.documentId)?.readiness || (marker.documentsHydrated ? 'indexing' : 'Checking readiness…')) : null;
   const fileRows = docs.map(doc => `<label class="ncb-source-file${doc.readiness !== 'ready' ? ' is-disabled' : ''}"><input type="checkbox" data-source-document value="${escapeHtml(doc.documentId)}"${selected.has(doc.documentId) ? ' checked' : ''}${doc.readiness !== 'ready' ? ' disabled' : ''}><span><strong>${escapeHtml(doc.fileName)}</strong><small>${escapeHtml(doc.readiness === 'ready' ? `${doc.pageCount || ''}${doc.pageCount ? ' pages · ' : ''}Ready` : doc.readiness === 'indexing' ? 'Indexing' : doc.readiness === 'failed' ? 'Processing failed' : 'Unsupported')}</small></span></label>`).join('');
+  const sourceSummary = scope === 'current_document' && current ? current.fileName : scope === 'whole_course' ? `Whole course · ${readyDocs.length} ready files` : selected.size ? `${selected.size} selected ${selected.size === 1 ? 'file' : 'files'}` : 'Choose course files';
   host.innerHTML = `<section class="ncb-tool-config" data-study-tool-configuration="${marker.intent}" data-action-id="${escapeHtml(marker.actionId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(definition.title)}</span><h3>${escapeHtml(definition.title)} setup</h3></header>
-    <fieldset class="ncb-source-selector"><legend>Source</legend><div class="ncb-source-modes">
+    <div class="ncb-source-selector"><span class="ncb-source-label">Source</span><button type="button" class="ncb-source-trigger" aria-expanded="${marker.sourcePickerOpen ? 'true' : 'false'}"><span class="ncb-source-trigger-icon" aria-hidden="true">⌁</span><span class="ncb-source-trigger-copy"><strong>${escapeHtml(scope === 'current_document' ? 'Open document' : scope === 'whole_course' ? 'Whole course' : 'Course files')}</strong><small>${escapeHtml(sourceSummary)}</small></span><span class="ncb-source-chevron" aria-hidden="true">⌄</span></button><div class="ncb-source-popover"${marker.sourcePickerOpen ? '' : ' hidden'}><div class="ncb-source-modes">
       <label${!current ? ' class="is-disabled"' : ''}><input type="radio" name="sourceScope-${marker.actionId}" value="current_document"${scope === 'current_document' ? ' checked' : ''}${!current ? ' disabled' : ''}><span>Open document</span></label>
       <label><input type="radio" name="sourceScope-${marker.actionId}" value="selected_documents"${scope === 'selected_documents' ? ' checked' : ''}><span>Course files</span></label>
       <label><input type="radio" name="sourceScope-${marker.actionId}" value="whole_course"${scope === 'whole_course' ? ' checked' : ''}><span>Whole course</span></label>
@@ -241,7 +243,7 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     ${current ? `<div class="ncb-source-current"${scope === 'current_document' ? '' : ' hidden'}><strong>${escapeHtml(current.fileName)}</strong><span>${current.pageCount} pages · ${escapeHtml(currentStatus === 'ready' ? 'Ready' : String(currentStatus))}</span></div>` : ''}
     <div class="ncb-source-files"${scope === 'selected_documents' ? '' : ' hidden'}><input type="search" data-source-search placeholder="Search course files"><div class="ncb-source-file-actions"><button type="button" data-source-select-all>Select all ready</button><button type="button" data-source-clear>Clear</button><span data-source-count>${selected.size} selected</span></div><div class="ncb-source-file-list">${fileRows || '<p class="ncb-source-empty">Loading indexed course files…</p>'}</div></div>
     <div class="ncb-source-whole"${scope === 'whole_course' ? '' : ' hidden'}>Use all ${readyDocs.length} ready files in this course. Larger generations may take longer.</div>
-    </fieldset><div class="ncb-tool-config-values">${definition.fields.map(field => control(field, marker.parameters)).join('')}</div><div class="ncb-tool-config-validation" role="alert">${escapeHtml(marker.validationMessage || '')}</div><button type="button" class="ncb-tool-config-generate">${escapeHtml(definition.actionLabel)}</button></section>`;
+    </div></div><div class="ncb-tool-config-values">${definition.fields.map(field => control(field, marker.parameters)).join('')}</div><div class="ncb-tool-config-validation" role="alert">${escapeHtml(marker.validationMessage || '')}</div><button type="button" class="ncb-tool-config-generate">${escapeHtml(definition.actionLabel)}</button></section>`;
   const update = () => { marker.status = 'awaiting_confirmation'; marker.validationMessage = ''; persist(marker); };
   const setSource = (nextScope: StudyToolSourceScope, ids: string[]) => {
     const chosen = docs.filter(doc => ids.includes(doc.documentId));
@@ -249,7 +251,16 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     marker.source = { scope: nextScope, courseId: marker.courseId, documentIds: ids, activeDocumentId: current?.documentId, activeFileName: current?.fileName, displayLabel: label };
     marker.documentIds = ids.slice(); marker.sourceLabel = label; marker.sourceDocumentName = nextScope === 'current_document' ? current?.fileName : undefined; update();
   };
+  host.querySelector<HTMLButtonElement>('.ncb-source-trigger')?.addEventListener('click', event => {
+    marker.sourcePickerOpen = !marker.sourcePickerOpen;
+    const trigger = event.currentTarget as HTMLButtonElement;
+    trigger.setAttribute('aria-expanded', marker.sourcePickerOpen ? 'true' : 'false');
+    const panel = host.querySelector<HTMLElement>('.ncb-source-popover');
+    if (panel) panel.hidden = !marker.sourcePickerOpen;
+    persist(marker);
+  });
   host.querySelectorAll<HTMLInputElement>('input[type="radio"][name^="sourceScope-"]').forEach(radio => radio.addEventListener('change', () => {
+    marker.sourcePickerOpen = true;
     const next = radio.value as StudyToolSourceScope;
     if (next === 'current_document' && current) setSource(next, [current.documentId]);
     else if (next === 'whole_course') setSource(next, readyDocs.map(doc => doc.documentId));
