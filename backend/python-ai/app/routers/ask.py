@@ -747,6 +747,9 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             selected_file_names=[
                 doc_name_map[i] for i in (retrieval_document_ids or []) if i in doc_name_map
             ] or None,
+            user_id=payload.userId,
+            course_id=payload.courseId,
+            active_document_id=payload.activeDocumentId,
         )
         answer = _with_source_meta(answer, source_decision)
     except Exception as e:  # noqa: BLE001

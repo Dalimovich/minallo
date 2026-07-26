@@ -1477,6 +1477,7 @@ def stream_answer(
     assistant_mode: str | None = None,
     workspace_question: bool = False,
     user_id: str | None = None,
+    course_id: str | None = None,
     selected_file_names: list[str] | None = None,
     selected_document_ids: list[str] | None = None,
     active_document_id: str | None = None,
@@ -1695,7 +1696,11 @@ def stream_answer(
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file (e.g. a chapter the student didn't select).
     is_exam_request = academic_intent == AcademicIntent.EXAM_GENERATION
-    wants_full_coverage = is_exam_request or wants_per_source_coverage(question)
+    from .exam_reference import is_similar_exam_request  # noqa: WPS433
+    similar_exam_request = is_exam_request and is_similar_exam_request(question)
+    wants_full_coverage = (
+        (is_exam_request and not similar_exam_request) or wants_per_source_coverage(question)
+    )
     if wants_full_coverage and used_chunks:
         system_prompt += build_source_coverage_overlay(
             used_chunks, doc_names, exam=is_exam_request,
@@ -1718,6 +1723,15 @@ def stream_answer(
             doc_ids=style_doc_ids, file_names=selected_file_names, user_id=user_id,
         )
         system_prompt += exam_style_overlay(exam_style)
+        from .exam_reference import resolve_exam_reference_overlay  # noqa: WPS433
+        reference_overlay, references = resolve_exam_reference_overlay(
+            question=question, user_id=user_id, course_id=course_id,
+            active_document_id=active_document_id,
+        )
+        if reference_overlay:
+            system_prompt += reference_overlay
+            if references:
+                exam_style = "authentic-reference"
         log.info("exam style resolved: %s", exam_style)
     # An exercise/figure page bitmap will be attached below whenever retrieval
     # surfaced a figure-bearing chunk on a math/exercise question — even if the

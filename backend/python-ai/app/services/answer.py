@@ -1782,6 +1782,9 @@ def generate_answer(
     weak_topics: list[str] | None = None,
     selected_file_names: list[str] | None = None,
     selected_document_ids: list[str] | None = None,
+    user_id: str | None = None,
+    course_id: str | None = None,
+    active_document_id: str | None = None,
 ) -> dict[str, Any]:
     """Return the structured answer dict the API surface exposes.
 
@@ -1828,7 +1831,9 @@ def generate_answer(
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file the student didn't select.
     is_exam_request = academic_intent == AcademicIntent.EXAM_GENERATION
-    if (is_exam_request or wants_per_source_coverage(question)) and used_chunks:
+    from .exam_reference import is_similar_exam_request  # noqa: WPS433
+    similar_exam_request = is_exam_request and is_similar_exam_request(question)
+    if ((is_exam_request and not similar_exam_request) or wants_per_source_coverage(question)) and used_chunks:
         system_prompt += build_source_coverage_overlay(
             used_chunks, doc_names, exam=is_exam_request,
             selected_file_names=selected_file_names,
@@ -1847,6 +1852,15 @@ def generate_answer(
             doc_ids=style_doc_ids, file_names=selected_file_names,
         )
         system_prompt += exam_style_overlay(exam_style)
+        from .exam_reference import resolve_exam_reference_overlay  # noqa: WPS433
+        reference_overlay, references = resolve_exam_reference_overlay(
+            question=question, user_id=user_id, course_id=course_id,
+            active_document_id=active_document_id,
+        )
+        if reference_overlay:
+            system_prompt += reference_overlay
+            if references:
+                exam_style = "authentic-reference"
     # Route by answer mode: math/exercise questions hit the strong model,
     # everything else stays on the cheaper mini model. Math reasoning is
     # where mini gets variable distinctions wrong (d vs d_3) and silently

@@ -3312,6 +3312,7 @@ async def _prepare_ask_stream_response(
             assistant_mode=assistant_mode,
             workspace_question=workspace_question,
             user_id=user_id,
+            course_id=payload.courseId,
             # The student's selection is the coverage contract for exam /
             # per-file requests — pass the resolved names so every selected file
             # gets a section and any still-processing ones are reported. The ids
