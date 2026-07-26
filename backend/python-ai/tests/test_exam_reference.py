@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 
 from app.services.exam_reference import (
+    CourseContentMap,
     analyse_exam_text,
+    build_course_content_overlay,
     build_exam_reference_overlay,
     is_similar_exam_request,
 )
@@ -51,3 +53,23 @@ def test_no_reference_is_transparent() -> None:
     assert "No authentic exam was found" in overlay
     assert "confidence LOW" in overlay
     assert "Never attribute it to the professor" in overlay
+
+
+def test_current_uploads_control_exam_content() -> None:
+    content = CourseContentMap(
+        source_titles=["Vorlesung Zerspanung.pdf", "Übung Spritzguss.pdf"],
+        topics=["Standzeit", "Schließkraft"],
+        excerpts=[("Vorlesung Zerspanung.pdf", "Taylor-Gleichung und Standzeit")],
+    )
+    overlay = build_course_content_overlay(content)
+    assert "reference controls FORMAT ONLY" in overlay
+    assert "current uploaded non-exam materials control CONTENT" in overlay
+    assert "Every generated question" in overlay
+    assert "Do not test obsolete reference topics" in overlay
+    assert "Vorlesung Zerspanung.pdf" in overlay
+
+
+def test_missing_current_material_is_disclosed() -> None:
+    overlay = build_course_content_overlay(CourseContentMap())
+    assert "No non-exam uploaded course material was available" in overlay
+    assert "do not claim" in overlay

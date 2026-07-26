@@ -87,6 +87,13 @@ class ExamReference:
     calculation_points: int | None = None
 
 
+@dataclass
+class CourseContentMap:
+    source_titles: list[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
+    excerpts: list[tuple[str, str]] = field(default_factory=list)
+
+
 def is_similar_exam_request(question: str) -> bool:
     return bool(_SIMILAR_REQUEST_RE.search(question or ""))
 
@@ -183,6 +190,93 @@ def discover_course_exams(*, user_id: str, course_id: str,
         return []
 
 
+def build_course_content_map(*, user_id: str, course_id: str,
+                             exam_document_ids: set[str] | None = None) -> CourseContentMap:
+    """Build topical grounding from every uploaded non-exam course document.
+
+    The inventory is exhaustive; excerpts are bounded and spread across files so
+    the prompt stays within budget without allowing the top RAG hits to define
+    the whole syllabus.
+    """
+    try:
+        sb = get_supabase()
+        rows = ((sb.table("documents")
+                 .select("id,file_name,source_type,document_type,processing_status")
+                 .eq("user_id", user_id).eq("course_id", course_id).execute()).data or [])
+        excluded = exam_document_ids or set()
+        content_rows = [row for row in rows if row["id"] not in excluded and not (
+            row.get("source_type") == "exam" or row.get("document_type") == "exam"
+            or _EXAM_NAME_RE.search(row.get("file_name") or "")
+        )]
+        titles = [row.get("file_name") or "Untitled course document" for row in content_rows]
+        if not content_rows:
+            return CourseContentMap(source_titles=titles)
+        ids = [row["id"] for row in content_rows]
+        name_by_id = {row["id"]: row.get("file_name") or "Untitled course document"
+                      for row in content_rows}
+        chunks = ((sb.table("document_chunks")
+                   .select("document_id,chunk_index,chunk_text,section_title,primary_topic")
+                   .in_("document_id", ids).order("chunk_index").limit(240).execute()).data or [])
+        by_doc: dict[str, list[dict]] = {}
+        topics: list[str] = []
+        for chunk in chunks:
+            by_doc.setdefault(chunk["document_id"], []).append(chunk)
+            topic = (chunk.get("primary_topic") or chunk.get("section_title") or "").strip()
+            if topic and topic.casefold() not in {value.casefold() for value in topics}:
+                topics.append(topic)
+        excerpts: list[tuple[str, str]] = []
+        # Round-robin coverage: up to two representative chunks from every file.
+        for index in range(2):
+            for document_id in ids:
+                doc_chunks = by_doc.get(document_id, [])
+                if index >= len(doc_chunks):
+                    continue
+                text = (doc_chunks[index].get("chunk_text") or "").strip()
+                if text:
+                    excerpts.append((name_by_id[document_id], text[:1200]))
+        return CourseContentMap(
+            source_titles=titles, topics=topics[:80], excerpts=excerpts[:40],
+        )
+    except Exception:
+        log.exception("course content map failed")
+        return CourseContentMap()
+
+
+def build_course_content_overlay(content: CourseContentMap) -> str:
+    if not content.source_titles:
+        return (
+            "\n\nCOURSE-CONTENT GROUNDING: No non-exam uploaded course material was available. "
+            "State that limitation and do not claim the questions represent the current syllabus.\n"
+        )
+    inventory = "\n".join(f"- {title}" for title in content.source_titles)
+    topics = ", ".join(content.topics) or "derive topics only from the excerpts below"
+    excerpts = "\n\n".join(
+        f"[Current course content: {title}]\n{text}" for title, text in content.excerpts
+    )
+    return f"""
+
+CURRENT COURSE CONTENT CONTRACT (mandatory; independent from the style reference):
+- The authentic exam reference controls FORMAT ONLY.
+- The student's current uploaded non-exam materials control CONTENT: topics, formulas,
+  terminology, methods, assumptions, and difficulty coverage.
+- Every generated question and its solution must be supported by at least one current-course
+  source listed below. Do not introduce a concept solely because it appears in an old exam or
+  in general subject knowledge. Do not test obsolete reference topics absent from current uploads.
+- Distribute questions across the uploaded materials and their recurring/emphasized topics;
+  do not let the first few semantic-retrieval chunks define the syllabus.
+- Before finalizing, audit every question against these sources. Replace any ungrounded question.
+
+COMPLETE NON-EXAM COURSE INVENTORY:
+{inventory}
+
+DETECTED CURRENT-COURSE TOPICS:
+{topics}
+
+GROUNDED COURSE EXCERPTS (representative coverage across the inventory):
+{excerpts or 'No indexed excerpts are ready; disclose this and avoid unsupported specifics.'}
+"""
+
+
 def build_exam_reference_overlay(references: list[ExamReference]) -> str:
     if not references:
         return (
@@ -248,10 +342,15 @@ def resolve_exam_reference_overlay(*, question: str, user_id: str | None,
     refs = discover_course_exams(
         user_id=user_id, course_id=course_id, active_document_id=active_document_id,
     )
-    return build_exam_reference_overlay(refs), refs
+    content = build_course_content_map(
+        user_id=user_id, course_id=course_id,
+        exam_document_ids={reference.document_id for reference in refs},
+    )
+    return build_exam_reference_overlay(refs) + build_course_content_overlay(content), refs
 
 
 __all__ = (
-    "ExamReference", "analyse_exam_text", "build_exam_reference_overlay",
+    "CourseContentMap", "ExamReference", "analyse_exam_text", "build_course_content_map",
+    "build_course_content_overlay", "build_exam_reference_overlay",
     "discover_course_exams", "is_similar_exam_request", "resolve_exam_reference_overlay",
 )
