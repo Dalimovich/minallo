@@ -4695,6 +4695,48 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   cursor: pointer;
 }
 
+.ncb-course-row-main,
+.ncb-file-row-main {
+  min-width: 0;
+  min-height: inherit;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.ncb-course-row-main > span,
+.ncb-file-row-main > span { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.ncb-course-row-main strong,
+.ncb-file-row-main strong { overflow: hidden; color: #dbeafe; text-overflow: ellipsis; white-space: nowrap; }
+.ncb-course-row-main small,
+.ncb-file-row-main small { color: #7589a3; font-size: 0.67rem; }
+.ncb-course-row-main > b,
+.ncb-file-row-main > b { color: #8a9db5; font-size: 0.67rem; }
+
+.ncb-library-delete {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #7890ad;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.ncb-library-delete svg { width: 15px; height: 15px; }
+.ncb-library-delete:hover { border-color: rgba(248, 113, 113, 0.25); color: #fca5a5; background: rgba(127, 29, 29, 0.2); }
+.ncb-folder summary > .ncb-library-delete { display: grid; margin-left: 2px; }
+
 .ncb-course-row:hover,
 .ncb-file-row:hover,
 .ncb-saved-row:hover,
@@ -4852,6 +4894,27 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-folder-create label { display: block; margin-bottom: 7px; color: #a8bdd8; font-size: 0.68rem; font-weight: 800; }
 .ncb-upload-status { margin: 8px 0; padding: 9px 10px; border-radius: 10px; color: #bfdbfe; background: rgba(37, 99, 235, 0.12); font-size: 0.7rem; }
 .ncb-upload-status.is-error { color: #fecaca; background: rgba(220, 38, 38, 0.12); }
+
+.ncb-upload-popup {
+  width: min(440px, 100%);
+  margin: 54px auto 0;
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  border-radius: 18px;
+  color: #dbeafe;
+  background: linear-gradient(145deg, rgba(21, 48, 82, 0.92), rgba(8, 25, 46, 0.94));
+  box-shadow: 0 22px 55px rgba(0, 5, 18, 0.35), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.ncb-upload-popup h2, .ncb-upload-popup p { margin: 0; }
+.ncb-upload-popup p { color: #91a8c4; font-size: .76rem; line-height: 1.5; }
+.ncb-upload-popup label { display: grid; gap: 7px; color: #a9bed8; font-size: .72rem; }
+.ncb-upload-popup select,
+.ncb-upload-picker { min-height: 40px; padding: 9px 11px; border: 1px solid rgba(96,165,250,.22); border-radius: 11px; color: #e5efff; background: #0b213d; font: inherit; }
+.ncb-upload-picker { cursor: pointer; }
+.ncb-upload-picker input { margin-top: 6px; color: #91a8c4; }
+.ncb-upload-popup > button { min-height: 40px; border: 1px solid rgba(147,197,253,.28); border-radius: 11px; color: white; background: linear-gradient(145deg,#2f73dc,#1d56a8); font: inherit; font-weight: 600; cursor: pointer; }
 
 .ncb-saved-kind-btn {
   min-height: 78px;

@@ -128,6 +128,22 @@ test('bookmarked AI responses load from the durable database endpoint', () => {
   assert.match(moduleSource, /kind: 'responses'/);
   assert.match(moduleSource, /renderMarkdown\(response\.text/);
   assert.match(shellSource, /syncSavedReplyCreate\(chat\.id, reply\)/);
+  assert.match(moduleSource, /localBookmarkedResponses\(\)/);
+  assert.match(moduleSource, /\[\.\.\.serverRows, \.\.\.localRows\]/);
+});
+
+test('course library provides permanent delete actions for files, folders, and courses', () => {
+  assert.match(moduleSource, /data-delete-file=/);
+  assert.match(moduleSource, /data-delete-folder=/);
+  assert.match(moduleSource, /data-delete-course=/);
+  assert.match(moduleSource, /\/api\/documents\/delete/);
+  assert.match(moduleSource, /\/api\/course-delete/);
+});
+
+test('course upload popup indexes uploaded PDFs for chatbot retrieval', () => {
+  assert.match(moduleSource, /class="ncb-upload-popup"/);
+  assert.match(moduleSource, /\/api\/documents\/index-existing/);
+  assert.match(moduleSource, /Upload complete\. Indexing files for AI search/);
 });
 
 test('tutor modes allow one selection or no selection', () => {

@@ -3334,7 +3334,10 @@ function buildSystemPrompt(): string {
 }
 
 function getSbToken(): string | null {
-  return (window as unknown as { _sbToken?: string })._sbToken || null;
+  const live = (window as unknown as { _sbToken?: string })._sbToken;
+  if (live) return live;
+  try { return localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token'); }
+  catch { return null; }
 }
 
 function escapeHtml(s: string | undefined | null): string {

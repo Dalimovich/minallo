@@ -1,4 +1,4 @@
-import { getNoteById, listCourseNotes, type SavedNote } from '../../services/ai-service.js';
+import { clearCourseDocumentCache, getNoteById, listCourseDocuments, listCourseNotes, type SavedNote } from '../../services/ai-service.js';
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { checkAdminStatus } from '../../services/admin-service.js';
@@ -423,21 +423,27 @@ function renderCourses(panel: HTMLElement): void {
     (!ordered.length ? '<div class="ncb-library-empty"><strong>No courses yet</strong><span>Add your first subject above.</span></div>' : '') +
     '<div class="ncb-course-list">' +
     ordered.map((course) => `
-      <button type="button" class="ncb-course-row${course.id === recent?.id ? ' ncb-course-row--recent' : ''}" data-course-id="${escapeHtml(course.id)}">
+      <div class="ncb-course-row${course.id === recent?.id ? ' ncb-course-row--recent' : ''}"><button type="button" class="ncb-course-row-main" data-course-id="${escapeHtml(course.id)}">
         ${icon('course')}
         <span>${course.id === recent?.id ? '<em>Last opened</em>' : ''}<strong>${escapeHtml(course.name || 'Untitled course')}</strong><small>${fileCount(course)} files</small></span>
         <b aria-hidden="true">›</b>
-      </button>`).join('') +
+      </button><button type="button" class="ncb-library-delete" data-delete-course="${escapeHtml(course.id)}" aria-label="Delete course" title="Delete course">${trashIcon()}</button></div>`).join('') +
     '</div>';
 
   bindSubjectAdd(panel);
 
-  panel.querySelectorAll<HTMLButtonElement>('.ncb-course-row').forEach((row) => {
+  panel.querySelectorAll<HTMLButtonElement>('.ncb-course-row-main').forEach((row) => {
     row.addEventListener('click', () => {
       const course = all.find((item) => item.id === row.dataset.courseId);
       if (!course) return;
       rememberCourse(course);
       void renderCourseDetail(panel, course);
+    });
+  });
+  panel.querySelectorAll<HTMLButtonElement>('[data-delete-course]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const course = all.find((item) => item.id === button.dataset.deleteCourse);
+      if (course) void deleteCourseCompletely(panel, course);
     });
   });
 }
@@ -510,7 +516,7 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
     <div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>
     ${folders.length ? `<div class="ncb-library-group"><h3>Folders</h3>${folders.map((folder) => `
       <details class="ncb-folder" data-drop-folder="${escapeHtml(folder.name)}">
-        <summary>${icon('folder')}<span><strong>${escapeHtml(folder.name)}</strong><small>${(folder.files || []).length} files</small></span><b>Drop files here</b></summary>
+        <summary>${icon('folder')}<span><strong>${escapeHtml(folder.name)}</strong><small>${(folder.files || []).length} files</small></span><b>Drop files here</b><button type="button" class="ncb-library-delete" data-delete-folder="${escapeHtml(folder.name)}" aria-label="Delete folder" title="Delete folder">${trashIcon()}</button></summary>
         <div>${(folder.files || []).map((file) => fileButton(file, course, folder.name)).join('') || '<p class="ncb-library-muted">Empty folder</p>'}</div>
       </details>`).join('')}</div>` : ''}
     <div class="ncb-library-group ncb-root-drop" data-drop-folder=""><h3>Files</h3><div class="ncb-drop-hint"><strong>Drop files here</strong><span>Upload to ${escapeHtml(course.name || 'this course')}</span></div>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div>`;
@@ -563,6 +569,18 @@ async function uploadIntoCourse(
   course.files = ((course.files || []) as CourseFile[]).filter((file) => !file._uploaded);
   if (folder) course.userFolders = [];
   await hydrate(course);
+  if (status) status.textContent = 'Upload complete. Indexing files for AI search...';
+  await Promise.allSettled(valid.map(async (file) => {
+    const uploaded = findCourseFile(course, file.name, folder);
+    if (!uploaded?._storageName || !authToken()) throw new Error('Uploaded file could not be indexed');
+    const response = await fetch('/api/documents/index-existing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` },
+      body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'lecture' })
+    });
+    if (!response.ok) throw new Error(`Indexing failed (${response.status})`);
+  }));
+  clearCourseDocumentCache(course.id);
   window.showToast?.(failed ? 'Some files uploaded' : 'Files uploaded', `${valid.length - failed} file${valid.length - failed === 1 ? '' : 's'} added.`);
   await renderCourseDetail(panel, course);
 }
@@ -574,7 +592,7 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
   const form = detail.querySelector<HTMLFormElement>('.ncb-folder-create');
   const folderInput = form?.querySelector<HTMLInputElement>('input');
   if (input && upload) {
-    upload.addEventListener('click', () => input.click());
+    upload.addEventListener('click', () => openUploadPopup(panel, course));
     input.addEventListener('change', () => {
       void uploadIntoCourse(panel, detail, course, Array.from(input.files || []), null);
       input.value = '';
@@ -597,6 +615,17 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
     if (!course.userFolders) course.userFolders = [];
     course.userFolders.push({ name, files: [] });
     void renderCourseDetail(panel, course);
+  });
+
+  detail.querySelectorAll<HTMLButtonElement>('[data-delete-file]').forEach((button) => {
+    button.addEventListener('click', () => void deleteFileCompletely(panel, course, button.dataset.deleteFile || '', button.dataset.folder || null));
+  });
+  detail.querySelectorAll<HTMLButtonElement>('[data-delete-folder]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void deleteFolderCompletely(panel, course, button.dataset.deleteFolder || '');
+    });
   });
 
   detail.querySelectorAll<HTMLElement>('[data-drop-folder]').forEach((target) => {
@@ -629,6 +658,84 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
       void uploadIntoCourse(panel, detail, course, files, folder);
     });
   });
+}
+
+function findCourseFile(course: LibraryCourse, name: string, folder: string | null): CourseFile | undefined {
+  const folders = (course.userFolders || []) as CourseFolder[];
+  const files = (course.files || []) as CourseFile[];
+  return folder
+    ? folders.find((item) => item.name === folder)?.files?.find((file) => file.name === name)
+    : files.find((file) => file.name === name);
+}
+
+function openUploadPopup(panel: HTMLElement, course: LibraryCourse): void {
+  const body = openOverlay(rootFor(panel), 'Upload course files');
+  if (!body) return;
+  const folders = (course.userFolders || []).map((folder) => `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`).join('');
+  body.innerHTML = `<form class="ncb-upload-popup"><h2>Upload files</h2><p>PDF files are uploaded and indexed so Minallo AI can use them in chat.</p><label>Destination<select><option value="">Course files</option>${folders}</select></label><label class="ncb-upload-picker">Choose files<input type="file" accept="application/pdf,.pdf" multiple required></label><div class="ncb-upload-status" role="status" hidden></div><button type="submit">Upload and index</button></form>`;
+  const form = body.querySelector<HTMLFormElement>('form')!;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = form.querySelector<HTMLInputElement>('input[type=file]')!;
+    const folder = form.querySelector<HTMLSelectElement>('select')!.value || null;
+    await uploadIntoCourse(panel, form, course, Array.from(input.files || []), folder);
+    window.setTimeout(() => closeOverlay(body.closest<HTMLElement>('[data-workspace-overlay]')!), 500);
+  });
+}
+
+async function deleteFileCompletely(panel: HTMLElement, course: LibraryCourse, name: string, folder: string | null): Promise<void> {
+  if (!name || !confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+  const file = findCourseFile(course, name, folder);
+  const docs = await listCourseDocuments(course.id, { force: true });
+  const matches = docs.filter((doc) => String(doc.file_name || doc.fileName) === name);
+  for (const doc of matches) {
+    const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
+    if (!response.ok) throw new Error('Database deletion failed');
+  }
+  if (file?._uploaded) await window._ufDeleteRemote?.(currentUid(), course, name, folder);
+  if (folder) {
+    const target = ((course.userFolders || []) as CourseFolder[]).find((item) => item.name === folder);
+    if (target) target.files = (target.files || []).filter((item) => item.name !== name);
+  } else course.files = ((course.files || []) as CourseFile[]).filter((item) => item.name !== name);
+  clearCourseDocumentCache(course.id);
+  await renderCourseDetail(panel, course);
+}
+
+async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse, name: string): Promise<void> {
+  const folder = ((course.userFolders || []) as CourseFolder[]).find((item) => item.name === name);
+  if (!folder || !confirm(`Permanently delete "${name}" and all ${folder.files?.length || 0} files?`)) return;
+  for (const file of [...(folder.files || [])]) await deleteFileCompletelyWithoutConfirm(course, file, name);
+  window._ufDeleteFolder?.(currentUid(), course, name);
+  const folders = (course.userFolders || []) as CourseFolder[];
+  const folderIndex = folders.findIndex((item) => item.name === name);
+  if (folderIndex >= 0) folders.splice(folderIndex, 1);
+  await renderCourseDetail(panel, course);
+}
+
+async function deleteFileCompletelyWithoutConfirm(course: LibraryCourse, file: CourseFile, folder: string | null): Promise<void> {
+  const docs = await listCourseDocuments(course.id, { force: true });
+  for (const doc of docs.filter((item) => String(item.file_name || item.fileName) === file.name)) {
+    const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
+    if (!response.ok) throw new Error('Database deletion failed');
+  }
+  if (file._uploaded) await window._ufDeleteRemote?.(currentUid(), course, file.name, folder);
+  clearCourseDocumentCache(course.id);
+}
+
+async function deleteCourseCompletely(panel: HTMLElement, course: LibraryCourse): Promise<void> {
+  if (!confirm(`Permanently delete "${course.name || 'this course'}", all files, saved resources, and indexed data?`)) return;
+  const response = await fetch('/api/course-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ courseId: course.id }) });
+  if (!response.ok) return window.showToast?.('Delete failed', 'Nothing was removed from the course list. Please try again.');
+  Object.values(window.SEMS || window._SEMS || {}).forEach((semester) => { semester.courses = (semester.courses || []).filter((item) => item.id !== course.id); });
+  window._saveUserCourses?.();
+  try {
+    const uid = currentUid();
+    localStorage.removeItem(`ss_ufolders_${uid}_${course.id}`);
+    localStorage.removeItem(`ss_uf_cache_${course.id}`);
+    localStorage.removeItem(`ss_fc_${course.id}`);
+  } catch { /* durable deletion already succeeded */ }
+  clearCourseDocumentCache(course.id);
+  renderCourses(panel);
 }
 
 function rootFor(node: HTMLElement): HTMLElement {
@@ -715,9 +822,11 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
-  return `<button type="button" class="ncb-file-row" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">
-    ${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b>
-  </button>`;
+  return `<div class="ncb-file-row"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b></button><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
+}
+
+function trashIcon(): string {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 15H6L5 6m5 4v7m4-7v7"/></svg>';
 }
 
 function fileCount(course: LibraryCourse): number {
@@ -912,16 +1021,36 @@ function readCheatsheetSettings(courseId: string, noteId: string): Record<string
 }
 
 async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: LibraryCourse[] }> {
-  const token = window._sbToken;
-  if (!token) return { items: [], groups: [] };
-  const response = await fetch('/api/chat-saved-replies', {
-    headers: { Authorization: `Bearer ${token}` }
+  type ReplyRow = { id?: string; chat_id?: string; reply_text?: string; created_at?: string };
+  const localRows = localBookmarkedResponses();
+  let serverRows: ReplyRow[] = [];
+  const token = authToken();
+  if (token) {
+    try {
+      const response = await fetch('/api/chat-saved-replies', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const body = await response.json() as { replies?: ReplyRow[] };
+        serverRows = Array.isArray(body.replies) ? body.replies : [];
+        const serverIds = new Set(serverRows.map((row) => row.id));
+        await Promise.allSettled(localRows.filter((row) => !serverIds.has(row.id)).map((row) =>
+          fetch('/api/chat-saved-replies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ id: row.id, chatId: row.chat_id, text: row.reply_text, createdAt: Date.parse(row.created_at) })
+          })
+        ));
+      }
+    } catch { /* local cache still makes bookmarks available offline */ }
+  }
+  const rowMap = new Map<string, ReplyRow>();
+  [...serverRows, ...localRows].forEach((row) => {
+    if (row.id) rowMap.set(row.id, row);
   });
-  if (!response.ok) return { items: [], groups: [] };
-  const body = await response.json() as {
-    replies?: Array<{ id?: string; chat_id?: string; reply_text?: string; created_at?: string }>;
-  };
-  const rows = Array.isArray(body.replies) ? body.replies : [];
+  const rows = Array.from(rowMap.values()).sort((a, b) =>
+    Date.parse(b.created_at || '') - Date.parse(a.created_at || '')
+  );
   const titles = savedChatTitles();
   const groupMap = new Map<string, LibraryCourse>();
   rows.forEach((row) => {
@@ -949,6 +1078,30 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
       };
     })
   };
+}
+
+function authToken(): string {
+  try {
+    return window._sbToken || localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token') || '';
+  } catch { return window._sbToken || ''; }
+}
+
+function localBookmarkedResponses(): Array<{ id: string; chat_id: string; reply_text: string; created_at: string }> {
+  try {
+    const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
+    const raw = localStorage.getItem(`ss_ncb_chats_v1:${uid}`) || localStorage.getItem('ss_ncb_chats_v1');
+    const parsed = raw ? JSON.parse(raw) as {
+      chats?: Array<{ id?: string; savedReplies?: Array<{ id?: string; text?: string; createdAt?: number }> }>;
+    } : null;
+    return (parsed?.chats || []).flatMap((chat) => (chat.savedReplies || [])
+      .filter((reply) => reply.id && reply.text)
+      .map((reply) => ({
+        id: reply.id!,
+        chat_id: chat.id || 'saved-responses',
+        reply_text: reply.text!,
+        created_at: new Date(reply.createdAt || Date.now()).toISOString()
+      })));
+  } catch { return []; }
 }
 
 function savedChatTitles(): Map<string, string> {
