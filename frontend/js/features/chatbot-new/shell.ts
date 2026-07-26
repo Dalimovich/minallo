@@ -1509,7 +1509,9 @@ async function handleIntentRoute(
     const marker: StudyToolConfigurationMarker = {
       actionId: crypto.randomUUID(), intent: route.intent, courseId: route.target.courseId,
       parameters: route.parameters, documentIds: source.documentIds,
-      sourceLabel: source.label, sourceDocumentName: source.documentName
+      sourceLabel: source.label, sourceDocumentName: source.documentName,
+      availableDocuments: source.availableDocuments,
+      status: 'awaiting_confirmation', revision: 0
     };
     if (bubble) renderStudyToolConfiguration(bubble, marker);
     console.info('[study-tool-routing]', {
@@ -4801,7 +4803,12 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     if (m.studyToolConfiguration) compact.studyToolConfiguration = {
       ...m.studyToolConfiguration,
       parameters: { ...m.studyToolConfiguration.parameters },
-      documentIds: m.studyToolConfiguration.documentIds.slice()
+      documentIds: m.studyToolConfiguration.documentIds.slice(),
+      availableDocuments: m.studyToolConfiguration.availableDocuments?.map((doc) => ({ ...doc })),
+      artifact: m.studyToolConfiguration.artifact ? {
+        ...m.studyToolConfiguration.artifact,
+        payload: m.studyToolConfiguration.artifact.payload ? { ...m.studyToolConfiguration.artifact.payload } : undefined
+      } : undefined
     };
   }
   return compact;

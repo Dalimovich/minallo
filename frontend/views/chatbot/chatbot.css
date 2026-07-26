@@ -5707,6 +5707,28 @@ body.ncb-pdf-workspace-open #drDrawer {
 .ncb-tool-config-source strong,.ncb-tool-config-row strong { text-align:right; overflow-wrap:anywhere; }
 .ncb-tool-config-open { width:100%; margin-top:18px; padding:12px 16px; border:0; border-radius:12px; background:#765cff; color:#fff; font-weight:750; cursor:pointer; }
 .ncb-tool-config-open:disabled { opacity:.58; cursor:wait; }
+.ncb-tool-config-values { display:grid; gap:14px; margin-top:14px; }
+.ncb-tool-field { display:grid; gap:6px; color:var(--text-muted,#9da2b4); font-size:.82rem; }
+.ncb-tool-field select,.ncb-tool-field input { width:100%; box-sizing:border-box; padding:10px 11px; border:1px solid rgba(255,255,255,.13); border-radius:10px; background:rgba(12,13,22,.72); color:inherit; font:inherit; }
+.ncb-tool-field select[multiple] { min-height:92px; }
+.ncb-tool-choice { display:flex; flex-wrap:wrap; gap:7px; margin:0; padding:0; border:0; }
+.ncb-tool-choice legend { width:100%; margin-bottom:2px; color:var(--text-muted,#9da2b4); font-size:.82rem; }
+.ncb-tool-choice label { cursor:pointer; }
+.ncb-tool-choice input { position:absolute; opacity:0; pointer-events:none; }
+.ncb-tool-choice span { display:block; padding:8px 11px; border:1px solid rgba(255,255,255,.13); border-radius:10px; color:var(--text-muted,#b4b8c7); }
+.ncb-tool-choice input:checked + span { border-color:#806cff; background:rgba(118,92,255,.22); color:#fff; }
+.ncb-tool-check { display:flex; align-items:center; gap:9px; cursor:pointer; }
+.ncb-tool-config-validation { min-height:20px; margin-top:12px; color:#ffaaa5; font-size:.84rem; }
+.ncb-tool-config-generate,.ncb-study-artifact-actions button { padding:12px 16px; border:0; border-radius:12px; background:#765cff; color:#fff; font-weight:750; cursor:pointer; }
+.ncb-tool-config-generate { width:100%; }
+.ncb-tool-config-generate:disabled { opacity:.58; cursor:wait; }
+.ncb-study-artifact { width:min(100%,680px); padding:20px; border:1px solid rgba(91,205,155,.3); border-radius:20px; background:linear-gradient(145deg,rgba(44,137,98,.12),rgba(19,20,31,.78)); }
+.ncb-study-artifact header { display:flex; align-items:center; gap:12px; }
+.ncb-study-artifact h3 { margin:0; }
+.ncb-study-artifact-source { color:var(--text-muted,#9da2b4); }
+.ncb-study-artifact-preview { margin:14px 0; }
+.ncb-study-artifact-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.ncb-study-artifact-actions button[data-adjust] { background:rgba(255,255,255,.1); }
 @media (max-width:540px) { .ncb-tool-config { padding:15px; } .ncb-tool-config-source,.ncb-tool-config-row { align-items:flex-start; flex-direction:column; gap:4px; } .ncb-tool-config-source strong,.ncb-tool-config-row strong { text-align:left; } }
 
 .ncb-sr-only {
