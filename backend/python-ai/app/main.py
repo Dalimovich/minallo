@@ -91,7 +91,10 @@ app.add_middleware(
     allow_origin_regex=r"^https://[a-z0-9-]+\.minallo\.pages\.dev$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Internal-Token", "Accept"],
+    allow_headers=[
+        "Authorization", "Content-Type", "X-Internal-Token", "Accept",
+        "X-Request-ID", "X-Idempotency-Key",
+    ],
 )
 
 app.include_router(index_router.router)

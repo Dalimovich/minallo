@@ -20,7 +20,7 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -758,10 +758,19 @@ async def ensure_conversation_endpoint(
 
 
 @router.post("/ask-stream")
-async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(verify_supabase_jwt)):
+async def ask_stream_endpoint(
+    payload: AskStreamRequest,
+    user: dict = Depends(verify_supabase_jwt),
+    x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
+):
     """Complete access preflight, then expose the deferred pipeline over SSE."""
     started = time.perf_counter()
-    request_id = uuid.uuid4().hex
+    supplied_request_id = x_request_id.strip() if isinstance(x_request_id, str) else ""
+    request_id = (
+        supplied_request_id
+        if re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", supplied_request_id)
+        else uuid.uuid4().hex
+    )
     user_id = user["id"]
     access_started = time.perf_counter()
     await run_in_threadpool(lambda: require_active_subscription(user_id, "ask_stream"))
@@ -1039,7 +1048,8 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         early_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Request-ID": request_id,
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
@@ -2307,9 +2317,15 @@ async def _prepare_ask_stream_response(
                 "targetSection": extraction.target,
                 "totalPages": extraction.total_pages,
                 "pagesScanned": extraction.scanned_pages,
+                "scannedPageCount": len(extraction.scanned_pages),
+                "pageStatuses": {
+                    str(page): page_status.value
+                    for page, page_status in sorted(extraction.page_statuses.items())
+                },
                 "itemsExtracted": len(extraction.items),
                 "coverageComplete": extraction.complete,
                 "unreadablePages": extraction.unreadable_pages,
+                "unresolvedItems": extraction.unanswered_item_ids,
                 "languageStatus": "valid_mixed_source",
                 "continuationCorrection": extraction_correction,
             },
@@ -3192,6 +3208,12 @@ async def _prepare_ask_stream_response(
                                 user_id, payload.conversationId
                             ) != generation:
                                 pending_token_events.clear()
+                                yield _error_sse(
+                                    code="request_superseded",
+                                    message="This request was replaced by a newer question.",
+                                    retryable=False,
+                                    request_id=request_id,
+                                )
                                 return
                         from ..services.answer_stream import (  # noqa: WPS433
                             rewrite_answer_in_resolved_language,
@@ -3334,6 +3356,12 @@ async def _prepare_ask_stream_response(
                         user_id, payload.conversationId, payload.conversationGeneration
                     ):
                         pending_token_events.clear()
+                        yield _error_sse(
+                            code="request_superseded",
+                            message="This request was replaced by a newer question.",
+                            retryable=False,
+                            request_id=request_id,
+                        )
                         return
                     if payload.conversationId and generation is not None:
                         from ..services.tutor_state_store import (  # noqa: WPS433
@@ -3349,9 +3377,21 @@ async def _prepare_ask_stream_response(
                                 request_id,
                             )
                             pending_token_events.clear()
+                            yield _error_sse(
+                                code="generation_state_unavailable",
+                                message="The request state could not be confirmed.",
+                                retryable=True,
+                                request_id=request_id,
+                            )
                             return
                         if persisted_generation != generation:
                             pending_token_events.clear()
+                            yield _error_sse(
+                                code="request_superseded",
+                                message="This request was replaced by a newer question.",
+                                retryable=False,
+                                request_id=request_id,
+                            )
                             return
                     if (
                         tutor_state
@@ -3375,10 +3415,12 @@ async def _prepare_ask_stream_response(
                                     "authorization_revoked_before_persistence request_id=%s",
                                     request_id,
                                 )
-                                yield _sse_bytes(json.dumps({
-                                    "error": "Document access changed during this request.",
-                                    "status": 403,
-                                }))
+                                yield _error_sse(
+                                    code="document_access_revoked",
+                                    message="Document access changed during this request.",
+                                    retryable=False,
+                                    request_id=request_id,
+                                )
                                 return
                         from ..services.tutor_state import (  # noqa: WPS433
                             VerifiedGroundedContext,

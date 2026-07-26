@@ -31,6 +31,7 @@ import {
   type DailyMissionResponse
 } from '../../services/study-service.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
+import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { initWorkspaceLibrary } from './workspace-library.js';
 import {
@@ -621,6 +622,7 @@ interface ChatMessage {
   id?: string;
   role: 'user' | 'assistant';
   text: string;
+  interrupted?: boolean;
   images?: PastedImage[];
   files?: PendingFile[];
   selectedSourceMode?: SourceMode;
@@ -969,8 +971,8 @@ async function streamAiReply(
     }
   };
 
+  const allowDiagrams = latestUserAllowsDiagrams(originMessages);
   try {
-    const allowDiagrams = latestUserAllowsDiagrams(originMessages);
     const latestFileLabel = latestUserFileLabel(originMessages);
     // Phase 12 wiring: when the active chat has ≥1 course-imported source
     // Grounded course files, active-PDF captures, and pasted screenshots use
@@ -1090,6 +1092,18 @@ async function streamAiReply(
           )
         );
         attachSubscribeCta(aiRow, bubble);
+      } else if (err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
+        && err.metadata.partialAnswer.trim()) {
+        const partial = sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams);
+        originMessages.push({ role: 'assistant', text: partial, allowDiagrams, interrupted: true });
+        touchOrigin();
+        saveChatStore();
+        renderRichBubble(bubble, partial, allowDiagrams);
+        const note = document.createElement('div');
+        note.className = 'ncb-bubble-aborted';
+        note.textContent = 'This answer was interrupted before completion. You can retry to continue.';
+        bubble.appendChild(note);
+        attachErrorRetry(aiRow, bubble);
       } else {
         bubble.innerHTML = renderInlineMarkdown(friendlyAiErrorMessage(err));
         attachErrorRetry(aiRow, bubble);
@@ -2718,10 +2732,17 @@ async function streamFromAskStream(
   const snapshotId = payloadPdf
     ? [payloadPdf.documentId, payloadPdf.visiblePage, payloadPdf.viewerInstanceId || '', snapshot?.capturedAt || 0].join(':')
     : undefined;
+  const requestId = typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `ask-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const resp = await authenticatedFetch(aiHost + '/ask-stream', {
     method: 'POST',
     signal: controller.signal,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Request-ID': requestId,
+      'X-Idempotency-Key': requestId,
+    },
     body: JSON.stringify({
       courseId,
       conversationId,
@@ -2804,7 +2825,6 @@ async function streamFromAskStream(
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
-  let sseBuffer = '';
   let answerBuf = '';
   let doneMeta: Record<string, unknown> | null = null;
   let streamMeta: Record<string, unknown> = {};
@@ -2820,24 +2840,28 @@ async function streamFromAskStream(
     return liveReveal;
   };
 
+  const parsedEvents: Record<string, unknown>[] = [];
+  const parser = new SseParser(({ data }) => {
+    try {
+      parsedEvents.push(JSON.parse(data) as Record<string, unknown>);
+    } catch (error) {
+      console.warn('[ncb] malformed ask-stream event', {
+        dataLength: data.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   while (true) {
     const result = await reader.read();
-    if (result.done) break;
-    sseBuffer += decoder.decode(result.value, { stream: true });
-    const lines = sseBuffer.split('\n');
-    sseBuffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      let evt: Record<string, unknown>;
-      try {
-        evt = JSON.parse(line.slice(6)) as Record<string, unknown>;
-      } catch (error) {
-        console.warn('[ncb] malformed ask-stream event', {
-          lineLength: line.length,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        continue;
-      }
+    if (result.done) {
+      parser.push(decoder.decode());
+      parser.finish();
+    } else {
+      parser.push(decoder.decode(result.value, { stream: true }));
+    }
+    while (parsedEvents.length) {
+      const evt = parsedEvents.shift()!;
         // Live status: backend pipeline events ("collecting_sources",
         // "writing_answer", …) update the pending bubble's status line before
         // any answer token arrives. Once a token creates the real bubble
@@ -2859,10 +2883,11 @@ async function streamFromAskStream(
               ? evt.message
               : typeof evt.error === 'string' ? evt.error : 'The AI request failed.',
             retryable: evt.retryable === true,
-            metadata: evt,
+            metadata: { ...evt, partialAnswer: answerBuf },
           });
         }
       }
+    if (result.done) break;
     }
 
   if (!answerBuf.trim()) {

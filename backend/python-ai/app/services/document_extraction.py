@@ -147,6 +147,14 @@ class ExtractionPageKind(StrEnum):
     UNCERTAIN = "uncertain"
 
 
+class PageProcessingStatus(StrEnum):
+    TEXT_PROCESSED = "text_processed"
+    VISION_PROCESSED = "vision_processed"
+    VERIFIED_IRRELEVANT = "verified_irrelevant"
+    UNREADABLE = "unreadable"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True)
 class PageClassificationResult:
     kind: ExtractionPageKind
@@ -257,6 +265,7 @@ class DocumentExtractionResult:
     total_pages: int
     scanned_pages: list[int] = field(default_factory=list)
     unreadable_pages: list[int] = field(default_factory=list)
+    page_statuses: dict[int, PageProcessingStatus] = field(default_factory=dict)
     items: list[ExtractedQAItem] = field(default_factory=list)
     unanswered_item_ids: list[str] = field(default_factory=list)
     duplicate_item_ids: list[str] = field(default_factory=list)
@@ -957,11 +966,14 @@ def extract_document_qa(
         else:
             usable.append((page, text))
             result.scanned_pages.append(page)
+            result.page_statuses[page] = PageProcessingStatus.TEXT_PROCESSED
     result.unreadable_pages.extend(
         page
         for page in target_pages
         if page not in seen_pages
     )
+    for page in result.unreadable_pages:
+        result.page_statuses[page] = PageProcessingStatus.UNREADABLE
     result.unreadable_pages = sorted(set(result.unreadable_pages))
 
     extracted_questions: list[ExtractedQuestion] = list(
@@ -1048,8 +1060,13 @@ def extract_document_qa(
                 if solution is not None
             )
             result.scanned_pages.append(page)
+            result.page_statuses[page] = PageProcessingStatus.VISION_PROCESSED
         else:
             result.unreadable_pages.append(page)
+            result.page_statuses[page] = (
+                PageProcessingStatus.FAILED if any(p == page and text for p, text in usable)
+                else PageProcessingStatus.UNREADABLE
+            )
     result.scanned_pages = sorted(set(result.scanned_pages))
     result.unreadable_pages = sorted(set(result.unreadable_pages))
     # Keep every map prompt bounded while scanning all pages in order. The
@@ -1084,6 +1101,9 @@ def extract_document_qa(
             (page, text, classify_extraction_page(text, target))
             for page, text in group
         ]
+        for page, _text, kind in classified:
+            if kind == ExtractionPageKind.IRRELEVANT:
+                result.page_statuses[page] = PageProcessingStatus.VERIFIED_IRRELEVANT
         question_pages = [
             (page, text) for page, text, kind in classified
             if kind in {ExtractionPageKind.QUESTION, ExtractionPageKind.MIXED,
@@ -1430,8 +1450,11 @@ def extract_document_qa(
 def format_document_extraction(result: DocumentExtractionResult, language: str) -> str:
     english = language != "de"
     heading = (
-        f"## All {result.target} and answers"
-        if english else f"## Alle {result.target} mit Antworten"
+        (f"## All {result.target} and answers" if result.complete else
+         f"## Extracted {result.target} and answers")
+        if english else
+        (f"## Alle {result.target} mit Antworten" if result.complete else
+         f"## Extrahierte {result.target} mit Antworten")
     )
     blocks = [heading]
     for item in result.items:
@@ -1444,6 +1467,22 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
             f"**{'Question' if english else 'Frage'}:** {item.question}\n\n"
             f"**{'Answer' if english else 'Antwort'}:** {answer}"
         )
+    unresolved_count = len(set(result.unanswered_item_ids) | {
+        gap.item_id for gap in result.gaps
+        if gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
+    })
+    coverage_lines = [
+        f"**Coverage:** {len(result.scanned_pages)}/{result.total_pages} pages scanned"
+        if english else
+        f"**Abdeckung:** {len(result.scanned_pages)}/{result.total_pages} Seiten geprÃ¼ft",
+        f"Questions found: {len(result.extracted_questions)}" if english else
+        f"Gefundene Fragen: {len(result.extracted_questions)}",
+        f"Answers paired: {sum(1 for item in result.paired_items if item.answer_text)}"
+        if english else
+        f"Zugeordnete Antworten: {sum(1 for item in result.paired_items if item.answer_text)}",
+        f"Unresolved: {unresolved_count}" if english else f"UngeklÃ¤rt: {unresolved_count}",
+    ]
+    blocks.append("\n".join(coverage_lines))
     if result.complete:
         blocks.append(
             f"I scanned all {result.total_pages} pages and found {len(result.items)} items."
@@ -1505,6 +1544,7 @@ __all__ = [
     "GapStatus",
     "NumberingGap",
     "PageExtractionResult",
+    "PageProcessingStatus",
     "PageClassificationResult",
     "PairedQAItem",
     "SearchAvailability",
