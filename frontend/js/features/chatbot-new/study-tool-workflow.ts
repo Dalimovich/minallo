@@ -154,7 +154,16 @@ function renderArtifact(host: HTMLElement, marker: StudyToolConfigurationMarker)
   host.innerHTML = `<section class="ncb-study-artifact" data-study-artifact="${artifact.artifactType}" data-resource-id="${escapeHtml(artifact.persistedResourceId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(DEFINITIONS[artifact.artifactType].title)}</span><h3>${escapeHtml(artifact.title)}</h3></header><p>${escapeHtml(artifact.summary)}</p><p class="ncb-study-artifact-source">Source: ${escapeHtml(marker.sourceLabel)}</p><div class="ncb-study-artifact-preview"></div><div class="ncb-study-artifact-actions"><button type="button" data-open-artifact>${artifact.artifactType === 'examforge' ? 'Start exam' : artifact.artifactType === 'flashcards' ? 'Open full deck' : 'Start lesson'}</button><button type="button" data-adjust>Adjust</button></div></section>`;
   const flashcardPlayer = (window as unknown as { mountFlashcardDeckPlayer?: (target: HTMLElement | null, deck: unknown, options: Record<string, unknown>) => void }).mountFlashcardDeckPlayer;
   if (artifact.artifactType === 'flashcards' && typeof flashcardPlayer === 'function') flashcardPlayer(host.querySelector<HTMLElement>('.ncb-study-artifact-preview'), artifact.payload, {});
-  host.querySelector<HTMLButtonElement>('[data-open-artifact]')?.addEventListener('click', () => { if (artifact.persistedResourceId) void openStudyToolWorkspace(artifact.artifactType as StudyWorkspaceKind, marker.courseId, { persistedResourceId: artifact.persistedResourceId }, marker.documentIds, marker.sourceDocumentName || ''); });
+  host.querySelector<HTMLButtonElement>('[data-open-artifact]')?.addEventListener('click', () => {
+    if (!artifact.persistedResourceId) return;
+    void openStudyToolWorkspace(
+      artifact.artifactType as StudyWorkspaceKind,
+      marker.courseId,
+      { ...marker.parameters, persistedResourceId: artifact.persistedResourceId },
+      marker.documentIds,
+      marker.sourceDocumentName || ''
+    );
+  });
   host.querySelector<HTMLButtonElement>('[data-adjust]')?.addEventListener('click', () => { marker.artifact = undefined; marker.status = 'awaiting_confirmation'; persist(marker); renderStudyToolConfiguration(host, marker); });
 }
 
