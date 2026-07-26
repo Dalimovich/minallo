@@ -143,6 +143,8 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
   let startWidth = 0;
   let pendingWidth = 0;
   let frame = 0;
+  let resizeRenderTimer = 0;
+  let lastObservedWidth = 0;
 
   const widthBounds = (): { min: number; max: number } => {
     const card = context.closest<HTMLElement>('.ncb-card');
@@ -211,7 +213,18 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
 
   handle.addEventListener('pointerdown', start);
   const observer = typeof ResizeObserver !== 'undefined'
-    ? new ResizeObserver(() => scheduleWidth(context.getBoundingClientRect().width))
+    ? new ResizeObserver(() => {
+        const width = context.getBoundingClientRect().width;
+        scheduleWidth(width);
+        if (Math.abs(width - lastObservedWidth) < 1) return;
+        lastObservedWidth = width;
+        window.clearTimeout(resizeRenderTimer);
+        resizeRenderTimer = window.setTimeout(() => {
+          const viewer = window as typeof window & { renderPages?: () => void };
+          viewer.renderPages?.();
+          requestAnimationFrame(refitWorkspacePdf);
+        }, 180);
+      })
     : null;
   observer?.observe(context);
 
@@ -226,6 +239,7 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
     window.removeEventListener('pointerup', finish);
     window.removeEventListener('pointercancel', finish);
     observer?.disconnect();
+    window.clearTimeout(resizeRenderTimer);
     if (frame) cancelAnimationFrame(frame);
     document.body.style.cursor = '';
     document.body.style.userSelect = '';

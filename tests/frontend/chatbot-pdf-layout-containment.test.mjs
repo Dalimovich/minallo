@@ -21,6 +21,13 @@ test('PDF waits for its rendered canvas before fitting to the hosted pane', () =
   assert.match(workspace, /viewer\.renderPages\?\.\(\)/);
 });
 
+test('exam-driven workspace width changes trigger a settled PDF rerender', () => {
+  assert.match(workspace, /new ResizeObserver/);
+  assert.match(workspace, /Math\.abs\(width - lastObservedWidth\) < 1/);
+  assert.match(workspace, /window\.setTimeout\(\(\) => \{/);
+  assert.match(workspace, /viewer\.renderPages\?\.\(\)/);
+});
+
 test('wide formulas, tables, and code scroll locally', () => {
   assert.match(css, /\.ncb-bubble-body \.katex-display[\s\S]*?overflow-x: auto/);
   assert.match(css, /\.ncb-bubble-body pre/);

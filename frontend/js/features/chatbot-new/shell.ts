@@ -1257,7 +1257,7 @@ async function streamAiReply(
     saveChatStore();
     if (isOriginActive()) {
       if (continuationBase && bubble) renderRichBubble(bubble, raw, allowDiagrams);
-      if (bubble && assistantMessage.examPractice) enhanceGeneratedExamPractice(bubble);
+      if (bubble) enhanceGeneratedExamPractice(bubble);
       appendBubbleActions(aiRow, raw, assistantMessage);
     }
     reconcileView();
@@ -6494,7 +6494,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // source preface / self-intro — scrub at render time.
   if (bubble) renderRichBubble(bubble, stripAnswerIntro(m.text), !!m.allowDiagrams);
   if (bubble && m.learningJourney) enhanceDocumentLearningJourney(bubble, m.learningJourney);
-  if (bubble && m.examPractice) enhanceGeneratedExamPractice(bubble);
+  if (bubble && m.role === 'assistant') enhanceGeneratedExamPractice(bubble);
   if (bubble && (m.sourceLabel || m.sources?.length)) {
     appendAskStreamMeta(bubble, {
       sourceLabel: m.sourceLabel,

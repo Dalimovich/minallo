@@ -37,5 +37,5 @@ test('combined-markdown generated exams hide the solution section by default', (
   assert.match(shell, /answerPanel\.hidden = true/);
   assert.match(shell, /Show answers/);
   assert.match(shell, /Hide answers/);
-  assert.match(shell, /m\.examPractice/);
+  assert.match(shell, /m\.role === 'assistant'/);
 });
