@@ -71,8 +71,11 @@ test('authenticated application permanently detaches the legacy visible shell', 
   assert.match(AUTH_BOOTSTRAP, /minallo-chatbot-only #portal \.sidebar[\s\S]*display:none!important/);
   assert.match(AUTH_BOOTSTRAP, /portal \.portal-section:not\(#psec-aipage\)\{display:none!important\}/);
   assert.match(AUTH_BOOTSTRAP, /minallo-chatbot-only #psec-aipage[\s\S]*position:fixed!important/);
-  assert.match(LOADER_TS, /legacyChrome\.inert = true/);
-  assert.match(LOADER_TS, /legacyChrome\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(LOADER_TS, /function detachLegacyPortalRuntime/);
+  assert.match(LOADER_TS, /legacyHost\.style\.setProperty\('display', 'none', 'important'\)/);
+  assert.match(LOADER_TS, /\.portal-section:not\(#psec-aipage\)/);
+  assert.match(LOADER_TS, /legacyHost!\.appendChild\(section\)/);
+  assert.match(LOADER_TS, /detachLegacyPortalRuntime\(\);[\s\S]*loadAppScript\(\)/);
   assert.match(LOADER_TS, /if \(!chatbotRoot \|\| chatbotRoot\.hidden \|\| !chatbotRoot\.querySelector\('\.ncb-card'\)\)/);
 });
 

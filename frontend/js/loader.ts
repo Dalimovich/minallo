@@ -928,6 +928,32 @@ interface LandingTranslation {
     return section ? loadFeatureSection(section) : Promise.resolve();
   };
 
+  function detachLegacyPortalRuntime(): void {
+    const portal = document.getElementById('portal');
+    if (!portal) throw new Error('authenticated portal host is missing');
+    let legacyHost = document.getElementById('legacyRuntimeHost');
+    if (!legacyHost) {
+      legacyHost = document.createElement('div');
+      legacyHost.id = 'legacyRuntimeHost';
+      legacyHost.hidden = true;
+      legacyHost.inert = true;
+      legacyHost.setAttribute('aria-hidden', 'true');
+      legacyHost.style.setProperty('display', 'none', 'important');
+      root!.appendChild(legacyHost);
+    }
+
+    const detachedChrome = portal.querySelectorAll<HTMLElement>(
+      '.sidebar, .main > .topbar, :scope > .blobs, :scope > .page-bg'
+    );
+    detachedChrome.forEach((element) => {
+      element.dataset.chatbotOnlyDetached = 'true';
+      legacyHost!.appendChild(element);
+    });
+    portal.querySelectorAll<HTMLElement>('.portal-section:not(#psec-aipage)').forEach((section) => {
+      legacyHost!.appendChild(section);
+    });
+  }
+
   // Fetch all sections in parallel, inject in order
   void Promise.all(
     SECTIONS.map((filename) => {
@@ -950,13 +976,7 @@ interface LandingTranslation {
       wrapper.innerHTML = html;
       while (wrapper.firstChild) root.appendChild(wrapper.firstChild);
     });
-    document.querySelectorAll<HTMLElement>(
-      '#portal .sidebar, #portal .main > .topbar, #portal > .page-bg'
-    ).forEach((legacyChrome) => {
-      legacyChrome.inert = true;
-      legacyChrome.setAttribute('aria-hidden', 'true');
-      legacyChrome.dataset.chatbotOnlyDetached = 'true';
-    });
+    detachLegacyPortalRuntime();
     if (SS) SS.markReady('sections', { count: htmls.length });
     loadAppScript();
   });
