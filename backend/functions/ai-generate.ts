@@ -33,6 +33,12 @@ interface PyResponse {
   text?: string;
   groundedSources?: unknown[];
   warning?: string;
+  error?: string;
+  failureCode?: string;
+  diagnostics?: Record<string, unknown>;
+  requestedCount?: number;
+  actualCount?: number;
+  readiness?: Record<string, unknown>;
 }
 
 // Normalise the Python pipeline's per-type output into stable shapes the
@@ -189,6 +195,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       userId: user.id, courseId, documentIds: docIds, requestedCount,
       difficulty: (typeof difficulty === 'string' ? difficulty : 'medium'),
       seenItems, language,
+      topic: typeof topic === 'string' && topic.trim() ? topic.trim() : null,
+      name: typeof body.name === 'string' ? body.name.slice(0, 120) : null,
       save: false
     };
   } else {
@@ -212,8 +220,14 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   } else if (tool === 'quiz') {
     mapped = { tool, items: _normaliseQuizQuestions(py.questions), sources: py.groundedSources || [] };
   } else {
-    mapped = { tool, items: py.cards || [], sources: py.groundedSources || [] };
+    mapped = {
+      tool, items: py.cards || [], sources: py.groundedSources || [],
+      requestedCount: py.requestedCount, actualCount: py.actualCount,
+      warning: py.warning || null, error: py.error || null,
+      failureCode: py.failureCode || null, diagnostics: py.diagnostics || null,
+      readiness: py.readiness || null
+    };
   }
-  if (py.warning) mapped.error = py.warning;
+  if (tool !== 'flashcards' && py.warning) mapped.warning = py.warning;
   return jsonResponse(200, mapped);
 };

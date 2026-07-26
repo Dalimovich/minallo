@@ -446,6 +446,7 @@ class GenerateFlashcardsRequest(BaseModel):
     requestedCount: int = Field(10, ge=1, le=24)
     difficulty: str = "medium"              # easy | medium | hard | mixed
     language: str | None = None
+    topic: str | None = Field(None, max_length=500)
     seenItems: list[str] | None = None      # already-seen card fronts to avoid repeating
     save: bool = True
     name: str | None = None
@@ -457,6 +458,10 @@ class GenerateFlashcardsResponse(BaseModel):
     cards: list[dict[str, Any]]
     groundedSources: list[dict[str, Any]] = []
     warning: str | None = None
+    error: str | None = None
+    failureCode: str | None = None
+    diagnostics: dict[str, Any] | None = None
+    readiness: dict[str, Any] | None = None
     studySetId: str | None = None
     model: str | None = None
     promptTokens: int | None = None
@@ -469,17 +474,28 @@ def generate_flashcards_endpoint(payload: GenerateFlashcardsRequest) -> Generate
     if payload.documentIds:
         for did in payload.documentIds:
             _require_uuid(did, "documentId")
-    doc_names = _verify_user_owns_documents(payload.userId, payload.courseId, payload.documentIds)
+    doc_ids, doc_names = _resolve_ready_document_ids(
+        payload.userId, payload.courseId, payload.documentIds
+    )
+    if not doc_ids:
+        return GenerateFlashcardsResponse(
+            requestedCount=payload.requestedCount, actualCount=0, cards=[],
+            error="None of the selected files are ready for Flashcard generation. Wait for indexing to finish or choose ready files.",
+            failureCode="flashcard_documents_not_ready",
+            diagnostics={"readyDocumentCount": 0, "modelCallsStarted": 0},
+            readiness={"requestedDocumentCount": len(payload.documentIds or []), "readyDocumentCount": 0},
+        )
 
     out = generate_flashcards(
         user_id=payload.userId,
         course_id=payload.courseId,
-        document_ids=payload.documentIds,
+        document_ids=doc_ids,
         requested_count=payload.requestedCount,
         doc_names=doc_names,
         difficulty=payload.difficulty,
         language=payload.language,
         seen_items=payload.seenItems,
+        topic=payload.topic,
     )
 
     set_id: str | None = None
@@ -487,7 +503,7 @@ def generate_flashcards_endpoint(payload: GenerateFlashcardsRequest) -> Generate
         set_id = save_flashcard_set(
             user_id=payload.userId,
             course_id=payload.courseId,
-            document_ids=payload.documentIds,
+            document_ids=doc_ids,
             name=payload.name or "Flashcards",
             cards=out["cards"],
         )
@@ -498,6 +514,10 @@ def generate_flashcards_endpoint(payload: GenerateFlashcardsRequest) -> Generate
         cards=out["cards"],
         groundedSources=out.get("groundedSources", []),
         warning=out.get("warning"),
+        error=out.get("error"),
+        failureCode=out.get("failureCode"),
+        diagnostics=out.get("diagnostics"),
+        readiness={"requestedDocumentCount": len(payload.documentIds or doc_ids), "readyDocumentCount": len(doc_ids)},
         studySetId=set_id,
         model=out.get("model"),
         promptTokens=out.get("promptTokens"),

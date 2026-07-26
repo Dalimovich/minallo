@@ -176,6 +176,24 @@ async function saveFlashcardDeck(courseId: string, name: string, cards: unknown[
   return rows[0].id;
 }
 
+async function loadSeenFlashcardFronts(courseId: string): Promise<string[]> {
+  const db = (window as unknown as { _ssDb?: { supaUrl?: () => string; supaHeaders?: () => Record<string, string> } })._ssDb;
+  const url = db?.supaUrl?.();
+  if (!url) return [];
+  try {
+    const response = await fetch(`${url}/rest/v1/flashcard_decks?course_id=eq.${encodeURIComponent(courseId)}&select=cards,study_progress,last_studied_at&limit=50`, { headers: db?.supaHeaders?.() || {} });
+    if (!response.ok) return [];
+    const decks = await response.json() as Array<{ cards?: Array<{ front?: string }>; study_progress?: number; last_studied_at?: string | null }>;
+    const fronts: string[] = [];
+    for (const deck of decks) {
+      const cards = Array.isArray(deck.cards) ? deck.cards : [];
+      const seenCount = deck.last_studied_at ? Math.min(cards.length, Math.max(1, Number(deck.study_progress || 0) + 1)) : 0;
+      for (const card of cards.slice(0, seenCount)) if (card.front?.trim()) fronts.push(card.front.trim());
+    }
+    return Array.from(new Set(fronts)).slice(0, 200);
+  } catch { return []; }
+}
+
 async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArtifactMarker> {
   const svc = await import('../../services/ai-service.js');
   const p = marker.parameters;
@@ -188,7 +206,8 @@ async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArti
     return { artifactType: 'examforge', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'ExamForge created', summary: `${raw.questions?.length || Number(p.count)} questions · ${String(p.difficulty)} · ${String(p.mode)} mode`, payload: raw as Record<string, unknown> };
   }
   if (marker.intent === 'flashcards') {
-    const raw = await svc.generateStudyTool(marker.courseId, 'flashcards', { documentIds, count: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', topic: String(p.topic || ''), seenItems: p.avoidSeen ? [] : undefined, sourceScope: marker.source?.scope }) as { items?: Array<{ front?: string; back?: string; source?: string }>; error?: string };
+    const seenItems = p.avoidSeen ? await loadSeenFlashcardFronts(marker.courseId) : undefined;
+    const raw = await svc.generateStudyTool(marker.courseId, 'flashcards', { documentIds, count: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', language: String(p.language || 'auto'), topic: String(p.topic || ''), name: String(p.deckName || ''), seenItems, sourceScope: marker.source?.scope }) as { items?: Array<{ front?: string; back?: string; source?: string }>; warning?: string; error?: string; failureCode?: string };
     const cards = (raw.items || []).filter(card => card.front?.trim() && card.back?.trim());
     if (!cards.length) throw new Error(raw.error || 'No flashcards were generated.');
     const name = String(p.deckName || '').trim() || 'Course flashcards';

@@ -29,7 +29,7 @@ def client(monkeypatch) -> TestClient:
     sb = MagicMock()
     chain = sb.table.return_value.select.return_value.in_.return_value
     chain.execute.return_value = MagicMock(data=[{
-        "id": DOC_A, "user_id": OWNER, "course_id": COURSE, "file_name": "f.pdf",
+        "id": DOC_A, "user_id": OWNER, "course_id": COURSE, "file_name": "f.pdf", "processing_status": "ready",
     }])
     monkeypatch.setattr("app.routers.generate.get_supabase", lambda: sb)
 
@@ -140,7 +140,7 @@ def test_quiz_forwards_seen_items_and_language(client: TestClient, monkeypatch) 
     assert captured["language"] == "en"
 
 
-def test_flashcards_forwards_difficulty_language_seen(client: TestClient, monkeypatch) -> None:
+def test_flashcards_forwards_difficulty_language_topic_seen(client: TestClient, monkeypatch) -> None:
     captured: dict = {}
 
     def cap(**kw):
@@ -153,12 +153,13 @@ def test_flashcards_forwards_difficulty_language_seen(client: TestClient, monkey
         headers={"X-Internal-Token": "test-token"},
         json={
             "userId": OWNER, "courseId": COURSE, "documentIds": [DOC_A], "requestedCount": 1,
-            "difficulty": "hard", "language": "de", "seenItems": ["front a"],
+            "difficulty": "hard", "language": "de", "topic": "Umformen", "seenItems": ["front a"],
         },
     )
     assert r.status_code == 200
     assert captured["difficulty"] == "hard"
     assert captured["language"] == "de"
+    assert captured["topic"] == "Umformen"
     assert captured["seen_items"] == ["front a"]
 
 
