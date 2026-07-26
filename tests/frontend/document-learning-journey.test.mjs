@@ -12,4 +12,9 @@ test('document extraction mounts a persistent Learning Journey accordion', () =>
   assert.match(shell, /compact\.learningJourney/);
   assert.match(css, /\.ncb-learning-journey__item summary/);
   assert.match(css, /prefers-reduced-motion/);
+  assert.match(shell, /questionPagesProcessed/);
+  assert.match(shell, /answerSearchPagesProcessed/);
+  assert.match(shell, /minallo_journey_view_/);
+  assert.match(shell, /Correct answer/);
+  assert.match(css, /data-view="table"/);
 });

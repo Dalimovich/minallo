@@ -927,6 +927,11 @@ Keep warmth concise: one genuine acknowledgement and one useful check are more
 interactive than filler, emojis, motivational speeches, or repeated offers to help.
 """
 
+ADAPTIVE_TABLE_LAYOUT_RULE = """
+
+ANSWER LAYOUT. Choose the clearest structure. Use a concise table when at least two comparable items share attributes, or for repeated question/answer pairs, classifications, symbols with units, or parameter/value summaries. Do not use a table for one definition, narrative explanations, proofs, code, or step-by-step derivations with long cells. A short introduction or clarification may surround a table. Keep tables to at most 8 concise columns and group large results by section. Markdown tables are supported. When consistent structured cells materially improve the answer, you may emit a fenced `minallo-table` JSON block with `title`, `columns` (id, label, alignment, type), and `rows` (id, cells, optional status). Never put arbitrary HTML in table cells.
+"""
+
 
 # ── Student Dignity overlay ──────────────────────────────────────────────────
 #
@@ -1818,6 +1823,7 @@ def generate_answer(
     wants_diagram = _wants_diagram(question) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks))
+    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file the student didn't select.

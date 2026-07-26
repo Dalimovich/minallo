@@ -31,7 +31,7 @@ import {
   todayLocalDate as _studyServiceToday,
   type DailyMissionResponse
 } from '../../services/study-service.js';
-import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
+import { classifyAiError } from '../../services/ai-error-message.js';
 import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { initWorkspaceLibrary } from './workspace-library.js';
@@ -649,6 +649,12 @@ interface LearningJourneyMarker {
   title: string;
   totalPages: number;
   pagesScanned: number;
+  questionPagesTotal: number;
+  questionPagesProcessed: number;
+  thisRunPagesProcessed: number;
+  answerSearchPagesProcessed: number;
+  scopeExtractionComplete: boolean;
+  answerVerificationComplete: boolean;
   coverageComplete: boolean;
   unresolvedItems: string[];
   sections?: LearningJourneySection[];
@@ -687,12 +693,18 @@ interface LearningJourneySection {
 
 function learningJourneyMarkerFromMeta(meta: Record<string, unknown>): LearningJourneyMarker {
   const structured = meta.learningJourney && typeof meta.learningJourney === 'object'
-    ? meta.learningJourney as { title?: unknown; sections?: unknown; scope?: { includedSectionNumbers?: unknown }; coverage?: { totalPages?: unknown; pagesScanned?: unknown; complete?: unknown }; outOfScopeItemsRejected?: unknown }
+    ? meta.learningJourney as { title?: unknown; sections?: unknown; scope?: { includedSectionNumbers?: unknown }; coverage?: Record<string, unknown>; outOfScopeItemsRejected?: unknown }
     : null;
   return {
     title: String(structured?.title || meta.resolvedHeading || meta.targetSection || 'Document review'),
     totalPages: Number(structured?.coverage?.totalPages || meta.totalPages || 0),
     pagesScanned: Number(structured?.coverage?.pagesScanned || meta.scannedPageCount || 0),
+    questionPagesTotal: Number(structured?.coverage?.questionPagesTotal || 0),
+    questionPagesProcessed: Number(structured?.coverage?.questionPagesProcessed || 0),
+    thisRunPagesProcessed: Number(structured?.coverage?.thisRunPagesProcessed || meta.scannedPageCount || 0),
+    answerSearchPagesProcessed: Number(structured?.coverage?.answerSearchPagesProcessed || 0),
+    scopeExtractionComplete: structured?.coverage?.scopeExtractionComplete === true,
+    answerVerificationComplete: structured?.coverage?.answerVerificationComplete === true,
     coverageComplete: structured?.coverage?.complete === true || meta.coverageComplete === true,
     unresolvedItems: Array.isArray(meta.unresolvedItems) ? meta.unresolvedItems.map(String) : [],
     sections: Array.isArray(structured?.sections) ? structured.sections as LearningJourneySection[] : undefined,
@@ -1173,8 +1185,16 @@ async function streamAiReply(
         bubble.appendChild(note);
         attachErrorRetry(aiRow, bubble);
       } else {
-        bubble.innerHTML = renderInlineMarkdown(friendlyAiErrorMessage(err));
-        attachErrorRetry(aiRow, bubble);
+        const failure = classifyAiError(err);
+        const requestId = err instanceof AskStreamError && typeof err.metadata?.requestId === 'string'
+          ? err.metadata.requestId : '';
+        bubble.innerHTML =
+          '<section class="ncb-tutor-recovery" role="alert">' +
+            '<strong>' + escapeHtml(failure.title) + '</strong>' +
+            '<p>' + escapeHtml(failure.message) + '</p>' +
+            (requestId ? '<small>Reference: ' + escapeHtml(requestId.slice(0, 8)) + '</small>' : '') +
+          '</section>';
+        if (failure.retryable) attachErrorRetry(aiRow, bubble);
       }
     }
     return false;
@@ -2984,7 +3004,17 @@ async function streamFromAskStream(
         // "writing_answer", …) update the pending bubble's status line before
         // any answer token arrives. Once a token creates the real bubble
         // (ensureLiveReveal) the line is gone, so this is a no-op after that.
-        if (typeof evt.status === 'string') thinking?.set(evt.status);
+        if (typeof evt.status === 'string') {
+          const statusMessages: Record<string, string> = {
+            reading_question: 'Reading your question…',
+            collecting_sources: 'Checking the relevant document sections…',
+            extracting_items: 'Working through the questions in order…',
+            writing_answer: 'Preparing the explanation…',
+            recovering_response: 'A step took longer than expected. Recovering your response…',
+            verifying_answer: 'Verifying the final result…',
+          };
+          thinking?.set(statusMessages[evt.status] || 'Still working on your answer…');
+        }
         if (typeof evt.t === 'string') {
           answerBuf += evt.t;
           const reveal = await ensureLiveReveal();
@@ -4026,8 +4056,9 @@ function enhanceDocumentLearningJourney(
   const journey = document.createElement('section');
   journey.className = 'ncb-learning-journey';
   journey.setAttribute('aria-label', 'Learning Journey');
-  const percent = marker.totalPages > 0
-    ? Math.min(100, Math.round((marker.pagesScanned / marker.totalPages) * 100)) : 0;
+  const percent = marker.questionPagesTotal > 0
+    ? Math.min(100, Math.round((marker.questionPagesProcessed / marker.questionPagesTotal) * 100))
+    : marker.totalPages > 0 ? Math.min(100, Math.round((marker.pagesScanned / marker.totalPages) * 100)) : 0;
   journey.innerHTML =
     '<header class="ncb-learning-journey__header">' +
       '<div><span>Learning Journey</span><h2>' + escapeHtml(marker.title) + '</h2></div>' +
@@ -4040,12 +4071,35 @@ function enhanceDocumentLearningJourney(
       '<span style="width:' + percent + '%"></span>' +
     '</div>' +
     '<p class="ncb-learning-journey__coverage">' +
-      escapeHtml(marker.pagesScanned + ' of ' + marker.totalPages + ' pages processed') +
-      (marker.coverageComplete ? ' · Complete' : ' · Partial coverage') +
+      escapeHtml(marker.questionPagesProcessed + ' of ' + marker.questionPagesTotal + ' question pages processed') +
+      ' · ' + escapeHtml(marker.answerSearchPagesProcessed + ' of ' + marker.totalPages + ' answer-search pages') +
+      (marker.thisRunPagesProcessed ? ' · ' + escapeHtml(String(marker.thisRunPagesProcessed)) + ' this run' : '') +
+      (marker.scopeExtractionComplete ? ' · Scope complete' : ' · Scope incomplete') +
+      (marker.answerVerificationComplete ? ' · Answers verified' : ' · Some answers unresolved') +
     '</p>';
   const list = document.createElement('div');
   list.className = 'ncb-learning-journey__list';
   if (sections.length) {
+    const viewKey = 'minallo_journey_view_' + marker.title;
+    let journeyView = 'cards';
+    try { journeyView = localStorage.getItem(viewKey) === 'table' ? 'table' : 'cards'; } catch { /* optional */ }
+    journey.dataset.view = journeyView;
+    const viewToggle = document.createElement('div');
+    viewToggle.className = 'ncb-learning-journey__view-toggle';
+    viewToggle.setAttribute('aria-label', 'Journey view');
+    for (const view of ['cards', 'table'] as const) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = view === 'cards' ? 'Cards' : 'Table';
+      button.setAttribute('aria-pressed', String(journeyView === view));
+      button.addEventListener('click', () => {
+        journey.dataset.view = view;
+        viewToggle.querySelectorAll('button').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+        try { localStorage.setItem(viewKey, view); } catch { /* optional */ }
+      });
+      viewToggle.appendChild(button);
+    }
+    journey.appendChild(viewToggle);
     const chips = document.createElement('nav');
     chips.className = 'ncb-learning-journey__chips';
     chips.setAttribute('aria-label', 'Journey sections');
@@ -4114,6 +4168,18 @@ function enhanceDocumentLearningJourney(
         questions.appendChild(card);
       });
       details.appendChild(questions);
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'ncb-learning-journey__section-table md-answer-table__scroll';
+      const tableRows = section.questions.slice()
+        .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }))
+        .map((question) => {
+          const verified = question.answerStatus === 'verified' || question.answerStatus === 'visually_verified';
+          return '<tr><th scope="row">' + escapeHtml(question.number) + '</th><td>' + escapeHtml(question.question) +
+            '</td><td>' + (question.answer ? renderInlineMarkdown(question.answer) : '—') + '</td><td>' +
+            escapeHtml(verified ? (question.answerStatus === 'visually_verified' ? 'Visual evidence' : 'Verified') : 'Needs review') + '</td></tr>';
+        }).join('');
+      tableWrap.innerHTML = '<table class="md-table"><thead><tr><th scope="col">ID</th><th scope="col">Question</th><th scope="col">Correct answer</th><th scope="col">Status</th></tr></thead><tbody>' + tableRows + '</tbody></table>';
+      details.appendChild(tableWrap);
       list.appendChild(details);
     });
     journey.appendChild(chips);

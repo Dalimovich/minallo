@@ -48,6 +48,19 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && !window.
   document.addEventListener('click', (ev) => {
     const target = ev.target as Element | null;
     if (!target) return;
+    const tableButton = target.closest('.md-table-copy') as HTMLButtonElement | null;
+    if (tableButton) {
+      const table = tableButton.closest('[data-answer-table]')?.querySelector('table');
+      if (!table) return;
+      const text = Array.from(table.querySelectorAll('tr')).map((row) =>
+        Array.from(row.querySelectorAll('th,td')).map((cell) => cell.textContent?.trim() || '').join('\t')
+      ).join('\n');
+      navigator.clipboard?.writeText(text).then(() => {
+        tableButton.textContent = 'Copied';
+        window.setTimeout(() => { tableButton.textContent = 'Copy table'; }, 1400);
+      }).catch(() => {});
+      return;
+    }
     const btn = target.closest('.md-code-copy') as HTMLButtonElement | null;
     if (!btn) return;
     const block = btn.closest('.md-code-block');
@@ -1522,6 +1535,50 @@ export function renderMarkdown(text: string): string {
     }
   }
 
+  function renderTableBlock(raw: string): string {
+    try {
+      const spec = JSON.parse(raw) as {
+        title?: string; caption?: string; density?: string; firstColumnSticky?: boolean;
+        columns?: Array<{ id?: string; label?: string; alignment?: string; type?: string }>;
+        rows?: Array<{ id?: string; cells?: Record<string, string | number | null>; status?: string }>;
+      };
+      const columns = (Array.isArray(spec.columns) ? spec.columns : []).filter(
+        (column) => column && typeof column.id === 'string' && typeof column.label === 'string'
+      ).slice(0, 8);
+      const rows = (Array.isArray(spec.rows) ? spec.rows : []).filter(
+        (row) => row && row.cells && typeof row.cells === 'object'
+      ).slice(0, 100);
+      if (columns.length < 2 || !rows.length) return '';
+      const title = typeof spec.title === 'string' ? spec.title.trim().slice(0, 140) : '';
+      const caption = typeof spec.caption === 'string' ? spec.caption.trim().slice(0, 240) : '';
+      const align = (value?: string): string => ['left', 'center', 'right'].includes(value || '') ? value! : 'left';
+      const visibleRows = rows.slice(0, 25);
+      const head = columns.map((column) =>
+        '<th scope="col" data-column="' + esc(column.id!) + '" style="text-align:' + align(column.alignment) + '">' +
+          inline(column.label!) + '</th>'
+      ).join('');
+      const body = visibleRows.map((row) => '<tr data-row-id="' + esc(String(row.id || '')) + '"' +
+        (row.status ? ' data-status="' + esc(String(row.status)) + '"' : '') + '>' +
+        columns.map((column, index) => {
+          const rawCell = row.cells?.[column.id!] ?? '';
+          const tag = index === 0 ? 'th scope="row"' : 'td';
+          return '<' + tag + ' data-label="' + esc(column.label!) + '" style="text-align:' + align(column.alignment) + '">' +
+            inline(String(rawCell)) + '</' + (index === 0 ? 'th' : 'td') + '>';
+        }).join('') + '</tr>').join('');
+      return '<section class="md-answer-table" data-answer-table data-density="' +
+        (spec.density === 'compact' ? 'compact' : 'comfortable') + '"' +
+        (spec.firstColumnSticky ? ' data-sticky-first="true"' : '') + '>' +
+        '<header class="md-answer-table__header">' +
+          (title ? '<strong>' + esc(title) + '</strong>' : '<span></span>') +
+          '<button type="button" class="md-table-copy" aria-label="Copy table">Copy table</button>' +
+        '</header><div class="md-answer-table__scroll"><table class="md-table">' +
+          (caption ? '<caption>' + inline(caption) + '</caption>' : '') +
+          '<thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+        (rows.length > 25 ? '<button type="button" class="md-table-show-all" data-total="' + rows.length + '">Show all ' + rows.length + '</button>' : '') +
+        '</section>';
+    } catch { return ''; }
+  }
+
   function inline(s: string): string {
     // Stash already-rendered math (and code spans) under sentinel placeholders
     // BEFORE escaping, so their trusted HTML survives the esc() pass that
@@ -1679,6 +1736,11 @@ export function renderMarkdown(text: string): string {
         i++;
         continue;
       }
+      if (/^(minallo-table|table-json)$/i.test(lang)) {
+        out.push(renderTableBlock(code.join('\n')));
+        i++;
+        continue;
+      }
       // Emit `class="language-X"` on <code> so highlight.js picks up the
       // language hint when present. Without a class, hljs auto-detects.
       const langClass = lang ? ' class="language-' + esc(lang) + '"' : '';
@@ -1760,14 +1822,14 @@ export function renderMarkdown(text: string): string {
       }
       const al = (idx: number): string => (aligns[idx] ? ' style="text-align:' + aligns[idx] + '"' : '');
       const thead = '<thead><tr>' +
-        headers.map((h, idx) => '<th' + al(idx) + '>' + inline(h) + '</th>').join('') +
+        headers.map((h, idx) => '<th scope="col"' + al(idx) + '>' + inline(h) + '</th>').join('') +
         '</tr></thead>';
       const tbody = '<tbody>' +
         bodyRows.map((cells) =>
           '<tr>' + headers.map((_, idx) => '<td' + al(idx) + '>' + inline(cells[idx] ?? '') + '</td>').join('') + '</tr>'
         ).join('') +
         '</tbody>';
-      out.push('<table class="md-table">' + thead + tbody + '</table>');
+      out.push('<section class="md-answer-table" data-answer-table><header class="md-answer-table__header"><span></span><button type="button" class="md-table-copy" aria-label="Copy table">Copy table</button></header><div class="md-answer-table__scroll"><table class="md-table">' + thead + tbody + '</table></div></section>');
       continue;
     }
 

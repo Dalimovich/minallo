@@ -133,6 +133,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const document = Array.isArray(insertResult.body) ? insertResult.body[0]! : insertResult.body as DocumentRow;
 
+  let indexingStarted = false;
+  let indexingErrorCode: string | null = null;
   if (pythonAiConfigured()) {
     const py = await forwardToPython('index-document', {
       userId: user.id, courseId, documentId: document.id, storagePath
@@ -140,9 +142,26 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (!py.ok) {
       const err = (py.body as { error?: string }).error;
       console.warn('[documents-upload] Python indexing failed:', py.status, err);
-    }
+      indexingErrorCode = 'indexing_start_failed';
+    } else indexingStarted = true;
   } else {
     console.warn('[documents-upload] AI service not configured — document stays unprocessed');
+    indexingErrorCode = 'indexing_service_unavailable';
+  }
+
+  if (!indexingStarted) {
+    await supaRequest(
+      'PATCH', 'documents?id=eq.' + encodeURIComponent(document.id),
+      { processing_status: 'failed', processing_error: indexingErrorCode }, serviceKey
+    );
+    return jsonResponse(503, {
+      documentId: document.id,
+      processingStatus: 'failed',
+      indexingStarted: false,
+      errorCode: indexingErrorCode,
+      retryable: true,
+      message: 'The file was uploaded, but AI indexing could not start.',
+    });
   }
 
   return jsonResponse(201, {
@@ -152,7 +171,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       courseId: document.course_id,
       sourceType: document.source_type,
       processingStatus: document.processing_status,
-      storagePath: document.storage_path
-    }
+      storagePath: document.storage_path,
+      indexingStarted: true
+    },
+    indexingStarted: true
   });
 };

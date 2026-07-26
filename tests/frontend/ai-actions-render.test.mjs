@@ -21,6 +21,30 @@ function renderActions(spec) {
   return renderMarkdown('```minallo-actions\n' + JSON.stringify(spec) + '\n```');
 }
 
+test('structured answer tables are semantic, bounded, and escaped', () => {
+  const html = renderMarkdown('```minallo-table\n' + JSON.stringify({
+    title: 'PVD vs CVD',
+    columns: [
+      { id: 'property', label: 'Property', alignment: 'left' },
+      { id: 'pvd', label: 'PVD', alignment: 'right' },
+    ],
+    rows: [{ id: 'temperature', cells: { property: '<img src=x onerror=alert(1)>', pvd: '$T$' } }],
+  }) + '\n```');
+  assert.match(html, /class="md-answer-table"/);
+  assert.match(html, /<th scope="col"/);
+  assert.match(html, /<th scope="row"/);
+  assert.match(html, /class="md-table-copy"/);
+  assert.ok(!html.includes('<img'));
+  assert.match(html, /&lt;img/);
+});
+
+test('ordinary markdown tables use the polished semantic wrapper', () => {
+  const html = renderMarkdown('| Property | PVD |\n|---|---:|\n| Temperature | Lower |');
+  assert.match(html, /data-answer-table/);
+  assert.match(html, /<th scope="col"/);
+  assert.match(html, /Copy table/);
+});
+
 test('valid minallo-actions renders allowlisted buttons', () => {
   const html = renderActions({
     actions: [

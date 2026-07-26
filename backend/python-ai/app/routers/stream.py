@@ -407,13 +407,29 @@ def _status_sse(status_key: str) -> bytes:
     return _sse_bytes(json.dumps({"status": status_key}, ensure_ascii=False))
 
 
-def _error_sse(*, code: str, message: str, retryable: bool, request_id: str) -> bytes:
+class TutorPipelineError(Exception):
+    def __init__(self, *, code: str, stage: str, message: str, retryable: bool,
+                 recoverable: bool, metadata: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.stage = stage
+        self.retryable = retryable
+        self.recoverable = recoverable
+        self.metadata = metadata or {}
+
+
+def _error_sse(*, code: str, message: str, retryable: bool, request_id: str,
+               stage: str = "unknown", recoverable: bool | None = None,
+               partial_answer_available: bool = False) -> bytes:
     return _sse_bytes(json.dumps({
         "type": "error",
         "error": True,
         "code": code,
         "message": message,
         "retryable": retryable,
+        "recoverable": retryable if recoverable is None else recoverable,
+        "stage": stage,
+        "partialAnswerAvailable": partial_answer_available,
         "requestId": request_id,
     }, ensure_ascii=False))
 
@@ -997,7 +1013,27 @@ async def ask_stream_endpoint(
                         yield _status_sse(last_status_key)
                         last_heartbeat = time.monotonic()
                     continue
-            prepared = await prepared_task
+            try:
+                prepared = await prepared_task
+            except (TimeoutError, ConnectionError, OSError) as exc:
+                log.warning(
+                    "tutor_pipeline_retry request_id=%s stage=conversation_state attempt=1 exception=%s",
+                    request_id, type(exc).__name__,
+                )
+                yield _status_sse("recovering_response")
+                await asyncio.sleep(0.45)
+                # The request identity, document snapshot and conversation
+                # generation stay unchanged, so downstream persistence remains
+                # idempotent while only the failed preparation stage is retried.
+                prepared = await _prepare_ask_stream_response(
+                    payload, user, status_queue.put_nowait, request_id,
+                    {
+                        "resolved_document_ids": resolved_ids,
+                        "document_name_resolution": document_name_resolution,
+                        "doc_name_map": preflight_doc_names,
+                        "documents": preflight_documents,
+                    },
+                )
             while not status_queue.empty():
                 if not await generation_is_current():
                     terminal_event_sent = True
@@ -1054,6 +1090,16 @@ async def ask_stream_endpoint(
                     retryable=True,
                     request_id=request_id,
                 )
+        except TutorPipelineError as exc:
+            terminal_event_sent = True
+            log.warning(
+                "tutor_pipeline_failed request_id=%s stage=%s error_code=%s retryable=%s",
+                request_id, exc.stage, exc.code, exc.retryable,
+            )
+            yield _error_sse(
+                code=exc.code, message=str(exc), retryable=exc.retryable,
+                request_id=request_id, stage=exc.stage, recoverable=exc.recoverable,
+            )
         except HTTPException as exc:
             terminal_event_sent = True
             typed_detail = exc.detail if isinstance(exc.detail, dict) else {}
@@ -1062,19 +1108,22 @@ async def ask_stream_endpoint(
                 message=str(typed_detail.get("message") or exc.detail),
                 retryable=bool(typed_detail.get("retryable", False)),
                 request_id=request_id,
+                stage=str(typed_detail.get("stage") or "request_validation"),
             )
         except asyncio.CancelledError:
             log.info("stream_cancelled request_id=%s", request_id)
             raise
-        except Exception:
+        except Exception as exc:
             log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
             if not terminal_event_sent:
                 terminal_event_sent = True
                 yield _error_sse(
                     code="internal_error",
                     message="Minallo could not complete this grounded answer.",
-                    retryable=False,
+                    retryable=True,
                     request_id=request_id,
+                    stage="unknown",
+                    recoverable=True,
                 )
         finally:
             log.info(
@@ -2228,6 +2277,7 @@ async def _prepare_ask_stream_response(
                 earliest_item_page=min(partial_item_pages) if partial_item_pages else None,
                 latest_item_page=max(partial_item_pages) if partial_item_pages else None,
                 complete=False,
+                scope_fingerprint=(extraction_context.scope_fingerprint if extraction_context else None),
             )
             save_extraction_context(partial_context)
             if tutor_state:
@@ -2310,6 +2360,10 @@ async def _prepare_ask_stream_response(
                 earliest_item_page=min(item_pages) if item_pages else None,
                 latest_item_page=max(item_pages) if item_pages else None,
                 complete=extraction.complete,
+                scope_extraction_complete=extraction.scope_extraction_complete,
+                answer_verification_complete=extraction.answer_verification_complete,
+                cumulative_scanned_pages=extraction.cumulative_scanned_pages,
+                scope_fingerprint=extraction.scope_fingerprint,
             )
             save_extraction_context(persisted_extraction_context)
             if tutor_state:

@@ -18,11 +18,15 @@ test('typed classification retains retry and partial-answer policy', () => {
     code: 'request_superseded',
     title: 'Response replaced',
     message: 'This answer was replaced by your newer question.',
-    retryable: false,
+    retryable: true,
     preservePartialAnswer: false,
     action: 'none',
   });
   const stalled = classifyAiError({ code: 'stream_inactivity_timeout' });
   assert.equal(stalled.preservePartialAnswer, true);
   assert.equal(stalled.action, 'continue');
+  const internal = classifyAiError({ code: 'internal_error', retryable: false, stage: 'unknown' });
+  assert.equal(internal.retryable, false);
+  assert.equal(internal.action, 'none');
+  assert.doesNotMatch(internal.message, /internal error/i);
 });

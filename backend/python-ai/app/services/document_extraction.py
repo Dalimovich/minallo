@@ -418,6 +418,10 @@ class DocumentExtractionContext:
     earliest_item_page: int | None = None
     latest_item_page: int | None = None
     complete: bool = False
+    scope_extraction_complete: bool = False
+    answer_verification_complete: bool = False
+    cumulative_scanned_pages: list[int] = field(default_factory=list)
+    scope_fingerprint: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -450,6 +454,10 @@ class DocumentExtractionResult:
     all_relevant_pages_scanned: bool = False
     all_items_have_answers: bool = False
     complete: bool = False
+    scope_extraction_complete: bool = False
+    answer_verification_complete: bool = False
+    cumulative_scanned_pages: list[int] = field(default_factory=list)
+    scope_fingerprint: str | None = None
     model: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -1346,6 +1354,28 @@ def extract_document_qa(
         target, all_text_by_page, total_pages=total_pages,
     )
     result.resolved_family = resolved_family
+    if resolved_family:
+        scope_payload = {
+            "document_revision": str(document.get("active_index_revision") or document.get("updated_at") or ""),
+            "target": resolved_family.family_name.casefold(),
+            "sections": [
+                [section.requested_number, section.matched_heading, section.start_page, section.end_page]
+                for section in resolved_family.matched_sections
+            ],
+        }
+        result.scope_fingerprint = hashlib.sha256(
+            json.dumps(scope_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()[:24]
+        if (
+            previous_context
+            and previous_context.scope_fingerprint
+            and previous_context.scope_fingerprint != result.scope_fingerprint
+        ):
+            log.info(
+                "document_scope_context_invalidated document=%s old=%s new=%s",
+                document_id, previous_context.scope_fingerprint, result.scope_fingerprint,
+            )
+            previous_context = None
     resolved_section = resolve_document_section(
         target,
         all_text_by_page,
@@ -2058,22 +2088,34 @@ def extract_document_qa(
     )
     result.new_item_count = max(0, len(result.items) - previous_count)
     expected_pages = question_page_scope if (numbered_section or resolved_family) else set(target_pages)
+    cumulative_scanned = set(result.scanned_pages)
+    if previous_context:
+        cumulative_scanned.update(previous_context.scanned_pages)
+    result.cumulative_scanned_pages = sorted(cumulative_scanned)
     result.all_relevant_pages_scanned = bool(
         expected_pages
-        and expected_pages.issubset(set(result.scanned_pages) | set(result.unreadable_pages))
+        and expected_pages.issubset(cumulative_scanned | set(result.unreadable_pages))
         and not set(result.unreadable_pages).intersection(expected_pages)
     )
     result.all_items_have_answers = bool(
         result.items and not result.unanswered_item_ids
     )
-    result.complete = bool(
+    result.scope_extraction_complete = bool(
         result.section_resolved
         and result.all_relevant_pages_scanned
-        and not result.unprocessed_pages
+        and not set(result.unprocessed_pages).intersection(expected_pages)
         and not result.invalid_item_ids_rejected
-        and result.all_items_have_answers
         and not result.duplicate_item_ids
+    )
+    result.answer_verification_complete = bool(
+        result.items
+        and result.all_items_have_answers
         and not result.conflicting_item_ids
+        and not result.answer_recovery_incomplete
+    )
+    result.complete = bool(
+        result.scope_extraction_complete
+        and result.answer_verification_complete
         and not any(
             gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
             for gap in result.gaps
@@ -2161,15 +2203,19 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
         "sections": sections,
         "coverage": {
             "totalPages": result.total_pages,
-            "pagesScanned": len(result.scanned_pages),
+            "pagesScanned": len(result.cumulative_scanned_pages or result.scanned_pages),
+            "thisRunPagesProcessed": len(result.scanned_pages),
+            "answerSearchPagesProcessed": len(result.cumulative_scanned_pages or result.scanned_pages),
             "questionPagesTotal": len({
                 page for section in family.matched_sections for page in section.question_pages
             }),
-            "questionPagesProcessed": len(set(result.scanned_pages).intersection({
+            "questionPagesProcessed": len(set(result.cumulative_scanned_pages or result.scanned_pages).intersection({
                 page for section in family.matched_sections for page in section.question_pages
             })),
             "unprocessedPages": result.unprocessed_pages,
             "complete": result.complete,
+            "scopeExtractionComplete": result.scope_extraction_complete,
+            "answerVerificationComplete": result.answer_verification_complete,
         },
         "outOfScopeItemsRejected": result.out_of_scope_items_rejected,
     }

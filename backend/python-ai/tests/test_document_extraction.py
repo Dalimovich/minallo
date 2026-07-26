@@ -707,3 +707,6 @@ def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
     questions = journey["sections"][0]["questions"]
     assert [question["number"] for question in questions] == ["5.9", "5.10"]
     assert questions[1]["answerStatus"] == "unresolved"
+    assert journey["coverage"]["scopeExtractionComplete"] is False
+    assert journey["coverage"]["answerVerificationComplete"] is False
+    assert journey["coverage"]["questionPagesTotal"] == 1

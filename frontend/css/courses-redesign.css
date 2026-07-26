@@ -74,6 +74,26 @@ textarea {
 .ncb-learning-journey__question > footer { margin-top:9px; color:#64748b; font-size:.68rem; }
 .ncb-learning-journey__status[data-state="unresolved"] { color:#1f1300; background:#fbbf24; }
 .ncb-learning-journey__status[data-state="source_unavailable"] { color:#fff; background:#ef4444; }
+.ncb-learning-journey__view-toggle { display:flex; width:max-content; margin:0 0 12px auto; padding:3px; border:1px solid rgba(148,163,184,.16); border-radius:10px; background:rgba(2,8,23,.35); }
+.ncb-learning-journey__view-toggle button { padding:6px 10px; border:0; border-radius:7px; color:#94a3b8; background:transparent; font:inherit; font-size:.72rem; cursor:pointer; }
+.ncb-learning-journey__view-toggle button[aria-pressed="true"] { color:#e0e7ff; background:rgba(59,130,246,.22); }
+.ncb-learning-journey[data-view="table"] .ncb-learning-journey__questions { display:none; }
+.ncb-learning-journey[data-view="cards"] .ncb-learning-journey__section-table { display:none; }
+.ncb-learning-journey__section-table { padding:0 12px 12px; }
+
+.md-answer-table { max-width:100%; margin:14px 0; overflow:hidden; border:1px solid rgba(96,165,250,.2); border-radius:15px; background:linear-gradient(145deg,rgba(15,28,52,.84),rgba(8,18,38,.72)); box-shadow:0 14px 34px rgba(2,8,23,.2); }
+.md-answer-table__header { display:flex; align-items:center; justify-content:space-between; min-height:38px; padding:7px 10px 7px 14px; border-bottom:1px solid rgba(148,163,184,.12); color:#eef2ff; }
+.md-table-copy,.md-table-show-all { border:1px solid rgba(96,165,250,.22); border-radius:8px; color:#bfdbfe; background:rgba(37,99,235,.1); padding:5px 9px; font:inherit; font-size:.7rem; cursor:pointer; }
+.md-answer-table__scroll { max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; }
+.md-answer-table .md-table { width:100%; margin:0; border-collapse:separate; border-spacing:0; color:#dbe4f3; font-size:.8rem; }
+.md-answer-table .md-table caption { padding:9px 14px; color:#94a3b8; text-align:left; caption-side:top; }
+.md-answer-table .md-table th,.md-answer-table .md-table td { padding:10px 13px; border:0; border-bottom:1px solid rgba(148,163,184,.1); vertical-align:top; white-space:normal; overflow-wrap:anywhere; }
+.md-answer-table .md-table thead th { position:sticky; top:0; z-index:1; color:#c7d2fe; background:rgba(30,50,82,.96); font-size:.72rem; letter-spacing:.02em; }
+.md-answer-table .md-table tbody tr:hover { background:rgba(59,130,246,.06); }
+.md-answer-table .md-table tbody tr:last-child > * { border-bottom:0; }
+.md-answer-table[data-sticky-first="true"] .md-table tr > :first-child { position:sticky; left:0; z-index:2; background:#10213c; }
+.md-answer-table[data-density="compact"] .md-table th,.md-answer-table[data-density="compact"] .md-table td { padding:7px 10px; }
+.md-table-show-all { margin:9px 12px; }
 @media (prefers-reduced-motion: reduce) { .ncb-learning-journey * { transition:none !important; } }
 @media (max-width: 640px) {
   .ncb-learning-journey { padding:14px; border-radius:16px; }
@@ -82,6 +102,7 @@ textarea {
   .ncb-learning-journey__content { padding-left:14px; }
   .ncb-learning-journey__section > summary { padding:12px 10px; }
   .ncb-learning-journey__section-badge { display:none; }
+  .md-answer-table .md-table { min-width:520px; }
 }
 
 /* Hero/section titles keep their Fredoka identity but at a lighter,

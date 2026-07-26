@@ -36,6 +36,7 @@ from .answer_intent import (
     wants_per_source_coverage,
 )
 from .answer import (
+    ADAPTIVE_TABLE_LAYOUT_RULE,
     DEFAULT_TUTOR_MODE,
     EQUATION_READABILITY_RULE,
     FIGURE_CHUNK_TYPES,
@@ -1689,6 +1690,7 @@ def stream_answer(
     wants_diagram = _wants_diagram(question, problem_solver) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks or (has_open and deictic)))
+    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file (e.g. a chapter the student didn't select).

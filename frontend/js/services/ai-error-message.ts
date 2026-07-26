@@ -5,6 +5,7 @@ export interface ClassifiedAiError {
   retryable: boolean;
   preservePartialAnswer: boolean;
   action: 'retry' | 'continue' | 'sign_in' | 'read_current_page' | 'none';
+  stage?: string;
 }
 
 type ErrorDetails = Omit<ClassifiedAiError, 'code'>;
@@ -13,8 +14,11 @@ const typedErrors: Record<string, ErrorDetails> = {
   stream_ended_without_terminal_event: { title: 'Answer interrupted', message: 'The connection ended before the answer was confirmed complete.', retryable: true, preservePartialAnswer: true, action: 'continue' },
   stream_inactivity_timeout: { title: 'Connection stalled', message: 'The tutor stopped sending updates. Please retry.', retryable: true, preservePartialAnswer: true, action: 'continue' },
   empty_completed_response: { title: 'Empty answer', message: 'The tutor finished without returning an answer.', retryable: true, preservePartialAnswer: false, action: 'retry' },
-  internal_error: { title: 'Tutor error', message: 'The tutor hit an internal error while answering.', retryable: true, preservePartialAnswer: true, action: 'retry' },
-  internal_stream_error: { title: 'Tutor error', message: 'The tutor hit an internal error while answering.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  internal_error: { title: 'Minallo could not finish this response', message: 'Your question and document context are preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  internal_stream_error: { title: 'Minallo could not finish this response', message: 'Your question and document context are preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  retrieval_timeout: { title: 'Document search took too long', message: 'Your file and question are still here.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  visual_page_render_failed: { title: 'Visual page reading paused', message: 'Minallo could not inspect the visual markings on this page.', retryable: true, preservePartialAnswer: true, action: 'read_current_page' },
+  generation_timeout: { title: 'The response took too long', message: 'Your grounded context is preserved and the answer can be retried.', retryable: true, preservePartialAnswer: true, action: 'retry' },
   shared_generation_check_failed: { title: 'Chat state unavailable', message: 'Minallo could not verify the active response state.', retryable: true, preservePartialAnswer: false, action: 'retry' },
   generation_state_unavailable: { title: 'Chat state unavailable', message: 'Minallo could not verify the active response state.', retryable: true, preservePartialAnswer: false, action: 'retry' },
   document_access_revoked: { title: 'Document access changed', message: 'Reopen the document before trying again.', retryable: false, preservePartialAnswer: false, action: 'read_current_page' },
@@ -28,9 +32,19 @@ const typedErrors: Record<string, ErrorDetails> = {
 
 /** Classify typed failures first; message matching is only a legacy fallback. */
 export function classifyAiError(error: unknown): ClassifiedAiError {
-  const typed = error && typeof error === 'object' ? error as { code?: unknown; retryable?: unknown } : null;
+  const typed = error && typeof error === 'object' ? error as { code?: unknown; retryable?: unknown; metadata?: { stage?: unknown }; stage?: unknown } : null;
   const code = typeof typed?.code === 'string' ? typed.code : '';
-  if (typedErrors[code]) return { code, ...typedErrors[code] };
+  if (typedErrors[code]) {
+    const known = typedErrors[code];
+    const retryable = typeof typed?.retryable === 'boolean' ? typed.retryable : known.retryable;
+    const result: ClassifiedAiError = {
+      code, ...known, retryable,
+      action: retryable ? known.action : 'none',
+    };
+    const stage = typed?.stage || typed?.metadata?.stage;
+    if (typeof stage === 'string' && stage) result.stage = stage;
+    return result;
+  }
 
   const raw = error instanceof Error ? error.message : String(error || '');
   const msg = raw.toLowerCase();
