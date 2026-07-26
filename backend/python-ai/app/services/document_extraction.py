@@ -473,6 +473,7 @@ class DocumentExtractionContext:
     answer_verification_complete: bool = False
     cumulative_scanned_pages: list[int] = field(default_factory=list)
     scope_fingerprint: str | None = None
+    resolved_family: ResolvedSectionFamily | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -696,7 +697,16 @@ def extraction_context_from_api(data: Any) -> DocumentExtractionContext | None:
         payload["created_at"] = datetime.fromisoformat(str(payload["created_at"]))
         payload["updated_at"] = datetime.fromisoformat(str(payload["updated_at"]))
         payload["extracted_questions"] = [
-            ExtractedQuestion(**item) for item in payload.get("extracted_questions", [])
+            ExtractedQuestion(
+                **{
+                    **item,
+                    "options": [
+                        ExtractedQuestionOption(**option)
+                        for option in item.get("options", [])
+                    ],
+                }
+            )
+            for item in payload.get("extracted_questions", [])
         ]
         payload["solution_evidence"] = [
             ExtractedSolutionEvidence(**item)
@@ -715,6 +725,14 @@ def extraction_context_from_api(data: Any) -> DocumentExtractionContext | None:
             for item_id, record in payload.get("answer_recovery_records", {}).items()
             if isinstance(record, dict)
         }
+        family = payload.get("resolved_family")
+        if isinstance(family, dict):
+            family_payload = dict(family)
+            family_payload["matched_sections"] = [
+                ResolvedDocumentSection(**section)
+                for section in family_payload.get("matched_sections", [])
+            ]
+            payload["resolved_family"] = ResolvedSectionFamily(**family_payload)
         return DocumentExtractionContext(**payload)
     except (KeyError, TypeError, ValueError):
         return None
@@ -1465,9 +1483,19 @@ def extract_document_qa(
     resolved_family = resolve_section_family(
         target, all_text_by_page, total_pages=total_pages,
     )
+    if (
+        not target_pages
+        and previous_context
+        and previous_context.resolved_family
+        and previous_context.scope_extraction_complete
+    ):
+        resolved_family = previous_context.resolved_family
     visual_heading_error: str | None = None
-    enforce_family_resolution = bool(family_requested and document.get("storage_path"))
-    if enforce_family_resolution and resolved_family is None and target_pages:
+    enforce_family_resolution = family_requested
+    if (
+        enforce_family_resolution and resolved_family is None and target_pages
+        and document.get("storage_path")
+    ):
         try:
             visual_headings = _discover_visual_section_headings(
                 document=document, total_pages=total_pages, target=target,
@@ -1571,6 +1599,20 @@ def extract_document_qa(
             set(range(1, total_pages + 1)) - set(all_text_by_page)
         )
         return result
+    if resolved_family and not any(
+        section.question_pages for section in resolved_family.matched_sections
+    ):
+        result.section_resolved = False
+        result.status = "section_scope_has_no_question_pages"
+        result.message = (
+            f'Minallo could not verify question pages for "{target}". '
+            "It did not extract questions from unrelated pages."
+        )
+        log.error(
+            "zero_question_page_invariant_triggered document=%s target=%s",
+            document_id, target,
+        )
+        return result
     question_page_scope = set(
         resolved_section.question_pages if resolved_section else
         [page for section in resolved_family.matched_sections for page in section.question_pages]
@@ -1628,6 +1670,14 @@ def extract_document_qa(
             result.extracted_questions,
             result.solution_evidence,
         )
+        if previous_context:
+            result.scope_extraction_complete = previous_context.scope_extraction_complete
+            result.answer_verification_complete = previous_context.answer_verification_complete
+            result.complete = previous_context.complete
+            result.scope_fingerprint = previous_context.scope_fingerprint
+            result.resolved_family = previous_context.resolved_family or result.resolved_family
+            result.cumulative_scanned_pages = list(previous_context.cumulative_scanned_pages)
+            result.scanned_pages = list(previous_context.scanned_pages)
         return result
     requested_pages = set(target_pages)
     page_rows = [
@@ -2011,6 +2061,22 @@ def extract_document_qa(
             item for item in result.solution_evidence
             if not item.normalized_item_id or item.normalized_item_id in allowed_ids
         ]
+    if family_requested and resolved_family is None and result.extracted_questions:
+        log.error(
+            "questions_returned_without_resolved_question_scope document=%s target=%s count=%d",
+            document_id, target, len(result.extracted_questions),
+        )
+        result.section_resolved = False
+        result.status = "questions_returned_without_resolved_question_scope"
+        result.message = (
+            "Minallo rejected an extraction because its complete section scope "
+            "could not be verified. No partial question list was shown."
+        )
+        result.extracted_questions = []
+        result.solution_evidence = []
+        result.paired_items = []
+        result.items = []
+        return result
     answers_by_id: dict[str, set[str]] = {}
     for evidence in result.solution_evidence:
         if evidence.normalized_item_id:

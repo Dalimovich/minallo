@@ -608,7 +608,7 @@ def test_question_and_solution_model_passes_are_independent(monkeypatch) -> None
         "_load_document_pages",
         lambda **_: (
             {"page_count": 1},
-            [{"page_number": 1, "cleaned_text": "Kurzfragen Lösung " * 30}],
+            [{"page_number": 1, "cleaned_text": "1. Kurzfragen - Grundlagen\n" + "Kurzfragen Lösung " * 30}],
         ),
     )
     systems: list[str] = []

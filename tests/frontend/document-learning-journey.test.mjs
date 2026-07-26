@@ -17,4 +17,7 @@ test('document extraction mounts a persistent Learning Journey accordion', () =>
   assert.match(shell, /minallo_journey_view_/);
   assert.match(shell, /Correct answer/);
   assert.match(css, /data-view="table"/);
+  assert.match(shell, /function isValidLearningJourney/);
+  assert.match(shell, /marker\.questionPagesTotal > 0/);
+  assert.match(shell, /No partial or out-of-scope question list was shown/);
 });

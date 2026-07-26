@@ -176,7 +176,7 @@ def test_full_scan_is_not_limited_by_displayed_source_count(monkeypatch) -> None
     pages = [
         {
             "page_number": page,
-            "cleaned_text": f"Kurzfragen Lösung page {page} " + ("content " * 20),
+            "cleaned_text": f"{page}. Kurzfragen - Bereich {page}\nLösung page {page} " + ("content " * 20),
             "raw_text": "",
         }
         for page in range(1, 9)
@@ -486,7 +486,7 @@ def test_unanswered_item_prevents_complete_status(monkeypatch) -> None:
         "_load_document_pages",
         lambda **_: (
             {"page_count": 1},
-            [{"page_number": 1, "cleaned_text": "Kurzfragen " * 20, "raw_text": ""}],
+            [{"page_number": 1, "cleaned_text": "1. Kurzfragen - Grundlagen\n" + "Kurzfragen " * 20, "raw_text": ""}],
         ),
     )
     monkeypatch.setattr(
@@ -742,6 +742,57 @@ def test_learning_journey_marks_resolved_empty_section_as_failed() -> None:
     assert journey is not None
     assert journey["sections"][0]["status"] == "failed"
     assert journey["sections"][0]["error"]["code"] == "section_questions_not_found"
+
+
+def test_all_kurzfragen_stops_when_family_scope_is_unresolved(monkeypatch) -> None:
+    from app.services import document_extraction as extraction
+
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: (
+            {"page_count": 43},
+            [{"page_number": 24, "cleaned_text": "12.20 Frage\n13.10 Rechnung"}],
+        ),
+    )
+    model_called = False
+
+    def forbidden_model_call(**_):
+        nonlocal model_called
+        model_called = True
+        raise AssertionError("model must not run without a resolved family scope")
+
+    monkeypatch.setattr(extraction, "chat_json", forbidden_model_call)
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="Kurzfragen",
+    )
+    assert result.status == "section_family_not_found"
+    assert result.items == []
+    assert result.resolved_family is None
+    assert model_called is False
+
+
+def test_verified_family_context_round_trips_independently_of_answers() -> None:
+    from app.services import document_extraction as extraction
+
+    family = extraction.ResolvedSectionFamily(
+        "Kurzfragen",
+        [extraction.ResolvedDocumentSection("2", "Grundlagen", "2. Kurzfragen", 2, 3, "2.", 0.96)],
+        ["12", "13", "14"], 0.96,
+    )
+    context = extraction.DocumentExtractionContext(
+        conversation_id="old-chat", document_id="doc", document_revision="rev",
+        source_fingerprint="hash", target_section="Kurzfragen",
+        requested_scope="complete_document", scope_extraction_complete=True,
+        scope_fingerprint="scope", resolved_family=family,
+    )
+    restored = extraction.extraction_context_from_api(
+        extraction.extraction_context_to_api(context)
+    )
+    assert restored is not None
+    assert restored.resolved_family is not None
+    assert restored.resolved_family.section_numbers == ["2"]
+    assert restored.resolved_family.excluded_sections == ["12", "13", "14"]
 
 
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:

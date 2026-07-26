@@ -734,6 +734,17 @@ function learningJourneyMarkerFromMeta(meta: Record<string, unknown>): LearningJ
   };
 }
 
+function isValidLearningJourney(marker: LearningJourneyMarker): boolean {
+  const questionsFound = (marker.sections || []).reduce(
+    (count, section) => count + section.questions.length,
+    0
+  );
+  return marker.scopeExtractionComplete
+    && marker.questionPagesTotal > 0
+    && questionsFound > 0
+    && (marker.outOfScopeItemsRejected || []).length === 0;
+}
+
 interface ConversationState {
   messages: ChatMessage[];
   pasted: PastedImage[];
@@ -4195,6 +4206,15 @@ function enhanceDocumentLearningJourney(
   marker: LearningJourneyMarker
 ): void {
   if (bubble.querySelector('.ncb-learning-journey')) return;
+  if (!isValidLearningJourney(marker)) {
+    bubble.innerHTML =
+      '<section class="ncb-learning-journey ncb-learning-journey--recovery" role="status">' +
+        '<h2>Rebuilding the document section map</h2>' +
+        '<p>I could not verify the complete Kurzfragen scope yet. ' +
+        'No partial or out-of-scope question list was shown.</p>' +
+      '</section>';
+    return;
+  }
   const headings = Array.from(bubble.querySelectorAll<HTMLHeadingElement>('h3'));
   const sections = (marker.sections || []).slice().sort(
     (a, b) => Number(a.sectionNumber) - Number(b.sectionNumber)

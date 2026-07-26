@@ -18,7 +18,7 @@ import json
 import re
 import time
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -2340,6 +2340,11 @@ async def _prepare_ask_stream_response(
         infer_extraction_rescan_direction,
         save_extraction_context,
     )
+    from ..services.document_extraction_cache import (  # noqa: WPS433
+        ExtractionCacheQuality,
+        load_verified_extraction_cache,
+        promote_verified_extraction_cache,
+    )
     document_extraction, extraction_correction, extraction_target = (
         classify_document_extraction(question, previous_turns_payload)
     )
@@ -2429,11 +2434,51 @@ async def _prepare_ask_stream_response(
             or document_revision
             or payload.activeDocumentId
         )
-        extraction_context = (
+        conversation_extraction_context = (
             extraction_context_from_api(tutor_state.document_extraction_context)
             if tutor_state and tutor_state.document_extraction_context
             else None
         )
+        durable_cache = await run_in_threadpool(lambda: load_verified_extraction_cache(
+            user_id=user_id,
+            document_id=payload.activeDocumentId or "",
+            document_revision=document_revision or "",
+            source_fingerprint=source_fingerprint,
+            target=extraction_target or "questions",
+        ))
+        durable_extraction_context = None
+        if durable_cache:
+            quality = dict(durable_cache.get("quality") or {})
+            scope = dict(durable_cache.get("scope") or {})
+            durable_extraction_context = extraction_context_from_api({
+                "conversation_id": payload.conversationId or "",
+                "document_id": payload.activeDocumentId or "",
+                "document_revision": document_revision,
+                "source_fingerprint": source_fingerprint,
+                "target_section": extraction_target or "questions",
+                "requested_scope": "complete_document",
+                "scanned_pages": list(scope.get("question_pages") or []),
+                "extracted_questions": list(durable_cache.get("questions") or []),
+                "solution_evidence": list(durable_cache.get("answer_evidence") or []),
+                "paired_items": list(durable_cache.get("paired_items") or []),
+                "unresolved_item_ids": [
+                    str(item.get("item_id") or "")
+                    for item in (durable_cache.get("paired_items") or [])
+                    if not item.get("answer_text")
+                ],
+                "complete": bool(quality.get("scope_complete")),
+                "scope_extraction_complete": bool(quality.get("scope_complete")),
+                "answer_verification_complete": all(
+                    bool(item.get("answer_text"))
+                    for item in (durable_cache.get("paired_items") or [])
+                ),
+                "cumulative_scanned_pages": list(scope.get("question_pages") or []),
+                "scope_fingerprint": durable_cache.get("scope_fingerprint"),
+                "resolved_family": scope.get("resolved_family"),
+                "created_at": durable_cache.get("created_at"),
+                "updated_at": durable_cache.get("updated_at"),
+            })
+        extraction_context = durable_extraction_context or conversation_extraction_context
         if extraction_context and (
             extraction_context.document_id != (payload.activeDocumentId or "")
             or extraction_context.source_fingerprint != source_fingerprint
@@ -2464,6 +2509,9 @@ async def _prepare_ask_stream_response(
                     if page not in already_scanned
                 ]
                 direction = "resume"
+            elif durable_extraction_context and extraction_context.scope_extraction_complete:
+                pages_to_scan = []
+                direction = "cached_verified"
         event_loop = asyncio.get_running_loop()
 
         def extraction_checkpoint(progress: dict[str, Any]) -> None:
@@ -2505,6 +2553,9 @@ async def _prepare_ask_stream_response(
                 latest_item_page=max(partial_item_pages) if partial_item_pages else None,
                 complete=False,
                 scope_fingerprint=(extraction_context.scope_fingerprint if extraction_context else None),
+                resolved_family=(
+                    extraction_context.resolved_family if extraction_context else None
+                ),
             )
             save_extraction_context(partial_context)
             if tutor_state:
@@ -2555,6 +2606,63 @@ async def _prepare_ask_stream_response(
                 ),
             )
         )
+        if (
+            durable_extraction_context
+            and not extraction.scope_extraction_complete
+        ):
+            log.warning(
+                "question_inventory_regression_prevented request_id=%s document=%s "
+                "previous_questions=%d candidate_questions=%d",
+                request_id, payload.activeDocumentId,
+                len(durable_extraction_context.extracted_questions),
+                len(extraction.extracted_questions),
+            )
+            extraction = await run_in_threadpool(lambda: extract_document_qa(
+                user_id=user_id,
+                course_id=payload.courseId,
+                document_id=payload.activeDocumentId or "",
+                target=extraction_target or "questions",
+                pages_to_scan=[],
+                previous_context=durable_extraction_context,
+                active_document_id=payload.activeDocumentId,
+            ))
+            direction = "cached_verified_regression_recovery"
+        if extraction.resolved_family and extraction.scope_extraction_complete:
+            question_pages = sorted({
+                page
+                for section in extraction.resolved_family.matched_sections
+                for page in section.question_pages
+            })
+            cache_quality = ExtractionCacheQuality(
+                scope_complete=True,
+                sections_found=len(extraction.resolved_family.matched_sections),
+                question_pages_processed=len(
+                    set(extraction.cumulative_scanned_pages or extraction.scanned_pages)
+                    .intersection(question_pages)
+                ),
+                question_pages_total=len(question_pages),
+                questions_found=len(extraction.extracted_questions),
+                out_of_scope_count=len(extraction.out_of_scope_items_rejected),
+                failed_pages=sorted(set(extraction.unreadable_pages + extraction.unprocessed_pages)),
+            )
+            await run_in_threadpool(lambda: promote_verified_extraction_cache(
+                user_id=user_id,
+                document_id=payload.activeDocumentId or "",
+                document_revision=document_revision or "",
+                source_fingerprint=source_fingerprint,
+                target=extraction_target or "questions",
+                scope_fingerprint=extraction.scope_fingerprint or "",
+                scope={
+                    "resolved_family": asdict(extraction.resolved_family),
+                    "question_pages": question_pages,
+                    "included_section_numbers": extraction.resolved_family.section_numbers,
+                    "excluded_section_numbers": extraction.resolved_family.excluded_sections,
+                },
+                questions=[asdict(item) for item in extraction.extracted_questions],
+                answer_evidence=[asdict(item) for item in extraction.solution_evidence],
+                paired_items=[asdict(item) for item in extraction.paired_items],
+                quality=cache_quality,
+            ))
         if payload.conversationId:
             scanned = sorted(set(
                 (extraction_context.scanned_pages if extraction_context else [])
@@ -2591,6 +2699,7 @@ async def _prepare_ask_stream_response(
                 answer_verification_complete=extraction.answer_verification_complete,
                 cumulative_scanned_pages=extraction.cumulative_scanned_pages,
                 scope_fingerprint=extraction.scope_fingerprint,
+                resolved_family=extraction.resolved_family,
             )
             save_extraction_context(persisted_extraction_context)
             if tutor_state:
