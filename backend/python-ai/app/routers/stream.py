@@ -949,12 +949,26 @@ async def ask_stream_endpoint(
                         user_id, payload.conversationId or ""
                     )
                 )
-            except Exception:
-                log.exception(
-                    "shared_generation_check_failed request_id=%s",
-                    request_id,
+            except Exception as first_exc:
+                log.warning(
+                    "shared_generation_check_retry request_id=%s exception=%s",
+                    request_id, type(first_exc).__name__,
                 )
-                return False
+                await asyncio.sleep(0.25)
+                try:
+                    persisted = await run_in_threadpool(
+                        lambda: current_persisted_generation(
+                            user_id, payload.conversationId or ""
+                        )
+                    )
+                except Exception as exc:
+                    raise TutorPipelineError(
+                        code="shared_generation_check_failed",
+                        stage="conversation_state",
+                        message="Minallo could not verify the active response state.",
+                        retryable=True,
+                        recoverable=True,
+                    ) from exc
             last_shared_generation_check = now
             last_shared_generation_result = (
                 persisted == payload.conversationGeneration

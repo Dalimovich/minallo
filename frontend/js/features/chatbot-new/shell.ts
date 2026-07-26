@@ -34,6 +34,7 @@ import {
 import { classifyAiError } from '../../services/ai-error-message.js';
 import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { aiMakePdfBlob } from '../ai-chat/ai-export.js';
 import { initWorkspaceLibrary } from './workspace-library.js';
 import {
   renderStudyToolConfiguration,
@@ -624,8 +625,25 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   interrupted?: boolean;
-  completionState?: 'complete' | 'interrupted';
+  completionState?: 'pending' | 'processing' | 'streaming' | 'recovering' | 'complete' | 'interrupted' | 'failed_recoverable' | 'failed_terminal';
   requestId?: string;
+  parentUserMessageId?: string;
+  regeneratedFromMessageId?: string;
+  generationVariant?: number;
+  exportable?: boolean;
+  retryable?: boolean;
+  errorCode?: string;
+  failureStage?: string;
+  recoveryAction?: 'retry' | 'continue' | 'sign_in' | 'read_current_page' | 'none';
+  requestSnapshot?: {
+    userText: string;
+    sourceMode: SourceMode;
+    selectedSourceIds: string[];
+    activeDocumentId?: string;
+    visiblePage?: number;
+  };
+  createdAt?: string;
+  updatedAt?: string;
   images?: PastedImage[];
   files?: PendingFile[];
   selectedSourceMode?: SourceMode;
@@ -930,44 +948,45 @@ async function doSend(
   const files = state.files.slice();
   if (!text && images.length === 0 && files.length === 0) return;
 
-  if (state.lastSendFailed) {
-    if (state.messages[state.messages.length - 1]?.role === 'user') state.messages.pop();
-    const trailingAi = msgs.lastElementChild;
-    if (trailingAi?.classList.contains('ncb-msg-row--ai')) trailingAi.remove();
-    const trailingUser = msgs.lastElementChild;
-    if (trailingUser?.classList.contains('ncb-msg-row--user')) trailingUser.remove();
-    state.lastSendFailed = false;
-  }
-
   // Switch to active-chat state on first send
   if (stage.dataset.state !== 'active') stage.dataset.state = 'active';
 
   // Append user bubble
-  state.messages.push({
-    id: 'ncb_msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
-    role: 'user', text, images, files
-  });
-  appendUserBubble(msgs, text, images, files);
+  const userMessage: ChatMessage = {
+    id: newChatMessageId(), role: 'user', text, images, files,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  };
+  state.messages.push(userMessage);
+  appendUserBubble(msgs, text, images, files, userMessage.id);
   touchActiveChat();
   saveChatStore();
 
   if (isInternalTechnicalQuestion(text)) {
-    const aiRow = appendAiBubble(msgs);
-    const bubble = aiRow.querySelector<HTMLElement>('.ncb-bubble-body');
     const raw = technicalRefusal();
+    const assistant: ChatMessage = {
+      id: newChatMessageId(), role: 'assistant', text: raw, allowDiagrams: false,
+      parentUserMessageId: userMessage.id, completionState: 'complete', exportable: true,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    const aiRow = appendAiBubble(msgs, assistant.id);
+    const bubble = aiRow.querySelector<HTMLElement>('.ncb-bubble-body');
     if (bubble) renderRichBubble(bubble, raw, false);
-    state.messages.push({ role: 'assistant', text: raw, allowDiagrams: false });
+    state.messages.push(assistant);
     setBubbleSubtitle(aiRow, 'study_only');
     touchActiveChat();
     saveChatStore();
-    appendBubbleActions(aiRow, raw);
+    appendBubbleActions(aiRow, raw, assistant);
     clearSentComposerDraft(state, stage, textarea, pasteRow);
     return;
   }
 
   const sent = await streamAiReply(state, sendBtn, msgs);
-  if (sent) clearSentComposerDraft(state, stage, textarea, pasteRow, text, files, images);
-  else state.lastSendFailed = true;
+  clearSentComposerDraft(state, stage, textarea, pasteRow, text, files, images);
+  state.lastSendFailed = !sent;
+}
+
+function newChatMessageId(): string {
+  return 'ncb_msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
 }
 
 function clearSentComposerDraft(
@@ -994,7 +1013,8 @@ function clearSentComposerDraft(
 async function streamAiReply(
   state: ConversationState,
   sendBtn: HTMLButtonElement,
-  msgs: HTMLElement
+  msgs: HTMLElement,
+  options: { targetMessage?: ChatMessage; targetRow?: HTMLElement; requestMessages?: ChatMessage[] } = {}
 ): Promise<boolean> {
   // Bind this reply to the chat it STARTED in. `state.messages` is a live
   // reference that loadActiveChatIntoCenter RE-POINTS on chat switch, so
@@ -1012,13 +1032,43 @@ async function streamAiReply(
   state.isSending = true;
   setSendBtnMode(sendBtn, 'pause');
 
-  const aiRow = appendAiBubble(msgs);
+  const sourceUser = [...(options.requestMessages || originMessages)].reverse().find((message) => message.role === 'user');
+  const nowIso = new Date().toISOString();
+  const assistantMessage = options.targetMessage || {
+    id: newChatMessageId(), role: 'assistant', text: '', parentUserMessageId: sourceUser?.id,
+    completionState: 'processing', exportable: false, retryable: true,
+    createdAt: nowIso, updatedAt: nowIso
+  } satisfies ChatMessage;
+  Object.assign(assistantMessage, {
+    text: '', completionState: 'processing', exportable: false, retryable: true,
+    errorCode: undefined, failureStage: undefined, recoveryAction: undefined,
+    interrupted: false, updatedAt: nowIso
+  });
+  if (!assistantMessage.requestSnapshot) {
+    const pdf = getActivePdfContext();
+    assistantMessage.requestSnapshot = {
+      userText: sourceUser?.text || '',
+      sourceMode: normaliseSourceMode(originChat.sourceMode),
+      selectedSourceIds: originChat.selectedSourceIds.slice(),
+      activeDocumentId: pdf?.documentId,
+      visiblePage: pdf?.visiblePage,
+    };
+  }
+  if (!originMessages.some((message) => message.id === assistantMessage.id)) originMessages.push(assistantMessage);
+  const requestMessages = options.requestMessages || originMessages.filter((message) => message.id !== assistantMessage.id);
+  const requestState: ConversationState = { ...state, messages: requestMessages };
+  touchOrigin();
+  saveChatStore();
+
+  const aiRow = options.targetRow || appendAiBubble(msgs, assistantMessage.id);
+  aiRow.dataset.messageId = assistantMessage.id || '';
+  setBubbleSubtitle(aiRow, undefined, 'pending');
   const bubble = aiRow.querySelector<HTMLElement>('.ncb-bubble-body');
   const thinking = createAIThinkingStatus({
-    context: chatbotThinkingContext(state),
+    context: chatbotThinkingContext(requestState),
     // Specific first message from real request context (selected file, exam,
     // quiz, …) instead of the coarse context bucket — matches the side panel.
-    status: chatbotInitialStatus(state),
+    status: chatbotInitialStatus(requestState),
     host: bubble,
     surface: 'chatbot',
     compact: true,
@@ -1045,38 +1095,38 @@ async function streamAiReply(
     }
   };
 
-  const allowDiagrams = latestUserAllowsDiagrams(originMessages);
+    const allowDiagrams = latestUserAllowsDiagrams(requestMessages);
   try {
-    const latestFileLabel = latestUserFileLabel(originMessages);
+    const latestFileLabel = latestUserFileLabel(requestMessages);
     // Phase 12 wiring: when the active chat has ≥1 course-imported source
     // Grounded course files, active-PDF captures, and pasted screenshots use
     // /ask-stream. Arbitrary non-indexed file attachments retain their
     // explicit generic attachment policy; images are never silently omitted.
-    const routed = await handleIntentRoute(state, bubble, thinking, controller);
+    const routed = await handleIntentRoute(requestState, bubble, thinking, controller);
     if (routed) {
-      const msg: ChatMessage = { role: 'assistant', text: routed.text };
-      if (routed.missionMarker) msg.missionMarker = routed.missionMarker;
-      if (routed.generatedDoc) msg.generatedDoc = routed.generatedDoc;
-      if (routed.studyToolConfiguration) msg.studyToolConfiguration = routed.studyToolConfiguration;
-      originMessages.push(msg);
+      Object.assign(assistantMessage, {
+        text: routed.text, completionState: 'complete', exportable: true, retryable: false,
+        updatedAt: new Date().toISOString(), missionMarker: routed.missionMarker,
+        generatedDoc: routed.generatedDoc, studyToolConfiguration: routed.studyToolConfiguration
+      });
       touchOrigin();
       saveChatStore();
       if (isOriginActive()) {
         setBubbleSubtitle(aiRow, routed.studyToolConfiguration ? 'study_tool' : 'course_files');
-        appendBubbleActions(aiRow, routed.text);
+        appendBubbleActions(aiRow, routed.text, assistantMessage);
       }
       reconcileView();
       return true;
     }
 
-    const rag = ragEligibility(originMessages);
+    const rag = ragEligibility(requestMessages);
     let raw: string;
     if (rag) {
       // History = everything BEFORE the just-added user turn (which is
       // already in rag.question). Without this the backend retrieves on
       // the literal text "I don't know" and falls into PARTIAL mode
       // instead of recognising the message as a reply to its own question.
-      const priorTurns = originMessages
+      const priorTurns = requestMessages
         .slice(0, -1)
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text)
         .map((m) => ({
@@ -1087,22 +1137,22 @@ async function streamAiReply(
       // before a refresh) rides along as openFileContext — the backend
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
-      const followUpDoc = await resolveFollowUpDoc(originMessages, rag.courseId || null);
+      const followUpDoc = await resolveFollowUpDoc(requestMessages, rag.courseId || null);
       const durable = await ensureDurableConversation(originChat, {
         courseId: rag.courseId,
         activeDocumentId: rag.activePdfContext?.documentId,
         titleSeed: originChat.title,
-        message: originMessages.at(-1)
+        message: requestMessages.at(-1)
       });
       const streamed = await streamFromAskStream(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
         rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams,
-        rag.activePdfContext, durable.conversationId, originMessages.at(-1)?.images || [], true
+        rag.activePdfContext, durable.conversationId, requestMessages.at(-1)?.images || [], true
       );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
-      originMessages.push({
-        role: 'assistant',
+      Object.assign(assistantMessage, {
         text: raw,
+        completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString(),
         allowDiagrams,
         selectedSourceMode: streamed.meta?.selectedSourceMode as SourceMode | undefined,
         sourceScope: streamed.meta?.sourceScope as string | undefined,
@@ -1125,19 +1175,19 @@ async function streamAiReply(
         "You're in **Course Files** mode, but no course files are attached to this chat yet, so there's nothing for me to search. Click the **import** button (the folder icon next to the message box) to add files from one of your courses, then ask again — or switch the source selector to **Auto** or **Internet**."
       );
       if (isOriginActive() && bubble) renderRichBubble(bubble, raw, false);
-      originMessages.push({ role: 'assistant', text: raw, allowDiagrams: false });
+      Object.assign(assistantMessage, { text: raw, allowDiagrams: false, completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString() });
       if (isOriginActive()) setBubbleSubtitle(aiRow, 'course_files');
     } else {
-      const followUpDoc = await resolveFollowUpDoc(originMessages, null);
-      raw = await callGenericAi(originMessages, bubble, controller, thinking, followUpDoc, allowDiagrams);
+      const followUpDoc = await resolveFollowUpDoc(requestMessages, null);
+      raw = await callGenericAi(requestMessages, bubble, controller, thinking, followUpDoc, allowDiagrams);
       raw = sanitizeChatbotDiagrams(raw, allowDiagrams);
-      originMessages.push({ role: 'assistant', text: raw, allowDiagrams });
+      Object.assign(assistantMessage, { text: raw, allowDiagrams, completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString() });
       // Generic chat path — no course retrieval ran, so don't claim otherwise.
       if (isOriginActive()) setBubbleSubtitle(aiRow, latestFileLabel ? 'file:' + latestFileLabel : 'general_knowledge');
     }
     touchOrigin();
     saveChatStore();
-    if (isOriginActive()) appendBubbleActions(aiRow, raw);
+    if (isOriginActive()) appendBubbleActions(aiRow, raw, assistantMessage);
     reconcileView();
 
     // After the first AI reply, ask the model for a 4-6 word title — only while
@@ -1150,6 +1200,26 @@ async function streamAiReply(
     return true;
   } catch (err) {
     thinking?.remove(true);
+    const partialText = err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
+      ? sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams).trim() : '';
+    const interrupted = (err as Error)?.name === 'AbortError' || !!partialText;
+    const classifiedFailure = classifyAiError(err);
+    Object.assign(assistantMessage, {
+      text: partialText,
+      completionState: interrupted && partialText ? 'interrupted' : 'failed_recoverable',
+      interrupted,
+      exportable: !!partialText,
+      retryable: classifiedFailure.retryable,
+      errorCode: classifiedFailure.code,
+      failureStage: classifiedFailure.stage || (err instanceof AskStreamError
+        ? String(err.metadata?.stage || err.metadata?.failureStage || '') : 'unknown'),
+      recoveryAction: classifiedFailure.action,
+      requestId: err instanceof AskStreamError && typeof err.metadata?.requestId === 'string'
+        ? err.metadata.requestId : assistantMessage.requestId,
+      updatedAt: new Date().toISOString()
+    });
+    touchOrigin();
+    saveChatStore();
     if (isOriginActive()) setBubbleSubtitle(aiRow, undefined, 'failed');
     if (isOriginActive() && bubble) {
       if ((err as Error)?.name === 'AbortError') {
@@ -1170,22 +1240,15 @@ async function streamAiReply(
         attachSubscribeCta(aiRow, bubble);
       } else if (err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
         && err.metadata.partialAnswer.trim()) {
-        const partial = sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams);
-        originMessages.push({
-          role: 'assistant', text: partial, allowDiagrams, interrupted: true,
-          completionState: 'interrupted',
-          requestId: typeof err.metadata.requestId === 'string' ? err.metadata.requestId : undefined,
-        });
-        touchOrigin();
-        saveChatStore();
-        renderRichBubble(bubble, partial, allowDiagrams);
+        renderRichBubble(bubble, partialText, allowDiagrams);
         const note = document.createElement('div');
         note.className = 'ncb-bubble-aborted';
         note.textContent = 'This answer was interrupted before completion. You can retry to continue.';
         bubble.appendChild(note);
         attachErrorRetry(aiRow, bubble);
+        appendBubbleActions(aiRow, partialText, assistantMessage);
       } else {
-        const failure = classifyAiError(err);
+        const failure = classifiedFailure;
         const requestId = err instanceof AskStreamError && typeof err.metadata?.requestId === 'string'
           ? err.metadata.requestId : '';
         bubble.innerHTML =
@@ -1194,7 +1257,7 @@ async function streamAiReply(
             '<p>' + escapeHtml(failure.message) + '</p>' +
             (requestId ? '<small>Reference: ' + escapeHtml(requestId.slice(0, 8)) + '</small>' : '') +
           '</section>';
-        if (failure.retryable) attachErrorRetry(aiRow, bubble);
+        attachStructuredRecoveryAction(aiRow, bubble, assistantMessage, failure);
       }
     }
     return false;
@@ -3541,10 +3604,13 @@ function appendUserBubble(
   msgs: HTMLElement,
   text: string,
   images: PastedImage[],
-  files: PendingFile[] = []
+  files: PendingFile[] = [],
+  messageId?: string
 ): void {
   const row = document.createElement('div');
   row.className = 'ncb-msg-row ncb-msg-row--user';
+  if (messageId) row.dataset.messageId = messageId;
+  row.dataset.role = 'user';
   const attachments = images
     .filter((img) => !!img.dataUrl)
     .map(
@@ -3569,9 +3635,11 @@ function appendUserBubble(
   scrollMsgsToBottom(msgs);
 }
 
-function appendAiBubble(msgs: HTMLElement): HTMLElement {
+function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTMLElement | null): HTMLElement {
   const row = document.createElement('div');
   row.className = 'ncb-msg-row ncb-msg-row--ai';
+  if (messageId) row.dataset.messageId = messageId;
+  row.dataset.role = 'assistant';
   row.innerHTML = `
     <div class="ncb-avatar" aria-hidden="true">
       <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3589,7 +3657,8 @@ function appendAiBubble(msgs: HTMLElement): HTMLElement {
       <div class="ncb-bubble-body"></div>
     </div>
   `;
-  msgs.appendChild(row);
+  if (insertAfter?.parentElement === msgs) insertAfter.insertAdjacentElement('afterend', row);
+  else msgs.appendChild(row);
   scrollMsgsToBottom(msgs);
   return row;
 }
@@ -4305,18 +4374,30 @@ function renderRichBubble(bubble: HTMLElement, raw: string, allowDiagrams = true
 
 // ============ PR-04: AI bubble actions, import modal, context tabs, title gen ============
 
-function appendBubbleActions(aiRow: HTMLElement, raw: string): void {
+const activeAssistantPdfExports = new Set<string>();
+
+function appendBubbleActions(aiRow: HTMLElement, raw: string, message?: ChatMessage): void {
   if (aiRow.querySelector('.ncb-bubble-actions')) return;
   const bubble = aiRow.querySelector<HTMLElement>('.ncb-bubble--ai');
   if (!bubble) return;
 
+  const messageId = message?.id || aiRow.dataset.messageId || '';
+  const exportable = message ? message.exportable !== false && !!raw.trim()
+    && (message.completionState === 'complete' || message.completionState === 'interrupted' || !message.completionState)
+    : !!raw.trim();
+
   const bar = document.createElement('div');
   bar.className = 'ncb-bubble-actions';
+  bar.dataset.assistantActions = 'true';
   bar.innerHTML = `
     <button type="button" class="ncb-bubble-action" data-action="copy" title="${escapeAttr(tStr('cb_act_copy', 'Copy'))}">
       <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
       <span>${escapeHtml(tStr('cb_act_copy', 'Copy'))}</span>
     </button>
+    ${exportable ? `<button type="button" class="ncb-bubble-action" data-action="download-pdf" aria-label="Download this response as a PDF" title="Download this response as a PDF">
+      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      <span>Download PDF</span>
+    </button>` : ''}
     <button type="button" class="ncb-bubble-action" data-action="regen" title="${escapeAttr(tStr('cb_act_regen', 'Regenerate'))}">
       <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
       <span>${escapeHtml(tStr('cb_act_regen', 'Regenerate'))}</span>
@@ -4339,6 +4420,7 @@ function appendBubbleActions(aiRow: HTMLElement, raw: string): void {
     if (!target) return;
     const action = target.dataset.action;
     if (action === 'copy') copyToClipboard(raw, target);
+    else if (action === 'download-pdf') void downloadAssistantResponsePdf(messageId, raw, message, target as HTMLButtonElement);
     else if (action === 'regen') regenerateLast(aiRow);
     else if (action === 'save') saveReplyToNotes(aiRow, raw, target);
     else if (action === 'thumb-up' || action === 'thumb-down') {
@@ -5463,6 +5545,22 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     id: m.id,
     role: m.role,
     text: truncateForStorage(m.text || '', NCB_MAX_STORED_MESSAGE_CHARS),
+    completionState: m.completionState,
+    requestId: m.requestId,
+    parentUserMessageId: m.parentUserMessageId,
+    regeneratedFromMessageId: m.regeneratedFromMessageId,
+    generationVariant: m.generationVariant,
+    exportable: m.exportable,
+    retryable: m.retryable,
+    errorCode: m.errorCode,
+    failureStage: m.failureStage,
+    recoveryAction: m.recoveryAction,
+    requestSnapshot: m.requestSnapshot ? {
+      ...m.requestSnapshot,
+      selectedSourceIds: m.requestSnapshot.selectedSourceIds.slice(),
+    } : undefined,
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
   };
   if (m.images?.length) {
     compact.images = m.images.map((img) => ({
@@ -5593,6 +5691,107 @@ function selectedSourceIdsFromChats(chats: SavedChat[]): Set<string> {
 
 let _ncbLoadedUid: string | null = null;
 
+function repairConversationIntegrity(messages: ChatMessage[]): void {
+  let latestUser: ChatMessage | null = null;
+  const answered = new Set<string>();
+  messages.forEach((message) => {
+    if (!message.id) message.id = newChatMessageId();
+    if (!message.createdAt) message.createdAt = new Date().toISOString();
+    if (!message.updatedAt) message.updatedAt = message.createdAt;
+    if (message.role === 'user') {
+      latestUser = message;
+      return;
+    }
+    if (!message.parentUserMessageId) message.parentUserMessageId = latestUser?.id;
+    if (message.parentUserMessageId) answered.add(message.parentUserMessageId);
+    if (!message.completionState) message.completionState = message.text.trim() ? 'complete' : 'failed_recoverable';
+    if (message.exportable == null) message.exportable = message.text.trim().length > 0
+      && (message.completionState === 'complete' || message.completionState === 'interrupted');
+    if (message.completionState === 'pending' || message.completionState === 'processing'
+      || message.completionState === 'streaming' || message.completionState === 'recovering') {
+      message.completionState = 'failed_recoverable';
+      message.retryable = true;
+      message.exportable = false;
+      message.errorCode ||= 'interrupted_while_processing';
+      message.failureStage ||= 'stream_transport';
+      message.recoveryAction ||= 'retry';
+    }
+  });
+  const orphans = messages.filter((message) => message.role === 'user' && message.id && !answered.has(message.id));
+  orphans.forEach((user) => {
+    const index = messages.findIndex((message) => message.id === user.id);
+    if (index < 0) return;
+    messages.splice(index + 1, 0, {
+      id: newChatMessageId(), role: 'assistant', text: '', parentUserMessageId: user.id,
+      completionState: 'failed_recoverable', exportable: false, retryable: true,
+      errorCode: 'orphaned_response', failureStage: 'unknown', recoveryAction: 'retry',
+      requestSnapshot: { userText: user.text, sourceMode: 'auto', selectedSourceIds: [] },
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    });
+    console.warn('[ncb] orphaned user message repaired', { messageId: user.id });
+  });
+}
+
+async function downloadAssistantResponsePdf(
+  messageId: string,
+  raw: string,
+  message: ChatMessage | undefined,
+  button: HTMLButtonElement
+): Promise<void> {
+  const key = messageId || raw.slice(0, 80);
+  if (activeAssistantPdfExports.has(key)) return;
+  activeAssistantPdfExports.add(key);
+  const label = button.querySelector<HTMLElement>('span');
+  const previous = label?.textContent || 'Download PDF';
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  if (label) label.textContent = 'Preparing PDF…';
+  const incomplete = message?.completionState === 'interrupted'
+    ? '> **Incomplete response:** This response was interrupted before completion.\n\n' : '';
+  const sourceLines = (message?.sources || []).map((source) => `- ${source.file_name || source.title || 'Course source'}${source.pages ? `, page ${source.pages}` : ''}`);
+  const structured = message?.learningJourney ? learningJourneyPdfText(message.learningJourney) : '';
+  const content = incomplete + raw + (structured ? `\n\n${structured}` : '')
+    + (sourceLines.length ? `\n\n## Sources\n${sourceLines.join('\n')}` : '');
+  try {
+    const blob = await aiMakePdfBlob('Minallo AI response', content);
+    if (!blob) throw new Error('pdf_generation_returned_no_file');
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = `Minallo-response-${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(href), 1_000);
+  } catch (error) {
+    console.error('[ncb] assistant_pdf_export_failed', {
+      messageId, contentType: message?.learningJourney ? 'learning_journey' : 'markdown',
+      stage: 'pdf_generation', errorCode: error instanceof Error ? error.name : 'unknown'
+    });
+    window.showToast?.('The PDF could not be created.', 'Try again from the response actions.');
+  } finally {
+    activeAssistantPdfExports.delete(key);
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    if (label) label.textContent = previous;
+  }
+}
+
+function learningJourneyPdfText(marker: LearningJourneyMarker): string {
+  if (!marker.sections?.length) return '';
+  const lines: string[] = ['# Learning Journey', `## ${marker.title}`];
+  for (const section of marker.sections) {
+    lines.push('', `### ${section.sectionNumber} ${section.title}`.trim());
+    for (const question of section.questions) {
+      lines.push('', `**${question.number}. ${question.question}**`);
+      lines.push(question.answer?.trim() || `_${question.answerStatus.replaceAll('_', ' ')}_`);
+      const page = question.answerPage || question.questionPage;
+      if (page) lines.push(`_Page ${page}_`);
+    }
+  }
+  return lines.join('\n');
+}
+
 function loadChatStore(): void {
   const uid = ncbCurrentUid();
   // Account changed within one page session. SIGNED_OUT normally reloads the
@@ -5656,6 +5855,7 @@ function loadChatStore(): void {
       c.persistenceStatus = c.persistedId ? 'persisted' : 'local';
     }
     if (!Array.isArray(c.messages)) c.messages = [];
+    repairConversationIntegrity(c.messages);
     if (!Array.isArray(c.attachedFolders)) c.attachedFolders = [];
     if (!Array.isArray(c.selectedSourceIds)) c.selectedSourceIds = [];
     if (!Array.isArray(c.savedReplies)) c.savedReplies = [];
@@ -5900,6 +6100,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   if (!stage || !msgs) return;
 
   const chat = chatStore.getActive();
+  if (repairOrphanedAssistantMessages(chat)) saveChatStore();
 
   // A reply for this chat may still be streaming in the background (the user
   // switched away and came back). Re-attach its live row below the history and
@@ -5949,18 +6150,54 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
 
 function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   if (m.role === 'user') {
-    appendUserBubble(msgs, m.text, m.images || [], m.files || []);
+    appendUserBubble(msgs, m.text, m.images || [], m.files || [], m.id);
     return;
   }
-  const row = appendAiBubble(msgs);
+  const row = appendAiBubble(msgs, m.id);
   // Restored history must not re-pop interactive minallo-input modals (see
   // promoteAiInputToModal's [data-restored] guard) — forms stay inline.
   row.setAttribute('data-restored', 'true');
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
 
+  if (bubble && m.completionState && ['pending', 'processing', 'recovering'].includes(m.completionState)) {
+    bubble.innerHTML = '<section class="ncb-tutor-recovery"><strong>Minallo is continuing this response…</strong><p>Your question and saved context are preserved.</p></section>';
+    m.completionState = 'failed_recoverable';
+    m.errorCode ||= 'interrupted_while_processing';
+    m.recoveryAction ||= 'retry';
+    m.retryable = true;
+    attachStructuredRecoveryAction(row, bubble, m, classifyAiError({ code: m.errorCode, retryable: true }));
+    return;
+  }
+  if (bubble && (m.completionState === 'failed_recoverable' || m.completionState === 'failed_terminal')) {
+    const failure = classifyAiError({
+      code: m.errorCode || 'orphaned_response', retryable: m.retryable !== false,
+      stage: m.failureStage,
+    });
+    bubble.innerHTML = '<section class="ncb-tutor-recovery" role="alert"><strong>' +
+      escapeHtml(m.errorCode === 'orphaned_response' ? 'This response did not complete' : failure.title) +
+      '</strong><p>' + escapeHtml(m.errorCode === 'orphaned_response'
+        ? 'Your request is preserved and can be tried again.' : failure.message) + '</p>' +
+      (m.requestId ? '<small>Reference: ' + escapeHtml(m.requestId.slice(0, 8)) + '</small>' : '') + '</section>';
+    attachStructuredRecoveryAction(row, bubble, m, failure);
+    return;
+  }
+  if (bubble && m.completionState === 'interrupted') {
+    renderRichBubble(bubble, m.text, !!m.allowDiagrams);
+    const note = document.createElement('div');
+    note.className = 'ncb-bubble-aborted';
+    note.textContent = 'This answer stopped before completion.';
+    bubble.appendChild(note);
+    attachStructuredRecoveryAction(row, bubble, m, classifyAiError({
+      code: m.errorCode || 'stream_ended_without_terminal_event', retryable: true,
+    }));
+    appendBubbleActions(row, m.text, m);
+    return;
+  }
+
   if (m.studyToolConfiguration && bubble) {
     renderStudyToolConfiguration(bubble, m.studyToolConfiguration);
     setBubbleSubtitle(row, 'study_tool');
+    appendBubbleActions(row, m.text, m);
     return;
   }
 
@@ -6009,7 +6246,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
           });
       });
     }
-    appendBubbleActions(row, m.text);
+    appendBubbleActions(row, m.text, m);
     return;
   }
 
@@ -6026,7 +6263,65 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
       sources: m.sources || [],
     });
   }
-  appendBubbleActions(row, m.text);
+  if (m.completionState === 'interrupted' && bubble) {
+    const note = document.createElement('div');
+    note.className = 'ncb-bubble-aborted';
+    note.textContent = 'This response was interrupted before completion.';
+    bubble.appendChild(note);
+  }
+  appendBubbleActions(row, m.text, m);
+}
+
+function repairOrphanedAssistantMessages(chat: SavedChat): boolean {
+  let changed = false;
+  for (const message of chat.messages) {
+    if (message.role === 'assistant' && message.completionState
+      && ['pending', 'processing', 'recovering'].includes(message.completionState)) {
+      message.completionState = 'failed_recoverable';
+      message.errorCode ||= 'interrupted_while_processing';
+      message.failureStage ||= 'stream_transport';
+      message.recoveryAction ||= 'retry';
+      message.retryable = true;
+      changed = true;
+    }
+  }
+  const explicitlyPaired = new Set(
+    chat.messages.filter((message) => message.role === 'assistant' && message.parentUserMessageId)
+      .map((message) => message.parentUserMessageId as string)
+  );
+  // Pair legacy alternating messages before deciding that a user turn is an
+  // orphan. This avoids manufacturing cards for old, valid conversations.
+  let pendingUser: ChatMessage | null = null;
+  for (const message of chat.messages) {
+    if (message.role === 'user') pendingUser = message;
+    else if (pendingUser && !message.parentUserMessageId) {
+      message.parentUserMessageId = pendingUser.id;
+      if (pendingUser.id) explicitlyPaired.add(pendingUser.id);
+      changed = true;
+      pendingUser = null;
+    } else if (message.role === 'assistant' && pendingUser) {
+      pendingUser = null;
+    }
+  }
+  const repaired: ChatMessage[] = [];
+  for (const message of chat.messages) {
+    repaired.push(message);
+    if (message.role !== 'user' || !message.id || explicitlyPaired.has(message.id)) continue;
+    repaired.push({
+      id: newChatMessageId(), role: 'assistant', text: '',
+      parentUserMessageId: message.id, completionState: 'failed_recoverable',
+      errorCode: 'orphaned_response', failureStage: 'unknown', recoveryAction: 'retry',
+      retryable: true, exportable: false,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      requestSnapshot: {
+        userText: message.text, sourceMode: normaliseSourceMode(chat.sourceMode),
+        selectedSourceIds: chat.selectedSourceIds.slice(),
+      },
+    });
+    changed = true;
+  }
+  if (changed) chat.messages = repaired;
+  return changed;
 }
 
 function renderConversationMessages(
@@ -6036,6 +6331,10 @@ function renderConversationMessages(
 ): void {
   const runId = ++messageRenderRun;
   msgs.innerHTML = '';
+  const trailingId = trailingRow?.dataset.messageId || '';
+  const visibleMessages = trailingId
+    ? messages.filter((message) => message.id !== trailingId)
+    : messages;
 
   // A still-streaming reply for this chat (re-attached on switch-back) must sit
   // BELOW all restored history, so append it only once the chunked render of the
@@ -6047,13 +6346,13 @@ function renderConversationMessages(
     }
   };
 
-  if (!messages.length) { attachTrailing(); return; }
+  if (!visibleMessages.length) { attachTrailing(); return; }
 
   let index = 0;
-  const firstChunk = Math.min(messages.length, 2);
+  const firstChunk = Math.min(visibleMessages.length, 2);
   suppressMessageAutoScroll = true;
   try {
-    while (index < firstChunk) appendStoredMessage(msgs, messages[index++]!);
+    while (index < firstChunk) appendStoredMessage(msgs, visibleMessages[index++]!);
   } finally {
     suppressMessageAutoScroll = false;
   }
@@ -6063,16 +6362,16 @@ function renderConversationMessages(
     if (runId !== messageRenderRun) return;
     suppressMessageAutoScroll = true;
     try {
-      const end = Math.min(index + 4, messages.length);
-      while (index < end) appendStoredMessage(msgs, messages[index++]!);
+      const end = Math.min(index + 4, visibleMessages.length);
+      while (index < end) appendStoredMessage(msgs, visibleMessages[index++]!);
     } finally {
       suppressMessageAutoScroll = false;
     }
     scrollMsgsToBottom(msgs);
-    if (index < messages.length) window.requestAnimationFrame(renderChunk);
+    if (index < visibleMessages.length) window.requestAnimationFrame(renderChunk);
     else attachTrailing();
   };
-  if (index < messages.length) window.requestAnimationFrame(renderChunk);
+  if (index < visibleMessages.length) window.requestAnimationFrame(renderChunk);
   else attachTrailing();
 }
 
@@ -6429,17 +6728,60 @@ function regenerateLastReal(aiRow: HTMLElement, root: HTMLElement): void {
   const state = liveState;
   if (!state || state.isSending) return;
 
-  // Drop the trailing assistant message from the active chat.
-  const last = state.messages[state.messages.length - 1];
-  if (!last || last.role !== 'assistant') return;
-  state.messages.pop();
+  const originalId = aiRow.dataset.messageId || '';
+  const originalIndex = state.messages.findIndex((message) => message.id === originalId && message.role === 'assistant');
+  if (originalIndex < 0) return;
+  const original = state.messages[originalIndex]!;
+  const parentIndex = state.messages.findIndex((message) => message.id === original.parentUserMessageId && message.role === 'user');
+  if (parentIndex < 0) return;
+
+  let insertionIndex = originalIndex + 1;
+  while (insertionIndex < state.messages.length && state.messages[insertionIndex]?.regeneratedFromMessageId === original.id) insertionIndex++;
+  const variants = state.messages.filter((message) => message.regeneratedFromMessageId === original.id).length;
+  const now = new Date().toISOString();
+  const alternative: ChatMessage = {
+    id: newChatMessageId(), role: 'assistant', text: '', parentUserMessageId: original.parentUserMessageId,
+    regeneratedFromMessageId: original.id, generationVariant: variants + 2,
+    completionState: 'processing', exportable: false, retryable: true, createdAt: now, updatedAt: now
+  };
+  const previousIds = state.messages.map((message) => message.id);
+  state.messages.splice(insertionIndex, 0, alternative);
+  if (state.messages.length !== previousIds.length + 1 || previousIds.some((id) => !state.messages.some((message) => message.id === id))) {
+    state.messages.splice(state.messages.findIndex((message) => message.id === alternative.id), 1);
+    throw new Error('regeneration_removed_existing_message');
+  }
   touchActiveChat();
   saveChatStore();
 
-  // Remove the corresponding DOM row (the bubble the user clicked Regenerate on).
-  aiRow.remove();
+  const anchorMessage = state.messages[insertionIndex - 1];
+  const anchorRow = anchorMessage?.id
+    ? msgs.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(anchorMessage.id)}"]`) : aiRow;
+  const alternativeRow = appendAiBubble(msgs, alternative.id, anchorRow || aiRow);
+  alternativeRow.classList.add('ncb-msg-row--alternative');
+  const subtitle = alternativeRow.querySelector<HTMLElement>('.ncb-bubble-subtitle');
+  if (subtitle) subtitle.textContent = 'Alternative response';
 
-  void streamAiReply(state, sendBtn, msgs);
+  const clicked = aiRow.querySelector<HTMLButtonElement>('[data-action="regen"]');
+  if (clicked) { clicked.disabled = true; clicked.setAttribute('aria-busy', 'true'); }
+  const requestMessages = state.messages.slice(0, parentIndex + 1).filter((message) => message.id !== alternative.id);
+  const activeChat = chatStore.getActive();
+  const previousMode = activeChat.sourceMode;
+  const previousSources = activeChat.selectedSourceIds.slice();
+  if (original.requestSnapshot) {
+    activeChat.sourceMode = original.requestSnapshot.sourceMode;
+    activeChat.selectedSourceIds = original.requestSnapshot.selectedSourceIds.slice();
+    alternative.requestSnapshot = { ...original.requestSnapshot };
+  }
+  void streamAiReply(state, sendBtn, msgs, {
+    targetMessage: alternative,
+    targetRow: alternativeRow,
+    requestMessages
+  }).finally(() => {
+    activeChat.sourceMode = previousMode;
+    activeChat.selectedSourceIds = previousSources;
+    saveChatStore();
+    if (clicked) { clicked.disabled = false; clicked.removeAttribute('aria-busy'); }
+  });
 }
 
 // ============ Context panel collapse ============
@@ -6548,8 +6890,13 @@ function runToolPrompt(root: HTMLElement, tool: string, btn: HTMLElement): void 
 
   if (stage.dataset.state !== 'active') stage.dataset.state = 'active';
 
-  state.messages.push({ role: 'user', text: prompt, images: [], files: [] });
-  appendUserBubble(msgs, prompt, [], []);
+  const now = new Date().toISOString();
+  const userMessage: ChatMessage = {
+    id: newChatMessageId(), role: 'user', text: prompt, images: [], files: [],
+    createdAt: now, updatedAt: now
+  };
+  state.messages.push(userMessage);
+  appendUserBubble(msgs, prompt, [], [], userMessage.id);
   touchActiveChat();
   saveChatStore();
 
@@ -6802,6 +7149,57 @@ function attachSubscribeCta(aiRow: HTMLElement, bubble: HTMLElement | null): voi
   bubble.appendChild(btn);
 }
 
+function attachStructuredRecoveryAction(
+  aiRow: HTMLElement,
+  bubble: HTMLElement,
+  message: ChatMessage,
+  failure: ReturnType<typeof classifyAiError>
+): void {
+  if (failure.action === 'none' || aiRow.querySelector('.ncb-retry-btn')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ncb-retry-btn';
+  const labels = {
+    retry: 'Try again', continue: 'Continue', sign_in: 'Sign in',
+    read_current_page: 'Retry page reading', none: '',
+  } as const;
+  btn.textContent = labels[failure.action];
+  btn.addEventListener('click', () => {
+    if (failure.action === 'sign_in') {
+      (document.querySelector('[data-auth-open], #authBtn, #loginBtn') as HTMLElement | null)?.click();
+      return;
+    }
+    const root = aiRow.closest<HTMLElement>('.ncb-root');
+    const msgs = root?.querySelector<HTMLElement>('.ncb-msgs');
+    const sendBtn = root?.querySelector<HTMLButtonElement>('.ncb-send-btn');
+    const state = liveState;
+    if (!root || !msgs || !sendBtn || !state || state.isSending) return;
+    const chat = chatStore.getActive();
+    const parentIndex = chat.messages.findIndex((item) => item.id === message.parentUserMessageId);
+    if (parentIndex < 0) return;
+    const requestMessages = chat.messages.slice(0, parentIndex + 1);
+    const previousMode = chat.sourceMode;
+    const previousSources = chat.selectedSourceIds.slice();
+    if (message.requestSnapshot) {
+      chat.sourceMode = message.requestSnapshot.sourceMode;
+      chat.selectedSourceIds = message.requestSnapshot.selectedSourceIds.slice();
+    }
+    message.completionState = 'recovering';
+    message.retryable = true;
+    message.updatedAt = new Date().toISOString();
+    bubble.innerHTML = '<section class="ncb-tutor-recovery"><strong>Continuing your response…</strong><p>Your original question and source selection are being reused.</p></section>';
+    saveChatStore();
+    void streamAiReply(state, sendBtn, msgs, {
+      targetMessage: message, targetRow: aiRow, requestMessages,
+    }).finally(() => {
+      chat.sourceMode = previousMode;
+      chat.selectedSourceIds = previousSources;
+      saveChatStore();
+    });
+  });
+  bubble.appendChild(btn);
+}
+
 function attachErrorRetry(aiRow: HTMLElement, bubble: HTMLElement | null): void {
   if (!bubble) return;
   const existing = aiRow.querySelector('.ncb-retry-btn');
@@ -6820,7 +7218,18 @@ function attachErrorRetry(aiRow: HTMLElement, bubble: HTMLElement | null): void 
     const sendBtn = root.querySelector<HTMLButtonElement>('.ncb-send-btn');
     const state = liveState;
     if (!msgs || !sendBtn || !state || state.isSending) return;
-    aiRow.remove();
+    const messageId = aiRow.dataset.messageId;
+    const message = messageId
+      ? chatStore.getActive().messages.find((item) => item.id === messageId)
+      : undefined;
+    if (message) {
+      btn.remove();
+      attachStructuredRecoveryAction(aiRow, bubble, message, classifyAiError({
+        code: message.errorCode || 'internal_error', retryable: true,
+      }));
+      (bubble.querySelector('.ncb-retry-btn') as HTMLButtonElement | null)?.click();
+      return;
+    }
     void streamAiReply(state, sendBtn, msgs);
   });
   bubble.appendChild(btn);

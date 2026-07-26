@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 
 import { beginSafeStreamRecovery } from '../../frontend/js/features/ai-chat/stream-recovery.ts';
 import { userFacingStreamError } from '../../frontend/js/features/ai-chat/stream-error-message.ts';
@@ -37,4 +38,20 @@ test('typed stream error messages contain no common mojibake sequences', () => {
     userFacingStreamError({ error: true, code: 'stream_interrupted' }),
   ].join('\n');
   assert.doesNotMatch(messages, /Ãƒ.|Ã¢â‚¬|Ã‚./);
+});
+
+test('chatbot persists assistant lifecycle and retries the same row', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /completionState: 'processing'/);
+  assert.match(shell, /parentUserMessageId/);
+  assert.match(shell, /saveChatStore\(\);[\s\S]{0,500}const aiRow/);
+  assert.match(shell, /targetMessage: message, targetRow: aiRow/);
+  assert.doesNotMatch(shell, /aiRow\.remove\(\);\s*void streamAiReply/);
+});
+
+test('chat reload repairs orphaned user turns with recovery cards', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /repairOrphanedAssistantMessages\(chat\)/);
+  assert.match(shell, /errorCode: 'orphaned_response'/);
+  assert.match(shell, /This response did not complete/);
 });
