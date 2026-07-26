@@ -22,7 +22,7 @@ test('pasted Markdown is a pending text attachment in the same user message', ()
   assert.match(shell, /source:\s*'clipboard'/);
   assert.match(shell, /mimeType:\s*'text\/markdown'/);
   assert.match(shell, /const files = state\.files\.slice\(\)/);
-  assert.match(shell, /state\.messages\.push\(\{ role: 'user', text, images, files \}\)/);
+  assert.match(shell, /state\.messages\.push\(\{[\s\S]*?role: 'user', text, images, files[\s\S]*?\}\)/);
   assert.match(shell, /source="' \+ escapeHtml\(f\.source \|\| 'upload'\)/);
 });
 
@@ -35,6 +35,8 @@ test('pasted Markdown can be previewed, edited, renamed and removed safely', () 
   assert.doesNotMatch(shell, /innerHTML\s*=\s*attachment\.textContent/);
   assert.match(css, /\.ncb-markdown-preview-overlay/);
   assert.match(css, /backdrop-filter:\s*blur/);
+  assert.match(css, /\.ncb-input > \.ncb-files-row \{ order: -2; \}/);
+  assert.match(css, /\.ncb-input\s*\{[\s\S]*?max-height:\s*320px/);
 });
 
 test('oversized pastes are rejected without truncation', () => {

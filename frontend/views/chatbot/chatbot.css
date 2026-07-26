@@ -807,7 +807,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
      the composer when the message list grows. */
   flex-shrink: 0;
   min-height: 56px;
-  max-height: 240px;
+  max-height: 320px;
   border-radius: 28px;
   /* overflow:hidden makes the rounded frame a hard boundary —
      attachments, textarea overflow, button shadows all stay inside. */
@@ -824,12 +824,17 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 .ncb-input > .ncb-attach-row,
 .ncb-input > .ncb-files-row,
 .ncb-input > .ncb-paste-row {
+  order: -1;
   flex-shrink: 0;
   max-height: 96px;
   padding: 6px 6px 4px;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
 }
+.ncb-input > .ncb-attach-row { order: -3; }
+.ncb-input > .ncb-files-row { order: -2; }
+.ncb-input > .ncb-paste-row { order: -1; }
 .ncb-input > .ncb-paste-row {
   border-bottom: none;
   margin-bottom: 0;
