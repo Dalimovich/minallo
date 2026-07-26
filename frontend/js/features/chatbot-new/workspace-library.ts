@@ -146,19 +146,27 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
   let resizeRenderTimer = 0;
   let lastObservedWidth = 0;
 
+  const workspace = context.closest<HTMLElement>('.ncb-card');
   const widthBounds = (): { min: number; max: number } => {
-    const card = context.closest<HTMLElement>('.ncb-card');
-    const sidebar = card?.querySelector<HTMLElement>('.ncb-sidebar');
-    const cardWidth = card?.clientWidth || window.innerWidth;
-    const max = Math.max(360, Math.min(900, cardWidth - (sidebar?.offsetWidth || 0) - 420));
+    const workspaceRect = workspace?.getBoundingClientRect();
+    const paneRect = context.getBoundingClientRect();
+    const measuredAvailable = workspaceRect ? workspaceRect.right - paneRect.left : paneRect.width;
+    const max = Math.max(0, Math.floor(measuredAvailable));
     return { min: Math.min(360, max), max };
   };
 
   const applyWidth = (width: number): void => {
+    if (window.matchMedia('(max-width: 1024px)').matches) {
+      context.style.removeProperty('width');
+      context.style.removeProperty('flex-basis');
+      return;
+    }
     const bounds = widthBounds();
     const next = Math.round(Math.min(bounds.max, Math.max(bounds.min, width)));
-    context.style.width = `${next}px`;
-    context.style.flexBasis = `${next}px`;
+    if (Math.abs(context.getBoundingClientRect().width - next) >= 1) {
+      context.style.width = `${next}px`;
+      context.style.flexBasis = `${next}px`;
+    }
     pendingWidth = next;
     refitWorkspacePdf();
   };
@@ -227,11 +235,16 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
       })
     : null;
   observer?.observe(context);
+  if (workspace) observer?.observe(workspace);
 
+  let initialWidth = context.getBoundingClientRect().width;
   try {
     const saved = Number.parseFloat(localStorage.getItem(PDF_WIDTH_KEY) || '');
-    if (Number.isFinite(saved)) applyWidth(saved);
+    if (Number.isFinite(saved)) initialWidth = saved;
   } catch { /* ignore */ }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => applyWidth(initialWidth));
+  });
 
   pdfResizeCleanup = () => {
     handle.removeEventListener('pointerdown', start);
@@ -942,6 +955,7 @@ function closeWorkspacePdf(root: HTMLElement): void {
   if (context) {
     context.style.removeProperty('width');
     context.style.removeProperty('flex-basis');
+    delete context.dataset.testid;
   }
   const aiPanel = document.getElementById('aiPanel');
   if (aiPanel) aiPanel.style.display = pdfAiDisplay;
@@ -972,7 +986,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   if (!pdfHost) {
     pdfHost = document.createElement('div');
     pdfHost.className = 'ncb-pdf-host';
-    pdfHost.dataset.testid = 'pdf-pane';
+    pdfHost.dataset.testid = 'pdf-viewer-shell';
     pdfHost.innerHTML =
       '<div class="ncb-pdf-resize" role="separator" aria-orientation="vertical" aria-label="Resize PDF viewer"></div>' +
       '<button type="button" class="ncb-pdf-close" aria-label="Close PDF viewer">&lsaquo;</button>';
@@ -983,6 +997,8 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   }
 
   pdfContextInner = inner;
+  context.dataset.testid = 'pdf-pane';
+  wrap.dataset.testid = 'pdf-viewer';
   inner.hidden = true;
   pdfHost.appendChild(wrap);
   wrap.style.display = 'flex';
