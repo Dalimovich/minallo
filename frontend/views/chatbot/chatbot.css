@@ -214,14 +214,21 @@ body.ncb-fullbleed .ncb-main {
 .ncb-main {
   display: flex;
   flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding: 20px;
+  box-sizing: border-box;
 }
 
 .ncb-card {
   display: flex;
   flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   border-radius: 2rem;
@@ -265,6 +272,7 @@ body.ncb-fullbleed .ncb-main {
   margin: 0 auto;
   max-width: 64rem;
   width: 100%;
+  min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -494,6 +502,8 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 
 .ncb-context {
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
   width: 340px;
   height: 100%;
   border-left: 1px solid rgba(255, 255, 255, 0.10);
@@ -1588,6 +1598,9 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 /* Bubbles */
 
 .ncb-bubble {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 16px 20px;
   border-radius: 1.5rem;
   font-size: 0.9375rem;
@@ -4643,6 +4656,73 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   background: transparent;
   box-shadow: none;
 }
+
+.ncb-msgs,
+.ncb-msg-row,
+.ncb-msg-row--ai,
+.ncb-bubble-body,
+.ncb-bubble-text,
+.ncb-learning-journey,
+.ncb-learning-journey__section,
+.ncb-learning-journey__questions,
+.ncb-learning-journey__question,
+.ncb-ef-inline,
+.ncb-ef-question {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ncb-bubble-body p,
+.ncb-bubble-body li,
+.ncb-learning-journey__question p,
+.ncb-ef-question h4 {
+  overflow-wrap: anywhere;
+}
+
+.ncb-bubble-body .katex-display,
+.ncb-bubble-body pre,
+.ncb-bubble-body .md-answer-table__scroll,
+.ncb-learning-journey__section-table {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.ncb-learning-journey__answer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0 18px;
+  color: #aebed2;
+  font-size: 0.86rem;
+}
+
+.ncb-learning-journey__answer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  max-width: 100%;
+  margin: 4px 0 12px;
+  padding: 7px 11px;
+  border: 1px solid rgba(79, 124, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(79, 124, 255, 0.1);
+  color: #cfe0ff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ncb-learning-journey__answer-toggle:hover { background: rgba(79, 124, 255, 0.18); }
+.ncb-learning-journey__answer-toggle:focus-visible {
+  outline: 2px solid #79adff;
+  outline-offset: 2px;
+}
 .ncb-account-avatar svg { width: 20px; height: 20px; }
 
 .ncb-account-copy {
@@ -5658,6 +5738,7 @@ body:not(.night) .ncb-workspace-close:hover { background: #dbe4ef; }
 .ncb-pdf-host #pdfBody {
   min-width: 0;
   min-height: 0;
+  max-width: 100%;
 }
 
 .ncb-pdf-host #aiPanel { display: none !important; }
@@ -5806,7 +5887,7 @@ body.ncb-pdf-workspace-open #drDrawer {
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .ncb-sidebar,
@@ -5823,6 +5904,12 @@ body.ncb-pdf-workspace-open #drDrawer {
 
   .ncb-sidebar { width: 252px; margin-left: 14px; }
   .ncb-context { margin-right: 14px; }
+
+  body.ncb-pdf-workspace-open .ncb-center { flex: 1 1 0; }
+  body.ncb-pdf-workspace-open .ncb-context {
+    flex: 0 1 min(50vw, 760px);
+    max-width: min(50vw, 760px);
+  }
 
   .ncb-center {
     border-radius: 24px;

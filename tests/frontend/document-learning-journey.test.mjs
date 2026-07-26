@@ -20,4 +20,13 @@ test('document extraction mounts a persistent Learning Journey accordion', () =>
   assert.match(shell, /function isValidLearningJourney/);
   assert.match(shell, /marker\.questionPagesTotal > 0/);
   assert.match(shell, /No partial or out-of-scope question list was shown/);
+  assert.match(shell, /marker\.manifestSealed/);
+  assert.match(shell, /questionsFound === marker\.discoveredCount/);
+  assert.match(shell, /Question scope complete/);
+  assert.match(shell, /Answer verification incomplete/);
+  assert.match(shell, /Show all answers/);
+  assert.match(shell, /Hide all answers/);
+  assert.match(shell, /aria-controls/);
+  assert.match(shell, /card\.insertBefore\(panel/);
+  assert.doesNotMatch(shell, /\? '<div class="ncb-learning-journey__answer"><span>Correct answer<\/span>'/);
 });

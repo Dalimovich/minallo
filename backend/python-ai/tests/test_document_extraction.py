@@ -806,7 +806,7 @@ def test_visual_heading_json_mode_prompt_explicitly_requests_json() -> None:
     assert '"response_format": {"type": "json_object"}' in source
     visual_source = inspect.getsource(extraction._extract_visual_image)
     assert 'Return JSON as' in visual_source
-    assert 'response_format={"type": "json_object"}' in visual_source
+    assert '"response_format": {"type": "json_object"}' in visual_source
 
 
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:

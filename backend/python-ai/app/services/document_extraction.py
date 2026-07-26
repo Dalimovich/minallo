@@ -1036,6 +1036,7 @@ def _extract_visual_page(
         media_type="image/png",
         page_number=page_number,
         target=target,
+        pace=True,
     )
 
 
@@ -1069,13 +1070,16 @@ def _discover_visual_section_headings(
                 "content": [
                     {"type": "text", "text": (
                         f"Inspect PDF page {page_number} only. Find every TOP-LEVEL section banner, "
-                        f"especially the family named by {target!r}. Use visual hierarchy, not merely "
+                        f"including the family named by {target!r} and the first later banner that "
+                        "ends that family (for example a calculation/task section). Use visual "
+                        "hierarchy, not merely "
                         "the words: when the page uses wide dark-gray horizontal section bars, only "
                         "text inside those bars is a top-level banner. Return no heading for ordinary "
                         "text lines, bold subsection "
                         "labels, running headers, continuation labels, or question IDs. A valid family "
-                        "banner has the exact printed form 'N. Kurzfragen - Topic' (or 'N. Short "
-                        "Questions - Topic'). Read every digit exactly; 10 and 11 must not become 1. "
+                        "family banner has the exact printed form 'N. Kurzfragen - Topic' (or 'N. "
+                        "Short Questions - Topic'), while a non-family top-level banner keeps its "
+                        "own exact title. Read every digit exactly; 10 and 11 must not become 1. "
                         "Never infer a banner from nearby content such as 2.1 or 12.20. Transcribe the "
                         "full banner exactly. Return JSON with "
                         "headings in top-to-bottom order "
@@ -1129,25 +1133,31 @@ def _extract_visual_image(
     media_type: str,
     page_number: int,
     target: str,
+    pace: bool = False,
 ) -> list[ExtractedQAItem]:
     """Inspect the exact browser-captured visible page without re-rendering it."""
     from .openai_client import get_openai_client
 
-    response = get_openai_client().chat.completions.create(
-        model=get_settings().openai_generate_model,
-        temperature=0,
-        max_tokens=3000,
-        response_format={"type": "json_object"},
-        messages=[{
+    request_kwargs = {
+        "model": get_settings().openai_generate_model,
+        "temperature": 0,
+        "max_tokens": 7000,
+        "response_format": {"type": "json_object"},
+        "messages": [{
             "role": "user",
             "content": [
                 {
                     "type": "text",
                     "text": (
-                        f"Extract {target!r} questions and separate solution evidence from "
-                        f"this scanned PDF page {page_number}. Detect IDs, exact question "
-                        "text, printed answers, worked solutions, checked boxes, green "
-                        "checkmarks and annotations. Never invent missing text. Return JSON as "
+                        f"Exhaustively extract EVERY numbered {target!r} question from this "
+                        f"scanned PDF page {page_number}, in reading order. Preserve the exact "
+                        "multi-level item ID (for example 2.1, 7.4), the full question text, and "
+                        "all visible multiple-choice options inside the question text. A top-level "
+                        "section heading such as '2. Kurzfragen' is not a question. Do not skip "
+                        "questions merely because they have no answer. The answer field must be "
+                        "empty unless this exact page visibly contains official solution evidence, "
+                        "a checked box, correction mark, worked solution, or annotation. Never use "
+                        "an unmarked option as the answer and never invent missing text. Return JSON as "
                         '{"items":[{"item_id":"...","question":"...","answer":"...",'
                         '"question_page":1,"answer_page":1,"evidence_type":"checked_option",'
                         '"confidence":0.9}]}.'
@@ -1163,7 +1173,25 @@ def _extract_visual_image(
                 },
             ],
         }],
-    )
+    }
+    response = None
+    for attempt in range(10):
+        try:
+            response = get_openai_client().chat.completions.create(**request_kwargs)
+            if pace:
+                time.sleep(3.0)
+            break
+        except Exception as exc:
+            if getattr(exc, "status_code", None) != 429 or attempt == 9:
+                raise
+            delay = min(5.0, 1.5 * (attempt + 1))
+            log.warning(
+                "visual_page_extraction_rate_limited page=%s attempt=%s delay=%.2f",
+                page_number, attempt + 1, delay,
+            )
+            time.sleep(delay)
+    if response is None:
+        raise RuntimeError(f"visual extraction failed on page {page_number}")
     try:
         data = json.loads(str(response.choices[0].message.content or "{}"))
     except (TypeError, ValueError):
@@ -2482,6 +2510,14 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
                 "unresolved": unresolved,
             },
         })
+    discovered_count = sum(len(section["questions"]) for section in sections)
+    answered_count = sum(section["statistics"]["answersVerified"] for section in sections)
+    unresolved_count = discovered_count - answered_count
+    question_pages_total = len({
+        page for section in family.matched_sections for page in section.question_pages
+    })
+    manifest_sealed = bool(result.scope_extraction_complete and question_pages_total > 0 and discovered_count > 0)
+    processing_finished = bool(manifest_sealed and not result.unprocessed_pages)
     return {
         "title": family.family_name,
         "scope": {
@@ -2491,14 +2527,22 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
             "excludedSections": family.excluded_sections,
         },
         "sections": sections,
+        "manifestSealed": manifest_sealed,
+        "discoveryComplete": manifest_sealed,
+        "processingFinished": processing_finished,
+        "allAnswersVerified": bool(processing_finished and result.answer_verification_complete),
+        "discoveredCount": discovered_count,
+        "pendingCount": 0 if processing_finished else len(result.unprocessed_pages),
+        "processingCount": 0,
+        "answeredCount": answered_count,
+        "unresolvedCount": unresolved_count,
+        "failedCount": 0,
         "coverage": {
             "totalPages": result.total_pages,
             "pagesScanned": len(result.cumulative_scanned_pages or result.scanned_pages),
             "thisRunPagesProcessed": len(result.scanned_pages),
             "answerSearchPagesProcessed": len(result.cumulative_scanned_pages or result.scanned_pages),
-            "questionPagesTotal": len({
-                page for section in family.matched_sections for page in section.question_pages
-            }),
+            "questionPagesTotal": question_pages_total,
             "questionPagesProcessed": len(set(result.cumulative_scanned_pages or result.scanned_pages).intersection({
                 page for section in family.matched_sections for page in section.question_pages
             })),

@@ -675,6 +675,16 @@ interface LearningJourneyMarker {
   scopeExtractionComplete: boolean;
   answerVerificationComplete: boolean;
   coverageComplete: boolean;
+  manifestSealed: boolean;
+  discoveryComplete: boolean;
+  processingFinished: boolean;
+  allAnswersVerified: boolean;
+  discoveredCount: number;
+  pendingCount: number;
+  processingCount: number;
+  answeredCount: number;
+  unresolvedCount: number;
+  failedCount: number;
   unresolvedItems: string[];
   sections?: LearningJourneySection[];
   includedSectionNumbers?: string[];
@@ -712,7 +722,7 @@ interface LearningJourneySection {
 
 function learningJourneyMarkerFromMeta(meta: Record<string, unknown>): LearningJourneyMarker {
   const structured = meta.learningJourney && typeof meta.learningJourney === 'object'
-    ? meta.learningJourney as { title?: unknown; sections?: unknown; scope?: { includedSectionNumbers?: unknown }; coverage?: Record<string, unknown>; outOfScopeItemsRejected?: unknown }
+    ? meta.learningJourney as { title?: unknown; sections?: unknown; scope?: { includedSectionNumbers?: unknown }; coverage?: Record<string, unknown>; outOfScopeItemsRejected?: unknown; [key: string]: unknown }
     : null;
   return {
     title: String(structured?.title || meta.resolvedHeading || meta.targetSection || 'Document review'),
@@ -725,6 +735,16 @@ function learningJourneyMarkerFromMeta(meta: Record<string, unknown>): LearningJ
     scopeExtractionComplete: structured?.coverage?.scopeExtractionComplete === true,
     answerVerificationComplete: structured?.coverage?.answerVerificationComplete === true,
     coverageComplete: structured?.coverage?.complete === true || meta.coverageComplete === true,
+    manifestSealed: structured?.manifestSealed === true,
+    discoveryComplete: structured?.discoveryComplete === true,
+    processingFinished: structured?.processingFinished === true,
+    allAnswersVerified: structured?.allAnswersVerified === true,
+    discoveredCount: Number(structured?.discoveredCount || 0),
+    pendingCount: Number(structured?.pendingCount || 0),
+    processingCount: Number(structured?.processingCount || 0),
+    answeredCount: Number(structured?.answeredCount || 0),
+    unresolvedCount: Number(structured?.unresolvedCount || 0),
+    failedCount: Number(structured?.failedCount || 0),
     unresolvedItems: Array.isArray(meta.unresolvedItems) ? meta.unresolvedItems.map(String) : [],
     sections: Array.isArray(structured?.sections) ? structured.sections as LearningJourneySection[] : undefined,
     includedSectionNumbers: Array.isArray(structured?.scope?.includedSectionNumbers)
@@ -739,9 +759,20 @@ function isValidLearningJourney(marker: LearningJourneyMarker): boolean {
     (count, section) => count + section.questions.length,
     0
   );
-  return marker.scopeExtractionComplete
+  const terminalCount = marker.answeredCount + marker.unresolvedCount + marker.failedCount;
+  return marker.manifestSealed
+    && marker.discoveryComplete
     && marker.questionPagesTotal > 0
-    && questionsFound > 0
+    && marker.discoveredCount > 0
+    && questionsFound === marker.discoveredCount
+    && terminalCount <= marker.discoveredCount
+    && (!marker.processingFinished || (
+      marker.pendingCount === 0 && marker.processingCount === 0 && terminalCount === marker.discoveredCount
+    ))
+    && (!marker.allAnswersVerified || (
+      marker.processingFinished && marker.answeredCount === marker.discoveredCount
+      && marker.unresolvedCount === 0 && marker.failedCount === 0
+    ))
     && (marker.outOfScopeItemsRejected || []).length === 0;
 }
 
@@ -4243,9 +4274,29 @@ function enhanceDocumentLearningJourney(
       escapeHtml(marker.questionPagesProcessed + ' of ' + marker.questionPagesTotal + ' question pages processed') +
       ' · ' + escapeHtml(marker.answerSearchPagesProcessed + ' of ' + marker.totalPages + ' answer-search pages') +
       (marker.thisRunPagesProcessed ? ' · ' + escapeHtml(String(marker.thisRunPagesProcessed)) + ' this run' : '') +
-      (marker.scopeExtractionComplete ? ' · Scope complete' : ' · Scope incomplete') +
-      (marker.answerVerificationComplete ? ' · Answers verified' : ' · Some answers unresolved') +
+      (marker.processingFinished
+        ? ' · ' + escapeHtml(marker.discoveredCount + ' of ' + marker.discoveredCount + ' questions processed')
+        : ' · ' + escapeHtml(marker.answeredCount + ' answered · ' + marker.processingCount + ' processing · ' + marker.pendingCount + ' pending')) +
+      ' · ' + escapeHtml(marker.answeredCount + ' answers verified') +
+      (marker.unresolvedCount ? ' · ' + escapeHtml(marker.unresolvedCount + ' unresolved') : '') +
+      (marker.discoveryComplete ? ' · Question scope complete' : ' · Question scope incomplete') +
+      (marker.allAnswersVerified ? ' · All answers verified' : ' · Answer verification incomplete') +
     '</p>';
+  const answerCards = new Map<string, { button: HTMLButtonElement }>();
+  const answerControls = document.createElement('div');
+  answerControls.className = 'ncb-learning-journey__answer-controls';
+  const answerCount = document.createElement('span');
+  const globalAnswerToggle = document.createElement('button');
+  globalAnswerToggle.type = 'button';
+  globalAnswerToggle.className = 'ncb-learning-journey__answer-toggle';
+  const updateGlobalAnswerControl = (): void => {
+    const shown = Array.from(answerCards.values()).filter(({ button }) => button.getAttribute('aria-expanded') === 'true').length;
+    answerCount.textContent = `${shown} of ${answerCards.size} answers shown`;
+    globalAnswerToggle.textContent = answerCards.size > 0 && shown === answerCards.size ? 'Hide all answers' : 'Show all answers';
+    globalAnswerToggle.setAttribute('aria-label', `${globalAnswerToggle.textContent}. ${answerCount.textContent}`);
+  };
+  answerControls.append(answerCount, globalAnswerToggle);
+  journey.appendChild(answerControls);
   const list = document.createElement('div');
   list.className = 'ncb-learning-journey__list';
   if (sections.length) {
@@ -4323,17 +4374,43 @@ function enhanceDocumentLearningJourney(
           source_unavailable: 'Source unavailable',
           unresolved: 'Answer unresolved',
         };
+        const answerPanelId = 'ncb-answer-' + question.questionId.replace(/[^a-zA-Z0-9_-]/g, '-');
         card.innerHTML =
           '<header><span class="ncb-learning-journey__status" data-state="' + escapeAttr(question.answerStatus) + '">' +
             (verified ? '✓' : question.answerStatus === 'source_unavailable' ? '×' : '!') + '</span>' +
             '<strong>' + escapeHtml(question.number) + '</strong>' +
             '<small>' + (verified ? (question.answerStatus === 'visually_verified' ? 'Visually verified' : 'Answer verified') : escapeHtml(unresolvedLabel[question.answerStatus] || 'Answer unresolved')) + '</small></header>' +
           '<p>' + escapeHtml(question.question) + '</p>' +
-          (verified && question.answer
-            ? '<div class="ncb-learning-journey__answer"><span>Correct answer</span>' + renderInlineMarkdown(question.answer) + '</div>'
-            : '<div class="ncb-learning-journey__unresolved">Minallo found the question but could not verify the official answer.</div>') +
           '<footer>Question page ' + escapeHtml(String(question.questionPage || '—')) +
             (question.answerPage ? ' · Answer page ' + escapeHtml(String(question.answerPage)) : '') + '</footer>';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'ncb-learning-journey__answer-toggle';
+        toggle.textContent = 'Show answer';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-controls', answerPanelId);
+        const setVisible = (visible: boolean): void => {
+          card.querySelector('.ncb-learning-journey__answer, .ncb-learning-journey__unresolved')?.remove();
+          toggle.setAttribute('aria-expanded', String(visible));
+          toggle.textContent = visible ? 'Hide answer' : 'Show answer';
+          if (visible) {
+            const panel = document.createElement('section');
+            panel.id = answerPanelId;
+            panel.setAttribute('aria-label', 'Answer to question ' + question.number);
+            if (verified && question.answer) {
+              panel.className = 'ncb-learning-journey__answer';
+              panel.innerHTML = '<span>Correct answer</span>' + renderInlineMarkdown(question.answer);
+            } else {
+              panel.className = 'ncb-learning-journey__unresolved';
+              panel.textContent = 'Minallo found the question but could not verify the official answer.';
+            }
+            card.insertBefore(panel, card.querySelector('footer'));
+          }
+          updateGlobalAnswerControl();
+        };
+        toggle.addEventListener('click', () => setVisible(toggle.getAttribute('aria-expanded') !== 'true'));
+        card.insertBefore(toggle, card.querySelector('footer'));
+        answerCards.set(question.questionId, { button: toggle });
         questions.appendChild(card);
       });
       details.appendChild(questions);
@@ -4344,7 +4421,7 @@ function enhanceDocumentLearningJourney(
         .map((question) => {
           const verified = question.answerStatus === 'verified' || question.answerStatus === 'visually_verified';
           return '<tr><th scope="row">' + escapeHtml(question.number) + '</th><td>' + escapeHtml(question.question) +
-            '</td><td>' + (question.answer ? renderInlineMarkdown(question.answer) : '—') + '</td><td>' +
+            '</td><td>Use the question card to reveal this answer.</td><td>' +
             escapeHtml(verified ? (question.answerStatus === 'visually_verified' ? 'Visual evidence' : 'Verified') : 'Needs review') + '</td></tr>';
         }).join('');
       tableWrap.innerHTML = '<table class="md-table"><thead><tr><th scope="col">ID</th><th scope="col">Question</th><th scope="col">Correct answer</th><th scope="col">Status</th></tr></thead><tbody>' + tableRows + '</tbody></table>';
@@ -4353,6 +4430,14 @@ function enhanceDocumentLearningJourney(
     });
     journey.appendChild(chips);
     journey.appendChild(list);
+    globalAnswerToggle.addEventListener('click', () => {
+      const show = !Array.from(answerCards.values()).every(({ button }) => button.getAttribute('aria-expanded') === 'true');
+      answerCards.forEach(({ button }) => {
+        if ((button.getAttribute('aria-expanded') === 'true') !== show) button.click();
+      });
+      updateGlobalAnswerControl();
+    });
+    updateGlobalAnswerControl();
     Array.from(bubble.children).forEach((child) => {
       if (child !== journey && !(child instanceof HTMLElement && child.classList.contains('ncb-ask-meta'))) {
         (child as HTMLElement).hidden = true;
