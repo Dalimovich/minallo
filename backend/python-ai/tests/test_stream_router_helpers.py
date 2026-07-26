@@ -181,12 +181,47 @@ def test_stream_opens_before_deferred_pipeline(monkeypatch) -> None:
     async def run_check():
         payload = stream_router.AskStreamRequest(courseId="course", question="Explain this")
         started = time.perf_counter()
-        response = await stream_router.ask_stream_endpoint(payload, {"id": "user"})
+        response = await stream_router.ask_stream_endpoint(
+            payload, {"id": "user"}, "client-request-1234"
+        )
         returned_ms = (time.perf_counter() - started) * 1000
         first = await response.body_iterator.__anext__()
+        second = await response.body_iterator.__anext__()
         await response.body_iterator.aclose()
-        return returned_ms, first
+        return returned_ms, first, second
 
-    returned_ms, first = asyncio.run(run_check())
+    returned_ms, first, second = asyncio.run(run_check())
     assert returned_ms < 200
-    assert b'"status": "reading_question"' in first
+    assert b'"meta": true' in first
+    assert b'"requestId": "client-request-1234"' in first
+    assert b'"streamProtocolVersion": 2' in first
+    assert b'"status": "reading_question"' in second
+
+
+def test_inner_stream_silence_emits_keepalive(monkeypatch) -> None:
+    from fastapi.responses import StreamingResponse
+    from app.routers import stream as stream_router
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(stream_router, "_INNER_STREAM_HEARTBEAT_SECONDS", 0.01)
+
+    async def slow_body():
+        await asyncio.sleep(0.035)
+        yield b'data: {"done": true}\n\n'
+
+    async def prepare(*_args, **_kwargs):
+        return StreamingResponse(slow_body(), media_type="text/event-stream")
+
+    monkeypatch.setattr(stream_router, "_prepare_ask_stream_response", prepare)
+
+    async def consume():
+        payload = stream_router.AskStreamRequest(courseId="course", question="Explain")
+        response = await stream_router.ask_stream_endpoint(payload, {"id": "user"})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(consume())
+    statuses = [event for event in events if b'"status": "reading_question"' in event]
+    assert len(statuses) >= 2
+    assert sum(b'"done": true' in event for event in events) == 1

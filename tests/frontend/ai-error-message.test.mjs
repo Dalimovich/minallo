@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { friendlyAiErrorMessage } from '../../frontend/js/services/ai-error-message.ts';
+import { classifyAiError, friendlyAiErrorMessage } from '../../frontend/js/services/ai-error-message.ts';
 
 test('maps typed stream errors without falling through to generic interruption copy', () => {
   assert.match(
@@ -11,4 +11,18 @@ test('maps typed stream errors without falling through to generic interruption c
     friendlyAiErrorMessage({ code: 'stream_ended_without_terminal_event' }),
     /confirmed complete/i,
   );
+});
+
+test('typed classification retains retry and partial-answer policy', () => {
+  assert.deepEqual(classifyAiError({ code: 'request_superseded', retryable: true }), {
+    code: 'request_superseded',
+    title: 'Response replaced',
+    message: 'This answer was replaced by your newer question.',
+    retryable: false,
+    preservePartialAnswer: false,
+    action: 'none',
+  });
+  const stalled = classifyAiError({ code: 'stream_inactivity_timeout' });
+  assert.equal(stalled.preservePartialAnswer, true);
+  assert.equal(stalled.action, 'continue');
 });

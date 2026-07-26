@@ -87,6 +87,7 @@ from ..supabase_client import get_supabase
 _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
+_INNER_STREAM_HEARTBEAT_SECONDS = 10.0
 _MAX_STREAM_OPEN_FILE_CTX_CHARS = 20000
 _MAX_OPEN_FILE_IMAGES = 3
 _MAX_OPEN_FILE_IMAGE_BASE64_CHARS = 2_500_000
@@ -406,6 +407,7 @@ def _status_sse(status_key: str) -> bytes:
 
 def _error_sse(*, code: str, message: str, retryable: bool, request_id: str) -> bytes:
     return _sse_bytes(json.dumps({
+        "type": "error",
         "error": True,
         "code": code,
         "message": message,
@@ -928,6 +930,11 @@ async def ask_stream_endpoint(
             return last_shared_generation_result
 
         first_sse_ms = (time.perf_counter() - started) * 1000
+        yield _sse_bytes(json.dumps({
+            "meta": True,
+            "requestId": request_id,
+            "streamProtocolVersion": 2,
+        }, ensure_ascii=False))
         yield _status_sse("reading_question")
         last_status_key = "reading_question"
         last_heartbeat = time.monotonic()
@@ -986,7 +993,27 @@ async def ask_stream_endpoint(
                     )
                     return
                 yield _status_sse(status_queue.get_nowait())
-            async for event in prepared.body_iterator:
+            body_iterator = prepared.body_iterator.__aiter__()
+            next_event_task: asyncio.Task | None = None
+            while True:
+                if next_event_task is None:
+                    next_event_task = asyncio.create_task(body_iterator.__anext__())
+                ready, _ = await asyncio.wait(
+                    {next_event_task}, timeout=_INNER_STREAM_HEARTBEAT_SECONDS
+                )
+                if not ready:
+                    # Keep the connection active during model generation,
+                    # verification, repair, and persistence—not only during
+                    # response preparation.
+                    yield _status_sse(last_status_key)
+                    last_heartbeat = time.monotonic()
+                    continue
+                try:
+                    event = next_event_task.result()
+                except StopAsyncIteration:
+                    next_event_task = None
+                    break
+                next_event_task = None
                 if not await generation_is_current():
                     log.info(
                         "stale_generation_stream_stopped request_id=%s generation=%s",
@@ -3378,7 +3405,7 @@ async def _prepare_ask_stream_response(
                             )
                             pending_token_events.clear()
                             yield _error_sse(
-                                code="generation_state_unavailable",
+                                code="shared_generation_check_failed",
                                 message="The request state could not be confirmed.",
                                 retryable=True,
                                 request_id=request_id,

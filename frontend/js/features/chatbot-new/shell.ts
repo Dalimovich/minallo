@@ -623,6 +623,8 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   interrupted?: boolean;
+  completionState?: 'complete' | 'interrupted';
+  requestId?: string;
   images?: PastedImage[];
   files?: PendingFile[];
   selectedSourceMode?: SourceMode;
@@ -1095,7 +1097,11 @@ async function streamAiReply(
       } else if (err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
         && err.metadata.partialAnswer.trim()) {
         const partial = sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams);
-        originMessages.push({ role: 'assistant', text: partial, allowDiagrams, interrupted: true });
+        originMessages.push({
+          role: 'assistant', text: partial, allowDiagrams, interrupted: true,
+          completionState: 'interrupted',
+          requestId: typeof err.metadata.requestId === 'string' ? err.metadata.requestId : undefined,
+        });
         touchOrigin();
         saveChatStore();
         renderRichBubble(bubble, partial, allowDiagrams);
@@ -2604,6 +2610,9 @@ class AskStreamError extends Error {
   }
 }
 
+export const STREAM_IDLE_WARNING_MS = 25_000;
+export const STREAM_IDLE_FAILURE_MS = 90_000;
+
 interface DurableConversationResult {
   conversationId: string;
   created: boolean;
@@ -2810,7 +2819,7 @@ async function streamFromAskStream(
   }, { safeToRetry: true });
   if (!resp.ok || !resp.body || !resp.body.getReader) {
     const errText = await resp.text().catch(() => '');
-    let detail: { code?: string; message?: string; retryable?: boolean } = {};
+    let detail: { code?: string; message?: string; retryable?: boolean; requestId?: string } = {};
     try {
       const parsed = JSON.parse(errText) as { detail?: typeof detail };
       detail = parsed.detail || {};
@@ -2819,7 +2828,12 @@ async function streamFromAskStream(
       code: detail.code || 'ask_stream_failed',
       message: detail.message || "Minallo's document tutor is temporarily unavailable.",
       retryable: detail.retryable !== false,
-      metadata: { status: resp.status }
+      metadata: {
+        status: resp.status,
+        requestId: detail.requestId || resp.headers.get('X-Request-ID') || requestId,
+        failureStage: 'http_response',
+        responseBody: errText.slice(0, 500),
+      }
     });
   }
 
@@ -2828,6 +2842,9 @@ async function streamFromAskStream(
   let answerBuf = '';
   let doneMeta: Record<string, unknown> | null = null;
   let streamMeta: Record<string, unknown> = {};
+  let streamRequestId = requestId;
+  let eventCount = 0;
+  let lastEventType = 'none';
   let liveReveal: ReturnType<typeof createSoftStreamReveal> | null = null;
   let hasLiveReveal = false;
 
@@ -2852,8 +2869,34 @@ async function streamFromAskStream(
     }
   });
 
+  const readWithInactivityWatchdog = (): Promise<ReadableStreamReadResult<Uint8Array>> =>
+    new Promise((resolve, reject) => {
+      const warningTimer = window.setTimeout(
+        () => thinking?.set('Still working on your document…'),
+        STREAM_IDLE_WARNING_MS,
+      );
+      const failureTimer = window.setTimeout(() => {
+        void reader.cancel('stream inactivity timeout').catch(() => undefined);
+        controller.abort();
+        reject(new AskStreamError({
+          code: 'stream_inactivity_timeout',
+          message: 'The stream stopped sending updates.',
+          retryable: true,
+          metadata: {
+            requestId: streamRequestId, failureStage: 'sse_read',
+            partialAnswer: answerBuf, answerCharacterCount: answerBuf.length,
+            eventCount, lastEventType,
+          },
+        }));
+      }, STREAM_IDLE_FAILURE_MS);
+      reader.read().then(resolve, reject).finally(() => {
+        window.clearTimeout(warningTimer);
+        window.clearTimeout(failureTimer);
+      });
+    });
+
   while (true) {
-    const result = await reader.read();
+    const result = await readWithInactivityWatchdog();
     if (result.done) {
       parser.push(decoder.decode());
       parser.finish();
@@ -2862,6 +2905,10 @@ async function streamFromAskStream(
     }
     while (parsedEvents.length) {
       const evt = parsedEvents.shift()!;
+        eventCount += 1;
+        lastEventType = evt.done === true ? 'done' : evt.error ? 'error'
+          : typeof evt.t === 'string' ? 'token' : evt.meta === true ? 'meta' : 'status';
+        if (typeof evt.requestId === 'string') streamRequestId = evt.requestId;
         // Live status: backend pipeline events ("collecting_sources",
         // "writing_answer", …) update the pending bubble's status line before
         // any answer token arrives. Once a token creates the real bubble
@@ -2883,7 +2930,11 @@ async function streamFromAskStream(
               ? evt.message
               : typeof evt.error === 'string' ? evt.error : 'The AI request failed.',
             retryable: evt.retryable === true,
-            metadata: { ...evt, partialAnswer: answerBuf },
+            metadata: {
+              ...evt, requestId: streamRequestId, partialAnswer: answerBuf,
+              failureStage: 'backend_error', answerCharacterCount: answerBuf.length,
+              eventCount, lastEventType,
+            },
           });
         }
       }
@@ -2899,7 +2950,11 @@ async function streamFromAskStream(
         ? 'Minallo completed the request but returned no answer.'
         : 'The AI connection ended before the answer was completed.',
       retryable: true,
-      metadata: doneMeta || streamMeta,
+      metadata: {
+        ...(doneMeta || streamMeta), requestId: streamRequestId,
+        partialAnswer: answerBuf, failureStage: 'terminal_validation',
+        answerCharacterCount: answerBuf.length, eventCount, lastEventType,
+      },
     });
   }
   if (!doneMeta?.done) {
@@ -2907,7 +2962,11 @@ async function streamFromAskStream(
       code: 'stream_ended_without_terminal_event',
       message: 'The AI connection ended before the answer was completed.',
       retryable: true,
-      metadata: streamMeta,
+      metadata: {
+        ...streamMeta, requestId: streamRequestId, partialAnswer: answerBuf,
+        failureStage: 'terminal_validation', answerCharacterCount: answerBuf.length,
+        eventCount, lastEventType,
+      },
     });
   }
 
@@ -2919,16 +2978,35 @@ async function streamFromAskStream(
     allowDiagrams
   );
   const revealToFinish = liveReveal as ReturnType<typeof createSoftStreamReveal> | null;
-  if (hasLiveReveal && revealToFinish) {
-    await revealToFinish.finish();
-  } else {
-    if (thinking) await thinking.waitMinimum();
+  try {
+    if (hasLiveReveal && revealToFinish) {
+      await revealToFinish.finish();
+    } else {
+      if (thinking) await thinking.waitMinimum();
+      thinking?.remove(true);
+    }
+    if (bubble) renderRichBubble(bubble, displayAnswer, allowDiagrams);
+  } catch (renderError) {
+    // Rendering is optional presentation. A confirmed raw answer remains a
+    // successful response and must never be relabelled as a network failure.
+    console.warn('[ncb] rich answer rendering failed', {
+      requestId: streamRequestId,
+      error: renderError instanceof Error ? renderError.message : String(renderError),
+    });
     thinking?.remove(true);
+    if (bubble) bubble.textContent = displayAnswer;
   }
-  if (bubble) renderRichBubble(bubble, displayAnswer, allowDiagrams);
 
-  // Append sources if the server included them. Verification stays internal.
-  if (doneMeta && bubble) appendAskStreamMeta(bubble, doneMeta);
+  // A source-footer failure likewise cannot erase a completed answer.
+  if (doneMeta && bubble) {
+    try { appendAskStreamMeta(bubble, doneMeta); }
+    catch (error) {
+      console.warn('[ncb] source footer rendering failed', {
+        requestId: streamRequestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return { text: displayAnswer, meta: doneMeta };
 }
