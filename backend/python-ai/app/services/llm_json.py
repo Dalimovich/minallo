@@ -9,8 +9,10 @@ Wraps the OpenAI client with:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +20,9 @@ from ..config import get_settings
 from .concurrency import llm_fanout_slot
 from .openai_client import get_openai_client
 from .usage_meter import record_usage, usage_from_response
+
+
+log = logging.getLogger(__name__)
 
 
 _FENCE_OPEN = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
@@ -206,16 +211,31 @@ def chat_json(
     # Bound total concurrent generation LLM calls per worker so fan-out shards
     # (cheatsheet/quiz/flashcards/…) can't saturate the OpenAI quota or the box.
     # The interactive stream path doesn't use chat_json, so it's never blocked.
-    with llm_fanout_slot():
-        resp = client.chat.completions.create(
-            model=chosen,
-            **token_param,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-        )
+    resp = None
+    for attempt in range(6):
+        try:
+            with llm_fanout_slot():
+                resp = client.chat.completions.create(
+                    model=chosen,
+                    **token_param,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": user},
+                    ],
+                )
+            break
+        except Exception as exc:
+            if getattr(exc, "status_code", None) != 429 or attempt == 5:
+                raise
+            delay = min(8.0, 1.5 * (attempt + 1))
+            log.warning(
+                "structured_json_rate_limited model=%s attempt=%s delay=%.2f",
+                chosen, attempt + 1, delay,
+            )
+            time.sleep(delay)
+    if resp is None:
+        raise RuntimeError("structured JSON generation returned no response")
     record_usage(feature=_caller_feature(), model=chosen, **usage_from_response(resp))
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""

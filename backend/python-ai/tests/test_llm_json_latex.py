@@ -1,6 +1,8 @@
 """LaTeX-in-JSON backslash repair (deep_learn / cheatsheet / quiz math)."""
 
 import json
+from contextlib import nullcontext
+from types import SimpleNamespace
 
 from app.services.llm_json import _parse_json_lenient, _salvage_string_value
 
@@ -62,3 +64,35 @@ def test_fenced_invalid_escape_repaired():
     raw = "```json\n" + '{"x": "' + bs + "Delta = " + bs + 'sqrt{2}"}' + "\n```"
     out = _parse_json_lenient(raw)
     assert out["x"] == r"\Delta = \sqrt{2}", out["x"]
+
+
+def test_chat_json_retries_transient_rate_limit(monkeypatch):
+    from app.services import llm_json
+
+    class RateLimited(Exception):
+        status_code = 429
+
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    attempts = []
+
+    def create(**_):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RateLimited()
+        return response
+
+    client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=create),
+    ))
+    monkeypatch.setattr(llm_json, "get_openai_client", lambda: client)
+    monkeypatch.setattr(llm_json, "llm_fanout_slot", nullcontext)
+    monkeypatch.setattr(llm_json, "record_usage", lambda **_: None)
+    monkeypatch.setattr(llm_json.time, "sleep", lambda _: None)
+
+    result = llm_json.chat_json(system="Return JSON.", user="Test")
+
+    assert result.data == {"ok": True}
+    assert len(attempts) == 2

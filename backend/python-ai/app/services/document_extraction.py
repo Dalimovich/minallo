@@ -1196,7 +1196,7 @@ def _extract_visual_image(
         data = json.loads(str(response.choices[0].message.content or "{}"))
     except (TypeError, ValueError):
         raise RuntimeError(f"visual extraction returned invalid JSON for page {page_number}")
-    return [
+    items = [
         item
         for item in (
             _normalise_item(raw, page_number)
@@ -1204,6 +1204,16 @@ def _extract_visual_image(
         )
         if item is not None
     ]
+    # Page provenance comes from the rendered page we supplied, never from the
+    # model's JSON. Models commonly copy a schema example such as page 1; that
+    # used to make valid visual questions fail the final section-scope filter.
+    for item in items:
+        item.question_page = page_number
+        if item.answer:
+            item.answer_page = page_number
+        else:
+            item.answer_page = None
+    return items
 
 
 def _normalise_item(raw: Any, fallback_page: int) -> ExtractedQAItem | None:
@@ -1866,7 +1876,12 @@ def extract_document_qa(
         ) if solution is not None
     )
     visual_item_pages_by_id: dict[str, set[int]] = {}
-    visual_pages = sorted(set(weak_pages + result.unprocessed_pages))
+    # This pass discovers questions, so it must remain inside the verified
+    # question-family scope. Answer evidence outside this range is handled by
+    # the separate answer-recovery pass below.
+    visual_pages = sorted(
+        set(weak_pages + result.unprocessed_pages).intersection(question_page_scope)
+    )
     for page in visual_pages:
         visual_processed = False
         try:
@@ -2167,6 +2182,78 @@ def extract_document_qa(
         result.paired_items = []
         result.items = []
         return result
+
+    # A dense page can end one section and begin the next. A general "extract
+    # everything" vision pass occasionally misses the first one or two items
+    # below that transition. Re-read only nearby in-scope pages for each exact
+    # numbering gap and merge a question only when its printed ID is visible.
+    question_gap_visual_calls = 0
+    initial_question_gaps = identify_suspicious_numbering_gaps(
+        [item.item_id for item in result.extracted_questions]
+    )
+    for missing_id in initial_question_gaps:
+        if question_gap_visual_calls >= MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT:
+            break
+        section_prefix = missing_id.split(".", 1)[0] + "."
+        related_pages = sorted({
+            item.question_page
+            for item in result.extracted_questions
+            if item.normalized_item_id.startswith(section_prefix)
+        })
+        candidate_pages = sorted(
+            question_page_scope,
+            key=lambda page: (
+                min((abs(page - known) for known in related_pages), default=999),
+                page,
+            ),
+        )[:MAX_TARGETED_VISUAL_PAGES_PER_GAP]
+        for page in candidate_pages:
+            if question_gap_visual_calls >= MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT:
+                break
+            question_gap_visual_calls += 1
+            try:
+                targeted_items = _extract_visual_page(
+                    document=document,
+                    page_number=page,
+                    target=(
+                        f"Find and fully transcribe exact Kurzfragen item {missing_id}. "
+                        "Inspect the entire page, including below an earlier section. "
+                        "Return it only when that exact printed ID is visibly present; "
+                        "never infer it from the surrounding numbering."
+                    ),
+                )
+            except Exception:
+                log.exception(
+                    "document_question_gap_recovery_failed document=%s gap=%s page=%s",
+                    document_id, missing_id, page,
+                )
+                continue
+            recovered = next((
+                item for item in targeted_items
+                if normalise_item_id(item.item_id) == normalise_item_id(missing_id)
+            ), None)
+            if recovered is None:
+                continue
+            question = _normalise_question({
+                "item_id": recovered.item_id,
+                "question": recovered.question,
+                "question_page": page,
+                "confidence": recovered.confidence,
+            }, page)
+            if question is not None:
+                result.extracted_questions.append(question)
+                visual_item_pages_by_id.setdefault(
+                    question.normalized_item_id, set()
+                ).add(page)
+                log.info(
+                    "document_question_gap_recovered document=%s item=%s page=%s",
+                    document_id, missing_id, page,
+                )
+            break
+    result.extracted_questions.sort(
+        key=lambda item: (_natural_item_id_key(item.item_id), item.question_page)
+    )
+
     answers_by_id: dict[str, set[str]] = {}
     for evidence in result.solution_evidence:
         if evidence.normalized_item_id:
@@ -2398,6 +2485,10 @@ def extract_document_qa(
         and not set(result.unprocessed_pages).intersection(expected_pages)
         and not result.invalid_item_ids_rejected
         and not result.duplicate_item_ids
+        and not any(
+            gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
+            for gap in result.gaps
+        )
         and (
             not resolved_family
             or all(any(

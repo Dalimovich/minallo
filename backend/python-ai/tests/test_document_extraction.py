@@ -809,6 +809,84 @@ def test_visual_heading_json_mode_prompt_explicitly_requests_json() -> None:
     assert '"response_format": {"type": "json_object"}' in visual_source
 
 
+def test_visual_extraction_uses_rendered_page_as_authoritative_provenance(
+    monkeypatch,
+) -> None:
+    import json
+    from app.services import openai_client
+
+    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+        content=json.dumps({"items": [{
+            "item_id": "5.1",
+            "question": "Welche Aussage ist korrekt?",
+            # Deliberately copied from the schema example. The inspected PDF
+            # page, not this model-generated field, is authoritative.
+            "question_page": 1,
+            "answer_page": 1,
+            "answer": "",
+            "confidence": 0.9,
+        }]})
+    ))])
+    completions = SimpleNamespace(create=lambda **_: response)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: client)
+
+    items = extraction._extract_visual_image(
+        image_bytes=b"png", media_type="image/png", page_number=7,
+        target="Kurzfragen",
+    )
+
+    assert len(items) == 1
+    assert items[0].question_page == 7
+    assert items[0].answer_page is None
+
+
+def test_numbering_gap_recovery_merges_visibly_confirmed_transition_question(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 1, "storage_path": "exam.pdf"}, [{
+            "page_number": 1,
+            "cleaned_text": "2. Kurzfragen - Grundlagen\n2.2 Zweite Frage?",
+            "raw_text": "",
+            "extraction_quality": "weak",
+        }]),
+    )
+    monkeypatch.setattr(
+        extraction,
+        "chat_json",
+        lambda **_: SimpleNamespace(
+            data={"questions": [], "solutions": []}, model="test",
+            prompt_tokens=0, completion_tokens=0,
+        ),
+    )
+
+    def visual_page(**kwargs):
+        if "exact Kurzfragen item 2.1" in kwargs["target"]:
+            return [extraction.ExtractedQAItem(
+                "2.1", "Erste Frage?", "", 1, confidence=0.95,
+            )]
+        return [extraction.ExtractedQAItem(
+            "2.2", "Zweite Frage?", "", 1, confidence=0.95,
+        )]
+
+    monkeypatch.setattr(extraction, "_extract_visual_page", visual_page)
+    monkeypatch.setattr(
+        extraction, "recover_unanswered_answers",
+        lambda **_: extraction.AnswerRecoveryResult(),
+    )
+
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="Kurzfragen",
+    )
+
+    assert [item.item_id for item in result.extracted_questions] == ["2.1", "2.2"]
+    assert result.suspicious_numbering_gaps == []
+    assert result.scope_extraction_complete
+
+
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
     from app.services import document_extraction as extraction
 
