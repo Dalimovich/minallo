@@ -121,7 +121,10 @@ function restore(marker: StudyToolConfigurationMarker): StudyToolConfigurationMa
 
 function readiness(doc: CourseDocument): DocumentGenerationReadiness {
   const status = String(doc.processing_status || '').toLowerCase();
-  if (status === 'ready') return 'ready';
+  if (status === 'ready') {
+    return Number(doc.page_count || 0) > 0 && Number(doc.chunk_count || 0) > 0
+      ? 'ready' : 'failed';
+  }
   if (status === 'failed') return 'failed';
   if (doc.file_type && !/pdf/i.test(doc.file_type)) return 'unsupported';
   return 'indexing';

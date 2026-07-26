@@ -546,3 +546,60 @@ def test_existing_unsearched_solution_section_keeps_gap_unresolved() -> None:
         ),
     )
     assert result.status is extraction.GapStatus.UNRESOLVED
+def test_unanswered_question_triggers_visual_recovery_on_good_text(monkeypatch) -> None:
+    from app.services import document_extraction as extraction
+
+    question = extraction.ExtractedQuestion(
+        item_id="2.1", normalized_item_id="2.1",
+        question_text="Welche Aussage trifft auf eine Fertigungszelle zu?",
+        question_page=2, question_fingerprint="fingerprint", confidence=0.95,
+        answer_type="multiple_choice",
+        options=[
+            extraction.ExtractedQuestionOption("A", "Werkzeugwechsel werden nicht benötigt.", 0),
+            extraction.ExtractedQuestionOption("B", "Automatischer Werkstückwechsel mit Werkstückspeicher", 1),
+        ],
+    )
+    pairs = extraction.pair_questions_and_solutions([question], [])
+    inspected: list[int] = []
+
+    def visual_page(**kwargs):
+        inspected.append(kwargs["page_number"])
+        return [extraction.ExtractedQAItem(
+            item_id="2.1", question=question.question_text,
+            answer="Automatischer Werkstückwechsel mit Werkstückspeicher",
+            question_page=2, answer_page=40, evidence_type="green_checkmark",
+            confidence=0.96,
+        )]
+
+    monkeypatch.setattr(extraction, "_extract_visual_page", visual_page)
+    statuses = {40: extraction.PageProcessingStatus.TEXT_PROCESSED}
+    recovered = extraction.recover_unanswered_answers(
+        document={"id": "doc"}, questions=[question], paired_items=pairs,
+        text_by_page={40: (
+            "Welche Aussage trifft auf eine Fertigungszelle zu? "
+            "Werkzeugwechsel werden nicht benötigt. "
+            "Automatischer Werkstückwechsel mit Werkstückspeicher"
+        )},
+        page_statuses=statuses,
+    )
+
+    assert inspected == [40]
+    assert recovered.solution_evidence[0].evidence_type == "green_checkmark"
+    assert statuses[40] == extraction.PageProcessingStatus.VISION_PROCESSED
+
+
+def test_solution_without_id_pairs_by_option_text() -> None:
+    from app.services import document_extraction as extraction
+
+    question = extraction.ExtractedQuestion(
+        item_id="2.4", normalized_item_id="2.4", question_text="Welches Verfahren?",
+        question_page=2, confidence=0.9,
+        options=[extraction.ExtractedQuestionOption("C", "Laser-Druckguss", 0)],
+    )
+    solution = extraction.ExtractedSolutionEvidence(
+        item_id=None, normalized_item_id=None, answer_text="Laser-Druckguss",
+        answer_page=41, evidence_type="checked_option", confidence=0.95,
+    )
+    paired = extraction.pair_questions_and_solutions([question], [solution])
+    assert paired[0].pairing_method == "option_text_match"
+    assert paired[0].answer_text == "Laser-Druckguss"

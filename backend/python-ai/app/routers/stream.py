@@ -2429,6 +2429,8 @@ async def _prepare_ask_stream_response(
                     if extraction.status == "section_result_mismatch" else None
                 ),
                 "unresolvedItems": extraction.unanswered_item_ids,
+                "answerRecoveryPages": extraction.answer_recovery_pages,
+                "answerRecoveryIncomplete": extraction.answer_recovery_incomplete,
                 "languageStatus": "valid_mixed_source",
                 "continuationCorrection": extraction_correction,
             },

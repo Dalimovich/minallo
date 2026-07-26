@@ -169,6 +169,14 @@ class ExtractedQAItem:
     question_page: int
     answer_page: int | None = None
     confidence: float = 0.0
+    evidence_type: str | None = None
+
+
+@dataclass
+class ExtractedQuestionOption:
+    label: str | None
+    text: str
+    order: int
 
 
 @dataclass
@@ -180,6 +188,8 @@ class ExtractedQuestion:
     section: str | None = None
     question_fingerprint: str = ""
     confidence: float = 0.0
+    options: list[ExtractedQuestionOption] = field(default_factory=list)
+    answer_type: str | None = None
 
 
 @dataclass
@@ -365,6 +375,8 @@ class DocumentExtractionResult:
     resolved_end_page: int | None = None
     invalid_item_ids_rejected: list[str] = field(default_factory=list)
     unprocessed_pages: list[int] = field(default_factory=list)
+    answer_recovery_pages: dict[str, list[int]] = field(default_factory=dict)
+    answer_recovery_incomplete: bool = False
 
 
 _EXTRACTION_CONTEXTS: dict[tuple[str, str], DocumentExtractionContext] = {}
@@ -421,6 +433,22 @@ def pair_questions_and_solutions(
                 score, possible = max(scored, key=lambda value: value[0])
                 if score >= 0.72:
                     candidate, method = possible, "referenced_question_similarity"
+        if candidate is None and question.options:
+            option_texts = {
+                re.sub(r"\W+", " ", option.text.casefold()).strip()
+                for option in question.options if option.text.strip()
+            }
+            candidate = next((
+                item for item in unused
+                if any(
+                    option and (
+                        option in re.sub(r"\W+", " ", item.answer_text.casefold()).strip()
+                        or re.sub(r"\W+", " ", item.answer_text.casefold()).strip() in option
+                    )
+                    for option in option_texts
+                )
+            ), None)
+            method = "option_text_match" if candidate else None
         if candidate:
             unused.remove(candidate)
         paired.append(PairedQAItem(
@@ -869,6 +897,7 @@ def _normalise_item(raw: Any, fallback_page: int) -> ExtractedQAItem | None:
         question_page=question_page,
         answer_page=answer_page,
         confidence=confidence,
+        evidence_type=str(raw.get("evidence_type") or "").strip() or None,
     )
 
 
@@ -876,6 +905,17 @@ def _normalise_question(raw: Any, fallback_page: int) -> ExtractedQuestion | Non
     item = _normalise_item(raw, fallback_page)
     if item is None:
         return None
+    raw_options = raw.get("options") if isinstance(raw, dict) else []
+    options: list[ExtractedQuestionOption] = []
+    if isinstance(raw_options, list):
+        for index, option in enumerate(raw_options):
+            if isinstance(option, dict):
+                text = str(option.get("text") or "").strip()
+                label = str(option.get("label") or "").strip() or None
+            else:
+                text, label = str(option or "").strip(), None
+            if text:
+                options.append(ExtractedQuestionOption(label=label, text=text, order=index))
     return ExtractedQuestion(
         item_id=item.item_id,
         normalized_item_id=normalise_item_id(item.item_id),
@@ -884,6 +924,8 @@ def _normalise_question(raw: Any, fallback_page: int) -> ExtractedQuestion | Non
         section=str(raw.get("section") or "").strip() or None,
         question_fingerprint=question_fingerprint(item.question),
         confidence=item.confidence,
+        options=options,
+        answer_type=str(raw.get("answer_type") or "").strip() or None,
     )
 
 
@@ -947,6 +989,132 @@ def _merge_items(items: list[ExtractedQAItem]) -> list[ExtractedQAItem]:
             existing.answer_page = item.answer_page or item.question_page
         existing.confidence = max(existing.confidence, item.confidence)
     return sorted(merged.values(), key=_item_sort_key)
+
+
+@dataclass
+class AnswerRecoveryResult:
+    solution_evidence: list[ExtractedSolutionEvidence] = field(default_factory=list)
+    inspected_pages: dict[str, list[int]] = field(default_factory=dict)
+    incomplete: bool = False
+
+
+def recover_unanswered_answers(
+    *,
+    document: dict[str, Any],
+    questions: list[ExtractedQuestion],
+    paired_items: list[PairedQAItem],
+    text_by_page: dict[int, str],
+    page_statuses: dict[int, PageProcessingStatus],
+    max_visual_calls: int = 12,
+) -> AnswerRecoveryResult:
+    """Target visual answer marks for existing questions with missing answers.
+
+    Text quality is deliberately not a gate: a page may have perfect option
+    text while its checked box, colour, circle, or annotation is visual-only.
+    """
+    recovery = AnswerRecoveryResult()
+    questions_by_id = {question.normalized_item_id: question for question in questions}
+    calls = 0
+    for pair in (item for item in paired_items if not item.answer_text):
+        question = questions_by_id.get(normalise_item_id(pair.item_id))
+        if question is None:
+            continue
+        question_tokens = set(re.findall(r"\w{4,}", question.question_text.casefold()))
+        option_tokens = [
+            set(re.findall(r"\w{4,}", option.text.casefold()))
+            for option in question.options
+        ]
+        ranked: list[tuple[float, int]] = []
+        for page, text in text_by_page.items():
+            normalized = text.casefold()
+            tokens = set(re.findall(r"\w{4,}", normalized))
+            score = 0.0
+            if re.search(
+                rf"(?<![\d.]){re.escape(question.item_id)}(?![\d.])", text
+            ):
+                score += 5.0
+            overlap = len(question_tokens & tokens) / max(1, len(question_tokens))
+            score += 4.0 * overlap
+            option_overlap = max(
+                (len(values & tokens) / max(1, len(values)) for values in option_tokens),
+                default=0.0,
+            )
+            score += 3.0 * option_overlap
+            if re.search(
+                r"\b(?:l[oÃ¶]sung(?:en)?|solution|antworten?|answer\s*key)\b",
+                normalized,
+            ):
+                score += 2.5
+            if len(question.options) >= 2 and option_overlap >= 0.35:
+                score += 2.0
+            if score > 0:
+                ranked.append((score, page))
+        candidate_pages = [page for _score, page in sorted(ranked, reverse=True)[:3]]
+        recovery.inspected_pages[pair.item_id] = []
+        if calls >= max_visual_calls or not candidate_pages:
+            recovery.incomplete = True
+            continue
+        options = "\n".join(
+            f"{option.label or option.order + 1}. {option.text}"
+            for option in question.options
+        ) or "No structured choices were extracted."
+        for page in candidate_pages:
+            if calls >= max_visual_calls:
+                recovery.incomplete = True
+                break
+            calls += 1
+            recovery.inspected_pages[pair.item_id].append(page)
+            try:
+                visual_items = _extract_visual_page(
+                    document=document,
+                    page_number=page,
+                    target=(
+                        f"Find official visible answer evidence for question {question.item_id}. "
+                        f"Question: {question.question_text}\nKnown answer choices:\n{options}\n"
+                        "Inspect checked boxes, coloured ticks, circles, underlining, "
+                        "highlighting, handwritten corrections, and answer-key rows. "
+                        "Return an answer only when a visible mark supports it. Never "
+                        "solve from general knowledge."
+                    ),
+                )
+                page_statuses[page] = PageProcessingStatus.VISION_PROCESSED
+            except Exception:
+                recovery.incomplete = True
+                log.exception(
+                    "document_answer_visual_recovery_failed document=%s item=%s page=%s",
+                    document.get("id"), pair.item_id, page,
+                )
+                continue
+            for item in visual_items:
+                if not item.answer.strip() or item.confidence < 0.65:
+                    continue
+                id_match = normalise_item_id(item.item_id) == question.normalized_item_id
+                answer_norm = re.sub(r"\W+", " ", item.answer.casefold()).strip()
+                option_match = any(
+                    re.sub(r"\W+", " ", option.text.casefold()).strip() in answer_norm
+                    or answer_norm in re.sub(r"\W+", " ", option.text.casefold()).strip()
+                    for option in question.options
+                    if option.text.strip() and answer_norm
+                )
+                if not (id_match or option_match):
+                    continue
+                recovery.solution_evidence.append(ExtractedSolutionEvidence(
+                    item_id=question.item_id,
+                    normalized_item_id=question.normalized_item_id,
+                    answer_text=item.answer,
+                    answer_page=item.answer_page or page,
+                    evidence_type=item.evidence_type or "visual_answer_mark",
+                    referenced_question_text=question.question_text,
+                    question_fingerprint=question.question_fingerprint,
+                    confidence=item.confidence,
+                ))
+                break
+            if any(
+                item.normalized_item_id == question.normalized_item_id
+                for item in recovery.solution_evidence
+            ):
+                break
+    return recovery
 
 
 def extract_document_qa(
@@ -1342,7 +1510,9 @@ def extract_document_qa(
                 "do not cap the number of items. Preserve German or other source wording "
                 "exactly. Do not extract, infer, or invent answers. Return JSON "
                 "{\"questions\":[{\"item_id\":\"9.2\",\"question\":\"...\","
-                "\"question_page\":9,\"section\":\"Kurzfragen\",\"confidence\":0.9}]}. "
+                "\"question_page\":9,\"section\":\"Kurzfragen\","
+                "\"answer_type\":\"multiple_choice\",\"options\":["
+                "{\"label\":\"A\",\"text\":\"...\"}],\"confidence\":0.9}]}. "
                 "Ignore solution-only content and unrelated long calculations."
             ),
             user="\n\n".join(
@@ -1490,6 +1660,21 @@ def extract_document_qa(
         result.extracted_questions,
         result.solution_evidence,
     )
+    answer_recovery = recover_unanswered_answers(
+        document=document,
+        questions=result.extracted_questions,
+        paired_items=result.paired_items,
+        text_by_page=all_text_by_page,
+        page_statuses=result.page_statuses,
+    )
+    if answer_recovery.solution_evidence:
+        result.solution_evidence.extend(answer_recovery.solution_evidence)
+        result.paired_items = pair_questions_and_solutions(
+            result.extracted_questions,
+            result.solution_evidence,
+        )
+    result.answer_recovery_pages = answer_recovery.inspected_pages
+    result.answer_recovery_incomplete = answer_recovery.incomplete
     result.items = [
         ExtractedQAItem(
             item_id=item.item_id,
@@ -1710,10 +1895,20 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
     )
     blocks = [heading]
     for item in result.items:
-        answer = item.answer or (
-            "No official answer was readable in the document."
-            if english else "Im Dokument war keine offizielle Antwort lesbar."
-        )
+        if item.answer:
+            answer = item.answer
+        elif result.answer_recovery_incomplete:
+            answer = (
+                "Answer recovery is incomplete because one or more candidate pages could not be inspected."
+                if english else
+                "Die Antwortsuche ist unvollstÃ¤ndig, weil nicht alle Kandidatenseiten visuell geprÃ¼ft werden konnten."
+            )
+        else:
+            answer = (
+                "Official answer not found after text and targeted visual search."
+                if english else
+                "Nach Textsuche und gezielter visueller PrÃ¼fung wurde keine offizielle Antwort gefunden."
+            )
         blocks.append(
             f"### {item.item_id}\n\n"
             f"**{'Question' if english else 'Frage'}:** {item.question}\n\n"
@@ -1749,10 +1944,13 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
                 f"Unreadable pages: {pages}" if english else f"Unlesbare Seiten: {pages}"
             )
         if result.unprocessed_pages:
-            pages = ", ".join(map(str, result.unprocessed_pages))
+            details = ", ".join(
+                f"{page} ({result.page_statuses.get(page, PageProcessingStatus.UNREADABLE).value})"
+                for page in result.unprocessed_pages
+            )
             reasons.append(
-                f"Pages not available for processing: {pages}"
-                if english else f"Nicht verarbeitete Seiten: {pages}"
+                f"Pages requiring retry: {details}" if english else
+                f"Erneut zu verarbeitende Seiten: {details}"
             )
         if result.unanswered_item_ids:
             item_ids = ", ".join(result.unanswered_item_ids)
@@ -1794,6 +1992,7 @@ __all__ = [
     "DocumentExtractionContext",
     "DocumentExtractionResult",
     "ExtractedQuestion",
+    "ExtractedQuestionOption",
     "ExtractedSolutionEvidence",
     "ExtractionPageKind",
     "GapSearchCoverage",
@@ -1824,6 +2023,7 @@ __all__ = [
     "load_extraction_context",
     "normalise_item_id",
     "pair_questions_and_solutions",
+    "recover_unanswered_answers",
     "question_fingerprint",
     "review_numbering_gap",
     "save_extraction_context",

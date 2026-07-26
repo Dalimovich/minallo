@@ -332,7 +332,7 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
         folder,
         { ..._guessDocMeta(fname), forceReindex: true }
       )
-        .then(() => {
+        .then(async () => {
           btn.textContent = '✓ AI';
           btn.style.background = 'rgba(6,214,160,.15)';
           btn.style.color = 'rgba(6,214,160,.9)';
@@ -398,7 +398,7 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
             .then((docs) => {
               const d = (docs || []).find((x) => x.id === docId);
               if (!d) return setTimeout(poll, 3000);
-              if (d.processing_status === 'ready' || d.processing_status === 'failed') {
+              if (_displayStatusForDoc(d) === 'ready' || _displayStatusForDoc(d) === 'ocr_weak' || d.processing_status === 'failed') {
                 return resolve({
                   status: d.processing_status as 'ready' | 'failed',
                   error: d.processing_error || null,
@@ -548,7 +548,7 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
             .filter((f) => !f._uploaded) as unknown as LegacyCourse['files'];
           return window._ufMerge?.(course);
         })
-        .then(() => {
+        .then(async () => {
           try {
             const courseFiles = (course.files || []) as unknown as CourseFileLite[];
             const toCache = {
@@ -577,33 +577,41 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
           const pdfFiles = files.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
           if (!pdfFiles.length || !course.id) {
             modal.setProcessingPct(100);
-            modal.setStage('processing', 'complete');
-            modal.setStage('ready', 'complete');
-            modal.markDone();
+            modal.markFailed('Uploaded successfully, but this file type is not available as an AI source.');
             return;
           }
           const allFiles = (course.files || []) as unknown as CourseFileLite[];
           const tracked: { fileName: string }[] = [];
-          pdfFiles.forEach((pf) => {
+          const starts = pdfFiles.map(async (pf) => {
             const merged = allFiles.find((x) => x.name === pf.name && x._uploaded && x._storageName);
             if (merged && merged._storageName) {
-              tracked.push({ fileName: merged.name });
-              indexExistingDocument(
+              await indexExistingDocument(
                 course.id,
                 merged._storageName,
                 merged.name,
                 _guessSourceType(merged.name),
                 merged._folder || null,
                 _guessDocMeta(merged.name)
-              ).catch(() => {});
+              );
+              tracked.push({ fileName: merged.name });
+              return;
             }
+            throw new Error(`${pf.name} was uploaded but no durable document could be created.`);
           });
+          const startResults = await Promise.allSettled(starts);
+          const indexingFailures = startResults.filter((result) => result.status === 'rejected');
           if (!tracked.length) {
-            modal.setProcessingPct(100);
-            modal.setStage('processing', 'complete');
-            modal.setStage('ready', 'complete');
-            modal.markDone();
+            modal.markFailed('Upload completed, but AI indexing did not start. Retry indexing from the file menu.');
+            if (typeof window.showToast === 'function') {
+              window.showToast('Uploaded, not indexed', 'The file is stored but is not ready for AI.');
+            }
             return;
+          }
+          if (indexingFailures.length && typeof window.showToast === 'function') {
+            window.showToast(
+              'Some files are not indexed',
+              `${indexingFailures.length} file${indexingFailures.length === 1 ? '' : 's'} will not be shown as Ready for AI.`
+            );
           }
           pollProcessingProgress(course.id, tracked, modal, () => cancelled);
         })
@@ -722,13 +730,14 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
 // ── Upload modal ────────────────────────────────────────────────────────────
 
 type UploadStage = 'upload' | 'processing' | 'ready';
-type UploadStageState = 'pending' | 'active' | 'complete';
+type UploadStageState = 'pending' | 'active' | 'complete' | 'failed';
 
 interface UploadModalHandle {
   setUploadPct(pct: number): void;
   setProcessingPct(pct: number): void;
   setStage(stage: UploadStage, state: UploadStageState): void;
   markDone(): void;
+  markFailed(message: string): void;
   close(): void;
   onClose?: () => void;
 }
@@ -737,6 +746,7 @@ const STAGE_LABELS: Record<UploadStageState, string> = {
   pending: 'Pending…',
   active: 'In Progress',
   complete: 'Complete',
+  failed: 'Failed',
 };
 
 function openUploadModal(): UploadModalHandle {
@@ -809,6 +819,12 @@ function openUploadModal(): UploadModalHandle {
     markDone() {
       setTimeout(() => handle.close(), 1400);
     },
+    markFailed(message: string) {
+      handle.setStage('processing', 'failed');
+      handle.setStage('ready', 'failed');
+      const foot = overlay.querySelector<HTMLElement>('.co-upmodal-foot p');
+      if (foot) foot.textContent = message;
+    },
     close() {
       if (!overlay.parentNode) return;
       overlay.parentNode.removeChild(overlay);
@@ -876,16 +892,30 @@ async function pollProcessingProgress(
     }
     let sum = 0;
     let resolved = 0;
+    const failedFiles: string[] = [];
     tracked.forEach((t) => {
       const d = docs.find((x) => x.file_name.toLowerCase() === t.fileName.toLowerCase());
       const status = (d?.processing_status || 'queued').toLowerCase();
+      const healthyReady = status === 'ready'
+        && Number(d?.page_count || 0) > 0
+        && Number(d?.chunk_count || 0) > 0;
       sum += _STATUS_PCT[status] ?? 10;
-      if (status === 'ready' || status === 'failed') resolved++;
+      if (healthyReady || status === 'failed' || status === 'ready') resolved++;
+      if (status === 'failed' || (status === 'ready' && !healthyReady)) failedFiles.push(t.fileName);
     });
     const avg = Math.round(sum / tracked.length);
     modal.setProcessingPct(avg);
     if (resolved === tracked.length) {
       modal.setProcessingPct(100);
+      if (failedFiles.length) {
+        modal.markFailed(
+          `${failedFiles.length} file${failedFiles.length === 1 ? '' : 's'} uploaded but failed AI indexing.`
+        );
+        if (typeof window.showToast === 'function') {
+          window.showToast('Uploaded, not indexed', failedFiles.join(', '));
+        }
+        return;
+      }
       modal.setStage('processing', 'complete');
       modal.setStage('ready', 'complete');
       modal.markDone();
@@ -1085,7 +1115,7 @@ async function _bindRagStatus(co: HTMLElement, course: LegacyCourse): Promise<vo
     if (doc) {
       _setRagStatus(el, _displayStatusForDoc(doc));
       if (doc.id) el.dataset.docId = doc.id;
-      if (doc.processing_status === 'ready') {
+      if (doc.processing_status === 'ready' && _displayStatusForDoc(doc) !== 'failed') {
         _ragConfirmed[cacheKey] = 'ready';
         return;
       }
@@ -1191,7 +1221,7 @@ async function _triggerRagIndex(
     const updated = updatedDocs.find((d) => d.file_name.toLowerCase() === fname.toLowerCase());
     if (updated) {
       _setRagStatus(el, _displayStatusForDoc(updated));
-      if (updated.processing_status === 'ready' && cacheKey) _ragConfirmed[cacheKey] = 'ready';
+      if (updated.processing_status === 'ready' && _displayStatusForDoc(updated) !== 'failed' && cacheKey) _ragConfirmed[cacheKey] = 'ready';
       if (
         updated.processing_status !== 'ready' &&
         updated.processing_status !== 'failed' &&
@@ -1235,6 +1265,9 @@ const RAG_ICONS: Record<string, string> = {
 
 function _displayStatusForDoc(doc: CourseDocument): string {
   const status = (doc.processing_status || '').toLowerCase();
+  if (status === 'ready' && (
+    Number(doc.page_count || 0) <= 0 || Number(doc.chunk_count || 0) <= 0
+  )) return 'failed';
   if (status === 'ready' && _docNeedsOcrReview(doc)) return 'ocr_weak';
   return status;
 }
@@ -1270,7 +1303,7 @@ async function _pollRagStatus(
     const doc = docs.find((d) => d.id === docId);
     if (!doc) return;
     _setRagStatus(el, _displayStatusForDoc(doc));
-    if (doc.processing_status === 'ready') {
+    if (doc.processing_status === 'ready' && _displayStatusForDoc(doc) !== 'failed') {
       if (cacheKey) _ragConfirmed[cacheKey] = 'ready';
       return;
     }

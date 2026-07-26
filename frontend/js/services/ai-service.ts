@@ -171,6 +171,7 @@ export interface CourseDocument {
   processing_status?: string;
   processing_error?: string | null;
   page_count?: number;
+  chunk_count?: number;
   extraction_quality?: 'good' | 'weak' | 'failed' | string | null;
   ocr_assessment?: {
     ocrRecommended?: boolean;
@@ -331,10 +332,16 @@ export async function indexExistingDocument(
     if (response.status === 401) _throwSessionExpired();
     const text = await response.text();
     try {
-      const data = JSON.parse(text);
+      const data = JSON.parse(text) as { code?: string; error?: string; indexingStarted?: boolean };
+      if (!response.ok || data.indexingStarted === false) {
+        const error = new Error(data.error || `Indexing could not start (${response.status})`);
+        error.name = data.code || 'uploaded_not_indexed';
+        throw error;
+      }
       clearCourseDocumentCache(courseId);
       return data;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === 'uploaded_not_indexed') throw error;
       throw new Error('Index failed (' + response.status + ')');
     }
   } catch (e: unknown) {

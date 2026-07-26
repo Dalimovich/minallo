@@ -254,24 +254,34 @@ export function bindFolderEvents(co: HTMLElement, course: LegacyCourse): void {
             (course.userFolders || []).forEach((fd) => {
               allFolderFiles = allFolderFiles.concat((fd.files || []) as unknown as CourseFileLite[]);
             });
-            files
+            const indexingStarts = files
               .filter((f) => f.name.toLowerCase().endsWith('.pdf'))
-              .forEach((pf) => {
+              .map((pf) => {
                 const merged = allFolderFiles.find(
                   (x) => x.name === pf.name && x._uploaded && x._storageName
                 );
                 if (merged && merged._storageName && merged.name) {
                   const st = _guessFolderSourceType(pf.name);
-                  indexExistingDocument(
+                  return indexExistingDocument(
                     course.id,
                     merged._storageName,
                     merged.name,
                     st,
                     merged._folder || targetFolder || null,
                     _guessFolderDocMeta(pf.name)
-                  ).catch(() => {});
+                  );
                 }
+                return Promise.reject(new Error(`${pf.name} was uploaded but no durable document could be created.`));
               });
+            void Promise.allSettled(indexingStarts).then((results) => {
+              const failed = results.filter((result) => result.status === 'rejected').length;
+              if (failed && typeof window.showToast === 'function') {
+                window.showToast(
+                  'Uploaded, not indexed',
+                  `${failed} file${failed === 1 ? '' : 's'} are stored but not ready for AI.`
+                );
+              }
+            });
           }
         })
         .catch((e: unknown) => {

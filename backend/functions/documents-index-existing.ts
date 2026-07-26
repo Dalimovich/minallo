@@ -20,10 +20,10 @@ interface DocumentRow {
 
 async function _kickIndex(
   documentId: string, userId: string, courseId: string, storagePath: string
-): Promise<void> {
+): Promise<{ started: true } | { started: false; error: string }> {
   if (!pythonAiConfigured()) {
     console.warn('[documents-index-existing] AI service not configured — document stays unprocessed');
-    return;
+    return { started: false, error: 'AI indexing service is not configured' };
   }
   const r = await forwardToPython('index-document', {
     userId, courseId, documentId, storagePath
@@ -31,7 +31,14 @@ async function _kickIndex(
   if (!r.ok) {
     const errBody = r.body as { error?: string };
     console.warn('[documents-index-existing] Python upstream failed:', r.status, errBody.error);
+    return { started: false, error: errBody.error || `Indexing service returned ${r.status}` };
   }
+  return { started: true };
+}
+
+async function _markIndexFailed(documentId: string, serviceKey: string): Promise<void> {
+  await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(documentId),
+    { processing_status: 'failed' }, serviceKey);
 }
 
 function _ufKey(courseId: string): string {
@@ -110,9 +117,16 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       .catch(() => {});
     await supaRequest('DELETE', 'document_pages?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
-    await _kickIndex(doc.id, user.id, courseId, docStoragePath);
+    const indexing = await _kickIndex(doc.id, user.id, courseId, docStoragePath);
+    if (!indexing.started) {
+      await _markIndexFailed(doc.id, serviceKey);
+      return jsonResponse(502, {
+        code: 'uploaded_not_indexed', error: indexing.error,
+        documentId: doc.id, processingStatus: 'failed', indexingStarted: false,
+      });
+    }
     return jsonResponse(200, {
-      alreadyIndexed: false, documentId: doc.id, processingStatus: 'uploaded'
+      alreadyIndexed: false, documentId: doc.id, processingStatus: 'uploaded', indexingStarted: true
     });
   }
 
@@ -138,8 +152,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(500, 'Failed to record document: ' + JSON.stringify(insertResult.body));
   }
   const document = Array.isArray(insertResult.body) ? insertResult.body[0]! : insertResult.body as DocumentRow;
-  await _kickIndex(document.id, user.id, courseId, docStoragePath);
+  const indexing = await _kickIndex(document.id, user.id, courseId, docStoragePath);
+  if (!indexing.started) {
+    await _markIndexFailed(document.id, serviceKey);
+    return jsonResponse(502, {
+      code: 'uploaded_not_indexed', error: indexing.error,
+      documentId: document.id, processingStatus: 'failed', indexingStarted: false,
+    });
+  }
   return jsonResponse(201, {
-    documentId: document.id, processingStatus: document.processing_status
+    documentId: document.id, processingStatus: document.processing_status, indexingStarted: true
   });
 };

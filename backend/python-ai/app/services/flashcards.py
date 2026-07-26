@@ -439,6 +439,9 @@ def generate_flashcards(
                     seen_fronts.add(key)
                     collected.append(norm)
                 diag.backfill_succeeded = True
+            elif diag.duplicate_count and diag.duplicate_count == diag.raw_items_received:
+                diag.failure_code = "flashcard_all_items_duplicate"
+                message = "Every generated Flashcard duplicated a card you already have. Try a narrower topic or different source."
             else:
                 diag.missing_items_arrays += 1
         else:
