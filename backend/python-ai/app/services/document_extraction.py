@@ -1056,7 +1056,7 @@ def _discover_visual_section_headings(
     pdf_bytes = download_document_bytes(storage_path)
     headings: list[dict[str, Any]] = []
     for page_number in range(1, total_pages + 1):
-        png = _render_page_to_png(pdfium, pdf_bytes, page_number - 1, 240)
+        png = _render_page_to_png(pdfium, pdf_bytes, page_number - 1, 180)
         if not png:
             continue
         request_kwargs = {
@@ -1092,14 +1092,18 @@ def _discover_visual_section_headings(
             }],
         }
         response = None
-        for attempt in range(3):
+        for attempt in range(10):
             try:
                 response = get_openai_client().chat.completions.create(**request_kwargs)
+                # High-detail page images can consume most of the per-minute
+                # vision budget in a short burst. Pace the one-time structural
+                # rebuild; later requests use the verified scope cache.
+                time.sleep(3.0)
                 break
             except Exception as exc:
-                if getattr(exc, "status_code", None) != 429 or attempt == 2:
+                if getattr(exc, "status_code", None) != 429 or attempt == 9:
                     raise
-                delay = 0.75 * (attempt + 1)
+                delay = min(5.0, 1.5 * (attempt + 1))
                 log.warning(
                     "visual_heading_discovery_rate_limited page=%s attempt=%s delay=%.2f",
                     page_number, attempt + 1, delay,
