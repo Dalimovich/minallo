@@ -5,6 +5,7 @@ import { escapeHtml } from '../../utils/escape-html.js';
 import { notePdfTabOpen } from './pdf-tabs.js';
 import { setActivePane, snapshotWindowInto, type PaneId, isPaneOpen } from './pdf-panes.js';
 import { clearCompareDoc } from './pdf-compare.js';
+import { setActivePdfViewerState } from './active-pdf-context.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 interface FileLite {
@@ -77,6 +78,16 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
   window.currentCourseShort = course.short;
   window.activeCourseRef = course;
   if (course.id) window.activeCourseId = course.id;
+  setActivePdfViewerState({
+    courseId: course.id ? String(course.id) : null,
+    documentId: null,
+    fileName: f.name,
+    pdfDoc: null,
+    visiblePage: 1,
+    pageTexts: {},
+    pageTextErrors: {},
+    openSequence: mySeq
+  });
 
   // Resolve this PDF's indexed document UUID so the AI panel can scope
   // retrieval directly via documentIds (no fragile filename-match fallback
@@ -94,7 +105,7 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
           (d) => d.processing_status === 'ready' && (d.file_name || '').toLowerCase() === target
         );
         if (match?.id) {
-          (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId = match.id;
+          setActivePdfViewerState({ documentId: match.id });
         }
       });
     }).catch(() => { /* best effort */ });
@@ -286,6 +297,7 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
               }
               const pdfDoc = pdf as { numPages: number; getPage: (n: number) => Promise<unknown> };
               window.pdfDoc = pdfDoc;
+              setActivePdfViewerState({ pdfDoc, visiblePage: window.pdfPage || 1 });
               window.pdfTotal = pdfDoc.numPages;
               const savedPage = _restorePageBookmark(
                 (f._course || course).id,
@@ -429,6 +441,7 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
               }
               const pdfDoc = pdf as { numPages: number; getPage: (n: number) => Promise<unknown> };
               window.pdfDoc = pdfDoc;
+              setActivePdfViewerState({ pdfDoc, visiblePage: window.pdfPage || 1 });
               window.pdfTotal = pdfDoc.numPages;
               window.pdfPage = 1;
               // Always open in all-pages (continuous) mode — see the note in the

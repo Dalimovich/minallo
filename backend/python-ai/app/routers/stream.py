@@ -361,11 +361,13 @@ class AskStreamRequest(BaseModel):
     selectedRegion: SelectedRegionPayload | None = None
     viewerRevision: str | None = None
     conversationId: str | None = None
+    durableConversation: bool = False
     conversationGeneration: int | None = Field(default=None, ge=0)
     responseLanguage: str | None = None
     openFileContext: str | None = None
     openFileImages: list[OpenFileImagePayload] | None = None
     visualEvidenceExpected: bool = False
+    visualUpload: bool = False
     visualContextMeta: VisualContextMeta | None = None
     # Tutor-mode overlay: explain | solve | quiz. Defaults to 'explain'.
     tutorMode: str | None = None
@@ -383,6 +385,15 @@ class AskStreamRequest(BaseModel):
     # is keyed by document_version_hash so it invalidates automatically when
     # documents change; letting the client opt out defeats the single biggest
     # cost mitigation. Any field the client sends is ignored.
+
+
+class EnsureConversationRequest(BaseModel):
+    clientConversationId: str = Field(min_length=1, max_length=160)
+    courseId: str | None = None
+    activeDocumentId: str | None = None
+    titleSeed: str | None = Field(default=None, max_length=180)
+    clientMessageId: str | None = Field(default=None, max_length=160)
+    messageText: str | None = Field(default=None, max_length=_MAX_STREAM_QUESTION_CHARS)
 
 
 def _sse_bytes(payload: str) -> bytes:
@@ -696,6 +707,56 @@ def _web_sources_to_js(sources: list[dict[str, Any]] | None) -> list[dict[str, A
     ]
 
 
+@router.post("/conversations/ensure")
+async def ensure_conversation_endpoint(
+    payload: EnsureConversationRequest,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Idempotently persist a browser chat and its current user turn."""
+    if payload.activeDocumentId:
+        _require_uuid(payload.activeDocumentId, "activeDocumentId")
+        await run_in_threadpool(
+            lambda: _verify_user_owns_documents(
+                user["id"], payload.courseId or "", [payload.activeDocumentId],
+            )
+        )
+    from ..services.conversation_store import ensure_durable_conversation  # noqa: WPS433
+    from ..services.tutor_state_store import claim_generation  # noqa: WPS433
+
+    try:
+        durable = await run_in_threadpool(
+            lambda: ensure_durable_conversation(
+                user_id=user["id"],
+                client_conversation_id=payload.clientConversationId,
+                course_id=payload.courseId,
+                active_document_id=payload.activeDocumentId,
+                title_seed=payload.titleSeed,
+                client_message_id=payload.clientMessageId,
+                message_text=payload.messageText,
+            )
+        )
+        # Creating the durable conversation also guarantees an empty tutor
+        # state exists. Repeated calls are safe and preserve generation 0.
+        accepted = await run_in_threadpool(
+            lambda: claim_generation(
+                user["id"], durable.conversation_id, payload.courseId or "", 0,
+            )
+        )
+        if not accepted:
+            raise RuntimeError("initial tutor state was not accepted")
+    except Exception as exc:
+        log.exception("durable_conversation_creation_failed user=%s", user["id"])
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "tutor_state_creation_failed",
+                "message": "Minallo could not save the document-scan progress.",
+                "retryable": True,
+            },
+        ) from exc
+    return {"conversationId": durable.conversation_id, "created": durable.created}
+
+
 @router.post("/ask-stream")
 async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(verify_supabase_jwt)):
     """Complete access preflight, then expose the deferred pipeline over SSE."""
@@ -943,10 +1004,11 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                 )
         except HTTPException as exc:
             terminal_event_sent = True
+            typed_detail = exc.detail if isinstance(exc.detail, dict) else {}
             yield _error_sse(
-                code="request_rejected",
-                message=str(exc.detail),
-                retryable=False,
+                code=str(typed_detail.get("code") or "request_rejected"),
+                message=str(typed_detail.get("message") or exc.detail),
+                retryable=bool(typed_detail.get("retryable", False)),
                 request_id=request_id,
             )
         except asyncio.CancelledError:
@@ -1024,6 +1086,27 @@ async def _prepare_ask_stream_response(
     conversation_id = (payload.conversationId or "").strip()
     generation = payload.conversationGeneration
     tutor_state = None
+    if payload.durableConversation:
+        from ..services.conversation_store import validate_durable_conversation  # noqa: WPS433
+        try:
+            conversation_valid = await run_in_threadpool(
+                lambda: validate_durable_conversation(
+                    user_id=user_id, conversation_id=conversation_id,
+                )
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "conversation_validation_failed",
+                    "retryable": True,
+                },
+            ) from exc
+        if not conversation_valid:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "conversation_not_found", "retryable": False},
+            )
     if conversation_id and generation is not None:
         from ..services.tutor_state_store import (  # noqa: WPS433
             claim_generation,
@@ -1045,10 +1128,27 @@ async def _prepare_ask_stream_response(
     elif conversation_id:
         # Legacy/internal callers may omit a generation. Persistent state is
         # still authoritative for document-extraction continuations.
-        from ..services.tutor_state_store import load_tutor_state  # noqa: WPS433
-        tutor_state = await run_in_threadpool(
-            lambda: load_tutor_state(user_id, conversation_id)
+        from ..services.tutor_state_store import (  # noqa: WPS433
+            ensure_tutor_state,
+            load_tutor_state,
         )
+        try:
+            tutor_state = await run_in_threadpool(
+                lambda: (
+                    ensure_tutor_state(user_id, conversation_id, payload.courseId)
+                    if payload.durableConversation
+                    else load_tutor_state(user_id, conversation_id)
+                )
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "tutor_state_creation_failed",
+                    "message": "Minallo could not save the document-scan progress.",
+                    "retryable": True,
+                },
+            ) from exc
         tutor_state.course_id = payload.courseId
 
     tutor_mode = normalise_tutor_mode(payload.tutorMode or DEFAULT_TUTOR_MODE)
@@ -1284,6 +1384,13 @@ async def _prepare_ask_stream_response(
         active_document_id=payload.activeDocumentId,
         open_file_context=payload.openFileContext,
     )
+    if payload.visualUpload and open_file_images and not payload.activeDocumentId:
+        source_decision = replace(
+            source_decision,
+            source_scope=SourceScope.VISUAL_UPLOAD,
+            source_label="Using: Pasted screenshot",
+            used_document_ids=[],
+        )
     if requested_documents_unresolved:
         requested_names = list(
             (document_name_resolution or {}).get("unresolved_names")
@@ -2599,7 +2706,7 @@ async def _prepare_ask_stream_response(
     explicit_course_files = source_decision.selected_source_mode.value == "course_files"
     explicit_selection = bool(retrieval_document_ids)
     has_strong_course_anchor = bool(
-        payload.openFileContext or exercise_hit or formula_hits
+        payload.openFileContext or open_file_images or exercise_hit or formula_hits
         or relevance_score >= 0.18
         or ((explicit_course_files or explicit_selection) and chunks)
     )

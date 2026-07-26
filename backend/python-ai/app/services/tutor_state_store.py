@@ -43,6 +43,26 @@ def load_tutor_state(user_id: str, conversation_id: str) -> TutorState:
     return state
 
 
+def ensure_tutor_state(
+    user_id: str, conversation_id: str, course_id: str,
+) -> TutorState:
+    """Create generation-zero state when absent, otherwise return the row."""
+    response = (
+        get_supabase().table("ai_tutor_states")
+        .select("state")
+        .eq("user_id", user_id)
+        .eq("conversation_id", conversation_id)
+        .limit(1)
+        .execute()
+    )
+    if not (response.data or []):
+        if not claim_generation(user_id, conversation_id, course_id, 0):
+            raise RuntimeError("initial tutor state was not accepted")
+    state = load_tutor_state(user_id, conversation_id)
+    state.course_id = course_id
+    return state
+
+
 def save_tutor_state(user_id: str, course_id: str, state: TutorState) -> None:
     """Upsert state under the authenticated user and conversation identity."""
     state.user_id = user_id
@@ -75,6 +95,6 @@ def current_persisted_generation(user_id: str, conversation_id: str) -> int | No
 
 
 __all__ = [
-    "claim_generation", "current_persisted_generation",
+    "claim_generation", "current_persisted_generation", "ensure_tutor_state",
     "load_tutor_state", "save_tutor_state",
 ]

@@ -24,7 +24,7 @@ export interface PdfPageCaptureRequest {
 export interface OpenFileImage {
   mediaType: 'image/png' | 'image/jpeg';
   data: string;
-  page: number;
+  page?: number;
   region: 'full_page' | 'selected_region' | 'formula_area' | 'drawing_area' | 'answer_grid';
 }
 
@@ -51,10 +51,72 @@ type ViewerWindow = Window & {
   pdfPageTexts?: Record<number, string>;
   pdfPageTextErrors?: Record<number, boolean>;
   _pdfOpenSeq?: number;
+  __minalloPdfViewerState?: MinalloPdfViewerState;
 };
+
+export interface MinalloPdfViewerState {
+  courseId: string | null;
+  documentId: string | null;
+  fileName: string | null;
+  pdfDoc: Window['pdfDoc'] | null;
+  visiblePage: number;
+  pageTexts: Record<number, string>;
+  pageTextErrors: Record<number, boolean>;
+  revision?: string;
+  fingerprint?: string;
+  openSequence: number;
+}
+
+export function setActivePdfViewerState(update: Partial<MinalloPdfViewerState>): MinalloPdfViewerState {
+  const viewer = window as ViewerWindow;
+  const current = viewer.__minalloPdfViewerState || {
+    courseId: null, documentId: null, fileName: null, pdfDoc: null,
+    visiblePage: 1, pageTexts: {}, pageTextErrors: {}, openSequence: 0
+  };
+  const next = { ...current, ...update };
+  viewer.__minalloPdfViewerState = next;
+  viewer.activeCourseId = next.courseId;
+  viewer.activeRagDocumentId = next.documentId;
+  viewer.activeFileName = next.fileName;
+  viewer.pdfDoc = next.pdfDoc;
+  viewer.pdfPage = next.visiblePage;
+  viewer.pdfPageTexts = next.pageTexts;
+  viewer.pdfPageTextErrors = next.pageTextErrors;
+  viewer.activeDocumentRevision = next.revision || null;
+  viewer.activeSourceFingerprint = next.fingerprint || null;
+  viewer._pdfOpenSeq = next.openSequence;
+  return next;
+}
+
+export function clearActivePdfViewerState(openSequence = Number(window._pdfOpenSeq || 0)): void {
+  setActivePdfViewerState({
+    courseId: null, documentId: null, fileName: null, pdfDoc: null,
+    visiblePage: 1, pageTexts: {}, pageTextErrors: {},
+    revision: undefined, fingerprint: undefined, openSequence
+  });
+}
+
+export function validateActivePdfViewerState(): boolean {
+  const viewer = window as ViewerWindow;
+  const visiblyOpen = !document.getElementById('pdfView')?.hidden;
+  const complete = !!(
+    viewer.activeCourseId && viewer.activeRagDocumentId
+    && viewer.activeFileName && viewer.pdfDoc
+  );
+  if (visiblyOpen && !complete) {
+    console.warn('active_pdf_state_incomplete', {
+      courseId: viewer.activeCourseId || null,
+      documentId: viewer.activeRagDocumentId || null,
+      fileName: viewer.activeFileName || null,
+      hasPdfDoc: !!viewer.pdfDoc
+    });
+  }
+  return complete;
+}
 
 export function getActivePdfContext(): ActivePdfContext | null {
   const viewer = window as ViewerWindow;
+  validateActivePdfViewerState();
   const documentId = String(viewer.activeRagDocumentId || '').trim();
   const courseId = String(viewer.activeCourseId || '').trim();
   const fileName = String(viewer.activeFileName || '').trim();

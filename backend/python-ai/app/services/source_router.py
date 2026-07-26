@@ -23,6 +23,7 @@ class SourceScope(str, Enum):
     INTERNET = "internet"
     GENERAL_KNOWLEDGE = "general_knowledge"
     NEEDS_CLARIFICATION = "needs_clarification"
+    VISUAL_UPLOAD = "visual_upload"
 
 
 class CourseFileScope(str, Enum):
@@ -132,6 +133,8 @@ def source_label(scope: SourceScope) -> str:
         return "Using: Internet"
     if scope == SourceScope.GENERAL_KNOWLEDGE:
         return "Using: General knowledge"
+    if scope == SourceScope.VISUAL_UPLOAD:
+        return "Using: Pasted screenshot"
     return ""
 
 

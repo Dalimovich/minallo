@@ -1,4 +1,5 @@
 import type { LegacyCourse } from '../../../globals.js';
+import { clearActivePdfViewerState } from './active-pdf-context.js';
 import { loadCompareDoc, clearCompareDoc, getCompareFileName, isCompareLoading, onCompareChange } from './pdf-compare.js';
 import { persistablePdfFile } from './pdf-tab-persistence.js';
 
@@ -429,6 +430,7 @@ function closeTab(key: string): void {
     closeMenu();
     renderTabsStrip();
     persist();
+    clearActivePdfViewerState();
     window.activeFileName = null;
     window.activeStorageName = null;
     window.pdfDoc = null;

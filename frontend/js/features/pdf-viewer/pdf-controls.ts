@@ -1,3 +1,5 @@
+import { clearActivePdfViewerState } from './active-pdf-context.js';
+
 export interface PdfControlsOptions {
   getPdfPage: () => number;
   setPdfPage: (n: number) => void;
@@ -189,6 +191,7 @@ export function initPdfControls(options: PdfControlsOptions): {
       // we don't clear first, ss_state keeps pointing at the file and
       // reload sends the user back into the PDF reader. The matching
       // goPortal handler in router.js does the same cleanup.
+      clearActivePdfViewerState();
       w.activeFileName = null;
       w.pdfDoc = null;
       w.pdfFullText = '';

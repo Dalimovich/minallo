@@ -1,4 +1,5 @@
 import type { LegacyCourse } from '../../../globals.js';
+import { setActivePdfViewerState } from './active-pdf-context.js';
 
 export type PaneId = 'left' | 'right';
 
@@ -109,6 +110,13 @@ export function restorePaneToWindow(id: PaneId): void {
   w.pdfShowAll = p.pdfShowAll;
   w.pdfFullText = p.pdfFullText;
   w._ssImageViewerActive = p.imageViewerActive;
+  setActivePdfViewerState({
+    courseId: p.activeCourseId ? String(p.activeCourseId) : null,
+    documentId: p.activeRagDocumentId,
+    fileName: p.activeFileName,
+    pdfDoc: p.pdfDoc,
+    visiblePage: p.pdfPage
+  });
 }
 
 export function setActivePane(id: PaneId): void {

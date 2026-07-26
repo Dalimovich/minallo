@@ -618,6 +618,7 @@ interface GeneratedDoc {
 }
 
 interface ChatMessage {
+  id?: string;
   role: 'user' | 'assistant';
   text: string;
   images?: PastedImage[];
@@ -866,7 +867,10 @@ async function doSend(
   if (stage.dataset.state !== 'active') stage.dataset.state = 'active';
 
   // Append user bubble
-  state.messages.push({ role: 'user', text, images, files });
+  state.messages.push({
+    id: 'ncb_msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+    role: 'user', text, images, files
+  });
   appendUserBubble(msgs, text, images, files);
   touchActiveChat();
   saveChatStore();
@@ -969,10 +973,9 @@ async function streamAiReply(
     const allowDiagrams = latestUserAllowsDiagrams(originMessages);
     const latestFileLabel = latestUserFileLabel(originMessages);
     // Phase 12 wiring: when the active chat has ≥1 course-imported source
-    // selected AND the latest user message is text-only (no images, no
-    // file uploads), route to the Python /ask-stream so plan-v2's RAG +
-    // ranking + math template + verification all kick in. Otherwise fall
-    // back to /api/ai for free-form chat + image/file handling.
+    // Grounded course files, active-PDF captures, and pasted screenshots use
+    // /ask-stream. Arbitrary non-indexed file attachments retain their
+    // explicit generic attachment policy; images are never silently omitted.
     const routed = await handleIntentRoute(state, bubble, thinking, controller);
     if (routed) {
       const msg: ChatMessage = { role: 'assistant', text: routed.text };
@@ -1009,10 +1012,16 @@ async function streamAiReply(
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
       const followUpDoc = await resolveFollowUpDoc(originMessages, rag.courseId || null);
+      const durable = await ensureDurableConversation(originChat, {
+        courseId: rag.courseId,
+        activeDocumentId: rag.activePdfContext?.documentId,
+        titleSeed: originChat.title,
+        message: originMessages.at(-1)
+      });
       const streamed = await streamFromAskStream(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
         rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams,
-        rag.activePdfContext, originId, originMessages.at(-1)?.images || []
+        rag.activePdfContext, durable.conversationId, originMessages.at(-1)?.images || [], true
       );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
       originMessages.push({
@@ -2314,7 +2323,7 @@ const NCB_GENERATED_DOC_CONTEXT_CHARS = 20000;
 // directly responding to, so unrelated later questions don't drag a 20k-char
 // document into every prompt.
 const GENERATED_DOC_REF_RE =
-  /\b(cheat\s*-?\s*sheets?|spickzettel|formelsammlung|formula sheets?|summar(y|ies)|zusammenfassung(en)?|pdf|(that|the|this|das|die) (file|document|doc|sheet|datei|dokument)|(you|du) (just )?(made|created|generated|erstellt|generiert))\b/i;
+  /\b(cheat\s*-?\s*sheets?|spickzettel|formelsammlung|formula sheets?|summar(y|ies)|zusammenfassung(en)?|(that|the|this|das|die) (file|document|doc|sheet|datei|dokument))\b/i;
 
 /** The generated doc the latest user message is asking about, if any.
  *  Always returns the doc when the user is replying directly to the
@@ -2450,9 +2459,10 @@ function ragEligibility(
   const active = chatStore.getActive();
   const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
   const openPdf = getActivePdfContext();
-  // Course/PDF screenshots stay on the grounded stream. Arbitrary uploaded
-  // files still use the generic attachment pipeline until they are indexed.
-  if ((last.files || []).length || ((last.images || []).length && !openPdf)) return null;
+  // Screenshots always stay on the explicit visual stream. With an open PDF
+  // they bind to that page; without one they are the sole visual source and
+  // must never be silently omitted by the generic attachment path.
+  if ((last.files || []).length) return null;
   const normalQuestion = last.text.toLocaleLowerCase();
   const explicitlyNamed = sourceLibrary.items.filter((source) => {
     const full = source.name.trim().toLocaleLowerCase();
@@ -2542,7 +2552,7 @@ function ragEligibility(
     // stays on the generic path when there's no course to ground against.
     const mode = normaliseSourceMode(active.sourceMode);
     const hasUrl = /(?:https?:\/\/|www\.)\S+|\byoutu\.be\/\S+|\b(?:youtube|wikipedia|github|stackoverflow)\.(?:com|org)\b/i.test(last.text);
-    if (mode === 'internet' || (mode === 'auto' && hasUrl)) {
+    if ((last.images || []).length || mode === 'internet' || (mode === 'auto' && hasUrl)) {
       return {
         question: last.text.trim(), courseId: '', documentIds: [], documentNames: [],
         activePdfContext: null, explicitSourceOverride: false
@@ -2580,6 +2590,71 @@ class AskStreamError extends Error {
   }
 }
 
+interface DurableConversationResult {
+  conversationId: string;
+  created: boolean;
+}
+
+const inFlightConversationCreates = new Map<string, Promise<DurableConversationResult>>();
+
+async function ensureDurableConversation(
+  chat: SavedChat,
+  context: {
+    courseId?: string;
+    activeDocumentId?: string;
+    titleSeed?: string;
+    message?: ChatMessage;
+  }
+): Promise<DurableConversationResult> {
+  const existing = inFlightConversationCreates.get(chat.id);
+  if (existing) return existing;
+  const promise = (async (): Promise<DurableConversationResult> => {
+    chat.persistenceStatus = 'creating';
+    saveChatStore();
+    const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
+    if (!aiHost) {
+      chat.persistenceStatus = 'failed';
+      saveChatStore();
+      throw new AskStreamError({
+        code: 'rag_service_unavailable',
+        message: "Minallo's document tutor is temporarily unavailable.",
+        retryable: true
+      });
+    }
+    const response = await authenticatedFetch(aiHost + '/conversations/ensure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientConversationId: chat.id,
+        courseId: context.courseId || undefined,
+        activeDocumentId: context.activeDocumentId || undefined,
+        titleSeed: context.titleSeed || undefined,
+        clientMessageId: context.message?.id,
+        messageText: context.message?.text
+      })
+    }, { safeToRetry: true });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as {
+        detail?: { code?: string; message?: string; retryable?: boolean };
+      };
+      chat.persistenceStatus = 'failed';
+      saveChatStore();
+      throw new AskStreamError({
+        code: body.detail?.code || 'tutor_state_creation_failed',
+        message: body.detail?.message || 'Minallo could not save the document-scan progress.',
+        retryable: body.detail?.retryable !== false
+      });
+    }
+    const result = await response.json() as DurableConversationResult;
+    chat.persistedId = result.conversationId;
+    chat.persistenceStatus = 'persisted';
+    saveChatStore();
+    return result;
+  })().finally(() => inFlightConversationCreates.delete(chat.id));
+  inFlightConversationCreates.set(chat.id, promise);
+  return promise;
+}
+
 async function streamFromAskStream(
   question: string,
   courseId: string,
@@ -2593,13 +2668,16 @@ async function streamFromAskStream(
   allowDiagrams = true,
   activePdfContext: ActivePdfContext | null = null,
   conversationId?: string,
-  userImages: PastedImage[] = []
+  userImages: PastedImage[] = [],
+  durableConversation = false
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {
-    // Misconfigured: graceful fallback to the generic path.
-    const text = await callGenericAi([{ role: 'user', text: question }], bubble, controller, thinking, null, allowDiagrams);
-    return { text, meta: null };
+    throw new AskStreamError({
+      code: 'rag_service_unavailable',
+      message: "Minallo's document tutor is temporarily unavailable.",
+      retryable: true
+    });
   }
   const snapshotResult = activePdfContext
     ? await captureStablePdfSnapshot(question, 'active_document')
@@ -2622,16 +2700,16 @@ async function streamFromAskStream(
   const pastedImages: OpenFileImage[] = userImages.flatMap((image) => {
     const comma = image.dataUrl.indexOf(',');
     const data = comma >= 0 ? image.dataUrl.slice(comma + 1) : '';
-    if (!data || !activePdf) return [];
+    if (!data) return [];
     return [{
       mediaType: image.mediaType === 'image/png' ? 'image/png' : 'image/jpeg',
       data,
-      page: activePdf.visiblePage,
+      page: activePdf?.visiblePage,
       region: 'selected_region'
     } satisfies OpenFileImage];
   });
   const openFileImages = [...(snapshot?.images || []), ...pastedImages].slice(0, 3);
-  const generatedArtifactIsExplicit = !!generatedDoc && /\b(?:cheat\s*-?sheet|summary|formula sheet|spickzettel|zusammenfassung|generated|created)\b/i.test(question);
+  const generatedArtifactIsExplicit = !!generatedDoc && /\b(?:cheat\s*-?sheets?|summar(?:y|ies)|formula sheets?|spickzettel|zusammenfassungen?)\b/i.test(question);
   const useGeneratedArtifact = generatedArtifactIsExplicit || (!activePdf && !!generatedDoc);
   const payloadPdf = useGeneratedArtifact ? null : activePdf;
   const currentPageContext = payloadPdf
@@ -2647,6 +2725,7 @@ async function streamFromAskStream(
     body: JSON.stringify({
       courseId,
       conversationId,
+      durableConversation,
       question,
       tutorMode: getCurrentTutorMode(),
       sourceMode: sourceModeForActiveChat(),
@@ -2687,6 +2766,16 @@ async function streamFromAskStream(
         },
         selectedText: payloadPdf.selectedRegion?.text,
         selectedRegion: payloadPdf.selectedRegion
+      } : openFileImages.length ? {
+        openFileImages,
+        visualEvidenceExpected: true,
+        visualUpload: true,
+        visualContextMeta: {
+          renderAttempted: true,
+          renderedImageCount: openFileImages.length,
+          currentPageTextChars: 0,
+          capturedImagePages: []
+        }
       } : {}),
       // The cheatsheet/summary this chat generated, when the question is about
       // it. openFileContext is the backend's "text the student is looking at"
@@ -2700,7 +2789,17 @@ async function streamFromAskStream(
   }, { safeToRetry: true });
   if (!resp.ok || !resp.body || !resp.body.getReader) {
     const errText = await resp.text().catch(() => '');
-    throw new Error('Ask-stream ' + resp.status + ': ' + errText.slice(0, 200));
+    let detail: { code?: string; message?: string; retryable?: boolean } = {};
+    try {
+      const parsed = JSON.parse(errText) as { detail?: typeof detail };
+      detail = parsed.detail || {};
+    } catch { /* retain typed transport fallback */ }
+    throw new AskStreamError({
+      code: detail.code || 'ask_stream_failed',
+      message: detail.message || "Minallo's document tutor is temporarily unavailable.",
+      retryable: detail.retryable !== false,
+      metadata: { status: resp.status }
+    });
   }
 
   const reader = resp.body.getReader();
@@ -4854,6 +4953,8 @@ interface SavedReply {
 
 interface SavedChat {
   id: string;
+  persistedId: string | null;
+  persistenceStatus: 'local' | 'creating' | 'persisted' | 'failed';
   title: string;
   messages: ChatMessage[];
   /** @deprecated kept for backward compat with v1 chats — selectedSourceIds is the new model. */
@@ -4938,6 +5039,8 @@ const chatStore: ChatStore = {
     const now = Date.now();
     const chat: SavedChat = {
       id: 'ncb_' + now.toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+      persistedId: null,
+      persistenceStatus: 'local',
       title: 'New chat',
       messages: [],
       attachedFolders: [],
@@ -4975,6 +5078,7 @@ function truncateForStorage(text: string, max: number): string {
 
 function compactMessageForStorage(m: ChatMessage): ChatMessage {
   const compact: ChatMessage = {
+    id: m.id,
     role: m.role,
     text: truncateForStorage(m.text || '', NCB_MAX_STORED_MESSAGE_CHARS),
   };
@@ -5039,6 +5143,8 @@ function compactChatForStorage(c: SavedChat): SavedChat {
   const messages = c.messages.slice(-NCB_MAX_STORED_MESSAGES_PER_CHAT);
   return {
     id: c.id,
+    persistedId: c.persistedId || null,
+    persistenceStatus: c.persistedId ? 'persisted' : c.persistenceStatus || 'local',
     title: c.title,
     messages: messages.map(compactMessageForStorage),
     attachedFolders: [],
@@ -5159,6 +5265,10 @@ function loadChatStore(): void {
 
   // Migrate any missing fields on legacy entries.
   chatStore.chats.forEach((c) => {
+    if (typeof c.persistedId !== 'string') c.persistedId = null;
+    if (!['local', 'creating', 'persisted', 'failed'].includes(c.persistenceStatus)) {
+      c.persistenceStatus = c.persistedId ? 'persisted' : 'local';
+    }
     if (!Array.isArray(c.messages)) c.messages = [];
     if (!Array.isArray(c.attachedFolders)) c.attachedFolders = [];
     if (!Array.isArray(c.selectedSourceIds)) c.selectedSourceIds = [];
