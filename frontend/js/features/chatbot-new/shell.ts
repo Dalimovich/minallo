@@ -640,6 +640,7 @@ interface ChatMessage {
     sourceMode: SourceMode;
     selectedSourceIds: string[];
     activeDocumentId?: string;
+    activeDocumentName?: string;
     visiblePage?: number;
   };
   createdAt?: string;
@@ -1014,7 +1015,7 @@ async function streamAiReply(
   state: ConversationState,
   sendBtn: HTMLButtonElement,
   msgs: HTMLElement,
-  options: { targetMessage?: ChatMessage; targetRow?: HTMLElement; requestMessages?: ChatMessage[] } = {}
+  options: { targetMessage?: ChatMessage; targetRow?: HTMLElement; requestMessages?: ChatMessage[]; continuationText?: string; resumeExistingRequest?: boolean } = {}
 ): Promise<boolean> {
   // Bind this reply to the chat it STARTED in. `state.messages` is a live
   // reference that loadActiveChatIntoCenter RE-POINTS on chat switch, so
@@ -1040,8 +1041,9 @@ async function streamAiReply(
     completionState: 'processing', exportable: false, retryable: true,
     createdAt: nowIso, updatedAt: nowIso
   } satisfies ChatMessage;
+  const continuationBase = options.continuationText?.trim() || '';
   Object.assign(assistantMessage, {
-    text: '', completionState: 'processing', exportable: false, retryable: true,
+    text: continuationBase, completionState: continuationBase ? 'recovering' : 'processing', exportable: false, retryable: true,
     errorCode: undefined, failureStage: undefined, recoveryAction: undefined,
     interrupted: false, updatedAt: nowIso
   });
@@ -1052,6 +1054,7 @@ async function streamAiReply(
       sourceMode: normaliseSourceMode(originChat.sourceMode),
       selectedSourceIds: originChat.selectedSourceIds.slice(),
       activeDocumentId: pdf?.documentId,
+      activeDocumentName: pdf?.fileName,
       visiblePage: pdf?.visiblePage,
     };
   }
@@ -1065,6 +1068,7 @@ async function streamAiReply(
   aiRow.dataset.messageId = assistantMessage.id || '';
   setBubbleSubtitle(aiRow, undefined, 'pending');
   const bubble = aiRow.querySelector<HTMLElement>('.ncb-bubble-body');
+  if (bubble && continuationBase) renderRichBubble(bubble, continuationBase, !!assistantMessage.allowDiagrams);
   const thinking = createAIThinkingStatus({
     context: chatbotThinkingContext(requestState),
     // Specific first message from real request context (selected file, exam,
@@ -1073,7 +1077,7 @@ async function streamAiReply(
     host: bubble,
     surface: 'chatbot',
     compact: true,
-    append: false
+    append: !!continuationBase
   });
 
   const controller = new AbortController();
@@ -1099,28 +1103,50 @@ async function streamAiReply(
     const allowDiagrams = latestUserAllowsDiagrams(requestMessages);
   try {
     const latestFileLabel = latestUserFileLabel(requestMessages);
+    const initialRag = ragEligibility(requestMessages);
+    if (options.resumeExistingRequest && assistantMessage.requestSnapshot?.activeDocumentId) {
+      const active = initialRag?.activePdfContext;
+      if (!active || active.documentId !== assistantMessage.requestSnapshot.activeDocumentId) {
+        throw new AskStreamError({
+          code: 'original_pdf_context_unavailable',
+          message: 'Reopen the original PDF before continuing this response.',
+          retryable: true,
+          metadata: { failureStage: 'document_access', requestId: assistantMessage.requestId }
+        });
+      }
+    }
+    const durable = initialRag ? await ensureDurableConversation(originChat, {
+      courseId: initialRag.courseId,
+      activeDocumentId: initialRag.activePdfContext?.documentId,
+      titleSeed: originChat.title,
+      message: sourceUser,
+      assistantMessage,
+      resumeExisting: options.resumeExistingRequest,
+    }) : null;
     // Phase 12 wiring: when the active chat has ≥1 course-imported source
     // Grounded course files, active-PDF captures, and pasted screenshots use
     // /ask-stream. Arbitrary non-indexed file attachments retain their
     // explicit generic attachment policy; images are never silently omitted.
     const routed = await handleIntentRoute(requestState, bubble, thinking, controller);
     if (routed) {
+      const routedText = continuationBase ? `${continuationBase}\n\n${routed.text}` : routed.text;
       Object.assign(assistantMessage, {
-        text: routed.text, completionState: 'complete', exportable: true, retryable: false,
+        text: routedText, completionState: 'complete', exportable: true, retryable: false,
         updatedAt: new Date().toISOString(), missionMarker: routed.missionMarker,
         generatedDoc: routed.generatedDoc, studyToolConfiguration: routed.studyToolConfiguration
       });
       touchOrigin();
       saveChatStore();
       if (isOriginActive()) {
+        if (bubble && continuationBase) renderRichBubble(bubble, routedText, !!assistantMessage.allowDiagrams);
         setBubbleSubtitle(aiRow, routed.studyToolConfiguration ? 'study_tool' : 'course_files');
-        appendBubbleActions(aiRow, routed.text, assistantMessage);
+        appendBubbleActions(aiRow, routedText, assistantMessage);
       }
       reconcileView();
       return true;
     }
 
-    const rag = ragEligibility(requestMessages);
+    const rag = initialRag;
     let raw: string;
     if (rag) {
       // History = everything BEFORE the just-added user turn (which is
@@ -1139,18 +1165,14 @@ async function streamAiReply(
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
       const followUpDoc = await resolveFollowUpDoc(requestMessages, rag.courseId || null);
-      const durable = await ensureDurableConversation(originChat, {
-        courseId: rag.courseId,
-        activeDocumentId: rag.activePdfContext?.documentId,
-        titleSeed: originChat.title,
-        message: requestMessages.at(-1)
-      });
       const streamed = await streamFromAskStream(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
         rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams,
-        rag.activePdfContext, durable.conversationId, requestMessages.at(-1)?.images || [], true
+        rag.activePdfContext, durable!.conversationId, requestMessages.at(-1)?.images || [], true,
+        assistantMessage.requestId
       );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
+      if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
       Object.assign(assistantMessage, {
         text: raw,
         completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString(),
@@ -1182,13 +1204,17 @@ async function streamAiReply(
       const followUpDoc = await resolveFollowUpDoc(requestMessages, null);
       raw = await callGenericAi(requestMessages, bubble, controller, thinking, followUpDoc, allowDiagrams);
       raw = sanitizeChatbotDiagrams(raw, allowDiagrams);
+      if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
       Object.assign(assistantMessage, { text: raw, allowDiagrams, completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString() });
       // Generic chat path — no course retrieval ran, so don't claim otherwise.
       if (isOriginActive()) setBubbleSubtitle(aiRow, latestFileLabel ? 'file:' + latestFileLabel : 'general_knowledge');
     }
     touchOrigin();
     saveChatStore();
-    if (isOriginActive()) appendBubbleActions(aiRow, raw, assistantMessage);
+    if (isOriginActive()) {
+      if (continuationBase && bubble) renderRichBubble(bubble, raw, allowDiagrams);
+      appendBubbleActions(aiRow, raw, assistantMessage);
+    }
     reconcileView();
 
     // After the first AI reply, ask the model for a 4-6 word title — only while
@@ -1201,8 +1227,10 @@ async function streamAiReply(
     return true;
   } catch (err) {
     thinking?.remove(true);
-    const partialText = err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
+    let partialText = err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
       ? sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams).trim() : '';
+    if (continuationBase) partialText = partialText
+      ? `${continuationBase}\n\n${partialText}` : continuationBase;
     const interrupted = (err as Error)?.name === 'AbortError' || !!partialText;
     const classifiedFailure = classifyAiError(err);
     Object.assign(assistantMessage, {
@@ -2781,8 +2809,13 @@ async function ensureDurableConversation(
     activeDocumentId?: string;
     titleSeed?: string;
     message?: ChatMessage;
+    assistantMessage?: ChatMessage;
+    resumeExisting?: boolean;
   }
 ): Promise<DurableConversationResult> {
+  if (context.resumeExisting && chat.persistedId) {
+    return { conversationId: chat.persistedId, created: false };
+  }
   const existing = inFlightConversationCreates.get(chat.id);
   if (existing) return existing;
   const promise = (async (): Promise<DurableConversationResult> => {
@@ -2807,7 +2840,10 @@ async function ensureDurableConversation(
         activeDocumentId: context.activeDocumentId || undefined,
         titleSeed: context.titleSeed || undefined,
         clientMessageId: context.message?.id,
-        messageText: context.message?.text
+        messageText: context.message?.text,
+        assistantMessageId: context.assistantMessage?.id,
+        requestId: context.assistantMessage?.requestId,
+        requestSnapshot: context.assistantMessage?.requestSnapshot
       })
     }, { safeToRetry: true });
     if (!response.ok) {
@@ -2846,7 +2882,8 @@ async function streamFromAskStream(
   activePdfContext: ActivePdfContext | null = null,
   conversationId?: string,
   userImages: PastedImage[] = [],
-  durableConversation = false
+  durableConversation = false,
+  logicalRequestId?: string
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {
@@ -2895,9 +2932,9 @@ async function streamFromAskStream(
   const snapshotId = payloadPdf
     ? [payloadPdf.documentId, payloadPdf.visiblePage, payloadPdf.viewerInstanceId || '', snapshot?.capturedAt || 0].join(':')
     : undefined;
-  const requestId = typeof crypto?.randomUUID === 'function'
+  const requestId = logicalRequestId || (typeof crypto?.randomUUID === 'function'
     ? crypto.randomUUID()
-    : `ask-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    : `ask-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   const resp = await authenticatedFetch(aiHost + '/ask-stream', {
     method: 'POST',
     signal: controller.signal,
@@ -3024,26 +3061,66 @@ async function streamFromAskStream(
     }
   });
 
+  const loadDurableRequestState = async (): Promise<{
+    status: string; stage?: string; partial_answer?: string; final_answer?: string;
+    error_code?: string; retryable?: boolean;
+  } | null> => {
+    if (!durableConversation || !streamRequestId) return null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await authenticatedFetch(
+        aiHost + '/requests/' + encodeURIComponent(streamRequestId),
+        { method: 'GET' }, { safeToRetry: true }
+      ).catch(() => null);
+      if (response?.ok) return response.json();
+      if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 350));
+    }
+    return null;
+  };
+
   const readWithInactivityWatchdog = (): Promise<ReadableStreamReadResult<Uint8Array>> =>
     new Promise((resolve, reject) => {
       const warningTimer = window.setTimeout(
         () => thinking?.set('Still working on your document…'),
         STREAM_IDLE_WARNING_MS,
       );
-      const failureTimer = window.setTimeout(() => {
+      let failureTimer = 0;
+      const failAfterStateCheck = async (): Promise<void> => {
+        thinking?.set('Reconnecting to the response…');
+        const durableState = await loadDurableRequestState();
+        if (durableState?.status === 'completed' && durableState.final_answer) {
+          void reader.cancel('completed response recovered').catch(() => undefined);
+          const extendsBufferedAnswer = durableState.final_answer.startsWith(answerBuf);
+          const missingText = extendsBufferedAnswer
+            ? durableState.final_answer.slice(answerBuf.length) : durableState.final_answer;
+          if (!extendsBufferedAnswer) answerBuf = '';
+          const recoveredEvents: Record<string, unknown>[] = missingText
+            ? [{ t: missingText, requestId: streamRequestId }] : [];
+          recoveredEvents.push({ done: true, requestId: streamRequestId, recovered: true });
+          const recovered = recoveredEvents
+            .map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
+          resolve({ done: false, value: new TextEncoder().encode(recovered) });
+          return;
+        }
+        if (durableState && ['queued', 'running', 'recovering'].includes(durableState.status)) {
+          thinking?.set('Minallo is still working. Keeping the response connected…');
+          failureTimer = window.setTimeout(() => { void failAfterStateCheck(); }, 30_000);
+          return;
+        }
         void reader.cancel('stream inactivity timeout').catch(() => undefined);
         controller.abort();
         reject(new AskStreamError({
-          code: 'stream_inactivity_timeout',
-          message: 'The stream stopped sending updates.',
-          retryable: true,
+          code: durableState?.error_code || (durableState ? 'stream_transport_interrupted' : 'request_state_unavailable'),
+          message: 'The response connection stopped before completion.',
+          retryable: durableState?.retryable !== false,
           metadata: {
-            requestId: streamRequestId, failureStage: 'sse_read',
-            partialAnswer: answerBuf, answerCharacterCount: answerBuf.length,
+            requestId: streamRequestId, failureStage: durableState?.stage || 'sse_read',
+            partialAnswer: durableState?.partial_answer || answerBuf,
+            answerCharacterCount: (durableState?.partial_answer || answerBuf).length,
             eventCount, lastEventType,
           },
         }));
-      }, STREAM_IDLE_FAILURE_MS);
+      };
+      failureTimer = window.setTimeout(() => { void failAfterStateCheck(); }, STREAM_IDLE_FAILURE_MS);
       reader.read().then(resolve, reject).finally(() => {
         window.clearTimeout(warningTimer);
         window.clearTimeout(failureTimer);
@@ -6134,6 +6211,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   stage.dataset.state = (chat.messages.length > 0 || pending) ? 'active' : 'empty';
 
   renderConversationMessages(msgs, chat.messages, pending?.row);
+  void reconcileDurableRequestMessages(chat, root);
 
   // Re-render attached folders + sources panel + saved-replies count.
   renderAttachChips(root);
@@ -6162,6 +6240,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
 
   if (bubble && m.completionState && ['pending', 'processing', 'recovering'].includes(m.completionState)) {
     bubble.innerHTML = '<section class="ncb-tutor-recovery"><strong>Minallo is continuing this response…</strong><p>Your question and saved context are preserved.</p></section>';
+    if (m.requestId) return;
     m.completionState = 'failed_recoverable';
     m.errorCode ||= 'interrupted_while_processing';
     m.recoveryAction ||= 'retry';
@@ -6271,6 +6350,78 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
     bubble.appendChild(note);
   }
   appendBubbleActions(row, m.text, m);
+}
+
+const durableRequestReconciliations = new Set<string>();
+
+async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElement): Promise<void> {
+  if (!chat.persistedId || durableRequestReconciliations.has(chat.id)) return;
+  const candidates = chat.messages.filter((message) => message.role === 'assistant' && message.requestId
+    && (['pending', 'processing', 'recovering'].includes(message.completionState || '')
+      || message.errorCode === 'interrupted_while_processing')).slice(-10);
+  if (!candidates.length) return;
+  const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
+  if (!aiHost) return;
+  durableRequestReconciliations.add(chat.id);
+  let changed = false;
+  let needsPoll = false;
+  try {
+    for (const message of candidates) {
+      const before = JSON.stringify([
+        message.text, message.completionState, message.exportable, message.retryable,
+        message.errorCode, message.failureStage,
+      ]);
+      const response = await authenticatedFetch(
+        aiHost + '/requests/' + encodeURIComponent(message.requestId!),
+        { method: 'GET' }, { safeToRetry: true }
+      ).catch(() => null);
+      if (!response?.ok) continue;
+      const record = await response.json() as {
+        status: string; stage?: string; partial_answer?: string; final_answer?: string;
+        error_code?: string; retryable?: boolean;
+      };
+      if (record.status === 'completed' && record.final_answer) {
+        Object.assign(message, {
+          text: record.final_answer, completionState: 'complete', exportable: true,
+          retryable: false, errorCode: undefined, failureStage: undefined,
+        });
+      } else if (record.partial_answer) {
+        Object.assign(message, {
+          text: record.partial_answer, completionState: 'interrupted', exportable: true,
+          retryable: true, errorCode: record.error_code || 'stream_transport_interrupted',
+          failureStage: record.stage,
+        });
+      } else if (['queued', 'running', 'recovering'].includes(record.status)) {
+        Object.assign(message, {
+          completionState: 'recovering', retryable: true,
+          errorCode: undefined, failureStage: record.stage,
+        });
+        needsPoll = true;
+      } else {
+        Object.assign(message, {
+          completionState: 'failed_recoverable', retryable: record.retryable !== false,
+          errorCode: record.error_code || 'internal_error', failureStage: record.stage,
+        });
+      }
+      const after = JSON.stringify([
+        message.text, message.completionState, message.exportable, message.retryable,
+        message.errorCode, message.failureStage,
+      ]);
+      if (after !== before) {
+        message.updatedAt = new Date().toISOString();
+        changed = true;
+      }
+    }
+    if (changed) {
+      saveChatStore();
+      if (chatStore.activeId === chat.id) loadActiveChatIntoCenter(root);
+    }
+  } finally {
+    durableRequestReconciliations.delete(chat.id);
+    if (needsPoll && chatStore.activeId === chat.id) {
+      window.setTimeout(() => { void reconcileDurableRequestMessages(chat, root); }, 3_000);
+    }
+  }
 }
 
 function repairOrphanedAssistantMessages(chat: SavedChat): boolean {
@@ -7166,7 +7317,7 @@ function attachStructuredRecoveryAction(
     read_current_page: 'Retry page reading', none: '',
   } as const;
   btn.textContent = labels[failure.action];
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     if (failure.action === 'sign_in') {
       (document.querySelector('[data-auth-open], #authBtn, #loginBtn') as HTMLElement | null)?.click();
       return;
@@ -7179,7 +7330,30 @@ function attachStructuredRecoveryAction(
     const chat = chatStore.getActive();
     const parentIndex = chat.messages.findIndex((item) => item.id === message.parentUserMessageId);
     if (parentIndex < 0) return;
-    const requestMessages = chat.messages.slice(0, parentIndex + 1);
+    if (failure.action === 'read_current_page' && message.requestSnapshot?.activeDocumentId) {
+      handleSourceClick({
+        fileName: message.requestSnapshot.activeDocumentName,
+        documentId: message.requestSnapshot.activeDocumentId,
+        page: message.requestSnapshot.visiblePage,
+      }, 'sidebar');
+      const deadline = Date.now() + 6_000;
+      while (Date.now() < deadline) {
+        const active = getActivePdfContext();
+        if (active?.documentId === message.requestSnapshot.activeDocumentId
+          && (!message.requestSnapshot.visiblePage || active.visiblePage === message.requestSnapshot.visiblePage)) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
+      }
+    }
+    const messageIndex = chat.messages.findIndex((item) => item.id === message.id);
+    const continuationText = failure.action === 'continue' ? message.text.trim() : '';
+    const continuationPrompt: ChatMessage | null = continuationText ? {
+      id: newChatMessageId(), role: 'user',
+      text: 'Continue the interrupted response from its last complete point. Do not repeat any existing paragraph. Preserve the original evidence scope.',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    } : null;
+    const requestMessages = continuationPrompt
+      ? chat.messages.slice(0, Math.max(messageIndex, parentIndex) + 1).concat(continuationPrompt)
+      : chat.messages.slice(0, parentIndex + 1);
     const previousMode = chat.sourceMode;
     const previousSources = chat.selectedSourceIds.slice();
     if (message.requestSnapshot) {
@@ -7193,6 +7367,7 @@ function attachStructuredRecoveryAction(
     saveChatStore();
     void streamAiReply(state, sendBtn, msgs, {
       targetMessage: message, targetRow: aiRow, requestMessages,
+      continuationText, resumeExistingRequest: true,
     }).finally(() => {
       chat.sourceMode = previousMode;
       chat.selectedSourceIds = previousSources;

@@ -31,6 +31,10 @@ class FakeTable:
         self.operation, self.payload = "upsert", payload
         return self
 
+    def update(self, payload):
+        self.operation, self.payload = "update", payload
+        return self
+
     def execute(self):
         rows = self.db.rows[self.name]
         if self.operation == "insert":
@@ -41,6 +45,14 @@ class FakeTable:
             if not any(row.get("client_message_id") == key for row in rows):
                 rows.append(dict(self.payload or {}))
             return SimpleNamespace(data=[self.payload])
+        if self.operation == "update":
+            matched = [
+                row for row in rows
+                if all(str(row.get(key)) == str(value) for key, value in self.filters.items())
+            ]
+            for row in matched:
+                row.update(dict(self.payload or {}))
+            return SimpleNamespace(data=matched)
         matched = [
             row for row in rows
             if all(str(row.get(key)) == str(value) for key, value in self.filters.items())
@@ -50,10 +62,15 @@ class FakeTable:
 
 class FakeSupabase:
     def __init__(self):
-        self.rows = {"ai_chat_conversations": [], "ai_chat_messages": []}
+        self.rows = {"ai_chat_conversations": [], "ai_chat_messages": [], "ai_tutor_requests": []}
+        self.rpc_calls: list[tuple[str, dict]] = []
 
     def table(self, name):
         return FakeTable(self, name)
+
+    def rpc(self, name, payload):
+        self.rpc_calls.append((name, payload))
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=None))
 
 
 def test_ensure_is_idempotent_and_persists_user_message(monkeypatch) -> None:
@@ -97,3 +114,43 @@ def test_validation_is_user_scoped(monkeypatch) -> None:
     assert not conversation_store.validate_durable_conversation(
         user_id="different-user", conversation_id="conversation",
     )
+
+
+def test_create_turn_uses_atomic_database_function(monkeypatch) -> None:
+    db = FakeSupabase()
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    conversation_store.create_durable_tutor_turn(
+        user_id="user", conversation_id="conversation",
+        user_message_id="u-1", user_content="Question",
+        assistant_message_id="a-1", request_id="request-1",
+        request_snapshot={"activeDocumentId": "doc-1", "visiblePage": 3},
+    )
+
+    assert db.rpc_calls == [("create_ai_tutor_turn", {
+        "p_conversation_id": "conversation", "p_user_id": "user",
+        "p_user_message_id": "u-1", "p_user_content": "Question",
+        "p_assistant_message_id": "a-1", "p_request_id": "request-1",
+        "p_request_snapshot": {"activeDocumentId": "doc-1", "visiblePage": 3},
+    })]
+
+
+def test_completed_continuation_preserves_saved_partial(monkeypatch) -> None:
+    db = FakeSupabase()
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+        "assistant_client_message_id": "a-1", "partial_answer": "Saved first half",
+    })
+    db.rows["ai_chat_messages"].append({
+        "conversation_id": "conversation", "client_message_id": "a-1", "content": "",
+    })
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="completed",
+        stage="completed", final_answer="New second half", retryable=False,
+    )
+
+    assert db.rows["ai_tutor_requests"][0]["final_answer"] == "Saved first half\n\nNew second half"
+    assert db.rows["ai_chat_messages"][0]["content"] == "Saved first half\n\nNew second half"
+    assert db.rows["ai_chat_messages"][0]["completion_state"] == "complete"

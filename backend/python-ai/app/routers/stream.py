@@ -397,6 +397,9 @@ class EnsureConversationRequest(BaseModel):
     titleSeed: str | None = Field(default=None, max_length=180)
     clientMessageId: str | None = Field(default=None, max_length=160)
     messageText: str | None = Field(default=None, max_length=_MAX_STREAM_QUESTION_CHARS)
+    assistantMessageId: str | None = Field(default=None, max_length=160)
+    requestId: str | None = Field(default=None, min_length=8, max_length=128)
+    requestSnapshot: dict[str, Any] | None = None
 
 
 def _sse_bytes(payload: str) -> bytes:
@@ -740,9 +743,22 @@ async def ensure_conversation_endpoint(
                 user["id"], payload.courseId or "", [payload.activeDocumentId],
             )
         )
-    from ..services.conversation_store import ensure_durable_conversation  # noqa: WPS433
+    from ..services.conversation_store import (  # noqa: WPS433
+        create_durable_tutor_turn,
+        ensure_durable_conversation,
+    )
     from ..services.tutor_state_store import claim_generation  # noqa: WPS433
 
+    turn_fields = (
+        payload.clientMessageId, payload.messageText,
+        payload.assistantMessageId, payload.requestId,
+    )
+    if any(turn_fields) and not all(turn_fields):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "incomplete_durable_tutor_turn", "retryable": False},
+        )
+    atomic_turn = all(turn_fields)
     try:
         durable = await run_in_threadpool(
             lambda: ensure_durable_conversation(
@@ -751,8 +767,8 @@ async def ensure_conversation_endpoint(
                 course_id=payload.courseId,
                 active_document_id=payload.activeDocumentId,
                 title_seed=payload.titleSeed,
-                client_message_id=payload.clientMessageId,
-                message_text=payload.messageText,
+                client_message_id=None if atomic_turn else payload.clientMessageId,
+                message_text=None if atomic_turn else payload.messageText,
             )
         )
         # Creating the durable conversation also guarantees an empty tutor
@@ -764,6 +780,15 @@ async def ensure_conversation_endpoint(
         )
         if not accepted:
             raise RuntimeError("initial tutor state was not accepted")
+        if atomic_turn:
+            await run_in_threadpool(lambda: create_durable_tutor_turn(
+                user_id=user["id"], conversation_id=durable.conversation_id,
+                user_message_id=payload.clientMessageId or "",
+                user_content=payload.messageText or "",
+                assistant_message_id=payload.assistantMessageId or "",
+                request_id=payload.requestId or "",
+                request_snapshot=payload.requestSnapshot or {},
+            ))
     except Exception as exc:
         log.exception("durable_conversation_creation_failed user=%s", user["id"])
         raise HTTPException(
@@ -775,6 +800,25 @@ async def ensure_conversation_endpoint(
             },
         ) from exc
     return {"conversationId": durable.conversation_id, "created": durable.created}
+
+
+@router.get("/requests/{request_id}")
+async def tutor_request_status_endpoint(
+    request_id: str,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Return durable request state so a disconnected browser can reconcile."""
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", request_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid request id")
+    from ..services.conversation_store import get_tutor_request  # noqa: WPS433
+    record = await run_in_threadpool(
+        lambda: get_tutor_request(user_id=user["id"], request_id=request_id)
+    )
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+            "code": "request_state_not_found", "retryable": True,
+        })
+    return record
 
 
 @router.post("/ask-stream")
@@ -918,8 +962,28 @@ async def ask_stream_endpoint(
     }
     preflight_ms = (time.perf_counter() - started) * 1000
 
+    async def persist_request_state(**fields: Any) -> None:
+        if not payload.durableConversation:
+            return
+        from ..services.conversation_store import update_tutor_request  # noqa: WPS433
+        for attempt in (1, 2):
+            try:
+                await run_in_threadpool(lambda: update_tutor_request(
+                    user_id=user_id, request_id=request_id, **fields,
+                ))
+                return
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "tutor_request_persist_retry request_id=%s attempt=%s exception=%s",
+                    request_id, attempt, type(exc).__name__,
+                )
+                if attempt == 1:
+                    await asyncio.sleep(0.2)
+        log.error("tutor_request_persist_failed request_id=%s", request_id)
+
     async def early_stream():
         terminal_event_sent = False
+        persisted_answer = ""
         last_shared_generation_check = 0.0
         last_shared_generation_result = True
 
@@ -982,6 +1046,7 @@ async def ask_stream_endpoint(
             "streamProtocolVersion": 2,
         }, ensure_ascii=False))
         yield _status_sse("reading_question")
+        await persist_request_state(status="running", stage="conversation_state")
         last_status_key = "reading_question"
         last_heartbeat = time.monotonic()
         log.info(
@@ -1010,6 +1075,10 @@ async def ask_stream_endpoint(
                     if not await generation_is_current(check_shared=False):
                         prepared_task.cancel()
                         terminal_event_sent = True
+                        await persist_request_state(
+                            status="failed", stage="conversation_state",
+                            error_code="request_superseded", retryable=False,
+                        )
                         yield _error_sse(
                             code="request_superseded",
                             message="This request was replaced by a newer question.",
@@ -1051,6 +1120,10 @@ async def ask_stream_endpoint(
             while not status_queue.empty():
                 if not await generation_is_current():
                     terminal_event_sent = True
+                    await persist_request_state(
+                        status="failed", stage="conversation_state",
+                        error_code="request_superseded", retryable=False,
+                    )
                     yield _error_sse(
                         code="request_superseded",
                         message="This request was replaced by a newer question.",
@@ -1061,6 +1134,7 @@ async def ask_stream_endpoint(
                 yield _status_sse(status_queue.get_nowait())
             body_iterator = prepared.body_iterator.__aiter__()
             next_event_task: asyncio.Task | None = None
+            generation_recovery_attempts = 0
             while True:
                 if next_event_task is None:
                     next_event_task = asyncio.create_task(body_iterator.__anext__())
@@ -1079,6 +1153,32 @@ async def ask_stream_endpoint(
                 except StopAsyncIteration:
                     next_event_task = None
                     break
+                except (TimeoutError, ConnectionError, OSError) as exc:
+                    next_event_task = None
+                    if persisted_answer or generation_recovery_attempts >= 1:
+                        raise TutorPipelineError(
+                            code="generation_timeout", stage="model_generation",
+                            message="Minallo could not finish generating the grounded response.",
+                            retryable=True, recoverable=True,
+                        ) from exc
+                    generation_recovery_attempts += 1
+                    await persist_request_state(
+                        status="recovering", stage="model_generation",
+                        automatic_retry_count=generation_recovery_attempts,
+                    )
+                    yield _status_sse("recovering_response")
+                    await asyncio.sleep(0.45)
+                    prepared = await _prepare_ask_stream_response(
+                        payload, user, status_queue.put_nowait, request_id,
+                        {
+                            "resolved_document_ids": resolved_ids,
+                            "document_name_resolution": document_name_resolution,
+                            "doc_name_map": preflight_doc_names,
+                            "documents": preflight_documents,
+                        },
+                    )
+                    body_iterator = prepared.body_iterator.__aiter__()
+                    continue
                 next_event_task = None
                 if not await generation_is_current():
                     log.info(
@@ -1086,6 +1186,10 @@ async def ask_stream_endpoint(
                         request_id, payload.conversationGeneration,
                     )
                     terminal_event_sent = True
+                    await persist_request_state(
+                        status="failed", stage="conversation_state",
+                        error_code="request_superseded", retryable=False,
+                    )
                     yield _error_sse(
                         code="request_superseded",
                         message="This request was replaced by a newer question.",
@@ -1095,9 +1199,37 @@ async def ask_stream_endpoint(
                     break
                 if _is_terminal_sse(event):
                     terminal_event_sent = True
+                raw_event = event.decode("utf-8", errors="ignore") if isinstance(event, bytes) else event
+                match = re.search(r"data:\s*(\{.*\})", raw_event, re.DOTALL)
+                decoded_event: dict[str, Any] = {}
+                if match:
+                    try:
+                        decoded_event = json.loads(match.group(1))
+                    except json.JSONDecodeError:
+                        decoded_event = {}
+                if isinstance(decoded_event.get("t"), str):
+                    persisted_answer += decoded_event["t"]
+                if decoded_event.get("error") is True:
+                    await persist_request_state(
+                        status="interrupted" if persisted_answer else "failed",
+                        stage=str(decoded_event.get("stage") or "generation"),
+                        partial_answer=persisted_answer or None,
+                        error_code=str(decoded_event.get("code") or "stream_error"),
+                        retryable=decoded_event.get("retryable") is True,
+                    )
+                elif decoded_event.get("done") is True:
+                    await persist_request_state(
+                        status="completed", stage="completed",
+                        final_answer=persisted_answer, retryable=False,
+                    )
                 yield event
             if not terminal_event_sent:
                 terminal_event_sent = True
+                await persist_request_state(
+                    status="interrupted" if persisted_answer else "failed",
+                    stage="stream_transport", partial_answer=persisted_answer or None,
+                    error_code="stream_ended_without_terminal_event", retryable=True,
+                )
                 yield _error_sse(
                     code="stream_ended_without_terminal_event",
                     message="The AI connection ended before the answer completed.",
@@ -1106,6 +1238,11 @@ async def ask_stream_endpoint(
                 )
         except TutorPipelineError as exc:
             terminal_event_sent = True
+            await persist_request_state(
+                status="interrupted" if persisted_answer else "failed",
+                stage=exc.stage, partial_answer=persisted_answer or None,
+                error_code=exc.code, retryable=exc.retryable,
+            )
             log.warning(
                 "tutor_pipeline_failed request_id=%s stage=%s error_code=%s retryable=%s",
                 request_id, exc.stage, exc.code, exc.retryable,
@@ -1117,6 +1254,13 @@ async def ask_stream_endpoint(
         except HTTPException as exc:
             terminal_event_sent = True
             typed_detail = exc.detail if isinstance(exc.detail, dict) else {}
+            await persist_request_state(
+                status="interrupted" if persisted_answer else "failed",
+                stage=str(typed_detail.get("stage") or "request_validation"),
+                partial_answer=persisted_answer or None,
+                error_code=str(typed_detail.get("code") or "request_rejected"),
+                retryable=bool(typed_detail.get("retryable", False)),
+            )
             yield _error_sse(
                 code=str(typed_detail.get("code") or "request_rejected"),
                 message=str(typed_detail.get("message") or exc.detail),
@@ -1125,12 +1269,22 @@ async def ask_stream_endpoint(
                 stage=str(typed_detail.get("stage") or "request_validation"),
             )
         except asyncio.CancelledError:
+            await persist_request_state(
+                status="interrupted" if persisted_answer else "failed",
+                stage="stream_transport", partial_answer=persisted_answer or None,
+                error_code="client_stream_disconnected", retryable=True,
+            )
             log.info("stream_cancelled request_id=%s", request_id)
             raise
         except Exception as exc:
             log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
             if not terminal_event_sent:
                 terminal_event_sent = True
+                await persist_request_state(
+                    status="interrupted" if persisted_answer else "failed",
+                    stage="unknown", partial_answer=persisted_answer or None,
+                    error_code="internal_error", retryable=True,
+                )
                 yield _error_sse(
                     code="internal_error",
                     message="Minallo could not complete this grounded answer.",

@@ -74,3 +74,35 @@ test('every useful assistant variant uses the shared idempotent PDF action', () 
   assert.match(shell, /learningJourneyPdfText\(message\.learningJourney\)/);
   assert.match(shell, /appendBubbleActions\(row, m\.text, m\)/);
 });
+
+test('durable tutor turns persist the assistant placeholder and request snapshot atomically', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /assistantMessageId: context\.assistantMessage\?\.id/);
+  assert.match(shell, /requestId: context\.assistantMessage\?\.requestId/);
+  assert.match(shell, /requestSnapshot: context\.assistantMessage\?\.requestSnapshot/);
+  assert.match(shell, /assistantMessage\.requestId\s*\n\s*\)/);
+});
+
+test('inactivity checks durable request state before abandoning the stream', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /loadDurableRequestState/);
+  assert.match(shell, /\/requests\/.*encodeURIComponent\(streamRequestId\)/);
+  assert.match(shell, /durableState\?\.status === 'completed'/);
+  assert.match(shell, /\['queued', 'running', 'recovering'\]\.includes/);
+  assert.match(shell, /request_state_unavailable/);
+});
+
+test('Continue preserves partial text and uses the existing logical request', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /failure\.action === 'continue' \? message\.text\.trim\(\) : ''/);
+  assert.match(shell, /continuationText, resumeExistingRequest: true/);
+  assert.match(shell, /text: continuationBase, completionState: continuationBase \? 'recovering'/);
+  assert.doesNotMatch(shell, /aiRow\.remove\(\);\s*void streamAiReply/);
+});
+
+test('page-reading recovery reopens the exact saved PDF page before retrying', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /activeDocumentName: pdf\?\.fileName/);
+  assert.match(shell, /failure\.action === 'read_current_page'/);
+  assert.match(shell, /handleSourceClick\(\{[\s\S]*documentId: message\.requestSnapshot\.activeDocumentId[\s\S]*page: message\.requestSnapshot\.visiblePage/);
+});
