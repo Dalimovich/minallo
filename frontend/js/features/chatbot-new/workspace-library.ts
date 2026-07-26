@@ -410,7 +410,10 @@ function renderCourses(panel: HTMLElement): void {
   panel.innerHTML =
     '<div class="ncb-library-section-head"><div><strong>Courses</strong><span>Select a course to browse its material.</span></div></div>' +
     `<div class="ncb-subject-add">
-      <button type="button" class="ncb-add-subject" aria-expanded="false" aria-controls="ncbSubjectPopover"><span aria-hidden="true">+</span> Add subject</button>
+      <button type="button" class="ncb-add-subject" aria-expanded="false" aria-controls="ncbSubjectPopover">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Add subject</span>
+      </button>
       <div class="ncb-subject-popover" id="ncbSubjectPopover" hidden>
         <label for="ncbSubjectSearch">Find or create a subject</label>
         <div><input id="ncbSubjectSearch" type="search" placeholder="Search subjects..." autocomplete="off"><button type="button" class="ncb-subject-confirm">Add</button></div>
@@ -500,9 +503,9 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
   detail.innerHTML = `
     <div class="ncb-course-detail-actions">
       <input class="ncb-course-upload-input" type="file" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" multiple hidden>
-      <button type="button" class="ncb-course-action ncb-course-new-folder">${icon('folder')}<span>New folder</span></button>
-      <button type="button" class="ncb-course-action ncb-course-upload">${icon('file')}<span>Upload files</span></button>
-      <button type="button" class="ncb-course-manage">Manage</button>
+      <button type="button" class="ncb-course-action ncb-course-new-folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v6m-3-3h6"/></svg><span>New folder</span></button>
+      <button type="button" class="ncb-course-action ncb-course-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Upload files</span></button>
+      <button type="button" class="ncb-course-manage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.83 2.83-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21h-4v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06-2.83-2.83.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3v-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.83-2.83.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3h4v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.83 2.83-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21v4h-.09A1.65 1.65 0 0 0 19.4 15Z"/></svg><span>Manage course</span></button>
     </div>
     <form class="ncb-folder-create" hidden><label for="ncbFolderName">Folder name</label><div><input id="ncbFolderName" maxlength="80" autocomplete="off" placeholder="e.g. Lecture notes"><button type="submit">Create</button></div></form>
     <div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>

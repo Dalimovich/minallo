@@ -93,6 +93,14 @@ test('course drawer can add subjects and manage course files in place', () => {
   assert.match(moduleSource, /class="ncb-course-action ncb-course-upload"/);
   assert.match(moduleSource, /window\._ufCreateFolder/);
   assert.match(moduleSource, /window\._ufUpload/);
+  assert.match(css, /\.ncb-course-detail-actions\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.ncb-course-manage\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
+});
+
+test('avatar and notification controls share the same glass button shell', () => {
+  assert.match(css, /\.ncb-notification-trigger\s*\{[\s\S]*width:\s*46px;[\s\S]*border-radius:\s*15px/);
+  assert.match(css, /\.ncb-account-trigger\s*\{[\s\S]*width:\s*46px;[\s\S]*border-radius:\s*15px/);
+  assert.match(css, /\.ncb-account-avatar\s*\{[\s\S]*background:\s*transparent/);
 });
 
 test('course and folder drop targets clearly identify the upload destination', () => {

@@ -4460,6 +4460,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   box-shadow: 0 10px 24px rgba(2, 9, 21, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.055);
   text-align: left;
   cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 
 .ncb-account-trigger:hover,
@@ -4475,13 +4476,13 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   flex: 0 0 36px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(147, 197, 253, 0.32);
-  border-radius: 11px;
+  border: 0;
+  border-radius: 0;
   color: #eff6ff;
-  background: radial-gradient(circle at 30% 20%, #60a5fa 0, #2563eb 38%, #172554 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 16px rgba(37, 99, 235, 0.2);
+  background: transparent;
+  box-shadow: none;
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .ncb-account-copy {
@@ -4612,18 +4613,21 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px dashed rgba(96, 165, 250, 0.42);
-  border-radius: 13px;
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.09);
+  padding: 0 14px;
+  border: 1px solid rgba(147, 197, 253, 0.17);
+  border-radius: 14px;
+  color: #dceaff;
+  background: linear-gradient(145deg, rgba(27, 51, 82, 0.72), rgba(10, 27, 48, 0.82));
+  box-shadow: 0 8px 22px rgba(2, 9, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.045);
   font: inherit;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
 }
-.ncb-add-subject span { font-size: 1.05rem; line-height: 1; }
+.ncb-add-subject svg { width: 17px; height: 17px; color: #8fc1ff; }
+.ncb-add-subject span { line-height: 1; }
 .ncb-add-subject:hover,
-.ncb-add-subject[aria-expanded="true"] { border-style: solid; background: rgba(37, 99, 235, 0.18); }
+.ncb-add-subject[aria-expanded="true"] { border-color: rgba(96, 165, 250, 0.42); background: linear-gradient(145deg, rgba(35, 68, 108, 0.8), rgba(14, 35, 61, 0.9)); }
 .ncb-subject-popover {
   position: absolute;
   z-index: 8;
@@ -4810,34 +4814,36 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-library-back:hover { background: rgba(37, 99, 235, 0.2); }
 
 .ncb-course-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 2px 0 16px;
 }
 
 .ncb-course-action,
 .ncb-course-manage {
-  min-height: 36px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
 }
 .ncb-course-action {
-  flex: 1 1 108px;
-  padding: 6px 9px;
-  border: 1px solid rgba(96, 165, 250, 0.25);
-  border-radius: 10px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(147, 197, 253, 0.16);
+  border-radius: 13px;
   color: #dbeafe;
-  background: rgba(37, 99, 235, 0.12);
+  background: linear-gradient(145deg, rgba(27, 52, 84, 0.74), rgba(10, 27, 48, 0.84));
+  box-shadow: 0 8px 20px rgba(2, 9, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.045);
   font: inherit;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
 }
-.ncb-course-action:hover { background: rgba(37, 99, 235, 0.22); }
-.ncb-course-action .ncb-library-icon { width: 23px; height: 23px; flex-basis: 23px; border-radius: 7px; font-size: 0.48rem; }
+.ncb-course-action:hover { transform: translateY(-1px); border-color: rgba(96, 165, 250, 0.38); background: linear-gradient(145deg, rgba(35, 69, 110, 0.82), rgba(14, 35, 61, 0.92)); }
+.ncb-course-action svg,
+.ncb-course-manage svg { width: 18px; height: 18px; flex: 0 0 18px; color: #8fc1ff; }
 .ncb-folder-create {
   margin-bottom: 10px;
   padding: 11px;
@@ -4971,15 +4977,19 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-saved-kind-results { margin-top: 12px; }
 
 .ncb-course-manage {
-  padding: 6px 10px;
-  border: 1px solid rgba(96, 165, 250, 0.25);
-  border-radius: 8px;
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.11);
+  grid-column: 1 / -1;
+  padding: 8px 12px;
+  border: 1px solid rgba(147, 197, 253, 0.13);
+  border-radius: 13px;
+  color: #bcd3ef;
+  background: rgba(18, 39, 66, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
+  font-weight: 600;
   cursor: pointer;
 }
+.ncb-course-manage:hover { border-color: rgba(96, 165, 250, 0.3); color: #e5efff; background: rgba(27, 52, 84, 0.78); }
 
 .ncb-library-group { margin-top: 16px; }
 .ncb-library-group > h3,
@@ -5017,7 +5027,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-folder summary::-webkit-details-marker { display: none; }
 .ncb-folder summary > span { display: grid; gap: 2px; }
-.ncb-folder summary > b { margin-left: auto; color: transparent; font-size: 0.62rem; white-space: nowrap; transition: color 150ms ease; }
+.ncb-folder summary > b { display: none; margin-left: auto; color: #93c5fd; font-size: 0.62rem; white-space: nowrap; }
 .ncb-folder summary strong { font-size: 0.81rem; }
 .ncb-folder summary small { color: #8298b4; font-size: 0.68rem; }
 .ncb-folder > div { padding: 0 6px 6px 16px; }
@@ -5025,13 +5035,13 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 
 .ncb-root-drop {
   position: relative;
-  min-height: 118px;
-  padding: 12px;
-  border: 1px dashed rgba(96, 165, 250, 0.22);
+  min-height: 0;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 16px;
   transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
 }
-.ncb-drop-hint { display: grid; place-items: center; gap: 3px; margin-bottom: 10px; padding: 15px 10px; border-radius: 11px; color: #8ea6c3; background: rgba(37, 99, 235, 0.055); text-align: center; pointer-events: none; }
+.ncb-drop-hint { display: none; place-items: center; gap: 3px; margin-bottom: 10px; padding: 15px 10px; border-radius: 11px; color: #8ea6c3; background: rgba(37, 99, 235, 0.055); text-align: center; pointer-events: none; }
 .ncb-drop-hint strong { color: #bfdbfe; font-size: 0.74rem; }
 .ncb-drop-hint span { font-size: 0.64rem; }
 .ncb-root-drop.is-drag-target,
@@ -5040,7 +5050,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   background: rgba(37, 99, 235, 0.18);
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13), 0 16px 38px rgba(1, 8, 20, 0.3);
 }
-.ncb-folder.is-drag-target summary > b { color: #93c5fd; }
+.ncb-root-drop.is-drag-target .ncb-drop-hint { display: grid; }
+.ncb-folder.is-drag-target summary > b { display: block; }
 
 .ncb-file-row {
   min-height: 62px;
