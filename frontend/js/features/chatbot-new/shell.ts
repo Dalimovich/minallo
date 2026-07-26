@@ -4605,6 +4605,7 @@ function enhanceGeneratedExamPractice(bubble: HTMLElement): void {
     toggle.setAttribute('aria-expanded', String(show));
   });
   controls.appendChild(toggle);
+  controls.dataset.testid = 'generated-exam';
   bubble.prepend(controls);
   bubble.appendChild(answerPanel);
   bubble.dataset.examPractice = 'true';

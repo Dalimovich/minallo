@@ -972,6 +972,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   if (!pdfHost) {
     pdfHost = document.createElement('div');
     pdfHost.className = 'ncb-pdf-host';
+    pdfHost.dataset.testid = 'pdf-pane';
     pdfHost.innerHTML =
       '<div class="ncb-pdf-resize" role="separator" aria-orientation="vertical" aria-label="Resize PDF viewer"></div>' +
       '<button type="button" class="ncb-pdf-close" aria-label="Close PDF viewer">&lsaquo;</button>';

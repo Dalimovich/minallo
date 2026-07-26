@@ -5924,10 +5924,14 @@ body.ncb-pdf-workspace-open #drDrawer {
   .ncb-sidebar { width: 252px; margin-left: 14px; }
   .ncb-context { margin-right: 14px; }
 
-  body.ncb-pdf-workspace-open .ncb-center { flex: 1 1 0; }
+  body.ncb-pdf-workspace-open .ncb-center {
+    width: 0;
+    flex: 1 1 0;
+  }
   body.ncb-pdf-workspace-open .ncb-context {
-    flex: 0 1 min(50vw, 760px);
-    max-width: min(50vw, 760px);
+    width: min(38vw, 680px);
+    flex: 0 1 min(38vw, 680px);
+    max-width: min(38vw, 680px);
   }
 
   .ncb-center {

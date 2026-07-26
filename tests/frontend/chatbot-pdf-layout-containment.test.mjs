@@ -10,8 +10,8 @@ test('chat and PDF flex chain permits both panes to shrink inside the viewport',
     assert.match(css, new RegExp(selector.replace('.', '\\\.') + '[\\s\\S]{0,320}min-width: 0'));
   }
   assert.match(css, /@media \(min-width: 1025px\)[\s\S]*?\.ncb-card \{[\s\S]*?overflow: hidden/);
-  assert.match(css, /body\.ncb-pdf-workspace-open \.ncb-center \{ flex: 1 1 0; \}/);
-  assert.match(css, /body\.ncb-pdf-workspace-open \.ncb-context[\s\S]*?max-width: min\(50vw, 760px\)/);
+  assert.match(css, /body\.ncb-pdf-workspace-open \.ncb-center \{[\s\S]*?width: 0;[\s\S]*?flex: 1 1 0/);
+  assert.match(css, /body\.ncb-pdf-workspace-open \.ncb-context[\s\S]*?max-width: min\(38vw, 680px\)/);
 });
 
 test('PDF waits for its rendered canvas before fitting to the hosted pane', () => {
