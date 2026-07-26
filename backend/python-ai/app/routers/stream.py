@@ -49,10 +49,8 @@ from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.reliability import (
     GroundedRequestContext,
     assess_text_quality,
-    answer_obligations,
-    build_allowed_mapping_labels,
-    build_retrieval_scope,
     classify_task_traits,
+    derive_grounding_state,
     evidence_requirement,
     identity_is_sufficient,
     is_page_bound_request,
@@ -201,15 +199,15 @@ def _resolve_document_ids_by_name(user_id: str, course_id: str, names: list[str]
 
     The chatbot's "Selected file(s)" scope only knows file names (the document
     id lives server-side), so it sends names; this maps them to ids for scoped
-    retrieval. Best-effort: returns [] on error or no match (caller then falls
-    back to a whole-course search rather than dead-ending)."""
+    retrieval. Returns [] on error or no match; callers must return a typed
+    source-resolution result and must never broaden the scope silently."""
     clean = list(dict.fromkeys(n.strip() for n in (names or []) if n and n.strip()))[:50]
     if not clean:
         return []
     sb = get_supabase()
     # Pull all of the course's documents once and match in Python so a tiny
     # name mismatch (case, a missing/extra .pdf extension, surrounding spaces)
-    # doesn't silently drop the whole selection back to a whole-course search.
+    # does not reject an otherwise exact user selection.
     try:
         resp = (
             sb.table("documents")
@@ -991,8 +989,19 @@ async def _prepare_ask_stream_response(
     # a "which file?" clarification — search the whole course instead (it still
     # includes the selected files), so the user always gets a grounded answer.
     effective_scope = payload.courseFileScope
+    requested_name_count = len({
+        name.strip().casefold() for name in (payload.documentNames or [])
+        if name and name.strip()
+    })
+    requested_documents_ambiguous = bool(
+        (payload.courseFileScope or "").strip().lower() == "specific_files"
+        and requested_name_count
+        and len(resolved_document_ids) > requested_name_count
+    )
     if (payload.courseFileScope or "").strip().lower() == "specific_files" and not resolved_document_ids:
-        effective_scope = "all_course_files"
+        requested_documents_unresolved = True
+    else:
+        requested_documents_unresolved = False
 
     if preflight:
         doc_name_map = dict(preflight.get("doc_name_map") or {})
@@ -1146,6 +1155,47 @@ async def _prepare_ask_stream_response(
         active_document_id=payload.activeDocumentId,
         open_file_context=payload.openFileContext,
     )
+    if requested_documents_unresolved:
+        requested_names = [name for name in (payload.documentNames or []) if name]
+        display_names = ", ".join(f'\"{name}\"' for name in requested_names)
+        return _stream_static_answer(
+            text=(
+                f"I could not reliably find {display_names or 'the requested document'}. "
+                "Please choose the intended document, or explicitly choose "
+                "Search the whole course instead."
+            ),
+            decision=source_decision,
+            answer_mode="clarification",
+            status_key="identifying_question",
+            extra_meta={
+                "taskType": "source_resolution",
+                "errorCode": "requested_documents_not_resolved",
+                "requestedNames": requested_names,
+                "retryable": False,
+                "terminalEvent": "done",
+            },
+        )
+    if requested_documents_ambiguous:
+        candidates = [
+            {"id": document_id, "name": doc_name_map.get(document_id, "")}
+            for document_id in resolved_document_ids
+        ]
+        return _stream_static_answer(
+            text=(
+                "More than one document matches the requested filename. "
+                "Please choose the intended document."
+            ),
+            decision=source_decision,
+            answer_mode="clarification",
+            status_key="identifying_question",
+            extra_meta={
+                "taskType": "source_resolution",
+                "errorCode": "requested_documents_ambiguous",
+                "documentCandidates": candidates,
+                "retryable": False,
+                "terminalEvent": "done",
+            },
+        )
 
     if tutor_state:
         active_revision = (
@@ -1376,10 +1426,7 @@ async def _prepare_ask_stream_response(
          "a": account_snapshot, "n": named_course_name}
     ) if workspace_block else ""
     assistant_mode = detect_assistant_mode(question)
-    from ..services.reliability import (  # noqa: WPS433
-        identify_grounded_task,
-        task_aware_cache_key,
-    )
+    from ..services.reliability import identify_grounded_task  # noqa: WPS433
     preliminary_traits = classify_task_traits(
         resolved_question,
         visible_text=payload.openFileContext or "",
@@ -1400,6 +1447,80 @@ async def _prepare_ask_stream_response(
         traits=preliminary_traits,
         selected_region_text=selected_text or "",
     )
+    visual_regrounding_attempted = False
+    visual_identity = None
+    visual_identity_model = None
+    initial_identity_gate_required = bool(
+        payload.activeDocumentId
+        and (
+            grounded_identity.exercise_reference
+            or preliminary_traits.requires_visual_evidence
+        )
+    )
+    if (
+        initial_identity_gate_required
+        and open_file_images
+        and not identity_is_sufficient(
+            grounded_identity,
+            traits=preliminary_traits,
+            page_bound_request=page_bound_request,
+        )
+    ):
+        from ..services.visual_repair import (  # noqa: WPS433
+            build_visual_identity_prompt,
+            generate_visual_task_identity,
+            visual_identity_model_for_task,
+        )
+        visual_regrounding_attempted = True
+        visual_identity_model = visual_identity_model_for_task(
+            preliminary_traits,
+            image_count=len(open_file_images),
+            has_mapping_labels=bool(grounded_identity.visible_mapping_labels),
+        )
+        try:
+            visual_identity = await run_in_threadpool(
+                lambda: generate_visual_task_identity(
+                    prompt=build_visual_identity_prompt(
+                        user_question=resolved_question,
+                        requested_exercise=grounded_identity.exercise_reference,
+                        visible_page=payload.visiblePage,
+                        active_filename=payload.activeFileName,
+                        selected_region_present=verified_region is not None,
+                    ),
+                    images=open_file_images,
+                    model=visual_identity_model or get_settings().openai_generate_model,
+                )
+            )
+        except Exception:
+            visual_identity = None
+            log.exception(
+                "task_identity_visual_reground_failed request_id=%s",
+                request_id,
+            )
+        text_task_references = set(re.findall(
+            r"\b(?:Aufgabe|Exercise|Question|Problem)\s+(\d+(?:\.\d+)*)",
+            payload.openFileContext or "",
+            re.IGNORECASE,
+        ))
+        visual_task_references = set(
+            getattr(visual_identity, "detected_task_references", []) or []
+        ) if visual_identity else set()
+        combined_task_references = {
+            re.sub(r"[^0-9.]", "", value).strip(".")
+            for value in text_task_references | visual_task_references if value
+        }
+        detected_task_count = max(
+            len(combined_task_references),
+            int(getattr(visual_identity, "detected_task_count", 0) or 0)
+            if visual_identity else 0,
+        )
+        grounded_identity = merge_grounded_task_identity(
+            user_identity=grounded_identity,
+            text_identity=grounded_identity,
+            visual_identity=visual_identity,
+            has_selected_region=verified_region is not None,
+            detected_task_count=detected_task_count or None,
+        )
     observer.event(
         "task_classified",
         visualKind=preliminary_traits.visual_kind.value,
@@ -1422,22 +1543,11 @@ async def _prepare_ask_stream_response(
         exerciseVisibleOnPage=grounded_identity.exercise_visible_on_page,
         sourceConfidence=grounded_identity.source_confidence,
     )
-    reliability_cache_fingerprint = task_aware_cache_key(
-        task_type=grounded_identity.task_kind,
-        identity=grounded_identity,
-        active_document=payload.activeDocumentId,
-        visible_page=payload.visiblePage,
-        document_revision=payload.viewerRevision,
-        visible_page_text=payload.openFileContext or "",
-        image_hashes=[
-            hashlib.sha256(str(image.get("data") or "").encode()).hexdigest()
-            for image in open_file_images
-        ],
-        task_traits=preliminary_traits,
-    )
-    ws_fingerprint = hashlib.sha256(
-        f"{ws_fingerprint}:{reliability_cache_fingerprint}".encode()
-    ).hexdigest()
+    image_hashes = [
+        hashlib.sha256(str(image.get("data") or "").encode()).hexdigest()
+        for image in open_file_images
+    ]
+    base_ws_fingerprint = ws_fingerprint
 
     # ── Cache check (same logic as /ask) ─────────────────────────────────────
     # When the request carries openFileContext (the user is reading a PDF
@@ -1496,39 +1606,32 @@ async def _prepare_ask_stream_response(
     # any document change in the course invalidates it. lookup and save MUST
     # pass identical key args, so both use cache_key_kwargs.
     course_file_scope = CourseFileScope(source_decision.course_file_scope.value)
-    retrieval_document_ids = effective_document_ids(
+    fallback_retrieval_document_ids = effective_document_ids(
         document_ids=resolved_document_ids,
         active_document_id=payload.activeDocumentId,
         course_file_scope=course_file_scope,
     )
-    retrieval_scope = build_retrieval_scope(
+    final_grounding_state = derive_grounding_state(
         active_document_id=payload.activeDocumentId,
         visible_page=payload.visiblePage,
         identity=grounded_identity,
         traits=preliminary_traits,
-        fallback_document_ids=retrieval_document_ids,
+        fallback_document_ids=fallback_retrieval_document_ids,
         question=resolved_question,
         has_valid_selected_region=bool(verified_region),
+        document_revision=payload.viewerRevision,
+        visible_page_text=payload.openFileContext or "",
+        image_hashes=image_hashes,
     )
-    cache_obligations = answer_obligations(
-        answer="", identity=grounded_identity, traits=preliminary_traits,
-    )
-    cache_grounding_payload = json.dumps({
-        "retrievalScope": {
-            "documentIds": retrieval_scope.document_ids,
-            "preferredPages": retrieval_scope.preferred_pages,
-            "exerciseReference": retrieval_scope.exercise_reference,
-            "allowCourseFallback": retrieval_scope.allow_course_fallback,
-        },
-        "answerObligations": [
-            {"type": item.obligation_type, "expected": item.expected_values}
-            for item in cache_obligations
-        ],
-    }, sort_keys=True, ensure_ascii=False)
+    retrieval_scope = final_grounding_state.retrieval_scope
+    retrieval_document_ids = final_grounding_state.retrieval_document_ids
+    cache_obligations = final_grounding_state.answer_obligations
+    reliability_cache_fingerprint = final_grounding_state.reliability_fingerprint
+    cache_grounding_payload = final_grounding_state.cache_grounding_payload
     ws_fingerprint = hashlib.sha256(
-        f"{ws_fingerprint}:{cache_grounding_payload}".encode()
+        f"{base_ws_fingerprint}:{reliability_cache_fingerprint}:"
+        f"{cache_grounding_payload}".encode()
     ).hexdigest()
-    retrieval_document_ids = retrieval_scope.document_ids
     observer.event(
         "retrieval_scope_resolved",
         activeDocumentId=payload.activeDocumentId,
@@ -1983,7 +2086,7 @@ async def _prepare_ask_stream_response(
             grounded_identity,
             traits=preliminary_traits,
             page_bound_request=page_bound_request,
-        ):
+        ) and not visual_regrounding_attempted:
             regrounding_text = "\n".join(
                 [
                     payload.openFileContext or "",
@@ -1996,6 +2099,7 @@ async def _prepare_ask_stream_response(
             visual_identity = None
             if open_file_images:
                 from ..services.visual_repair import (  # noqa: WPS433
+                    build_visual_identity_prompt,
                     generate_visual_task_identity,
                     visual_identity_model_for_task,
                 )
@@ -2007,11 +2111,12 @@ async def _prepare_ask_stream_response(
                     )
                     visual_identity = await run_in_threadpool(
                         lambda: generate_visual_task_identity(
-                            prompt=(
-                                "Identify only the active task from this PDF page. "
-                                "Extract exact exercise reference, domain, requested quantities, "
-                                "values, answer options with selected state, mapping labels, formula "
-                                "symbols, task kind, evidence page and confidence. Do not solve it."
+                            prompt=build_visual_identity_prompt(
+                                user_question=resolved_question,
+                                requested_exercise=grounded_identity.exercise_reference,
+                                visible_page=payload.visiblePage,
+                                active_filename=payload.activeFileName,
+                                selected_region_present=verified_region is not None,
                             ),
                             images=open_file_images,
                             model=visual_identity_model,
@@ -2032,17 +2137,54 @@ async def _prepare_ask_stream_response(
                 traits=preliminary_traits,
                 selected_region_text=selected_text or "",
             )
+            text_task_references = set(re.findall(
+                r"\b(?:Aufgabe|Exercise|Question|Problem)\s+(\d+(?:\.\d+)*)",
+                regrounding_text,
+                re.IGNORECASE,
+            ))
+            visual_task_references = set(
+                getattr(visual_identity, "detected_task_references", []) or []
+            ) if visual_identity else set()
+            combined_task_references = {
+                re.sub(r"[^0-9.]", "", value).strip(".")
+                for value in text_task_references | visual_task_references
+                if value
+            }
+            detected_task_count = max(
+                len(combined_task_references),
+                int(getattr(visual_identity, "detected_task_count", 0) or 0)
+                if visual_identity else 0,
+            )
             grounded_identity = merge_grounded_task_identity(
                 user_identity=grounded_identity,
                 text_identity=text_identity,
                 visual_identity=visual_identity,
                 has_selected_region=verified_region is not None,
-                detected_task_count=len(set(re.findall(
-                    r"\b(?:Aufgabe|Exercise|Question|Problem)\s+(\d+(?:\.\d+)*)",
-                    regrounding_text,
-                    re.IGNORECASE,
-                ))) or None,
+                detected_task_count=detected_task_count or None,
             )
+            final_grounding_state = derive_grounding_state(
+                identity=grounded_identity,
+                traits=preliminary_traits,
+                active_document_id=payload.activeDocumentId,
+                visible_page=payload.visiblePage,
+                fallback_document_ids=fallback_retrieval_document_ids,
+                question=resolved_question,
+                has_valid_selected_region=bool(verified_region),
+                document_revision=payload.viewerRevision,
+                visible_page_text=payload.openFileContext or "",
+                image_hashes=image_hashes,
+            )
+            retrieval_scope = final_grounding_state.retrieval_scope
+            retrieval_document_ids = final_grounding_state.retrieval_document_ids
+            cache_obligations = final_grounding_state.answer_obligations
+            reliability_cache_fingerprint = final_grounding_state.reliability_fingerprint
+            cache_grounding_payload = final_grounding_state.cache_grounding_payload
+            ws_fingerprint = hashlib.sha256(
+                f"{base_ws_fingerprint}:{reliability_cache_fingerprint}:"
+                f"{cache_grounding_payload}".encode()
+            ).hexdigest()
+            cache_key_kwargs["selected_document_ids"] = retrieval_document_ids
+            cache_key_kwargs["workspace_fingerprint"] = ws_fingerprint or None
             observer.event(
                 "task_identity_regrounded",
                 visualIdentityBinding=(
@@ -2083,6 +2225,26 @@ async def _prepare_ask_stream_response(
                         "terminalEvent": "done",
                     },
                 )
+        if identity_gate_required and not identity_is_sufficient(
+            grounded_identity,
+            traits=preliminary_traits,
+            page_bound_request=page_bound_request,
+        ):
+            return _stream_static_answer(
+                text=(
+                    "I found the active exercise, but could not reliably identify "
+                    "the requested quantity or required answer options from the "
+                    "current page. The task was not sent to broad course retrieval."
+                ),
+                decision=source_decision,
+                answer_mode="clarification",
+                status_key="identifying_question",
+                extra_meta={
+                    "taskType": grounded_identity.task_kind,
+                    "errorCode": "task_identity_insufficient",
+                    "terminalEvent": "done",
+                },
+            )
         if status_sink:
             status_sink("searching_course_material")
         # Scale retrieval breadth with the number of explicitly-selected
@@ -2271,6 +2433,36 @@ async def _prepare_ask_stream_response(
     captured_meta: dict[str, Any] = {}
     pending_token_events: list[bytes] = []
     task_traits = preliminary_traits
+    context_consistent = bool(
+        retrieval_scope.exercise_reference == grounded_identity.exercise_reference
+        and (
+            not retrieval_scope.preferred_pages
+            or grounded_identity.resolved_task_page is None
+            or grounded_identity.resolved_task_page in retrieval_scope.preferred_pages
+        )
+        and final_grounding_state.identity.fingerprint()
+        == grounded_identity.fingerprint()
+        and final_grounding_state.reliability_fingerprint
+        == reliability_cache_fingerprint
+    )
+    if not context_consistent:
+        log.error(
+            "grounded_context_inconsistent request_id=%s exercise=%s resolved_page=%s",
+            request_id,
+            grounded_identity.exercise_reference,
+            grounded_identity.resolved_task_page,
+        )
+        return _stream_static_answer(
+            text="Minallo could not create a consistent grounded request context.",
+            decision=source_decision,
+            answer_mode="clarification",
+            status_key="identifying_question",
+            extra_meta={
+                "taskType": grounded_identity.task_kind,
+                "errorCode": "grounded_context_inconsistent",
+                "terminalEvent": "done",
+            },
+        )
     grounded_request_context = GroundedRequestContext(
         request_id=request_id,
         task_traits=task_traits,
@@ -2283,9 +2475,7 @@ async def _prepare_ask_stream_response(
             image_count=len(open_file_images),
         ),
         answer_obligations=cache_obligations,
-        allowed_mapping_labels=build_allowed_mapping_labels(
-            grounded_identity.visible_mapping_labels
-        ),
+        allowed_mapping_labels=final_grounding_state.allowed_mapping_labels,
         visible_answer_options=grounded_identity.visible_answer_options,
         source_fingerprint=reliability_cache_fingerprint,
     )
@@ -2297,6 +2487,12 @@ async def _prepare_ask_stream_response(
         identityResolutionMethod=grounded_identity.identity_resolution_method.value,
         identityEvidencePages=grounded_identity.identity_evidence_pages,
         exerciseVisibleOnPage=grounded_identity.exercise_visible_on_page,
+        exerciseVisibleOnVisiblePage=(
+            grounded_identity.exercise_visible_on_visible_page
+        ),
+        exerciseFoundOnResolvedPage=(
+            grounded_identity.exercise_found_on_resolved_page
+        ),
         visibleOptionCount=len(grounded_identity.visible_answer_options),
         mappingLabelCount=len(grounded_identity.visible_mapping_labels),
         identityConfidence=grounded_identity.source_confidence,

@@ -34,6 +34,8 @@ class VisualAnswerOptionResult(BaseModel):
 class VisualTaskIdentityResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     exercise_reference: str | None = None
+    detected_task_references: list[str] = Field(default_factory=list)
+    detected_task_count: int = Field(default=0, ge=0)
     domain: str | None = None
     requested_quantities: list[str] = Field(default_factory=list)
     visible_values: list[str] = Field(default_factory=list)
@@ -44,6 +46,33 @@ class VisualTaskIdentityResult(BaseModel):
     task_summary: str | None = None
     evidence_page: int | None = None
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+def build_visual_identity_prompt(
+    *,
+    user_question: str,
+    requested_exercise: str | None,
+    visible_page: int | None,
+    active_filename: str | None,
+    selected_region_present: bool,
+) -> str:
+    target = requested_exercise or "not explicitly specified"
+    return f"""Identify the task requested by the user from the attached PDF evidence.
+
+User request: {user_question}
+Requested exercise: {target}
+Visible page: {visible_page or 'unknown'}
+Active file: {active_filename or 'unknown'}
+Selected region present: {selected_region_present}
+
+If a requested exercise is specified, identify that exercise only. Do not return
+another exercise as the active exercise. If it is not visible in the supplied
+evidence, set exercise_reference to null and lower confidence.
+
+Return every exercise reference visible in detected_task_references and set
+detected_task_count consistently. Extract the exact domain, requested quantities,
+values, answer options and selected state, mapping labels, formula symbols, task
+kind, evidence page, and confidence. Do not solve the exercise."""
 
 
 def visual_identity_model_for_task(
@@ -306,6 +335,7 @@ Incorrect draft (for contradiction diagnosis only):
 
 
 __all__ = [
+    "build_visual_identity_prompt",
     "MAX_VISUAL_DENIAL_REPAIRS",
     "VISUAL_DENIAL_REPAIR_TIMEOUT_SECONDS",
     "VisualAnswerOptionResult",

@@ -41,6 +41,7 @@ from app.services.reliability import (
     classify_task_traits,
     compare_task_identities,
     build_retrieval_scope,
+    derive_grounding_state,
     evidence_requirement,
     identity_is_sufficient,
     identify_draft_task,
@@ -58,6 +59,7 @@ from app.services.reliability import (
 from app.services.visual_repair import (
     VisualAnswerOptionResult,
     VisualTaskIdentityResult,
+    build_visual_identity_prompt,
     generate_visual_task_identity,
     visual_identity_model_for_task,
     repair_false_visual_denial,
@@ -274,7 +276,7 @@ def test_route_resolves_identity_and_scope_before_primary_retrieval() -> None:
     stream_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "stream.py"
     source = stream_path.read_text(encoding="utf-8")
     identity_position = source.index("grounded_identity = identify_grounded_task(")
-    scope_position = source.index("retrieval_scope = build_retrieval_scope(")
+    scope_position = source.index("final_grounding_state = derive_grounding_state(")
     started_position = source.index('"primary_retrieval_started"')
     retrieval_position = source.index("lambda: retrieve_chunks(")
     completed_position = source.index('"primary_retrieval_completed"')
@@ -283,6 +285,93 @@ def test_route_resolves_identity_and_scope_before_primary_retrieval() -> None:
     assert "extraction_context.document_revision != document_revision" in source
     route_body = source[source.index("async def _prepare_ask_stream_response"):]
     assert "load_extraction_context(" not in route_body
+
+
+def test_final_derived_state_rebuilds_scope_obligations_and_fingerprint() -> None:
+    traits = classify_task_traits(
+        "Calculate Aufgabe 14.4 and select the option",
+        visible_text="Aufgabe 14.4 V_Spritz",
+        has_visible_image=True,
+        active_document_id="doc",
+    )
+    initial = GroundedTaskIdentity(
+        document_id="doc", visible_page=39, resolved_task_page=39,
+        exercise_reference="14.4", domain="injection_moulding",
+        source_confidence=0.75, identity_evidence_pages=[39],
+    )
+    refined = GroundedTaskIdentity(
+        document_id="doc", visible_page=39, resolved_task_page=42,
+        exercise_reference="14.4", domain="injection_moulding",
+        requested_quantities=["V_Spritz"],
+        task_kind=GroundedTaskKind.CHECKBOX_CALCULATION,
+        visible_answer_options=["191 cm³"], source_confidence=0.98,
+        identity_evidence_pages=[42],
+        exercise_visible_on_visible_page=False,
+        exercise_found_on_resolved_page=True,
+    )
+    common = dict(
+        traits=traits, active_document_id="doc", visible_page=39,
+        fallback_document_ids=["other"], question="Find and solve 14.4",
+        has_valid_selected_region=False, document_revision="rev",
+        visible_page_text="page text", image_hashes=["image"],
+    )
+    initial_state = derive_grounding_state(identity=initial, **common)
+    final_state = derive_grounding_state(identity=refined, **common)
+    assert final_state.retrieval_scope.preferred_pages == [41, 42, 43]
+    assert final_state.retrieval_document_ids == ["doc"]
+    assert final_state.reliability_fingerprint != initial_state.reliability_fingerprint
+    obligation_types = {item.obligation_type for item in final_state.answer_obligations}
+    assert {
+        "include_requested_quantity", "include_final_numeric_value",
+        "include_compatible_unit", "select_visible_option",
+    }.issubset(
+        obligation_types
+    )
+
+
+def test_resolved_page_provenance_does_not_claim_visible_page_match() -> None:
+    user = GroundedTaskIdentity(document_id="doc", visible_page=39, exercise_reference="14.4")
+    text = GroundedTaskIdentity(
+        document_id="doc", page=39, visible_page=39, exercise_reference="14.4",
+        source_confidence=0.5,
+    )
+    merged = merge_grounded_task_identity(
+        user_identity=user,
+        text_identity=text,
+        visual_identity=VisualTaskIdentityResult(
+            exercise_reference="14.4", detected_task_references=["14.4"],
+            detected_task_count=1, domain="injection_moulding",
+            requested_quantities=["V_Spritz"], evidence_page=42, confidence=0.98,
+        ),
+        detected_task_count=1,
+    )
+    assert merged.visible_page == 39
+    assert merged.resolved_task_page == 42
+    assert not merged.exercise_visible_on_visible_page
+    assert merged.exercise_found_on_resolved_page
+
+
+def test_visual_identity_prompt_is_anchored_to_requested_exercise() -> None:
+    prompt = build_visual_identity_prompt(
+        user_question="Solve Aufgabe 14.4",
+        requested_exercise="14.4",
+        visible_page=39,
+        active_filename="exam.pdf",
+        selected_region_present=False,
+    )
+    assert "Requested exercise: 14.4" in prompt
+    assert "Visible page: 39" in prompt
+    assert "Do not return\nanother exercise" in prompt
+    assert "detected_task_references" in prompt
+
+
+def test_unresolved_specific_files_never_expand_to_whole_course() -> None:
+    stream_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "stream.py"
+    source = stream_path.read_text(encoding="utf-8")
+    assert 'effective_scope = "all_course_files"' not in source
+    assert '"requested_documents_not_resolved"' in source
+    assert '"requested_documents_ambiguous"' in source
+    assert '"documentCandidates": candidates' in source
 
 
 def test_visual_denial_repair_is_bounded_and_returns_repaired_answer() -> None:

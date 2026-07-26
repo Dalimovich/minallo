@@ -140,6 +140,12 @@ class PageClassificationResult:
     signals: list[str] = field(default_factory=list)
 
 
+class SearchAvailability(StrEnum):
+    SEARCHED = "searched"
+    NOT_AVAILABLE = "not_available"
+    NOT_SEARCHED = "not_searched"
+
+
 @dataclass
 class GapSearchCoverage:
     nearby_pages_searched: list[int] = field(default_factory=list)
@@ -172,6 +178,8 @@ class GapReviewResult:
     exact_text_search_performed: bool = False
     full_section_search_performed: bool = False
     solution_section_search_performed: bool = False
+    question_section_status: SearchAvailability = SearchAvailability.NOT_SEARCHED
+    solution_section_status: SearchAvailability = SearchAvailability.NOT_SEARCHED
     visual_search_performed: bool = False
     exact_matches: list[int] = field(default_factory=list)
     intentional_omission_pages: list[int] = field(default_factory=list)
@@ -496,8 +504,20 @@ def review_numbering_gap(
         status = GapStatus.CONFIRMED_MISSING
     elif (
         explicit.exact_text_search_performed
-        and explicit.full_section_search_performed
-        and explicit.solution_section_search_performed
+        and (
+            explicit.full_section_search_performed
+            or explicit.question_section_status in {
+                SearchAvailability.SEARCHED,
+                SearchAvailability.NOT_AVAILABLE,
+            }
+        )
+        and (
+            explicit.solution_section_search_performed
+            or explicit.solution_section_status in {
+                SearchAvailability.SEARCHED,
+                SearchAvailability.NOT_AVAILABLE,
+            }
+        )
         and explicit.coverage.full_document_text_searched
         and not explicit.coverage.visual_search_budget_exhausted
         and set(explicit.coverage.targeted_visual_pages_required).issubset(
@@ -1291,12 +1311,21 @@ def extract_document_qa(
         )
         log.info(
             "document_gap_search document=%s gap=%s visual_calls_used=%s "
-            "visual_call_budget=%s budget_exhausted=%s",
+            "visual_call_budget=%s budget_exhausted=%s "
+            "question_section_status=%s solution_section_status=%s",
             document_id,
             item_id,
             gap_visual_calls_used,
             MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT,
             coverage.visual_search_budget_exhausted,
+            (
+                SearchAvailability.SEARCHED.value if section_pages
+                else SearchAvailability.NOT_AVAILABLE.value
+            ),
+            (
+                SearchAvailability.SEARCHED.value if solution_pages
+                else SearchAvailability.NOT_AVAILABLE.value
+            ),
         )
         result.gaps.append(review_numbering_gap(
             item_id,
@@ -1306,6 +1335,14 @@ def extract_document_qa(
                 exact_text_search_performed=True,
                 full_section_search_performed=bool(section_pages),
                 solution_section_search_performed=bool(solution_pages),
+                question_section_status=(
+                    SearchAvailability.SEARCHED if section_pages
+                    else SearchAvailability.NOT_AVAILABLE
+                ),
+                solution_section_status=(
+                    SearchAvailability.SEARCHED if solution_pages
+                    else SearchAvailability.NOT_AVAILABLE
+                ),
                 visual_search_performed=bool(targeted_visual_pages),
                 exact_matches=exact_matches,
                 intentional_omission_pages=intentional_pages,
@@ -1420,6 +1457,7 @@ __all__ = [
     "PageExtractionResult",
     "PageClassificationResult",
     "PairedQAItem",
+    "SearchAvailability",
     "classify_document_extraction",
     "classify_extraction_page",
     "classify_extraction_page_result",

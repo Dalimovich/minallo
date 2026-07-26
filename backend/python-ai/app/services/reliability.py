@@ -387,6 +387,8 @@ class GroundedTaskIdentity:
     visible_mapping_labels: list[str] = field(default_factory=list)
     visible_formula_symbols: list[str] = field(default_factory=list)
     exercise_visible_on_page: bool = False
+    exercise_visible_on_visible_page: bool = False
+    exercise_found_on_resolved_page: bool = False
     identity_resolution_method: IdentityResolutionMethod = (
         IdentityResolutionMethod.USER_REFERENCE_ONLY
     )
@@ -501,6 +503,77 @@ class AnswerObligation:
 
 
 @dataclass(frozen=True)
+class DerivedGroundingState:
+    identity: GroundedTaskIdentity
+    retrieval_scope: RetrievalScope
+    retrieval_document_ids: list[str] | None
+    answer_obligations: list[AnswerObligation]
+    allowed_mapping_labels: list[AllowedMappingLabel]
+    reliability_fingerprint: str
+    cache_grounding_payload: str
+
+
+def derive_grounding_state(
+    *,
+    identity: GroundedTaskIdentity,
+    traits: TaskTraits,
+    active_document_id: str | None,
+    visible_page: int | None,
+    fallback_document_ids: list[str] | None,
+    question: str,
+    has_valid_selected_region: bool,
+    document_revision: str | None,
+    visible_page_text: str,
+    image_hashes: list[str],
+) -> DerivedGroundingState:
+    """Build every identity-derived value as one internally consistent unit."""
+    scope = build_retrieval_scope(
+        active_document_id=active_document_id,
+        visible_page=visible_page,
+        identity=identity,
+        traits=traits,
+        fallback_document_ids=fallback_document_ids,
+        question=question,
+        has_valid_selected_region=has_valid_selected_region,
+    )
+    obligations = answer_obligations(answer="", identity=identity, traits=traits)
+    labels = build_allowed_mapping_labels(identity.visible_mapping_labels)
+    fingerprint = task_aware_cache_key(
+        task_type=identity.task_kind,
+        identity=identity,
+        active_document=active_document_id,
+        visible_page=visible_page,
+        document_revision=document_revision,
+        visible_page_text=visible_page_text,
+        image_hashes=image_hashes,
+        task_traits=traits,
+    )
+    grounding_payload = json.dumps({
+        "identityFingerprint": identity.fingerprint(),
+        "retrievalScope": {
+            "documentIds": scope.document_ids,
+            "preferredPages": scope.preferred_pages,
+            "exerciseReference": scope.exercise_reference,
+            "allowCourseFallback": scope.allow_course_fallback,
+        },
+        "answerObligations": [
+            {"type": item.obligation_type, "expected": item.expected_values}
+            for item in obligations
+        ],
+        "allowedMappingLabels": [item.canonical for item in labels],
+    }, sort_keys=True, ensure_ascii=False)
+    return DerivedGroundingState(
+        identity=identity,
+        retrieval_scope=scope,
+        retrieval_document_ids=scope.document_ids,
+        answer_obligations=obligations,
+        allowed_mapping_labels=labels,
+        reliability_fingerprint=fingerprint,
+        cache_grounding_payload=grounding_payload,
+    )
+
+
+@dataclass(frozen=True)
 class GroundedRequestContext:
     request_id: str
     task_traits: TaskTraits
@@ -581,7 +654,10 @@ def identity_is_sufficient(
     if identity.exercise_reference and not identity.document_id:
         return False
     if page_bound_request and identity.exercise_reference:
-        if not identity.exercise_visible_on_page:
+        if not (
+            identity.exercise_visible_on_visible_page
+            or identity.exercise_visible_on_page
+        ):
             return False
         resolved_page = identity.resolved_task_page or identity.page
         if resolved_page is None or resolved_page not in identity.identity_evidence_pages:
@@ -1200,6 +1276,10 @@ def identify_grounded_task(
         visible_mapping_labels=mapping_labels,
         visible_formula_symbols=list(dict.fromkeys(match.group(1) for match in assignments)),
         exercise_visible_on_page=exercise_visible,
+        exercise_visible_on_visible_page=exercise_visible,
+        exercise_found_on_resolved_page=bool(
+            exercise_visible and page is not None and page in evidence_pages
+        ),
         identity_resolution_method=resolution_method,
         identity_evidence_pages=evidence_pages,
         field_evidence={
@@ -1355,7 +1435,19 @@ def merge_grounded_task_identity(
         visible_answer_options=options,
         visible_mapping_labels=labels,
         visible_formula_symbols=symbols,
-        exercise_visible_on_page=(text_identity.exercise_visible_on_page or trusted),
+        exercise_visible_on_page=(
+            text_identity.exercise_visible_on_visible_page
+            or text_identity.exercise_visible_on_page
+            or current_visual
+        ),
+        exercise_visible_on_visible_page=(
+            text_identity.exercise_visible_on_visible_page
+            or text_identity.exercise_visible_on_page
+            or current_visual
+        ),
+        exercise_found_on_resolved_page=bool(
+            resolved_page is not None and resolved_page in evidence_pages
+        ),
         identity_resolution_method=resolution,
         identity_evidence_pages=evidence_pages,
         field_evidence=field_evidence,
@@ -1439,6 +1531,7 @@ __all__ = [
     "CheckboxGeometry",
     "AnswerObligation",
     "DraftTaskIdentity",
+    "DerivedGroundingState",
     "GroundedTaskIdentity",
     "GroundedTaskKind",
     "GroundedFieldEvidence",
@@ -1464,6 +1557,7 @@ __all__ = [
     "classify_number_roles",
     "classify_task_traits",
     "compare_task_identities",
+    "derive_grounding_state",
     "evidence_requirement",
     "extract_text_visible_options",
     "identify_draft_task",

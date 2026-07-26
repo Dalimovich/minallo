@@ -198,3 +198,40 @@ def test_unanswered_item_prevents_complete_status(monkeypatch) -> None:
     )
     assert not result.complete
     assert result.unanswered_item_ids == ["1.1"]
+
+
+def test_missing_solution_section_can_complete_gap_review() -> None:
+    result = extraction.review_numbering_gap(
+        "9.1",
+        neighbouring_text="Kurzfragen 9.2 and 9.3",
+        reviewed_pages=[1, 2, 3],
+        review_result=extraction.GapReviewResult(
+            exact_text_search_performed=True,
+            question_section_status=extraction.SearchAvailability.SEARCHED,
+            solution_section_status=extraction.SearchAvailability.NOT_AVAILABLE,
+            reviewed_pages=[1, 2, 3],
+            coverage=extraction.GapSearchCoverage(
+                full_document_text_searched=True,
+            ),
+        ),
+    )
+    assert result.status is extraction.GapStatus.REVIEWED_NOT_FOUND
+
+
+def test_existing_unsearched_solution_section_keeps_gap_unresolved() -> None:
+    result = extraction.review_numbering_gap(
+        "9.1",
+        neighbouring_text="Kurzfragen 9.2 and 9.3",
+        reviewed_pages=[1, 2],
+        review_result=extraction.GapReviewResult(
+            exact_text_search_performed=True,
+            question_section_status=extraction.SearchAvailability.SEARCHED,
+            solution_section_status=extraction.SearchAvailability.NOT_SEARCHED,
+            reviewed_pages=[1, 2],
+            coverage=extraction.GapSearchCoverage(
+                full_document_text_searched=True,
+                solution_section_detected=True,
+            ),
+        ),
+    )
+    assert result.status is extraction.GapStatus.UNRESOLVED
