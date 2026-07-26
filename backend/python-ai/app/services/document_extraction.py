@@ -11,6 +11,7 @@ import re
 import hashlib
 import base64
 import json
+import time
 from dataclasses import asdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -1058,12 +1059,12 @@ def _discover_visual_section_headings(
         png = _render_page_to_png(pdfium, pdf_bytes, page_number - 1, 240)
         if not png:
             continue
-        response = get_openai_client().chat.completions.create(
-            model=get_settings().openai_generate_model,
-            temperature=0,
-            max_tokens=500,
-            response_format={"type": "json_object"},
-            messages=[{
+        request_kwargs = {
+            "model": get_settings().openai_generate_model,
+            "temperature": 0,
+            "max_tokens": 500,
+            "response_format": {"type": "json_object"},
+            "messages": [{
                 "role": "user",
                 "content": [
                     {"type": "text", "text": (
@@ -1089,7 +1090,23 @@ def _discover_visual_section_headings(
                     }},
                 ],
             }],
-        )
+        }
+        response = None
+        for attempt in range(3):
+            try:
+                response = get_openai_client().chat.completions.create(**request_kwargs)
+                break
+            except Exception as exc:
+                if getattr(exc, "status_code", None) != 429 or attempt == 2:
+                    raise
+                delay = 0.75 * (attempt + 1)
+                log.warning(
+                    "visual_heading_discovery_rate_limited page=%s attempt=%s delay=%.2f",
+                    page_number, attempt + 1, delay,
+                )
+                time.sleep(delay)
+        if response is None:
+            raise RuntimeError(f"visual heading discovery failed on page {page_number}")
         try:
             payload = json.loads(str(response.choices[0].message.content or "{}"))
         except (TypeError, ValueError):
