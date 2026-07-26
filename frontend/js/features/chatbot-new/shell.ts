@@ -347,9 +347,9 @@ function bindSearch(sidebar: HTMLElement): void {
 // ============ Tutor-mode pills (phase 1) ============
 //
 // Three pills above the composer: Solve with me / Explain / Quiz me.
-// The selected mode is forwarded to /ask-stream as `tutorMode`. Default is
-// 'explain' so ordinary questions receive direct grounded answers. Persisted in
-// localStorage so the choice survives reloads but never spans logins.
+// The selected mode is forwarded to /ask-stream as `tutorMode`. A selected pill
+// can be clicked again to clear the visible mode; requests then use the ordinary
+// explanation behaviour. Persisted in localStorage so the choice survives reloads.
 
 type TutorMode = 'explain' | 'solve' | 'quiz';
 type SourceMode = 'auto' | 'course_files' | 'internet';
@@ -357,7 +357,7 @@ type CourseFileScope = 'all_course_files' | 'specific_files';
 const TUTOR_MODE_STORAGE_KEY = 'ncb_tutor_mode';
 const TUTOR_MODE_MIGRATION_KEY = 'ncb_tutor_mode_direct_default_v1';
 const TUTOR_MODE_DEFAULT: TutorMode = 'explain';
-let currentTutorMode: TutorMode = TUTOR_MODE_DEFAULT;
+let currentTutorMode: TutorMode | null = null;
 let messageRenderRun = 0;
 let sidebarRenderRun = 0;
 let activeChatLoadRaf: number | null = null;
@@ -375,7 +375,7 @@ let suppressMessageAutoScroll = false;
 // image reflow grows the content past the initial scroll.
 let chatScrollSettleToken = 0;
 
-function _readStoredTutorMode(): TutorMode {
+function _readStoredTutorMode(): TutorMode | null {
   try {
     const v = localStorage.getItem(TUTOR_MODE_STORAGE_KEY);
     if (v === 'solve' && localStorage.getItem(TUTOR_MODE_MIGRATION_KEY) !== '1') {
@@ -385,11 +385,14 @@ function _readStoredTutorMode(): TutorMode {
     }
     if (v === 'explain' || v === 'solve' || v === 'quiz') return v;
   } catch { /* ignore */ }
-  return TUTOR_MODE_DEFAULT;
+  return null;
 }
 
-function _writeStoredTutorMode(m: TutorMode): void {
-  try { localStorage.setItem(TUTOR_MODE_STORAGE_KEY, m); } catch { /* ignore */ }
+function _writeStoredTutorMode(m: TutorMode | null): void {
+  try {
+    if (m) localStorage.setItem(TUTOR_MODE_STORAGE_KEY, m);
+    else localStorage.removeItem(TUTOR_MODE_STORAGE_KEY);
+  } catch { /* ignore */ }
 }
 
 function _preferGerman(): boolean {
@@ -420,18 +423,19 @@ function initTutorModes(root: HTMLElement): void {
     pill.setAttribute('aria-pressed', mode === currentTutorMode ? 'true' : 'false');
     pill.addEventListener('click', () => {
       const next = pill.getAttribute('data-mode') as TutorMode | null;
-      if (!next || next === currentTutorMode) return;
-      currentTutorMode = next;
-      _writeStoredTutorMode(next);
+      if (!next) return;
+      const selected = next === currentTutorMode ? null : next;
+      currentTutorMode = selected;
+      _writeStoredTutorMode(selected);
       pills.forEach((p) => {
-        p.setAttribute('aria-pressed', p.getAttribute('data-mode') === next ? 'true' : 'false');
+        p.setAttribute('aria-pressed', p.getAttribute('data-mode') === selected ? 'true' : 'false');
       });
     });
   });
 }
 
 function getCurrentTutorMode(): TutorMode {
-  return currentTutorMode;
+  return currentTutorMode || TUTOR_MODE_DEFAULT;
 }
 
 function normaliseSourceMode(v: unknown): SourceMode {
@@ -4303,6 +4307,7 @@ function saveReplyToNotes(aiRow: HTMLElement, raw: string, btn: HTMLElement): vo
   touchActiveChat();
   saveChatStore();
   syncSavedReplyCreate(chat.id, reply);
+  document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed'));
   flashAck(btn, tStr('cb_act_saved', 'Saved'));
 
   // If the Notes tab is currently visible, refresh it inline.
@@ -4367,6 +4372,7 @@ function renderNotesTab(root: HTMLElement): void {
       touchActiveChat();
       saveChatStore();
       syncSavedReplyDelete(id);
+      document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed'));
       renderNotesTab(root);
     });
     card.querySelector<HTMLButtonElement>('.ncb-saved-copy')?.addEventListener('click', (ev) => {

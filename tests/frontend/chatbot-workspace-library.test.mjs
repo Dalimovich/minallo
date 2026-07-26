@@ -106,11 +106,24 @@ test('course and folder drop targets clearly identify the upload destination', (
 });
 
 test('Saved is grouped by resource function and course', () => {
-  for (const kind of ['notes', 'summaries', 'flashcards', 'cheatsheets', 'exams']) {
+  for (const kind of ['notes', 'summaries', 'flashcards', 'cheatsheets', 'exams', 'responses']) {
     assert.match(moduleSource, new RegExp(`${kind}:`));
   }
   assert.match(moduleSource, /allCourses\.map\(\(course\)/);
   assert.match(moduleSource, /items\.filter\(\(item\) => item\.course\.id === course\.id\)/);
+});
+
+test('bookmarked AI responses load from the durable database endpoint', () => {
+  assert.match(moduleSource, /fetch\('\/api\/chat-saved-replies'/);
+  assert.match(moduleSource, /kind: 'responses'/);
+  assert.match(moduleSource, /renderMarkdown\(response\.text/);
+  assert.match(shellSource, /syncSavedReplyCreate\(chat\.id, reply\)/);
+});
+
+test('tutor modes allow one selection or no selection', () => {
+  assert.match(shellSource, /const selected = next === currentTutorMode \? null : next/);
+  assert.match(shellSource, /currentTutorMode = selected/);
+  assert.match(shellSource, /getCurrentTutorMode[\s\S]*currentTutorMode \|\| TUTOR_MODE_DEFAULT/);
 });
 
 test('courses and saved resources use replacement-style drill-down navigation', () => {

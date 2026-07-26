@@ -16,7 +16,7 @@ type CourseFile = {
 };
 type CourseFolder = { name: string; files?: CourseFile[] };
 type LibraryCourse = LegacyCourse & { files?: CourseFile[]; userFolders?: CourseFolder[] };
-type SavedKind = 'notes' | 'summaries' | 'flashcards' | 'cheatsheets' | 'exams';
+type SavedKind = 'notes' | 'summaries' | 'flashcards' | 'cheatsheets' | 'exams' | 'responses';
 type SavedItem = {
   id: string;
   kind: SavedKind;
@@ -32,7 +32,8 @@ const kindLabels: Record<SavedKind, string> = {
   summaries: 'Summaries',
   flashcards: 'Flashcards',
   cheatsheets: 'Cheatsheets',
-  exams: 'Practice exams'
+  exams: 'Practice exams',
+  responses: 'AI responses'
 };
 
 let pdfOrigin: Comment | null = null;
@@ -226,7 +227,7 @@ function courses(): LibraryCourse[] {
 function icon(kind: 'course' | 'folder' | 'file' | SavedKind): string {
   const glyph: Record<string, string> = {
     course: 'C', folder: 'F', file: 'PDF', notes: 'N', summaries: 'S',
-    flashcards: 'FC', cheatsheets: 'CS', exams: 'EX'
+    flashcards: 'FC', cheatsheets: 'CS', exams: 'EX', responses: 'AI'
   };
   return `<span class="ncb-library-icon ncb-library-icon--${kind}">${glyph[kind]}</span>`;
 }
@@ -258,6 +259,11 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
     savedPanel.hidden = selected !== 'saved';
     if (selected === 'saved') void renderSaved(savedPanel, root);
   }));
+
+  document.addEventListener('minallo:saved-replies-changed', () => {
+    delete savedPanel.dataset.loaded;
+    if (!savedPanel.hidden) void renderSaved(savedPanel, root);
+  });
 
   bindAccountMenu(root);
   bindWidgetLauncher(root);
@@ -748,9 +754,11 @@ async function renderSaved(panel: HTMLElement, root: HTMLElement): Promise<void>
       }));
       return items;
     }));
-    const items = groups.flat();
+    const responseItems = await loadBookmarkedResponses();
+    const items = [...groups.flat(), ...responseItems.items];
+    const savedGroups = [...allCourses, ...responseItems.groups];
     panel.dataset.loaded = '1';
-    renderSavedKinds(panel, root, items, allCourses);
+    renderSavedKinds(panel, root, items, savedGroups);
   } catch {
     panel.innerHTML = '<div class="ncb-library-error">Saved resources could not be loaded. Check your connection and try again.</div>';
   }
@@ -828,6 +836,11 @@ async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
   const overlay = openOverlay(root, item.title);
   if (!overlay) return;
   overlay.innerHTML = '<div class="ncb-library-status">Opening resource&hellip;</div>';
+  if (item.kind === 'responses') {
+    const response = item.payload as { text?: string };
+    overlay.innerHTML = `<article class="ncb-resource-document ncb-bookmarked-response">${renderMarkdown(response.text || '')}</article>`;
+    return;
+  }
   if (item.note) {
     const note = await getNoteById(item.note.id);
     overlay.innerHTML = note
@@ -842,6 +855,64 @@ async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
     return;
   }
   mountCourseFeature(overlay, item.course, 'examforge');
+}
+
+async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: LibraryCourse[] }> {
+  const token = window._sbToken;
+  if (!token) return { items: [], groups: [] };
+  const response = await fetch('/api/chat-saved-replies', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) return { items: [], groups: [] };
+  const body = await response.json() as {
+    replies?: Array<{ id?: string; chat_id?: string; reply_text?: string; created_at?: string }>;
+  };
+  const rows = Array.isArray(body.replies) ? body.replies : [];
+  const titles = savedChatTitles();
+  const groupMap = new Map<string, LibraryCourse>();
+  rows.forEach((row) => {
+    const chatId = String(row.chat_id || 'saved-responses');
+    if (!groupMap.has(chatId)) {
+      groupMap.set(chatId, {
+        id: `responses:${chatId}`,
+        name: titles.get(chatId) || 'AI conversation',
+        short: 'AI'
+      } as LibraryCourse);
+    }
+  });
+  return {
+    groups: Array.from(groupMap.values()),
+    items: rows.filter((row) => row.id && row.reply_text).map((row) => {
+      const chatId = String(row.chat_id || 'saved-responses');
+      const text = String(row.reply_text || '');
+      return {
+        id: String(row.id),
+        kind: 'responses' as const,
+        title: responseTitle(text),
+        course: groupMap.get(chatId)!,
+        meta: formatDate(row.created_at),
+        payload: { text }
+      };
+    })
+  };
+}
+
+function savedChatTitles(): Map<string, string> {
+  const titles = new Map<string, string>();
+  try {
+    const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
+    const raw = localStorage.getItem(`ss_ncb_chats_v1:${uid}`) || localStorage.getItem('ss_ncb_chats_v1');
+    const parsed = raw ? JSON.parse(raw) as { chats?: Array<{ id?: string; title?: string }> } : null;
+    parsed?.chats?.forEach((chat) => {
+      if (chat.id) titles.set(chat.id, chat.title || 'AI conversation');
+    });
+  } catch { /* corrupted local cache should not hide server bookmarks */ }
+  return titles;
+}
+
+function responseTitle(text: string): string {
+  const plain = text.replace(/```[\s\S]*?```/g, ' ').replace(/[#*_>`\[\]()]/g, '').replace(/\s+/g, ' ').trim();
+  return plain.length > 72 ? `${plain.slice(0, 69)}\u2026` : plain || 'Saved AI response';
 }
 
 function noteKind(type: string): SavedKind {

@@ -158,9 +158,8 @@
 
               <div class="ncb-input">
                 <!-- Tutor-mode pill row. Locale-aware labels (DE / EN) are
-                     applied by the shell on init. Default is 'explain' so
-                     normal questions receive direct grounded answers. The
-                     shell reads data-mode and forwards it to /ask-stream. -->
+                     applied by the shell on init. Only one may be active and
+                     the active pill can be clicked again to clear it. -->
                 <div class="ncb-composer-modes">
                 <div class="ncb-tutor-modes" role="radiogroup" data-i18n-aria="cb_tutor_group_aria" aria-label="Tutor mode" data-testid="chatbot-tutor-modes">
                   <button type="button" class="ncb-tutor-mode" data-mode="solve" aria-pressed="false"
@@ -174,7 +173,7 @@
                     </svg>
                     <span class="ncb-tutor-mode-label">Solve with me</span>
                   </button>
-                  <button type="button" class="ncb-tutor-mode" data-mode="explain" aria-pressed="true"
+                  <button type="button" class="ncb-tutor-mode" data-mode="explain" aria-pressed="false"
                           data-label-de="Erklären" data-label-en="Explain"
                           data-i18n-title="cb_tutor_explain_title"
                           title="Direct explanation grounded in your course files">
