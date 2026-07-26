@@ -505,7 +505,6 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
       <input class="ncb-course-upload-input" type="file" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" multiple hidden>
       <button type="button" class="ncb-course-action ncb-course-new-folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v6m-3-3h6"/></svg><span>New folder</span></button>
       <button type="button" class="ncb-course-action ncb-course-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Upload files</span></button>
-      <button type="button" class="ncb-course-manage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.83 2.83-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21h-4v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06-2.83-2.83.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3v-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.83-2.83.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3h4v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.83 2.83-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21v4h-.09A1.65 1.65 0 0 0 19.4 15Z"/></svg><span>Manage course</span></button>
     </div>
     <form class="ncb-folder-create" hidden><label for="ncbFolderName">Folder name</label><div><input id="ncbFolderName" maxlength="80" autocomplete="off" placeholder="e.g. Lecture notes"><button type="submit">Create</button></div></form>
     <div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>
@@ -516,9 +515,6 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
       </details>`).join('')}</div>` : ''}
     <div class="ncb-library-group ncb-root-drop" data-drop-folder=""><h3>Files</h3><div class="ncb-drop-hint"><strong>Drop files here</strong><span>Upload to ${escapeHtml(course.name || 'this course')}</span></div>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div>`;
 
-  detail.querySelector<HTMLButtonElement>('.ncb-course-manage')?.addEventListener('click', () => {
-    window.openCourse?.(course);
-  });
   bindCourseFileActions(panel, detail, course);
   detail.querySelectorAll<HTMLButtonElement>('[data-library-file]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -844,6 +840,25 @@ async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
     overlay.innerHTML = `<article class="ncb-resource-document ncb-bookmarked-response">${renderMarkdown(response.text || '')}</article>`;
     return;
   }
+  if (item.kind === 'cheatsheets' && item.note) {
+    const note = await getNoteById(item.note.id);
+    if (!note) {
+      overlay.innerHTML = '<div class="ncb-library-error">This saved cheatsheet is no longer available.</div>';
+      return;
+    }
+    overlay.remove();
+    await ensureArtifactRenderer('cheatsheet');
+    const openPaper = (window as unknown as { openCheatsheetPaper?: (options: Record<string, unknown>) => void }).openCheatsheetPaper;
+    if (openPaper) {
+      openPaper({
+        kind: 'cheatsheet', course: item.course.id, noteId: note.id,
+        title: note.title || item.title, scope: note.title || item.title,
+        markdown: note.content_markdown || '', meta: item.meta,
+        settings: readCheatsheetSettings(item.course.id, note.id)
+      });
+    }
+    return;
+  }
   if (item.note) {
     const note = await getNoteById(item.note.id);
     overlay.innerHTML = note
@@ -852,12 +867,48 @@ async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
     return;
   }
   if (item.kind === 'flashcards') {
-    const deck = item.payload as { cards?: Array<{ front?: string; back?: string; question?: string; answer?: string }> };
-    overlay.innerHTML = `<div class="ncb-popup-flashcards">${(deck.cards || []).map((card, index) => `
-      <article><span>Card ${index + 1}</span><h3>${escapeHtml(card.front || card.question || '')}</h3><p>${escapeHtml(card.back || card.answer || '')}</p></article>`).join('')}</div>`;
+    await ensureArtifactRenderer('flashcards');
+    overlay.innerHTML = '<div class="ncb-flashcard-workspace"><div data-flashcard-player></div></div>';
+    const mount = (window as unknown as { mountFlashcardDeckPlayer?: (target: HTMLElement, deck: unknown, options?: Record<string, unknown>) => void }).mountFlashcardDeckPlayer;
+    const player = overlay.querySelector<HTMLElement>('[data-flashcard-player]');
+    if (mount && player) mount(player, item.payload, { embedded: false, mode: 'study' });
+    else overlay.innerHTML = '<div class="ncb-library-error">The Flashcards player could not be loaded.</div>';
     return;
   }
   mountCourseFeature(overlay, item.course, 'examforge');
+}
+
+const rendererLoads = new Map<string, Promise<void>>();
+function ensureArtifactRenderer(kind: 'flashcards' | 'cheatsheet'): Promise<void> {
+  const loaded = kind === 'flashcards'
+    ? typeof (window as unknown as { mountFlashcardDeckPlayer?: unknown }).mountFlashcardDeckPlayer === 'function'
+    : typeof (window as unknown as { openCheatsheetPaper?: unknown }).openCheatsheetPaper === 'function';
+  if (loaded) return Promise.resolve();
+  const existing = rendererLoads.get(kind);
+  if (existing) return existing;
+  const base = kind === 'flashcards' ? '/views/flashcards/flashcards' : '/views/cheatsheet/cheatsheet';
+  const promise = new Promise<void>((resolve, reject) => {
+    if (!document.querySelector(`link[data-artifact-renderer="${kind}"]`)) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet'; link.href = `${base}.css`; link.dataset.artifactRenderer = kind;
+      document.head.appendChild(link);
+    }
+    const script = document.createElement('script');
+    script.src = `${base}.js`; script.dataset.artifactRenderer = kind;
+    script.addEventListener('load', () => resolve(), { once: true });
+    script.addEventListener('error', () => reject(new Error(`Could not load ${kind} renderer`)), { once: true });
+    document.head.appendChild(script);
+  });
+  rendererLoads.set(kind, promise);
+  return promise;
+}
+
+function readCheatsheetSettings(courseId: string, noteId: string): Record<string, unknown> {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`minallo_cs_last_${courseId}`) || 'null') as { noteId?: string; settings?: Record<string, unknown> } | null;
+    if (stored?.noteId === noteId && stored.settings) return stored.settings;
+  } catch { /* legacy artifacts use deterministic renderer defaults */ }
+  return { columns: 3, font: 'sm', pad: '10mm', style: 'academic', rendererVersion: 1 };
 }
 
 async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: LibraryCourse[] }> {
@@ -953,10 +1004,7 @@ function bindAccountMenu(root: HTMLElement): void {
     } catch { return null; }
   })();
   const name = profile?.full_name || window._currentUser?.email || 'Account';
-  const initial = name.trim().charAt(0).toUpperCase() || '?';
-  const avatar = trigger.querySelector<HTMLElement>('.ncb-account-avatar');
   const label = trigger.querySelector<HTMLElement>('.ncb-account-name');
-  if (avatar) avatar.textContent = initial;
   if (label) label.textContent = name;
 
   const adminButton = menu.querySelector<HTMLButtonElement>('[data-admin-page]');
@@ -1046,10 +1094,11 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
   if (overlay) overlay.dataset.workspaceView = view;
   body.innerHTML = '<div class="ncb-library-status">Opening&hellip;</div>';
   if (view !== 'lounge') {
-    await Promise.all([
-      window._ssLoadFeatureSection?.(view),
-      window._ssLoadPortalFeature?.(view)
-    ]);
+    // Inject the real section markup before executing its feature script. Some
+    // legacy feature initialisers bind immediately on evaluation; loading both
+    // concurrently could let the script win the race and leave an empty popup.
+    await window._ssLoadFeatureSection?.(view);
+    await window._ssLoadPortalFeature?.(view);
   }
   const section = document.getElementById('psec-' + view);
   if (!section) {
@@ -1059,7 +1108,10 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
   const placeholder = document.createComment('ncb-overlay-origin');
   section.parentNode?.insertBefore(placeholder, section);
   section.dataset.ncbPreviousDisplay = section.style.display;
-  section.style.display = 'block';
+  section.hidden = false;
+  section.removeAttribute('inert');
+  section.setAttribute('aria-hidden', 'false');
+  section.style.setProperty('display', 'block', 'important');
   body.innerHTML = '';
   body.appendChild(section);
   body.closest<HTMLElement>('[data-workspace-overlay]')!.dataset.movedSection = view;
@@ -1075,6 +1127,7 @@ function openOverlay(root: HTMLElement, title: string): HTMLElement | null {
   const body = overlay?.querySelector<HTMLElement>('.ncb-workspace-body');
   const dialog = overlay?.querySelector<HTMLElement>('.ncb-workspace-dialog');
   if (!overlay || !body || !dialog) return null;
+  if (!overlay.hidden && overlay.dataset.movedSection) closeOverlay(overlay);
   delete overlay.dataset.workspaceView;
   dialog.setAttribute('aria-label', title);
   overlay.hidden = false;
@@ -1098,7 +1151,9 @@ function closeOverlay(overlay: HTMLElement): void {
   const moved = body?.firstElementChild as HTMLElement | null;
   const stateful = overlay as HTMLElement & { _origin?: Comment };
   if (moved && stateful._origin?.parentNode) {
+    moved.style.removeProperty('display');
     moved.style.display = moved.dataset.ncbPreviousDisplay || 'none';
+    moved.setAttribute('aria-hidden', 'true');
     delete moved.dataset.ncbPreviousDisplay;
     stateful._origin.parentNode.insertBefore(moved, stateful._origin);
     stateful._origin.remove();

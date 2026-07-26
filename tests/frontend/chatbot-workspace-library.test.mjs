@@ -94,12 +94,14 @@ test('course drawer can add subjects and manage course files in place', () => {
   assert.match(moduleSource, /window\._ufCreateFolder/);
   assert.match(moduleSource, /window\._ufUpload/);
   assert.match(css, /\.ncb-course-detail-actions\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(css, /\.ncb-course-manage\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
+  assert.doesNotMatch(moduleSource, /ncb-course-manage/);
+  assert.doesNotMatch(moduleSource, /window\.openCourse\?\.\(course\)/);
 });
 
 test('avatar and notification controls share the same glass button shell', () => {
   assert.match(css, /\.ncb-notification-trigger\s*\{[\s\S]*width:\s*46px;[\s\S]*border-radius:\s*15px/);
   assert.match(css, /\.ncb-account-trigger\s*\{[\s\S]*width:\s*46px;[\s\S]*border-radius:\s*15px/);
+  assert.match(html, /class="ncb-account-avatar"[\s\S]*<circle cx="12" cy="8" r="4"/);
   assert.match(css, /\.ncb-account-avatar\s*\{[\s\S]*background:\s*transparent/);
 });
 
@@ -153,10 +155,16 @@ test('saved resources and account destinations use the workspace overlay', () =>
   assert.match(html, /data-account-view="settings"/);
 });
 
+test('workspace popup sections are restored from the detached host and forced visible', () => {
+  assert.match(moduleSource, /section\.style\.setProperty\('display', 'block', 'important'\)/);
+  assert.match(css, /\.ncb-workspace-body > \.portal-section\s*\{[\s\S]*display:\s*block !important/);
+  assert.match(moduleSource, /if \(!overlay\.hidden && overlay\.dataset\.movedSection\) closeOverlay\(overlay\)/);
+});
+
 test('account overlays load both the real section HTML and its feature scripts', () => {
   assert.match(moduleSource, /window\._ssLoadFeatureSection\?\.\(view\)/);
   assert.match(moduleSource, /window\._ssLoadPortalFeature\?\.\(view\)/);
-  assert.match(moduleSource, /Promise\.all/);
+  assert.match(moduleSource, /await window\._ssLoadFeatureSection[\s\S]*await window\._ssLoadPortalFeature/);
   assert.match(moduleSource, /window\.refreshSubscriptionView\?\.\(\)/);
 });
 
