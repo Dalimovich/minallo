@@ -35,7 +35,7 @@ test('course library has glass cards and persists a larger most-recent course', 
   assert.match(moduleSource, /localStorage\.setItem\(RECENT_COURSE_KEY, course\.id\)/);
   assert.match(moduleSource, /const ordered = recent \? \[recent, \.\.\.all\.filter/);
   assert.match(moduleSource, /ncb-course-row--recent/);
-  assert.match(css, /\.ncb-course-row--recent\s*\{[\s\S]*min-height:\s*88px/);
+  assert.match(css, /\.ncb-course-row--recent\s*\{[\s\S]*min-height:\s*76px/);
   assert.match(css, /\.ncb-course-row\s*\{[\s\S]*backdrop-filter:\s*blur\(18px\)/);
   assert.match(css, /\.ncb-file-row\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/);
   assert.match(css, /\.ncb-folder\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/);
@@ -138,6 +138,8 @@ test('course library provides permanent delete actions for files, folders, and c
   assert.match(moduleSource, /data-delete-course=/);
   assert.match(moduleSource, /\/api\/documents\/delete/);
   assert.match(moduleSource, /\/api\/course-delete/);
+  assert.match(css, /\.ncb-library-delete\s*\{[\s\S]*margin-left:\s*auto/);
+  assert.match(css, /\.ncb-course-row-main > span:not\(\.ncb-library-icon\)/);
 });
 
 test('course upload popup indexes uploaded PDFs for chatbot retrieval', () => {

@@ -4710,8 +4710,8 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   text-align: left;
   cursor: pointer;
 }
-.ncb-course-row-main > span,
-.ncb-file-row-main > span { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.ncb-course-row-main > span:not(.ncb-library-icon),
+.ncb-file-row-main > span:not(.ncb-library-icon) { min-width: 0; flex: 1; display: grid; gap: 3px; }
 .ncb-course-row-main strong,
 .ncb-file-row-main strong { overflow: hidden; color: #dbeafe; text-overflow: ellipsis; white-space: nowrap; }
 .ncb-course-row-main small,
@@ -4723,6 +4723,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
+  margin-left: auto;
   display: grid;
   place-items: center;
   padding: 0;
@@ -4735,7 +4736,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 }
 .ncb-library-delete svg { width: 15px; height: 15px; }
 .ncb-library-delete:hover { border-color: rgba(248, 113, 113, 0.25); color: #fca5a5; background: rgba(127, 29, 29, 0.2); }
-.ncb-folder summary > .ncb-library-delete { display: grid; margin-left: 2px; }
+.ncb-folder summary > .ncb-library-delete { display: grid; margin-left: auto; }
 
 .ncb-course-row:hover,
 .ncb-file-row:hover,
@@ -5001,9 +5002,9 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 }
 
 .ncb-course-row--recent {
-  min-height: 88px;
+  min-height: 76px;
   margin-bottom: 7px;
-  padding: 17px 15px;
+  padding: 14px 13px;
   border-color: rgba(96, 165, 250, 0.42);
   background:
     radial-gradient(circle at 12% 15%, rgba(96, 165, 250, 0.18), transparent 42%),
