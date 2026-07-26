@@ -1,6 +1,6 @@
 import { escapeHtml } from '../../utils/escape-html.js';
 import { listCourseDocuments, type CourseDocument } from '../../services/ai-service.js';
-import type { ActivePdfContext } from '../pdf-viewer/active-pdf-context.js';
+import { getActivePdfContext, type ActivePdfContext } from '../pdf-viewer/active-pdf-context.js';
 import { openStudyToolWorkspace, type StudyWorkspaceKind } from './workspace-library.js';
 
 export type InlineStudyToolKind = 'examforge' | 'flashcards' | 'deep_learn';
@@ -104,6 +104,7 @@ const DEFINITIONS: Record<InlineStudyToolKind, ToolDefinition> = {
 };
 
 const pendingKey = (id: string) => `minallo_pending_study_action_${id}`;
+const sourceWatchers = new WeakMap<HTMLElement, number>();
 function persist(marker: StudyToolConfigurationMarker): void {
   marker.revision = (marker.revision || 0) + 1;
   try { localStorage.setItem(pendingKey(marker.actionId), JSON.stringify(marker)); } catch { /* optional cache */ }
@@ -222,6 +223,8 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
   const marker = restore(input);
   if (marker.artifact?.persistedResourceId) { renderArtifact(host, marker); return; }
   const definition = DEFINITIONS[marker.intent];
+  const livePdf = getActivePdfContext();
+  if (livePdf?.courseId === marker.courseId && livePdf.documentId) marker.activePdf = livePdf;
   marker.parameters = { ...definition.defaults, ...marker.parameters };
   marker.status ||= 'awaiting_confirmation';
   const docs = marker.availableDocuments || [];
@@ -302,4 +305,20 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     console.info('[study-tool-source]', { tool: marker.intent, activeCourseId: marker.courseId, activeDocumentId: marker.activePdf?.documentId || null, activeFileName: marker.activePdf?.fileName || null, courseDocumentsLoaded: courseDocs.length, readyDocuments: marker.availableDocuments.filter(doc => doc.readiness === 'ready').length, visiblePickerOptions: marker.availableDocuments.length, defaultSourceMode: marker.source?.scope });
     renderStudyToolConfiguration(host, marker);
   }).catch(() => { marker.validationMessage = 'Course files could not be loaded. Retry by reopening this card.'; persist(marker); renderStudyToolConfiguration(host, marker); });
+  if (!sourceWatchers.has(host)) {
+    const watcher = window.setInterval(() => {
+      if (!host.isConnected || marker.artifact) { window.clearInterval(watcher); sourceWatchers.delete(host); return; }
+      const next = getActivePdfContext();
+      const nextId = next?.courseId === marker.courseId ? next.documentId : '';
+      if (!nextId || nextId === marker.activePdf?.documentId) return;
+      marker.activePdf = next!;
+      if (marker.source?.scope === 'current_document') {
+        marker.source = { scope: 'current_document', courseId: marker.courseId, documentIds: [nextId], activeDocumentId: nextId, activeFileName: next!.fileName, displayLabel: `Open document — ${next!.fileName}` };
+        marker.documentIds = [nextId]; marker.sourceLabel = marker.source.displayLabel; marker.sourceDocumentName = next!.fileName;
+      }
+      persist(marker);
+      renderStudyToolConfiguration(host, marker);
+    }, 400);
+    sourceWatchers.set(host, watcher);
+  }
 }

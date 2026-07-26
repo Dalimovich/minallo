@@ -63,3 +63,10 @@ test('source selector is a compact collapsible card control', () => {
   assert.match(workflow, /ncb-source-popover/);
   assert.match(workflow, /panel\.hidden = !marker\.sourcePickerOpen/);
 });
+
+test('an open PDF discovered after card creation enables the live source option', () => {
+  assert.match(workflow, /getActivePdfContext\(\)/);
+  assert.match(workflow, /window\.setInterval/);
+  assert.match(workflow, /nextId === marker\.activePdf\?\.documentId/);
+  assert.match(workflow, /renderStudyToolConfiguration\(host, marker\)/);
+});
