@@ -14,9 +14,11 @@ test('chat and PDF flex chain permits both panes to shrink inside the viewport',
   assert.match(css, /body\.ncb-pdf-workspace-open \.ncb-context[\s\S]*?max-width: min\(50vw, 760px\)/);
 });
 
-test('PDF refits after the asynchronous document open settles', () => {
-  assert.match(workspace, /Promise\.resolve\(opened\)\.finally/);
-  assert.match(workspace, /requestAnimationFrame\(refitWorkspacePdf\)/);
+test('PDF waits for its rendered canvas before fitting to the hosted pane', () => {
+  assert.match(workspace, /function refitWorkspacePdfAfterRender/);
+  assert.match(workspace, /new MutationObserver/);
+  assert.match(workspace, /\.pdf-page-wrap canvas/);
+  assert.match(workspace, /viewer\.renderPages\?\.\(\)/);
 });
 
 test('wide formulas, tables, and code scroll locally', () => {

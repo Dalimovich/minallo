@@ -112,6 +112,27 @@ function refitWorkspacePdf(): void {
   else viewer.renderPages?.();
 }
 
+function refitWorkspacePdfAfterRender(): void {
+  const body = document.getElementById('pdfBody');
+  if (!body || typeof MutationObserver === 'undefined') return;
+  let settled = false;
+  const renderAtHostedWidth = (): void => {
+    if (settled) return;
+    settled = true;
+    observer.disconnect();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const viewer = window as typeof window & { renderPages?: () => void };
+      viewer.renderPages?.();
+      refitWorkspacePdf();
+    }));
+  };
+  const observer = new MutationObserver(() => {
+    if (body.querySelector('.pdf-page-wrap canvas')) renderAtHostedWidth();
+  });
+  observer.observe(body, { childList: true, subtree: true });
+  if (body.querySelector('.pdf-page-wrap canvas')) renderAtHostedWidth();
+}
+
 function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
   pdfResizeCleanup?.();
   const handle = host.querySelector<HTMLElement>('.ncb-pdf-resize');
@@ -967,13 +988,8 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
   bindWorkspacePdfResize(context, pdfHost);
   window.selectChatbotPdfSource?.(course, file);
-  const opened = window.openFile(file, course);
-  void Promise.resolve(opened).finally(() => {
-    requestAnimationFrame(() => {
-      refitWorkspacePdf();
-      requestAnimationFrame(refitWorkspacePdf);
-    });
-  });
+  refitWorkspacePdfAfterRender();
+  window.openFile(file, course);
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
