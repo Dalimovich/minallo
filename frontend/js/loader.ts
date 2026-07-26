@@ -773,6 +773,10 @@ interface LandingTranslation {
               })._ncbMountPromise;
               if (!mountPromise) throw new Error('chatbot mount did not start');
               await mountPromise;
+              const chatbotRoot = document.getElementById('ncbRoot');
+              if (!chatbotRoot || chatbotRoot.hidden || !chatbotRoot.querySelector('.ncb-card')) {
+                throw new Error('chatbot shell did not render');
+              }
               const navigate = (window as unknown as {
                 _navigatePortal?: (section: string) => void;
               })._navigatePortal;
@@ -945,6 +949,13 @@ interface LandingTranslation {
       if (name) wrapper.setAttribute('data-section', name.replace('.html', ''));
       wrapper.innerHTML = html;
       while (wrapper.firstChild) root.appendChild(wrapper.firstChild);
+    });
+    document.querySelectorAll<HTMLElement>(
+      '#portal .sidebar, #portal .main > .topbar, #portal > .page-bg'
+    ).forEach((legacyChrome) => {
+      legacyChrome.inert = true;
+      legacyChrome.setAttribute('aria-hidden', 'true');
+      legacyChrome.dataset.chatbotOnlyDetached = 'true';
     });
     if (SS) SS.markReady('sections', { count: htmls.length });
     loadAppScript();

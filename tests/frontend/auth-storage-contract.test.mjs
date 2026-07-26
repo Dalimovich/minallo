@@ -66,6 +66,16 @@ test('authenticated boot mounts the chatbot before revealing the application', (
   assert.match(LOADER_TS, /Minallo could not open\.[\s\S]*Retry/);
 });
 
+test('authenticated application permanently detaches the legacy visible shell', () => {
+  assert.match(AUTH_BOOTSTRAP, /document\.body\.classList\.add\('minallo-chatbot-only'\)/);
+  assert.match(AUTH_BOOTSTRAP, /minallo-chatbot-only #portal \.sidebar[\s\S]*display:none!important/);
+  assert.match(AUTH_BOOTSTRAP, /portal \.portal-section:not\(#psec-aipage\)\{display:none!important\}/);
+  assert.match(AUTH_BOOTSTRAP, /minallo-chatbot-only #psec-aipage[\s\S]*position:fixed!important/);
+  assert.match(LOADER_TS, /legacyChrome\.inert = true/);
+  assert.match(LOADER_TS, /legacyChrome\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(LOADER_TS, /if \(!chatbotRoot \|\| chatbotRoot\.hidden \|\| !chatbotRoot\.querySelector\('\.ncb-card'\)\)/);
+});
+
 test('automatic boot recovery preserves the authenticated session', () => {
   const recoverStart = AUTH_BOOTSTRAP.indexOf("if (qp.get('recover') === '1')");
   const fullResetStart = AUTH_BOOTSTRAP.indexOf("if (qp.get('reset') === '1')");

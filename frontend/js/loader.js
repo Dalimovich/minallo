@@ -724,6 +724,10 @@
                         if (!mountPromise)
                             throw new Error('chatbot mount did not start');
                         await mountPromise;
+                        const chatbotRoot = document.getElementById('ncbRoot');
+                        if (!chatbotRoot || chatbotRoot.hidden || !chatbotRoot.querySelector('.ncb-card')) {
+                            throw new Error('chatbot shell did not render');
+                        }
                         const navigate = window._navigatePortal;
                         if (typeof navigate === 'function')
                             navigate('aipage');
@@ -896,6 +900,11 @@
             wrapper.innerHTML = html;
             while (wrapper.firstChild)
                 root.appendChild(wrapper.firstChild);
+        });
+        document.querySelectorAll('#portal .sidebar, #portal .main > .topbar, #portal > .page-bg').forEach((legacyChrome) => {
+            legacyChrome.inert = true;
+            legacyChrome.setAttribute('aria-hidden', 'true');
+            legacyChrome.dataset.chatbotOnlyDetached = 'true';
         });
         if (SS)
             SS.markReady('sections', { count: htmls.length });
