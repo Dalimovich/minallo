@@ -19,6 +19,8 @@ const AI_ASK = read('frontend/js/features/ai-chat/ai-ask.ts');
 const CSS = read('frontend/css/styles.css');
 const DOCUMENT_RAIL_CSS = read('frontend/css/document-rail.css');
 const MESSAGE_NAVIGATOR = read('frontend/js/features/message-navigator/message-navigator.ts');
+const NEW_CHATBOT = read('frontend/js/features/chatbot-new/shell.ts');
+const ACTIVE_PDF_CONTEXT = read('frontend/js/features/pdf-viewer/active-pdf-context.ts');
 
 test('Ctrl/Cmd + wheel resizing works across the complete AI drawer', () => {
   assert.match(DOCUMENT_RAIL, /drawer\.addEventListener\(['"]wheel['"]/);
@@ -39,8 +41,8 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260726-pasted-markdown-v1['"]/);
-  assert.match(INDEX, /config\.js\?v=20260726-pasted-markdown-v1/);
+  assert.match(CONFIG, /assetVersion:\s*['"]20260726-open-pdf-grounding-v1['"]/);
+  assert.match(INDEX, /config\.js\?v=20260726-open-pdf-grounding-v1/);
 });
 
 test('Manrope is the single shared interface font while technical text stays monospace', () => {
@@ -98,4 +100,28 @@ test('questions about the visible professor solution attach the visible PDF page
   assert.match(AI_ASK, /_visibleTextWeak \|\| _asksAboutVisibleSolution \? pdfToImages\(1,\s*_denseVisualTask\)/);
   assert.match(AI_ASK, /\(_visibleTextWeak \|\| _asksAboutVisibleSolution\) && pageImages\[0\]/);
   assert.match(AI_ASK, /task\|exercise\|problem\|question\|aufgabe/);
+});
+
+test('new chatbot sends one stable active-PDF snapshot to ask-stream', () => {
+  assert.match(NEW_CHATBOT, /getActivePdfContext\(\)/);
+  assert.match(NEW_CHATBOT, /captureStablePdfSnapshot\(question, 'active_document'\)/);
+  assert.match(NEW_CHATBOT, /activeDocumentId: payloadPdf\.documentId/);
+  assert.match(NEW_CHATBOT, /visiblePage: payloadPdf\.visiblePage/);
+  assert.match(NEW_CHATBOT, /openFileContext: currentPageContext/);
+  assert.match(NEW_CHATBOT, /openFileImages: openFileImages\.length/);
+  assert.match(NEW_CHATBOT, /visualEvidenceExpected: !!snapshot\?\.visualEvidenceExpected/);
+  assert.match(NEW_CHATBOT, /conversationId,/);
+  assert.match(NEW_CHATBOT, /const explicitlyNamed = sourceLibrary\.items\.filter/);
+  assert.match(NEW_CHATBOT, /const payloadPdf = useGeneratedArtifact \? null : activePdf/);
+  assert.match(NEW_CHATBOT, /region: 'selected_region'/);
+  assert.doesNotMatch(NEW_CHATBOT, /if \(\(last\.images \|\| \[\]\)\.length \|\| \(last\.files \|\| \[\]\)\.length\) return null/);
+});
+
+test('active PDF provider retries a page race once and uses canonical viewer state', () => {
+  assert.match(ACTIVE_PDF_CONTEXT, /activeRagDocumentId/);
+  assert.match(ACTIVE_PDF_CONTEXT, /pdfPageTexts\?\.\[visiblePage\]/);
+  assert.match(ACTIVE_PDF_CONTEXT, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
+  assert.match(ACTIVE_PDF_CONTEXT, /sameViewerPage\(before, after\)/);
+  assert.match(ACTIVE_PDF_CONTEXT, /window\._pdfToImages\(1, true\)/);
+  assert.match(ACTIVE_PDF_CONTEXT, /image\.page === context\.visiblePage/);
 });

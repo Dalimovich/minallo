@@ -10,6 +10,12 @@ import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { attachMessageNavigator } from '../message-navigator/message-navigator.js';
 import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
+  captureStablePdfSnapshot,
+  getActivePdfContext,
+  type ActivePdfContext,
+  type OpenFileImage
+} from '../pdf-viewer/active-pdf-context.js';
+import {
   createAIThinkingStatus,
   getThinkingContext,
   getInitialAssistantStatus,
@@ -1003,7 +1009,11 @@ async function streamAiReply(
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
       const followUpDoc = await resolveFollowUpDoc(originMessages, rag.courseId || null);
-      const streamed = await streamFromAskStream(rag.question, rag.courseId, bubble, controller, priorTurns, thinking, rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams);
+      const streamed = await streamFromAskStream(
+        rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
+        rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams,
+        rag.activePdfContext, originId, originMessages.at(-1)?.images || []
+      );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
       originMessages.push({
         role: 'assistant',
@@ -2421,16 +2431,41 @@ async function resolveFollowUpDoc(
  * eligible, else null. */
 function ragEligibility(
   messages: ChatMessage[]
-): { question: string; courseId: string; documentIds: string[]; documentNames: string[] } | null {
+): {
+  question: string;
+  courseId: string;
+  documentIds: string[];
+  documentNames: string[];
+  activePdfContext: ActivePdfContext | null;
+  explicitSourceOverride: boolean;
+} | null {
   if (!messages.length) return null;
   const last = messages[messages.length - 1]!;
   if (last.role !== 'user') return null;
   if (!last.text || !last.text.trim()) return null;
-  // Images and file uploads aren't supported by /ask-stream — fall through.
-  if ((last.images || []).length || (last.files || []).length) return null;
-
   const active = chatStore.getActive();
   const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
+  const openPdf = getActivePdfContext();
+  // Course/PDF screenshots stay on the grounded stream. Arbitrary uploaded
+  // files still use the generic attachment pipeline until they are indexed.
+  if ((last.files || []).length || ((last.images || []).length && !openPdf)) return null;
+  const normalQuestion = last.text.toLocaleLowerCase();
+  const explicitlyNamed = sourceLibrary.items.filter((source) => {
+    const full = source.name.trim().toLocaleLowerCase();
+    const stem = full.replace(/\.(?:pdf|docx?|txt|pptx?)$/i, '');
+    return full.length >= 4 && (normalQuestion.includes(full) || (stem.length >= 4 && normalQuestion.includes(stem)));
+  });
+  const requestSources = explicitlyNamed.length ? explicitlyNamed : selected;
+  const namedCourseFiles = listCourses().flatMap((course) => [
+    ...(course.files || []).map((file) => ({ courseId: course.id, file })),
+    ...(course.userFolders || []).flatMap((folder) =>
+      (folder.files || []).map((file) => ({ courseId: course.id, file }))
+    )
+  ]).filter(({ file }) => {
+    const full = file.name.trim().toLocaleLowerCase();
+    const stem = full.replace(/\.(?:pdf|docx?|txt|pptx?)$/i, '');
+    return full.length >= 4 && (normalQuestion.includes(full) || (stem.length >= 4 && normalQuestion.includes(stem)));
+  });
 
   // Selecting sources is an explicit scoping action: whenever the user has any
   // sources selected, narrow retrieval to exactly those files — regardless of
@@ -2443,11 +2478,11 @@ function ragEligibility(
   let documentIds: string[] = [];
   let documentNames: string[] = [];
   const scopeToSelection =
-    selected.length > 0 || normaliseCourseFileScope(active.courseFileScope) === 'specific_files';
+    requestSources.length > 0 || normaliseCourseFileScope(active.courseFileScope) === 'specific_files';
   if (scopeToSelection) {
     const ids = new Set<string>();
     const names = new Set<string>();
-    selected.forEach((s) => {
+    requestSources.forEach((s) => {
       (s.documents || []).forEach((d) => {
         if (d.id) ids.add(d.id);
         if (d.name) names.add(d.name);
@@ -2461,13 +2496,37 @@ function ragEligibility(
     documentIds = Array.from(ids);
     documentNames = Array.from(names);
   }
+  if (namedCourseFiles.length) {
+    documentIds = Array.from(new Set(namedCourseFiles.map(({ file }) => file.id).filter(Boolean) as string[]));
+    documentNames = Array.from(new Set(namedCourseFiles.map(({ file }) => file.name)));
+  }
+
+  const selectedMatchesOpenPdf = !!openPdf && requestSources.length > 0 && requestSources.every((source) =>
+    source.courseId === openPdf.courseId
+    && (source.documents || [{ name: source.name }]).some((doc) => doc.name === openPdf.fileName)
+  );
+  const namedOpenPdf = !!openPdf && namedCourseFiles.length > 0 && namedCourseFiles.every(
+    ({ courseId, file }) => courseId === openPdf.courseId && file.name === openPdf.fileName
+  );
+  const explicitSourceOverride = (
+    (explicitlyNamed.length > 0 || namedCourseFiles.length > 0)
+    && !(selectedMatchesOpenPdf || namedOpenPdf)
+  ) || (
+    explicitlyNamed.length === 0 && namedCourseFiles.length === 0
+    && selected.length > 0 && !selectedMatchesOpenPdf
+  );
+  const activePdfContext = explicitSourceOverride ? null : openPdf;
+  if (activePdfContext) {
+    documentIds = [activePdfContext.documentId];
+    documentNames = [activePdfContext.fileName];
+  }
 
   // All selected sources are expected to come from the same course (the
   // import UI scopes by course). Pick the first one's courseId as the
   // request scope. If they ever mix courses we still pick the first —
   // worst case is RAG searches a smaller-than-expected universe.
   const fallbackCourseId = String((window as unknown as { activeCourseId?: string | null }).activeCourseId || '');
-  const courseId = selected[0]?.courseId || fallbackCourseId;
+  const courseId = namedCourseFiles[0]?.courseId || requestSources[0]?.courseId || activePdfContext?.courseId || fallbackCourseId;
   if (!courseId) {
     // No course context. Internet mode still works — a web search needs no
     // course — so route it through /ask-stream with an empty courseId (the
@@ -2480,12 +2539,18 @@ function ragEligibility(
     const mode = normaliseSourceMode(active.sourceMode);
     const hasUrl = /(?:https?:\/\/|www\.)\S+|\byoutu\.be\/\S+|\b(?:youtube|wikipedia|github|stackoverflow)\.(?:com|org)\b/i.test(last.text);
     if (mode === 'internet' || (mode === 'auto' && hasUrl)) {
-      return { question: last.text.trim(), courseId: '', documentIds: [], documentNames: [] };
+      return {
+        question: last.text.trim(), courseId: '', documentIds: [], documentNames: [],
+        activePdfContext: null, explicitSourceOverride: false
+      };
     }
     return null;
   }
 
-  return { question: last.text.trim(), courseId, documentIds, documentNames };
+  return {
+    question: last.text.trim(), courseId, documentIds, documentNames,
+    activePdfContext, explicitSourceOverride
+  };
 }
 
 
@@ -2502,7 +2567,10 @@ async function streamFromAskStream(
   documentIds: string[] = [],
   documentNames: string[] = [],
   generatedDoc: GeneratedDoc | null = null,
-  allowDiagrams = true
+  allowDiagrams = true,
+  activePdfContext: ActivePdfContext | null = null,
+  conversationId?: string,
+  userImages: PastedImage[] = []
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {
@@ -2510,12 +2578,35 @@ async function streamFromAskStream(
     const text = await callGenericAi([{ role: 'user', text: question }], bubble, controller, thinking, null, allowDiagrams);
     return { text, meta: null };
   }
+  const snapshot = activePdfContext
+    ? await captureStablePdfSnapshot(question, 'active_document')
+    : null;
+  const activePdf = snapshot?.activeDocument || null;
+  const pastedImages: OpenFileImage[] = userImages.flatMap((image) => {
+    const comma = image.dataUrl.indexOf(',');
+    const data = comma >= 0 ? image.dataUrl.slice(comma + 1) : '';
+    if (!data || !activePdf) return [];
+    return [{
+      mediaType: image.mediaType === 'image/png' ? 'image/png' : 'image/jpeg',
+      data,
+      page: activePdf.visiblePage,
+      region: 'selected_region'
+    } satisfies OpenFileImage];
+  });
+  const openFileImages = [...(snapshot?.images || []), ...pastedImages].slice(0, 3);
+  const generatedArtifactIsExplicit = !!generatedDoc && /\b(?:cheat\s*-?sheet|summary|formula sheet|spickzettel|zusammenfassung|generated|created)\b/i.test(question);
+  const useGeneratedArtifact = generatedArtifactIsExplicit || (!activePdf && !!generatedDoc);
+  const payloadPdf = useGeneratedArtifact ? null : activePdf;
+  const currentPageContext = payloadPdf
+    ? `[CURRENTLY VISIBLE PDF PAGE]\nFile: ${payloadPdf.fileName}\nPage: ${payloadPdf.visiblePage} of ${payloadPdf.pageCount}\n\n${payloadPdf.pageText}`.slice(0, 16000)
+    : undefined;
   const resp = await authenticatedFetch(aiHost + '/ask-stream', {
     method: 'POST',
     signal: controller.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       courseId,
+      conversationId,
       question,
       tutorMode: getCurrentTutorMode(),
       sourceMode: sourceModeForActiveChat(),
@@ -2535,11 +2626,30 @@ async function streamFromAskStream(
       // Both omitted for "All files" (whole-course search).
       ...(documentIds.length ? { documentIds } : {}),
       ...(documentNames.length ? { documentNames } : {}),
+      ...(payloadPdf ? {
+        activeDocumentId: payloadPdf.documentId,
+        activeFileName: payloadPdf.fileName,
+        visiblePage: payloadPdf.visiblePage,
+        viewerRevision: payloadPdf.documentRevision,
+        openFileContext: currentPageContext,
+        openFileImages: openFileImages.length ? openFileImages : undefined,
+        visualEvidenceExpected: !!snapshot?.visualEvidenceExpected,
+        visualContextMeta: {
+          renderAttempted: !!snapshot?.visualEvidenceExpected,
+          renderedPage: payloadPdf.visiblePage,
+          renderedImageCount: openFileImages.length,
+          currentPageTextChars: payloadPdf.pageText.length,
+          activeDocumentId: payloadPdf.documentId,
+          activeFileName: payloadPdf.fileName
+        },
+        selectedText: payloadPdf.selectedRegion?.text,
+        selectedRegion: payloadPdf.selectedRegion
+      } : {}),
       // The cheatsheet/summary this chat generated, when the question is about
       // it. openFileContext is the backend's "text the student is looking at"
       // channel — retrieval can't surface a generated doc (it's a note, not an
       // indexed course file), so it's handed over verbatim.
-      ...(generatedDoc ? {
+      ...(useGeneratedArtifact && generatedDoc ? {
         activeFileName: generatedDocLabel(generatedDoc),
         openFileContext: generatedDoc.markdown.slice(0, NCB_GENERATED_DOC_CONTEXT_CHARS),
       } : {}),
