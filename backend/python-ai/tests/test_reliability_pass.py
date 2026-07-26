@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.routers import stream as stream_router
 from app.services import document_extraction as extraction
 from app.services import visual_repair as visual_repair_service
 from app.services.document_extraction import (
@@ -372,6 +373,68 @@ def test_unresolved_specific_files_never_expand_to_whole_course() -> None:
     assert '"requested_documents_not_resolved"' in source
     assert '"requested_documents_ambiguous"' in source
     assert '"documentCandidates": candidates' in source
+
+
+class _DocumentResolutionQuery:
+    def __init__(self, rows: list[dict[str, str]]) -> None:
+        self.rows = rows
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=self.rows)
+
+
+class _DocumentResolutionClient:
+    def __init__(self, rows: list[dict[str, str]]) -> None:
+        self.rows = rows
+
+    def table(self, name: str):
+        assert name == "documents"
+        return _DocumentResolutionQuery(self.rows)
+
+
+def test_document_name_resolution_rejects_partial_multi_file_match(monkeypatch) -> None:
+    monkeypatch.setattr(
+        stream_router,
+        "get_supabase",
+        lambda: _DocumentResolutionClient([
+            {"id": "doc-a", "file_name": "Lecture A.pdf"},
+        ]),
+    )
+    result = stream_router._resolve_document_names(
+        "user", "course", ["Lecture A.pdf", "Lecture 66.pdf"]
+    )
+    assert result["resolved_ids"] == ["doc-a"]
+    assert result["unresolved_names"] == ["Lecture 66.pdf"]
+    assert result["ambiguous_candidates"] == []
+
+
+def test_document_name_resolution_returns_verified_ambiguous_candidates(monkeypatch) -> None:
+    monkeypatch.setattr(
+        stream_router,
+        "get_supabase",
+        lambda: _DocumentResolutionClient([
+            {"id": "doc-a", "file_name": "Exam.pdf"},
+            {"id": "doc-b", "file_name": "Exam.PDF"},
+        ]),
+    )
+    result = stream_router._resolve_document_names(
+        "user", "course", ["exam"]
+    )
+    assert result["resolved_ids"] == []
+    assert result["unresolved_names"] == []
+    assert result["ambiguous_candidates"] == [
+        {"id": "doc-a", "name": "Exam.pdf", "requestedName": "exam"},
+        {"id": "doc-b", "name": "Exam.PDF", "requestedName": "exam"},
+    ]
 
 
 def test_visual_denial_repair_is_bounded_and_returns_repaired_answer() -> None:

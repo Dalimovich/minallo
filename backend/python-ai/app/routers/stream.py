@@ -215,20 +215,22 @@ def _verify_user_owns_documents(
     }
 
 
-def _resolve_document_ids_by_name(user_id: str, course_id: str, names: list[str] | None) -> list[str]:
-    """Resolve storage file names → owned document ids in this course.
-
-    The chatbot's "Selected file(s)" scope only knows file names (the document
-    id lives server-side), so it sends names; this maps them to ids for scoped
-    retrieval. Returns [] on error or no match; callers must return a typed
-    source-resolution result and must never broaden the scope silently."""
+def _resolve_document_names(
+    user_id: str,
+    course_id: str,
+    names: list[str] | None,
+) -> dict[str, Any]:
+    """Resolve each requested filename without losing partial failures."""
     clean = list(dict.fromkeys(n.strip() for n in (names or []) if n and n.strip()))[:50]
+    result: dict[str, Any] = {
+        "requested_names": clean,
+        "resolved_ids": [],
+        "unresolved_names": [],
+        "ambiguous_candidates": [],
+    }
     if not clean:
-        return []
+        return result
     sb = get_supabase()
-    # Pull all of the course's documents once and match in Python so a tiny
-    # name mismatch (case, a missing/extra .pdf extension, surrounding spaces)
-    # does not reject an otherwise exact user selection.
     try:
         resp = (
             sb.table("documents")
@@ -240,19 +242,41 @@ def _resolve_document_ids_by_name(user_id: str, course_id: str, names: list[str]
         )
     except Exception:
         log.exception("resolve document ids by name failed")
-        return []
+        result["unresolved_names"] = clean
+        return result
 
-    def _norm(s: str) -> str:
-        s = (s or "").strip().lower()
-        return s[:-4] if s.endswith(".pdf") else s
+    def _norm(value: str) -> str:
+        value = (value or "").strip().casefold()
+        return value.removesuffix(".pdf")
 
-    wanted = {_norm(n) for n in clean}
-    out: list[str] = []
-    for row in (resp.data or []):
-        fn = row.get("file_name") or ""
-        if row.get("id") and (fn.strip().lower() in {n.lower() for n in clean} or _norm(fn) in wanted):
-            out.append(row["id"])
-    return out
+    rows = [
+        {"id": str(row.get("id") or ""), "name": str(row.get("file_name") or "")}
+        for row in (resp.data or [])
+        if row.get("id")
+    ]
+    for requested_name in clean:
+        matches = [row for row in rows if _norm(row["name"]) == _norm(requested_name)]
+        if len(matches) == 1:
+            result["resolved_ids"].append(matches[0]["id"])
+        elif not matches:
+            result["unresolved_names"].append(requested_name)
+        else:
+            result["ambiguous_candidates"].extend(
+                {**candidate, "requestedName": requested_name}
+                for candidate in matches
+            )
+    result["resolved_ids"] = list(dict.fromkeys(result["resolved_ids"]))
+    return result
+
+
+def _resolve_document_ids_by_name(user_id: str, course_id: str, names: list[str] | None) -> list[str]:
+    """Resolve storage file names → owned document ids in this course.
+
+    The chatbot's "Selected file(s)" scope only knows file names (the document
+    id lives server-side), so it sends names; this maps them to ids for scoped
+    retrieval. Returns [] on error or no match; callers must return a typed
+    source-resolution result and must never broaden the scope silently."""
+    return list(_resolve_document_names(user_id, course_id, names)["resolved_ids"])
 
 
 class PreviousTurn(BaseModel):
@@ -737,10 +761,12 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
         return StreamingResponse(missing_visual_stream(), media_type="text/event-stream")
 
     resolved_ids = list(payload.documentIds) if payload.documentIds else []
+    document_name_resolution = None
     if not resolved_ids and payload.documentNames:
-        resolved_ids = await run_in_threadpool(
-            lambda: _resolve_document_ids_by_name(user_id, payload.courseId, payload.documentNames)
+        document_name_resolution = await run_in_threadpool(
+            lambda: _resolve_document_names(user_id, payload.courseId, payload.documentNames)
         )
+        resolved_ids = list(document_name_resolution["resolved_ids"])
     preflight_documents = await run_in_threadpool(
         lambda: _load_authorized_documents(user_id, payload.courseId, resolved_ids)
     )
@@ -812,6 +838,7 @@ async def ask_stream_endpoint(payload: AskStreamRequest, user: dict = Depends(ve
                     payload, user, status_queue.put_nowait, request_id,
                     {
                         "resolved_document_ids": resolved_ids,
+                        "document_name_resolution": document_name_resolution,
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
                     },
@@ -1023,31 +1050,38 @@ async def _prepare_ask_stream_response(
     # "Selected file(s)" scope: the chatbot sends file NAMES (it has no document
     # ids), so resolve them to ids here. Fall back to ids the client did send.
     resolved_document_ids = list((preflight or {}).get("resolved_document_ids") or [])
+    document_name_resolution = (preflight or {}).get("document_name_resolution")
     if not preflight and not resolved_document_ids and payload.documentNames:
-        resolved_document_ids = await run_in_threadpool(
-            lambda: _resolve_document_ids_by_name(user_id, payload.courseId, payload.documentNames)
+        document_name_resolution = await run_in_threadpool(
+            lambda: _resolve_document_names(user_id, payload.courseId, payload.documentNames)
         )
-    if not payload.activeDocumentId and len(resolved_document_ids) == 1:
+        resolved_document_ids = list(document_name_resolution["resolved_ids"])
+    requested_documents_unresolved = bool(
+        (payload.courseFileScope or "").strip().lower() == "specific_files"
+        and document_name_resolution
+        and document_name_resolution.get("unresolved_names")
+    )
+    requested_documents_ambiguous = bool(
+        (payload.courseFileScope or "").strip().lower() == "specific_files"
+        and document_name_resolution
+        and document_name_resolution.get("ambiguous_candidates")
+    )
+    if not payload.activeDocumentId and len(resolved_document_ids) == 1 and not (
+        requested_documents_unresolved or requested_documents_ambiguous
+    ):
         # A single selected file is an unambiguous active document even when
         # the standalone chatbot did not originate from the legacy PDF viewer.
         payload.activeDocumentId = resolved_document_ids[0]
-    # If the chat asked for specific files but none resolved, don't dead-end on
-    # a "which file?" clarification — search the whole course instead (it still
-    # includes the selected files), so the user always gets a grounded answer.
+    # Explicit file selections are all-or-nothing: partial resolution must not
+    # retrieve from the surviving subset or broaden to the whole course.
     effective_scope = payload.courseFileScope
-    requested_name_count = len({
-        name.strip().casefold() for name in (payload.documentNames or [])
-        if name and name.strip()
-    })
-    requested_documents_ambiguous = bool(
+    if (
         (payload.courseFileScope or "").strip().lower() == "specific_files"
-        and requested_name_count
-        and len(resolved_document_ids) > requested_name_count
-    )
-    if (payload.courseFileScope or "").strip().lower() == "specific_files" and not resolved_document_ids:
+        and payload.documentNames
+        and not resolved_document_ids
+        and not requested_documents_ambiguous
+    ):
         requested_documents_unresolved = True
-    else:
-        requested_documents_unresolved = False
 
     if preflight:
         doc_name_map = dict(preflight.get("doc_name_map") or {})
@@ -1202,7 +1236,10 @@ async def _prepare_ask_stream_response(
         open_file_context=payload.openFileContext,
     )
     if requested_documents_unresolved:
-        requested_names = [name for name in (payload.documentNames or []) if name]
+        requested_names = list(
+            (document_name_resolution or {}).get("unresolved_names")
+            or [name for name in (payload.documentNames or []) if name]
+        )
         display_names = ", ".join(f'\"{name}\"' for name in requested_names)
         return _stream_static_answer(
             text=(
@@ -1222,10 +1259,9 @@ async def _prepare_ask_stream_response(
             },
         )
     if requested_documents_ambiguous:
-        candidates = [
-            {"id": document_id, "name": doc_name_map.get(document_id, "")}
-            for document_id in resolved_document_ids
-        ]
+        candidates = list(
+            (document_name_resolution or {}).get("ambiguous_candidates") or []
+        )
         return _stream_static_answer(
             text=(
                 "More than one document matches the requested filename. "
