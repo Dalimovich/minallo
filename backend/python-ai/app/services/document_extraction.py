@@ -185,6 +185,8 @@ class GapIdVariant:
 
 MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT = 12
 MAX_TARGETED_VISUAL_PAGES_PER_GAP = 3
+DOCUMENT_EXTRACTION_BATCH_SIZE = 10
+DOCUMENT_EXTRACTION_BATCH_CHAR_LIMIT = 60_000
 
 
 @dataclass
@@ -850,6 +852,7 @@ def extract_document_qa(
     pages_to_scan: list[int] | None = None,
     previous_items: list[ExtractedQAItem] | None = None,
     previous_context: DocumentExtractionContext | None = None,
+    checkpoint: Callable[[dict[str, Any]], None] | None = None,
 ) -> DocumentExtractionResult:
     document, page_rows = _load_document_pages(
         user_id=user_id, course_id=course_id, document_id=document_id,
@@ -935,11 +938,19 @@ def extract_document_qa(
             continue
         seen_pages.add(page)
         text = str(row.get("cleaned_text") or row.get("raw_text") or "").strip()
-        try:
-            stored_quality = float(row.get("extraction_quality") or 0.0)
-        except (TypeError, ValueError):
-            stored_quality = 0.0
-        if len(text) < 20 or (stored_quality and stored_quality < 0.75):
+        raw_quality = row.get("extraction_quality")
+        if isinstance(raw_quality, str):
+            stored_quality = {
+                "good": 1.0,
+                "weak": 0.5,
+                "failed": 0.0,
+            }.get(raw_quality.casefold(), 0.0)
+        else:
+            try:
+                stored_quality = float(raw_quality or 0.0)
+            except (TypeError, ValueError):
+                stored_quality = 0.0
+        if len(text) < 20 or raw_quality is not None and stored_quality < 0.75:
             weak_pages.append(page)
             if text:
                 usable.append((page, text))
@@ -1041,13 +1052,17 @@ def extract_document_qa(
             result.unreadable_pages.append(page)
     result.scanned_pages = sorted(set(result.scanned_pages))
     result.unreadable_pages = sorted(set(result.unreadable_pages))
-    # Keep every map prompt bounded while scanning all pages in order.
+    # Keep every map prompt bounded while scanning all pages in order. The
+    # limit controls one map call, never total document coverage.
     groups: list[list[tuple[int, str]]] = []
     current: list[tuple[int, str]] = []
     current_chars = 0
     for page, text in usable:
         clipped = text[:16000]
-        if current and (len(current) >= 5 or current_chars + len(clipped) > 30000):
+        if current and (
+            len(current) >= DOCUMENT_EXTRACTION_BATCH_SIZE
+            or current_chars + len(clipped) > DOCUMENT_EXTRACTION_BATCH_CHAR_LIMIT
+        ):
             groups.append(current)
             current, current_chars = [], 0
         current.append((page, clipped))
@@ -1056,6 +1071,12 @@ def extract_document_qa(
         groups.append(current)
 
     settings = get_settings()
+    checkpoint_scanned_pages = set(
+        previous_context.scanned_pages if previous_context else []
+    )
+    checkpoint_scanned_pages.update(
+        page for page in result.scanned_pages if page in weak_pages
+    )
     for index, group in enumerate(groups, start=1):
         if status:
             status("extracting_items")
@@ -1147,6 +1168,21 @@ def extract_document_qa(
             document_id, index, len(groups), [p for p, _ in group],
             len(raw_questions), len(raw_solutions),
         )
+        if checkpoint:
+            checkpoint_scanned_pages.update(page for page, _ in group)
+            completed_pages = sorted(checkpoint_scanned_pages)
+            checkpoint({
+                "batch_index": index,
+                "batch_count": len(groups),
+                "batch_pages": [page for page, _ in group],
+                "scanned_pages": completed_pages,
+                "unreadable_pages": sorted(set(result.unreadable_pages)),
+                "extracted_questions": list(extracted_questions),
+                "solution_evidence": list(solution_evidence),
+                "paired_items": pair_questions_and_solutions(
+                    extracted_questions, solution_evidence,
+                ),
+            })
 
     questions_by_id: dict[str, set[str]] = {}
     for item in extracted_questions:
@@ -1484,6 +1520,7 @@ __all__ = [
     "gap_id_variants",
     "MAX_TARGETED_VISUAL_GAP_CALLS_PER_DOCUMENT",
     "MAX_TARGETED_VISUAL_PAGES_PER_GAP",
+    "DOCUMENT_EXTRACTION_BATCH_SIZE",
     "identify_suspicious_numbering_gaps",
     "infer_extraction_rescan_direction",
     "load_extraction_context",

@@ -97,6 +97,142 @@ def test_full_scan_is_not_limited_by_displayed_source_count(monkeypatch) -> None
     assert len(result.items) > 5
 
 
+def test_sixty_pages_run_as_six_batches_and_checkpoint_coverage(monkeypatch) -> None:
+    pages = [
+        {
+            "page_number": page,
+            "cleaned_text": f"Question or solution page {page} " + ("content " * 8),
+            "raw_text": "",
+            "extraction_quality": "good",
+        }
+        for page in range(1, 61)
+    ]
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 60, "file_name": "exam.pdf"}, pages),
+    )
+    calls: list[list[int]] = []
+
+    def fake_chat_json(*, user: str, **_):
+        page_numbers = [
+            int(line.split()[2])
+            for line in user.splitlines()
+            if line.startswith("--- PAGE ")
+        ]
+        calls.append(page_numbers)
+        return SimpleNamespace(
+            data={"questions": [], "solutions": []},
+            model="test-model",
+            prompt_tokens=1,
+            completion_tokens=1,
+        )
+
+    monkeypatch.setattr(extraction, "chat_json", fake_chat_json)
+    checkpoints: list[dict] = []
+    result = extraction.extract_document_qa(
+        user_id="user",
+        course_id="course",
+        document_id="document",
+        target="questions",
+        checkpoint=checkpoints.append,
+    )
+
+    # Each batch runs two independent map passes: questions and solutions.
+    assert calls[::2] == [list(range(start, start + 10)) for start in range(1, 61, 10)]
+    assert calls[1::2] == calls[::2]
+    assert len(checkpoints) == 6
+    assert checkpoints[-1]["scanned_pages"] == list(range(1, 61))
+    assert result.scanned_pages == list(range(1, 61))
+
+
+def test_resume_only_processes_pages_after_last_checkpoint(monkeypatch) -> None:
+    pages = [
+        {
+            "page_number": page,
+            "cleaned_text": f"Question page {page} " + ("content " * 8),
+            "raw_text": "",
+            "extraction_quality": "good",
+        }
+        for page in range(31, 61)
+    ]
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 60}, pages),
+    )
+    seen: list[list[int]] = []
+
+    def fake_chat_json(*, user: str, **_):
+        seen.append([
+            int(line.split()[2])
+            for line in user.splitlines()
+            if line.startswith("--- PAGE ")
+        ])
+        return SimpleNamespace(
+            data={"questions": [], "solutions": []},
+            model="test",
+            prompt_tokens=1,
+            completion_tokens=1,
+        )
+
+    monkeypatch.setattr(extraction, "chat_json", fake_chat_json)
+    context = extraction.DocumentExtractionContext(
+        conversation_id="conversation",
+        document_id="document",
+        document_revision="revision",
+        source_fingerprint="fingerprint",
+        target_section="questions",
+        requested_scope="complete_document",
+        scanned_pages=list(range(1, 31)),
+    )
+    extraction.extract_document_qa(
+        user_id="user",
+        course_id="course",
+        document_id="document",
+        target="questions",
+        pages_to_scan=list(range(31, 61)),
+        previous_context=context,
+    )
+
+    assert {page for batch in seen for page in batch} == set(range(31, 61))
+    assert not ({page for batch in seen for page in batch} & set(range(1, 31)))
+
+
+def test_string_weak_quality_triggers_visual_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 1}, [{
+            "page_number": 1,
+            "cleaned_text": "OCR text " * 20,
+            "raw_text": "",
+            "extraction_quality": "weak",
+        }]),
+    )
+    visual_pages: list[int] = []
+    monkeypatch.setattr(
+        extraction,
+        "_extract_visual_page",
+        lambda **kwargs: visual_pages.append(kwargs["page_number"]) or [],
+    )
+    monkeypatch.setattr(
+        extraction,
+        "chat_json",
+        lambda **_: SimpleNamespace(
+            data={"questions": [], "solutions": []},
+            model="test",
+            prompt_tokens=1,
+            completion_tokens=1,
+        ),
+    )
+
+    extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="questions",
+    )
+    assert visual_pages == [1]
+
+
 def test_english_framing_preserves_german_source_text() -> None:
     result = extraction.DocumentExtractionResult(
         document_id="doc",

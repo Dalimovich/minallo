@@ -1955,12 +1955,8 @@ async def _prepare_ask_stream_response(
             or payload.activeDocumentId
         )
         extraction_context = (
-            extraction_context_from_api(
-                tutor_state.document_extraction_context
-            )
-            if extraction_correction
-            and tutor_state
-            and tutor_state.document_extraction_context
+            extraction_context_from_api(tutor_state.document_extraction_context)
+            if tutor_state and tutor_state.document_extraction_context
             else None
         )
         if extraction_context and (
@@ -1975,13 +1971,84 @@ async def _prepare_ask_stream_response(
         previous_items = None
         direction = "full"
         if extraction_context:
-            direction = infer_extraction_rescan_direction(question)
             total_pages = int(active_document.get("page_count") or 0)
-            pages_to_scan = extraction_pages_for_direction(
-                direction,
-                context=extraction_context,
-                section_start_page=1,
-                section_end_page=total_pages,
+            if extraction_correction:
+                direction = infer_extraction_rescan_direction(question)
+                pages_to_scan = extraction_pages_for_direction(
+                    direction,
+                    context=extraction_context,
+                    section_start_page=1,
+                    section_end_page=total_pages,
+                )
+            elif not extraction_context.complete:
+                # Resume an interrupted exhaustive request from the first page
+                # not durably checkpointed by a completed map batch.
+                already_scanned = set(extraction_context.scanned_pages)
+                pages_to_scan = [
+                    page for page in range(1, total_pages + 1)
+                    if page not in already_scanned
+                ]
+                direction = "resume"
+        event_loop = asyncio.get_running_loop()
+
+        def extraction_checkpoint(progress: dict[str, Any]) -> None:
+            batch_pages = list(progress.get("batch_pages") or [])
+            if status_sink:
+                event_loop.call_soon_threadsafe(status_sink, "extracting_items")
+            partial_questions = list(progress.get("extracted_questions") or [])
+            partial_solutions = list(progress.get("solution_evidence") or [])
+            partial_pairs = list(progress.get("paired_items") or [])
+            partial_scanned = sorted(set(progress.get("scanned_pages") or []))
+            partial_item_pages = [
+                item.question_page for item in partial_pairs
+                if item.question_page is not None
+            ]
+            partial_context = DocumentExtractionContext(
+                conversation_id=payload.conversationId or "",
+                document_id=payload.activeDocumentId or "",
+                document_revision=document_revision,
+                source_fingerprint=source_fingerprint,
+                target_section=extraction_target or "questions",
+                requested_scope="complete_document",
+                scanned_pages=partial_scanned,
+                extracted_questions=partial_questions,
+                solution_evidence=partial_solutions,
+                paired_items=partial_pairs,
+                unresolved_item_ids=[
+                    item.item_id for item in partial_pairs if not item.answer_text
+                ],
+                unresolved_pages=list(progress.get("unreadable_pages") or []),
+                earliest_source_page=min(partial_scanned) if partial_scanned else None,
+                latest_source_page=max(partial_scanned) if partial_scanned else None,
+                earliest_scanned_page=min(partial_scanned) if partial_scanned else None,
+                latest_scanned_page=max(partial_scanned) if partial_scanned else None,
+                earliest_item_page=min(partial_item_pages) if partial_item_pages else None,
+                latest_item_page=max(partial_item_pages) if partial_item_pages else None,
+                complete=False,
+            )
+            save_extraction_context(partial_context)
+            if tutor_state:
+                tutor_state.document_extraction_context = extraction_context_to_api(
+                    partial_context
+                )
+                try:
+                    from ..services.tutor_state_store import save_tutor_state  # noqa: WPS433
+                    save_tutor_state(user_id, payload.courseId, tutor_state)
+                except Exception:
+                    log.exception(
+                        "document_extraction_checkpoint_failed request_id=%s batch=%s/%s pages=%s",
+                        request_id,
+                        progress.get("batch_index"),
+                        progress.get("batch_count"),
+                        batch_pages,
+                    )
+            log.info(
+                "document_extraction_checkpoint request_id=%s batch=%s/%s pages=%s scanned=%d",
+                request_id,
+                progress.get("batch_index"),
+                progress.get("batch_count"),
+                batch_pages,
+                len(partial_scanned),
             )
         extraction_started = time.perf_counter()
         extraction = await run_in_threadpool(
@@ -1993,6 +2060,7 @@ async def _prepare_ask_stream_response(
                 pages_to_scan=pages_to_scan,
                 previous_items=previous_items,
                 previous_context=extraction_context,
+                checkpoint=extraction_checkpoint,
             )
         )
         if payload.conversationId:
