@@ -554,6 +554,13 @@ def test_distant_solution_pairing_gap_review_and_direction() -> None:
     assert extraction_pages_for_direction(
         "later", context=context, section_start_page=1, section_end_page=30,
     ) == list(range(21, 31))
+    context.unresolved_pages = [17]
+    assert extraction.infer_extraction_rescan_direction(
+        "This is not all of them; check the whole document",
+    ) == "full_scope_rebuild"
+    assert extraction_pages_for_direction(
+        "full_scope_rebuild", context=context, section_start_page=1, section_end_page=30,
+    ) == list(range(1, 31))
     restored = extraction_context_from_api(extraction_context_to_api(context))
     assert restored is not None
     assert restored.source_fingerprint == "hash"

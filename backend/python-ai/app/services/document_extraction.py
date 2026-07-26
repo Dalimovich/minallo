@@ -102,7 +102,9 @@ def resolve_section_family(
         r"(?P<family>Kurzfragen?|Short\s+Questions?)\b"
         r"\s*(?:[-â€“â€”:]\s*)?(?P<title>[^\n\r]{0,160})$"
     )
-    any_heading_re = re.compile(r"(?im)^\s*(?P<number>\d+)\s*\.\s*[^\n\r]{1,200}$")
+    # Require whitespace after the dot so question IDs such as ``2.1`` are
+    # never mistaken for a new top-level document section.
+    any_heading_re = re.compile(r"(?im)^\s*(?P<number>\d+)\s*\.\s+[^\n\r]{1,200}$")
     matches: list[tuple[int, str, str, str]] = []
     all_headings: list[tuple[int, int, str]] = []
     for page, text in sorted(text_by_page.items()):
@@ -300,6 +302,30 @@ class PageProcessingStatus(StrEnum):
     FAILED = "failed"
 
 
+class AnswerResolutionStatus(StrEnum):
+    PAIRED_TEXT = "paired_text"
+    PAIRED_VISUAL = "paired_visual"
+    SEARCH_PENDING = "search_pending"
+    NO_CANDIDATES = "no_candidates"
+    VISUAL_BUDGET_EXHAUSTED = "visual_budget_exhausted"
+    VISUAL_RENDER_FAILED = "visual_render_failed"
+    VISION_EXTRACTION_FAILED = "vision_extraction_failed"
+    AMBIGUOUS_EVIDENCE = "ambiguous_evidence"
+    NOT_FOUND_AFTER_FULL_SEARCH = "not_found_after_full_search"
+
+
+@dataclass
+class AnswerRecoveryRecord:
+    item_id: str
+    candidate_pages: list[int] = field(default_factory=list)
+    inspected_pages: list[int] = field(default_factory=list)
+    remaining_pages: list[int] = field(default_factory=list)
+    status: AnswerResolutionStatus = AnswerResolutionStatus.SEARCH_PENDING
+    evidence_page: int | None = None
+    evidence_type: str | None = None
+    calls_used: int = 0
+
+
 @dataclass(frozen=True)
 class PageClassificationResult:
     kind: ExtractionPageKind
@@ -383,6 +409,7 @@ class DocumentExtractionContext:
     paired_items: list[PairedQAItem] = field(default_factory=list)
     unresolved_item_ids: list[str] = field(default_factory=list)
     unresolved_pages: list[int] = field(default_factory=list)
+    answer_recovery_records: dict[str, AnswerRecoveryRecord] = field(default_factory=dict)
     conflicting_item_ids: list[str] = field(default_factory=list)
     earliest_source_page: int | None = None
     latest_source_page: int | None = None
@@ -437,6 +464,7 @@ class DocumentExtractionResult:
     unprocessed_pages: list[int] = field(default_factory=list)
     answer_recovery_pages: dict[str, list[int]] = field(default_factory=dict)
     answer_recovery_incomplete: bool = False
+    answer_recovery_records: dict[str, AnswerRecoveryRecord] = field(default_factory=dict)
     resolved_family: ResolvedSectionFamily | None = None
     out_of_scope_items_rejected: list[str] = field(default_factory=list)
 
@@ -584,6 +612,8 @@ def extraction_pages_for_direction(
         return list(range(section_start_page, earliest_item))
     if direction == "later" and latest_item is not None:
         return list(range(latest_item + 1, section_end_page + 1))
+    if direction in {"full", "full_scope_rebuild"}:
+        return list(range(section_start_page, section_end_page + 1))
     return context.unresolved_pages or list(range(section_start_page, section_end_page + 1))
 
 
@@ -616,6 +646,16 @@ def extraction_context_from_api(data: Any) -> DocumentExtractionContext | None:
         payload["paired_items"] = [
             PairedQAItem(**item) for item in payload.get("paired_items", [])
         ]
+        payload["answer_recovery_records"] = {
+            str(item_id): AnswerRecoveryRecord(
+                **{
+                    **record,
+                    "status": AnswerResolutionStatus(record.get("status", "search_pending")),
+                }
+            )
+            for item_id, record in payload.get("answer_recovery_records", {}).items()
+            if isinstance(record, dict)
+        }
         return DocumentExtractionContext(**payload)
     except (KeyError, TypeError, ValueError):
         return None
@@ -639,6 +679,14 @@ def load_extraction_context(
 
 
 def infer_extraction_rescan_direction(follow_up: str) -> str:
+    if re.search(
+        r"\b(not\s+all|all\s+of\s+them|every(?:thing)?|whole\s+document|"
+        r"only\s+a\s+fraction|do(?:n't|\s+not)\s+leave|nicht\s+alle|alle\s+davon|"
+        r"gesamte[ns]?\s+dokument|vollst[aÃ¤]ndig)\b",
+        follow_up or "",
+        re.IGNORECASE,
+    ):
+        return "full_scope_rebuild"
     if re.search(
         r"\b(first ones|earlier ones|beginning|before|die ersten|früheren|am anfang)\b",
         follow_up or "",
@@ -1062,6 +1110,7 @@ class AnswerRecoveryResult:
     solution_evidence: list[ExtractedSolutionEvidence] = field(default_factory=list)
     inspected_pages: dict[str, list[int]] = field(default_factory=dict)
     incomplete: bool = False
+    records: dict[str, AnswerRecoveryRecord] = field(default_factory=dict)
 
 
 def recover_unanswered_answers(
@@ -1071,7 +1120,8 @@ def recover_unanswered_answers(
     paired_items: list[PairedQAItem],
     text_by_page: dict[int, str],
     page_statuses: dict[int, PageProcessingStatus],
-    max_visual_calls: int = 12,
+    max_visual_calls: int | None = None,
+    previous_records: dict[str, AnswerRecoveryRecord] | None = None,
 ) -> AnswerRecoveryResult:
     """Target visual answer marks for existing questions with missing answers.
 
@@ -1080,7 +1130,14 @@ def recover_unanswered_answers(
     """
     recovery = AnswerRecoveryResult()
     questions_by_id = {question.normalized_item_id: question for question in questions}
+    unanswered_count = sum(not item.answer_text for item in paired_items)
+    if max_visual_calls is None:
+        settings = get_settings()
+        hard_limit = int(getattr(settings, "document_answer_recovery_hard_limit", 90) or 90)
+        per_question = 3 if unanswered_count <= 5 else 2 if unanswered_count <= 15 else 1
+        max_visual_calls = min(hard_limit, max(12, unanswered_count * per_question))
     calls = 0
+    previous_records = previous_records or {}
     for pair in (item for item in paired_items if not item.answer_text):
         question = questions_by_id.get(normalise_item_id(pair.item_id))
         if question is None:
@@ -1116,8 +1173,29 @@ def recover_unanswered_answers(
             if score > 0:
                 ranked.append((score, page))
         candidate_pages = [page for _score, page in sorted(ranked, reverse=True)[:3]]
-        recovery.inspected_pages[pair.item_id] = []
-        if calls >= max_visual_calls or not candidate_pages:
+        prior = previous_records.get(pair.item_id)
+        record = AnswerRecoveryRecord(
+            item_id=pair.item_id,
+            candidate_pages=candidate_pages,
+            inspected_pages=list(prior.inspected_pages) if prior else [],
+            calls_used=prior.calls_used if prior else 0,
+        )
+        candidate_pages = [page for page in candidate_pages if page not in record.inspected_pages]
+        record.remaining_pages = list(candidate_pages)
+        recovery.records[pair.item_id] = record
+        recovery.inspected_pages[pair.item_id] = record.inspected_pages
+        if not candidate_pages:
+            record.status = (
+                prior.status if prior and prior.candidate_pages
+                else AnswerResolutionStatus.NO_CANDIDATES
+            )
+            recovery.incomplete = record.status not in {
+                AnswerResolutionStatus.NOT_FOUND_AFTER_FULL_SEARCH,
+                AnswerResolutionStatus.PAIRED_VISUAL,
+            }
+            continue
+        if calls >= max_visual_calls:
+            record.status = AnswerResolutionStatus.VISUAL_BUDGET_EXHAUSTED
             recovery.incomplete = True
             continue
         options = "\n".join(
@@ -1126,10 +1204,14 @@ def recover_unanswered_answers(
         ) or "No structured choices were extracted."
         for page in candidate_pages:
             if calls >= max_visual_calls:
+                record.status = AnswerResolutionStatus.VISUAL_BUDGET_EXHAUSTED
+                record.remaining_pages = [p for p in candidate_pages if p not in record.inspected_pages]
                 recovery.incomplete = True
                 break
             calls += 1
-            recovery.inspected_pages[pair.item_id].append(page)
+            record.calls_used += 1
+            record.inspected_pages.append(page)
+            record.remaining_pages = [p for p in candidate_pages if p not in record.inspected_pages]
             try:
                 visual_items = _extract_visual_page(
                     document=document,
@@ -1145,12 +1227,14 @@ def recover_unanswered_answers(
                 )
                 page_statuses[page] = PageProcessingStatus.VISION_PROCESSED
             except Exception:
+                record.status = AnswerResolutionStatus.VISION_EXTRACTION_FAILED
                 recovery.incomplete = True
                 log.exception(
                     "document_answer_visual_recovery_failed document=%s item=%s page=%s",
                     document.get("id"), pair.item_id, page,
                 )
                 continue
+            accepted: list[ExtractedQAItem] = []
             for item in visual_items:
                 if not item.answer.strip() or item.confidence < 0.65:
                     continue
@@ -1164,6 +1248,16 @@ def recover_unanswered_answers(
                 )
                 if not (id_match or option_match):
                     continue
+                accepted.append(item)
+            distinct_answers = {
+                re.sub(r"\s+", " ", item.answer.casefold()).strip()
+                for item in accepted
+            }
+            if len(distinct_answers) > 1:
+                record.status = AnswerResolutionStatus.AMBIGUOUS_EVIDENCE
+                recovery.incomplete = True
+                break
+            for item in accepted[:1]:
                 recovery.solution_evidence.append(ExtractedSolutionEvidence(
                     item_id=question.item_id,
                     normalized_item_id=question.normalized_item_id,
@@ -1174,12 +1268,17 @@ def recover_unanswered_answers(
                     question_fingerprint=question.question_fingerprint,
                     confidence=item.confidence,
                 ))
+                record.status = AnswerResolutionStatus.PAIRED_VISUAL
+                record.evidence_page = item.answer_page or page
+                record.evidence_type = item.evidence_type or "visual_answer_mark"
                 break
             if any(
                 item.normalized_item_id == question.normalized_item_id
                 for item in recovery.solution_evidence
             ):
                 break
+        if record.status == AnswerResolutionStatus.SEARCH_PENDING:
+            record.status = AnswerResolutionStatus.NOT_FOUND_AFTER_FULL_SEARCH
     return recovery
 
 
@@ -1765,6 +1864,9 @@ def extract_document_qa(
         paired_items=result.paired_items,
         text_by_page=all_text_by_page,
         page_statuses=result.page_statuses,
+        previous_records=(
+            previous_context.answer_recovery_records if previous_context else None
+        ),
     )
     if answer_recovery.solution_evidence:
         result.solution_evidence.extend(answer_recovery.solution_evidence)
@@ -1774,6 +1876,7 @@ def extract_document_qa(
         )
     result.answer_recovery_pages = answer_recovery.inspected_pages
     result.answer_recovery_incomplete = answer_recovery.incomplete
+    result.answer_recovery_records = answer_recovery.records
     result.items = [
         ExtractedQAItem(
             item_id=item.item_id,
@@ -1993,6 +2096,7 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
         questions.sort(key=lambda item: _natural_item_id_key(item.item_id))
         question_payload = []
         for item in questions:
+            recovery_record = result.answer_recovery_records.get(item.item_id)
             if item.answer_text:
                 visual = bool(re.search(
                     r"visual|check|mark|circle|highlight|annotation", item.answer_evidence_type or "", re.I,
@@ -2001,7 +2105,10 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
             elif item.question_page in result.unprocessed_pages:
                 answer_status = "source_unavailable"
             else:
-                answer_status = "unresolved"
+                answer_status = (
+                    recovery_record.status.value
+                    if recovery_record else "unresolved"
+                )
             question_payload.append({
                 "questionId": item.item_id,
                 "number": item.item_id,
@@ -2012,6 +2119,17 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
                 "answerPage": item.answer_page,
                 "confidence": item.pairing_confidence,
                 "pairingMethod": item.pairing_method,
+                "candidatePages": recovery_record.candidate_pages if recovery_record else [],
+                "inspectedPages": recovery_record.inspected_pages if recovery_record else [],
+                "remainingPages": recovery_record.remaining_pages if recovery_record else [],
+                "visualCallsUsed": recovery_record.calls_used if recovery_record else 0,
+                "retryable": bool(recovery_record and recovery_record.status in {
+                    AnswerResolutionStatus.SEARCH_PENDING,
+                    AnswerResolutionStatus.VISUAL_BUDGET_EXHAUSTED,
+                    AnswerResolutionStatus.VISUAL_RENDER_FAILED,
+                    AnswerResolutionStatus.VISION_EXTRACTION_FAILED,
+                    AnswerResolutionStatus.AMBIGUOUS_EVIDENCE,
+                }),
             })
         verified = sum(
             item["answerStatus"] in {"verified", "visually_verified"}
@@ -2044,6 +2162,12 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
         "coverage": {
             "totalPages": result.total_pages,
             "pagesScanned": len(result.scanned_pages),
+            "questionPagesTotal": len({
+                page for section in family.matched_sections for page in section.question_pages
+            }),
+            "questionPagesProcessed": len(set(result.scanned_pages).intersection({
+                page for section in family.matched_sections for page in section.question_pages
+            })),
             "unprocessedPages": result.unprocessed_pages,
             "complete": result.complete,
         },

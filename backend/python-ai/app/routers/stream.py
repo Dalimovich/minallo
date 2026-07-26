@@ -2217,6 +2217,10 @@ async def _prepare_ask_stream_response(
                     item.item_id for item in partial_pairs if not item.answer_text
                 ],
                 unresolved_pages=list(progress.get("unreadable_pages") or []),
+                answer_recovery_records=(
+                    extraction_context.answer_recovery_records
+                    if extraction_context else {}
+                ),
                 earliest_source_page=min(partial_scanned) if partial_scanned else None,
                 latest_source_page=max(partial_scanned) if partial_scanned else None,
                 earliest_scanned_page=min(partial_scanned) if partial_scanned else None,
@@ -2297,6 +2301,7 @@ async def _prepare_ask_stream_response(
                 paired_items=extraction.paired_items,
                 unresolved_item_ids=extraction.unanswered_item_ids,
                 unresolved_pages=extraction.unreadable_pages,
+                answer_recovery_records=extraction.answer_recovery_records,
                 conflicting_item_ids=extraction.conflicting_item_ids,
                 earliest_source_page=min(scanned) if scanned else None,
                 latest_source_page=max(scanned) if scanned else None,
@@ -2433,6 +2438,19 @@ async def _prepare_ask_stream_response(
                 "unresolvedItems": extraction.unanswered_item_ids,
                 "answerRecoveryPages": extraction.answer_recovery_pages,
                 "answerRecoveryIncomplete": extraction.answer_recovery_incomplete,
+                "answerRecoveryRecords": {
+                    item_id: {
+                        "itemId": record.item_id,
+                        "candidatePages": record.candidate_pages,
+                        "inspectedPages": record.inspected_pages,
+                        "remainingPages": record.remaining_pages,
+                        "status": record.status.value,
+                        "evidencePage": record.evidence_page,
+                        "evidenceType": record.evidence_type,
+                        "callsUsed": record.calls_used,
+                    }
+                    for item_id, record in extraction.answer_recovery_records.items()
+                },
                 "learningJourney": learning_journey,
                 "outOfScopeItemsRejected": extraction.out_of_scope_items_rejected,
                 "languageStatus": "valid_mixed_source",

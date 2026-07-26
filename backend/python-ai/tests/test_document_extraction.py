@@ -586,6 +586,65 @@ def test_unanswered_question_triggers_visual_recovery_on_good_text(monkeypatch) 
     assert inspected == [40]
     assert recovered.solution_evidence[0].evidence_type == "green_checkmark"
     assert statuses[40] == extraction.PageProcessingStatus.VISION_PROCESSED
+    assert recovered.records["2.1"].status is extraction.AnswerResolutionStatus.PAIRED_VISUAL
+
+
+def test_recovery_budget_scales_for_twenty_five_questions(monkeypatch) -> None:
+    from app.services import document_extraction as extraction
+
+    questions = [
+        extraction.ExtractedQuestion(
+            item_id=f"5.{number}", normalized_item_id=f"5.{number}",
+            question_text=f"Question {number} distinctive wording", question_page=5,
+            confidence=0.9,
+        )
+        for number in range(1, 26)
+    ]
+    calls: list[int] = []
+
+    def visual_page(**kwargs):
+        calls.append(kwargs["page_number"])
+        item_id = f"5.{len(calls)}"
+        return [extraction.ExtractedQAItem(
+            item_id=item_id, question=f"Question {len(calls)} distinctive wording",
+            answer=f"Answer {len(calls)}", question_page=5,
+            answer_page=kwargs["page_number"], confidence=0.95,
+        )]
+
+    monkeypatch.setattr(extraction, "_extract_visual_page", visual_page)
+    result = extraction.recover_unanswered_answers(
+        document={"id": "doc"}, questions=questions,
+        paired_items=extraction.pair_questions_and_solutions(questions, []),
+        text_by_page={number: f"Question {number} distinctive wording" for number in range(1, 26)},
+        page_statuses={},
+    )
+    assert len(calls) == 25
+    assert len(result.solution_evidence) == 25
+    assert not result.incomplete
+
+
+def test_conflicting_visual_marks_are_ambiguous(monkeypatch) -> None:
+    from app.services import document_extraction as extraction
+
+    question = extraction.ExtractedQuestion(
+        item_id="2.1", normalized_item_id="2.1", question_text="Choose one",
+        question_page=2, confidence=0.9,
+        options=[
+            extraction.ExtractedQuestionOption("A", "First option", 0),
+            extraction.ExtractedQuestionOption("B", "Second option", 1),
+        ],
+    )
+    monkeypatch.setattr(extraction, "_extract_visual_page", lambda **_: [
+        extraction.ExtractedQAItem("2.1", "Choose one", "First option", 2, 10, 0.9),
+        extraction.ExtractedQAItem("2.1", "Choose one", "Second option", 2, 10, 0.9),
+    ])
+    result = extraction.recover_unanswered_answers(
+        document={"id": "doc"}, questions=[question],
+        paired_items=extraction.pair_questions_and_solutions([question], []),
+        text_by_page={10: "2.1 Choose one First option Second option"}, page_statuses={},
+    )
+    assert not result.solution_evidence
+    assert result.records["2.1"].status is extraction.AnswerResolutionStatus.AMBIGUOUS_EVIDENCE
 
 
 def test_solution_without_id_pairs_by_option_text() -> None:
@@ -628,6 +687,7 @@ def test_kurzfragen_family_resolves_sections_and_excludes_later_tasks() -> None:
     assert family.section_numbers == [str(number) for number in range(2, 12)]
     assert "13" in family.excluded_sections
     assert "14" in family.excluded_sections
+    assert family.matched_sections[0].end_page == 2
 
 
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:

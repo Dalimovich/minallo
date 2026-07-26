@@ -661,9 +661,17 @@ interface LearningJourneyQuestion {
   number: string;
   question: string;
   answer?: string | null;
-  answerStatus: 'verified' | 'visually_verified' | 'unresolved' | 'ambiguous' | 'source_unavailable';
+  answerStatus: 'verified' | 'visually_verified' | 'unresolved' | 'ambiguous' | 'source_unavailable'
+    | 'search_pending' | 'no_candidates' | 'visual_budget_exhausted'
+    | 'visual_render_failed' | 'vision_extraction_failed' | 'ambiguous_evidence'
+    | 'not_found_after_full_search';
   questionPage: number;
   answerPage?: number | null;
+  candidatePages?: number[];
+  inspectedPages?: number[];
+  remainingPages?: number[];
+  visualCallsUsed?: number;
+  retryable?: boolean;
 }
 
 interface LearningJourneySection {
@@ -4081,11 +4089,22 @@ function enhanceDocumentLearningJourney(
         const card = document.createElement('article');
         card.className = 'ncb-learning-journey__question';
         card.dataset.answerStatus = question.answerStatus;
+        const unresolvedLabel: Record<string, string> = {
+          search_pending: 'Searching visually',
+          no_candidates: 'No candidate pages found',
+          visual_budget_exhausted: 'Visual search needs retry',
+          visual_render_failed: 'Page rendering failed',
+          vision_extraction_failed: 'Visual inspection failed',
+          ambiguous_evidence: 'Answer marks are ambiguous',
+          not_found_after_full_search: 'Official answer not found',
+          source_unavailable: 'Source unavailable',
+          unresolved: 'Answer unresolved',
+        };
         card.innerHTML =
           '<header><span class="ncb-learning-journey__status" data-state="' + escapeAttr(question.answerStatus) + '">' +
             (verified ? '✓' : question.answerStatus === 'source_unavailable' ? '×' : '!') + '</span>' +
             '<strong>' + escapeHtml(question.number) + '</strong>' +
-            '<small>' + (verified ? (question.answerStatus === 'visually_verified' ? 'Visually verified' : 'Answer verified') : 'Answer unresolved') + '</small></header>' +
+            '<small>' + (verified ? (question.answerStatus === 'visually_verified' ? 'Visually verified' : 'Answer verified') : escapeHtml(unresolvedLabel[question.answerStatus] || 'Answer unresolved')) + '</small></header>' +
           '<p>' + escapeHtml(question.question) + '</p>' +
           (verified && question.answer
             ? '<div class="ncb-learning-journey__answer"><span>Correct answer</span>' + renderInlineMarkdown(question.answer) + '</div>'
