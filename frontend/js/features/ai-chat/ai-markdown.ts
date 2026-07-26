@@ -662,6 +662,26 @@ export function splitStableStreamText(input: string): { stable: string; tail: st
   if (mathOpen) {
     return { stable: input.slice(0, mathOpen.idx), tail: input.slice(mathOpen.idx) };
   }
+  // Hold an unfinished semantic directive just like unfinished math. This keeps
+  // `:::definition` and its partial body from flashing as ordinary text while
+  // the closing `:::` is still in flight. Ignore directive-looking text inside
+  // fenced code blocks.
+  const semanticKinds = /^(definition|important|warning|tip|note|example|formula|procedure|common-mistake|remember|exam-relevance|source-note)(?:\s|$)/i;
+  let directiveStart = -1;
+  let fenced = false;
+  let offset = 0;
+  for (const line of input.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) fenced = !fenced;
+    else if (!fenced && trimmed === ':::' && directiveStart >= 0) directiveStart = -1;
+    else if (!fenced && trimmed.startsWith(':::') && semanticKinds.test(trimmed.slice(3))) {
+      directiveStart = offset + line.indexOf(':::');
+    }
+    offset += line.length + 1;
+  }
+  if (directiveStart >= 0) {
+    return { stable: input.slice(0, directiveStart), tail: input.slice(directiveStart) };
+  }
   const last = input[n - 1];
   if (last === '\\' || last === '$') {
     return { stable: input.slice(0, n - 1), tail: last };
@@ -699,6 +719,17 @@ export function renderMarkdown(text: string): string {
       return display ? '\\[' + src + '\\]' : '\\(' + src + '\\)';
     }
   }
+
+  const learningVariants = new Set([
+    'definition', 'important', 'warning', 'tip', 'note', 'example', 'formula',
+    'procedure', 'common-mistake', 'remember', 'exam-relevance', 'source-note'
+  ]);
+  const learningLabels: Record<string, string> = {
+    definition: 'Definition', important: 'Important', warning: 'Warning', tip: 'Tip',
+    note: 'Note', example: 'Example', formula: 'Formula', procedure: 'Procedure',
+    'common-mistake': 'Common mistake', remember: 'Remember',
+    'exam-relevance': 'Exam relevance', 'source-note': 'Source note'
+  };
 
   function num(value: unknown, fallback: number): number {
     const n = typeof value === 'number' ? value : Number(value);
@@ -1598,7 +1629,9 @@ export function renderMarkdown(text: string): string {
     // desync every inline formula after it (math rendered at the top of the
     // message, raw `$…$` from that point down).
     s = s.replace(/\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g, (_, m: string) => stash(renderKatex(m, false)));
-    s = s.replace(/`([^`]+)`/g, (_, c: string) => stash('<code>' + esc(c) + '</code>'));
+    s = s.replace(/`([^`]+)`/g, (_, c: string) => stash('<code class="ai-inline-code">' + esc(c) + '</code>'));
+    s = s.replace(/\[\[kbd:([^\]\n]{1,80})\]\]/gi, (_, keys: string) =>
+      stash('<kbd class="ai-kbd">' + esc(keys.trim()) + '</kbd>'));
 
     // Now everything left is user/AI text. Escape it.
     s = esc(s);
@@ -1617,6 +1650,33 @@ export function renderMarkdown(text: string): string {
 
   while (i < lines.length) {
     const line = lines[i] ?? '';
+
+    // Safe semantic directive compatibility layer. The model emits
+    // `:::definition Optional title`, Markdown body, then `:::`. Raw HTML is
+    // still escaped by the normal renderer and unknown directives remain text.
+    const directive = line.trim().match(/^:::([a-z][a-z-]*)(?:\s+(.{1,120}))?$/i);
+    if (directive && learningVariants.has((directive[1] || '').toLowerCase())) {
+      const variant = (directive[1] || '').toLowerCase();
+      const title = (directive[2] || '').trim();
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && (lines[j] || '').trim() !== ':::') {
+        body.push(lines[j] || '');
+        j++;
+      }
+      if (j < lines.length) {
+        const label = learningLabels[variant] || variant;
+        out.push(
+          '<aside class="learning-block learning-block--' + variant + '" role="note" aria-label="' +
+          esc(label) + '"><header class="learning-block__header"><span class="learning-block__icon" aria-hidden="true"></span>' +
+          '<span class="learning-block__label">' + esc(label) + '</span>' +
+          (title ? '<strong class="learning-block__title">' + inline(title) + '</strong>' : '') +
+          '</header><div class="learning-block__body">' + renderMarkdown(body.join('\n')) + '</div></aside>'
+        );
+        i = j + 1;
+        continue;
+      }
+    }
 
     // Defensive fallback: the model is told to wrap actions/quizzes in a fenced
     // block (```minallo-actions / ```minallo-quiz), but it sometimes drops the
@@ -1676,7 +1736,7 @@ export function renderMarkdown(text: string): string {
         }
         if (i < lines.length) mathLines.push((lines[i] ?? '').replace(/\\\]\s*$/, ''));
       }
-      out.push('<div class="md-math-block">' + renderKatex(mathLines.join('\n'), true) + '</div>');
+      out.push('<div class="md-math-block formula-block">' + renderKatex(mathLines.join('\n'), true) + '<button type="button" class="formula-copy" aria-label="Copy formula">Copy formula</button></div>');
       i++;
       continue;
     }
@@ -1692,7 +1752,7 @@ export function renderMarkdown(text: string): string {
         j++;
       }
       if (j < lines.length && /\$\$/.test(lines[j] ?? '')) {
-        out.push('<div class="md-math-block">' + renderKatex(mathLines2.join('\n'), true) + '</div>');
+        out.push('<div class="md-math-block formula-block">' + renderKatex(mathLines2.join('\n'), true) + '<button type="button" class="formula-copy" aria-label="Copy formula">Copy formula</button></div>');
         i = j + 1;
         continue;
       }

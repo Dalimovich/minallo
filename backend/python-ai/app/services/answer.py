@@ -932,6 +932,26 @@ ADAPTIVE_TABLE_LAYOUT_RULE = """
 ANSWER LAYOUT. Choose the clearest structure. Use a concise table when at least two comparable items share attributes, or for repeated question/answer pairs, classifications, symbols with units, or parameter/value summaries. Do not use a table for one definition, narrative explanations, proofs, code, or step-by-step derivations with long cells. A short introduction or clarification may surround a table. Keep tables to at most 8 concise columns and group large results by section. Markdown tables are supported. When consistent structured cells materially improve the answer, you may emit a fenced `minallo-table` JSON block with `title`, `columns` (id, label, alignment, type), and `rows` (id, cells, optional status). Never put arbitrary HTML in table cells.
 """
 
+SEMANTIC_LEARNING_BLOCK_RULE = """
+
+RESPONSE STRUCTURE — make long educational answers readable without over-styling them.
+Begin with a direct answer or short orientation, then use descriptive Markdown headings when
+the topic changes. Normal explanation remains normal paragraphs. When a genuine semantic
+callout improves learning, use this exact safe directive syntax:
+
+:::definition Optional concise title
+Markdown content (equations are allowed).
+:::
+
+Allowed variants: definition, important, warning, tip, note, example, formula, procedure,
+common-mistake, remember, exam-relevance, source-note. Use at most one callout per 2–4 normal
+paragraphs. Never repeat the preceding paragraph as a callout. Warning is only for a real risk,
+invalid assumption, missing source data, or serious pitfall. Tips must be actionable. A common
+mistake must state both the error and correction. Use exam-relevance ONLY when uploaded exams or
+course analysis support the claim; otherwise omit it. Never emit HTML. For keyboard shortcuts,
+use [[kbd:Ctrl + V]]. Keep formulas near the explanation that uses them.
+"""
+
 
 # ── Student Dignity overlay ──────────────────────────────────────────────────
 #
@@ -1826,7 +1846,7 @@ def generate_answer(
     wants_diagram = _wants_diagram(question) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks))
-    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE
+    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file the student didn't select.

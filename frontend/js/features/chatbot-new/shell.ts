@@ -3729,6 +3729,7 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
   row.className = 'ncb-msg-row ncb-msg-row--ai';
   if (messageId) row.dataset.messageId = messageId;
   row.dataset.role = 'assistant';
+  row.dataset.responseState = 'pending';
   row.innerHTML = `
     <div class="ncb-avatar" aria-hidden="true">
       <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3740,7 +3741,7 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
       <div class="ncb-bubble-head">
         <div>
           <p class="ncb-bubble-sender">${escapeHtml(tStr('cb_sender_minallo', 'Minallo AI'))}</p>
-          <p class="ncb-bubble-subtitle">${escapeHtml(tStr('cb_answered_using_context', 'Answered using course context'))}</p>
+          <p class="ncb-bubble-subtitle">${escapeHtml(tStr('cb_building_explanation', 'Building the explanation…'))}</p>
         </div>
       </div>
       <div class="ncb-bubble-body"></div>
@@ -3762,6 +3763,7 @@ function setBubbleSubtitle(
 ): void {
   const el = aiRow.querySelector<HTMLElement>('.ncb-bubble-subtitle');
   if (!el) return;
+  aiRow.dataset.responseState = state;
   if (state === 'pending') {
     el.textContent = tStr('cb_subtitle_pending_document', 'Checking your document');
     return;
@@ -4468,6 +4470,16 @@ function renderRichBubble(bubble: HTMLElement, raw: string, allowDiagrams = true
   };
   if (w._ssEnsureKatex) w._ssEnsureKatex().then(runMath).catch(runMath);
   else runMath();
+  if (!bubble.dataset.richInteractions) {
+    bubble.dataset.richInteractions = 'true';
+    bubble.addEventListener('click', (event) => {
+      const button = (event.target as Element | null)?.closest<HTMLButtonElement>('.formula-copy');
+      if (!button) return;
+      const formula = button.closest('.formula-block')?.querySelector('annotation')?.textContent?.trim() || '';
+      if (!formula) return;
+      void navigator.clipboard.writeText(formula).then(() => flashAck(button, 'Copied'));
+    });
+  }
 }
 
 // ============ PR-04: AI bubble actions, import modal, context tabs, title gen ============

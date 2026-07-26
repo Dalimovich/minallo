@@ -42,6 +42,7 @@ from .answer import (
     FIGURE_CHUNK_TYPES,
     MAX_PROMPT_CHUNKS,
     MINALLO_APP_CONTEXT,
+    SEMANTIC_LEARNING_BLOCK_RULE,
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
     detect_exam_style,
@@ -1691,7 +1692,7 @@ def stream_answer(
     wants_diagram = _wants_diagram(question, problem_solver) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks or (has_open and deictic)))
-    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE
+    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file (e.g. a chapter the student didn't select).
