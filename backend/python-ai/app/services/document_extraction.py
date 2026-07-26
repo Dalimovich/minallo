@@ -74,6 +74,66 @@ class ResolvedDocumentSection:
         return list(range(self.start_page, self.end_page + 1))
 
 
+@dataclass(frozen=True)
+class ResolvedSectionFamily:
+    family_name: str
+    matched_sections: list[ResolvedDocumentSection]
+    excluded_sections: list[str]
+    confidence: float
+
+    @property
+    def section_numbers(self) -> list[str]:
+        return [section.requested_number or "" for section in self.matched_sections]
+
+
+def resolve_section_family(
+    target: str,
+    text_by_page: dict[int, str],
+    *,
+    total_pages: int,
+) -> ResolvedSectionFamily | None:
+    """Resolve every numbered main section whose heading names one family."""
+    family_match = re.search(r"\b(kurzfragen?|short\s+questions?)\b", target, re.I)
+    if not family_match or requested_section_number(target):
+        return None
+    family_name = "Kurzfragen" if "kurz" in family_match.group(1).casefold() else "Short questions"
+    heading_re = re.compile(
+        r"(?im)^\s*(?P<number>\d+)\s*\.\s*"
+        r"(?P<family>Kurzfragen?|Short\s+Questions?)\b"
+        r"\s*(?:[-â€“â€”:]\s*)?(?P<title>[^\n\r]{0,160})$"
+    )
+    any_heading_re = re.compile(r"(?im)^\s*(?P<number>\d+)\s*\.\s*[^\n\r]{1,200}$")
+    matches: list[tuple[int, str, str, str]] = []
+    all_headings: list[tuple[int, int, str]] = []
+    for page, text in sorted(text_by_page.items()):
+        for match in any_heading_re.finditer(text or ""):
+            all_headings.append((page, int(match.group("number")), match.group(0).strip()))
+        for match in heading_re.finditer(text or ""):
+            matches.append((page, match.group("number"), match.group("title").strip(), match.group(0).strip()))
+    if not matches:
+        return None
+    sections: list[ResolvedDocumentSection] = []
+    for page, number, title, heading in matches:
+        later_pages = [candidate_page for candidate_page, _n, _h in all_headings if candidate_page > page]
+        end_page = min(later_pages) - 1 if later_pages else total_pages
+        sections.append(ResolvedDocumentSection(
+            requested_number=number,
+            requested_title=title or family_name,
+            matched_heading=heading,
+            start_page=page,
+            end_page=max(page, end_page),
+            expected_item_prefix=f"{number}.",
+            confidence=0.96,
+        ))
+    sections.sort(key=lambda section: int(section.requested_number or 0))
+    included = {int(section.requested_number or 0) for section in sections}
+    excluded = sorted({
+        str(number) for _page, number, _heading in all_headings
+        if number not in included
+    }, key=int)
+    return ResolvedSectionFamily(family_name, sections, excluded, 0.96)
+
+
 def resolve_document_section(
     target: str,
     text_by_page: dict[int, str],
@@ -377,6 +437,8 @@ class DocumentExtractionResult:
     unprocessed_pages: list[int] = field(default_factory=list)
     answer_recovery_pages: dict[str, list[int]] = field(default_factory=dict)
     answer_recovery_incomplete: bool = False
+    resolved_family: ResolvedSectionFamily | None = None
+    out_of_scope_items_rejected: list[str] = field(default_factory=list)
 
 
 _EXTRACTION_CONTEXTS: dict[tuple[str, str], DocumentExtractionContext] = {}
@@ -384,6 +446,10 @@ _EXTRACTION_CONTEXTS: dict[tuple[str, str], DocumentExtractionContext] = {}
 
 def normalise_item_id(item_id: str) -> str:
     return re.sub(r"[^0-9.]", "", item_id or "").strip(".")
+
+
+def _natural_item_id_key(item_id: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in normalise_item_id(item_id).split(".") if part.isdigit())
 
 
 def question_fingerprint(text: str) -> str:
@@ -1177,6 +1243,10 @@ def extract_document_qa(
         total_pages=total_pages,
     )
     numbered_section = requested_section_number(target)
+    resolved_family = resolve_section_family(
+        target, all_text_by_page, total_pages=total_pages,
+    )
+    result.resolved_family = resolved_family
     resolved_section = resolve_document_section(
         target,
         all_text_by_page,
@@ -1237,7 +1307,9 @@ def extract_document_qa(
         )
         return result
     question_page_scope = set(
-        resolved_section.question_pages if resolved_section else target_pages
+        resolved_section.question_pages if resolved_section else
+        [page for section in resolved_family.matched_sections for page in section.question_pages]
+        if resolved_family else target_pages
     )
     if resolved_section:
         result.resolved_heading = resolved_section.matched_heading
@@ -1647,6 +1719,33 @@ def extract_document_qa(
             item for item in result.solution_evidence
             if not item.normalized_item_id or item.normalized_item_id in allowed_ids
         ]
+    if resolved_family:
+        allowed_prefixes = tuple(
+            f"{number}." for number in resolved_family.section_numbers if number
+        )
+        rejected = [
+            item.item_id for item in result.extracted_questions
+            if not normalise_item_id(item.item_id).startswith(allowed_prefixes)
+        ]
+        result.out_of_scope_items_rejected = sorted(
+            set(rejected), key=_natural_item_id_key,
+        )
+        if result.out_of_scope_items_rejected:
+            log.warning(
+                "out_of_scope_items_rejected document=%s family=%s items=%s",
+                document_id, resolved_family.family_name,
+                result.out_of_scope_items_rejected,
+            )
+        result.extracted_questions = [
+            item for item in result.extracted_questions
+            if normalise_item_id(item.item_id).startswith(allowed_prefixes)
+            and item.question_page in question_page_scope
+        ]
+        allowed_ids = {item.normalized_item_id for item in result.extracted_questions}
+        result.solution_evidence = [
+            item for item in result.solution_evidence
+            if not item.normalized_item_id or item.normalized_item_id in allowed_ids
+        ]
     answers_by_id: dict[str, set[str]] = {}
     for evidence in result.solution_evidence:
         if evidence.normalized_item_id:
@@ -1855,7 +1954,7 @@ def extract_document_qa(
         len(previous_context.paired_items) if previous_context else len(previous_items or [])
     )
     result.new_item_count = max(0, len(result.items) - previous_count)
-    expected_pages = question_page_scope if numbered_section else set(target_pages)
+    expected_pages = question_page_scope if (numbered_section or resolved_family) else set(target_pages)
     result.all_relevant_pages_scanned = bool(
         expected_pages
         and expected_pages.issubset(set(result.scanned_pages) | set(result.unreadable_pages))
@@ -1878,6 +1977,78 @@ def extract_document_qa(
         )
     )
     return result
+
+
+def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] | None:
+    family = result.resolved_family
+    if not family:
+        return None
+    sections: list[dict[str, Any]] = []
+    for section in family.matched_sections:
+        number = section.requested_number or ""
+        questions = [
+            item for item in result.paired_items
+            if normalise_item_id(item.item_id).startswith(f"{number}.")
+        ]
+        questions.sort(key=lambda item: _natural_item_id_key(item.item_id))
+        question_payload = []
+        for item in questions:
+            if item.answer_text:
+                visual = bool(re.search(
+                    r"visual|check|mark|circle|highlight|annotation", item.answer_evidence_type or "", re.I,
+                ))
+                answer_status = "visually_verified" if visual else "verified"
+            elif item.question_page in result.unprocessed_pages:
+                answer_status = "source_unavailable"
+            else:
+                answer_status = "unresolved"
+            question_payload.append({
+                "questionId": item.item_id,
+                "number": item.item_id,
+                "question": item.question_text,
+                "answer": item.answer_text,
+                "answerStatus": answer_status,
+                "questionPage": item.question_page,
+                "answerPage": item.answer_page,
+                "confidence": item.pairing_confidence,
+                "pairingMethod": item.pairing_method,
+            })
+        verified = sum(
+            item["answerStatus"] in {"verified", "visually_verified"}
+            for item in question_payload
+        )
+        unresolved = len(question_payload) - verified
+        sections.append({
+            "sectionId": number,
+            "sectionNumber": number,
+            "title": section.requested_title or family.family_name,
+            "pageStart": section.start_page,
+            "pageEnd": section.end_page,
+            "questions": question_payload,
+            "status": "complete" if question_payload and not unresolved else "partial",
+            "statistics": {
+                "questionsFound": len(question_payload),
+                "answersVerified": verified,
+                "unresolved": unresolved,
+            },
+        })
+    return {
+        "title": family.family_name,
+        "scope": {
+            "type": "section_family",
+            "requestedLabel": result.target,
+            "includedSectionNumbers": family.section_numbers,
+            "excludedSections": family.excluded_sections,
+        },
+        "sections": sections,
+        "coverage": {
+            "totalPages": result.total_pages,
+            "pagesScanned": len(result.scanned_pages),
+            "unprocessedPages": result.unprocessed_pages,
+            "complete": result.complete,
+        },
+        "outOfScopeItemsRejected": result.out_of_scope_items_rejected,
+    }
 
 
 def format_document_extraction(result: DocumentExtractionResult, language: str) -> str:
@@ -2004,10 +2175,12 @@ __all__ = [
     "PageProcessingStatus",
     "PageClassificationResult",
     "PairedQAItem",
+    "ResolvedSectionFamily",
     "SearchAvailability",
     "classify_document_extraction",
     "classify_extraction_page",
     "classify_extraction_page_result",
+    "build_learning_journey",
     "extract_page_with_fallback",
     "extract_document_qa",
     "extraction_pages_for_direction",
@@ -2022,6 +2195,7 @@ __all__ = [
     "infer_extraction_rescan_direction",
     "load_extraction_context",
     "normalise_item_id",
+    "resolve_section_family",
     "pair_questions_and_solutions",
     "recover_unanswered_answers",
     "question_fingerprint",

@@ -2059,6 +2059,7 @@ async def _prepare_ask_stream_response(
         extraction_context_to_api,
         extraction_pages_for_direction,
         extract_document_qa,
+        build_learning_journey,
         format_document_extraction,
         infer_extraction_rescan_direction,
         save_extraction_context,
@@ -2325,6 +2326,7 @@ async def _prepare_ask_stream_response(
             extraction,
             language_context.requested_response_language,
         )
+        learning_journey = build_learning_journey(extraction)
         if extraction_correction:
             if extraction.status == "no_pages_in_requested_direction":
                 answer_text = (
@@ -2431,6 +2433,8 @@ async def _prepare_ask_stream_response(
                 "unresolvedItems": extraction.unanswered_item_ids,
                 "answerRecoveryPages": extraction.answer_recovery_pages,
                 "answerRecoveryIncomplete": extraction.answer_recovery_incomplete,
+                "learningJourney": learning_journey,
+                "outOfScopeItemsRejected": extraction.out_of_scope_items_rejected,
                 "languageStatus": "valid_mixed_source",
                 "continuationCorrection": extraction_correction,
             },

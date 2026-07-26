@@ -651,6 +651,48 @@ interface LearningJourneyMarker {
   pagesScanned: number;
   coverageComplete: boolean;
   unresolvedItems: string[];
+  sections?: LearningJourneySection[];
+  includedSectionNumbers?: string[];
+  outOfScopeItemsRejected?: string[];
+}
+
+interface LearningJourneyQuestion {
+  questionId: string;
+  number: string;
+  question: string;
+  answer?: string | null;
+  answerStatus: 'verified' | 'visually_verified' | 'unresolved' | 'ambiguous' | 'source_unavailable';
+  questionPage: number;
+  answerPage?: number | null;
+}
+
+interface LearningJourneySection {
+  sectionId: string;
+  sectionNumber: string;
+  title: string;
+  pageStart: number;
+  pageEnd: number;
+  questions: LearningJourneyQuestion[];
+  status: 'queued' | 'processing' | 'complete' | 'partial' | 'failed';
+  statistics: { questionsFound: number; answersVerified: number; unresolved: number };
+}
+
+function learningJourneyMarkerFromMeta(meta: Record<string, unknown>): LearningJourneyMarker {
+  const structured = meta.learningJourney && typeof meta.learningJourney === 'object'
+    ? meta.learningJourney as { title?: unknown; sections?: unknown; scope?: { includedSectionNumbers?: unknown }; coverage?: { totalPages?: unknown; pagesScanned?: unknown; complete?: unknown }; outOfScopeItemsRejected?: unknown }
+    : null;
+  return {
+    title: String(structured?.title || meta.resolvedHeading || meta.targetSection || 'Document review'),
+    totalPages: Number(structured?.coverage?.totalPages || meta.totalPages || 0),
+    pagesScanned: Number(structured?.coverage?.pagesScanned || meta.scannedPageCount || 0),
+    coverageComplete: structured?.coverage?.complete === true || meta.coverageComplete === true,
+    unresolvedItems: Array.isArray(meta.unresolvedItems) ? meta.unresolvedItems.map(String) : [],
+    sections: Array.isArray(structured?.sections) ? structured.sections as LearningJourneySection[] : undefined,
+    includedSectionNumbers: Array.isArray(structured?.scope?.includedSectionNumbers)
+      ? structured.scope.includedSectionNumbers.map(String) : undefined,
+    outOfScopeItemsRejected: Array.isArray(structured?.outOfScopeItemsRejected)
+      ? structured.outOfScopeItemsRejected.map(String) : undefined,
+  };
 }
 
 interface ConversationState {
@@ -1047,14 +1089,8 @@ async function streamAiReply(
         sourceLabel: streamed.meta?.sourceLabel as string | undefined,
         courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
         sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
-        learningJourney: streamed.meta?.taskType === 'document_wide_extraction' ? {
-          title: String(streamed.meta?.resolvedHeading || streamed.meta?.targetSection || 'Document review'),
-          totalPages: Number(streamed.meta?.totalPages || 0),
-          pagesScanned: Number(streamed.meta?.scannedPageCount || 0),
-          coverageComplete: streamed.meta?.coverageComplete === true,
-          unresolvedItems: Array.isArray(streamed.meta?.unresolvedItems)
-            ? streamed.meta.unresolvedItems.map(String) : [],
-        } : undefined,
+        learningJourney: streamed.meta?.taskType === 'document_wide_extraction'
+          ? learningJourneyMarkerFromMeta(streamed.meta) : undefined,
       });
       if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
     } else if (normaliseSourceMode(originChat.sourceMode) === 'course_files') {
@@ -3073,13 +3109,7 @@ async function ensureChatCourseFilesLoaded(): Promise<void> {
  * Verification/confidence status remains internal and is not shown to users. */
 function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>): void {
   if (meta.taskType === 'document_wide_extraction') {
-    enhanceDocumentLearningJourney(bubble, {
-      title: String(meta.resolvedHeading || meta.targetSection || 'Document review'),
-      totalPages: Number(meta.totalPages || 0),
-      pagesScanned: Number(meta.scannedPageCount || 0),
-      coverageComplete: meta.coverageComplete === true,
-      unresolvedItems: Array.isArray(meta.unresolvedItems) ? meta.unresolvedItems.map(String) : [],
-    });
+    enhanceDocumentLearningJourney(bubble, learningJourneyMarkerFromMeta(meta));
   }
   const sources = Array.isArray(meta.sources) ? meta.sources : [];
   const sourceLabel = typeof meta.sourceLabel === 'string' ? meta.sourceLabel : '';
@@ -3981,7 +4011,10 @@ function enhanceDocumentLearningJourney(
 ): void {
   if (bubble.querySelector('.ncb-learning-journey')) return;
   const headings = Array.from(bubble.querySelectorAll<HTMLHeadingElement>('h3'));
-  if (!headings.length) return;
+  const sections = (marker.sections || []).slice().sort(
+    (a, b) => Number(a.sectionNumber) - Number(b.sectionNumber)
+  );
+  if (!headings.length && !sections.length) return;
   const journey = document.createElement('section');
   journey.className = 'ncb-learning-journey';
   journey.setAttribute('aria-label', 'Learning Journey');
@@ -3990,7 +4023,10 @@ function enhanceDocumentLearningJourney(
   journey.innerHTML =
     '<header class="ncb-learning-journey__header">' +
       '<div><span>Learning Journey</span><h2>' + escapeHtml(marker.title) + '</h2></div>' +
-      '<strong>' + escapeHtml(String(headings.length)) + ' questions</strong>' +
+      '<strong>' + escapeHtml(String(sections.length
+        ? sections.reduce((sum, section) => sum + section.questions.length, 0)
+        : headings.length)) + ' questions' +
+        (sections.length ? ' · ' + sections.length + ' sections' : '') + '</strong>' +
     '</header>' +
     '<div class="ncb-learning-journey__progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + percent + '">' +
       '<span style="width:' + percent + '%"></span>' +
@@ -4001,6 +4037,76 @@ function enhanceDocumentLearningJourney(
     '</p>';
   const list = document.createElement('div');
   list.className = 'ncb-learning-journey__list';
+  if (sections.length) {
+    const chips = document.createElement('nav');
+    chips.className = 'ncb-learning-journey__chips';
+    chips.setAttribute('aria-label', 'Journey sections');
+    const expandedKey = 'minallo_journey_section_' + marker.title;
+    let persistedSection = '';
+    try { persistedSection = localStorage.getItem(expandedKey) || ''; } catch { /* optional */ }
+    sections.forEach((section, index) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = section.sectionNumber.padStart(2, '0') + ' ' + section.title;
+      chip.addEventListener('click', () => {
+        const target = list.querySelector<HTMLDetailsElement>(`[data-section-id="${CSS.escape(section.sectionId)}"]`);
+        if (target) { target.open = true; target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+      });
+      chips.appendChild(chip);
+
+      const details = document.createElement('details');
+      details.className = 'ncb-learning-journey__section';
+      details.dataset.sectionId = section.sectionId;
+      details.open = persistedSection ? persistedSection === section.sectionId : index === 0;
+      details.addEventListener('toggle', () => {
+        if (details.open) try { localStorage.setItem(expandedKey, section.sectionId); } catch { /* optional */ }
+      });
+      const summary = document.createElement('summary');
+      const unresolved = section.statistics.unresolved;
+      summary.innerHTML =
+        '<span class="ncb-learning-journey__section-number">' + escapeHtml(section.sectionNumber.padStart(2, '0')) + '</span>' +
+        '<span><strong>' + escapeHtml(section.title) + '</strong><small>' +
+          escapeHtml(section.statistics.questionsFound + ' questions · ' + section.statistics.answersVerified +
+            ' verified · ' + unresolved + ' unresolved') + '</small></span>' +
+        '<span class="ncb-learning-journey__section-badge" data-state="' + (unresolved ? 'partial' : 'complete') + '">' +
+          escapeHtml(section.statistics.answersVerified + '/' + section.statistics.questionsFound) + '</span>';
+      details.appendChild(summary);
+      const questions = document.createElement('div');
+      questions.className = 'ncb-learning-journey__questions';
+      section.questions.slice().sort((a, b) => {
+        const ap = a.number.split('.').map(Number); const bp = b.number.split('.').map(Number);
+        return ((ap[0] || 0) - (bp[0] || 0)) || ((ap[1] || 0) - (bp[1] || 0));
+      }).forEach((question) => {
+        const verified = question.answerStatus === 'verified' || question.answerStatus === 'visually_verified';
+        const card = document.createElement('article');
+        card.className = 'ncb-learning-journey__question';
+        card.dataset.answerStatus = question.answerStatus;
+        card.innerHTML =
+          '<header><span class="ncb-learning-journey__status" data-state="' + escapeAttr(question.answerStatus) + '">' +
+            (verified ? '✓' : question.answerStatus === 'source_unavailable' ? '×' : '!') + '</span>' +
+            '<strong>' + escapeHtml(question.number) + '</strong>' +
+            '<small>' + (verified ? (question.answerStatus === 'visually_verified' ? 'Visually verified' : 'Answer verified') : 'Answer unresolved') + '</small></header>' +
+          '<p>' + escapeHtml(question.question) + '</p>' +
+          (verified && question.answer
+            ? '<div class="ncb-learning-journey__answer"><span>Correct answer</span>' + renderInlineMarkdown(question.answer) + '</div>'
+            : '<div class="ncb-learning-journey__unresolved">Minallo found the question but could not verify the official answer.</div>') +
+          '<footer>Question page ' + escapeHtml(String(question.questionPage || '—')) +
+            (question.answerPage ? ' · Answer page ' + escapeHtml(String(question.answerPage)) : '') + '</footer>';
+        questions.appendChild(card);
+      });
+      details.appendChild(questions);
+      list.appendChild(details);
+    });
+    journey.appendChild(chips);
+    journey.appendChild(list);
+    Array.from(bubble.children).forEach((child) => {
+      if (child !== journey && !(child instanceof HTMLElement && child.classList.contains('ncb-ask-meta'))) {
+        (child as HTMLElement).hidden = true;
+      }
+    });
+    bubble.prepend(journey);
+    return;
+  }
   headings.forEach((heading, index) => {
     const details = document.createElement('details');
     details.className = 'ncb-learning-journey__item';

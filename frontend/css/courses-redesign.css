@@ -51,12 +51,37 @@ textarea {
 .ncb-learning-journey__status { display:grid; place-items:center; width:22px; height:22px; flex:0 0 22px; border-radius:50%; color:#07111f; background:#65e6bd; font-size:.72rem; }
 .ncb-learning-journey__content { padding:0 14px 14px 46px; color:#cbd5e1; }
 .ncb-learning-journey__content > :first-child { margin-top:0; }
+.ncb-learning-journey__chips { display:flex; gap:7px; margin:12px 0 16px; overflow-x:auto; scrollbar-width:thin; }
+.ncb-learning-journey__chips button { flex:0 0 auto; padding:7px 10px; border:1px solid rgba(96,165,250,.24); border-radius:999px; color:#bfdbfe; background:rgba(37,99,235,.1); font:inherit; font-size:.72rem; cursor:pointer; }
+.ncb-learning-journey__chips button:hover { border-color:rgba(96,165,250,.55); background:rgba(37,99,235,.2); }
+.ncb-learning-journey__section { overflow:hidden; border:1px solid rgba(148,163,184,.16); border-radius:16px; background:rgba(8,18,38,.58); }
+.ncb-learning-journey__section[open] { border-color:rgba(59,130,246,.32); box-shadow:0 10px 32px rgba(2,8,23,.2); }
+.ncb-learning-journey__section > summary { display:flex; align-items:center; gap:11px; padding:14px; cursor:pointer; list-style:none; }
+.ncb-learning-journey__section > summary::-webkit-details-marker { display:none; }
+.ncb-learning-journey__section > summary > span:nth-child(2) { display:grid; gap:2px; min-width:0; }
+.ncb-learning-journey__section > summary small { color:#94a3b8; font-size:.7rem; font-weight:500; }
+.ncb-learning-journey__section-number { display:grid; place-items:center; width:34px; height:34px; border-radius:11px; color:#dbeafe; background:linear-gradient(145deg,rgba(37,99,235,.42),rgba(14,165,233,.18)); font-weight:800; }
+.ncb-learning-journey__section-badge { margin-left:auto; padding:5px 8px; border-radius:999px; color:#fde68a; background:rgba(245,158,11,.12); font-size:.7rem; }
+.ncb-learning-journey__section-badge[data-state="complete"] { color:#a7f3d0; background:rgba(16,185,129,.12); }
+.ncb-learning-journey__questions { display:grid; gap:9px; padding:0 12px 12px; }
+.ncb-learning-journey__question { padding:13px; border:1px solid rgba(148,163,184,.12); border-radius:13px; background:rgba(255,255,255,.035); }
+.ncb-learning-journey__question > header { display:flex; align-items:center; gap:8px; }
+.ncb-learning-journey__question > header small { margin-left:auto; color:#94a3b8; }
+.ncb-learning-journey__question > p { margin:10px 0; color:#e2e8f0; }
+.ncb-learning-journey__answer { padding:10px; border-radius:10px; color:#d1fae5; background:rgba(16,185,129,.08); }
+.ncb-learning-journey__answer > span { display:block; margin-bottom:4px; color:#6ee7b7; font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; }
+.ncb-learning-journey__unresolved { padding:10px; border-radius:10px; color:#fde68a; background:rgba(245,158,11,.08); }
+.ncb-learning-journey__question > footer { margin-top:9px; color:#64748b; font-size:.68rem; }
+.ncb-learning-journey__status[data-state="unresolved"] { color:#1f1300; background:#fbbf24; }
+.ncb-learning-journey__status[data-state="source_unavailable"] { color:#fff; background:#ef4444; }
 @media (prefers-reduced-motion: reduce) { .ncb-learning-journey * { transition:none !important; } }
 @media (max-width: 640px) {
   .ncb-learning-journey { padding:14px; border-radius:16px; }
   .ncb-learning-journey__header { display:block; }
   .ncb-learning-journey__header strong { display:block; margin-top:6px; }
   .ncb-learning-journey__content { padding-left:14px; }
+  .ncb-learning-journey__section > summary { padding:12px 10px; }
+  .ncb-learning-journey__section-badge { display:none; }
 }
 
 /* Hero/section titles keep their Fredoka identity but at a lighter,

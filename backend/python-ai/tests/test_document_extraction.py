@@ -603,3 +603,47 @@ def test_solution_without_id_pairs_by_option_text() -> None:
     paired = extraction.pair_questions_and_solutions([question], [solution])
     assert paired[0].pairing_method == "option_text_match"
     assert paired[0].answer_text == "Laser-Druckguss"
+
+
+def test_kurzfragen_family_resolves_sections_and_excludes_later_tasks() -> None:
+    from app.services.document_extraction import resolve_section_family
+
+    pages = {
+        2: "2. Kurzfragen - Grundlagen\n2.1 Frage",
+        3: "3. Kurzfragen - Urformen\n3.1 Frage",
+        4: "4. Kurzfragen - Umformen\n4.1 Frage",
+        5: "5. Kurzfragen - Trennen\n5.1 Frage",
+        6: "6. Kurzfragen - Fügen\n6.1 Frage",
+        7: "7. Kurzfragen - Beschichten\n7.1 Frage",
+        8: "8. Kurzfragen - Stoffeigenschaften ändern\n8.1 Frage",
+        9: "9. Kurzfragen - Generative Fertigung\n9.1 Frage",
+        10: "10. Kurzfragen - Hybrider Leichtbau\n10.1 Frage",
+        11: "11. Kurzfragen - Messtechnik\n11.1 Frage",
+        12: "12. Rechenaufgabe\n12.1 Rechnung",
+        13: "13. Rechenaufgabe\n13.10 Rechnung",
+        14: "14. Spritzgießen\n14.5 Rechnung",
+    }
+    family = resolve_section_family("all Kurzfragen", pages, total_pages=14)
+    assert family is not None
+    assert family.section_numbers == [str(number) for number in range(2, 12)]
+    assert "13" in family.excluded_sections
+    assert "14" in family.excluded_sections
+
+
+def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
+    from app.services import document_extraction as extraction
+
+    family = extraction.ResolvedSectionFamily(
+        "Kurzfragen",
+        [extraction.ResolvedDocumentSection("5", "Trennen", "5. Kurzfragen - Trennen", 5, 5, "5.", 0.96)],
+        ["13", "14"], 0.96,
+    )
+    result = extraction.DocumentExtractionResult("doc", "Kurzfragen", 43, resolved_family=family)
+    result.paired_items = [
+        extraction.PairedQAItem("5.10", "Ten", None, 5, None, None, 0, None),
+        extraction.PairedQAItem("5.9", "Nine", "Verified", 5, 20, "normalized_item_id", 0.9, "printed_answer"),
+    ]
+    journey = extraction.build_learning_journey(result)
+    questions = journey["sections"][0]["questions"]
+    assert [question["number"] for question in questions] == ["5.9", "5.10"]
+    assert questions[1]["answerStatus"] == "unresolved"
