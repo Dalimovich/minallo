@@ -967,7 +967,13 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
   bindWorkspacePdfResize(context, pdfHost);
   window.selectChatbotPdfSource?.(course, file);
-  window.openFile(file, course);
+  const opened = window.openFile(file, course);
+  void Promise.resolve(opened).finally(() => {
+    requestAnimationFrame(() => {
+      refitWorkspacePdf();
+      requestAnimationFrame(refitWorkspacePdf);
+    });
+  });
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {

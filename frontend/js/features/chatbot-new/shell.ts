@@ -662,6 +662,7 @@ interface ChatMessage {
   allowDiagrams?: boolean;
   studyToolConfiguration?: StudyToolConfigurationMarker;
   learningJourney?: LearningJourneyMarker;
+  examPractice?: boolean;
 }
 
 interface LearningJourneyMarker {
@@ -1226,6 +1227,7 @@ async function streamAiReply(
         sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
         learningJourney: streamed.meta?.taskType === 'document_wide_extraction'
           ? learningJourneyMarkerFromMeta(streamed.meta) : undefined,
+        examPractice: GENERATED_EXAM_REQUEST_RE.test(sourceUser?.text || ''),
       });
       if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
     } else if (normaliseSourceMode(originChat.sourceMode) === 'course_files') {
@@ -1247,7 +1249,7 @@ async function streamAiReply(
       raw = await callGenericAi(requestMessages, bubble, controller, thinking, followUpDoc, allowDiagrams);
       raw = sanitizeChatbotDiagrams(raw, allowDiagrams);
       if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
-      Object.assign(assistantMessage, { text: raw, allowDiagrams, completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString() });
+      Object.assign(assistantMessage, { text: raw, allowDiagrams, completionState: 'complete', exportable: true, retryable: false, examPractice: GENERATED_EXAM_REQUEST_RE.test(sourceUser?.text || ''), updatedAt: new Date().toISOString() });
       // Generic chat path — no course retrieval ran, so don't claim otherwise.
       if (isOriginActive()) setBubbleSubtitle(aiRow, latestFileLabel ? 'file:' + latestFileLabel : 'general_knowledge');
     }
@@ -1255,6 +1257,7 @@ async function streamAiReply(
     saveChatStore();
     if (isOriginActive()) {
       if (continuationBase && bubble) renderRichBubble(bubble, raw, allowDiagrams);
+      if (bubble && assistantMessage.examPractice) enhanceGeneratedExamPractice(bubble);
       appendBubbleActions(aiRow, raw, assistantMessage);
     }
     reconcileView();
@@ -4567,6 +4570,46 @@ function renderRichBubble(bubble: HTMLElement, raw: string, allowDiagrams = true
   }
 }
 
+const GENERATED_EXAM_REQUEST_RE = /\b(?:create|generate|make|prepare|erstelle|generiere).*\b(?:exam|klausur|prüfung|practice test)\b|\b(?:exam|klausur|prüfung).*\b(?:similar|different questions?|different values?|ähnlich|andere fragen)\b/iu;
+const EXAM_SOLUTION_HEADING_RE = /^(?:answer key|answers?|solutions?|worked solutions?|lösungen?|kurzlösungen?|musterlösungen?|lösungshinweise)(?:\s|$)/iu;
+
+function enhanceGeneratedExamPractice(bubble: HTMLElement): void {
+  if (bubble.dataset.examPractice === 'true') return;
+  const headings = Array.from(bubble.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4'));
+  const solutionHeading = headings.find((heading) => EXAM_SOLUTION_HEADING_RE.test((heading.textContent || '').trim()));
+  if (!solutionHeading) return;
+  const answerPanel = document.createElement('section');
+  answerPanel.className = 'ncb-exam-answer-panel';
+  answerPanel.id = `ncb-exam-answers-${Math.random().toString(36).slice(2)}`;
+  answerPanel.hidden = true;
+  answerPanel.setAttribute('aria-label', 'Exam answers and solutions');
+  let node: ChildNode | null = solutionHeading;
+  while (node) {
+    const next: ChildNode | null = node.nextSibling;
+    answerPanel.appendChild(node);
+    node = next;
+  }
+  const controls = document.createElement('div');
+  controls.className = 'ncb-exam-practice-controls';
+  controls.innerHTML = '<span><strong>Practice mode</strong><small>Answers are hidden until you reveal them.</small></span>';
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'ncb-learning-journey__answer-toggle';
+  toggle.textContent = 'Show answers';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', answerPanel.id);
+  toggle.addEventListener('click', () => {
+    const show = answerPanel.hidden;
+    answerPanel.hidden = !show;
+    toggle.textContent = show ? 'Hide answers' : 'Show answers';
+    toggle.setAttribute('aria-expanded', String(show));
+  });
+  controls.appendChild(toggle);
+  bubble.prepend(controls);
+  bubble.appendChild(answerPanel);
+  bubble.dataset.examPractice = 'true';
+}
+
 // ============ PR-04: AI bubble actions, import modal, context tabs, title gen ============
 
 const activeAssistantPdfExports = new Set<string>();
@@ -6451,6 +6494,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // source preface / self-intro — scrub at render time.
   if (bubble) renderRichBubble(bubble, stripAnswerIntro(m.text), !!m.allowDiagrams);
   if (bubble && m.learningJourney) enhanceDocumentLearningJourney(bubble, m.learningJourney);
+  if (bubble && m.examPractice) enhanceGeneratedExamPractice(bubble);
   if (bubble && (m.sourceLabel || m.sources?.length)) {
     appendAskStreamMeta(bubble, {
       sourceLabel: m.sourceLabel,

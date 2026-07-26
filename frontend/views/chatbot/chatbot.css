@@ -4723,6 +4723,25 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   outline: 2px solid #79adff;
   outline-offset: 2px;
 }
+
+.ncb-exam-practice-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(79, 124, 255, 0.22);
+  border-radius: 14px;
+  background: rgba(79, 124, 255, 0.08);
+  box-sizing: border-box;
+}
+.ncb-exam-practice-controls span { display: grid; gap: 3px; min-width: 0; }
+.ncb-exam-practice-controls small { color: #9fb0c7; }
+.ncb-exam-answer-panel { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .ncb-account-avatar svg { width: 20px; height: 20px; }
 
 .ncb-account-copy {

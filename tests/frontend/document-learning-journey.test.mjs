@@ -30,3 +30,12 @@ test('document extraction mounts a persistent Learning Journey accordion', () =>
   assert.match(shell, /card\.insertBefore\(panel/);
   assert.doesNotMatch(shell, /\? '<div class="ncb-learning-journey__answer"><span>Correct answer<\/span>'/);
 });
+
+test('combined-markdown generated exams hide the solution section by default', () => {
+  assert.match(shell, /function enhanceGeneratedExamPractice/);
+  assert.match(shell, /EXAM_SOLUTION_HEADING_RE/);
+  assert.match(shell, /answerPanel\.hidden = true/);
+  assert.match(shell, /Show answers/);
+  assert.match(shell, /Hide answers/);
+  assert.match(shell, /m\.examPractice/);
+});
