@@ -11,6 +11,7 @@ Reuses /ask's retrieval + ownership + cache logic.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import json
@@ -351,6 +352,7 @@ class AskStreamRequest(BaseModel):
     # NAMES (the document id lives server-side). Resolved to document ids here.
     documentNames: list[str] | None = None
     activeDocumentId: str | None = None
+    activePdfVisible: bool = False
     question: str
     # The file name + a slice of text from whatever the user is currently
     # looking at in the PDF reader. Surfaced into the user message so the
@@ -807,6 +809,20 @@ async def ask_stream_endpoint(
     validated_image_pages = [
         int(image["page"]) for image in validated_images if image.get("page") is not None
     ]
+    if payload.activePdfVisible and not payload.activeDocumentId:
+        async def incomplete_active_pdf_stream():
+            yield _error_sse(
+                code="active_pdf_state_incomplete",
+                message=(
+                    "The PDF is visible, but its document identity is incomplete. "
+                    "Reopen the PDF and retry."
+                ),
+                retryable=True,
+                request_id=request_id,
+            )
+        return StreamingResponse(
+            incomplete_active_pdf_stream(), media_type="text/event-stream"
+        )
     snapshot_mismatch = bool(
         visual_meta
         and visual_meta.snapshotId
@@ -2082,6 +2098,44 @@ async def _prepare_ask_stream_response(
         if status_sink:
             status_sink("scanning_document")
             status_sink("extracting_items")
+        visible_page_image = next((
+            image for image in open_file_images
+            if image.get("page") == payload.visiblePage
+            and image.get("region") == "full_page"
+        ), None)
+        visible_page_image_bytes = (
+            base64.b64decode(str(visible_page_image.get("data") or ""), validate=True)
+            if visible_page_image else None
+        )
+        observer.event(
+            "document_bound_request",
+            activePdfFound=bool(payload.activeDocumentId and payload.visiblePage),
+            activeDocumentIdPresent=bool(payload.activeDocumentId),
+            visiblePage=payload.visiblePage,
+            pageTextStatus=(
+                "ready" if (payload.openFileContext or "").strip() else "missing"
+            ),
+            pageTextChars=len((payload.openFileContext or "").strip()),
+            imageCount=len(open_file_images),
+            capturedPages=[
+                image.get("page") for image in open_file_images if image.get("page")
+            ],
+            requestWorkflow="document_extraction",
+        )
+        log.info(
+            "document_bound_request request_id=%s activePdfFound=%s "
+            "activeDocumentIdPresent=%s visiblePage=%s pageTextStatus=%s "
+            "pageTextChars=%d imageCount=%d capturedPages=%s "
+            "requestWorkflow=document_extraction",
+            request_id,
+            bool(payload.activeDocumentId and payload.visiblePage),
+            bool(payload.activeDocumentId),
+            payload.visiblePage,
+            "ready" if (payload.openFileContext or "").strip() else "missing",
+            len((payload.openFileContext or "").strip()),
+            len(open_file_images),
+            [image.get("page") for image in open_file_images if image.get("page")],
+        )
         active_document = dict(
             ((preflight or {}).get("documents") or {}).get(
                 payload.activeDocumentId or "",
@@ -2206,6 +2260,17 @@ async def _prepare_ask_stream_response(
                 previous_context=extraction_context,
                 checkpoint=extraction_checkpoint,
                 visible_page=payload.visiblePage,
+                visible_page_text=payload.openFileContext,
+                visible_page_image=visible_page_image_bytes,
+                visible_page_image_media_type=(
+                    str(visible_page_image.get("mediaType") or "image/png")
+                    if visible_page_image else "image/png"
+                ),
+                active_document_id=payload.activeDocumentId,
+                active_file_name=(
+                    doc_name_map.get(payload.activeDocumentId or "")
+                    or payload.activeFileName
+                ),
             )
         )
         if payload.conversationId:
@@ -2359,6 +2424,10 @@ async def _prepare_ask_stream_response(
                 "resolvedStartPage": extraction.resolved_start_page,
                 "resolvedEndPage": extraction.resolved_end_page,
                 "invalidItemIdsRejected": extraction.invalid_item_ids_rejected,
+                "errorCode": (
+                    "section_result_mismatch"
+                    if extraction.status == "section_result_mismatch" else None
+                ),
                 "unresolvedItems": extraction.unanswered_item_ids,
                 "languageStatus": "valid_mixed_source",
                 "continuationCorrection": extraction_correction,

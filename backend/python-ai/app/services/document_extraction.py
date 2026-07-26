@@ -61,11 +61,17 @@ def item_belongs_to_requested_section(item_id: str, target: str) -> bool:
 
 @dataclass(frozen=True)
 class ResolvedDocumentSection:
-    requested: str
-    heading: str
+    requested_number: str | None
+    requested_title: str
+    matched_heading: str
     start_page: int
     end_page: int
-    question_pages: list[int]
+    expected_item_prefix: str | None
+    confidence: float
+
+    @property
+    def question_pages(self) -> list[int]:
+        return list(range(self.start_page, self.end_page + 1))
 
 
 def resolve_document_section(
@@ -106,11 +112,13 @@ def resolve_document_section(
     end_page = min(boundary_pages) - 1 if boundary_pages else total_pages
     end_page = max(start_page, end_page)
     return ResolvedDocumentSection(
-        requested=target,
-        heading=heading,
+        requested_number=section,
+        requested_title=label,
+        matched_heading=heading,
         start_page=start_page,
         end_page=end_page,
-        question_pages=list(range(start_page, end_page + 1)),
+        expected_item_prefix=f"{section}.",
+        confidence=0.98 if visible_page == start_page else 0.93,
     )
 
 
@@ -757,7 +765,6 @@ def _extract_visual_page(
     storage_path = str(document.get("storage_path") or "")
     if not storage_path:
         raise RuntimeError("document storage path is unavailable for visual extraction")
-    from .openai_client import get_openai_client
     from .storage import download_document_bytes
     from .vision_ocr import _render_page_to_png, _try_import_pypdfium2
 
@@ -772,6 +779,24 @@ def _extract_visual_page(
     )
     if not png:
         raise RuntimeError(f"PDF page {page_number} could not be rendered")
+    return _extract_visual_image(
+        image_bytes=png,
+        media_type="image/png",
+        page_number=page_number,
+        target=target,
+    )
+
+
+def _extract_visual_image(
+    *,
+    image_bytes: bytes,
+    media_type: str,
+    page_number: int,
+    target: str,
+) -> list[ExtractedQAItem]:
+    """Inspect the exact browser-captured visible page without re-rendering it."""
+    from .openai_client import get_openai_client
+
     response = get_openai_client().chat.completions.create(
         model=get_settings().openai_generate_model,
         temperature=0,
@@ -795,8 +820,8 @@ def _extract_visual_page(
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": "data:image/png;base64,"
-                        + base64.b64encode(png).decode("ascii"),
+                        "url": f"data:{media_type};base64,"
+                        + base64.b64encode(image_bytes).decode("ascii"),
                         "detail": "high",
                     },
                 },
@@ -936,7 +961,14 @@ def extract_document_qa(
     previous_context: DocumentExtractionContext | None = None,
     checkpoint: Callable[[dict[str, Any]], None] | None = None,
     visible_page: int | None = None,
+    visible_page_text: str | None = None,
+    visible_page_image: bytes | None = None,
+    visible_page_image_media_type: str = "image/png",
+    active_document_id: str | None = None,
+    active_file_name: str | None = None,
 ) -> DocumentExtractionResult:
+    if active_document_id and active_document_id != document_id:
+        raise ValueError("active document does not match extraction document")
     document, page_rows = _load_document_pages(
         user_id=user_id, course_id=course_id, document_id=document_id,
     )
@@ -947,6 +979,24 @@ def extract_document_qa(
         for row in page_rows
         if int(row.get("page_number") or 0) >= 1
     }
+    if visible_page and (visible_page_text or "").strip():
+        # The stable browser snapshot is authoritative for the page the student
+        # is actually looking at, even while its background index is incomplete.
+        all_text_by_page[visible_page] = str(visible_page_text).strip()
+        visible_row = next(
+            (row for row in page_rows if int(row.get("page_number") or 0) == visible_page),
+            None,
+        )
+        if visible_row is None:
+            page_rows.append({
+                "page_number": visible_page,
+                "cleaned_text": str(visible_page_text).strip(),
+                "raw_text": "",
+                "extraction_quality": "good",
+            })
+        else:
+            visible_row["cleaned_text"] = str(visible_page_text).strip()
+            visible_row["extraction_quality"] = "good"
     total_pages = int(document.get("page_count") or len(page_rows) or 0)
     target_pages = (
         list(range(1, total_pages + 1))
@@ -966,14 +1016,31 @@ def extract_document_qa(
         visible_page=visible_page,
     ) if numbered_section else None
     bootstrap_visual_items: list[ExtractedQAItem] = []
-    if numbered_section and resolved_section is None and visible_page:
+    if numbered_section and visible_page and visible_page_image:
         try:
             bootstrap_visual_items = [
-                item for item in _extract_visual_page(
-                    document=document,
+                item for item in _extract_visual_image(
+                    image_bytes=visible_page_image,
+                    media_type=visible_page_image_media_type,
                     page_number=visible_page,
                     target=target,
                 )
+                if item_belongs_to_requested_section(item.item_id, target)
+            ]
+        except Exception:
+            log.exception(
+                "document_visible_snapshot_read_failed document=%s page=%s target=%s",
+                document_id, visible_page, target,
+            )
+    if numbered_section and resolved_section is None and visible_page:
+        try:
+            visual_items = bootstrap_visual_items or (
+                _extract_visual_page(
+                    document=document, page_number=visible_page, target=target,
+                )
+            )
+            bootstrap_visual_items = [
+                item for item in visual_items
                 if item_belongs_to_requested_section(item.item_id, target)
             ]
         except Exception:
@@ -983,11 +1050,13 @@ def extract_document_qa(
             )
         if bootstrap_visual_items:
             resolved_section = ResolvedDocumentSection(
-                requested=target,
-                heading=target,
+                requested_number=numbered_section,
+                requested_title=re.sub(r"^\s*\d+\s*\.\s*", "", target).strip(),
+                matched_heading=target,
                 start_page=visible_page,
                 end_page=visible_page,
-                question_pages=[visible_page],
+                expected_item_prefix=f"{numbered_section}.",
+                confidence=0.86,
             )
     if numbered_section and resolved_section is None:
         result.section_resolved = False
@@ -1003,7 +1072,7 @@ def extract_document_qa(
         resolved_section.question_pages if resolved_section else target_pages
     )
     if resolved_section:
-        result.resolved_heading = resolved_section.heading
+        result.resolved_heading = resolved_section.matched_heading
         result.resolved_start_page = resolved_section.start_page
         result.resolved_end_page = resolved_section.end_page
     if not target_pages:
@@ -1387,6 +1456,15 @@ def extract_document_qa(
             item.item_id for item in result.extracted_questions
             if not item_belongs_to_requested_section(item.item_id, target)
         })
+        if result.invalid_item_ids_rejected:
+            result.status = "section_result_mismatch"
+            log.warning(
+                "section_result_mismatch document=%s file=%s target=%s heading=%s "
+                "rejected_ids=%s",
+                document_id, active_file_name, target,
+                resolved_section.matched_heading if resolved_section else None,
+                result.invalid_item_ids_rejected,
+            )
         result.extracted_questions = [
             item for item in result.extracted_questions
             if item_belongs_to_requested_section(item.item_id, target)
@@ -1605,6 +1683,7 @@ def extract_document_qa(
         result.section_resolved
         and result.all_relevant_pages_scanned
         and not result.unprocessed_pages
+        and not result.invalid_item_ids_rejected
         and result.all_items_have_answers
         and not result.duplicate_item_ids
         and not result.conflicting_item_ids

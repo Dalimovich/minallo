@@ -61,6 +61,101 @@ def test_unresolved_numbered_section_returns_no_unrelated_items(monkeypatch) -> 
     assert result.unreadable_pages == []
 
 
+def test_visible_page_anchors_section_questions_while_answers_search_all_pages(
+    monkeypatch,
+) -> None:
+    pages = [{
+        "page_number": page,
+        "cleaned_text": (
+            "unrelated indexed text " * 20 if page == 3
+            else "Musterlösung 2.3: Die korrekte Antwort ist B. " * 8 if page == 40
+            else "document content " * 20
+        ),
+        "raw_text": "",
+        "extraction_quality": "good",
+    } for page in range(1, 44)]
+    pages[3]["cleaned_text"] = "3. Kurzfragen - Urformen\n3.1 Andere Frage? " * 10
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 43, "file_name": "exam.pdf"}, pages),
+    )
+
+    def fake_chat_json(*, system: str, user: str, **_):
+        if "QUESTIONS ONLY" in system and "--- PAGE 3 ---" in user:
+            data = {"questions": [{
+                "item_id": "2.3", "question": "Welche Aussage ist korrekt?",
+                "question_page": 3, "section": "2. Kurzfragen - Grundlagen",
+                "confidence": 0.95,
+            }]}
+        elif "SOLUTION EVIDENCE ONLY" in system and "--- PAGE 40 ---" in user:
+            data = {"solutions": [{
+                "item_id": "2.3", "answer_text": "Die korrekte Antwort ist B.",
+                "answer_page": 40, "confidence": 0.95,
+            }]}
+        else:
+            data = {"questions": [], "solutions": []}
+        return SimpleNamespace(
+            data=data, model="test", prompt_tokens=1, completion_tokens=1,
+        )
+
+    monkeypatch.setattr(extraction, "chat_json", fake_chat_json)
+    visible_images: list[tuple[int, bytes]] = []
+    monkeypatch.setattr(
+        extraction,
+        "_extract_visual_image",
+        lambda **kwargs: visible_images.append((
+            kwargs["page_number"], kwargs["image_bytes"],
+        )) or [],
+    )
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="2. Kurzfragen",
+        visible_page=3,
+        visible_page_text=(
+            "2. Kurzfragen - Grundlagen\n"
+            "2.3 Welche Aussage ist korrekt? " + "Kontext " * 20
+        ),
+        visible_page_image=b"browser-page-3-png",
+        active_document_id="d",
+        active_file_name="exam.pdf",
+    )
+    assert result.resolved_heading.startswith("2. Kurzfragen - Grundlagen")
+    assert [item.item_id for item in result.items] == ["2.3"]
+    assert result.items[0].question_page == 3
+    assert result.items[0].answer_page == 40
+    assert visible_images == [(3, b"browser-page-3-png")]
+
+
+def test_section_result_mismatch_is_typed_and_never_rendered(monkeypatch) -> None:
+    monkeypatch.setattr(
+        extraction,
+        "_load_document_pages",
+        lambda **_: ({"page_count": 1}, [{
+            "page_number": 1,
+            "cleaned_text": "2. Kurzfragen - Grundlagen\n2.1 Frage? " * 20,
+            "raw_text": "", "extraction_quality": "good",
+        }]),
+    )
+    monkeypatch.setattr(
+        extraction,
+        "chat_json",
+        lambda **kwargs: SimpleNamespace(
+            data=({"questions": [{
+                "item_id": "12.21", "question": "Falsche Sektion?",
+                "question_page": 1, "confidence": 0.9,
+            }]} if "QUESTIONS ONLY" in kwargs.get("system", "") else {"solutions": []}),
+            model="test", prompt_tokens=1, completion_tokens=1,
+        ),
+    )
+    result = extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="2. Kurzfragen",
+    )
+    assert result.status == "section_result_mismatch"
+    assert result.invalid_item_ids_rejected == ["12.21"]
+    assert result.items == []
+    assert "12.21" not in extraction.format_document_extraction(result, "en")
+
+
 def test_missing_first_items_continuation_reuses_extraction_scope() -> None:
     matched, correction, target = extraction.classify_document_extraction(
         "you missed the first ones, keep extracting the questions",

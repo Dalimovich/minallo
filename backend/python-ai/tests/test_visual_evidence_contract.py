@@ -73,6 +73,15 @@ def test_stream_rejects_snapshot_mismatch_and_guarantees_terminal_error() -> Non
     assert "any(page != payload.visiblePage for page in validated_image_pages)" in route
 
 
+def test_visible_pdf_without_document_identity_is_explicit_error() -> None:
+    route = (
+        Path(__file__).resolve().parents[1] / "app" / "routers" / "stream.py"
+    ).read_text(encoding="utf-8")
+    assert "payload.activePdfVisible and not payload.activeDocumentId" in route
+    assert 'code="active_pdf_state_incomplete"' in route
+    assert "requestWorkflow=document_extraction" in route
+
+
 def test_terminal_sse_recognises_done_and_error_only() -> None:
     assert _is_terminal_sse(b'data: {"done": true}\n\n')
     assert _is_terminal_sse(b'data: {"error": true, "code": "internal_error"}\n\n')

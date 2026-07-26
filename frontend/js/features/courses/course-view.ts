@@ -3,6 +3,7 @@ import { bindFileEvents } from './course-files.js';
 import { bindFolderEvents } from './course-folders.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { computeCourseProgress } from './courses-render.js';
+import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 interface InCourseProgress {
@@ -390,6 +391,7 @@ function buildFilesContent(course: LegacyCourse): string {
 
 export function openCourse(course: LegacyCourse): void {
   if (!course.files) course.files = [];
+  clearActivePdfViewerState();
   window.activeCourseId = course.id;
   window.activeFileName = null;
   // No file open in this course yet — the AI side panel must start empty,
@@ -755,6 +757,8 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
   }
 
   window.activeFileName = null;
+  clearActivePdfViewerState();
+  window.activeCourseId = course.id;
   window.activeStorageName = null;
   (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId = null;
   if (typeof window.resetAiPanelChat === 'function') window.resetAiPanelChat();

@@ -13,6 +13,7 @@
 // shows a toast rather than throwing.
 
 import type { LegacyCourse } from '../../../globals.js';
+import { setActivePdfViewerState } from './active-pdf-context.js';
 
 export interface CitedSource {
   fileName?: string | null;
@@ -166,6 +167,7 @@ function _jumpOpenPdf(page: number): void {
   if (!page || page < 1) return;
   window.pdfShowAll = false;
   window.pdfPage = page;
+  setActivePdfViewerState({ visiblePage: page });
   window.updatePageInfo?.();
   window.renderPages?.();
 }

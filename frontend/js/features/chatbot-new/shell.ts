@@ -12,6 +12,7 @@ import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
   captureStablePdfSnapshot,
   getActivePdfContext,
+  isPdfViewerVisible,
   type ActivePdfContext,
   type OpenFileImage
 } from '../pdf-viewer/active-pdf-context.js';
@@ -2496,6 +2497,14 @@ function ragEligibility(
   const active = chatStore.getActive();
   const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
   const openPdf = getActivePdfContext();
+  if (isPdfViewerVisible() && !openPdf) {
+    throw new AskStreamError({
+      code: 'active_pdf_state_incomplete',
+      message: 'The PDF is visible, but its document identity is incomplete. Reopen the PDF and retry.',
+      retryable: true,
+      metadata: { activePdfFound: false, activePdfVisible: true }
+    });
+  }
   // Screenshots always stay on the explicit visual stream. With an open PDF
   // they bind to that page; without one they are the sole visual source and
   // must never be silently omitted by the generic attachment path.
@@ -2794,6 +2803,7 @@ async function streamFromAskStream(
       ...(documentNames.length ? { documentNames } : {}),
       ...(payloadPdf ? {
         activeDocumentId: payloadPdf.documentId,
+        activePdfVisible: isPdfViewerVisible(),
         activeFileName: payloadPdf.fileName,
         visiblePage: payloadPdf.visiblePage,
         viewerRevision: payloadPdf.documentRevision,

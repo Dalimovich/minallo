@@ -98,42 +98,48 @@ export function clearActivePdfViewerState(openSequence = Number(window._pdfOpenS
 
 export function validateActivePdfViewerState(): boolean {
   const viewer = window as ViewerWindow;
-  const visiblyOpen = !document.getElementById('pdfView')?.hidden;
+  const state = viewer.__minalloPdfViewerState;
+  const visiblyOpen = isPdfViewerVisible();
   const complete = !!(
-    viewer.activeCourseId && viewer.activeRagDocumentId
-    && viewer.activeFileName && viewer.pdfDoc
+    state?.courseId && state.documentId && state.fileName && state.pdfDoc
   );
   if (visiblyOpen && !complete) {
     console.warn('active_pdf_state_incomplete', {
-      courseId: viewer.activeCourseId || null,
-      documentId: viewer.activeRagDocumentId || null,
-      fileName: viewer.activeFileName || null,
-      hasPdfDoc: !!viewer.pdfDoc
+      courseId: state?.courseId || null,
+      documentId: state?.documentId || null,
+      fileName: state?.fileName || null,
+      hasPdfDoc: !!state?.pdfDoc
     });
   }
   return complete;
 }
 
+export function isPdfViewerVisible(): boolean {
+  const view = document.getElementById('pdfView');
+  return !!view && !view.hidden && getComputedStyle(view).display !== 'none';
+}
+
 export function getActivePdfContext(): ActivePdfContext | null {
   const viewer = window as ViewerWindow;
   validateActivePdfViewerState();
-  const documentId = String(viewer.activeRagDocumentId || '').trim();
-  const courseId = String(viewer.activeCourseId || '').trim();
-  const fileName = String(viewer.activeFileName || '').trim();
-  const pdfDoc = viewer.pdfDoc;
+  const state = viewer.__minalloPdfViewerState;
+  const documentId = String(state?.documentId || '').trim();
+  const courseId = String(state?.courseId || '').trim();
+  const fileName = String(state?.fileName || '').trim();
+  const pdfDoc = state?.pdfDoc;
   if (!documentId || !courseId || !fileName || !pdfDoc) return null;
   const visiblePage = Math.max(1, Number(viewer._pdfVisiblePage?.() || viewer.pdfPage || 1));
-  const hasPageTextResult = Object.prototype.hasOwnProperty.call(viewer.pdfPageTexts || {}, visiblePage);
-  const pageText = String(viewer.pdfPageTexts?.[visiblePage] || '').trim();
-  const pageTextStatus: ActivePdfContext['pageTextStatus'] = viewer.pdfPageTextErrors?.[visiblePage]
+  const hasPageTextResult = Object.prototype.hasOwnProperty.call(state?.pageTexts || {}, visiblePage);
+  const pageText = String(state?.pageTexts?.[visiblePage] || '').trim();
+  const pageTextStatus: ActivePdfContext['pageTextStatus'] = state?.pageTextErrors?.[visiblePage]
     ? 'failed'
     : !hasPageTextResult
       ? 'loading'
       : pageText
         ? 'ready'
         : 'empty_scanned_page';
-  const revision = String(viewer.activeDocumentRevision || '').trim() || undefined;
-  const sourceFingerprint = String(viewer.activeSourceFingerprint || revision || '').trim() || undefined;
+  const revision = String(state?.revision || '').trim() || undefined;
+  const sourceFingerprint = String(state?.fingerprint || revision || '').trim() || undefined;
   const selection = window.getSelection?.() || null;
   const selected = regionFromSelection(
     selection,
@@ -148,7 +154,7 @@ export function getActivePdfContext(): ActivePdfContext | null {
     pageCount: Number(pdfDoc.numPages || 0),
     documentRevision: revision,
     sourceFingerprint,
-    viewerInstanceId: String(viewer._pdfOpenSeq || ''),
+    viewerInstanceId: String(state?.openSequence || ''),
     pageText,
     pageTextStatus,
     selectedRegion: selected ? { ...selected, text: selection?.toString().trim() || undefined } : undefined,
@@ -156,7 +162,9 @@ export function getActivePdfContext(): ActivePdfContext | null {
 }
 
 export function requiresVisualPdfEvidence(question: string, context: ActivePdfContext): boolean {
-  return !!context.selectedRegion || context.pageTextStatus !== 'ready' || context.pageText.length < 500 || /\b(?:checked|checkbox|marked|green|arrow|diagram|drawing|figure|table|grid|option|formula|shown|visible|number\s+\d+|angekreuzt|markiert|pfeil|abbildung|zeichnung|tabelle|formel)\b/i.test(question);
+  const sectionExtraction = /\b(?:all|every|alle|jede[nrsm]?|sämtliche)\b[\s\S]*\b(?:questions?|fragen|kurzfragen|aufgaben)\b/i.test(question)
+    && /\b\d+\s*\.\s*(?:kurzfragen?|fragen|questions?|aufgaben)\b/i.test(question);
+  return sectionExtraction || !!context.selectedRegion || context.pageTextStatus !== 'ready' || context.pageText.length < 500 || /\b(?:checked|checkbox|marked|green|arrow|diagram|drawing|figure|table|grid|option|formula|shown|visible|number\s+\d+|angekreuzt|markiert|pfeil|abbildung|zeichnung|tabelle|formel)\b/i.test(question);
 }
 
 export async function capturePdfPage(request: PdfPageCaptureRequest): Promise<OpenFileImage[]> {
@@ -164,7 +172,7 @@ export async function capturePdfPage(request: PdfPageCaptureRequest): Promise<Op
   if (!context || context.documentId !== request.documentId) {
     throw new Error('active_document_changed');
   }
-  const pdfDoc = window.pdfDoc as {
+  const pdfDoc = (window as ViewerWindow).__minalloPdfViewerState?.pdfDoc as {
     getPage?: (page: number) => Promise<{
       getViewport: (options: { scale: number }) => { width: number; height: number };
       render: (options: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<unknown> };
