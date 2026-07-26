@@ -5698,3 +5698,13 @@ body.ncb-pdf-workspace-open #drDrawer {
   font-weight: 600;
   letter-spacing: -0.025em;
 }
+.ncb-tool-config { width:min(100%,680px); padding:20px; border:1px solid rgba(132,112,255,.28); border-radius:20px; background:linear-gradient(145deg,rgba(111,88,255,.12),rgba(19,20,31,.78)); }
+.ncb-tool-config header { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.ncb-tool-config header h3 { margin:0; font-size:1.08rem; }
+.ncb-tool-config-badge { padding:5px 9px; border-radius:999px; background:rgba(127,105,255,.2); color:#bcb0ff; font-size:.75rem; font-weight:700; }
+.ncb-tool-config-source,.ncb-tool-config-row { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.08); }
+.ncb-tool-config-source span,.ncb-tool-config-row span { color:var(--text-muted,#9da2b4); text-transform:capitalize; }
+.ncb-tool-config-source strong,.ncb-tool-config-row strong { text-align:right; overflow-wrap:anywhere; }
+.ncb-tool-config-open { width:100%; margin-top:18px; padding:12px 16px; border:0; border-radius:12px; background:#765cff; color:#fff; font-weight:750; cursor:pointer; }
+.ncb-tool-config-open:disabled { opacity:.58; cursor:wait; }
+@media (max-width:540px) { .ncb-tool-config { padding:15px; } .ncb-tool-config-source,.ncb-tool-config-row { align-items:flex-start; flex-direction:column; gap:4px; } .ncb-tool-config-source strong,.ncb-tool-config-row strong { text-align:left; } }

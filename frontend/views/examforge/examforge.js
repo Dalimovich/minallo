@@ -169,14 +169,14 @@
       '</div>' +
     '</div>';
 
-  window.mountExamForge = function (target, course) {
+  window.mountExamForge = function (target, course, options) {
     if (!target) return;
     target.innerHTML = _HTML;
     var root = target.querySelector('[data-examforge-root]');
-    if (root) _init(root, course || {});
+    if (root) _init(root, course || {}, options || {});
   };
 
-  function _init(root, course) {
+  function _init(root, course, options) {
     var courseId = course.id || 'unknown';
     var st = _getState(courseId);
     var els = {
@@ -197,6 +197,19 @@
       topicSearch: root.querySelector('#efTopicSearch'),
       buildTopics: root.querySelector('#efBuildTopics'),
     };
+    var initial = options.initialParameters || {};
+    var initialDocIds = Array.isArray(options.initialDocumentIds) ? options.initialDocumentIds : [];
+    if (els.count && initial.count != null) els.count.value = String(initial.count);
+    if (els.difficulty && initial.difficulty) els.difficulty.value = initial.difficulty;
+    if (els.language && initial.language) els.language.value = initial.language;
+    if (els.topic && initial.topic) els.topic.value = initial.topic;
+    if (initial.mode === 'practice' || initial.mode === 'exam') st.mode = initial.mode;
+    if (Array.isArray(initial.questionTypes)) {
+      root.querySelectorAll('input[name="efType"]').forEach(function (box) { box.checked = initial.questionTypes.indexOf(box.value) !== -1; });
+    }
+    root.querySelectorAll('.ef-mode-btn').forEach(function (button) {
+      button.classList.toggle('is-active', button.getAttribute('data-mode') === st.mode);
+    });
 
     // ── Mode toggle (Exam / Practice) ──────────────────────────────────────
     root.querySelectorAll('.ef-mode-btn').forEach(function (btn) {
@@ -392,7 +405,7 @@
             '<div class="ef-doc-group-list">' +
               group.docs.map(function (d) {
                 var ready = d.processing_status === 'ready';
-                var checked = ready ? ' checked' : '';
+                var checked = ready && (!initialDocIds.length || initialDocIds.indexOf(d.id) !== -1) ? ' checked' : '';
                 return (
                   '<label class="ef-doc ' + (ready ? 'is-ready' : 'is-muted') + '">' +
                     '<input type="checkbox" value="' + _esc(d.id) + '"' + checked + (ready ? '' : ' disabled') + '>' +

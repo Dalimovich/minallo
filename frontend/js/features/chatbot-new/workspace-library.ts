@@ -46,6 +46,7 @@ let pdfOriginCourse: LibraryCourse | null = null;
 const PDF_WIDTH_KEY = 'minallo:chatbot-pdf-width';
 const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf';
 const RECENT_COURSE_KEY = 'minallo:chatbot-recent-course';
+let activeWorkspaceRoot: HTMLElement | null = null;
 
 type WorkspacePdfSession = {
   course: { id: string; name?: string; short?: string };
@@ -239,6 +240,7 @@ function hydrate(course: LibraryCourse): Promise<void> {
 }
 
 export function initWorkspaceLibrary(root: HTMLElement): void {
+  activeWorkspaceRoot = root;
   const context = root.querySelector<HTMLElement>('.ncb-context');
   if (!context || context.dataset.libraryBound === '1') return;
   context.dataset.libraryBound = '1';
@@ -269,6 +271,58 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   bindWidgetLauncher(root);
   renderCourses(coursePanel);
   restoreWorkspacePdf(root, coursePanel);
+}
+
+export type StudyWorkspaceKind = 'examforge' | 'flashcards' | 'deep_learn';
+
+/** Open the canonical course tool inside the chatbot overlay. Typed commands,
+ * quick actions and Saved artifacts all converge on these production mounts. */
+export async function openStudyToolWorkspace(
+  kind: StudyWorkspaceKind,
+  courseId: string,
+  parameters: Record<string, unknown> = {},
+  documentIds: string[] = [],
+  documentName = ''
+): Promise<boolean> {
+  const root = activeWorkspaceRoot;
+  const course = courses().find((candidate) => candidate.id === courseId);
+  if (!root || !course) return false;
+  const body = openOverlay(root, kind === 'examforge' ? 'ExamForge' : kind === 'flashcards' ? 'Flashcards' : 'Deep Learn');
+  if (!body) return false;
+  body.innerHTML = '<div class="ncb-library-status">Opening study tool&hellip;</div>';
+  const loaderKind = kind === 'deep_learn' ? 'deeplearn' : kind;
+  try {
+    await window._ssLoadFeatureSection?.(loaderKind);
+    await hydrate(course);
+  } catch {
+    body.innerHTML = '<div class="ncb-library-error">This study tool could not be loaded. Please retry.</div>';
+    return false;
+  }
+  body.innerHTML = '';
+  let resolvedDocumentIds = documentIds.slice();
+  if (!resolvedDocumentIds.length && documentName) {
+    const normalName = documentName.trim().toLowerCase();
+    const docs = await listCourseDocuments(courseId).catch(() => []);
+    const matches = docs.filter((doc) => {
+      const fileName = String(doc.file_name || doc.fileName || '').trim().toLowerCase();
+      const baseName = fileName.replace(/\.[^.]+$/, '');
+      return fileName === normalName || baseName === normalName;
+    });
+    if (matches.length === 1 && matches[0]?.id) resolvedDocumentIds = [matches[0].id];
+    else {
+      body.innerHTML = `<div class="ncb-library-error">${matches.length > 1 ? 'More than one course document matches that name.' : 'The selected PDF could not be resolved to an indexed course document.'} Choose it from the course library.</div>`;
+      return false;
+    }
+  }
+  const options = { initialParameters: parameters, initialDocumentIds: resolvedDocumentIds };
+  if (kind === 'examforge' && typeof window.mountExamForge === 'function') (window.mountExamForge as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(body, course, options);
+  else if (kind === 'flashcards' && typeof window.mountFlashcards === 'function') window.mountFlashcards(body, course, { ...options, generate: window._generateStudyTool });
+  else if (kind === 'deep_learn' && typeof window.mountDeepLearn === 'function') (window.mountDeepLearn as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(body, course, options);
+  else {
+    body.innerHTML = '<div class="ncb-library-error">This study tool viewer is unavailable.</div>';
+    return false;
+  }
+  return true;
 }
 
 function bindWidgetLauncher(root: HTMLElement): void {

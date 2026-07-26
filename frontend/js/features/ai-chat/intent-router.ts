@@ -31,6 +31,10 @@ export interface DetectedStudyIntent {
   matchedPhrase?: string;
 }
 
+export interface MultiStudyIntentProposal {
+  actions: DetectedStudyIntent[];
+}
+
 export const AUTO_OPEN_CONFIGURATION_THRESHOLD = 0.82;
 export const SUGGEST_INTENT_THRESHOLD = 0.58;
 
@@ -44,7 +48,7 @@ export const STUDY_TOOL_INTENT_ALIASES: Record<Exclude<StudyToolIntent, 'unknown
   note_save: ['save to notes', 'save this note', 'save this answer', 'add to notes', 'keep this in notes', 'als notiz speichern', 'in notizen speichern']
 };
 
-const COMMAND_RE = /\b(create|make|generate|build|prepare|give me|put|turn\b.{0,80}\binto|convert\b.{0,80}\binto|i want|i need|open|start|write me|save|add|keep|test me|teach me|explain this|erstelle|mach|generiere|baue|gib mir|speicher|schreib)\b/iu;
+const COMMAND_RE = /\b(create|make|generate|build|prepare|give me|put|turn\b.{0,80}\binto|convert\b.{0,80}\binto|i want|i need|open|start|write me|save|add|keep|test me|teach me|erstelle|mach|generiere|baue|gib mir|speicher|schreib)\b/iu;
 const INFORMATION_RE = /^(?:what|why|how|when|where|who|was|warum|wie)\b|\b(?:mentions?|means?|definition|algorithm|metal)\b/iu;
 
 export function normaliseIntentText(value: string): string {
@@ -89,6 +93,19 @@ function params(text: string, intent: StudyToolIntent): Record<string, unknown> 
   if (difficulty) result.difficulty = ({ simple: 'easy', leicht: 'easy', normal: 'medium', mittel: 'medium', difficult: 'hard', schwer: 'hard', gemischt: 'mixed' } as Record<string, string>)[difficulty] || difficulty;
   if (/\b(german|deutsch)\b/iu.test(text)) result.language = 'de';
   if (/\b(english|englisch)\b/iu.test(text)) result.language = 'en';
+  if (/\bpractice(?:\s+(?:exam|test|mode))?|training|with feedback|ubungsmodus|übungsmodus\b/iu.test(text)) result.mode = 'practice';
+  else if (/\bexam mode|timed exam|real exam|prufungsmodus|prüfungsmodus\b/iu.test(text)) result.mode = 'exam';
+  const questionTypes: string[] = [];
+  if (/\bmcq|multiple choice|multiple-choice\b/iu.test(text)) questionTypes.push('mcq');
+  if (/\btrue\s*\/\s*false|true false|wahr falsch\b/iu.test(text)) questionTypes.push('true_false');
+  if (/\bshort answer|written questions?|written|schriftlich\b/iu.test(text)) questionTypes.push('short_answer');
+  if (questionTypes.length) result.questionTypes = questionTypes;
+  if (/\bprofessor(?: style|-style)?|like (?:a|my) professor\b/iu.test(text)) result.lessonMode = 'professor';
+  else if (/\b(?:simple|simply|beginner|einfach)\b/iu.test(text) && intent === 'deep_learn_create') result.lessonMode = 'simple';
+  if (/\b(\d+)\s*columns?|\b(\d+)\s*spalten\b/iu.test(text)) result.columns = Number(text.match(/\b(\d+)\s*(?:columns?|spalten)\b/iu)?.[1]);
+  if (/\b(?:concise|brief|short|kurz)\b/iu.test(text)) result.detailLevel = 'concise';
+  if (/\binclude formulas?|mit formeln\b/iu.test(text)) result.includeFormulas = true;
+  if (/\bavoid (?:old|seen|previous) cards?|ohne alte karten\b/iu.test(text)) result.avoidSeenCards = true;
   if (intent === 'cheatsheet_create' && /\b(?:one|1|eine[rnms]?)\s+pages?\b|\beinseitig\b/iu.test(text)) result.pages = 1;
   return result;
 }
@@ -134,7 +151,8 @@ export function detectStudyIntent(message: string): DetectedStudyIntent {
   const intent = !best || ambiguous || blocked ? 'unknown' : best.intent;
   const confidence = intent === 'unknown' ? (ambiguous ? 0.6 : 0) : (best?.score ?? 0);
   const extractedParameters = params(text, intent);
-  const sourceMatch = text.match(/\b(?:from|use|aus|nutze)\s+(this pdf|this document|current page|whole course|[\p{L}\p{N}][\p{L}\p{N} ._-]*\.(?:pdf|docx?))\b/iu);
+  const sourceMatch = text.match(/\b(?:from|use|aus|nutze)\s+(this pdf|this document|current page|whole course|[\p{L}\p{N}][\p{L}\p{N} ._-]*\.(?:pdf|docx?))\b/iu)
+    || text.match(/\b(?:from|use|aus|nutze)\s+((?:lecture|chapter|vorlesung|kapitel)\s+[\p{L}\p{N}._-]+)(?:\s+instead)?\b/iu);
   return {
     intent,
     confidence,
@@ -148,19 +166,27 @@ export function detectStudyIntent(message: string): DetectedStudyIntent {
   };
 }
 
+export function detectStudyIntents(message: string): MultiStudyIntentProposal {
+  const normal = normaliseIntentText(message);
+  const segments = normal.split(/\b(?:and|then|und|danach)\b/iu).map((part) => part.trim()).filter(Boolean);
+  if (segments.length < 2) return { actions: [detectStudyIntent(message)].filter((item) => item.intent !== 'unknown') };
+  const actions = segments.map((segment) => detectStudyIntent(segment)).filter((item) => item.intent !== 'unknown');
+  return { actions: Array.from(new Map(actions.map((item) => [item.intent, item])).values()) };
+}
+
 // Existing shell compatibility. Interactive tools are deliberately proposed but
 // not executed by this shim until their configuration card confirms the action.
-export type StudyIntent = 'daily_mission' | 'summary' | 'notes' | 'cheatsheet';
-export interface IntentRoute { intent: StudyIntent; action: 'create_or_show'; confidence: number; needsClarification: boolean; target: { courseId: string | null }; }
+export type StudyIntent = 'daily_mission' | 'summary' | 'notes' | 'cheatsheet' | 'examforge' | 'flashcards' | 'deep_learn' | 'note_save';
+export interface IntentRoute { intent: StudyIntent; action: 'create_or_show'; confidence: number; needsClarification: boolean; target: { courseId: string | null }; parameters: Record<string, unknown>; explicitSourceReference: boolean; sourcePhrase?: string; }
 
 export function routeStudyIntent(message: string, courseId: string | null): IntentRoute | null {
   const daily = /\b(?:daily mission|study today|to-?do list|plan my study day)\b/iu.test(message);
-  if (daily) return { intent: 'daily_mission', action: 'create_or_show', confidence: 0.95, needsClarification: false, target: { courseId } };
+  if (daily) return { intent: 'daily_mission', action: 'create_or_show', confidence: 0.95, needsClarification: false, target: { courseId }, parameters: {}, explicitSourceReference: false };
   const detected = detectStudyIntent(message);
-  const map: Partial<Record<StudyToolIntent, StudyIntent>> = { summary_generate: 'summary', notes_generate: 'notes', cheatsheet_create: 'cheatsheet' };
+  const map: Partial<Record<StudyToolIntent, StudyIntent>> = { summary_generate: 'summary', notes_generate: 'notes', cheatsheet_create: 'cheatsheet', examforge_create: 'examforge', flashcards_create: 'flashcards', deep_learn_create: 'deep_learn', note_save: 'note_save' };
   const intent = map[detected.intent];
   if (!intent || detected.confidence < SUGGEST_INTENT_THRESHOLD) return null;
-  return { intent, action: 'create_or_show', confidence: detected.confidence, needsClarification: !courseId, target: { courseId } };
+  return { intent, action: 'create_or_show', confidence: detected.confidence, needsClarification: !courseId, target: { courseId }, parameters: detected.extractedParameters, explicitSourceReference: detected.explicitSourceReference, sourcePhrase: detected.sourcePhrase };
 }
 
 // Legacy AI-panel contract retained while both chat surfaces converge on the

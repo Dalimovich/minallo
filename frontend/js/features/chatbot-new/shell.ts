@@ -27,6 +27,11 @@ import {
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { initWorkspaceLibrary } from './workspace-library.js';
+import {
+  renderStudyToolConfiguration,
+  resolveStudyToolSource,
+  type StudyToolConfigurationMarker
+} from './study-tool-workflow.js';
 
 /** Returns today's date as YYYY-MM-DD in the local timezone. */
 function todayLocalDateStr(): string {
@@ -621,6 +626,7 @@ interface ChatMessage {
   /** Chatbot-only gate: diagram fences render only for answers whose user turn
    *  explicitly asked for a diagram/visual artifact. */
   allowDiagrams?: boolean;
+  studyToolConfiguration?: StudyToolConfigurationMarker;
 }
 
 interface ConversationState {
@@ -933,11 +939,12 @@ async function streamAiReply(
       const msg: ChatMessage = { role: 'assistant', text: routed.text };
       if (routed.missionMarker) msg.missionMarker = routed.missionMarker;
       if (routed.generatedDoc) msg.generatedDoc = routed.generatedDoc;
+      if (routed.studyToolConfiguration) msg.studyToolConfiguration = routed.studyToolConfiguration;
       originMessages.push(msg);
       touchOrigin();
       saveChatStore();
       if (isOriginActive()) {
-        setBubbleSubtitle(aiRow, 'course_files');
+        setBubbleSubtitle(aiRow, routed.studyToolConfiguration ? 'study_tool' : 'course_files');
         appendBubbleActions(aiRow, routed.text);
       }
       reconcileView();
@@ -1051,7 +1058,7 @@ async function streamAiReply(
   }
 }
 
-type IntentRouteResult = { text: string; missionMarker?: MissionMarker; generatedDoc?: GeneratedDoc };
+type IntentRouteResult = { text: string; missionMarker?: MissionMarker; generatedDoc?: GeneratedDoc; studyToolConfiguration?: StudyToolConfigurationMarker };
 
 // ── PDF settings card (shared by cheatsheet + summary) ───────────────────────
 
@@ -1359,6 +1366,37 @@ async function handleIntentRoute(
       return { text };
     }
     route.target.courseId = pickedCourseId;
+  }
+
+  if (route.intent === 'examforge' || route.intent === 'flashcards' || route.intent === 'deep_learn') {
+    if (thinking) await thinking.waitMinimum();
+    thinking?.remove(true);
+    const source = resolveStudyToolSource(route.target.courseId, chatStore.getActive().selectedSourceIds, sourceLibrary.items, buildPageContext()?.documentTitle || '');
+    if (route.explicitSourceReference && route.sourcePhrase && !/^this (?:pdf|document)$/i.test(route.sourcePhrase)) {
+      source.documentIds = [];
+      source.documentName = route.sourcePhrase;
+      source.label = `Requested document: ${route.sourcePhrase}`;
+    }
+    const marker: StudyToolConfigurationMarker = {
+      actionId: crypto.randomUUID(), intent: route.intent, courseId: route.target.courseId,
+      parameters: route.parameters, documentIds: source.documentIds,
+      sourceLabel: source.label, sourceDocumentName: source.documentName
+    };
+    if (bubble) renderStudyToolConfiguration(bubble, marker);
+    console.info('[study-tool-routing]', {
+      messageType: 'study_tool_command', resolvedIntent: `${route.intent}_create`, confidence: route.confidence,
+      routingDecision: 'open_configuration', normalRagSuppressed: true,
+      sourceResolution: source.documentIds.length ? 'selected_document' : source.label.startsWith('Current PDF:') ? 'current_document' : 'picker_required'
+    });
+    return { text: `${route.intent.replace('_', ' ')} configuration`, studyToolConfiguration: marker };
+  }
+
+  if (route.intent === 'note_save') {
+    if (thinking) await thinking.waitMinimum();
+    thinking?.remove(true);
+    const text = 'Choose the answer you want to save using its Save action.';
+    if (bubble) renderRichBubble(bubble, text, false);
+    return { text };
   }
 
   if (route.intent === 'daily_mission') {
@@ -2933,6 +2971,9 @@ function setBubbleSubtitle(aiRow: HTMLElement, sourceScope: string | undefined):
     return;
   }
   switch (sourceScope) {
+    case 'study_tool':
+      label = tStr('cb_subtitle_study_tool', 'Study tool configuration');
+      break;
     case 'course_files':
       label = tStr('cb_subtitle_course', 'Answered using your course files');
       break;
@@ -4619,6 +4660,11 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
         noteId: m.generatedDoc.noteId,
       };
     }
+    if (m.studyToolConfiguration) compact.studyToolConfiguration = {
+      ...m.studyToolConfiguration,
+      parameters: { ...m.studyToolConfiguration.parameters },
+      documentIds: m.studyToolConfiguration.documentIds.slice()
+    };
   }
   return compact;
 }
@@ -5049,6 +5095,12 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // promoteAiInputToModal's [data-restored] guard) — forms stay inline.
   row.setAttribute('data-restored', 'true');
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
+
+  if (m.studyToolConfiguration && bubble) {
+    renderStudyToolConfiguration(bubble, m.studyToolConfiguration);
+    setBubbleSubtitle(row, 'study_tool');
+    return;
+  }
 
   // Daily Mission marker: re-fetch and re-render the live card UI instead of
   // replaying the serialised plain-text fallback, which has no CSS or listeners.

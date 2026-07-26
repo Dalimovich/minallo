@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectStudyIntent } from '../../frontend/js/features/ai-chat/intent-router.ts';
+import { detectStudyIntent, detectStudyIntents, routeStudyIntent } from '../../frontend/js/features/ai-chat/intent-router.ts';
 
 const detects = (message: string, intent: string): void => {
   const result = detectStudyIntent(message);
@@ -31,4 +31,38 @@ test('extracts role-labelled numbers without confusing page and count', () => {
 
 test('ambiguous sheet wording remains unknown', () => {
   assert.equal(detectStudyIntent('make a sheet').intent, 'unknown');
+});
+
+test('ExamForge commands route before RAG while explanatory questions do not', () => {
+  for (const input of ['examforge', 'ExamForge', 'exam forge', 'examforg', 'open examforge', 'make me a practice exam', 'test me on this PDF']) {
+    assert.equal(routeStudyIntent(input, 'course-1')?.intent, 'examforge', input);
+  }
+  for (const input of ['What is ExamForge?', 'How does ExamForge grading work?', 'Why did ExamForge fail?']) {
+    assert.equal(routeStudyIntent(input, 'course-1'), null, input);
+  }
+});
+
+test('extracts ExamForge configuration parameters', () => {
+  const result = detectStudyIntent('Make a hard German practice exam with 12 MCQ questions');
+  assert.equal(result.intent, 'examforge_create');
+  assert.deepEqual(result.extractedParameters, { count: 12, difficulty: 'hard', language: 'de', mode: 'practice', questionTypes: ['mcq'] });
+});
+
+test('routes every interactive tool and preserves multi-intent actions', () => {
+  assert.equal(routeStudyIntent('flashcards', 'c')?.intent, 'flashcards');
+  assert.equal(routeStudyIntent('deep learn', 'c')?.intent, 'deep_learn');
+  const multi = detectStudyIntents('Create flashcards and a cheatsheet from this PDF');
+  assert.deepEqual(multi.actions.map((action) => action.intent), ['flashcards_create', 'cheatsheet_create']);
+});
+
+test('explicit named source is retained for application-owned resolution', () => {
+  const route = routeStudyIntent('Create a cheatsheet from Lecture 6 instead', 'c');
+  assert.equal(route?.sourcePhrase, 'lecture 6');
+  assert.equal(route?.explicitSourceReference, true);
+});
+
+test('feature mentions and academic lookalikes remain normal RAG', () => {
+  for (const input of ['What are flashcards useful for?', 'What is deep learning?', 'The professor wrote a note here.', 'Explain this summary theorem.', 'What is an exam?', 'This lecture discusses sheet-metal forming.', 'Explain the cheat detection method.']) {
+    assert.equal(routeStudyIntent(input, 'c'), null, input);
+  }
 });

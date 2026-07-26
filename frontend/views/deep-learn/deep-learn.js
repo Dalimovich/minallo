@@ -1146,7 +1146,7 @@
     };
   }
 
-  window.mountDeepLearn = function (target, course) {
+  window.mountDeepLearn = function (target, course, options) {
     if (!target) return;
     target.innerHTML = _HTML;
     var root = target.querySelector('[data-deeplearn-root]');
@@ -1163,6 +1163,13 @@
       saved: root.querySelector('#dlSaved'),
       savedList: root.querySelector('#dlSavedList'),
     };
+    options = options || {};
+    var initial = options.initialParameters || {};
+    if (els.text && initial.topic) els.text.value = initial.topic;
+    if (els.mode && initial.lessonMode) els.mode.value = initial.lessonMode;
+    if (els.language && (initial.lessonLanguage || initial.language)) {
+      els.language.value = initial.lessonLanguage || initial.language;
+    }
     if (els.select) els.select._courseId = courseId;
 
     var docsPromise = null;

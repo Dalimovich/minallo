@@ -678,7 +678,9 @@
     var _historyKey  = 'ss_fc_history_reset_' + courseId;
 
     function _loadSettings() {
-      try { return JSON.parse(localStorage.getItem(_settingsKey) || '{}'); } catch(e) { return {}; }
+      var saved = {};
+      try { saved = JSON.parse(localStorage.getItem(_settingsKey) || '{}'); } catch(e) { saved = {}; }
+      return Object.assign({}, saved, options.initialParameters || {});
     }
     function _saveSettings(s) {
       try { localStorage.setItem(_settingsKey, JSON.stringify(s)); } catch(e) {}
@@ -838,8 +840,9 @@
       });
 
       function itemHtml(d) {
+        var selected = !Array.isArray(options.initialDocumentIds) || !options.initialDocumentIds.length || options.initialDocumentIds.indexOf(d.id) !== -1;
         return '<label class="qzsp-item">' +
-          '<input type="checkbox" class="qzsp-cb" value="' + _esc(d.id) + '" checked>' +
+          '<input type="checkbox" class="qzsp-cb" value="' + _esc(d.id) + '"' + (selected ? ' checked' : '') + '>' +
           '<span class="qzsp-name">' + _esc(d.file_name || d.fileName || 'Untitled') + '</span>' +
         '</label>';
       }
