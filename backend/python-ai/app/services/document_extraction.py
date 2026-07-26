@@ -1037,7 +1037,7 @@ def _discover_visual_section_headings(
                     {"type": "text", "text": (
                         f"Inspect PDF page {page_number} only. Find every top-level numbered "
                         f"document heading, especially the family named by {target!r}. Do not "
-                        "return question IDs such as 2.1. Return headings in top-to-bottom order "
+                        "return question IDs such as 2.1. Return JSON with headings in top-to-bottom order "
                         "as {\"headings\":[{\"number\":2,\"heading\":\"2. Kurzfragen - ...\","
                         "\"title\":\"...\",\"position\":0,\"confidence\":0.9}]}. "
                         "position is the zero-based top-to-bottom heading order on this page."

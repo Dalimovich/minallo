@@ -795,6 +795,15 @@ def test_verified_family_context_round_trips_independently_of_answers() -> None:
     assert restored.resolved_family.excluded_sections == ["12", "13", "14"]
 
 
+def test_visual_heading_json_mode_prompt_explicitly_requests_json() -> None:
+    import inspect
+    from app.services import document_extraction as extraction
+
+    source = inspect.getsource(extraction._discover_visual_section_headings)
+    assert 'Return JSON with headings' in source
+    assert 'response_format={"type": "json_object"}' in source
+
+
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
     from app.services import document_extraction as extraction
 
