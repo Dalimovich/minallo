@@ -1,8 +1,31 @@
 import { escapeHtml } from '../../utils/escape-html.js';
+import { listCourseDocuments, type CourseDocument } from '../../services/ai-service.js';
+import type { ActivePdfContext } from '../pdf-viewer/active-pdf-context.js';
 import { openStudyToolWorkspace, type StudyWorkspaceKind } from './workspace-library.js';
 
 export type InlineStudyToolKind = 'examforge' | 'flashcards' | 'deep_learn';
 export type StudyToolConfigurationStatus = 'collecting_parameters' | 'awaiting_confirmation' | 'generating' | 'failed' | 'completed';
+export type StudyToolSourceScope = 'current_document' | 'current_page' | 'page_range' | 'selected_documents' | 'whole_course';
+export type DocumentGenerationReadiness = 'ready' | 'indexing' | 'failed' | 'unsupported';
+
+export interface CourseDocumentOption {
+  documentId: string;
+  courseId: string;
+  fileName: string;
+  readiness: DocumentGenerationReadiness;
+  pageCount?: number;
+}
+
+export interface StudyToolSource {
+  scope: StudyToolSourceScope;
+  courseId: string;
+  documentIds: string[];
+  activeDocumentId?: string;
+  activeFileName?: string;
+  page?: number;
+  pageRange?: { start: number; end: number };
+  displayLabel: string;
+}
 
 export interface StudyArtifactMarker {
   artifactType: InlineStudyToolKind;
@@ -22,7 +45,11 @@ export interface StudyToolConfigurationMarker {
   documentIds: string[];
   sourceLabel: string;
   sourceDocumentName?: string;
-  availableDocuments?: Array<{ id: string; name: string }>;
+  requestedSourceName?: string;
+  source?: StudyToolSource;
+  activePdf?: Pick<ActivePdfContext, 'courseId' | 'documentId' | 'fileName' | 'visiblePage' | 'pageCount'>;
+  availableDocuments?: CourseDocumentOption[];
+  documentsHydrated?: boolean;
   status?: StudyToolConfigurationStatus;
   validationMessage?: string;
   revision?: number;
@@ -87,16 +114,32 @@ function restore(marker: StudyToolConfigurationMarker): StudyToolConfigurationMa
   } catch { return marker; }
 }
 
-export function resolveStudyToolSource(courseId: string, selectedSourceIds: string[], sourceItems: SourceItem[], openName: string): { documentIds: string[]; label: string; documentName?: string; availableDocuments: Array<{ id: string; name: string }> } {
+function readiness(doc: CourseDocument): DocumentGenerationReadiness {
+  const status = String(doc.processing_status || '').toLowerCase();
+  if (status === 'ready') return 'ready';
+  if (status === 'failed') return 'failed';
+  if (doc.file_type && !/pdf/i.test(doc.file_type)) return 'unsupported';
+  return 'indexing';
+}
+
+function option(courseId: string, doc: CourseDocument): CourseDocumentOption {
+  return { documentId: doc.id, courseId, fileName: doc.file_name || doc.fileName || 'Untitled document', readiness: readiness(doc), pageCount: doc.page_count };
+}
+
+export function resolveStudyToolSource(courseId: string, selectedSourceIds: string[], sourceItems: SourceItem[], activePdf: ActivePdfContext | null): { source: StudyToolSource; documentIds: string[]; label: string; documentName?: string; availableDocuments: CourseDocumentOption[]; activePdf?: StudyToolConfigurationMarker['activePdf'] } {
   const all = sourceItems.filter(item => item.courseId === courseId).flatMap(item => item.documents || []);
-  const availableDocuments = all.filter((doc): doc is { id: string; name: string } => !!doc.id).map(doc => ({ id: doc.id, name: doc.name }));
+  const availableDocuments = all.filter((doc): doc is { id: string; name: string } => !!doc.id).map(doc => ({ documentId: doc.id, courseId, fileName: doc.name, readiness: 'ready' as const }));
   const selected = sourceItems.filter(item => selectedSourceIds.includes(item.id) && item.courseId === courseId).flatMap(item => item.documents || []);
-  const open = openName ? all.find(doc => doc.name.toLowerCase() === openName.toLowerCase()) : undefined;
-  if (open) return { documentIds: open.id ? [open.id] : [], label: `Current PDF: ${open.name}`, documentName: open.name, availableDocuments };
-  if (openName) return { documentIds: [], label: `Current PDF: ${openName}`, documentName: openName, availableDocuments };
   const ids = selected.map(doc => doc.id).filter((id): id is string => !!id);
-  if (selected.length) return { documentIds: ids, label: selected.length === 1 ? selected[0]!.name : `${selected.length} selected files`, availableDocuments };
-  return { documentIds: [], label: 'Choose a course document', availableDocuments };
+  if (selected.length) {
+    const label = selected.length === 1 ? selected[0]!.name : `${selected.length} selected files`;
+    return { source: { scope: 'selected_documents', courseId, documentIds: ids, displayLabel: label }, documentIds: ids, label, availableDocuments };
+  }
+  if (activePdf?.courseId === courseId && activePdf.documentId) {
+    const label = `Open document — ${activePdf.fileName}`;
+    return { source: { scope: 'current_document', courseId, documentIds: [activePdf.documentId], activeDocumentId: activePdf.documentId, activeFileName: activePdf.fileName, displayLabel: label }, documentIds: [activePdf.documentId], label, documentName: activePdf.fileName, availableDocuments, activePdf };
+  }
+  return { source: { scope: 'selected_documents', courseId, documentIds: [], displayLabel: 'No source selected' }, documentIds: [], label: 'No source selected', availableDocuments };
 }
 
 function control(field: FieldDefinition, values: Record<string, unknown>): string {
@@ -109,7 +152,13 @@ function control(field: FieldDefinition, values: Record<string, unknown>): strin
 }
 
 function validate(marker: StudyToolConfigurationMarker): string {
-  if (!marker.documentIds.length) return 'Choose at least one indexed source document.';
+  if (!marker.source?.courseId) return 'Choose a course first.';
+  if (!marker.documentsHydrated) return 'Checking source readiness. Please wait a moment.';
+  if (marker.source.scope !== 'whole_course' && !marker.source.documentIds.length) return 'Choose at least one indexed source document.';
+  const selected = new Set(marker.source.documentIds);
+  const selectedOptions = (marker.availableDocuments || []).filter(doc => selected.has(doc.documentId));
+  if (marker.source.scope !== 'whole_course' && selectedOptions.length !== selected.size) return 'The selected document is not available in this course.';
+  if (selectedOptions.some(doc => doc.readiness !== 'ready')) return 'Every selected document must finish indexing before generation.';
   if (marker.intent === 'examforge' && !(marker.parameters.questionTypes as unknown[] || []).length) return 'Choose at least one question type.';
   if (marker.intent === 'deep_learn' && !String(marker.parameters.topic || '').trim()) return 'Enter a topic for the lesson.';
   return '';
@@ -128,22 +177,23 @@ async function saveFlashcardDeck(courseId: string, name: string, cards: unknown[
 async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArtifactMarker> {
   const svc = await import('../../services/ai-service.js');
   const p = marker.parameters;
+  const documentIds = marker.source?.documentIds || marker.documentIds;
   if (marker.intent === 'examforge') {
-    const result = await svc.generateExamForge(marker.courseId, { documentIds: marker.documentIds, count: Number(p.count), requestedCount: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', questionTypes: p.questionTypes, language: String(p.language || 'auto'), topic: String(p.topic || '') });
+    const result = await svc.generateExamForge(marker.courseId, { documentIds, count: Number(p.count), requestedCount: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', questionTypes: p.questionTypes, language: String(p.language || 'auto'), topic: String(p.topic || ''), sourceScope: marker.source?.scope });
     const raw = result as { sessionId?: string; id?: string; questions?: unknown[]; error?: string };
     const id = raw.sessionId || raw.id;
     if (!id) throw new Error(raw.error || 'The exam was not persisted.');
     return { artifactType: 'examforge', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'ExamForge created', summary: `${raw.questions?.length || Number(p.count)} questions · ${String(p.difficulty)} · ${String(p.mode)} mode`, payload: raw as Record<string, unknown> };
   }
   if (marker.intent === 'flashcards') {
-    const raw = await svc.generateStudyTool(marker.courseId, 'flashcards', { documentIds: marker.documentIds, count: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', topic: String(p.topic || ''), seenItems: p.avoidSeen ? [] : undefined }) as { items?: Array<{ front?: string; back?: string; source?: string }>; error?: string };
+    const raw = await svc.generateStudyTool(marker.courseId, 'flashcards', { documentIds, count: Number(p.count), difficulty: p.difficulty as 'easy' | 'medium' | 'hard' | 'mixed', topic: String(p.topic || ''), seenItems: p.avoidSeen ? [] : undefined, sourceScope: marker.source?.scope }) as { items?: Array<{ front?: string; back?: string; source?: string }>; error?: string };
     const cards = (raw.items || []).filter(card => card.front?.trim() && card.back?.trim());
     if (!cards.length) throw new Error(raw.error || 'No flashcards were generated.');
     const name = String(p.deckName || '').trim() || 'Course flashcards';
     const id = await saveFlashcardDeck(marker.courseId, name, cards);
-    return { artifactType: 'flashcards', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'Flashcards created', summary: `${cards.length} cards · ${String(p.difficulty)}`, payload: { id, name, cards } };
+    return { artifactType: 'flashcards', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'Flashcards created', summary: `${cards.length} cards · ${String(p.difficulty)}`, payload: { id, name, cards, sourceScope: marker.source?.scope, sourceDocumentIds: documentIds, sourceDisplayNames: (marker.availableDocuments || []).filter(doc => documentIds.includes(doc.documentId)).map(doc => doc.fileName) } };
   }
-  const raw = await svc.generateDeepLearn(marker.courseId, String(p.topic), { documentIds: marker.documentIds, lessonMode: String(p.lessonMode), lessonLanguage: String(p.lessonLanguage) });
+  const raw = await svc.generateDeepLearn(marker.courseId, String(p.topic), { documentIds, lessonMode: String(p.lessonMode), lessonLanguage: String(p.lessonLanguage) });
   if (!raw.noteId) throw new Error(raw.error || 'The lesson was not persisted.');
   return { artifactType: 'deep_learn', artifactId: raw.noteId, persistedResourceId: raw.noteId, rendererVersion: 1, title: 'Deep Learn lesson ready', summary: `${raw.title || raw.topic} · ${String(p.lessonMode)} style`, payload: raw as unknown as Record<string, unknown> };
 }
@@ -174,10 +224,43 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
   marker.parameters = { ...definition.defaults, ...marker.parameters };
   marker.status ||= 'awaiting_confirmation';
   const docs = marker.availableDocuments || [];
-  const sourceOptions = docs.map(doc => `<option value="${escapeHtml(doc.id)}"${marker.documentIds.includes(doc.id) ? ' selected' : ''}>${escapeHtml(doc.name)}</option>`).join('');
-  host.innerHTML = `<section class="ncb-tool-config" data-study-tool-configuration="${marker.intent}" data-action-id="${escapeHtml(marker.actionId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(definition.title)}</span><h3>${escapeHtml(definition.title)} setup</h3></header><label class="ncb-tool-field"><span>Source</span><select data-source${docs.length > 1 ? ' multiple' : ''}>${sourceOptions || '<option value="">Choose a course document</option>'}</select></label><div class="ncb-tool-config-values">${definition.fields.map(field => control(field, marker.parameters)).join('')}</div><div class="ncb-tool-config-validation" role="alert">${escapeHtml(marker.validationMessage || '')}</div><button type="button" class="ncb-tool-config-generate">${escapeHtml(definition.actionLabel)}</button></section>`;
+  marker.source ||= { scope: marker.documentIds.length ? 'selected_documents' : 'selected_documents', courseId: marker.courseId, documentIds: marker.documentIds.slice(), displayLabel: marker.sourceLabel || 'No source selected' };
+  marker.documentIds = marker.source.documentIds.slice();
+  const scope = marker.source.scope;
+  const readyDocs = docs.filter(doc => doc.readiness === 'ready');
+  const selected = new Set(marker.source.documentIds);
+  const current = marker.activePdf;
+  const currentStatus = current ? (docs.find(doc => doc.documentId === current.documentId)?.readiness || (marker.documentsHydrated ? 'indexing' : 'Checking readiness…')) : null;
+  const fileRows = docs.map(doc => `<label class="ncb-source-file${doc.readiness !== 'ready' ? ' is-disabled' : ''}"><input type="checkbox" data-source-document value="${escapeHtml(doc.documentId)}"${selected.has(doc.documentId) ? ' checked' : ''}${doc.readiness !== 'ready' ? ' disabled' : ''}><span><strong>${escapeHtml(doc.fileName)}</strong><small>${escapeHtml(doc.readiness === 'ready' ? `${doc.pageCount || ''}${doc.pageCount ? ' pages · ' : ''}Ready` : doc.readiness === 'indexing' ? 'Indexing' : doc.readiness === 'failed' ? 'Processing failed' : 'Unsupported')}</small></span></label>`).join('');
+  host.innerHTML = `<section class="ncb-tool-config" data-study-tool-configuration="${marker.intent}" data-action-id="${escapeHtml(marker.actionId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(definition.title)}</span><h3>${escapeHtml(definition.title)} setup</h3></header>
+    <fieldset class="ncb-source-selector"><legend>Source</legend><div class="ncb-source-modes">
+      <label${!current ? ' class="is-disabled"' : ''}><input type="radio" name="sourceScope-${marker.actionId}" value="current_document"${scope === 'current_document' ? ' checked' : ''}${!current ? ' disabled' : ''}><span>Open document</span></label>
+      <label><input type="radio" name="sourceScope-${marker.actionId}" value="selected_documents"${scope === 'selected_documents' ? ' checked' : ''}><span>Course files</span></label>
+      <label><input type="radio" name="sourceScope-${marker.actionId}" value="whole_course"${scope === 'whole_course' ? ' checked' : ''}><span>Whole course</span></label>
+    </div>
+    ${current ? `<div class="ncb-source-current"${scope === 'current_document' ? '' : ' hidden'}><strong>${escapeHtml(current.fileName)}</strong><span>${current.pageCount} pages · ${escapeHtml(currentStatus === 'ready' ? 'Ready' : String(currentStatus))}</span></div>` : ''}
+    <div class="ncb-source-files"${scope === 'selected_documents' ? '' : ' hidden'}><input type="search" data-source-search placeholder="Search course files"><div class="ncb-source-file-actions"><button type="button" data-source-select-all>Select all ready</button><button type="button" data-source-clear>Clear</button><span data-source-count>${selected.size} selected</span></div><div class="ncb-source-file-list">${fileRows || '<p class="ncb-source-empty">Loading indexed course files…</p>'}</div></div>
+    <div class="ncb-source-whole"${scope === 'whole_course' ? '' : ' hidden'}>Use all ${readyDocs.length} ready files in this course. Larger generations may take longer.</div>
+    </fieldset><div class="ncb-tool-config-values">${definition.fields.map(field => control(field, marker.parameters)).join('')}</div><div class="ncb-tool-config-validation" role="alert">${escapeHtml(marker.validationMessage || '')}</div><button type="button" class="ncb-tool-config-generate">${escapeHtml(definition.actionLabel)}</button></section>`;
   const update = () => { marker.status = 'awaiting_confirmation'; marker.validationMessage = ''; persist(marker); };
-  host.querySelector<HTMLSelectElement>('[data-source]')?.addEventListener('change', event => { marker.documentIds = Array.from((event.currentTarget as HTMLSelectElement).selectedOptions).map(o => o.value).filter(Boolean); const names = docs.filter(d => marker.documentIds.includes(d.id)).map(d => d.name); marker.sourceLabel = names.length === 1 ? names[0]! : `${names.length} selected files`; update(); });
+  const setSource = (nextScope: StudyToolSourceScope, ids: string[]) => {
+    const chosen = docs.filter(doc => ids.includes(doc.documentId));
+    const label = nextScope === 'current_document' && current ? `Open document — ${current.fileName}` : nextScope === 'whole_course' ? `Whole course — ${readyDocs.length} ready files` : chosen.length ? `${chosen.length} selected ${chosen.length === 1 ? 'file' : 'files'}` : 'No source selected';
+    marker.source = { scope: nextScope, courseId: marker.courseId, documentIds: ids, activeDocumentId: current?.documentId, activeFileName: current?.fileName, displayLabel: label };
+    marker.documentIds = ids.slice(); marker.sourceLabel = label; marker.sourceDocumentName = nextScope === 'current_document' ? current?.fileName : undefined; update();
+  };
+  host.querySelectorAll<HTMLInputElement>('input[type="radio"][name^="sourceScope-"]').forEach(radio => radio.addEventListener('change', () => {
+    const next = radio.value as StudyToolSourceScope;
+    if (next === 'current_document' && current) setSource(next, [current.documentId]);
+    else if (next === 'whole_course') setSource(next, readyDocs.map(doc => doc.documentId));
+    else setSource('selected_documents', marker.source?.scope === 'selected_documents' ? marker.source.documentIds : []);
+    renderStudyToolConfiguration(host, marker);
+  }));
+  const checkedIds = () => Array.from(host.querySelectorAll<HTMLInputElement>('[data-source-document]:checked')).map(el => el.value);
+  host.querySelectorAll<HTMLInputElement>('[data-source-document]').forEach(box => box.addEventListener('change', () => { setSource('selected_documents', checkedIds()); const count = host.querySelector<HTMLElement>('[data-source-count]'); if (count) count.textContent = `${checkedIds().length} selected`; }));
+  host.querySelector<HTMLButtonElement>('[data-source-select-all]')?.addEventListener('click', () => { setSource('selected_documents', readyDocs.map(doc => doc.documentId)); renderStudyToolConfiguration(host, marker); });
+  host.querySelector<HTMLButtonElement>('[data-source-clear]')?.addEventListener('click', () => { setSource('selected_documents', []); renderStudyToolConfiguration(host, marker); });
+  host.querySelector<HTMLInputElement>('[data-source-search]')?.addEventListener('input', event => { const query = (event.currentTarget as HTMLInputElement).value.toLowerCase(); host.querySelectorAll<HTMLElement>('.ncb-source-file').forEach(row => { row.hidden = !row.textContent?.toLowerCase().includes(query); }); });
   definition.fields.forEach(field => host.querySelectorAll<HTMLInputElement | HTMLSelectElement>(`[data-field="${field.key}"]`).forEach(el => el.addEventListener('change', () => {
     if (field.type === 'multi') marker.parameters[field.key] = Array.from(host.querySelectorAll<HTMLInputElement>(`[data-field="${field.key}"]:checked`)).map(x => x.value);
     else if (field.type === 'checkbox') marker.parameters[field.key] = (el as HTMLInputElement).checked;
@@ -193,4 +276,19 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     try { marker.artifact = await generate(marker); marker.status = 'completed'; persist(marker); renderArtifact(host, marker); }
     catch (err) { marker.status = 'failed'; marker.validationMessage = err instanceof Error ? err.message : 'Generation failed. Please retry.'; persist(marker); button.disabled = false; button.textContent = `Retry ${definition.actionLabel.toLowerCase()}`; const alert = host.querySelector<HTMLElement>('.ncb-tool-config-validation'); if (alert) alert.textContent = marker.validationMessage; }
   });
+  if (!marker.documentsHydrated) void listCourseDocuments(marker.courseId).then(courseDocs => {
+    marker.availableDocuments = courseDocs.map(doc => option(marker.courseId, doc));
+    marker.documentsHydrated = true;
+    const named = marker.requestedSourceName?.trim().toLowerCase();
+    if (named) {
+      const matches = marker.availableDocuments.filter(doc => doc.fileName.toLowerCase() === named || doc.fileName.toLowerCase().replace(/\.[^.]+$/, '') === named);
+      if (matches.length === 1 && matches[0]) {
+        marker.source = { scope: 'selected_documents', courseId: marker.courseId, documentIds: [matches[0].documentId], displayLabel: matches[0].fileName };
+        marker.documentIds = [matches[0].documentId]; marker.sourceLabel = matches[0].fileName;
+      } else if (matches.length !== 1) marker.validationMessage = matches.length ? 'More than one course file matches that name. Choose one below.' : 'The requested document was not found. Choose a course file below.';
+    }
+    persist(marker);
+    console.info('[study-tool-source]', { tool: marker.intent, activeCourseId: marker.courseId, activeDocumentId: marker.activePdf?.documentId || null, activeFileName: marker.activePdf?.fileName || null, courseDocumentsLoaded: courseDocs.length, readyDocuments: marker.availableDocuments.filter(doc => doc.readiness === 'ready').length, visiblePickerOptions: marker.availableDocuments.length, defaultSourceMode: marker.source?.scope });
+    renderStudyToolConfiguration(host, marker);
+  }).catch(() => { marker.validationMessage = 'Course files could not be loaded. Retry by reopening this card.'; persist(marker); renderStudyToolConfiguration(host, marker); });
 }

@@ -5729,6 +5729,27 @@ body.ncb-pdf-workspace-open #drDrawer {
 .ncb-study-artifact-preview { margin:14px 0; }
 .ncb-study-artifact-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .ncb-study-artifact-actions button[data-adjust] { background:rgba(255,255,255,.1); }
+.ncb-source-selector { margin:0 0 16px; padding:0; border:0; }
+.ncb-source-selector legend { margin-bottom:8px; color:var(--text-muted,#9da2b4); font-size:.82rem; }
+.ncb-source-modes { display:flex; flex-wrap:wrap; gap:7px; }
+.ncb-source-modes label { cursor:pointer; }
+.ncb-source-modes label.is-disabled { opacity:.45; cursor:not-allowed; }
+.ncb-source-modes input { position:absolute; opacity:0; }
+.ncb-source-modes span { display:block; padding:8px 11px; border:1px solid rgba(255,255,255,.13); border-radius:10px; color:var(--text-muted,#b4b8c7); }
+.ncb-source-modes input:checked + span { border-color:#806cff; background:rgba(118,92,255,.22); color:#fff; }
+.ncb-source-current,.ncb-source-whole { display:flex; flex-direction:column; gap:3px; margin-top:10px; padding:11px; border-radius:11px; background:rgba(255,255,255,.055); }
+.ncb-source-current span,.ncb-source-whole { color:var(--text-muted,#9da2b4); font-size:.82rem; }
+.ncb-source-files { margin-top:10px; }
+.ncb-source-files > input { width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid rgba(255,255,255,.13); border-radius:10px; background:rgba(12,13,22,.72); color:inherit; }
+.ncb-source-file-actions { display:flex; align-items:center; gap:8px; margin:8px 0; }
+.ncb-source-file-actions button { padding:5px 8px; border:0; border-radius:7px; background:rgba(255,255,255,.09); color:inherit; cursor:pointer; }
+.ncb-source-file-actions span { margin-left:auto; color:var(--text-muted,#9da2b4); font-size:.78rem; }
+.ncb-source-file-list { max-height:210px; overflow:auto; display:grid; gap:5px; }
+.ncb-source-file { display:flex; align-items:flex-start; gap:8px; padding:8px; border-radius:9px; background:rgba(255,255,255,.04); cursor:pointer; }
+.ncb-source-file.is-disabled { opacity:.55; cursor:not-allowed; }
+.ncb-source-file span { display:flex; flex-direction:column; min-width:0; }
+.ncb-source-file strong { overflow:hidden; text-overflow:ellipsis; }
+.ncb-source-file small,.ncb-source-empty { color:var(--text-muted,#9da2b4); }
 @media (max-width:540px) { .ncb-tool-config { padding:15px; } .ncb-tool-config-source,.ncb-tool-config-row { align-items:flex-start; flex-direction:column; gap:4px; } .ncb-tool-config-source strong,.ncb-tool-config-row strong { text-align:left; } }
 
 .ncb-sr-only {

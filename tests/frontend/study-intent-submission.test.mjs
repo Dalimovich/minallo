@@ -39,3 +39,20 @@ test('only persisted typed artifacts open canonical production mounts', () => {
   assert.match(workspace, /window\.mountFlashcards/);
   assert.match(workspace, /window\.mountDeepLearn/);
 });
+
+test('study cards reuse active PDF context and hydrate the canonical document API', () => {
+  assert.match(shell, /resolveStudyToolSource\([\s\S]*getActivePdfContext\(\)/);
+  assert.match(workflow, /listCourseDocuments\(marker\.courseId\)/);
+  assert.match(workflow, /processing_status/);
+  assert.match(workflow, /Open document/);
+  assert.match(workflow, /Course files/);
+  assert.match(workflow, /Whole course/);
+});
+
+test('source selector supports ready-state multi-selection without resetting parameters', () => {
+  assert.match(workflow, /data-source-document/);
+  assert.match(workflow, /Select all ready/);
+  assert.match(workflow, /doc\.readiness !== 'ready'.*disabled/s);
+  assert.match(workflow, /marker\.parameters = \{ \.\.\.definition\.defaults, \.\.\.marker\.parameters \}/);
+  assert.match(workflow, /documentIds, count: Number\(p\.count\)/);
+});

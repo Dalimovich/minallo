@@ -1510,16 +1510,19 @@ async function handleIntentRoute(
   if (route.intent === 'examforge' || route.intent === 'flashcards' || route.intent === 'deep_learn') {
     if (thinking) await thinking.waitMinimum();
     thinking?.remove(true);
-    const source = resolveStudyToolSource(route.target.courseId, chatStore.getActive().selectedSourceIds, sourceLibrary.items, buildPageContext()?.documentTitle || '');
+    const source = resolveStudyToolSource(route.target.courseId, chatStore.getActive().selectedSourceIds, sourceLibrary.items, getActivePdfContext());
     if (route.explicitSourceReference && route.sourcePhrase && !/^this (?:pdf|document)$/i.test(route.sourcePhrase)) {
       source.documentIds = [];
       source.documentName = route.sourcePhrase;
       source.label = `Requested document: ${route.sourcePhrase}`;
+      source.source = { scope: 'selected_documents', courseId: route.target.courseId, documentIds: [], displayLabel: source.label };
     }
     const marker: StudyToolConfigurationMarker = {
       actionId: crypto.randomUUID(), intent: route.intent, courseId: route.target.courseId,
       parameters: route.parameters, documentIds: source.documentIds,
       sourceLabel: source.label, sourceDocumentName: source.documentName,
+      requestedSourceName: route.explicitSourceReference ? route.sourcePhrase : undefined,
+      source: source.source, activePdf: source.activePdf,
       availableDocuments: source.availableDocuments,
       status: 'awaiting_confirmation', revision: 0
     };

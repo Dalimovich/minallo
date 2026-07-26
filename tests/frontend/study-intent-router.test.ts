@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { detectStudyIntent, detectStudyIntents, routeStudyIntent } from '../../frontend/js/features/ai-chat/intent-router.ts';
+import { resolveStudyToolSource } from '../../frontend/js/features/chatbot-new/study-tool-workflow.ts';
 
 const detects = (message: string, intent: string): void => {
   const result = detectStudyIntent(message);
@@ -65,4 +66,27 @@ test('feature mentions and academic lookalikes remain normal RAG', () => {
   for (const input of ['What are flashcards useful for?', 'What is deep learning?', 'The professor wrote a note here.', 'Explain this summary theorem.', 'What is an exam?', 'This lecture discusses sheet-metal forming.', 'Explain the cheat detection method.']) {
     assert.equal(routeStudyIntent(input, 'c'), null, input);
   }
+});
+
+test('open PDF becomes the default source when no manual files are selected', () => {
+  const resolved = resolveStudyToolSource('course-1', [], [], {
+    courseId: 'course-1', documentId: 'doc-open', fileName: 'Open.pdf',
+    visiblePage: 4, pageCount: 20, pageText: ''
+  });
+  assert.equal(resolved.source.scope, 'current_document');
+  assert.deepEqual(resolved.source.documentIds, ['doc-open']);
+  assert.match(resolved.label, /Open document.*Open\.pdf/);
+});
+
+test('manually selected files override the open PDF and preserve every ID', () => {
+  const resolved = resolveStudyToolSource('course-1', ['selection'], [{
+    id: 'selection', courseId: 'course-1', documents: [
+      { id: 'doc-b', name: 'B.pdf' }, { id: 'doc-c', name: 'C.pdf' }
+    ]
+  }], {
+    courseId: 'course-1', documentId: 'doc-a', fileName: 'A.pdf',
+    visiblePage: 1, pageCount: 10, pageText: ''
+  });
+  assert.equal(resolved.source.scope, 'selected_documents');
+  assert.deepEqual(resolved.source.documentIds, ['doc-b', 'doc-c']);
 });
