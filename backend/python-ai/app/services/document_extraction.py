@@ -140,7 +140,23 @@ def resolve_section_family(
         heading = str(raw.get("heading") or "").strip()
         title = str(raw.get("title") or "").strip()
         position = int(raw.get("position") or 0)
-        all_headings.append((page, position, int(number), heading or f"{number}. {title}"))
+        exact_top_level = re.match(
+            rf"^\s*{re.escape(number)}\s*\.\s+[^\r\n]+$",
+            heading,
+            re.IGNORECASE,
+        )
+        if not exact_top_level:
+            continue
+        all_headings.append((page, position, int(number), heading))
+        exact_family_heading = re.match(
+            rf"^\s*{re.escape(number)}\s*\.\s+"
+            r"(?:Kurzfragen?|Short\s+Questions?)\b"
+            r"\s*(?:[-–—:]\s*)?[^\r\n]*$",
+            heading,
+            re.IGNORECASE,
+        )
+        if not exact_family_heading:
+            continue
         if re.search(
             r"\b(?:kurzfragen?|short\s+questions?)\b",
             f"{heading} {title}",
@@ -150,15 +166,25 @@ def resolve_section_family(
             matches.append((page, position, number, title, heading or f"{number}. {title}", "visual_ocr", confidence))
     if not matches:
         return None
-    # De-duplicate a visual confirmation of a text heading.
+    # A top-level section number identifies one structural section. Repeated
+    # running headers on later pages are not new sections.
     deduplicated_matches: dict[tuple[int, str], tuple[int, int, str, str, str, str, float]] = {}
     for value in matches:
-        key = (value[0], value[2])
+        key = (0, value[2])
         current = deduplicated_matches.get(key)
-        if current is None or value[5] == "text":
+        if current is None or (value[0], value[1]) < (current[0], current[1]):
             deduplicated_matches[key] = value
     matches = list(deduplicated_matches.values())
-    all_headings = sorted(set(all_headings), key=lambda value: (value[0], value[1], value[2]))
+    earliest_heading_by_number: dict[int, tuple[int, int, int, str]] = {}
+    for heading_value in all_headings:
+        number_value = heading_value[2]
+        current = earliest_heading_by_number.get(number_value)
+        if current is None or heading_value[:2] < current[:2]:
+            earliest_heading_by_number[number_value] = heading_value
+    all_headings = sorted(
+        earliest_heading_by_number.values(),
+        key=lambda value: (value[0], value[1], value[2]),
+    )
     sections: list[ResolvedDocumentSection] = []
     for page, position, number, title, heading, method, confidence in matches:
         later = [candidate for candidate in all_headings if (candidate[0], candidate[1]) > (page, position)]
@@ -1035,9 +1061,13 @@ def _discover_visual_section_headings(
                 "role": "user",
                 "content": [
                     {"type": "text", "text": (
-                        f"Inspect PDF page {page_number} only. Find every top-level numbered "
-                        f"document heading, especially the family named by {target!r}. Do not "
-                        "return question IDs such as 2.1. Return JSON with headings in top-to-bottom order "
+                        f"Inspect PDF page {page_number} only. Find every visibly printed top-level "
+                        f"section banner, especially the family named by {target!r}. A valid family "
+                        "heading has the exact printed form 'N. Kurzfragen - Topic' (or 'N. Short "
+                        "Questions - Topic') and is normally a large horizontal banner. Never infer "
+                        "a heading from a running page header, nearby content, or question IDs such "
+                        "as 2.1 or 12.20. Transcribe the full banner exactly. Return JSON with "
+                        "headings in top-to-bottom order "
                         "as {\"headings\":[{\"number\":2,\"heading\":\"2. Kurzfragen - ...\","
                         "\"title\":\"...\",\"position\":0,\"confidence\":0.9}]}. "
                         "position is the zero-based top-to-bottom heading order on this page."
@@ -1085,7 +1115,7 @@ def _extract_visual_image(
                         f"Extract {target!r} questions and separate solution evidence from "
                         f"this scanned PDF page {page_number}. Detect IDs, exact question "
                         "text, printed answers, worked solutions, checked boxes, green "
-                        "checkmarks and annotations. Never invent missing text. Return "
+                        "checkmarks and annotations. Never invent missing text. Return JSON as "
                         '{"items":[{"item_id":"...","question":"...","answer":"...",'
                         '"question_page":1,"answer_page":1,"evidence_type":"checked_option",'
                         '"confidence":0.9}]}.'

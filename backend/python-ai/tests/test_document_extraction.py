@@ -800,8 +800,11 @@ def test_visual_heading_json_mode_prompt_explicitly_requests_json() -> None:
     from app.services import document_extraction as extraction
 
     source = inspect.getsource(extraction._discover_visual_section_headings)
-    assert 'Return JSON with headings' in source
+    assert 'Return JSON with "' in source
     assert 'response_format={"type": "json_object"}' in source
+    visual_source = inspect.getsource(extraction._extract_visual_image)
+    assert 'Return JSON as' in visual_source
+    assert 'response_format={"type": "json_object"}' in visual_source
 
 
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
