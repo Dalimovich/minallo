@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../utils/escape-html.js';
 import { gradeExamForgeAnswer } from '../../services/ai-service.js';
+import { reportStudyToolError } from './study-tool-boundary.js';
 
 interface Question { id?: string; type?: string; question?: string; prompt?: string; options?: unknown; points?: number; topic?: string; difficulty?: string }
 interface Grade { ok?: boolean; isCorrect?: boolean; score?: number; correctAnswer?: string; feedback?: string; error?: string }
@@ -34,11 +35,20 @@ export function mountInlineExamForge(target: HTMLElement | null, payload: Record
   };
 
   const render = () => {
-    const done = answered(); const total = questions.length; const shown = state.display === 'all' ? questions.map(renderQuestion).join('') : renderQuestion(questions[state.current]!, state.current);
+    const done = answered(); const total = questions.length;
+    if (!total) { target.replaceChildren(document.createTextNode('This ExamForge session contains no questions.')); return; }
+    state.current = Math.max(0, Math.min(state.current, total - 1));
+    const shown = state.display === 'all' ? questions.map(renderQuestion).join('') : renderQuestion(questions[state.current]!, state.current);
     const score = Object.values(state.grades).reduce((n, g) => n + Number(g.score || 0), 0);
     const max = questions.reduce((n, q) => n + Number(q.points || 1), 0);
+    const previousHtml = target.innerHTML;
+    try {
     target.innerHTML = `<section class="ncb-ef-inline" aria-live="polite"><header><div><span class="ncb-tool-config-badge">ExamForge</span><h3>${escapeHtml(String(payload.title || 'ExamForge'))}</h3></div><span>${done} answered · ${total - done} unanswered</span></header><div class="ncb-ef-progress"><i style="width:${total ? Math.round(done / total * 100) : 0}%"></i></div>${state.status === 'graded' ? `<div class="ncb-ef-score"><strong>Exam completed · ${score}/${max}</strong><span>${max ? Math.round(score / max * 100) : 0}%</span></div>` : ''}<div class="ncb-ef-display"><button data-ef-display="one" class="${state.display === 'one' ? 'active' : ''}">One at a time</button><button data-ef-display="all" class="${state.display === 'all' ? 'active' : ''}">All questions</button></div><nav class="ncb-ef-nav" aria-label="Question navigator">${questions.map((q, i) => `<button data-ef-go="${i}" class="${i === state.current ? 'current' : ''} ${state.answers[qKey(q, i)] ? 'answered' : ''}" aria-label="Question ${i + 1}">${i + 1}${state.flags[qKey(q, i)] ? '⚑' : ''}</button>`).join('')}</nav>${shown}<div class="ncb-ef-actions">${state.display === 'one' ? `<button data-ef-prev${state.current === 0 ? ' disabled' : ''}>Previous</button><button data-ef-next${state.current === total - 1 ? ' disabled' : ''}>Next</button>` : ''}${state.status === 'in_progress' ? `<button class="primary" data-ef-submit>Submit exam</button>` : state.status === 'failed' ? `<button class="primary" data-ef-submit>Retry review</button>` : ''}</div>${state.confirmSubmit ? `<div class="ncb-ef-confirm" role="alert">You still have ${total - done} unanswered questions.<button data-ef-unanswered>Review unanswered</button><button data-ef-submit-anyway>Submit anyway</button></div>` : ''}${state.status === 'submitting' ? '<p class="ncb-ef-grading">Reviewing your answers…</p>' : state.status === 'failed' ? '<p class="ncb-ef-error">Minallo could not finish reviewing your answers. Your responses are saved.</p>' : ''}</section>`;
-    bind();
+      bind();
+    } catch (error) {
+      target.innerHTML = previousHtml;
+      reportStudyToolError({ tool: 'examforge', stage: 'attempt_render', artifactId: sessionId }, error);
+    }
   };
 
   const submit = async () => {
@@ -53,8 +63,24 @@ export function mountInlineExamForge(target: HTMLElement | null, payload: Record
     } catch { state.status = 'failed'; persist(); render(); }
   };
 
+  const updateExamChrome = (): void => {
+    const done = answered();
+    const count = target.querySelector<HTMLElement>('.ncb-ef-inline header > span');
+    if (count) count.textContent = `${done} answered · ${questions.length - done} unanswered`;
+    const progress = target.querySelector<HTMLElement>('.ncb-ef-progress i');
+    if (progress) progress.style.width = `${questions.length ? Math.round(done / questions.length * 100) : 0}%`;
+    target.querySelectorAll<HTMLButtonElement>('[data-ef-go]').forEach(button => {
+      const index = Number(button.dataset.efGo); const question = questions[index];
+      button.classList.toggle('answered', !!question && !!state.answers[qKey(question, index)]);
+    });
+  };
+
   const bind = () => {
-    target.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-ef-answer]').forEach(el => el.addEventListener(el instanceof HTMLTextAreaElement ? 'input' : 'change', () => { state.answers[el.dataset.efAnswer!] = el.value; persist(); if (!(el instanceof HTMLTextAreaElement)) render(); }));
+    target.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-ef-answer]').forEach(el => el.addEventListener(el instanceof HTMLTextAreaElement ? 'input' : 'change', () => {
+      try {
+        state.answers[el.dataset.efAnswer!] = el.value; persist(); updateExamChrome();
+      } catch (error) { reportStudyToolError({ tool: 'examforge', stage: 'answer_update', artifactId: sessionId }, error); }
+    }));
     target.querySelectorAll<HTMLButtonElement>('[data-ef-go]').forEach(b => b.addEventListener('click', () => { state.current = Number(b.dataset.efGo); state.display = 'one'; persist(); render(); }));
     target.querySelectorAll<HTMLButtonElement>('[data-ef-display]').forEach(b => b.addEventListener('click', () => { state.display = b.dataset.efDisplay as 'one' | 'all'; persist(); render(); }));
     target.querySelectorAll<HTMLButtonElement>('[data-ef-flag]').forEach(b => b.addEventListener('click', () => { const i = Number(b.dataset.efFlag); const id = qKey(questions[i]!, i); state.flags[id] = !state.flags[id]; persist(); render(); }));

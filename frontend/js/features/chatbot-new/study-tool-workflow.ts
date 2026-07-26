@@ -3,6 +3,7 @@ import { listCourseDocuments, type CourseDocument } from '../../services/ai-serv
 import { getActivePdfContext, type ActivePdfContext } from '../pdf-viewer/active-pdf-context.js';
 import { openStudyToolWorkspace, type StudyWorkspaceKind } from './workspace-library.js';
 import { mountInlineExamForge } from './examforge-inline.js';
+import { reportStudyToolError } from './study-tool-boundary.js';
 
 export type InlineStudyToolKind = 'examforge' | 'flashcards' | 'deep_learn';
 export type StudyToolConfigurationStatus = 'collecting_parameters' | 'awaiting_confirmation' | 'generating' | 'failed' | 'completed';
@@ -224,6 +225,8 @@ async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArti
 function renderArtifact(host: HTMLElement, marker: StudyToolConfigurationMarker): void {
   const artifact = marker.artifact;
   if (!artifact?.persistedResourceId) return;
+  const previousHtml = host.innerHTML;
+  try {
   host.innerHTML = `<section class="ncb-study-artifact" data-study-artifact="${artifact.artifactType}" data-resource-id="${escapeHtml(artifact.persistedResourceId)}"><header><span class="ncb-tool-config-badge">${escapeHtml(DEFINITIONS[artifact.artifactType].title)}</span><h3>${escapeHtml(artifact.title)}</h3></header><p>${escapeHtml(artifact.summary)}</p><p class="ncb-study-artifact-source">Source: ${escapeHtml(marker.sourceLabel)}</p><div class="ncb-study-artifact-preview"></div><div class="ncb-study-artifact-actions"><button type="button" data-open-artifact>${artifact.artifactType === 'examforge' ? 'Open full workspace' : artifact.artifactType === 'flashcards' ? 'Open full deck' : 'Start lesson'}</button><button type="button" data-adjust>Adjust</button></div></section>`;
   const flashcardPlayer = (window as unknown as { mountFlashcardDeckPlayer?: (target: HTMLElement | null, deck: unknown, options: Record<string, unknown>) => void }).mountFlashcardDeckPlayer;
   if (artifact.artifactType === 'flashcards' && typeof flashcardPlayer === 'function') flashcardPlayer(host.querySelector<HTMLElement>('.ncb-study-artifact-preview'), artifact.payload, {});
@@ -239,6 +242,10 @@ function renderArtifact(host: HTMLElement, marker: StudyToolConfigurationMarker)
     );
   });
   host.querySelector<HTMLButtonElement>('[data-adjust]')?.addEventListener('click', () => { marker.artifact = undefined; marker.status = 'awaiting_confirmation'; persist(marker); renderStudyToolConfiguration(host, marker); });
+  } catch (error) {
+    host.innerHTML = previousHtml;
+    reportStudyToolError({ tool: marker.intent, stage: 'artifact_render', actionId: marker.actionId, artifactId: artifact.persistedResourceId }, error);
+  }
 }
 
 export function renderStudyToolConfiguration(host: HTMLElement, input: StudyToolConfigurationMarker): void {
@@ -249,6 +256,8 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
   if (livePdf?.courseId === marker.courseId && livePdf.documentId) marker.activePdf = livePdf;
   marker.parameters = { ...definition.defaults, ...marker.parameters };
   marker.status ||= 'awaiting_confirmation';
+  const renderToken = `${marker.actionId}:${marker.revision || 0}:${Date.now()}:${Math.random()}`;
+  host.dataset.studyRenderToken = renderToken;
   const docs = marker.availableDocuments || [];
   marker.source ||= { scope: marker.documentIds.length ? 'selected_documents' : 'selected_documents', courseId: marker.courseId, documentIds: marker.documentIds.slice(), displayLabel: marker.sourceLabel || 'No source selected' };
   marker.documentIds = marker.source.documentIds.slice();
@@ -302,6 +311,11 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     else if (field.type === 'checkbox') marker.parameters[field.key] = (el as HTMLInputElement).checked;
     else marker.parameters[field.key] = field.key === 'count' ? Number(el.value) : el.value;
     update();
+    const invalidTypes = marker.intent === 'examforge' && !(marker.parameters.questionTypes as unknown[] || []).length;
+    const generateButton = host.querySelector<HTMLButtonElement>('.ncb-tool-config-generate');
+    const alert = host.querySelector<HTMLElement>('.ncb-tool-config-validation');
+    if (generateButton) generateButton.disabled = invalidTypes;
+    if (alert) alert.textContent = invalidTypes ? 'At least one question type is required.' : '';
   })));
   host.querySelectorAll<HTMLInputElement>('input[type="text"][data-field]').forEach(el => el.addEventListener('input', () => { marker.parameters[el.dataset.field!] = el.value; update(); }));
   host.querySelector<HTMLButtonElement>('.ncb-tool-config-generate')?.addEventListener('click', async event => {
@@ -313,6 +327,7 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     catch (err) { marker.status = 'failed'; marker.validationMessage = err instanceof Error ? err.message : 'Generation failed. Please retry.'; persist(marker); button.disabled = false; button.textContent = `Retry ${definition.actionLabel.toLowerCase()}`; const alert = host.querySelector<HTMLElement>('.ncb-tool-config-validation'); if (alert) alert.textContent = marker.validationMessage; }
   });
   if (!marker.documentsHydrated) void listCourseDocuments(marker.courseId).then(courseDocs => {
+    if (!host.isConnected || host.dataset.studyRenderToken !== renderToken) return;
     marker.availableDocuments = courseDocs.map(doc => option(marker.courseId, doc));
     marker.documentsHydrated = true;
     const named = marker.requestedSourceName?.trim().toLowerCase();
@@ -326,7 +341,12 @@ export function renderStudyToolConfiguration(host: HTMLElement, input: StudyTool
     persist(marker);
     console.info('[study-tool-source]', { tool: marker.intent, activeCourseId: marker.courseId, activeDocumentId: marker.activePdf?.documentId || null, activeFileName: marker.activePdf?.fileName || null, courseDocumentsLoaded: courseDocs.length, readyDocuments: marker.availableDocuments.filter(doc => doc.readiness === 'ready').length, visiblePickerOptions: marker.availableDocuments.length, defaultSourceMode: marker.source?.scope });
     renderStudyToolConfiguration(host, marker);
-  }).catch(() => { marker.validationMessage = 'Course files could not be loaded. Retry by reopening this card.'; persist(marker); renderStudyToolConfiguration(host, marker); });
+  }).catch(error => {
+    if (!host.isConnected || host.dataset.studyRenderToken !== renderToken) return;
+    marker.validationMessage = 'Course files could not be loaded. Retry by reopening this card.'; persist(marker);
+    reportStudyToolError({ tool: marker.intent, stage: 'configuration_update', actionId: marker.actionId }, error);
+    renderStudyToolConfiguration(host, marker);
+  });
   if (!sourceWatchers.has(host)) {
     const watcher = window.setInterval(() => {
       if (!host.isConnected || marker.artifact) { window.clearInterval(watcher); sourceWatchers.delete(host); return; }

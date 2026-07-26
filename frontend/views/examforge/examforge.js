@@ -627,8 +627,19 @@
       els.exam.querySelectorAll('.ef-option').forEach(function (btn) {
         btn.addEventListener('click', function () {
           if (st.submitted) return;
-          st.answers[Number(btn.getAttribute('data-q'))] = btn.getAttribute('data-a') || '';
-          renderExam();
+          var questionIndex = Number(btn.getAttribute('data-q'));
+          st.answers[questionIndex] = btn.getAttribute('data-a') || '';
+          var questionCard = btn.closest('.ef-question');
+          if (questionCard) {
+            questionCard.querySelectorAll('.ef-option').forEach(function (option) {
+              option.classList.toggle('selected', option === btn);
+            });
+            var badge = questionCard.querySelector('.ef-q-status-badge');
+            if (badge) { badge.className = 'ef-q-status-badge ef-q-status-answered'; badge.textContent = '✓ Answered'; }
+          }
+          var progress = computeResults(s);
+          var answeredNode = els.exam.querySelector('.ef-progress-item');
+          if (answeredNode) answeredNode.innerHTML = 'Answered: <b>' + progress.answered + ' / ' + progress.total + '</b>';
         });
       });
       els.exam.querySelectorAll('.ef-written').forEach(function (input) {
