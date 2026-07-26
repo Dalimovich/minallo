@@ -13,6 +13,7 @@ const askSource = await readFile(
 
 test('document-wide extraction progress events have user-facing text', () => {
   assert.match(statusSource, /scanning_document:\s*[\r\n\s]*"I'm scanning every page/);
+  assert.match(statusSource, /preparing_document_structure:\s*[\r\n\s]*"I'm preparing this document/);
   assert.match(statusSource, /extracting_items:\s*[\r\n\s]*"I'm extracting the questions/);
   assert.match(statusSource, /checking_completeness:\s*[\r\n\s]*"I'm checking the full document/);
 });

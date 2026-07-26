@@ -190,7 +190,8 @@ def _load_authorized_documents(
         sb.table("documents")
         .select(
             "id, user_id, course_id, file_name, storage_path, document_hash, "
-            "processing_status, page_count, chunk_count, updated_at, active_index_revision"
+            "processing_status, page_count, chunk_count, updated_at, active_index_revision, "
+            "structural_index_status"
         )
         .in_("id", unique_ids)
         .execute()
@@ -838,6 +839,25 @@ async def tutor_request_status_endpoint(
             "code": "request_state_not_found", "retryable": True,
         })
     return record
+
+
+@router.get("/scoped-jobs/{job_id}")
+async def scoped_job_status_endpoint(
+    job_id: str,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Authoritative refresh/reconnect snapshot for an exhaustive job."""
+    _require_uuid(job_id, "job_id")
+    from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
+    snapshot = await run_in_threadpool(
+        lambda: load_job_snapshot(user_id=user["id"], job_id=job_id)
+    )
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "scoped_job_not_found", "retryable": False},
+        )
+    return snapshot
 
 
 @router.post("/ask-stream")
@@ -2345,9 +2365,31 @@ async def _prepare_ask_stream_response(
         load_verified_extraction_cache,
         promote_verified_extraction_cache,
     )
+    from ..services.scoped_extraction import (  # noqa: WPS433
+        DiscoveryStatus,
+        DetectedHeading,
+        RequestScopeManifest,
+        RetrievalMode,
+        ScopeItem,
+        ScopeItemStatus,
+        classify_scoped_request,
+        finalise_scoped_job,
+        stable_scope_key,
+    )
+    from ..services.scoped_job_store import (  # noqa: WPS433
+        EXTRACTOR_SCHEMA_VERSION,
+        create_or_resume_job,
+        emit_job_event,
+        load_active_manifest,
+        mark_job_discovery,
+        persist_item_state,
+        persist_job_state,
+        persist_manifest_candidate,
+    )
     document_extraction, extraction_correction, extraction_target = (
         classify_document_extraction(question, previous_turns_payload)
     )
+    scoped_request = classify_scoped_request(question)
     if document_extraction:
         if not payload.conversationId or tutor_state is None:
             return _stream_static_answer(
@@ -2424,6 +2466,20 @@ async def _prepare_ask_stream_response(
                 {},
             )
         )
+        if active_document.get("structural_index_status") != "structured_ready":
+            if status_sink:
+                status_sink("preparing_document_structure")
+            from ..services.indexing import index_document  # noqa: WPS433
+            observer.event(
+                "structural_reindex_required",
+                activeDocumentId=payload.activeDocumentId,
+            )
+            await run_in_threadpool(
+                lambda: index_document(payload.activeDocumentId or "", force=True)
+            )
+            active_document = await run_in_threadpool(lambda: _load_authorized_documents(
+                user_id, payload.courseId, [payload.activeDocumentId or ""]
+            ).get(payload.activeDocumentId or "", {}))
         document_revision = str(
             active_document.get("active_index_revision")
             or active_document.get("updated_at")
@@ -2433,6 +2489,48 @@ async def _prepare_ask_stream_response(
             active_document.get("document_hash")
             or document_revision
             or payload.activeDocumentId
+        )
+        if scoped_request.retrieval_mode is not RetrievalMode.COVERAGE:
+            # The legacy classifier may recognise a correction using prior
+            # turns; preserve that meaning as a coverage continuation.
+            scoped_request = replace(
+                scoped_request,
+                retrieval_mode=RetrievalMode.COVERAGE,
+            )
+        scoped_job = await run_in_threadpool(lambda: create_or_resume_job(
+            user_id=user_id,
+            course_id=payload.courseId,
+            document_id=payload.activeDocumentId or "",
+            document_revision_id=document_revision or "",
+            source_fingerprint=source_fingerprint,
+            request_text=question,
+            spec=scoped_request,
+        ))
+        scoped_job_id = str(scoped_job["id"])
+        active_manifest = await run_in_threadpool(lambda: load_active_manifest(
+            user_id=user_id,
+            document_id=payload.activeDocumentId or "",
+            document_revision_id=document_revision or "",
+            canonical_target=scoped_request.canonical_target,
+            source_fingerprint=source_fingerprint,
+        ))
+        manifest_holder: dict[str, RequestScopeManifest | None] = {
+            "manifest": active_manifest,
+        }
+        await run_in_threadpool(
+            lambda: mark_job_discovery(scoped_job_id, DiscoveryStatus.RUNNING)
+        )
+        observer.event(
+            "coverage_mode_selected",
+            jobId=scoped_job_id,
+            canonicalTarget=scoped_request.canonical_target,
+            coverageIntent=scoped_request.coverage_intent.value,
+        )
+        log.info(
+            "coverage_mode_selected request_id=%s job_id=%s document=%s "
+            "revision=%s canonical_target=%s coverage_intent=%s",
+            request_id, scoped_job_id, payload.activeDocumentId, document_revision,
+            scoped_request.canonical_target, scoped_request.coverage_intent.value,
         )
         conversation_extraction_context = (
             extraction_context_from_api(tutor_state.document_extraction_context)
@@ -2509,7 +2607,11 @@ async def _prepare_ask_stream_response(
                     if page not in already_scanned
                 ]
                 direction = "resume"
-            elif durable_extraction_context and extraction_context.scope_extraction_complete:
+            elif (
+                durable_extraction_context
+                and active_manifest
+                and extraction_context.scope_extraction_complete
+            ):
                 pages_to_scan = []
                 direction = "cached_verified"
         event_loop = asyncio.get_running_loop()
@@ -2581,6 +2683,93 @@ async def _prepare_ask_stream_response(
                 batch_pages,
                 len(partial_scanned),
             )
+
+        def discovery_checkpoint(discovery: dict[str, Any]) -> None:
+            family = discovery.get("resolved_family")
+            questions = list(discovery.get("questions") or [])
+            sealed = bool(discovery.get("manifest_sealed"))
+            if not family or not sealed:
+                emit_job_event(
+                    job_id=scoped_job_id,
+                    event_key="manifest.discovery.incomplete",
+                    event_type="scope.partially_processed",
+                    payload={
+                        "numbering_gaps": list(discovery.get("numbering_gaps") or []),
+                        "question_pages": list(discovery.get("question_pages") or []),
+                    },
+                )
+                return
+            section_titles = {
+                str(section.requested_number): (
+                    section.requested_title or family.family_name
+                )
+                for section in family.matched_sections
+            }
+            candidate_items: list[ScopeItem] = []
+            for order, extracted in enumerate(questions):
+                number = str(extracted.item_id)
+                section_number = number.split(".", 1)[0]
+                stable_key = stable_scope_key(
+                    document_revision or source_fingerprint,
+                    "exam_question",
+                    number,
+                    extracted.question_page,
+                    order,
+                )
+                candidate_items.append(ScopeItem(
+                    id=str(uuid.uuid5(uuid.NAMESPACE_URL, stable_key)),
+                    stable_key=stable_key,
+                    document_id=payload.activeDocumentId or "",
+                    document_revision_id=document_revision or "",
+                    item_number=number,
+                    label=extracted.question_text,
+                    block_type="exam_question",
+                    section_number=section_number,
+                    section_title=section_titles.get(section_number),
+                    page_start=extracted.question_page,
+                    page_end=extracted.question_page,
+                    document_order=order,
+                    status=ScopeItemStatus.PENDING,
+                ))
+            candidate = RequestScopeManifest(
+                id=str(uuid.uuid4()),
+                job_id=scoped_job_id,
+                document_revision_id=document_revision or "",
+                discovery_status=DiscoveryStatus.COMPLETE,
+                manifest_sealed=True,
+                manifest_verified=False,
+                included_section_numbers=list(family.section_numbers),
+                excluded_section_numbers=list(family.excluded_sections),
+                question_pages=list(discovery.get("question_pages") or []),
+                items=candidate_items,
+                source_fingerprint=source_fingerprint,
+                scope_fingerprint=str(discovery.get("scope_fingerprint") or ""),
+                extractor_schema_version=EXTRACTOR_SCHEMA_VERSION,
+                out_of_scope_items_rejected=list(
+                    discovery.get("out_of_scope_items_rejected") or []
+                ),
+                detected_headings=[DetectedHeading(
+                    number=str(section.requested_number or ""),
+                    title=section.requested_title or family.family_name,
+                    page=section.start_page,
+                    y_position=(
+                        float(section.start_position)
+                        if section.start_position is not None else None
+                    ),
+                    document_order=index,
+                    method=section.discovery_method,
+                    confidence=section.confidence,
+                ) for index, section in enumerate(family.matched_sections)],
+                version=(active_manifest.version + 1 if active_manifest else 1),
+            )
+            promotion = persist_manifest_candidate(
+                user_id=user_id,
+                document_id=payload.activeDocumentId or "",
+                canonical_target=scoped_request.canonical_target,
+                candidate=candidate,
+            )
+            manifest_holder["manifest"] = promotion.active_manifest
+
         extraction_started = time.perf_counter()
         extraction = await run_in_threadpool(
             lambda: extract_document_qa(
@@ -2592,6 +2781,7 @@ async def _prepare_ask_stream_response(
                 previous_items=previous_items,
                 previous_context=extraction_context,
                 checkpoint=extraction_checkpoint,
+                discovery_checkpoint=discovery_checkpoint,
                 visible_page=payload.visiblePage,
                 visible_page_text=payload.openFileContext,
                 visible_page_image=visible_page_image_bytes,
@@ -2715,13 +2905,74 @@ async def _prepare_ask_stream_response(
                 await run_in_threadpool(
                     lambda: save_tutor_state(user_id, payload.courseId, tutor_state)
                 )
+        scoped_manifest = manifest_holder.get("manifest")
+        scoped_job_state = None
+        if scoped_manifest:
+            pairs_by_id = {
+                item.item_id: item for item in extraction.paired_items
+            }
+            retryable_answer_states = {
+                "search_pending", "visual_budget_exhausted", "visual_render_failed",
+                "vision_extraction_failed", "ambiguous_evidence",
+            }
+            for scope_item in scoped_manifest.items:
+                pair = pairs_by_id.get(scope_item.item_number or "")
+                recovery = extraction.answer_recovery_records.get(
+                    scope_item.item_number or ""
+                )
+                scope_item.attempts += 1
+                if pair and pair.answer_text:
+                    scope_item.status = ScopeItemStatus.ANSWERED
+                    scope_item.error_code = None
+                    scope_item.error_message = None
+                elif pair and recovery and recovery.status.value in retryable_answer_states:
+                    scope_item.status = ScopeItemStatus.PENDING
+                    scope_item.error_code = recovery.status.value
+                    scope_item.error_message = "Answer recovery will resume from its checkpoint."
+                elif pair:
+                    scope_item.status = ScopeItemStatus.UNRESOLVED
+                    scope_item.error_code = (
+                        recovery.status.value if recovery else "official_answer_not_found"
+                    )
+                    scope_item.error_message = "No verified official answer was found."
+                else:
+                    scope_item.status = ScopeItemStatus.FAILED
+                    scope_item.error_code = "missing_batch_output"
+                    scope_item.error_message = "The sealed item was absent from the processing output."
+                await run_in_threadpool(lambda item=scope_item, paired=pair, record=recovery: persist_item_state(
+                    job_id=scoped_job_id,
+                    manifest_id=scoped_manifest.id,
+                    item=item,
+                    result=(asdict(paired) if paired else None),
+                    answer_checkpoint=(asdict(record) if record else {}),
+                ))
+            scoped_job_state = finalise_scoped_job(scoped_manifest)
+            await run_in_threadpool(
+                lambda: persist_job_state(scoped_job_id, scoped_job_state)
+            )
+        else:
+            await run_in_threadpool(
+                lambda: mark_job_discovery(scoped_job_id, DiscoveryStatus.FAILED)
+            )
         if status_sink:
             status_sink("checking_completeness")
-        answer_text = format_document_extraction(
-            extraction,
-            language_context.requested_response_language,
-        )
-        learning_journey = build_learning_journey(extraction)
+        if scoped_manifest and scoped_job_state:
+            answer_text = format_document_extraction(
+                extraction,
+                language_context.requested_response_language,
+            )
+            learning_journey = build_learning_journey(
+                extraction,
+                scoped_job_state=scoped_job_state,
+                scoped_job_id=scoped_job_id,
+                manifest_id=scoped_manifest.id,
+            )
+        else:
+            answer_text = (
+                "Minallo could not verify the complete document scope yet. "
+                "The document structure is being rebuilt. No partial question list was shown."
+            )
+            learning_journey = None
         if extraction_correction:
             if extraction.status == "no_pages_in_requested_direction":
                 answer_text = (
@@ -2804,6 +3055,11 @@ async def _prepare_ask_stream_response(
             status_key="checking_completeness",
             extra_meta={
                 "taskType": "document_wide_extraction",
+                "scopedJobId": scoped_job_id,
+                "manifestId": scoped_manifest.id if scoped_manifest else None,
+                "retrievalMode": scoped_request.retrieval_mode.value,
+                "coverageIntent": scoped_request.coverage_intent.value,
+                "canonicalTarget": scoped_request.canonical_target,
                 "targetSection": extraction.target,
                 "totalPages": extraction.total_pages,
                 "pagesScanned": extraction.scanned_pages,

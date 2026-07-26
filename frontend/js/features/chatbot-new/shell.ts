@@ -666,6 +666,9 @@ interface ChatMessage {
 }
 
 interface LearningJourneyMarker {
+  jobId?: string;
+  manifestId?: string;
+  scopeFingerprint?: string;
   title: string;
   totalPages: number;
   pagesScanned: number;
@@ -690,6 +693,7 @@ interface LearningJourneyMarker {
   sections?: LearningJourneySection[];
   includedSectionNumbers?: string[];
   outOfScopeItemsRejected?: string[];
+  seenEventIds?: string[];
 }
 
 interface LearningJourneyQuestion {
@@ -726,6 +730,9 @@ function learningJourneyMarkerFromMeta(meta: Record<string, unknown>): LearningJ
     ? meta.learningJourney as { title?: unknown; sections?: unknown; scope?: { includedSectionNumbers?: unknown }; coverage?: Record<string, unknown>; outOfScopeItemsRejected?: unknown; [key: string]: unknown }
     : null;
   return {
+    jobId: structured?.jobId ? String(structured.jobId) : undefined,
+    manifestId: structured?.manifestId ? String(structured.manifestId) : undefined,
+    scopeFingerprint: structured?.scopeFingerprint ? String(structured.scopeFingerprint) : undefined,
     title: String(structured?.title || meta.resolvedHeading || meta.targetSection || 'Document review'),
     totalPages: Number(structured?.coverage?.totalPages || meta.totalPages || 0),
     pagesScanned: Number(structured?.coverage?.pagesScanned || meta.scannedPageCount || 0),
@@ -761,11 +768,17 @@ function isValidLearningJourney(marker: LearningJourneyMarker): boolean {
     0
   );
   const terminalCount = marker.answeredCount + marker.unresolvedCount + marker.failedCount;
+  const questionIds = (marker.sections || []).flatMap((section) =>
+    section.questions.map((question) => question.number)
+  );
+  const included = new Set(marker.includedSectionNumbers || []);
   return marker.manifestSealed
     && marker.discoveryComplete
     && marker.questionPagesTotal > 0
     && marker.discoveredCount > 0
     && questionsFound === marker.discoveredCount
+    && new Set(questionIds).size === questionIds.length
+    && questionIds.every((id) => included.has(id.split('.')[0] || ''))
     && terminalCount <= marker.discoveredCount
     && (!marker.processingFinished || (
       marker.pendingCount === 0 && marker.processingCount === 0 && terminalCount === marker.discoveredCount
@@ -775,6 +788,23 @@ function isValidLearningJourney(marker: LearningJourneyMarker): boolean {
       && marker.unresolvedCount === 0 && marker.failedCount === 0
     ))
     && (marker.outOfScopeItemsRejected || []).length === 0;
+}
+
+function journeyCacheKey(marker: LearningJourneyMarker): string {
+  return 'minallo_verified_journey_' + marker.title.trim().toLowerCase();
+}
+
+function rememberVerifiedJourney(marker: LearningJourneyMarker): void {
+  try { localStorage.setItem(journeyCacheKey(marker), JSON.stringify(marker)); } catch { /* optional */ }
+}
+
+function lastKnownGoodJourney(marker: LearningJourneyMarker): LearningJourneyMarker | null {
+  try {
+    const raw = localStorage.getItem(journeyCacheKey(marker));
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as LearningJourneyMarker;
+    return isValidLearningJourney(cached) ? cached : null;
+  } catch { return null; }
 }
 
 interface ConversationState {
@@ -3195,6 +3225,7 @@ async function streamFromAskStream(
             reading_question: 'Reading your question…',
             collecting_sources: 'Checking the relevant document sections…',
             extracting_items: 'Working through the questions in order…',
+            preparing_document_structure: 'Preparing this document for complete extraction…',
             writing_answer: 'Preparing the explanation…',
             recovering_response: 'A step took longer than expected. Recovering your response…',
             verifying_answer: 'Verifying the final result…',
@@ -4243,6 +4274,18 @@ function enhanceDocumentLearningJourney(
 ): void {
   if (bubble.querySelector('.ncb-learning-journey')) return;
   if (!isValidLearningJourney(marker)) {
+    window.dispatchEvent(new CustomEvent('minallo:rag-telemetry', { detail: {
+      event: 'invalid_journey_rejected',
+      jobId: marker.jobId,
+      manifestId: marker.manifestId,
+      questionPagesTotal: marker.questionPagesTotal,
+      discoveredCount: marker.discoveredCount,
+    } }));
+    const verified = lastKnownGoodJourney(marker);
+    if (verified) {
+      enhanceDocumentLearningJourney(bubble, verified);
+      return;
+    }
     bubble.innerHTML =
       '<section class="ncb-learning-journey ncb-learning-journey--recovery" role="status">' +
         '<h2>Rebuilding the document section map</h2>' +
@@ -4251,6 +4294,7 @@ function enhanceDocumentLearningJourney(
       '</section>';
     return;
   }
+  rememberVerifiedJourney(marker);
   const headings = Array.from(bubble.querySelectorAll<HTMLHeadingElement>('h3'));
   const sections = (marker.sections || []).slice().sort(
     (a, b) => Number(a.sectionNumber) - Number(b.sectionNumber)
@@ -6494,7 +6538,10 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // Answers saved before the clean-opening fix may still start with the old
   // source preface / self-intro — scrub at render time.
   if (bubble) renderRichBubble(bubble, stripAnswerIntro(m.text), !!m.allowDiagrams);
-  if (bubble && m.learningJourney) enhanceDocumentLearningJourney(bubble, m.learningJourney);
+  if (bubble && m.learningJourney) {
+    enhanceDocumentLearningJourney(bubble, m.learningJourney);
+    void reconcileScopedJourney(m, bubble);
+  }
   if (bubble && m.role === 'assistant') enhanceGeneratedExamPractice(bubble);
   if (bubble && (m.sourceLabel || m.sources?.length)) {
     appendAskStreamMeta(bubble, {
@@ -6515,6 +6562,77 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
 }
 
 const durableRequestReconciliations = new Set<string>();
+const scopedJourneyReconciliations = new Set<string>();
+
+async function reconcileScopedJourney(
+  message: ChatMessage,
+  bubble: HTMLElement,
+): Promise<void> {
+  const marker = message.learningJourney;
+  if (!marker?.jobId || scopedJourneyReconciliations.has(marker.jobId)) return;
+  const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
+  if (!aiHost) return;
+  scopedJourneyReconciliations.add(marker.jobId);
+  let shouldPoll = false;
+  try {
+    const response = await authenticatedFetch(
+      aiHost + '/scoped-jobs/' + encodeURIComponent(marker.jobId),
+      { method: 'GET' }, { safeToRetry: true }
+    ).catch(() => null);
+    if (!response?.ok) return;
+    const snapshot = await response.json() as {
+      manifestId?: string; manifestSealed: boolean; discoveryComplete: boolean;
+      processingFinished: boolean; allAnswersVerified: boolean;
+      discoveredCount: number; pendingCount: number; processingCount: number;
+      answeredCount: number; unresolvedCount: number; failedCount: number;
+      scopeFingerprint?: string;
+      items?: Array<{ item_number?: string; status: string; result?: Record<string, unknown> }>;
+      events?: Array<{ event_id: string }>;
+    };
+    const seen = new Set(marker.seenEventIds || []);
+    for (const event of snapshot.events || []) seen.add(event.event_id);
+    Object.assign(marker, {
+      manifestId: snapshot.manifestId || marker.manifestId,
+      scopeFingerprint: snapshot.scopeFingerprint || marker.scopeFingerprint,
+      manifestSealed: snapshot.manifestSealed,
+      discoveryComplete: snapshot.discoveryComplete,
+      processingFinished: snapshot.processingFinished,
+      allAnswersVerified: snapshot.allAnswersVerified,
+      discoveredCount: snapshot.discoveredCount,
+      pendingCount: snapshot.pendingCount,
+      processingCount: snapshot.processingCount,
+      answeredCount: snapshot.answeredCount,
+      unresolvedCount: snapshot.unresolvedCount,
+      failedCount: snapshot.failedCount,
+      seenEventIds: Array.from(seen),
+    });
+    const itemByNumber = new Map((snapshot.items || []).map((item) => [item.item_number || '', item]));
+    for (const section of marker.sections || []) {
+      for (const question of section.questions) {
+        const item = itemByNumber.get(question.number);
+        if (!item) continue;
+        const result = item.result || {};
+        question.answer = typeof result.answer_text === 'string' ? result.answer_text : question.answer;
+        question.answerStatus = item.status === 'answered'
+          ? 'verified' : item.status === 'failed' ? 'source_unavailable' : 'unresolved';
+      }
+      section.statistics.answersVerified = section.questions.filter(
+        (question) => question.answerStatus === 'verified' || question.answerStatus === 'visually_verified'
+      ).length;
+      section.statistics.unresolved = section.questions.length - section.statistics.answersVerified;
+    }
+    saveChatStore();
+    bubble.innerHTML = '';
+    renderRichBubble(bubble, message.text, !!message.allowDiagrams);
+    enhanceDocumentLearningJourney(bubble, marker);
+    shouldPoll = !snapshot.processingFinished;
+  } finally {
+    scopedJourneyReconciliations.delete(marker.jobId);
+    if (shouldPoll) {
+      window.setTimeout(() => { void reconcileScopedJourney(message, bubble); }, 3_000);
+    }
+  }
+}
 
 async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElement): Promise<void> {
   if (!chat.persistedId || durableRequestReconciliations.has(chat.id)) return;

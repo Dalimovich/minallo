@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -466,6 +467,23 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             document_revision=content_hash,
             index_revision=content_hash,
         )
+        structural_ready = False
+        try:
+            _replace_logical_units(
+                sb,
+                document_id=document_id,
+                document_revision=content_hash,
+                user_id=user_id,
+                course_id=course_id,
+                pages=pages,
+                chunks=chunks,
+            )
+            structural_ready = True
+        except Exception:  # noqa: BLE001
+            log.exception(
+                "structural unit indexing failed document_id=%s revision=%s",
+                document_id, content_hash,
+            )
 
         # Phase 4: classify the document and roll up per-page extraction
         # quality. Best-effort — failure here must not block indexing.
@@ -595,6 +613,9 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             "chunk_count": len(chunks),
             "indexed_at": now,
             "updated_at": now,
+            "structural_index_status": (
+                "structured_ready" if structural_ready else "structural_index_failed"
+            ),
         }
         if doc_type:
             update_payload["document_type"] = doc_type
@@ -616,7 +637,10 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             log.exception(
                 "documents.update failed — retrying without document-understanding fields"
             )
-            for _k in ("document_type_confidence", "document_understanding"):
+            for _k in (
+                "document_type_confidence", "document_understanding",
+                "structural_index_status",
+            ):
                 update_payload.pop(_k, None)
             sb.table("documents").update(update_payload).eq("id", document_id).execute()
 
@@ -1091,6 +1115,117 @@ def _replace_pages(
         ]
         for start in range(0, len(stripped), 100):
             sb.table("document_pages").insert(stripped[start:start + 100]).execute()
+
+
+def _replace_logical_units(
+    sb,
+    *,
+    document_id: str,
+    document_revision: str,
+    user_id: str,
+    course_id: str,
+    pages: list[str],
+    chunks: list[Chunk],
+) -> None:
+    """Extend the existing index with deterministic logical coverage units."""
+    from .scoped_extraction import stable_scope_key  # noqa: WPS433
+
+    heading_re = re.compile(
+        r"(?im)^\s*(?P<number>\d+)\s*\.\s+(?P<title>[^\r\n]{2,180})$"
+    )
+    question_re = re.compile(
+        r"(?im)^\s*(?P<number>\d+\.\d+)\s+(?P<label>[^\r\n]{2,500})"
+    )
+    rows: list[dict[str, Any]] = []
+    order = 0
+    current_section_number: str | None = None
+    current_section_title: str | None = None
+    for page_number, text in enumerate(pages, start=1):
+        page_headings = list(heading_re.finditer(text or ""))
+        for heading in page_headings:
+            current_section_number = heading.group("number")
+            current_section_title = heading.group("title").strip()
+            stable = stable_scope_key(
+                document_revision, "section_heading", current_section_number,
+                page_number, order,
+            )
+            rows.append({
+                "user_id": user_id, "course_id": course_id,
+                "document_id": document_id,
+                "document_revision_id": document_revision,
+                "stable_block_id": stable,
+                "block_type": "section_heading",
+                "section_number": current_section_number,
+                "section_title": current_section_title,
+                "page_start": page_number, "page_end": page_number,
+                "document_order": order,
+                "source_text": heading.group(0).strip(),
+                "extraction_confidence": 0.96,
+            })
+            order += 1
+        matches = list(question_re.finditer(text or ""))
+        for index, match in enumerate(matches):
+            number = match.group("number")
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            source = (text[match.start():end] or match.group(0)).strip()
+            section_number = number.split(".", 1)[0]
+            stable = stable_scope_key(
+                document_revision, "exam_question", number, page_number, order,
+            )
+            rows.append({
+                "user_id": user_id, "course_id": course_id,
+                "document_id": document_id,
+                "document_revision_id": document_revision,
+                "stable_block_id": stable,
+                "block_type": "exam_question",
+                "question_number": number,
+                "parent_question": section_number,
+                "section_number": section_number,
+                "section_title": (
+                    current_section_title if current_section_number == section_number else None
+                ),
+                "page_start": page_number, "page_end": page_number,
+                "document_order": order,
+                "source_text": source,
+                "continues_on_next_page": bool(re.search(
+                    r"\b(?:Fortsetzung|continued)\b", source, re.I,
+                )),
+                "extraction_confidence": 0.92,
+            })
+            order += 1
+    type_map = {
+        "definition": "definition", "formula": "formula",
+        "example": "worked_example", "solution": "exam_solution",
+    }
+    for chunk_index, chunk in enumerate(chunks):
+        block_type = type_map.get(chunk.chunk_type)
+        if not block_type:
+            continue
+        stable = stable_scope_key(
+            document_revision, block_type, None, chunk.page_start, chunk_index,
+        )
+        rows.append({
+            "user_id": user_id, "course_id": course_id,
+            "document_id": document_id,
+            "document_revision_id": document_revision,
+            "stable_block_id": stable, "block_type": block_type,
+            "section_title": chunk.section_title,
+            "page_start": chunk.page_start, "page_end": chunk.page_end,
+            "document_order": order, "source_text": chunk.chunk_text,
+            "extraction_confidence": 0.85,
+        })
+        order += 1
+    (
+        sb.table("document_logical_units").delete()
+        .eq("document_id", document_id)
+        .eq("document_revision_id", document_revision)
+        .execute()
+    )
+    for start in range(0, len(rows), 100):
+        sb.table("document_logical_units").upsert(
+            rows[start:start + 100],
+            on_conflict="document_id,document_revision_id,stable_block_id",
+        ).execute()
 
 
 def _replace_chunks(

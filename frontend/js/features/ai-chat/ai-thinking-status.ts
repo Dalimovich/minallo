@@ -30,6 +30,7 @@ export type AssistantStatus =
   | 'preparing_step_solution'
   | 'checking_app_context'
   | 'scanning_document'
+  | 'preparing_document_structure'
   | 'extracting_items'
   | 'checking_completeness';
 
@@ -105,6 +106,8 @@ export const assistantStatusText: Record<AssistantStatus, string> = {
     "I'm checking the Minallo workspace context that matches your question.",
   scanning_document:
     "I'm scanning every page in the active document.",
+  preparing_document_structure:
+    "I'm preparing this document for complete extraction.",
   extracting_items:
     "I'm extracting the questions and matching their official answers.",
   checking_completeness:

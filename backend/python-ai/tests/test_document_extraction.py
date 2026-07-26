@@ -887,6 +887,42 @@ def test_numbering_gap_recovery_merges_visibly_confirmed_transition_question(
     assert result.scope_extraction_complete
 
 
+def test_manifest_is_sealed_before_answer_recovery(monkeypatch) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(
+        extraction, "_load_document_pages",
+        lambda **_: ({"page_count": 1, "storage_path": "exam.pdf"}, [{
+            "page_number": 1,
+            "cleaned_text": "2. Kurzfragen - Grundlagen\n2.1 Erste Frage?",
+            "raw_text": "", "extraction_quality": "weak",
+        }]),
+    )
+    monkeypatch.setattr(extraction, "_extract_visual_page", lambda **_: [
+        extraction.ExtractedQAItem("2.1", "Erste Frage?", "", 1, confidence=0.95),
+    ])
+    monkeypatch.setattr(
+        extraction, "chat_json",
+        lambda **_: SimpleNamespace(
+            data={"questions": [], "solutions": []}, model="test",
+            prompt_tokens=0, completion_tokens=0,
+        ),
+    )
+
+    def recover(**_):
+        assert events == ["sealed"]
+        events.append("answers")
+        return extraction.AnswerRecoveryResult()
+
+    monkeypatch.setattr(extraction, "recover_unanswered_answers", recover)
+    extraction.extract_document_qa(
+        user_id="u", course_id="c", document_id="d", target="Kurzfragen",
+        discovery_checkpoint=lambda payload: events.append(
+            "sealed" if payload["manifest_sealed"] else "incomplete"
+        ),
+    )
+    assert events == ["sealed", "answers"]
+
+
 def test_structured_journey_uses_natural_order_and_unresolved_status() -> None:
     from app.services import document_extraction as extraction
 

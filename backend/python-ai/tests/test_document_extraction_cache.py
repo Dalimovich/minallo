@@ -40,6 +40,13 @@ def test_smaller_same_revision_inventory_cannot_replace_complete_inventory() -> 
     assert not should_replace_cache(_quality(), _quality(questions_found=44))
 
 
+def test_same_count_candidate_cannot_replace_when_exact_ids_regress() -> None:
+    assert not should_replace_cache(
+        _quality(), _quality(),
+        current_ids={"2.1", "2.2"}, candidate_ids={"2.1", "12.20"},
+    )
+
+
 def test_equal_or_stronger_verified_inventory_can_be_promoted() -> None:
     assert should_replace_cache(_quality(), _quality(questions_found=46))
 

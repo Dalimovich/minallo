@@ -1525,6 +1525,7 @@ def extract_document_qa(
     previous_items: list[ExtractedQAItem] | None = None,
     previous_context: DocumentExtractionContext | None = None,
     checkpoint: Callable[[dict[str, Any]], None] | None = None,
+    discovery_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     visible_page: int | None = None,
     visible_page_text: str | None = None,
     visible_page_image: bytes | None = None,
@@ -2254,6 +2255,40 @@ def extract_document_qa(
         key=lambda item: (_natural_item_id_key(item.item_id), item.question_page)
     )
 
+    # Phase boundary: the complete ordered question inventory is sealed and
+    # durably persisted by the caller before answer recovery may alter answer
+    # state. The callback receives no generated prose or answer evidence.
+    if discovery_checkpoint and resolved_family:
+        discovery_question_pages = sorted({
+            page
+            for section in resolved_family.matched_sections
+            for page in section.question_pages
+        })
+        remaining_gaps = identify_suspicious_numbering_gaps(
+            [item.item_id for item in result.extracted_questions]
+        )
+        discovery_complete = bool(
+            discovery_question_pages
+            and not remaining_gaps
+            and not set(result.unprocessed_pages).intersection(discovery_question_pages)
+            and set(discovery_question_pages).issubset(set(result.scanned_pages))
+            and not result.out_of_scope_items_rejected
+            and all(any(
+                item.normalized_item_id.startswith(f"{section.requested_number}.")
+                for item in result.extracted_questions
+            ) for section in resolved_family.matched_sections)
+        )
+        discovery_checkpoint({
+            "discovery_complete": discovery_complete,
+            "manifest_sealed": discovery_complete,
+            "questions": list(result.extracted_questions),
+            "question_pages": discovery_question_pages,
+            "resolved_family": resolved_family,
+            "scope_fingerprint": result.scope_fingerprint,
+            "out_of_scope_items_rejected": list(result.out_of_scope_items_rejected),
+            "numbering_gaps": remaining_gaps,
+        })
+
     answers_by_id: dict[str, set[str]] = {}
     for evidence in result.solution_evidence:
         if evidence.normalized_item_id:
@@ -2514,7 +2549,13 @@ def extract_document_qa(
     return result
 
 
-def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] | None:
+def build_learning_journey(
+    result: DocumentExtractionResult,
+    *,
+    scoped_job_state: Any | None = None,
+    scoped_job_id: str | None = None,
+    manifest_id: str | None = None,
+) -> dict[str, Any] | None:
     family = result.resolved_family
     if not family:
         return None
@@ -2607,10 +2648,19 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
     question_pages_total = len({
         page for section in family.matched_sections for page in section.question_pages
     })
+    from .scoped_extraction import assert_result_invariants  # noqa: WPS433
+    assert_result_invariants(
+        question_pages_total=question_pages_total,
+        discovered_count=discovered_count,
+    )
     manifest_sealed = bool(result.scope_extraction_complete and question_pages_total > 0 and discovered_count > 0)
     processing_finished = bool(manifest_sealed and not result.unprocessed_pages)
+    authoritative = scoped_job_state
     return {
         "title": family.family_name,
+        "jobId": scoped_job_id,
+        "manifestId": manifest_id,
+        "scopeFingerprint": result.scope_fingerprint,
         "scope": {
             "type": "section_family",
             "requestedLabel": result.target,
@@ -2618,16 +2668,16 @@ def build_learning_journey(result: DocumentExtractionResult) -> dict[str, Any] |
             "excludedSections": family.excluded_sections,
         },
         "sections": sections,
-        "manifestSealed": manifest_sealed,
-        "discoveryComplete": manifest_sealed,
-        "processingFinished": processing_finished,
-        "allAnswersVerified": bool(processing_finished and result.answer_verification_complete),
-        "discoveredCount": discovered_count,
-        "pendingCount": 0 if processing_finished else len(result.unprocessed_pages),
-        "processingCount": 0,
-        "answeredCount": answered_count,
-        "unresolvedCount": unresolved_count,
-        "failedCount": 0,
+        "manifestSealed": authoritative.manifest_sealed if authoritative else manifest_sealed,
+        "discoveryComplete": authoritative.discovery_complete if authoritative else manifest_sealed,
+        "processingFinished": authoritative.processing_finished if authoritative else processing_finished,
+        "allAnswersVerified": authoritative.all_answers_verified if authoritative else bool(processing_finished and result.answer_verification_complete),
+        "discoveredCount": authoritative.discovered_count if authoritative else discovered_count,
+        "pendingCount": authoritative.pending_count if authoritative else (0 if processing_finished else len(result.unprocessed_pages)),
+        "processingCount": authoritative.processing_count if authoritative else 0,
+        "answeredCount": authoritative.answered_count if authoritative else answered_count,
+        "unresolvedCount": authoritative.unresolved_count if authoritative else unresolved_count,
+        "failedCount": authoritative.failed_count if authoritative else 0,
         "coverage": {
             "totalPages": result.total_pages,
             "pagesScanned": len(result.cumulative_scanned_pages or result.scanned_pages),

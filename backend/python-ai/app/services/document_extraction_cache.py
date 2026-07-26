@@ -34,6 +34,8 @@ def canonical_extraction_target(target: str) -> str:
 def should_replace_cache(
     current: ExtractionCacheQuality | None,
     candidate: ExtractionCacheQuality,
+    *, current_ids: set[str] | None = None,
+    candidate_ids: set[str] | None = None,
 ) -> bool:
     if not candidate.scope_complete or candidate.question_pages_total <= 0:
         return False
@@ -46,6 +48,8 @@ def should_replace_cache(
     if candidate.questions_found < current.questions_found:
         return False
     if candidate.sections_found < current.sections_found:
+        return False
+    if current_ids and candidate_ids is not None and not current_ids.issubset(candidate_ids):
         return False
     return True
 
@@ -109,7 +113,19 @@ def promote_verified_extraction_cache(
             current_quality = ExtractionCacheQuality(**existing["quality"])
         except (TypeError, ValueError):
             current_quality = None
-    if not should_replace_cache(current_quality, quality):
+    current_ids = {
+        str(item.get("item_id") or item.get("question_id") or item.get("number") or "")
+        for item in (existing or {}).get("questions", []) if isinstance(item, dict)
+    }
+    candidate_ids = {
+        str(item.get("item_id") or item.get("question_id") or item.get("number") or "")
+        for item in questions if isinstance(item, dict)
+    }
+    current_ids.discard("")
+    candidate_ids.discard("")
+    if not should_replace_cache(
+        current_quality, quality, current_ids=current_ids, candidate_ids=candidate_ids,
+    ):
         log.warning(
             "scope_candidate_rejected document=%s revision=%s previous_questions=%d "
             "candidate_questions=%d sections=%d out_of_scope=%d",

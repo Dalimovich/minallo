@@ -22,8 +22,13 @@ test('document extraction mounts a persistent Learning Journey accordion', () =>
   assert.match(shell, /No partial or out-of-scope question list was shown/);
   assert.match(shell, /marker\.manifestSealed/);
   assert.match(shell, /questionsFound === marker\.discoveredCount/);
+  assert.match(shell, /new Set\(questionIds\)\.size === questionIds\.length/);
+  assert.match(shell, /included\.has\(id\.split\('\.'\)\[0\]/);
+  assert.match(shell, /invalid_journey_rejected/);
+  assert.match(shell, /lastKnownGoodJourney/);
   assert.match(shell, /Question scope complete/);
   assert.match(shell, /Answer verification incomplete/);
+  assert.match(shell, /marker\.answeredCount \+ ' answers verified'/);
   assert.match(shell, /Show all answers/);
   assert.match(shell, /Hide all answers/);
   assert.match(shell, /aria-controls/);
@@ -38,4 +43,13 @@ test('combined-markdown generated exams hide the solution section by default', (
   assert.match(shell, /Show answers/);
   assert.match(shell, /Hide answers/);
   assert.match(shell, /m\.role === 'assistant'/);
+});
+
+test('scoped Learning Journey refresh resumes the authoritative job and deduplicates events', () => {
+  assert.match(shell, /\/scoped-jobs\//);
+  assert.match(shell, /reconcileScopedJourney/);
+  assert.match(shell, /seenEventIds/);
+  assert.match(shell, /new Set\(marker\.seenEventIds \|\| \[\]\)/);
+  assert.match(shell, /shouldPoll = !snapshot\.processingFinished/);
+  assert.match(shell, /snapshot\.allAnswersVerified/);
 });
