@@ -157,3 +157,27 @@ test('page-reading recovery reopens the exact saved PDF page before retrying', (
   assert.match(shell, /failure\.action === 'read_current_page'/);
   assert.match(shell, /handleSourceClick\(\{[\s\S]*documentId: message\.requestSnapshot\.activeDocumentId[\s\S]*page: message\.requestSnapshot\.visiblePage/);
 });
+
+test('Stop immediately releases foreground ownership and persists a terminal stopped message', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /userStoppedControllers\.add\(controller\)/);
+  assert.match(shell, /completionState: 'stopped'/);
+  assert.match(shell, /controller\.abort\(\);[\s\S]{0,200}state\.controller = null;[\s\S]{0,200}state\.isSending = false;/);
+  assert.match(shell, /setSendBtnMode\(sendBtn, 'send'\);[\s\S]{0,100}saveChatStore\(\)/);
+});
+
+test('stopped turns preserve partial output and cannot be restored as running', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /if \(stoppedByUser && !partialText\) partialText = assistantMessage\.text/);
+  assert.match(shell, /m\.completionState === 'stopped'/);
+  assert.match(shell, /Response stopped\./);
+  assert.match(shell, /\['pending', 'processing', 'streaming', 'recovering'\]/);
+});
+
+test('aborted streams reject late events and a later request keeps its own state', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /if \(controller\.signal\.aborted\) throw new DOMException\('Aborted', 'AbortError'\)/);
+  assert.match(shell, /if \(state\.controller === controller\)/);
+  assert.match(shell, /if \(state\.activeAssistantMessage === assistantMessage\)/);
+  assert.match(shell, /requestId: newChatMessageId\(\)/);
+});

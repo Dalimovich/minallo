@@ -33,6 +33,7 @@ const ROUTES = [
   ['activate-paypal-subscription',    'activate-paypal-subscription'],
   ['join-room-by-code',               'join-room-by-code'],
   ['send-chat-message',               'send-chat-message'],
+  ['chat-attachments',                'chat-attachments'],
   ['chat-friends',                    'chat-friends'],
   ['public-billing-config',           'public-billing-config'],
   ['chat-user-search',                'chat-user-search'],

@@ -5,6 +5,11 @@ import { readFileSync } from 'node:fs';
 const endpoint = readFileSync('backend/functions/chat-attachments.ts', 'utf8');
 const migration = readFileSync('supabase/migrations/20260727_000009_persistent_ai_chat_attachments.sql', 'utf8');
 const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+const pagesShimGenerator = readFileSync('scripts/generate-pages-shims.mjs', 'utf8');
+
+test('Cloudflare Pages exposes the persistent attachment endpoint', () => {
+  assert.match(pagesShimGenerator, /\['chat-attachments',\s*'chat-attachments'\]/);
+});
 
 test('sent chat files use private object storage and permanent database records', () => {
   assert.match(endpoint, /const BUCKET = 'chat-attachments'/);
@@ -41,4 +46,19 @@ test('PDF attachments create exact RAG document identities without filename look
 test('metadata failure removes uploaded objects and document records', () => {
   assert.match(endpoint, /DELETE', `documents\?id=eq\./);
   assert.match(endpoint, /storageRequest\('DELETE'/);
+});
+
+test('unsafe original filenames never become object storage paths', () => {
+  assert.match(endpoint, /safeExtension\(filename, mimeType\)/);
+  assert.match(endpoint, /`\$\{user\.id\}\/\$\{fileId\}\$\{safeExtension/);
+  assert.doesNotMatch(endpoint, /`\$\{user\.id\}\/\$\{fileId\}\/\$\{filename\}`/);
+  assert.match(endpoint, /original_filename: filename/);
+});
+
+test('attachment failures expose structured stages without leaking file data', () => {
+  assert.match(endpoint, /chat_attachment_send_failed/);
+  assert.match(endpoint, /storage_policy_denied/);
+  assert.match(endpoint, /message_attachment_relation_failed/);
+  assert.match(shell, /class AttachmentSendError/);
+  assert.match(shell, /Your draft is still available/);
 });

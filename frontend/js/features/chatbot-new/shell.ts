@@ -387,6 +387,7 @@ let activeChatLoadRaf: number | null = null;
 // button) when the user switches BACK mid-stream — instead of showing a blank
 // chat that only fills in once the stream finally completes.
 const inFlightReplyRows = new Map<string, { row: HTMLElement; controller: AbortController }>();
+const userStoppedControllers = new WeakSet<AbortController>();
 let suppressMessageAutoScroll = false;
 // Bumped on every chat (re)load; pending settle-scroll passes carry the token
 // they were scheduled with and bail if a newer load — or the user's own scroll
@@ -624,6 +625,22 @@ interface AttachmentRef {
   currentPage?: number;
 }
 
+interface AttachmentSendFailure {
+  stage: 'validation' | 'storage_upload' | 'file_record' | 'message_creation' | 'message_attachment_relation' | 'indexing_registration' | 'ai_request';
+  code: string;
+  message: string;
+  fileName: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
+class AttachmentSendError extends Error {
+  constructor(readonly failure: AttachmentSendFailure) {
+    super(failure.message);
+    this.name = 'AttachmentSendError';
+  }
+}
+
 interface MissionMarker {
   type: 'daily_mission';
   courseId: string;
@@ -647,7 +664,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   interrupted?: boolean;
-  completionState?: 'pending' | 'processing' | 'streaming' | 'recovering' | 'complete' | 'interrupted' | 'failed_recoverable' | 'failed_terminal';
+  completionState?: 'pending' | 'processing' | 'streaming' | 'recovering' | 'complete' | 'stopped' | 'interrupted' | 'failed_recoverable' | 'failed_terminal';
   requestId?: string;
   scopedJobId?: string;
   parentUserMessageId?: string;
@@ -837,6 +854,8 @@ interface ConversationState {
   files: PendingFile[];
   controller: AbortController | null;
   isSending: boolean;
+  activeAssistantMessage?: ChatMessage | null;
+  activeChatId?: string | null;
   lastSendFailed?: boolean;
 }
 
@@ -860,7 +879,7 @@ function initConversation(root: HTMLElement): void {
   // Send / pause toggle
   sendBtn.addEventListener('click', () => {
     if (state.isSending) {
-      abortSend(state);
+      abortSend(state, sendBtn, msgs);
     } else {
       void doSend(state, stage, textarea, sendBtn, pasteRow, msgs);
     }
@@ -1058,6 +1077,7 @@ async function doSend(
     await persistMessageAttachments(userMessage);
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : 'The attachment could not be saved.';
+    if (cause instanceof AttachmentSendError) console.error('chat_attachment_send_failed', cause.failure);
     (window as unknown as { showToast?: (title: string, detail?: string) => void }).showToast?.('Attachment not sent', detail + ' Your draft is still available.');
     return;
   }
@@ -1145,6 +1165,8 @@ async function streamAiReply(
     completionState: 'processing', exportable: false, retryable: true,
     createdAt: nowIso, updatedAt: nowIso
   } satisfies ChatMessage;
+  state.activeAssistantMessage = assistantMessage;
+  state.activeChatId = originId;
   const continuationBase = options.continuationText?.trim() || '';
   Object.assign(assistantMessage, {
     text: continuationBase, completionState: continuationBase ? 'recovering' : 'processing', exportable: false, retryable: true,
@@ -1333,19 +1355,21 @@ async function streamAiReply(
     return true;
   } catch (err) {
     thinking?.remove(true);
+    const stoppedByUser = userStoppedControllers.has(controller);
     let partialText = err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
       ? sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams).trim() : '';
     if (continuationBase) partialText = partialText
       ? `${continuationBase}\n\n${partialText}` : continuationBase;
+    if (stoppedByUser && !partialText) partialText = assistantMessage.text || '';
     const interrupted = (err as Error)?.name === 'AbortError' || !!partialText;
     const classifiedFailure = classifyAiError(err);
     Object.assign(assistantMessage, {
       text: partialText,
-      completionState: interrupted && partialText ? 'interrupted' : 'failed_recoverable',
+      completionState: stoppedByUser ? 'stopped' : interrupted && partialText ? 'interrupted' : 'failed_recoverable',
       interrupted,
       exportable: !!partialText,
       retryable: classifiedFailure.retryable,
-      errorCode: classifiedFailure.code,
+      errorCode: stoppedByUser ? 'user_cancelled' : classifiedFailure.code,
       failureStage: classifiedFailure.stage || (err instanceof AskStreamError
         ? String(err.metadata?.stage || err.metadata?.failureStage || '') : 'unknown'),
       recoveryAction: classifiedFailure.action,
@@ -1355,13 +1379,16 @@ async function streamAiReply(
     });
     touchOrigin();
     saveChatStore();
-    if (isOriginActive()) setBubbleSubtitle(aiRow, undefined, 'failed');
+    if (isOriginActive()) setBubbleSubtitle(aiRow, undefined, stoppedByUser ? 'stopped' : 'failed');
     if (isOriginActive() && bubble) {
-      if ((err as Error)?.name === 'AbortError') {
-        bubble.innerHTML =
-          '<em class="ncb-bubble-aborted">' +
-          escapeHtml(tStr('cb_response_stopped', 'Response stopped.')) +
-          '</em>';
+      if (stoppedByUser) {
+        if (partialText) renderRichBubble(bubble, partialText, allowDiagrams);
+        else bubble.innerHTML = '';
+        const note = document.createElement('div');
+        note.className = 'ncb-bubble-aborted';
+        note.textContent = tStr('cb_response_stopped', 'Response stopped.');
+        bubble.appendChild(note);
+        appendBubbleActions(aiRow, partialText, assistantMessage);
       } else if (isSubscriptionError(err)) {
         // New users without a plan hit the 402 gate — show a calm upgrade
         // prompt instead of a raw "Server 402: {…}" dump, and swap the
@@ -1406,6 +1433,10 @@ async function streamAiReply(
       state.controller = null;
       state.isSending = false;
       setSendBtnMode(sendBtn, 'send');
+    }
+    if (state.activeAssistantMessage === assistantMessage) {
+      state.activeAssistantMessage = null;
+      state.activeChatId = null;
     }
     // Sticky: don't yank a user who scrolled up to read while the answer finished.
     if (isOriginActive()) scrollMsgsToBottom(msgs, false);
@@ -3267,6 +3298,7 @@ async function streamFromAskStream(
     }
     while (parsedEvents.length) {
       const evt = parsedEvents.shift()!;
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
         eventCount += 1;
         lastEventType = evt.done === true ? 'done' : evt.error ? 'error'
           : typeof evt.t === 'string' ? 'token' : evt.meta === true ? 'meta' : 'status';
@@ -3299,6 +3331,9 @@ async function streamFromAskStream(
         }
         if (typeof evt.t === 'string') {
           answerBuf += evt.t;
+          if (assistantMessage) assistantMessage.text = sanitizeChatbotDiagrams(
+            stripSourceMarkers(answerBuf), allowDiagrams
+          );
           const reveal = await ensureLiveReveal();
           reveal.push(evt.t);
         }
@@ -3808,8 +3843,47 @@ async function callGenericAi(
   return raw;
 }
 
-function abortSend(state: ConversationState): void {
-  if (state.controller) state.controller.abort();
+function abortSend(
+  state: ConversationState,
+  sendBtn: HTMLButtonElement,
+  msgs: HTMLElement
+): void {
+  const controller = state.controller;
+  if (!controller || userStoppedControllers.has(controller)) return;
+  userStoppedControllers.add(controller);
+
+  const message = state.activeAssistantMessage;
+  if (message) {
+    Object.assign(message, {
+      completionState: 'stopped', interrupted: true, retryable: true,
+      exportable: !!message.text.trim(), errorCode: 'user_cancelled',
+      recoveryAction: 'continue', updatedAt: new Date().toISOString()
+    });
+    const row = message.id
+      ? msgs.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(message.id)}"]`)
+      : null;
+    const bubble = row?.querySelector<HTMLElement>('.ncb-bubble-body');
+    row?.querySelector<HTMLElement>('.ncb-thinking')?.remove();
+    if (bubble) {
+      if (message.text.trim()) renderRichBubble(bubble, message.text, !!message.allowDiagrams);
+      else bubble.innerHTML = '';
+      const note = document.createElement('div');
+      note.className = 'ncb-bubble-aborted';
+      note.textContent = tStr('cb_response_stopped', 'Response stopped.');
+      bubble.appendChild(note);
+    }
+  }
+
+  if (state.activeChatId && inFlightReplyRows.get(state.activeChatId)?.controller === controller) {
+    inFlightReplyRows.delete(state.activeChatId);
+  }
+  controller.abort();
+  state.controller = null;
+  state.isSending = false;
+  state.activeAssistantMessage = null;
+  state.activeChatId = null;
+  setSendBtnMode(sendBtn, 'send');
+  saveChatStore();
 }
 
 /** Mirror fetch's abort contract for non-fetch awaits: pressing pause must
@@ -3897,8 +3971,13 @@ async function persistMessageAttachments(message: ChatMessage): Promise<void> {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'upload', filename: item.name, mimeType, base64, courseId: courseId || undefined })
     });
-    const result = await response.json().catch(() => ({})) as { fileId?: string; documentId?: string; error?: { message?: string } };
-    if (!response.ok || !result.fileId) throw new Error(result.error?.message || `Could not save ${item.name}.`);
+    const result = await response.json().catch(() => ({})) as { fileId?: string; documentId?: string; error?: { stage?: AttachmentSendFailure['stage']; code?: string; message?: string } };
+    if (!response.ok || !result.fileId) throw new AttachmentSendError({
+      stage: result.error?.stage || 'storage_upload',
+      code: result.error?.code || (response.status === 404 ? 'upload_route_missing' : 'upload_failed'),
+      message: result.error?.message || `Could not save ${item.name}.`,
+      fileName: item.name, mimeType, sizeBytes: 'kind' in item ? item.size : undefined
+    });
     item.persistentFileId = result.fileId;
     item.fileId = result.documentId;
     item.courseId = courseId || undefined;
@@ -3910,7 +3989,17 @@ async function persistMessageAttachments(message: ChatMessage): Promise<void> {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'link', conversationId: durable.conversationId, messageId: message.id, messageText: message.text || `Attached ${item.name}`, fileId: item.persistentFileId, order })
     });
-    if (!response.ok) throw new Error(`Could not attach ${item.name} to the conversation.`);
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({})) as { error?: { stage?: AttachmentSendFailure['stage']; code?: string; message?: string } };
+      throw new AttachmentSendError({
+        stage: result.error?.stage || 'message_attachment_relation',
+        code: result.error?.code || 'message_attachment_relation_failed',
+        message: result.error?.message || `Could not attach ${item.name} to the conversation.`,
+        fileName: item.name,
+        mimeType: !('kind' in item) ? item.mediaType : (item.mimeType || item.mediaType || guessMimeType(item.name)),
+        sizeBytes: 'kind' in item ? item.size : undefined
+      });
+    }
   }
   message.attachmentRefs = attachments.map((item) => ({
     fileId: item.fileId!, filename: item.name,
@@ -3955,7 +4044,7 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
 function setBubbleSubtitle(
   aiRow: HTMLElement,
   sourceScope: string | undefined,
-  state: 'pending' | 'completed' | 'failed' = 'completed'
+  state: 'pending' | 'completed' | 'stopped' | 'failed' = 'completed'
 ): void {
   const el = aiRow.querySelector<HTMLElement>('.ncb-bubble-subtitle');
   if (!el) return;
@@ -3966,6 +4055,10 @@ function setBubbleSubtitle(
   }
   if (state === 'failed') {
     el.textContent = tStr('cb_subtitle_document_failed', 'Document request failed');
+    return;
+  }
+  if (state === 'stopped') {
+    el.textContent = tStr('cb_response_stopped', 'Response stopped.');
     return;
   }
   let label: string;
@@ -4838,7 +4931,7 @@ function appendBubbleActions(aiRow: HTMLElement, raw: string, message?: ChatMess
 
   const messageId = message?.id || aiRow.dataset.messageId || '';
   const exportable = message ? message.exportable !== false && !!raw.trim()
-    && (message.completionState === 'complete' || message.completionState === 'interrupted' || !message.completionState)
+    && (message.completionState === 'complete' || message.completionState === 'interrupted' || message.completionState === 'stopped' || !message.completionState)
     : !!raw.trim();
 
   const bar = document.createElement('div');
@@ -6579,6 +6672,11 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   state.files = [];
   state.controller = pending ? pending.controller : null;
   state.isSending = !!pending;
+  state.activeAssistantMessage = pending
+    ? [...chat.messages].reverse().find((message) => message.role === 'assistant'
+      && ['pending', 'processing', 'streaming', 'recovering'].includes(message.completionState || '')) || null
+    : null;
+  state.activeChatId = pending ? chat.id : null;
   if (sendBtn) setSendBtnMode(sendBtn, pending ? 'pause' : 'send');
   if (textarea) {
     textarea.value = '';
@@ -6656,6 +6754,15 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
     attachStructuredRecoveryAction(row, bubble, m, classifyAiError({
       code: m.errorCode || 'stream_ended_without_terminal_event', retryable: true,
     }));
+    appendBubbleActions(row, m.text, m);
+    return;
+  }
+  if (bubble && m.completionState === 'stopped') {
+    if (m.text.trim()) renderRichBubble(bubble, m.text, !!m.allowDiagrams);
+    const note = document.createElement('div');
+    note.className = 'ncb-bubble-aborted';
+    note.textContent = 'Response stopped.';
+    bubble.appendChild(note);
     appendBubbleActions(row, m.text, m);
     return;
   }

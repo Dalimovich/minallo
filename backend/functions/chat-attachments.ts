@@ -10,6 +10,22 @@ const BUCKET = 'chat-attachments';
 const MAX_BYTES = 25 * 1024 * 1024;
 const SAFE_MIME = /^(application\/pdf|image\/(png|jpeg|webp)|text\/(plain|markdown)|application\/(msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/i;
 
+function attachmentFailure(statusCode: number, stage: string, code: string, message: string, retryable = true): LambdaResponse {
+  return jsonResponse(statusCode, { error: { stage, code, message, retryable } });
+}
+
+function safeExtension(filename: string, mimeType: string): string {
+  const match = filename.toLowerCase().match(/\.[a-z0-9]{1,10}$/);
+  if (match) return match[0];
+  if (mimeType === 'application/pdf') return '.pdf';
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/jpeg') return '.jpg';
+  if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'text/plain') return '.txt';
+  if (mimeType === 'text/markdown') return '.md';
+  return '';
+}
+
 interface FileRow { id: string; owner_id: string; document_id?: string | null; original_filename: string; storage_bucket: string; storage_path: string; mime_type: string; size_bytes?: number; indexing_status?: string | null }
 
 async function storageRequest(method: string, path: string, body?: Buffer, contentType = 'application/octet-stream'): Promise<Response> {
@@ -35,13 +51,16 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     const filename = String(body.filename || '').replace(/[\\/\x00-\x1f]/g, '_').slice(0, 180);
     const mimeType = String(body.mimeType || 'application/octet-stream');
     const encoded = String(body.base64 || '');
-    if (!filename || !SAFE_MIME.test(mimeType) || !/^[A-Za-z0-9+/=\r\n]+$/.test(encoded)) return fail(400, 'Unsupported attachment');
+    if (!filename || !SAFE_MIME.test(mimeType) || !/^[A-Za-z0-9+/=\r\n]+$/.test(encoded)) return attachmentFailure(400, 'validation', 'unsupported_attachment', 'Unsupported attachment', false);
     const bytes = Buffer.from(encoded, 'base64');
-    if (!bytes.length || bytes.length > MAX_BYTES) return fail(413, 'Attachment is empty or too large');
+    if (!bytes.length || bytes.length > MAX_BYTES) return attachmentFailure(413, 'validation', bytes.length ? 'file_too_large' : 'file_missing', 'Attachment is empty or too large', false);
     const fileId = crypto.randomUUID();
-    const storagePath = `${user.id}/${fileId}/${filename}`;
+    const storagePath = `${user.id}/${fileId}${safeExtension(filename, mimeType)}`;
     const upload = await storageRequest('POST', `object/${BUCKET}/${storagePath}`, bytes);
-    if (!upload.ok) return fail(502, 'Attachment storage failed');
+    if (!upload.ok) {
+      console.error('chat_attachment_send_failed', { stage: 'storage_upload', code: 'storage_upload_failed', fileName: filename, mimeType, sizeBytes: bytes.length, storageBucket: BUCKET, storagePath, status: upload.status });
+      return attachmentFailure(502, 'storage_upload', upload.status === 403 ? 'storage_policy_denied' : 'storage_upload_failed', 'Attachment storage failed');
+    }
     let documentId: string | null = null;
     let indexingStatus: string | null = null;
     const courseId = typeof body.courseId === 'string' ? body.courseId : null;
@@ -54,7 +73,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       const created = Array.isArray(doc.body) ? doc.body[0] : doc.body;
       if (doc.status !== 201 || !created?.id) {
         await storageRequest('DELETE', `object/${BUCKET}/${storagePath}`).catch(() => undefined);
-        return fail(500, 'Attachment document record could not be saved');
+        return attachmentFailure(500, 'file_record', 'document_record_failed', 'Attachment document record could not be saved');
       }
       documentId = created.id;
       indexingStatus = 'processing';
@@ -72,7 +91,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (insert.status !== 201) {
       if (documentId) await supaRequest('DELETE', `documents?id=eq.${encodeURIComponent(documentId)}&user_id=eq.${encodeURIComponent(user.id)}`, null, key).catch(() => undefined);
       await storageRequest('DELETE', `object/${BUCKET}/${storagePath}`).catch(() => undefined);
-      return fail(500, 'Attachment metadata could not be saved');
+      return attachmentFailure(500, 'file_record', 'file_record_failed', 'Attachment metadata could not be saved');
     }
     return jsonResponse(201, { fileId, documentId, filename, mimeType, sizeBytes: bytes.length, indexingStatus });
   }
@@ -89,12 +108,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       conversation_id: conversationId, user_id: user.id, client_message_id: messageId,
       role: 'user', content: messageText
     }, key, { Prefer: 'resolution=merge-duplicates,return=minimal' });
-    if (message.status < 200 || message.status >= 300) return fail(409, 'Message could not be persisted');
+    if (message.status < 200 || message.status >= 300) return attachmentFailure(409, 'message_creation', 'message_creation_failed', 'Message could not be persisted');
     const inserted = await supaRequest('POST', 'ai_chat_message_attachments', {
       conversation_id: conversationId, client_message_id: messageId, file_id: fileId,
       attachment_order: Number(body.order) || 0, page_number: Number(body.page) || null
     }, key, { Prefer: 'resolution=merge-duplicates,return=minimal' });
-    if (inserted.status < 200 || inserted.status >= 300) return fail(409, 'Attachment could not be linked to this message');
+    if (inserted.status < 200 || inserted.status >= 300) return attachmentFailure(409, 'message_attachment_relation', 'message_attachment_relation_failed', 'Attachment could not be linked to this message');
     return jsonResponse(200, { linked: true });
   }
 
