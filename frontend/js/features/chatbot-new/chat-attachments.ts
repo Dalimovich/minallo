@@ -10,6 +10,7 @@ export interface ChatAttachmentView {
   courseId?: string;
   currentPage?: number;
   status?: 'uploading' | 'processing' | 'ready' | 'failed';
+  refreshPreviewUrl?: () => Promise<string>;
 }
 
 const esc = (value: string): string => value.replace(/[&<>'"]/g, (c) => ({
@@ -65,7 +66,17 @@ export function openAttachmentViewer(
   const body = isImage
     ? `<div class="chat-file-viewer__image-stage"><img class="chat-file-viewer__image" src="${esc(item.dataUrl!)}" alt="${esc(item.name)}"></div>`
     : isPdf
-      ? `<iframe class="chat-file-viewer__pdf" src="${esc(item.dataUrl!)}#toolbar=1" title="${esc(item.name)}"></iframe>`
+      ? `<section class="chat-file-viewer__pdf" data-testid="chat-file-pdf-host">
+          <nav class="chat-file-viewer__pdf-toolbar" aria-label="PDF controls">
+            <button type="button" data-pdf-action="previous" aria-label="Previous page">‹</button>
+            <span><input type="number" min="1" value="1" aria-label="Current page"> / <b>–</b></span>
+            <button type="button" data-pdf-action="next" aria-label="Next page">›</button>
+            <button type="button" data-pdf-action="zoom-out" aria-label="Zoom out">−</button>
+            <button type="button" data-pdf-action="fit">Fit</button>
+            <button type="button" data-pdf-action="zoom-in" aria-label="Zoom in">+</button>
+          </nav>
+          <div class="chat-file-viewer__pdf-stage"><div class="chat-file-viewer__pdf-status">Resolving file…</div><canvas hidden></canvas></div>
+        </section>`
       : item.textContent != null
         ? `<pre class="chat-file-viewer__text">${esc(item.textContent)}</pre>`
         : `<div class="chat-file-viewer__unsupported"><span>${esc(type)}</span><p>A preview is not available for this file type.</p></div>`;
@@ -92,6 +103,7 @@ export function openAttachmentViewer(
   const textarea = overlay.querySelector<HTMLTextAreaElement>('textarea')!;
   const send = overlay.querySelector<HTMLButtonElement>('.chat-file-viewer__send')!;
   const error = overlay.querySelector<HTMLElement>('.chat-file-viewer__error')!;
+  if (isPdf) void mountPdfJsViewer(overlay, item, error);
   const submit = async (): Promise<void> => {
     const question = textarea.value.trim();
     if (!question || send.disabled) return;
@@ -102,4 +114,107 @@ export function openAttachmentViewer(
   send.addEventListener('click', () => { void submit(); });
   textarea.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); void submit(); } });
   window.requestAnimationFrame(() => textarea.focus());
+}
+
+interface PdfPageLike {
+  getViewport(options: { scale: number }): { width: number; height: number };
+  render(options: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }): { promise: Promise<void>; cancel?: () => void };
+}
+
+interface PdfDocumentLike {
+  numPages: number;
+  getPage(page: number): Promise<PdfPageLike>;
+  destroy?: () => Promise<void>;
+}
+
+async function fetchPdfBytes(url: string): Promise<ArrayBuffer> {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`PDF request failed (HTTP ${response.status})`);
+  return response.arrayBuffer();
+}
+
+async function mountPdfJsViewer(overlay: HTMLElement, item: ChatAttachmentView, error: HTMLElement): Promise<void> {
+  const host = overlay.querySelector<HTMLElement>('.chat-file-viewer__pdf');
+  const stage = overlay.querySelector<HTMLElement>('.chat-file-viewer__pdf-stage');
+  const status = overlay.querySelector<HTMLElement>('.chat-file-viewer__pdf-status');
+  const canvas = overlay.querySelector<HTMLCanvasElement>('.chat-file-viewer__pdf canvas');
+  const pageInput = overlay.querySelector<HTMLInputElement>('.chat-file-viewer__pdf-toolbar input');
+  const pageTotal = overlay.querySelector<HTMLElement>('.chat-file-viewer__pdf-toolbar b');
+  if (!host || !stage || !status || !canvas || !pageInput || !pageTotal) return;
+
+  let source = item.dataUrl!;
+  let bytes: ArrayBuffer;
+  try {
+    status.textContent = 'Loading PDF…';
+    try {
+      bytes = await fetchPdfBytes(source);
+    } catch (firstError) {
+      if (!item.refreshPreviewUrl) throw firstError;
+      source = await item.refreshPreviewUrl();
+      item.dataUrl = source;
+      bytes = await fetchPdfBytes(source);
+    }
+    await window._ssEnsurePdfJs?.();
+    if (!window.pdfjsLib) throw new Error('PDF.js could not be loaded.');
+    const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise as PdfDocumentLike;
+    pageTotal.textContent = String(pdf.numPages);
+    pageInput.max = String(pdf.numPages);
+    let pageNumber = Math.min(Math.max(item.currentPage || 1, 1), pdf.numPages);
+    let zoom = 1;
+    let renderTask: { promise: Promise<void>; cancel?: () => void } | null = null;
+
+    const render = async (fit = false): Promise<void> => {
+      renderTask?.cancel?.();
+      status.hidden = false;
+      status.textContent = `Rendering page ${pageNumber} of ${pdf.numPages}…`;
+      const page = await pdf.getPage(pageNumber);
+      const base = page.getViewport({ scale: 1 });
+      if (fit) zoom = Math.min(2.5, Math.max(0.35, (stage.clientWidth - 40) / base.width));
+      const viewport = page.getViewport({ scale: zoom });
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.ceil(viewport.width * pixelRatio);
+      canvas.height = Math.ceil(viewport.height * pixelRatio);
+      canvas.style.width = `${Math.ceil(viewport.width)}px`;
+      canvas.style.height = `${Math.ceil(viewport.height)}px`;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Canvas rendering is unavailable.');
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      renderTask = page.render({ canvasContext: context, viewport });
+      await renderTask.promise;
+      if (!overlay.isConnected) return;
+      canvas.hidden = false;
+      status.hidden = true;
+      pageInput.value = String(pageNumber);
+      item.currentPage = pageNumber;
+      const composerContext = overlay.querySelector<HTMLElement>('.chat-file-viewer__composer-row > span');
+      if (composerContext) composerContext.textContent = `${item.name} · Page ${pageNumber}`;
+    };
+
+    host.addEventListener('click', (event) => {
+      const action = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-pdf-action]')?.dataset.pdfAction;
+      if (!action) return;
+      if (action === 'previous') pageNumber = Math.max(1, pageNumber - 1);
+      if (action === 'next') pageNumber = Math.min(pdf.numPages, pageNumber + 1);
+      if (action === 'zoom-out') zoom = Math.max(0.35, zoom - 0.15);
+      if (action === 'zoom-in') zoom = Math.min(3, zoom + 0.15);
+      void render(action === 'fit').catch(showPdfError);
+    });
+    pageInput.addEventListener('change', () => {
+      pageNumber = Math.min(pdf.numPages, Math.max(1, Number(pageInput.value) || 1));
+      void render().catch(showPdfError);
+    });
+    const observer = new ResizeObserver(() => { if (overlay.isConnected) void render(true).catch(showPdfError); });
+    observer.observe(stage);
+    new MutationObserver(() => { if (!overlay.isConnected) { observer.disconnect(); renderTask?.cancel?.(); void pdf.destroy?.(); } }).observe(document.body, { childList: true });
+    await render(true);
+  } catch (cause) {
+    showPdfError(cause);
+  }
+
+  function showPdfError(cause: unknown): void {
+    status!.hidden = false;
+    status!.textContent = cause instanceof Error ? `Could not open this PDF. ${cause.message}` : 'Could not open this PDF.';
+    error.textContent = 'The PDF preview could not be loaded. Close and reopen the attachment to retry.';
+    error.hidden = false;
+  }
 }

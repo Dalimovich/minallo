@@ -3579,6 +3579,15 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 .chat-file-viewer__close { width: 38px; height: 38px; border: 1px solid rgba(148,163,184,.2); border-radius: 12px; color: #dbeafe; background: rgba(255,255,255,.055); cursor: pointer; font: 400 24px/1 sans-serif; }
 .chat-file-viewer__body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; background: #030b18; }
 .chat-file-viewer__pdf, .chat-file-viewer__image-stage { width: 100%; height: 100%; border: 0; }
+.chat-file-viewer__pdf { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: #111827; }
+.chat-file-viewer__pdf-toolbar { flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 6px 12px; border-bottom: 1px solid rgba(148,163,184,.18); background: rgba(7,20,38,.96); }
+.chat-file-viewer__pdf-toolbar button { min-width: 34px; height: 32px; padding: 0 10px; border: 1px solid rgba(148,163,184,.24); border-radius: 9px; color: #dbeafe; background: rgba(255,255,255,.06); cursor: pointer; }
+.chat-file-viewer__pdf-toolbar span { display: inline-flex; align-items: center; gap: 5px; color: #a9bfdb; font-size: 12px; }
+.chat-file-viewer__pdf-toolbar input { width: 48px; height: 30px; box-sizing: border-box; border: 1px solid rgba(148,163,184,.24); border-radius: 8px; color: #eef6ff; text-align: center; background: #071426; }
+.chat-file-viewer__pdf-stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; padding: 20px; box-sizing: border-box; text-align: center; background: #182235; }
+.chat-file-viewer__pdf-stage canvas { display: block; margin: 0 auto; background: white; box-shadow: 0 10px 35px rgba(0,0,0,.38); }
+.chat-file-viewer__pdf-status { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #b9cce4; background: #111827; }
+.chat-file-viewer__pdf-status[hidden] { display: none; }
 .chat-file-viewer__image-stage { overflow: auto; display: grid; place-items: center; padding: 20px; box-sizing: border-box; }
 .chat-file-viewer__image { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
 .chat-file-viewer__text { width: 100%; height: 100%; overflow: auto; box-sizing: border-box; margin: 0; padding: 24px; color: #dbeafe; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 14px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; }

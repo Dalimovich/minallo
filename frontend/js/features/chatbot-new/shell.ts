@@ -3937,17 +3937,26 @@ async function openPersistedAttachment(attachment: ChatAttachmentView, card: HTM
     else toast?.('Attachment unavailable', 'This older attachment is missing its persistent file reference.');
     return;
   }
-  const response = await authenticatedFetch('/api/chat-attachments', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'preview', fileId: attachment.fileId })
-  }, { safeToRetry: true });
-  const result = await response.json().catch(() => ({})) as { error?: { message?: string }; previewUrl?: string };
-  if (!response.ok || !result.previewUrl) {
-    toast?.('Attachment unavailable', result.error?.message || 'This file is no longer available.');
+  let previewUrl: string;
+  try {
+    previewUrl = await resolveAttachmentPreviewUrl(attachment.fileId);
+  } catch (cause) {
+    toast?.('Attachment unavailable', cause instanceof Error ? cause.message : 'This file is no longer available.');
     return;
   }
-  attachment.dataUrl = result.previewUrl;
+  attachment.dataUrl = previewUrl;
+  attachment.refreshPreviewUrl = () => resolveAttachmentPreviewUrl(attachment.fileId!);
   openAttachmentViewer(attachment, card, askAboutAttachment);
+}
+
+async function resolveAttachmentPreviewUrl(fileId: string): Promise<string> {
+  const response = await authenticatedFetch('/api/chat-attachments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'preview', fileId })
+  }, { safeToRetry: true });
+  const result = await response.json().catch(() => ({})) as { error?: { message?: string }; previewUrl?: string };
+  if (!response.ok || !result.previewUrl) throw new Error(result.error?.message || 'This file is no longer available.');
+  return result.previewUrl;
 }
 
 function utf8Base64(value: string): string {

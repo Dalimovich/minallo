@@ -31,7 +31,8 @@ test('frontend persists before rendering sent state and refreshes preview URLs',
   const persist = shell.indexOf('await persistMessageAttachments(userMessage)');
   const render = shell.indexOf('appendUserBubble(msgs, text, images, files, userMessage.id)', persist);
   assert.ok(persist >= 0 && render > persist);
-  assert.match(shell, /action: 'preview', fileId: attachment\.fileId/);
+  assert.match(shell, /action: 'preview', fileId/);
+  assert.match(shell, /resolveAttachmentPreviewUrl\(attachment\.fileId\)/);
   assert.match(shell, /Your draft is still available/);
   assert.match(shell, /persistentFileId/);
 });
