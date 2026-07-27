@@ -136,6 +136,65 @@ test('stripe-webhook: ledger 409 returns 200 duplicate', async () => {
   } finally { restore(); }
 });
 
+test('stripe-webhook: checkout upsert includes the required subscription id', async () => {
+  const userId = '033e9c3b-042c-405a-91bb-baf3d37c0606';
+  let subscriptionWrite;
+  const restore = withFetch([
+    {
+      match: u => u.includes('/stripe_webhook_events'),
+      respond: () => jsonResponse(201, {})
+    },
+    {
+      match: u => u.includes('/v1/subscriptions/sub_test'),
+      respond: () => jsonResponse(200, { current_period_end: 1785624508 })
+    },
+    {
+      match: (u, init) => u.includes('/subscriptions?on_conflict=user_id') && init?.method === 'POST',
+      respond: (_u, init) => {
+        subscriptionWrite = JSON.parse(init.body);
+        return jsonResponse(201, {});
+      }
+    },
+    {
+      match: u => u.includes('/subscription_events'),
+      respond: () => jsonResponse(201, {})
+    },
+    {
+      match: u => u.includes('/rpc/record_affiliate_trial'),
+      respond: () => jsonResponse(200, {})
+    },
+    {
+      match: u => u.includes('/stripe_webhook_events?event_id='),
+      respond: () => jsonResponse(204, {})
+    }
+  ]);
+
+  try {
+    delete require.cache[require.resolve('../../backend/functions/stripe-webhook.ts')];
+    const { handler } = require('../../backend/functions/stripe-webhook.ts');
+    const payload = JSON.stringify({
+      id: 'evt_checkout_required_id',
+      type: 'checkout.session.completed',
+      data: { object: {
+        customer: 'cus_test',
+        subscription: 'sub_test',
+        metadata: { user_id: userId, no_trial: 'false' }
+      } }
+    });
+    const res = await handler({
+      httpMethod: 'POST',
+      headers: { 'stripe-signature': signStripe(payload, process.env.STRIPE_WEBHOOK_SECRET) },
+      body: payload
+    });
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(subscriptionWrite.id, userId);
+    assert.equal(subscriptionWrite.user_id, userId);
+  } finally {
+    restore();
+  }
+});
+
 test('paypal-webhook: ledger 500 returns 5xx (not 200 duplicate)', async () => {
   const restore = withFetch([
     {

@@ -221,7 +221,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
         await supaWriteOrThrow('POST', 'subscriptions?on_conflict=user_id',
           {
-            user_id: userId, plan: 'pro', status: noTrial ? 'active' : 'trialing',
+            id: userId, user_id: userId, plan: 'pro', status: noTrial ? 'active' : 'trialing',
             stripe_subscription_id: session.subscription || null,
             stripe_customer_id: session.customer || null,
             expires_at: expiresAt,
