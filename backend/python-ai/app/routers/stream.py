@@ -2891,6 +2891,7 @@ async def _prepare_ask_stream_response(
         ScopeItemStatus,
         classify_scoped_request,
         finalise_scoped_job,
+        resolve_scoped_request,
         stable_scope_key,
     )
     from ..services.scoped_job_store import (  # noqa: WPS433
@@ -2909,7 +2910,7 @@ async def _prepare_ask_stream_response(
     document_extraction, extraction_correction, extraction_target = (
         classify_document_extraction(question, previous_turns_payload)
     )
-    scoped_request = classify_scoped_request(question)
+    scoped_request = resolve_scoped_request(question, previous_turns_payload)
     if scoped_request.target_type == "focused_numbered_target":
         # A bounded section/exercise may ask for "all questions" inside that
         # section. The legacy conversation-aware extraction classifier used

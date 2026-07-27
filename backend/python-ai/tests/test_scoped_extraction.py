@@ -8,7 +8,7 @@ from app.services.scoped_extraction import (
     RequestScopeManifest, RetrievalMode, ScopeItem, ScopeItemStatus, ScopedJobState,
     StructuralUnit, assert_result_invariants, classify_scoped_request,
     persist_batch_results, promote_manifest, reconcile_structural_units,
-    deduplicate_scope_items, retrieve_units, scoped_state_payload,
+    deduplicate_scope_items, resolve_scoped_request, retrieve_units, scoped_state_payload,
     stable_scope_key, validate_manifest,
 )
 
@@ -61,6 +61,27 @@ def test_true_document_wide_request_remains_exhaustive():
     spec = classify_scoped_request("Find and answer all questions in this entire exam")
     assert spec.retrieval_mode is RetrievalMode.COVERAGE
     assert spec.coverage_intent is CoverageIntent.ALL
+
+
+def test_popup_answer_inherits_previous_focused_exercise():
+    prompt = (
+        "Continue the previous calculation using this user-provided missing information: "
+        "taylor_formula = you can find everything in the Formelsammlung inside the course. "
+        "Treat it as the answer to your popup request and finish the solution."
+    )
+    spec = resolve_scoped_request(prompt, [{
+        "role": "user",
+        "text": "12. Rechenaufgabe 1 - Standzeit [Fortsetzung] explain all questions",
+    }])
+    assert spec.retrieval_mode is RetrievalMode.RELEVANCE
+    assert spec.target_type == "focused_numbered_target"
+
+
+def test_explicit_new_exhaustive_followup_does_not_inherit_old_focus():
+    spec = resolve_scoped_request("Continue with all questions in the entire exam", [{
+        "role": "user", "text": "12. Rechenaufgabe 1 - Standzeit",
+    }])
+    assert spec.retrieval_mode is RetrievalMode.COVERAGE
 
 
 def test_canonical_manifest_has_exact_45_ids():

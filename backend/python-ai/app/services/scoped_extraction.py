@@ -94,6 +94,32 @@ def classify_scoped_request(text: str) -> ScopedRequestSpec:
     )
 
 
+_FOCUSED_FOLLOWUP = re.compile(
+    r"\b(?:continue|finish|resume|previous\s+(?:calculation|solution|exercise)|"
+    r"missing\s+information|popup\s+request|fortsetzen|weiterrechnen)\b",
+    re.I,
+)
+
+
+def resolve_scoped_request(
+    text: str,
+    previous_turns: Iterable[dict[str, str]] | None = None,
+) -> ScopedRequestSpec:
+    """Keep an explicit bounded target across short continuation answers."""
+    current = classify_scoped_request(text)
+    if current.target_type == "focused_numbered_target":
+        return current
+    if current.retrieval_mode is RetrievalMode.COVERAGE or not _FOCUSED_FOLLOWUP.search(text or ""):
+        return current
+    for turn in reversed(list(previous_turns or [])):
+        if str(turn.get("role") or "").casefold() != "user":
+            continue
+        inherited = classify_scoped_request(str(turn.get("text") or turn.get("content") or ""))
+        if inherited.target_type == "focused_numbered_target":
+            return inherited
+    return current
+
+
 @dataclass
 class ScopeItem:
     id: str
