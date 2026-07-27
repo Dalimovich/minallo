@@ -54,10 +54,12 @@ test('expired PDF sources are refreshed once using the persistent file identity'
   assert.match(shell, /action: 'preview', fileId/);
 });
 
-test('file questions persist a real-id reference and hard-scope RAG to it', () => {
+test('file questions persist a real-id reference and prioritize it alongside the open PDF', () => {
   assert.match(shell, /attachmentRefs:\s*ref/);
   assert.match(shell, /attachmentRefs\?\.map\(\(ref\) => \(\{ \.\.\.ref \}\)\)/);
-  assert.match(shell, /documentIds:\s*\[explicitAttachment\.fileId\]/);
+  assert.match(shell, /explicitAttachment\.fileId,[\s\S]*compatibleOpenPdf\?\.documentId/);
+  assert.match(shell, /activePdfContext: compatibleOpenPdf/);
+  assert.match(shell, /documentIds,\s*documentNames,/);
   assert.match(shell, /courseId:\s*explicitAttachment\.courseId/);
   assert.match(shell, /appendUserBubble\(msgs, question, \[\], \[file\], userMessage\.id\)/);
 });

@@ -2801,21 +2801,27 @@ function ragEligibility(
   const active = chatStore.getActive();
   const explicitAttachment = last.attachmentRefs?.[0];
   if (explicitAttachment?.fileId && explicitAttachment.courseId) {
-    const page = Math.max(1, explicitAttachment.currentPage || 1);
+    const openPdf = getActivePdfContext();
+    const compatibleOpenPdf = openPdf?.courseId === explicitAttachment.courseId ? openPdf : null;
+    const documentIds = Array.from(new Set([
+      explicitAttachment.fileId,
+      compatibleOpenPdf?.documentId
+    ].filter(Boolean) as string[]));
+    const documentNames = Array.from(new Set([
+      explicitAttachment.filename,
+      compatibleOpenPdf?.fileName
+    ].filter(Boolean) as string[]));
     return {
       question: last.text.trim(),
       courseId: explicitAttachment.courseId,
-      documentIds: [explicitAttachment.fileId],
-      documentNames: [explicitAttachment.filename],
-      activePdfContext: {
-        courseId: explicitAttachment.courseId,
-        documentId: explicitAttachment.fileId,
-        fileName: explicitAttachment.filename,
-        visiblePage: page,
-        pageCount: Math.max(page, 1),
-        pageText: '',
-        pageTextStatus: 'loading'
-      },
+      // The attachment is first (preferred), while a genuinely open PDF is
+      // included too. The backend may broaden ordinary academic retrieval to
+      // other files in this course when neither priority source has evidence.
+      documentIds,
+      documentNames,
+      // Only claim live page context for the PDF the viewer is actually
+      // showing; an attachment chip by itself is not a rendered PDF page.
+      activePdfContext: compatibleOpenPdf,
       explicitSourceOverride: true
     };
   }
