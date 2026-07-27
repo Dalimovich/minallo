@@ -26,10 +26,20 @@ const features: Record<Exclude<WorkspaceModalType, null>, WorkspaceFeature> = {
 let cleanupWorkspaceModal: (() => void) | null = null;
 
 function ensureStyles(): void {
-  if (document.querySelector('[data-mn-workspace-styles]')) return;
+  const version = String(
+    (window as unknown as { MinalloConfig?: { assetVersion?: string } }).MinalloConfig
+      ?.assetVersion || '1'
+  );
+  const href = '/js/features/chatbot-new/workspace-modals/workspace-modal.css?v=' +
+    encodeURIComponent(version);
+  const existing = document.querySelector<HTMLLinkElement>('[data-mn-workspace-styles]');
+  if (existing) {
+    if (existing.getAttribute('href') !== href) existing.href = href;
+    return;
+  }
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = '/js/features/chatbot-new/workspace-modals/workspace-modal.css';
+  link.href = href;
   link.dataset.mnWorkspaceStyles = '1';
   document.head.appendChild(link);
 }
@@ -104,6 +114,19 @@ export function openWorkspaceModal(type: Exclude<WorkspaceModalType, null>): voi
   document.body.classList.add('mn-workspace-open');
   workspaceModalState.active = type;
   feature.afterMount?.(section);
+
+  // Some portal/PDF listeners live above the modal and can consume wheel
+  // events before Chromium performs native scrolling. Make this pane the
+  // authoritative wheel owner so every workspace scrolls consistently.
+  content.addEventListener('wheel', (event) => {
+    if (event.ctrlKey || event.metaKey || event.deltaY === 0) return;
+    const before = content.scrollTop;
+    content.scrollTop += event.deltaY;
+    if (content.scrollTop !== before) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, { passive: false });
 
   let closed = false;
   const close = (): void => {

@@ -55,6 +55,10 @@ test('workspace content has a definite constrained height and owns vertical scro
   assert.match(css, /\.mn-workspace-content\s*\{[^}]*height:\s*100%[^}]*max-height:\s*100%[^}]*overflow-y:\s*auto/);
   assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
   assert.match(css, /touch-action:\s*pan-y/);
+  assert.match(shell, /workspace-modal\.css\?v=/);
+  assert.match(shell, /content\.addEventListener\('wheel'/);
+  assert.match(shell, /content\.scrollTop \+= event\.deltaY/);
+  assert.match(shell, /passive:\s*false/);
 });
 
 test('feature adapters use real profile, billing and lounge refresh paths', () => {
