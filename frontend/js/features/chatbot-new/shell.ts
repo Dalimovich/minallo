@@ -708,6 +708,10 @@ interface ChatMessage {
   examPractice?: boolean;
 }
 
+const ACTIVE_COMPLETION_STATES = new Set<ChatMessage['completionState']>([
+  'pending', 'processing', 'streaming', 'recovering'
+]);
+
 interface LearningJourneyMarker {
   jobId?: string;
   manifestId?: string;
@@ -6745,7 +6749,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   row.setAttribute('data-restored', 'true');
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
 
-  if (bubble && m.completionState && ['pending', 'processing', 'recovering'].includes(m.completionState)) {
+  if (bubble && m.completionState && ACTIVE_COMPLETION_STATES.has(m.completionState)) {
     const stageLabels: Record<string, string> = {
       request_preflight: 'Preparing the document request…',
       locating_question: 'Locating the requested exercise…',
@@ -7085,7 +7089,7 @@ async function reconcileScopedJourney(
 async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElement): Promise<void> {
   if (!chat.persistedId || durableRequestReconciliations.has(chat.id)) return;
   const candidates = chat.messages.filter((message) => message.role === 'assistant' && message.requestId
-    && (['pending', 'processing', 'recovering'].includes(message.completionState || '')
+    && (ACTIVE_COMPLETION_STATES.has(message.completionState)
       || message.errorCode === 'interrupted_while_processing')).slice(-10);
   if (!candidates.length) return;
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
@@ -7239,7 +7243,7 @@ function repairOrphanedAssistantMessages(chat: SavedChat): boolean {
   let changed = false;
   for (const message of chat.messages) {
     if (message.role === 'assistant' && !message.requestId && message.completionState
-      && ['pending', 'processing', 'recovering'].includes(message.completionState)) {
+      && ACTIVE_COMPLETION_STATES.has(message.completionState)) {
       message.completionState = 'failed_recoverable';
       message.errorCode ||= 'interrupted_while_processing';
       message.failureStage ||= 'stream_transport';

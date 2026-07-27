@@ -95,6 +95,10 @@ _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
 _INNER_STREAM_HEARTBEAT_SECONDS = 10.0
+# A heartbeat proves the coroutine is alive, not that useful work is advancing.
+# Focused (non-leased) responses therefore get an absolute per-stage deadline;
+# exhaustive scoped jobs use their database lease/worker recovery instead.
+_FOCUSED_RESPONSE_STAGE_TIMEOUT_SECONDS = 240.0
 _MAX_STREAM_OPEN_FILE_CTX_CHARS = 20000
 _MAX_OPEN_FILE_IMAGES = 3
 _MAX_OPEN_FILE_IMAGE_BASE64_CHARS = 2_500_000
@@ -1520,6 +1524,7 @@ async def ask_stream_endpoint(
                     },
                 )
             )
+            preparation_started = time.monotonic()
             while not prepared_task.done():
                 try:
                     status_event = await asyncio.wait_for(status_queue.get(), timeout=0.1)
@@ -1528,6 +1533,7 @@ async def ask_stream_endpoint(
                     # previous turn after a reload.
                     if not await generation_is_current(check_shared=False):
                         prepared_task.cancel()
+                        await asyncio.gather(prepared_task, return_exceptions=True)
                         terminal_event_sent = True
                         await persist_request_state(
                             status="failed", stage="conversation_state",
@@ -1549,6 +1555,14 @@ async def ask_stream_endpoint(
                     last_heartbeat = time.monotonic()
                     yield _status_sse(status_key)
                 except asyncio.TimeoutError:
+                    if (not precreated_scoped_job and time.monotonic() - preparation_started
+                            >= _FOCUSED_RESPONSE_STAGE_TIMEOUT_SECONDS):
+                        prepared_task.cancel()
+                        raise TutorPipelineError(
+                            code="response_stage_stalled", stage="document_preparation",
+                            message="The document preparation stage stopped making progress.",
+                            retryable=True, recoverable=True,
+                        )
                     if time.monotonic() - last_heartbeat >= 10.0:
                         # Long document scans and map batches must keep the SSE
                         # connection visibly alive.
@@ -1599,6 +1613,7 @@ async def ask_stream_endpoint(
             body_iterator = prepared.body_iterator.__aiter__()
             next_event_task: asyncio.Task | None = None
             generation_recovery_attempts = 0
+            generation_stage_started = time.monotonic()
             while True:
                 if next_event_task is None:
                     next_event_task = asyncio.create_task(body_iterator.__anext__())
@@ -1606,6 +1621,15 @@ async def ask_stream_endpoint(
                     {next_event_task}, timeout=_INNER_STREAM_HEARTBEAT_SECONDS
                 )
                 if not ready:
+                    if (not precreated_scoped_job and time.monotonic() - generation_stage_started
+                            >= _FOCUSED_RESPONSE_STAGE_TIMEOUT_SECONDS):
+                        next_event_task.cancel()
+                        await asyncio.gather(next_event_task, return_exceptions=True)
+                        raise TutorPipelineError(
+                            code="response_stage_stalled", stage="model_generation",
+                            message="The answer generation stage stopped making progress.",
+                            retryable=True, recoverable=True,
+                        )
                     # Keep the connection active during model generation,
                     # verification, repair, and persistence—not only during
                     # response preparation.
@@ -1627,6 +1651,7 @@ async def ask_stream_endpoint(
                             retryable=True, recoverable=True,
                         ) from exc
                     generation_recovery_attempts += 1
+                    generation_stage_started = time.monotonic()
                     await persist_request_state(
                         status="recovering", stage="model_generation",
                         automatic_retry_count=generation_recovery_attempts,

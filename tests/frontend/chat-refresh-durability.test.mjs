@@ -51,3 +51,9 @@ test('a transient durable-state poll failure cannot strand the continuation card
   assert.match(shell, /response_worker_stalled|request_state_missing/);
   assert.match(shell, /const delay = Math\.min\(10_000/);
 });
+
+test('every active completion state uses the same generic reconciliation path', () => {
+  assert.match(shell, /ACTIVE_COMPLETION_STATES[\s\S]*'pending'[\s\S]*'processing'[\s\S]*'streaming'[\s\S]*'recovering'/);
+  assert.match(shell, /ACTIVE_COMPLETION_STATES\.has\(m\.completionState\)/);
+  assert.match(shell, /ACTIVE_COMPLETION_STATES\.has\(message\.completionState\)/);
+});

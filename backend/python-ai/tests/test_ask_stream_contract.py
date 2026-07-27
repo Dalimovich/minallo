@@ -78,3 +78,11 @@ def test_cross_page_numbered_sections_retrieve_before_identity_refusal():
     assert "and page_bound_request\n            and (" in STREAM
     assert "Answer and explain every explicitly requested numbered subpart" in STREAM
     assert "do not replace the answers with an overview" in STREAM
+
+
+def test_every_focused_response_stage_has_an_absolute_terminal_deadline():
+    assert "_FOCUSED_RESPONSE_STAGE_TIMEOUT_SECONDS" in STREAM
+    assert 'code="response_stage_stalled", stage="document_preparation"' in STREAM
+    assert 'code="response_stage_stalled", stage="model_generation"' in STREAM
+    assert "await asyncio.gather(prepared_task, return_exceptions=True)" in STREAM
+    assert "await asyncio.gather(next_event_task, return_exceptions=True)" in STREAM
