@@ -4,6 +4,12 @@ import { escapeHtml } from '../../utils/escape-html.js';
 import { checkAdminStatus } from '../../services/admin-service.js';
 import { filterOversizedFiles, warnRejected } from '../courses/upload-validate.js';
 import type { LegacyCourse } from '../../../globals.js';
+import {
+  courseEntry, dedupeStudyRequest, invalidateSaved,
+  isCourseFresh, isSavedFresh, persistStudyLibrary, removeCourseEntry,
+  resetStudyLibraryMemory, setCourseEntry, studyLibraryState,
+  type CachedCourseFile, type CachedSavedItem,
+} from './study-library-store.js';
 
 type CourseFile = {
   name: string;
@@ -37,11 +43,11 @@ const kindLabels: Record<SavedKind, string> = {
 };
 
 let pdfOrigin: Comment | null = null;
+let workspaceLibraryCleanup: (() => void) | null = null;
 let pdfHost: HTMLElement | null = null;
 let pdfContextInner: HTMLElement | null = null;
 let pdfAiDisplay = '';
 let pdfResizeCleanup: (() => void) | null = null;
-let pdfOriginCourse: LibraryCourse | null = null;
 
 const PDF_WIDTH_KEY = 'minallo:chatbot-pdf-width';
 const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf';
@@ -287,10 +293,106 @@ function hydrate(course: LibraryCourse): Promise<void> {
     : Promise.resolve();
 }
 
+function cachedFile(file: CourseFile): CachedCourseFile {
+  return {
+    name: file.name, storageName: file._storageName, folder: file._folder,
+    uploaded: file._uploaded, uid: file._uid, size: file.size,
+  };
+}
+
+function applyCourseCache(
+  course: LibraryCourse,
+  files: CachedCourseFile[],
+  folders: Array<{ name: string; files: CachedCourseFile[] }>
+): void {
+  course.files = files.map((file) => ({
+    name: file.name, _storageName: file.storageName, _folder: file.folder,
+    _uploaded: file.uploaded, _uid: file.uid, size: file.size, _course: course,
+  }));
+  course.userFolders = folders.map((folder) => ({
+    name: folder.name,
+    files: folder.files.map((file) => ({
+      name: file.name, _storageName: file.storageName, _folder: folder.name,
+      _uploaded: file.uploaded, _uid: file.uid, size: file.size, _course: course,
+    })),
+  }));
+}
+
+function persistCanonicalCourseCache(course: LibraryCourse): void {
+  try {
+    const uid = currentUid();
+    if (!uid) return;
+    localStorage.setItem(`ss_uf_cache_${course.id}`, JSON.stringify({
+      version: 2, userId: uid, courseId: course.id, fetchedAt: Date.now(),
+      files: ((course.files || []) as CourseFile[]).filter((file) => file._uploaded && !file._folder).map(cachedFile),
+      folders: ((course.userFolders || []) as CourseFolder[]).map((folder) => ({
+        name: folder.name, files: (folder.files || []).map(cachedFile),
+      })),
+    }));
+  } catch { /* canonical cache is best effort */ }
+}
+
+function restoreCanonicalCourseCache(course: LibraryCourse): boolean {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`ss_uf_cache_${course.id}`) || 'null') as {
+      version?: number; userId?: string; courseId?: string; fetchedAt?: number;
+      files?: CachedCourseFile[]; folders?: Array<{ name: string; files: CachedCourseFile[] }>;
+    } | null;
+    if (!parsed || parsed.version !== 2 || parsed.userId !== currentUid() || parsed.courseId !== course.id
+      || !Number.isFinite(parsed.fetchedAt) || !Array.isArray(parsed.files) || !Array.isArray(parsed.folders)) return false;
+    if (!parsed.files.every((file) => file && typeof file.name === 'string')
+      || !parsed.folders.every((folder) => folder && typeof folder.name === 'string' && Array.isArray(folder.files))) return false;
+    applyCourseCache(course, parsed.files, parsed.folders);
+    setCourseEntry(course.id, {
+      files: parsed.files, folders: parsed.folders, hydrated: true, status: 'ready',
+      fetchedAt: parsed.fetchedAt!, error: null, scrollTop: 0,
+    });
+    return true;
+  } catch { return false; }
+}
+
+function ensureCourseHydrated(course: LibraryCourse, force = false): Promise<void> {
+  const cached = courseEntry(course.id);
+  if (!force && isCourseFresh(cached)) {
+    if (cached) applyCourseCache(course, cached.files, cached.folders);
+    return Promise.resolve();
+  }
+  return dedupeStudyRequest(`course:${course.id}`, async () => {
+    await hydrate(course);
+    const previous = courseEntry(course.id);
+    setCourseEntry(course.id, {
+      files: ((course.files || []) as CourseFile[]).map(cachedFile),
+      folders: ((course.userFolders || []) as CourseFolder[]).map((folder) => ({
+        name: folder.name,
+        files: (folder.files || []).map(cachedFile),
+        expanded: previous?.folders.find((item) => item.name === folder.name)?.expanded,
+      })),
+      hydrated: true, status: 'ready', fetchedAt: Date.now(), error: null,
+      scrollTop: previous?.scrollTop || 0,
+    });
+    persistCanonicalCourseCache(course);
+  });
+}
+
+function syncCourseCache(course: LibraryCourse): void {
+  const previous = courseEntry(course.id);
+  setCourseEntry(course.id, {
+    files: ((course.files || []) as CourseFile[]).map(cachedFile),
+    folders: ((course.userFolders || []) as CourseFolder[]).map((folder) => ({
+      name: folder.name, files: (folder.files || []).map(cachedFile),
+      expanded: previous?.folders.find((item) => item.name === folder.name)?.expanded,
+    })),
+    hydrated: true, status: 'ready', fetchedAt: Date.now(), error: null,
+    scrollTop: previous?.scrollTop || 0,
+  });
+  persistCanonicalCourseCache(course);
+}
+
 export function initWorkspaceLibrary(root: HTMLElement): void {
   activeWorkspaceRoot = root;
   const context = root.querySelector<HTMLElement>('.ncb-context');
   if (!context || context.dataset.libraryBound === '1') return;
+  workspaceLibraryCleanup?.();
   context.dataset.libraryBound = '1';
 
   const coursePanel = context.querySelector<HTMLElement>('[data-library-panel="courses"]');
@@ -298,26 +400,54 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   const tabs = Array.from(context.querySelectorAll<HTMLButtonElement>('[data-library-tab]'));
   if (!coursePanel || !savedPanel) return;
 
-  tabs.forEach((tab) => tab.addEventListener('click', () => {
-    const selected = tab.dataset.libraryTab || 'courses';
+  const libraryState = studyLibraryState();
+  const selectTab = (selected: string): void => {
+    const currentState = studyLibraryState();
+    if (currentState.activeTab === 'courses') currentState.courseScrollTop = coursePanel.scrollTop;
+    else currentState.savedScrollTop = savedPanel.scrollTop;
     tabs.forEach((candidate) => {
-      const active = candidate === tab;
+      const active = candidate.dataset.libraryTab === selected;
       candidate.classList.toggle('ncb-library-tab--active', active);
       candidate.setAttribute('aria-selected', String(active));
     });
     coursePanel.hidden = selected !== 'courses';
     savedPanel.hidden = selected !== 'saved';
+    currentState.activeTab = selected === 'saved' ? 'saved' : 'courses';
+    persistStudyLibrary();
     if (selected === 'saved') void renderSaved(savedPanel, root);
+  };
+  tabs.forEach((tab) => tab.addEventListener('click', () => {
+    selectTab(tab.dataset.libraryTab || 'courses');
   }));
 
-  document.addEventListener('minallo:saved-replies-changed', () => {
-    delete savedPanel.dataset.loaded;
-    if (!savedPanel.hidden) void renderSaved(savedPanel, root);
-  });
+  const handleSavedRepliesChanged = (): void => {
+    invalidateSaved();
+    if (!savedPanel.hidden) void renderSaved(savedPanel, root, true);
+  };
+  document.addEventListener('minallo:saved-replies-changed', handleSavedRepliesChanged);
+  const refreshForAuthenticatedUser = (): void => {
+    resetStudyLibraryMemory();
+    renderCourses(coursePanel);
+    const nextState = studyLibraryState();
+    const selectedCourse = courses().find((course) => course.id === nextState.activeCourseId);
+    if (selectedCourse) void renderCourseDetail(coursePanel, selectedCourse);
+    if (nextState.activeTab === 'saved') void renderSaved(savedPanel, root);
+  };
+  document.addEventListener('minallo:auth:signed-in', refreshForAuthenticatedUser);
+  document.addEventListener('minallo:auth:entered', refreshForAuthenticatedUser);
+  workspaceLibraryCleanup = () => {
+    document.removeEventListener('minallo:saved-replies-changed', handleSavedRepliesChanged);
+    document.removeEventListener('minallo:auth:signed-in', refreshForAuthenticatedUser);
+    document.removeEventListener('minallo:auth:entered', refreshForAuthenticatedUser);
+    workspaceLibraryCleanup = null;
+  };
 
   bindAccountMenu(root);
   bindWidgetLauncher(root);
   renderCourses(coursePanel);
+  const activeCourse = courses().find((course) => course.id === libraryState.activeCourseId);
+  if (activeCourse && !readWorkspacePdfSession()) void renderCourseDetail(coursePanel, activeCourse);
+  selectTab(libraryState.activeTab);
   restoreWorkspacePdf(root, coursePanel);
 }
 
@@ -502,7 +632,13 @@ function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement, attemp
 }
 
 function renderCourses(panel: HTMLElement): void {
+  delete panel.dataset.activeCourseId;
   const all = courses();
+  all.forEach((course) => {
+    let cached = courseEntry(course.id);
+    if (!cached && restoreCanonicalCourseCache(course)) cached = courseEntry(course.id);
+    if (cached) applyCourseCache(course, cached.files, cached.folders);
+  });
   const recentId = recentCourseId();
   const recent = all.find((course) => course.id === recentId);
   const ordered = recent ? [recent, ...all.filter((course) => course.id !== recent.id)] : all;
@@ -535,6 +671,7 @@ function renderCourses(panel: HTMLElement): void {
     row.addEventListener('click', () => {
       const course = all.find((item) => item.id === row.dataset.courseId);
       if (!course) return;
+      studyLibraryState().courseScrollTop = panel.scrollTop;
       rememberCourse(course);
       void renderCourseDetail(panel, course);
     });
@@ -545,6 +682,16 @@ function renderCourses(panel: HTMLElement): void {
       if (course) void deleteCourseCompletely(panel, course);
     });
   });
+  requestAnimationFrame(() => { panel.scrollTop = studyLibraryState().courseScrollTop; });
+}
+
+function returnToCourseList(panel: HTMLElement): void {
+  const activeId = panel.dataset.activeCourseId;
+  const entry = activeId ? courseEntry(activeId) : null;
+  if (activeId && entry) { entry.scrollTop = panel.scrollTop; setCourseEntry(activeId, entry); }
+  studyLibraryState().activeCourseId = null;
+  persistStudyLibrary();
+  renderCourses(panel);
 }
 
 function bindSubjectAdd(panel: HTMLElement): void {
@@ -587,25 +734,52 @@ function bindSubjectAdd(panel: HTMLElement): void {
 }
 
 async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Promise<void> {
-  panel.innerHTML = `
-    <div class="ncb-library-drill-head">
-      <button type="button" class="ncb-library-back" aria-label="Back to all courses">&lsaquo;</button>
-      <div><strong>${escapeHtml(course.name || 'Course')}</strong><span>Loading files and folders&hellip;</span></div>
-    </div>
-    <div class="ncb-course-detail"><div class="ncb-library-status">Loading files and folders&hellip;</div></div>`;
-  panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => renderCourses(panel));
-  const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
-  try {
-    await hydrate(course);
-  } catch {
-    detail.innerHTML = '<div class="ncb-library-error">Could not load this course. Please try again.</div>';
-    return;
+  const state = studyLibraryState();
+  const previousId = panel.dataset.activeCourseId;
+  if (previousId && previousId !== course.id) {
+    const previous = courseEntry(previousId);
+    if (previous) { previous.scrollTop = panel.scrollTop; setCourseEntry(previousId, previous); }
   }
+  state.activeCourseId = course.id;
+  panel.dataset.activeCourseId = course.id;
+  persistStudyLibrary();
+
+  const cached = courseEntry(course.id);
+  if (cached) applyCourseCache(course, cached.files, cached.folders);
+  if (cached) paintCourseDetail(panel, course, cached.scrollTop);
+  else paintCourseLoading(panel, course);
+
+  if (isCourseFresh(cached)) return;
+  if (cached) cached.status = 'refreshing';
+  try {
+    await ensureCourseHydrated(course);
+    if (panel.dataset.activeCourseId === course.id) {
+      const latest = courseEntry(course.id);
+      paintCourseDetail(panel, course, latest?.scrollTop || panel.scrollTop);
+    }
+  } catch {
+    if (!cached) {
+      const detail = panel.querySelector<HTMLElement>('.ncb-course-detail');
+      if (detail) detail.innerHTML = '<div class="ncb-library-error">Could not load this course. Please try again.</div>';
+    } else {
+      window.showToast?.('Could not refresh files', 'Showing the most recently loaded version.');
+      cached.status = 'error';
+      cached.error = 'Could not refresh files';
+      setCourseEntry(course.id, cached);
+    }
+  }
+}
+
+function paintCourseLoading(panel: HTMLElement, course: LibraryCourse): void {
+  panel.innerHTML = `<div class="ncb-library-drill-head"><button type="button" class="ncb-library-back" aria-label="Back to all courses">&lsaquo;</button><div><strong>${escapeHtml(course.name || 'Course')}</strong><span>Loading files and folders&hellip;</span></div></div><div class="ncb-course-detail"><div class="ncb-library-status">Loading files and folders&hellip;</div></div>`;
+  panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => returnToCourseList(panel));
+}
+
+function paintCourseDetail(panel: HTMLElement, course: LibraryCourse, scrollTop = 0): void {
   const folders = (course.userFolders || []) as CourseFolder[];
   const files = (course.files || []) as CourseFile[];
-  const drillMeta = panel.querySelector<HTMLElement>('.ncb-library-drill-head span');
-  if (drillMeta) drillMeta.textContent = `${fileCount(course)} files`;
-  detail.innerHTML = `
+  const expanded = new Set(courseEntry(course.id)?.folders.filter((folder) => folder.expanded).map((folder) => folder.name) || []);
+  panel.innerHTML = `<div class="ncb-library-drill-head"><button type="button" class="ncb-library-back" aria-label="Back to all courses">&lsaquo;</button><div><strong>${escapeHtml(course.name || 'Course')}</strong><span>${fileCount(course)} files</span></div></div><div class="ncb-course-detail">
     <div class="ncb-course-detail-actions">
       <input class="ncb-course-upload-input" type="file" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" multiple hidden>
       <button type="button" class="ncb-course-action ncb-course-new-folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v6m-3-3h6"/></svg><span>New folder</span></button>
@@ -614,13 +788,20 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
     <form class="ncb-folder-create" hidden><label for="ncbFolderName">Folder name</label><div><input id="ncbFolderName" maxlength="80" autocomplete="off" placeholder="e.g. Lecture notes"><button type="submit">Create</button></div></form>
     <div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>
     ${folders.length ? `<div class="ncb-library-group"><h3>Folders</h3>${folders.map((folder) => `
-      <details class="ncb-folder" data-drop-folder="${escapeHtml(folder.name)}">
+      <details class="ncb-folder" data-drop-folder="${escapeHtml(folder.name)}"${expanded.has(folder.name) ? ' open' : ''}>
         <summary>${icon('folder')}<span><strong>${escapeHtml(folder.name)}</strong><small>${(folder.files || []).length} files</small></span><b>Drop files here</b><button type="button" class="ncb-library-delete" data-delete-folder="${escapeHtml(folder.name)}" aria-label="Delete folder" title="Delete folder">${trashIcon()}</button></summary>
         <div>${(folder.files || []).map((file) => fileButton(file, course, folder.name)).join('') || '<p class="ncb-library-muted">Empty folder</p>'}</div>
       </details>`).join('')}</div>` : ''}
-    <div class="ncb-library-group ncb-root-drop" data-drop-folder=""><h3>Files</h3><div class="ncb-drop-hint"><strong>Drop files here</strong><span>Upload to ${escapeHtml(course.name || 'this course')}</span></div>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div>`;
-
+    <div class="ncb-library-group ncb-root-drop" data-drop-folder=""><h3>Files</h3><div class="ncb-drop-hint"><strong>Drop files here</strong><span>Upload to ${escapeHtml(course.name || 'this course')}</span></div>${files.map((file) => fileButton(file, course, null)).join('') || '<p class="ncb-library-muted">No files in the course root.</p>'}</div></div>`;
+  panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => returnToCourseList(panel));
+  const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   bindCourseFileActions(panel, detail, course);
+  panel.querySelectorAll<HTMLDetailsElement>('.ncb-folder').forEach((folder) => folder.addEventListener('toggle', () => {
+    const entry = courseEntry(course.id);
+    const cachedFolder = entry?.folders.find((item) => item.name === folder.dataset.dropFolder);
+    if (entry && cachedFolder) { cachedFolder.expanded = folder.open; setCourseEntry(course.id, entry); }
+  }));
+  requestAnimationFrame(() => { panel.scrollTop = scrollTop; });
 }
 
 function currentUid(): string {
@@ -668,6 +849,7 @@ async function uploadIntoCourse(
   course.files = ((course.files || []) as CourseFile[]).filter((file) => !file._uploaded);
   if (folder) course.userFolders = [];
   await hydrate(course);
+  syncCourseCache(course);
   if (status) status.textContent = 'Upload complete. Indexing files for AI search...';
   await Promise.allSettled(valid.map(async (file, index) => {
     if (results[index]?.status === 'rejected') return;
@@ -784,6 +966,7 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
     }
     if (!course.userFolders) course.userFolders = [];
     course.userFolders.push({ name, files: [] });
+    syncCourseCache(course);
     void renderCourseDetail(panel, course);
   });
 
@@ -882,6 +1065,7 @@ async function deleteFileCompletely(panel: HTMLElement, detail: HTMLElement, cou
       const target = ((course.userFolders || []) as CourseFolder[]).find((item) => item.name === folder);
       if (target) target.files = (target.files || []).filter((item) => item.name !== name);
     } else course.files = ((course.files || []) as CourseFile[]).filter((item) => item.name !== name);
+    syncCourseCache(course);
     clearCourseDocumentCache(course.id);
     row.remove();
     const host = courseCollectionHost(detail, folder);
@@ -901,6 +1085,7 @@ async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse,
   const folders = (course.userFolders || []) as CourseFolder[];
   const folderIndex = folders.findIndex((item) => item.name === name);
   if (folderIndex >= 0) folders.splice(folderIndex, 1);
+  syncCourseCache(course);
   const details = Array.from(panel.querySelectorAll<HTMLElement>('.ncb-folder[data-drop-folder]'))
     .find((item) => item.dataset.dropFolder === name);
   const group = details?.closest<HTMLElement>('.ncb-library-group');
@@ -932,6 +1117,8 @@ async function deleteCourseCompletely(panel: HTMLElement, course: LibraryCourse)
     localStorage.removeItem(`ss_fc_${course.id}`);
   } catch { /* durable deletion already succeeded */ }
   clearCourseDocumentCache(course.id);
+  removeCourseEntry(course.id);
+  invalidateSaved();
   renderCourses(panel);
 }
 
@@ -964,10 +1151,6 @@ function closeWorkspacePdf(root: HTMLElement): void {
   window._ncbPdfWorkspaceActive = false;
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
   clearWorkspacePdfSession();
-  const coursePanel = root.querySelector<HTMLElement>('[data-library-panel="courses"]');
-  const currentCourse = courses().find((course) => course.id === pdfOriginCourse?.id) || pdfOriginCourse;
-  pdfOriginCourse = null;
-  if (coursePanel && currentCourse) void renderCourseDetail(coursePanel, currentCourse);
 }
 
 function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCourse): void {
@@ -976,7 +1159,6 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   const wrap = document.getElementById('pdfViewerWrap');
   if (!context || !inner || !wrap || !window.openFile) return;
   rememberCourse(course);
-  pdfOriginCourse = course;
   saveWorkspacePdfSession(course, file);
 
   if (!pdfOrigin) {
@@ -1035,12 +1217,22 @@ function fileCount(course: LibraryCourse): number {
   return (course.files || []).length + ((course.userFolders || []) as CourseFolder[]).reduce((sum, folder) => sum + (folder.files || []).length, 0);
 }
 
-async function renderSaved(panel: HTMLElement, root: HTMLElement): Promise<void> {
-  if (panel.dataset.loaded === '1') return;
-  panel.innerHTML = '<div class="ncb-library-status">Loading saved resources&hellip;</div>';
+async function renderSaved(panel: HTMLElement, root: HTMLElement, force = false): Promise<void> {
   const allCourses = courses();
+  const state = studyLibraryState();
+  const cachedItems = savedItemsFromCache(state.savedItems, allCourses);
+  if (cachedItems.length || state.savedStatus === 'ready') {
+    paintSavedState(panel, root, cachedItems, savedGroupsFor(cachedItems, allCourses));
+    if (!force && isSavedFresh()) return;
+    state.savedStatus = 'refreshing';
+  } else {
+    panel.innerHTML = '<div class="ncb-library-status">Loading saved resources&hellip;</div>';
+    state.savedStatus = 'loading';
+  }
+  persistStudyLibrary();
   try {
-    const groups = await Promise.all(allCourses.map(async (course) => {
+    const result = await dedupeStudyRequest('saved:all', async () => {
+      const groups = await Promise.all(allCourses.map(async (course) => {
       const [notes, decks, exams] = await Promise.all([
         listCourseNotes(course.id),
         fetchRows('flashcard_decks', course.id),
@@ -1062,16 +1254,51 @@ async function renderSaved(panel: HTMLElement, root: HTMLElement): Promise<void>
         id: String(exam.id), kind: 'exams', title: String(exam.title || exam.topic || 'Practice exam'),
         course, meta: formatDate(String(exam.updated_at || exam.created_at || '')), payload: exam
       }));
-      return items;
-    }));
-    const responseItems = await loadBookmarkedResponses();
-    const items = [...groups.flat(), ...responseItems.items];
-    const savedGroups = [...allCourses, ...responseItems.groups];
-    panel.dataset.loaded = '1';
-    renderSavedKinds(panel, root, items, savedGroups);
+        return items;
+      }));
+      const responseItems = await loadBookmarkedResponses();
+      return { items: [...groups.flat(), ...responseItems.items], groups: [...allCourses, ...responseItems.groups] };
+    });
+    state.savedItems = result.items.map(savedItemCache);
+    state.savedStatus = 'ready';
+    state.savedFetchedAt = Date.now();
+    persistStudyLibrary();
+    paintSavedState(panel, root, result.items, result.groups);
   } catch {
-    panel.innerHTML = '<div class="ncb-library-error">Saved resources could not be loaded. Check your connection and try again.</div>';
+    state.savedStatus = 'error';
+    persistStudyLibrary();
+    if (!cachedItems.length) panel.innerHTML = '<div class="ncb-library-error">Saved resources could not be loaded. Check your connection and try again.</div>';
+    else window.showToast?.('Could not refresh Saved', 'Showing the most recently loaded version.');
   }
+}
+
+function paintSavedState(panel: HTMLElement, root: HTMLElement, items: SavedItem[], groups: LibraryCourse[]): void {
+  const kind = studyLibraryState().activeSavedKind as SavedKind | null;
+  if (kind && kindLabels[kind]) renderSavedKind(panel, root, items, groups, kind);
+  else renderSavedKinds(panel, root, items, groups);
+  requestAnimationFrame(() => { panel.scrollTop = studyLibraryState().savedScrollTop; });
+}
+
+function savedItemCache(item: SavedItem): CachedSavedItem {
+  return {
+    id: item.id, kind: item.kind, title: item.title, courseId: item.course.id,
+    courseName: item.course.name || 'Course', meta: item.meta, noteId: item.note?.id,
+  };
+}
+
+function savedItemsFromCache(cached: CachedSavedItem[], allCourses: LibraryCourse[]): SavedItem[] {
+  const map = new Map(allCourses.map((course) => [course.id, course]));
+  return cached.map((item) => {
+    const course = map.get(item.courseId) || { id: item.courseId, name: item.courseName, files: [], userFolders: [] } as LibraryCourse;
+    const note = item.noteId ? { id: item.noteId, title: item.title, type: item.kind === 'summaries' ? 'summary' : item.kind === 'cheatsheets' ? 'cheatsheet' : 'note' } as SavedNote : undefined;
+    return { id: item.id, kind: item.kind as SavedKind, title: item.title, course, meta: item.meta, note };
+  });
+}
+
+function savedGroupsFor(items: SavedItem[], allCourses: LibraryCourse[]): LibraryCourse[] {
+  const groups = [...allCourses];
+  items.forEach((item) => { if (!groups.some((course) => course.id === item.course.id)) groups.push(item.course); });
+  return groups;
 }
 
 function renderSavedKinds(
@@ -1080,6 +1307,8 @@ function renderSavedKinds(
   items: SavedItem[],
   allCourses: LibraryCourse[]
 ): void {
+  studyLibraryState().activeSavedKind = null;
+  persistStudyLibrary();
   panel.innerHTML = `
     <div class="ncb-library-section-head"><div><strong>Saved</strong><span>Choose what you want to open.</span></div></div>
     <div class="ncb-saved-kind-list">${(Object.keys(kindLabels) as SavedKind[]).map((kind) => {
@@ -1093,7 +1322,12 @@ function renderSavedKinds(
   panel.querySelectorAll<HTMLButtonElement>('.ncb-saved-kind-btn').forEach((button) => {
     button.addEventListener('click', () => {
       const kind = button.dataset.savedKind as SavedKind | undefined;
-      if (kind) renderSavedKind(panel, root, items, allCourses, kind);
+      if (kind) {
+        studyLibraryState().activeSavedKind = kind;
+        studyLibraryState().savedScrollTop = panel.scrollTop;
+        persistStudyLibrary();
+        renderSavedKind(panel, root, items, allCourses, kind);
+      }
     });
   });
 }
@@ -1117,6 +1351,8 @@ function renderSavedKind(
         : `<div class="ncb-library-empty"><strong>No ${kindLabels[kind].toLowerCase()} yet</strong><span>Saved ${kindLabels[kind].toLowerCase()} will appear here.</span></div>`
     }</div>`;
   panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => {
+    studyLibraryState().activeSavedKind = null;
+    persistStudyLibrary();
     renderSavedKinds(panel, root, items, allCourses);
   });
   bindSaved(panel, root, ofKind);
@@ -1146,6 +1382,7 @@ async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
   const overlay = openOverlay(root, item.title);
   if (!overlay) return;
   overlay.innerHTML = '<div class="ncb-library-status">Opening resource&hellip;</div>';
+  item = await resolveCachedSavedItem(item);
   if (item.kind === 'responses') {
     const response = item.payload as { text?: string };
     overlay.innerHTML = `<article class="ncb-resource-document ncb-bookmarked-response">${renderMarkdown(response.text || '')}</article>`;
@@ -1187,6 +1424,25 @@ async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
     return;
   }
   mountCourseFeature(overlay, item.course, 'examforge');
+}
+
+async function resolveCachedSavedItem(item: SavedItem): Promise<SavedItem> {
+  if (item.note || item.payload) return item;
+  if (item.kind === 'flashcards' || item.kind === 'exams') {
+    const table = item.kind === 'flashcards' ? 'flashcard_decks' : 'exam_sessions';
+    const rows = await dedupeStudyRequest(`saved:${table}:${item.course.id}`, () => fetchRows(table, item.course.id));
+    const payload = rows.find((row) => String(row.id) === item.id);
+    return payload ? { ...item, payload } : item;
+  }
+  if (item.kind === 'responses') {
+    const token = authToken();
+    if (!token) return item;
+    const response = await fetch('/api/chat-saved-replies', { headers: { Authorization: `Bearer ${token}` } });
+    const body = response.ok ? await response.json() as { replies?: Array<{ id?: string; reply_text?: string }> } : {};
+    const saved = body.replies?.find((row) => String(row.id) === item.id);
+    return saved ? { ...item, payload: { text: saved.reply_text || '' } } : item;
+  }
+  return item;
 }
 
 const rendererLoads = new Map<string, Promise<void>>();

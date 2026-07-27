@@ -85,6 +85,79 @@ test('course drawer reuses the real course registry, hydration, and file opener'
   assert.match(moduleSource, /window\.openFile\(file, course\)/);
 });
 
+test('Study Library keeps cached course and Saved content visible while revalidating', () => {
+  assert.match(moduleSource, /if \(cached\) paintCourseDetail\(panel, course, cached\.scrollTop\)/);
+  assert.match(moduleSource, /if \(isCourseFresh\(cached\)\) return/);
+  assert.match(moduleSource, /dedupeStudyRequest\(`course:\$\{course\.id\}`/);
+  assert.match(moduleSource, /if \(cachedItems\.length \|\| state\.savedStatus === 'ready'\)/);
+  assert.match(moduleSource, /state\.savedStatus = 'refreshing'/);
+  assert.doesNotMatch(moduleSource, /panel\.dataset\.loaded/);
+});
+
+test('closing the workspace PDF restores the preserved drawer DOM without course hydration', () => {
+  const closeBody = moduleSource.slice(
+    moduleSource.indexOf('function closeWorkspacePdf'),
+    moduleSource.indexOf('function openWorkspacePdf')
+  );
+  assert.match(closeBody, /pdfContextInner\.hidden = false/);
+  assert.doesNotMatch(closeBody, /renderCourseDetail|ensureCourseHydrated|_ufMerge/);
+});
+
+test('Study Library remount removes document listeners before binding replacements', () => {
+  assert.match(moduleSource, /let workspaceLibraryCleanup: \(\(\) => void\) \| null = null/);
+  assert.match(moduleSource, /workspaceLibraryCleanup\?\.\(\)/);
+  assert.match(moduleSource, /removeEventListener\('minallo:saved-replies-changed'/);
+  assert.match(moduleSource, /removeEventListener\('minallo:auth:signed-in'/);
+});
+
+test('persistent Study Library cache is user-scoped, survives remount, and deduplicates requests', async () => {
+  const previousWindow = globalThis.window;
+  const previousStorage = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  globalThis.window = { _currentUser: { id: 'library-user-a' } };
+  try {
+    const store = await import('../../frontend/js/features/chatbot-new/study-library-store.ts');
+    store.resetStudyLibraryMemory();
+    store.setCourseEntry('course-a', {
+      files: [], folders: [], hydrated: true, status: 'ready', fetchedAt: Date.now(),
+      error: null, scrollTop: 84,
+    });
+    const state = store.studyLibraryState();
+    state.savedItems = [{
+      id: 'saved-1', kind: 'summaries', title: 'Summary', courseId: 'course-a',
+      courseName: 'Course A', meta: 'today',
+    }];
+    state.savedStatus = 'ready';
+    state.savedFetchedAt = Date.now();
+    store.persistStudyLibrary();
+
+    store.resetStudyLibraryMemory();
+    assert.equal(store.courseEntry('course-a').scrollTop, 84);
+    assert.equal(store.studyLibraryState().savedItems[0].id, 'saved-1');
+
+    let requests = 0;
+    let release;
+    const pending = new Promise((resolve) => { release = resolve; });
+    const first = store.dedupeStudyRequest('course:course-a', async () => { requests += 1; await pending; return 1; });
+    const second = store.dedupeStudyRequest('course:course-a', async () => { requests += 1; return 2; });
+    assert.equal(requests, 1);
+    release();
+    assert.deepEqual(await Promise.all([first, second]), [1, 1]);
+
+    globalThis.window._currentUser = { id: 'library-user-b' };
+    assert.equal(store.courseEntry('course-a'), null);
+    assert.equal(store.studyLibraryState().savedItems.length, 0);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.localStorage = previousStorage;
+  }
+});
+
 test('course drawer can add subjects and manage course files in place', () => {
   assert.match(moduleSource, /class="ncb-add-subject"/);
   assert.match(moduleSource, /id="ncbSubjectSearch" type="search"/);
@@ -315,8 +388,9 @@ test('refresh restores the chatbot PDF and Back restores its originating course'
   assert.match(moduleSource, /setTimeout\(\(\) => restoreWorkspacePdf\(root, coursePanel, attempt \+ 1\), 100\)/);
   assert.doesNotMatch(moduleSource, /await renderCourseDetail\(coursePanel, course\)/);
   assert.match(moduleSource, /openWorkspacePdf\(root, file, course\)/);
-  assert.match(moduleSource, /const currentCourse = courses\(\)\.find/);
-  assert.match(moduleSource, /renderCourseDetail\(coursePanel, currentCourse\)/);
+  const closeBody = moduleSource.slice(moduleSource.indexOf('function closeWorkspacePdf'), moduleSource.indexOf('function openWorkspacePdf'));
+  assert.match(closeBody, /pdfContextInner\.hidden = false/);
+  assert.doesNotMatch(closeBody, /renderCourseDetail|_ufMerge/);
   assert.match(moduleSource, /sessionStorage\.removeItem\(PDF_SESSION_KEY\)/);
   const backgroundCourse = moduleSource.indexOf('void renderCourseDetail(coursePanel, course)');
   const immediatePdf = moduleSource.indexOf('openWorkspacePdf(root, file, course)', backgroundCourse);
