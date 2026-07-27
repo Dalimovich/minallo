@@ -114,7 +114,14 @@ async def _execute(job: dict[str, Any]) -> None:
         # states, and the renderable result before yielding its terminal event.
         pass
     snapshot = load_job_snapshot(user_id=str(job["user_id"]), job_id=str(job["id"]))
-    if snapshot and snapshot.get("finalText") and job.get("request_id"):
+    if (
+        snapshot
+        and snapshot.get("finalText")
+        and snapshot.get("processingFinished")
+        and str(snapshot.get("status") or "")
+        not in {"failed", "failed_recoverable", "failed_terminal", "cancelled", "superseded"}
+        and job.get("request_id")
+    ):
         update_tutor_request(
             user_id=str(job["user_id"]), request_id=str(job["request_id"]),
             status="completed", stage="completed",

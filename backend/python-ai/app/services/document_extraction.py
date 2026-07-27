@@ -2267,11 +2267,15 @@ def extract_document_qa(
         remaining_gaps = identify_suspicious_numbering_gaps(
             [item.item_id for item in result.extracted_questions]
         )
+        discovery_scanned_pages = set(result.scanned_pages)
+        if previous_context:
+            discovery_scanned_pages.update(previous_context.scanned_pages)
+            discovery_scanned_pages.update(previous_context.cumulative_scanned_pages)
         discovery_complete = bool(
             discovery_question_pages
             and not remaining_gaps
             and not set(result.unprocessed_pages).intersection(discovery_question_pages)
-            and set(discovery_question_pages).issubset(set(result.scanned_pages))
+            and set(discovery_question_pages).issubset(discovery_scanned_pages)
             and not result.out_of_scope_items_rejected
             and all(any(
                 item.normalized_item_id.startswith(f"{section.requested_number}.")

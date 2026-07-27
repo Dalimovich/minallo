@@ -36,6 +36,12 @@ def test_worker_reconstructs_authorized_preflight_for_canonical_job_reuse():
     assert "preflight," in WORKER
 
 
+def test_worker_only_completes_tutor_turn_after_successful_processing():
+    assert 'snapshot.get("processingFinished")' in WORKER
+    assert '"failed_recoverable"' in WORKER
+    assert '"failed_terminal"' in WORKER
+
+
 def test_sse_observes_persisted_job_instead_of_running_extraction():
     branch = STREAM[STREAM.index("if precreated_scoped_job:"):]
     poll = branch.index("load_job_snapshot")

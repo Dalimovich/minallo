@@ -82,3 +82,10 @@ def test_manifest_items_reuse_structural_multi_page_ranges():
     assert "load_question_unit_ranges" in STORE
     assert 'structural_range.get("page_start")' in STREAM
     assert 'structural_range.get("page_end")' in STREAM
+
+
+def test_resumed_discovery_seals_against_cumulative_pages():
+    extraction = (ROOT / "backend" / "python-ai" / "app" / "services" / "document_extraction.py").read_text(encoding="utf-8")
+    assert "discovery_scanned_pages.update(previous_context.scanned_pages)" in extraction
+    assert "discovery_scanned_pages.update(previous_context.cumulative_scanned_pages)" in extraction
+    assert "set(discovery_question_pages).issubset(discovery_scanned_pages)" in extraction
