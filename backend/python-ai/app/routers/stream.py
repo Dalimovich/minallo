@@ -2910,6 +2910,13 @@ async def _prepare_ask_stream_response(
         classify_document_extraction(question, previous_turns_payload)
     )
     scoped_request = classify_scoped_request(question)
+    if scoped_request.target_type == "focused_numbered_target":
+        # A bounded section/exercise may ask for "all questions" inside that
+        # section. The legacy conversation-aware extraction classifier used
+        # that phrase to override the explicit target and launch a complete
+        # document map. Exact target identity is the stronger routing signal.
+        document_extraction = False
+        extraction_correction = False
     if document_extraction:
         if not payload.conversationId or tutor_state is None:
             return _stream_static_answer(

@@ -77,3 +77,9 @@ def test_frontend_requires_live_nonstalled_worker_before_claiming_continuation()
     assert "job.isProgressStalled" in SHELL
     assert "request_progress_stalled" in SHELL
     assert "automaticResumeAttempts" in SHELL
+
+
+def test_focused_numbered_target_overrides_legacy_document_extraction_classifier():
+    gate = 'if scoped_request.target_type == "focused_numbered_target":'
+    assert gate in STREAM
+    assert STREAM.index(gate) < STREAM.index("if document_extraction:", STREAM.index(gate))
