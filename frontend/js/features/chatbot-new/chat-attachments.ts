@@ -6,6 +6,7 @@ export interface ChatAttachmentView {
   dataUrl?: string;
   textContent?: string;
   fileId?: string;
+  documentId?: string;
   courseId?: string;
   currentPage?: number;
   status?: 'uploading' | 'processing' | 'ready' | 'failed';

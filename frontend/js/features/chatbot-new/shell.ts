@@ -588,6 +588,9 @@ interface PastedImage {
   id: string;
   name: string;
   mediaType: string;
+  fileId?: string;
+  persistentFileId?: string;
+  courseId?: string;
   dataUrl: string; // full "data:image/...;base64,..." — used for preview and to derive raw base64
 }
 
@@ -607,6 +610,7 @@ interface PendingFile {
   characterCount?: number;
   dataUrl?: string;
   fileId?: string;
+  persistentFileId?: string;
   courseId?: string;
   currentPage?: number;
   status?: 'uploading' | 'processing' | 'ready' | 'failed';
@@ -1050,6 +1054,13 @@ async function doSend(
     id: newChatMessageId(), role: 'user', text, images, files,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
   };
+  try {
+    await persistMessageAttachments(userMessage);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'The attachment could not be saved.';
+    (window as unknown as { showToast?: (title: string, detail?: string) => void }).showToast?.('Attachment not sent', detail + ' Your draft is still available.');
+    return;
+  }
   state.messages.push(userMessage);
   appendUserBubble(msgs, text, images, files, userMessage.id);
   touchActiveChat();
@@ -3819,13 +3830,14 @@ function appendUserBubble(
   row.className = 'ncb-msg-row ncb-msg-row--user';
   if (messageId) row.dataset.messageId = messageId;
   row.dataset.role = 'user';
-  const imageItems: ChatAttachmentView[] = images.filter((img) => !!img.dataUrl).map((img) => ({
-    id: img.id, name: img.name, mimeType: img.mediaType, dataUrl: img.dataUrl, status: 'ready'
+  const imageItems: ChatAttachmentView[] = images.filter((img) => !!img.dataUrl || !!img.persistentFileId).map((img) => ({
+    id: img.id, name: img.name, mimeType: img.mediaType, dataUrl: img.dataUrl,
+    fileId: img.persistentFileId, documentId: img.fileId, courseId: img.courseId, status: 'ready'
   }));
   const fileItems: ChatAttachmentView[] = files.map((file) => ({
     id: file.id, name: file.name, mimeType: file.mimeType || file.mediaType || guessMimeType(file.name),
     size: file.size, dataUrl: file.dataUrl || (file.kind === 'image' && file.base64 ? `data:${file.mediaType || 'image/png'};base64,${file.base64}` : undefined),
-    textContent: file.textContent, fileId: file.fileId, courseId: file.courseId,
+    textContent: file.textContent, fileId: file.persistentFileId, documentId: file.fileId, courseId: file.courseId,
     currentPage: file.currentPage, status: file.status || 'ready'
   }));
   const allAttachments = [...imageItems, ...fileItems];
@@ -3838,10 +3850,74 @@ function appendUserBubble(
   `;
   row.querySelectorAll<HTMLElement>('[data-chat-attachment-id]').forEach((card) => {
     const attachment = allAttachments.find((item) => item.id === card.dataset.chatAttachmentId);
-    if (attachment) card.addEventListener('click', () => openAttachmentViewer(attachment, card, askAboutAttachment));
+    if (attachment) card.addEventListener('click', () => { void openPersistedAttachment(attachment, card); });
   });
   msgs.appendChild(row);
   scrollMsgsToBottom(msgs);
+}
+
+async function openPersistedAttachment(attachment: ChatAttachmentView, card: HTMLElement): Promise<void> {
+  const toast = (window as unknown as { showToast?: (title: string, detail?: string) => void }).showToast;
+  if (!attachment.fileId) {
+    if (attachment.dataUrl || attachment.textContent != null) openAttachmentViewer(attachment, card, askAboutAttachment);
+    else toast?.('Attachment unavailable', 'This older attachment is missing its persistent file reference.');
+    return;
+  }
+  const response = await authenticatedFetch('/api/chat-attachments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'preview', fileId: attachment.fileId })
+  }, { safeToRetry: true });
+  const result = await response.json().catch(() => ({})) as { error?: { message?: string }; previewUrl?: string };
+  if (!response.ok || !result.previewUrl) {
+    toast?.('Attachment unavailable', result.error?.message || 'This file is no longer available.');
+    return;
+  }
+  attachment.dataUrl = result.previewUrl;
+  openAttachmentViewer(attachment, card, askAboutAttachment);
+}
+
+function utf8Base64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+async function persistMessageAttachments(message: ChatMessage): Promise<void> {
+  const attachments: Array<PastedImage | PendingFile> = [...(message.images || []), ...(message.files || [])];
+  if (!attachments.length) return;
+  const courseId = String((window as unknown as { activeCourseId?: string | null }).activeCourseId || '');
+  for (const item of attachments) {
+    if (item.persistentFileId) continue;
+    const pasted = !('kind' in item);
+    const mimeType = pasted ? item.mediaType : (item.mimeType || item.mediaType || guessMimeType(item.name));
+    const base64 = pasted ? item.dataUrl.replace(/^data:[^;]+;base64,/, '')
+      : item.dataUrl?.replace(/^data:[^;]+;base64,/, '') || item.base64 || utf8Base64(item.textContent || '');
+    const response = await authenticatedFetch('/api/chat-attachments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upload', filename: item.name, mimeType, base64, courseId: courseId || undefined })
+    });
+    const result = await response.json().catch(() => ({})) as { fileId?: string; documentId?: string; error?: { message?: string } };
+    if (!response.ok || !result.fileId) throw new Error(result.error?.message || `Could not save ${item.name}.`);
+    item.persistentFileId = result.fileId;
+    item.fileId = result.documentId;
+    item.courseId = courseId || undefined;
+  }
+  const durable = await ensureDurableConversation(chatStore.getActive(), { courseId: courseId || undefined, titleSeed: message.text });
+  for (let order = 0; order < attachments.length; order++) {
+    const item = attachments[order]!;
+    const response = await authenticatedFetch('/api/chat-attachments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'link', conversationId: durable.conversationId, messageId: message.id, messageText: message.text || `Attached ${item.name}`, fileId: item.persistentFileId, order })
+    });
+    if (!response.ok) throw new Error(`Could not attach ${item.name} to the conversation.`);
+  }
+  message.attachmentRefs = attachments.map((item) => ({
+    fileId: item.fileId!, filename: item.name,
+    mimeType: !('kind' in item) ? item.mediaType : (item.mimeType || item.mediaType || guessMimeType(item.name)),
+    courseId: item.courseId
+  }));
+  saveChatStore();
 }
 
 function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTMLElement | null): HTMLElement {
@@ -4340,8 +4416,8 @@ async function askAboutAttachment(question: string, attachment: ChatAttachmentVi
   const state = liveState;
   if (!root || !msgs || !sendBtn || !state || state.isSending) throw new Error('The chat is not ready yet.');
   if (attachment.status === 'uploading' || attachment.status === 'processing') throw new Error('This file is still being indexed.');
-  const ref = attachment.fileId ? [{
-    fileId: attachment.fileId, filename: attachment.name,
+  const ref = attachment.documentId ? [{
+    fileId: attachment.documentId, filename: attachment.name,
     mimeType: attachment.mimeType || guessMimeType(attachment.name),
     courseId: attachment.courseId, currentPage: attachment.currentPage
   }] : undefined;
@@ -4350,7 +4426,7 @@ async function askAboutAttachment(question: string, attachment: ChatAttachmentVi
     kind: attachment.mimeType?.startsWith('image/') ? 'image' : 'text',
     mimeType: attachment.mimeType, mediaType: attachment.mimeType,
     size: attachment.size, dataUrl: attachment.dataUrl, textContent: attachment.textContent,
-    fileId: attachment.fileId, courseId: attachment.courseId,
+    fileId: attachment.documentId, persistentFileId: attachment.fileId, courseId: attachment.courseId,
     currentPage: attachment.currentPage, status: attachment.status || 'ready'
   };
   const userMessage: ChatMessage = {
@@ -5947,6 +6023,9 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
       id: img.id,
       name: img.name,
       mediaType: img.mediaType,
+      fileId: img.fileId,
+      persistentFileId: img.persistentFileId,
+      courseId: img.courseId,
       dataUrl: '',
     }));
   }
@@ -5961,6 +6040,7 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
       source: f.source,
       characterCount: f.characterCount,
       fileId: f.fileId,
+      persistentFileId: f.persistentFileId,
       courseId: f.courseId,
       currentPage: f.currentPage,
       status: f.status,
