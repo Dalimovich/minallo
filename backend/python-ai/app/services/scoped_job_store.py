@@ -277,6 +277,31 @@ def enqueue_scoped_job(
     }).eq("id", job_id).eq("user_id", user_id).execute())
 
 
+def supersede_incompatible_job_binding(*, user_id: str, job_id: str) -> None:
+    """Detach an obsolete routing decision without changing message identity."""
+    sb = get_supabase()
+    job = _one(
+        sb.table("complete_document_jobs")
+        .select("id,conversation_id,assistant_message_id,request_id")
+        .eq("id", job_id).eq("user_id", user_id).limit(1).execute()
+    )
+    if not job:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    (sb.table("complete_document_jobs").update({
+        "status": "superseded", "current_stage": "routing_corrected",
+        "worker_id": None, "lease_expires_at": None, "updated_at": now,
+    }).eq("id", job_id).eq("user_id", user_id).execute())
+    if job.get("request_id"):
+        (sb.table("ai_tutor_requests").update({"scoped_job_id": None, "updated_at": now})
+         .eq("request_id", job["request_id"]).eq("user_id", user_id).execute())
+    if job.get("conversation_id") and job.get("assistant_message_id"):
+        (sb.table("ai_chat_messages").update({"scoped_job_id": None, "updated_at": now})
+         .eq("conversation_id", job["conversation_id"])
+         .eq("client_message_id", job["assistant_message_id"])
+         .eq("user_id", user_id).execute())
+
+
 def bind_job_to_tutor_turn(
     *, job_id: str, user_id: str, conversation_id: str,
     user_message_id: str, assistant_message_id: str, request_id: str,
@@ -593,6 +618,9 @@ def load_job_snapshot(*, user_id: str, job_id: str) -> dict[str, Any] | None:
         "jobId": job_id,
         "manifestId": manifest_id,
         "status": job.get("status"),
+        "retrievalMode": job.get("retrieval_mode"),
+        "coverageIntent": job.get("coverage_intent"),
+        "requestText": job.get("request_text"),
         "workerId": job.get("worker_id"),
         "workerAttempts": int(job.get("worker_attempts") or 0),
         "leaseExpiresAt": job.get("lease_expires_at"),

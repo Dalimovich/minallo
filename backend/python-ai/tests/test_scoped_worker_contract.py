@@ -68,6 +68,8 @@ def test_resume_is_idempotent_while_worker_lease_is_valid():
     assert '@router.post("/requests/{request_id}/resume")' in STREAM
     assert 'retry_count >= 2' in STREAM
     assert 'stage="completion_repaired"' in STREAM
+    assert "supersede_incompatible_job_binding" in STREAM
+    assert 'error_code="request_routing_corrected"' in STREAM
 
 
 def test_frontend_requires_live_nonstalled_worker_before_claiming_continuation():

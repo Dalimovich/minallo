@@ -1011,10 +1011,31 @@ async def tutor_request_resume_endpoint(
         return record
     scoped_job_id = str(record.get("scoped_job_id") or "")
     if scoped_job_id:
-        from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
+        from ..services.scoped_extraction import classify_scoped_request  # noqa: WPS433
+        from ..services.scoped_job_store import (  # noqa: WPS433
+            load_job_snapshot,
+            supersede_incompatible_job_binding,
+        )
         snapshot = await run_in_threadpool(
             lambda: load_job_snapshot(user_id=user["id"], job_id=scoped_job_id)
         )
+        current_spec = classify_scoped_request(str(snapshot.get("requestText") or "")) if snapshot else None
+        if (
+            snapshot and current_spec
+            and snapshot.get("retrievalMode") != current_spec.retrieval_mode.value
+        ):
+            await run_in_threadpool(lambda: supersede_incompatible_job_binding(
+                user_id=user["id"], job_id=scoped_job_id,
+            ))
+            await run_in_threadpool(lambda: update_tutor_request(
+                user_id=user["id"], request_id=request_id,
+                status="failed", stage="routing_corrected",
+                error_code="request_routing_corrected", retryable=True,
+            ))
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+                "code": "request_routing_corrected", "retryable": True,
+                "message": "The obsolete document-wide job was detached. Continue the saved response.",
+            })
         if snapshot and snapshot.get("finalText") and snapshot.get("processingFinished"):
             await run_in_threadpool(lambda: update_tutor_request(
                 user_id=user["id"], request_id=request_id,
