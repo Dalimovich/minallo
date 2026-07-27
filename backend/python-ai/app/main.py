@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import anyio
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import require_internal_token
@@ -98,7 +98,18 @@ app.add_middleware(
         "Authorization", "Content-Type", "X-Internal-Token", "Accept",
         "X-Request-ID", "X-Idempotency-Key",
     ],
+    expose_headers=["X-Request-ID", "X-Minallo-Backend-Revision"],
 )
+
+
+@app.middleware("http")
+async def deployment_diagnostics(request: Request, call_next) -> Response:
+    """Identify the running image without exposing configuration or secrets."""
+    response = await call_next(request)
+    response.headers["X-Minallo-Backend-Revision"] = os.getenv(
+        "MINALLO_REVISION", "unknown"
+    )
+    return response
 
 app.include_router(index_router.router)
 app.include_router(ask_router.router)

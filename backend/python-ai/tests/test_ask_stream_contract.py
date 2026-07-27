@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import asyncio
+
+from fastapi import HTTPException
+
 from app.routers.stream import AskStreamRequest
 
 
@@ -38,3 +42,29 @@ def test_cached_frontend_identity_is_restored_from_durable_request():
     restored = STREAM.index("get_tutor_request(")
     rejected = STREAM.index('"code": "incomplete_durable_turn_identity"')
     assert restored < rejected
+
+
+def test_all_three_request_id_channels_must_match():
+    from app.routers import stream as stream_router
+
+    payload = AskStreamRequest(
+        courseId="course-id",
+        question="Grundlagen der Umformtechnik",
+        requestId="body-request-123",
+    )
+
+    async def invoke():
+        return await stream_router.ask_stream_endpoint(
+            payload,
+            {"id": "user-id"},
+            "body-request-123",
+            "different-idempotency-key",
+        )
+
+    try:
+        asyncio.run(invoke())
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail["code"] == "request_id_mismatch"
+        return
+    raise AssertionError("mismatched idempotency key was accepted")

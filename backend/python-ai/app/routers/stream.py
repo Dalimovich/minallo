@@ -940,12 +940,21 @@ async def ask_stream_endpoint(
     payload: AskStreamRequest,
     user: dict = Depends(verify_supabase_jwt),
     x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
     """Complete access preflight, then expose the deferred pipeline over SSE."""
     started = time.perf_counter()
     supplied_request_id = x_request_id.strip() if isinstance(x_request_id, str) else ""
+    supplied_idempotency_key = (
+        x_idempotency_key.strip() if isinstance(x_idempotency_key, str) else ""
+    )
     body_request_id = (payload.requestId or "").strip()
-    if supplied_request_id and body_request_id and supplied_request_id != body_request_id:
+    provided_request_ids = {
+        value for value in (
+            body_request_id, supplied_request_id, supplied_idempotency_key,
+        ) if value
+    }
+    if len(provided_request_ids) > 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
             "code": "request_id_mismatch",
             "message": "The request identity is inconsistent.",
@@ -953,8 +962,11 @@ async def ask_stream_endpoint(
             "stage": "request_validation",
         })
     request_id = (
-        body_request_id or supplied_request_id
-        if re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", body_request_id or supplied_request_id)
+        body_request_id or supplied_request_id or supplied_idempotency_key
+        if re.fullmatch(
+            r"[A-Za-z0-9._:-]{8,128}",
+            body_request_id or supplied_request_id or supplied_idempotency_key,
+        )
         else uuid.uuid4().hex
     )
     user_id = user["id"]
