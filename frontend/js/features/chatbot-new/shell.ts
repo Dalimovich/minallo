@@ -6746,7 +6746,18 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
 
   if (bubble && m.completionState && ['pending', 'processing', 'recovering'].includes(m.completionState)) {
-    bubble.innerHTML = '<section class="ncb-tutor-recovery"><strong>Minallo is continuing this response…</strong><p>Your question and saved context are preserved.</p></section>';
+    const stageLabels: Record<string, string> = {
+      request_preflight: 'Preparing the document request…',
+      locating_question: 'Locating the requested exercise…',
+      loading_continuation: 'Reading the exercise and its continuation pages…',
+      model_generation: 'Solving and explaining the exercise…',
+      recovering_response: 'Reconnecting to the active response…',
+    };
+    const progress = stageLabels[m.failureStage || ''] || 'Minallo is continuing this response…';
+    const updated = m.updatedAt ? new Date(m.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    bubble.innerHTML = '<section class="ncb-tutor-recovery"><strong>' + escapeHtml(progress) +
+      '</strong><p>Your question and saved context are preserved.' +
+      (updated ? ' Last progress: ' + escapeHtml(updated) + '.' : '') + '</p></section>';
     if (m.requestId) return;
     m.completionState = 'failed_recoverable';
     m.errorCode ||= 'interrupted_while_processing';
@@ -6877,6 +6888,7 @@ const scopedJourneyReconciliations = new Set<string>();
 const durableTranscriptHydrations = new Set<string>();
 const durablePollTimers = new Map<string, number>();
 const scopedPollTimers = new Map<string, number>();
+const durablePollFailures = new Map<string, number>();
 
 function updateStoredMessageRow(root: HTMLElement, message: ChatMessage): void {
   if (!message.id) return;
@@ -7092,7 +7104,25 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
         aiHost + '/requests/' + encodeURIComponent(message.requestId!),
         { method: 'GET' }, { safeToRetry: true }
       ).catch(() => null);
-      if (!response?.ok) continue;
+      if (!response?.ok) {
+        const failures = (durablePollFailures.get(message.requestId!) || 0) + 1;
+        durablePollFailures.set(message.requestId!, failures);
+        if (failures >= 5 && response?.status === 404) {
+          Object.assign(message, {
+            completionState: 'failed_recoverable', retryable: true,
+            errorCode: 'request_state_missing', failureStage: 'request_reconciliation',
+            recoveryAction: 'retry', updatedAt: new Date().toISOString(),
+          });
+          changed = true;
+          changedMessages.push(message);
+        } else {
+          // One network/authorization/server failure must not permanently stop
+          // the only loop capable of restoring an offline final answer.
+          needsPoll = true;
+        }
+        continue;
+      }
+      durablePollFailures.delete(message.requestId!);
       const record = await response.json() as {
         status: string; stage?: string; partial_answer?: string; final_answer?: string;
         error_code?: string; retryable?: boolean; scoped_job_id?: string;
@@ -7161,7 +7191,7 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
       } else if (!scopedStateRestored && ['queued', 'running', 'recovering'].includes(record.status)) {
         Object.assign(message, {
           completionState: 'recovering', retryable: true,
-          errorCode: undefined, failureStage: record.stage,
+          errorCode: undefined, failureStage: record.stage || 'processing',
         });
         needsPoll = true;
       } else if (!scopedStateRestored) {
@@ -7192,10 +7222,14 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
     if (previousTimer != null) window.clearTimeout(previousTimer);
     durablePollTimers.delete(chat.id);
     if (needsPoll && chatStore.activeId === chat.id) {
+      const maxFailures = Math.max(0, ...candidates.map(
+        (message) => durablePollFailures.get(message.requestId || '') || 0
+      ));
+      const delay = Math.min(10_000, 1_000 * Math.pow(2, Math.min(maxFailures, 3)));
       const timer = window.setTimeout(() => {
         durablePollTimers.delete(chat.id);
         if (chatStore.activeId === chat.id) void reconcileDurableRequestMessages(chat, root);
-      }, 3_000);
+      }, delay);
       durablePollTimers.set(chat.id, timer);
     }
   }

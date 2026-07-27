@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.services import conversation_store
@@ -183,3 +184,24 @@ def test_completed_continuation_preserves_saved_partial(monkeypatch) -> None:
     assert db.rows["ai_tutor_requests"][0]["final_answer"] == "Saved first half\n\nNew second half"
     assert db.rows["ai_chat_messages"][0]["content"] == "Saved first half\n\nNew second half"
     assert db.rows["ai_chat_messages"][0]["completion_state"] == "complete"
+
+
+def test_stale_running_request_becomes_recoverable(monkeypatch) -> None:
+    db = FakeSupabase()
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-stale", "user_id": "user", "conversation_id": "conversation",
+        "assistant_client_message_id": "a-1", "status": "running", "stage": "model_generation",
+        "partial_answer": "", "updated_at": stale,
+    })
+    db.rows["ai_chat_messages"].append({
+        "conversation_id": "conversation", "client_message_id": "a-1", "content": "",
+    })
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    record = conversation_store.expire_stale_tutor_request(
+        user_id="user", record=dict(db.rows["ai_tutor_requests"][0]), stale_after_seconds=180,
+    )
+    assert record["status"] == "failed"
+    assert record["error_code"] == "response_worker_stalled"
+    assert record["retryable"] is True

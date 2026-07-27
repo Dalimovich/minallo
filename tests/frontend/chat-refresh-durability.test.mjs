@@ -43,3 +43,11 @@ test('scoped recovery identity survives browser compaction and hydration', () =>
   assert.match(shell, /const durablePollTimers = new Map/);
   assert.match(shell, /const scopedPollTimers = new Map/);
 });
+
+test('a transient durable-state poll failure cannot strand the continuation card', () => {
+  assert.match(shell, /One network\/authorization\/server failure must not permanently stop/);
+  assert.match(shell, /needsPoll = true/);
+  assert.match(shell, /durablePollFailures/);
+  assert.match(shell, /response_worker_stalled|request_state_missing/);
+  assert.match(shell, /const delay = Math\.min\(10_000/);
+});

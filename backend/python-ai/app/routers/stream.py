@@ -889,7 +889,9 @@ async def tutor_request_status_endpoint(
     """Return durable request state so a disconnected browser can reconcile."""
     if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", request_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid request id")
-    from ..services.conversation_store import get_tutor_request  # noqa: WPS433
+    from ..services.conversation_store import (  # noqa: WPS433
+        expire_stale_tutor_request, get_tutor_request,
+    )
     record = await run_in_threadpool(
         lambda: get_tutor_request(user_id=user["id"], request_id=request_id)
     )
@@ -897,6 +899,9 @@ async def tutor_request_status_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
             "code": "request_state_not_found", "retryable": True,
         })
+    record = await run_in_threadpool(lambda: expire_stale_tutor_request(
+        user_id=user["id"], record=record,
+    ))
     return record
 
 
@@ -1362,6 +1367,15 @@ async def ask_stream_endpoint(
         persisted_answer = ""
         last_shared_generation_check = 0.0
         last_shared_generation_result = True
+        last_request_heartbeat = 0.0
+
+        async def persist_heartbeat(stage: str) -> None:
+            nonlocal last_request_heartbeat
+            now = time.monotonic()
+            if now - last_request_heartbeat < 8.0:
+                return
+            last_request_heartbeat = now
+            await persist_request_state(status="running", stage=stage)
 
         async def generation_is_current(*, check_shared: bool = True) -> bool:
             nonlocal last_shared_generation_check, last_shared_generation_result
@@ -1540,6 +1554,7 @@ async def ask_stream_endpoint(
                         # connection visibly alive.
                         yield _status_sse(last_status_key)
                         last_heartbeat = time.monotonic()
+                        await persist_heartbeat(last_status_key or "preparing_response")
                     continue
             try:
                 prepared = await prepared_task
@@ -1596,6 +1611,7 @@ async def ask_stream_endpoint(
                     # response preparation.
                     yield _status_sse(last_status_key)
                     last_heartbeat = time.monotonic()
+                    await persist_heartbeat(last_status_key or "model_generation")
                     continue
                 try:
                     event = next_event_task.result()

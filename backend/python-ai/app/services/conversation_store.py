@@ -199,8 +199,31 @@ def get_tutor_request(*, user_id: str, request_id: str) -> dict[str, Any] | None
     return dict(rows[0]) if rows else None
 
 
+def expire_stale_tutor_request(
+    *, user_id: str, record: dict[str, Any], stale_after_seconds: int = 180,
+) -> dict[str, Any]:
+    """Turn an abandoned active request into an explicit resumable state."""
+    if str(record.get("status") or "") not in {"queued", "running", "recovering"}:
+        return record
+    try:
+        updated = datetime.fromisoformat(str(record.get("updated_at") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return record
+    age = (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds()
+    if age <= stale_after_seconds:
+        return record
+    partial = str(record.get("partial_answer") or "").strip()
+    update_tutor_request(
+        user_id=user_id, request_id=str(record["request_id"]),
+        status="interrupted" if partial else "failed", stage="worker_lease_expired",
+        partial_answer=partial or None, error_code="response_worker_stalled", retryable=True,
+    )
+    return get_tutor_request(user_id=user_id, request_id=str(record["request_id"])) or record
+
+
 __all__ = [
     "DurableConversation", "ensure_durable_conversation", "validate_durable_conversation",
     "create_durable_tutor_turn", "update_tutor_request", "get_tutor_request",
     "get_durable_conversation_messages",
+    "expire_stale_tutor_request",
 ]
