@@ -35,6 +35,10 @@ from .supabase_client import get_supabase
 settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger("minallo-ai")
+# Supabase's polling worker uses httpx every few seconds. INFO-level request
+# lines can evict the much more valuable ask-stream exception from Fly's small
+# retained log window before an operator can inspect it.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

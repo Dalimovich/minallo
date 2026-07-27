@@ -1027,6 +1027,38 @@ async def ask_stream_endpoint(
             "retryable": False,
             "stage": "request_validation",
         })
+    if payload.durableConversation:
+        from ..services.conversation_store import update_tutor_request  # noqa: WPS433
+        try:
+            await run_in_threadpool(lambda: update_tutor_request(
+                user_id=user_id,
+                request_id=request_id,
+                status="running",
+                stage="request_preflight",
+            ))
+        except Exception as exc:  # noqa: BLE001
+            log.exception(
+                "ask_stream_preflight_state_failed request_id=%s exception=%s",
+                request_id,
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "request_state_initialization_failed",
+                    "message": "The document request state could not be initialized.",
+                    "retryable": True,
+                    "stage": "request_preflight",
+                    "requestId": request_id,
+                },
+                headers={"X-Request-ID": request_id},
+            ) from exc
+        log.info(
+            "ask_stream_preflight_started request_id=%s document_id=%s visible_page=%s",
+            request_id,
+            payload.activeDocumentId,
+            payload.visiblePage,
+        )
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
     if payload.selectedText and len(payload.selectedText) > 12000:
@@ -1034,6 +1066,11 @@ async def ask_stream_endpoint(
     if payload.visiblePage is not None and payload.visiblePage < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visiblePage must be positive")
     validated_images = _validate_open_file_images(payload.openFileImages)
+    log.info(
+        "ask_stream_preflight_checkpoint request_id=%s checkpoint=visual_payload_validated images=%s",
+        request_id,
+        len(validated_images),
+    )
     visual_meta = payload.visualContextMeta
     validated_image_pages = [
         int(image["page"]) for image in validated_images if image.get("page") is not None
@@ -1125,6 +1162,11 @@ async def ask_stream_endpoint(
         preflight_documents.update(await run_in_threadpool(
             lambda: _load_authorized_documents(user_id, payload.courseId, [payload.activeDocumentId])
         ))
+    log.info(
+        "ask_stream_preflight_checkpoint request_id=%s checkpoint=documents_authorized documents=%s",
+        request_id,
+        len(preflight_documents),
+    )
     preflight_doc_names = {
         document_id: str(row.get("file_name") or "")
         for document_id, row in preflight_documents.items()
@@ -1170,6 +1212,11 @@ async def ask_stream_endpoint(
             selected_document_not_ready_stream(), media_type="text/event-stream",
         )
     preflight_ms = (time.perf_counter() - started) * 1000
+    log.info(
+        "ask_stream_preflight_checkpoint request_id=%s checkpoint=stream_ready preflight_ms=%.0f",
+        request_id,
+        preflight_ms,
+    )
 
     # Exhaustive document work is queued before the SSE generator starts. The
     # browser stream observes durable state; it does not execute the job.
