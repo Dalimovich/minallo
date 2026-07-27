@@ -37,6 +37,11 @@ import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { aiMakePdfBlob } from '../ai-chat/ai-export.js';
 import { initWorkspaceLibrary } from './workspace-library.js';
 import {
+  openAttachmentViewer,
+  renderAttachmentCard,
+  type ChatAttachmentView
+} from './chat-attachments.js';
+import {
   renderStudyToolConfiguration,
   resolveStudyToolSource,
   type StudyToolConfigurationMarker
@@ -600,6 +605,19 @@ interface PendingFile {
   source?: 'upload' | 'clipboard';
   mimeType?: string;
   characterCount?: number;
+  dataUrl?: string;
+  fileId?: string;
+  courseId?: string;
+  currentPage?: number;
+  status?: 'uploading' | 'processing' | 'ready' | 'failed';
+}
+
+interface AttachmentRef {
+  fileId: string;
+  filename: string;
+  mimeType: string;
+  courseId?: string;
+  currentPage?: number;
 }
 
 interface MissionMarker {
@@ -648,6 +666,7 @@ interface ChatMessage {
   updatedAt?: string;
   images?: PastedImage[];
   files?: PendingFile[];
+  attachmentRefs?: AttachmentRef[];
   selectedSourceMode?: SourceMode;
   sourceScope?: string;
   sourceLabel?: string;
@@ -2726,6 +2745,26 @@ function ragEligibility(
   if (last.role !== 'user') return null;
   if (!last.text || !last.text.trim()) return null;
   const active = chatStore.getActive();
+  const explicitAttachment = last.attachmentRefs?.[0];
+  if (explicitAttachment?.fileId && explicitAttachment.courseId) {
+    const page = Math.max(1, explicitAttachment.currentPage || 1);
+    return {
+      question: last.text.trim(),
+      courseId: explicitAttachment.courseId,
+      documentIds: [explicitAttachment.fileId],
+      documentNames: [explicitAttachment.filename],
+      activePdfContext: {
+        courseId: explicitAttachment.courseId,
+        documentId: explicitAttachment.fileId,
+        fileName: explicitAttachment.filename,
+        visiblePage: page,
+        pageCount: Math.max(page, 1),
+        pageText: '',
+        pageTextStatus: 'loading'
+      },
+      explicitSourceOverride: true
+    };
+  }
   const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
   const openPdf = getActivePdfContext();
   if (isPdfViewerVisible() && !openPdf) {
@@ -3780,26 +3819,27 @@ function appendUserBubble(
   row.className = 'ncb-msg-row ncb-msg-row--user';
   if (messageId) row.dataset.messageId = messageId;
   row.dataset.role = 'user';
-  const attachments = images
-    .filter((img) => !!img.dataUrl)
-    .map(
-      (img) =>
-        `<img class="ncb-bubble-image" src="${escapeAttr(img.dataUrl)}" alt="${escapeAttr(img.name)}" />`
-    )
-    .join('');
-  const fileChips = files
-    .map(
-      (f) =>
-        `<span class="ncb-bubble-file-chip"><svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>${escapeHtml(f.name)}</span>`
-    )
-    .join('');
+  const imageItems: ChatAttachmentView[] = images.filter((img) => !!img.dataUrl).map((img) => ({
+    id: img.id, name: img.name, mimeType: img.mediaType, dataUrl: img.dataUrl, status: 'ready'
+  }));
+  const fileItems: ChatAttachmentView[] = files.map((file) => ({
+    id: file.id, name: file.name, mimeType: file.mimeType || file.mediaType || guessMimeType(file.name),
+    size: file.size, dataUrl: file.dataUrl || (file.kind === 'image' && file.base64 ? `data:${file.mediaType || 'image/png'};base64,${file.base64}` : undefined),
+    textContent: file.textContent, fileId: file.fileId, courseId: file.courseId,
+    currentPage: file.currentPage, status: file.status || 'ready'
+  }));
+  const allAttachments = [...imageItems, ...fileItems];
+  const attachments = allAttachments.map(renderAttachmentCard).join('');
   row.innerHTML = `
     <div class="ncb-bubble ncb-bubble--user">
-      ${attachments ? `<div class="ncb-bubble-images">${attachments}</div>` : ''}
-      ${fileChips ? `<div class="ncb-bubble-files">${fileChips}</div>` : ''}
+      ${attachments ? `<div class="ncb-bubble-files">${attachments}</div>` : ''}
       ${text ? `<p class="ncb-bubble-text">${escapeHtml(text)}</p>` : ''}
     </div>
   `;
+  row.querySelectorAll<HTMLElement>('[data-chat-attachment-id]').forEach((card) => {
+    const attachment = allAttachments.find((item) => item.id === card.dataset.chatAttachmentId);
+    if (attachment) card.addEventListener('click', () => openAttachmentViewer(attachment, card, askAboutAttachment));
+  });
   msgs.appendChild(row);
   scrollMsgsToBottom(msgs);
 }
@@ -4281,6 +4321,47 @@ function getSbToken(): string | null {
   if (live) return live;
   try { return localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token'); }
   catch { return null; }
+}
+
+function guessMimeType(name: string): string {
+  if (/\.pdf$/i.test(name)) return 'application/pdf';
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.jpe?g$/i.test(name)) return 'image/jpeg';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  if (/\.md$/i.test(name)) return 'text/markdown';
+  if (/\.txt$/i.test(name)) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+async function askAboutAttachment(question: string, attachment: ChatAttachmentView): Promise<void> {
+  const root = document.querySelector<HTMLElement>('.ncb-root');
+  const msgs = root?.querySelector<HTMLElement>('.ncb-msgs');
+  const sendBtn = root?.querySelector<HTMLButtonElement>('.ncb-send-btn');
+  const state = liveState;
+  if (!root || !msgs || !sendBtn || !state || state.isSending) throw new Error('The chat is not ready yet.');
+  if (attachment.status === 'uploading' || attachment.status === 'processing') throw new Error('This file is still being indexed.');
+  const ref = attachment.fileId ? [{
+    fileId: attachment.fileId, filename: attachment.name,
+    mimeType: attachment.mimeType || guessMimeType(attachment.name),
+    courseId: attachment.courseId, currentPage: attachment.currentPage
+  }] : undefined;
+  const file: PendingFile = {
+    id: attachment.id, name: attachment.name,
+    kind: attachment.mimeType?.startsWith('image/') ? 'image' : 'text',
+    mimeType: attachment.mimeType, mediaType: attachment.mimeType,
+    size: attachment.size, dataUrl: attachment.dataUrl, textContent: attachment.textContent,
+    fileId: attachment.fileId, courseId: attachment.courseId,
+    currentPage: attachment.currentPage, status: attachment.status || 'ready'
+  };
+  const userMessage: ChatMessage = {
+    id: newChatMessageId(), role: 'user', text: question, files: [file], attachmentRefs: ref,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  };
+  state.messages.push(userMessage);
+  appendUserBubble(msgs, question, [], [file], userMessage.id);
+  touchActiveChat(); saveChatStore();
+  const ok = await streamAiReply(state, sendBtn, msgs);
+  if (!ok) throw new Error('Minallo could not answer this file question. You can retry it in the chat.');
 }
 
 function enhanceDocumentLearningJourney(
@@ -5859,6 +5940,7 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     } : undefined,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
+    attachmentRefs: m.attachmentRefs?.map((ref) => ({ ...ref })),
   };
   if (m.images?.length) {
     compact.images = m.images.map((img) => ({
@@ -5878,6 +5960,10 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
       size: f.size,
       source: f.source,
       characterCount: f.characterCount,
+      fileId: f.fileId,
+      courseId: f.courseId,
+      currentPage: f.currentPage,
+      status: f.status,
       textContent: f.source === 'clipboard' ? f.textContent : undefined,
     }));
   }
@@ -6962,7 +7048,7 @@ function readUploadedFile(f: File): Promise<PendingFile | null> {
 
   // PDF — pdfjsLib + the same page/char limits the existing chatbot uses.
   if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
-    return extractPdfText(f).then(async (text) => {
+    return Promise.all([extractPdfText(f), readAsDataUrl(f)]).then(async ([text, dataUrl]) => {
       // A scanned/image-only PDF extracts to (nearly) nothing. Before this
       // check an empty textContent fell through buildApiMessages' binary
       // branch and the AI told the user it "can't view binary files".
@@ -6970,15 +7056,18 @@ function readUploadedFile(f: File): Promise<PendingFile | null> {
         ? 0
         : text.replace(/--- Page \d+ ---/g, '').replace(/\s+/g, '').length;
       if (contentChars >= 40) {
-        return { ...baseMeta, kind: 'text' as const, textContent: text };
+        return { ...baseMeta, kind: 'text' as const, mimeType: 'application/pdf', dataUrl: dataUrl || undefined, textContent: text, status: 'ready' as const };
       }
       const pageImages = await renderPdfPagesAsImages(f, NCB_PDF_IMAGE_PAGE_LIMIT);
       if (pageImages.length) {
-        return { ...baseMeta, kind: 'text' as const, textContent: '', pageImages };
+        return { ...baseMeta, kind: 'text' as const, mimeType: 'application/pdf', dataUrl: dataUrl || undefined, textContent: '', pageImages, status: 'ready' as const };
       }
       return {
         ...baseMeta,
         kind: 'text' as const,
+        mimeType: 'application/pdf',
+        dataUrl: dataUrl || undefined,
+        status: 'ready' as const,
         textContent: '(could not extract text from this PDF)',
       };
     });
