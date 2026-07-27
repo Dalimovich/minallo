@@ -49,6 +49,8 @@ def test_equivalent_prompts_use_coverage_target(prompt):
     "I want you to give me the answer to this exercise. explain all the questions in detail",
     "Aufgabe 14.4: answer all the questions in this exercise",
     "Exercise 7.2 - explain every question and give every answer",
+    "what about 12.1 to 12.6 and 12.10 to 12.21? answer them all comprehensively",
+    "Please explain all parts from 4.2–4.9 in this chemistry worksheet",
 ])
 def test_explicit_numbered_target_is_not_misrouted_as_whole_document(prompt):
     spec = classify_scoped_request(prompt)

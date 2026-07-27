@@ -78,7 +78,8 @@ def classify_scoped_request(text: str) -> ScopedRequestSpec:
     exact_bounded_target = bool(re.search(
         r"(?:^\s*\d{1,3}(?:\.\d{1,3})?\s*[.):-]?\s+.{2,}|"
         r"\b(?:section|chapter|exercise|problem|task|aufgabe)\s+"
-        r"\d{1,3}(?:\.\d{1,3})?\b)",
+        r"\d{1,3}(?:\.\d{1,3})?\b|"
+        r"\b\d{1,3}\.\d{1,3}\b)",
         normalized, re.I,
     ))
     exhaustive = bool(_ALL.search(normalized)) and not exact_bounded_target
