@@ -385,6 +385,10 @@ class AskStreamRequest(BaseModel):
     viewerRevision: str | None = None
     conversationId: str | None = None
     durableConversation: bool = False
+    clientMessageId: str | None = Field(default=None, min_length=1, max_length=160)
+    assistantMessageId: str | None = Field(default=None, min_length=1, max_length=160)
+    requestId: str | None = Field(default=None, min_length=8, max_length=128)
+    requestSnapshot: dict[str, Any] | None = None
     conversationGeneration: int | None = Field(default=None, ge=0)
     responseLanguage: str | None = None
     openFileContext: str | None = None
@@ -940,9 +944,17 @@ async def ask_stream_endpoint(
     """Complete access preflight, then expose the deferred pipeline over SSE."""
     started = time.perf_counter()
     supplied_request_id = x_request_id.strip() if isinstance(x_request_id, str) else ""
+    body_request_id = (payload.requestId or "").strip()
+    if supplied_request_id and body_request_id and supplied_request_id != body_request_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
+            "code": "request_id_mismatch",
+            "message": "The request identity is inconsistent.",
+            "retryable": False,
+            "stage": "request_validation",
+        })
     request_id = (
-        supplied_request_id
-        if re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", supplied_request_id)
+        body_request_id or supplied_request_id
+        if re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", body_request_id or supplied_request_id)
         else uuid.uuid4().hex
     )
     user_id = user["id"]
@@ -968,6 +980,18 @@ async def ask_stream_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
     if len(question) > _MAX_STREAM_QUESTION_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
+    if payload.durableConversation and not all((
+        payload.conversationId,
+        payload.clientMessageId,
+        payload.assistantMessageId,
+        request_id,
+    )):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
+            "code": "incomplete_durable_turn_identity",
+            "message": "The document request is missing its durable conversation identity.",
+            "retryable": False,
+            "stage": "request_validation",
+        })
     if payload.openFileContext and len(payload.openFileContext) > _MAX_STREAM_OPEN_FILE_CTX_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="openFileContext is too long")
     if payload.selectedText and len(payload.selectedText) > 12000:
@@ -1135,18 +1159,43 @@ async def ask_stream_endpoint(
             )
             worker_payload = payload.model_dump(mode="json")
             worker_payload["requestId"] = request_id
-            precreated_scoped_job = await run_in_threadpool(lambda: create_or_resume_job(
-                user_id=user_id, course_id=payload.courseId,
-                document_id=payload.activeDocumentId or "",
-                document_revision_id=early_revision,
-                source_fingerprint=early_fingerprint,
-                request_text=question, spec=early_spec,
-                conversation_id=payload.conversationId,
-                user_message_id=payload.clientMessageId,
-                assistant_message_id=payload.assistantMessageId,
-                request_id=request_id,
-                request_payload=worker_payload,
-            ))
+            try:
+                precreated_scoped_job = await run_in_threadpool(lambda: create_or_resume_job(
+                    user_id=user_id, course_id=payload.courseId,
+                    document_id=payload.activeDocumentId or "",
+                    document_revision_id=early_revision,
+                    source_fingerprint=early_fingerprint,
+                    request_text=question, spec=early_spec,
+                    conversation_id=payload.conversationId,
+                    user_message_id=payload.clientMessageId,
+                    assistant_message_id=payload.assistantMessageId,
+                    request_id=request_id,
+                    request_payload=worker_payload,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                log.exception(
+                    "scoped_job_precreation_failed request_id=%s conversation_id=%s assistant_message_id=%s",
+                    request_id, payload.conversationId, payload.assistantMessageId,
+                )
+
+                async def scoped_precreation_error_stream():
+                    yield _sse_bytes(json.dumps({
+                        "meta": True, "requestId": request_id,
+                        "streamProtocolVersion": 2,
+                    }, ensure_ascii=False))
+                    yield _error_sse(
+                        code="scoped_job_precreation_failed",
+                        message="The exhaustive document job could not be started.",
+                        retryable=True,
+                        request_id=request_id,
+                        stage="job_creation",
+                        recoverable=True,
+                    )
+
+                return StreamingResponse(
+                    scoped_precreation_error_stream(), media_type="text/event-stream",
+                    headers={"X-Request-ID": request_id},
+                )
             log.info(
                 "scoped_job_created_before_expensive_work request_id=%s job_id=%s",
                 request_id, precreated_scoped_job["id"],

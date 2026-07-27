@@ -3023,6 +3023,10 @@ async function streamFromAskStream(
       courseId,
       conversationId,
       durableConversation,
+      clientMessageId: assistantMessage?.parentUserMessageId,
+      assistantMessageId: assistantMessage?.id,
+      requestId,
+      requestSnapshot: assistantMessage?.requestSnapshot,
       question,
       tutorMode: getCurrentTutorMode(),
       sourceMode: sourceModeForActiveChat(),
@@ -3087,19 +3091,19 @@ async function streamFromAskStream(
   }, { safeToRetry: true });
   if (!resp.ok || !resp.body || !resp.body.getReader) {
     const errText = await resp.text().catch(() => '');
-    let detail: { code?: string; message?: string; retryable?: boolean; requestId?: string } = {};
+    let detail: { code?: string; message?: string; retryable?: boolean; requestId?: string; stage?: string } = {};
     try {
       const parsed = JSON.parse(errText) as { detail?: typeof detail };
       detail = parsed.detail || {};
     } catch { /* retain typed transport fallback */ }
     throw new AskStreamError({
-      code: detail.code || 'ask_stream_failed',
-      message: detail.message || "Minallo's document tutor is temporarily unavailable.",
-      retryable: detail.retryable !== false,
+      code: detail.code || 'ask_stream_preflight_failed',
+      message: detail.message || 'The document request could not start.',
+      retryable: typeof detail.retryable === 'boolean' ? detail.retryable : resp.status >= 500,
       metadata: {
         status: resp.status,
         requestId: detail.requestId || resp.headers.get('X-Request-ID') || requestId,
-        failureStage: 'http_response',
+        failureStage: detail.stage || 'request_preflight',
         responseBody: errText.slice(0, 500),
       }
     });

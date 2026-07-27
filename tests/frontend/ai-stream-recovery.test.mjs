@@ -129,6 +129,21 @@ test('scoped restoration suppresses generic request failure state', () => {
   assert.match(shell, /else if \(!scopedStateRestored\)/);
 });
 
+test('ask-stream body carries the same durable identity as its headers', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /'X-Request-ID': requestId/);
+  assert.match(shell, /'X-Idempotency-Key': requestId/);
+  assert.match(shell, /clientMessageId: assistantMessage\?\.parentUserMessageId/);
+  assert.match(shell, /assistantMessageId: assistantMessage\?\.id/);
+  assert.match(shell, /requestId,\s*\n\s*requestSnapshot: assistantMessage\?\.requestSnapshot/);
+});
+
+test('non-2xx ask-stream responses preserve typed preflight failures', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /ask_stream_preflight_failed/);
+  assert.match(shell, /failureStage: detail\.stage \|\| 'request_preflight'/);
+});
+
 test('error references are validated and never truncated to ncb_msg_', () => {
   const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
   assert.match(shell, /function durableErrorReference/);
