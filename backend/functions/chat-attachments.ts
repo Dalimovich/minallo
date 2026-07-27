@@ -28,6 +28,20 @@ function safeExtension(filename: string, mimeType: string): string {
 
 interface FileRow { id: string; owner_id: string; document_id?: string | null; original_filename: string; storage_bucket: string; storage_path: string; mime_type: string; size_bytes?: number; indexing_status?: string | null }
 
+function idempotentFileId(userId: string, clientUploadId: string, contentHash: string): string {
+  const hex = crypto.createHash('sha256').update(`${userId}\0${clientUploadId}\0${contentHash}`).digest('hex').slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function uploadResult(file: FileRow): LambdaResponse {
+  return jsonResponse(200, {
+    fileId: file.id, documentId: file.document_id || null,
+    filename: file.original_filename, mimeType: file.mime_type,
+    sizeBytes: file.size_bytes, indexingStatus: file.indexing_status || null,
+    reused: true
+  });
+}
+
 async function storageRequest(method: string, path: string, body?: Buffer, contentType = 'application/octet-stream'): Promise<Response> {
   const key = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
   return fetch(requireEnv('SUPABASE_URL').replace(/\/$/, '') + '/storage/v1/' + path, {
@@ -51,10 +65,38 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     const filename = String(body.filename || '').replace(/[\\/\x00-\x1f]/g, '_').slice(0, 180);
     const mimeType = String(body.mimeType || 'application/octet-stream');
     const encoded = String(body.base64 || '');
+    const clientUploadId = String(body.clientUploadId || '').trim().slice(0, 240);
     if (!filename || !SAFE_MIME.test(mimeType) || !/^[A-Za-z0-9+/=\r\n]+$/.test(encoded)) return attachmentFailure(400, 'validation', 'unsupported_attachment', 'Unsupported attachment', false);
     const bytes = Buffer.from(encoded, 'base64');
     if (!bytes.length || bytes.length > MAX_BYTES) return attachmentFailure(413, 'validation', bytes.length ? 'file_too_large' : 'file_missing', 'Attachment is empty or too large', false);
-    const fileId = crypto.randomUUID();
+    const contentHash = crypto.createHash('sha256').update(bytes).digest('hex');
+    const courseId = typeof body.courseId === 'string' ? body.courseId : null;
+    // Selecting the same PDF again (even in a later tab/session with a new
+    // client attachment id) should link the durable file that is already ready.
+    // Keep this course-scoped so its exact RAG identity remains valid.
+    if (mimeType === 'application/pdf' && courseId) {
+      const documents = await supaRequest<Array<{ id: string }>>(
+        'GET',
+        `documents?user_id=eq.${encodeURIComponent(user.id)}&course_id=eq.${encodeURIComponent(courseId)}&source_type=eq.chat_attachment&document_hash=eq.${contentHash}&processing_status=eq.ready&select=id&order=created_at.asc&limit=1`,
+        null,
+        key
+      );
+      const documentId = Array.isArray(documents.body) ? documents.body[0]?.id : undefined;
+      if (documentId) {
+        const existingFile = await supaRequest<FileRow[]>(
+          'GET',
+          `ai_chat_files?owner_id=eq.${encodeURIComponent(user.id)}&document_id=eq.${encodeURIComponent(documentId)}&upload_status=eq.ready&select=*&order=created_at.asc&limit=1`,
+          null,
+          key
+        );
+        if (Array.isArray(existingFile.body) && existingFile.body[0]) return uploadResult(existingFile.body[0]);
+      }
+    }
+    const fileId = clientUploadId ? idempotentFileId(user.id, clientUploadId, contentHash) : crypto.randomUUID();
+    if (clientUploadId) {
+      const prior = await supaRequest<FileRow[]>('GET', `ai_chat_files?id=eq.${encodeURIComponent(fileId)}&owner_id=eq.${encodeURIComponent(user.id)}&select=*&limit=1`, null, key);
+      if (Array.isArray(prior.body) && prior.body[0]) return uploadResult(prior.body[0]);
+    }
     const storagePath = `${user.id}/${fileId}${safeExtension(filename, mimeType)}`;
     const upload = await storageRequest('POST', `object/${BUCKET}/${storagePath}`, bytes);
     if (!upload.ok) {
@@ -63,12 +105,11 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     }
     let documentId: string | null = null;
     let indexingStatus: string | null = null;
-    const courseId = typeof body.courseId === 'string' ? body.courseId : null;
     if (mimeType === 'application/pdf' && courseId) {
       const doc = await supaRequest<Array<{ id: string }> | { id: string }>('POST', 'documents', {
         user_id: user.id, course_id: courseId, file_name: filename, file_type: 'pdf',
         source_type: 'chat_attachment', storage_path: `${BUCKET}:${storagePath}`,
-        processing_status: 'uploaded', document_hash: crypto.createHash('sha256').update(bytes).digest('hex')
+        processing_status: 'uploaded', document_hash: contentHash
       }, key, { Prefer: 'return=representation' });
       const created = Array.isArray(doc.body) ? doc.body[0] : doc.body;
       if (doc.status !== 201 || !created?.id) {

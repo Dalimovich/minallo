@@ -63,3 +63,26 @@ test('attachment failures expose structured stages without leaking file data', (
   assert.match(shell, /class AttachmentSendError/);
   assert.match(shell, /Your draft is still available/);
 });
+
+test('direct uploads are idempotent across auth retries and repeated sends', () => {
+  assert.match(shell, /clientUploadId: item\.id/);
+  assert.match(shell, /\}, \{ safeToRetry: true \}\)/);
+  assert.match(endpoint, /idempotentFileId\(user\.id, clientUploadId, contentHash\)/);
+  assert.match(endpoint, /if \(Array\.isArray\(prior\.body\) && prior\.body\[0\]\) return uploadResult/);
+});
+
+test('an identical ready PDF reuses its durable chat file instead of uploading again', () => {
+  const lookup = endpoint.indexOf('document_hash=eq.${contentHash}');
+  const storageUpload = endpoint.indexOf("storageRequest('POST'", lookup);
+  assert.ok(lookup >= 0 && storageUpload > lookup);
+  assert.match(endpoint, /source_type=eq\.chat_attachment/);
+  assert.match(endpoint, /processing_status=eq\.ready/);
+  assert.match(endpoint, /document_id=eq\.\$\{encodeURIComponent\(documentId\)\}/);
+  assert.match(endpoint, /return uploadResult\(existingFile\.body\[0\]\)/);
+});
+
+test('composer locks while attachments persist and direct attachment owns the request snapshot', () => {
+  assert.match(shell, /state\.isSending = true;\s*sendBtn\.disabled = true;\s*try \{\s*await persistMessageAttachments/);
+  assert.match(shell, /activeDocumentId: directAttachment\?\.fileId \|\| pdf\?\.documentId/);
+  assert.match(shell, /activeDocumentName: directAttachment\?\.filename \|\| pdf\?\.fileName/);
+});

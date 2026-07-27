@@ -1060,6 +1060,10 @@ async function doSend(
   pasteRow: HTMLElement,
   msgs: HTMLElement
 ): Promise<void> {
+  // Attachment persistence can take a little while (PDF indexing in particular).
+  // Lock before that await so repeated clicks/Enter presses cannot create several
+  // uploads and race different document identities into the same message.
+  if (state.isSending) return;
   const text = textarea.value.trim();
   const images = state.pasted.slice();
   const files = state.files.slice();
@@ -1073,6 +1077,8 @@ async function doSend(
     id: newChatMessageId(), role: 'user', text, images, files,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
   };
+  state.isSending = true;
+  sendBtn.disabled = true;
   try {
     await persistMessageAttachments(userMessage);
   } catch (cause) {
@@ -1080,6 +1086,9 @@ async function doSend(
     if (cause instanceof AttachmentSendError) console.error('chat_attachment_send_failed', cause.failure);
     (window as unknown as { showToast?: (title: string, detail?: string) => void }).showToast?.('Attachment not sent', detail + ' Your draft is still available.');
     return;
+  } finally {
+    state.isSending = false;
+    sendBtn.disabled = false;
   }
   state.messages.push(userMessage);
   appendUserBubble(msgs, text, images, files, userMessage.id);
@@ -1175,13 +1184,16 @@ async function streamAiReply(
   });
   if (!assistantMessage.requestSnapshot) {
     const pdf = getActivePdfContext();
+    const directAttachment = sourceUser?.attachmentRefs?.[0];
     assistantMessage.requestSnapshot = {
       userText: sourceUser?.text || '',
       sourceMode: normaliseSourceMode(originChat.sourceMode),
       selectedSourceIds: originChat.selectedSourceIds.slice(),
-      activeDocumentId: pdf?.documentId,
-      activeDocumentName: pdf?.fileName,
-      visiblePage: pdf?.visiblePage,
+      // A file attached to this exact message always wins over a PDF that may
+      // merely still be open elsewhere in the UI.
+      activeDocumentId: directAttachment?.fileId || pdf?.documentId,
+      activeDocumentName: directAttachment?.filename || pdf?.fileName,
+      visiblePage: directAttachment?.currentPage || pdf?.visiblePage,
     };
   }
   if (!originMessages.some((message) => message.id === assistantMessage.id)) originMessages.push(assistantMessage);
@@ -3978,8 +3990,11 @@ async function persistMessageAttachments(message: ChatMessage): Promise<void> {
       : item.dataUrl?.replace(/^data:[^;]+;base64,/, '') || item.base64 || utf8Base64(item.textContent || '');
     const response = await authenticatedFetch('/api/chat-attachments', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload', filename: item.name, mimeType, base64, courseId: courseId || undefined })
-    });
+      body: JSON.stringify({
+        action: 'upload', filename: item.name, mimeType, base64,
+        courseId: courseId || undefined, clientUploadId: item.id
+      })
+    }, { safeToRetry: true });
     const result = await response.json().catch(() => ({})) as { fileId?: string; documentId?: string; error?: { stage?: AttachmentSendFailure['stage']; code?: string; message?: string } };
     if (!response.ok || !result.fileId) throw new AttachmentSendError({
       stage: result.error?.stage || 'storage_upload',
