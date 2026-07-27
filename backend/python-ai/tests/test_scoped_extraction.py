@@ -233,3 +233,33 @@ def test_existing_indexer_persists_logical_units_alongside_chunks():
         assert row["solution_block_ids"] is not None
         assert row["source_text"] is not None
         assert row["metadata"] is not None
+
+
+def test_logical_unit_upsert_deduplicates_repeated_exam_solution_numbers():
+    from types import SimpleNamespace
+    from app.services import indexing
+
+    written = []
+
+    class Query:
+        def delete(self): return self
+        def eq(self, *_): return self
+        def execute(self): return SimpleNamespace(data=[])
+        def upsert(self, rows, **_):
+            written.extend(rows)
+            return self
+
+    class Db:
+        def table(self, _): return Query()
+
+    indexing._replace_logical_units(
+        Db(), document_id="doc", document_revision="rev", user_id="user",
+        course_id="course",
+        pages=[
+            "2. Kurzfragen - Grundlagen\n2.1 Welche Aussage ist korrekt?",
+            "2. Kurzfragen - Lösungen\n2.1 Die korrekte Aussage ist B.",
+        ],
+        chunks=[],
+    )
+    stable_ids = [row["stable_block_id"] for row in written]
+    assert len(stable_ids) == len(set(stable_ids))

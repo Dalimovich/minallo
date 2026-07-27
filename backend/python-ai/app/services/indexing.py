@@ -1231,6 +1231,14 @@ def _replace_logical_units(
         {**logical_unit_defaults, **row}
         for row in rows
     ]
+    # Combined exam/solution PDFs may repeat the same semantic question or
+    # section number later in the document. stable_block_id intentionally
+    # identifies that semantic unit, so keep the first (question-side) row
+    # rather than sending duplicate conflict keys in one PostgREST upsert.
+    unique_rows: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        unique_rows.setdefault(str(row["stable_block_id"]), row)
+    rows = list(unique_rows.values())
     (
         sb.table("document_logical_units").delete()
         .eq("document_id", document_id)
