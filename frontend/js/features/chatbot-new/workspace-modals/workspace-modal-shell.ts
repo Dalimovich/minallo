@@ -9,9 +9,12 @@ export type WorkspaceFeature = {
   title: string;
   subtitle: string;
   sectionId: string;
+  layout: WorkspaceModalLayout;
   nav?: Array<[string, string]>;
   afterMount?: (section: HTMLElement) => void;
 };
+
+export type WorkspaceModalLayout = 'full' | 'sidebar-content' | 'content-detail' | 'three-column';
 
 const features: Record<Exclude<WorkspaceModalType, null>, WorkspaceFeature> = {
   profile: profileWorkspace,
@@ -54,13 +57,13 @@ export function openWorkspaceModal(type: Exclude<WorkspaceModalType, null>): voi
   mount.className = 'mn-workspace-modal-root';
   mount.innerHTML = `
     <div class="mn-workspace-backdrop">
-      <section class="mn-workspace-modal" role="dialog" aria-modal="true" aria-labelledby="mn-workspace-title" tabindex="-1" data-workspace-type="${type}">
+      <section class="mn-workspace-modal" role="dialog" aria-modal="true" aria-labelledby="mn-workspace-title" tabindex="-1" data-workspace-type="${type}" data-layout="${feature.layout}">
         <header class="mn-workspace-header">
           <div><p class="mn-workspace-eyebrow">Minallo workspace</p><h1 id="mn-workspace-title"></h1><p class="mn-workspace-subtitle"></p></div>
           <button class="mn-workspace-close" type="button" aria-label="Close workspace">&times;</button>
         </header>
-        <div class="mn-workspace-layout">
-          <aside class="mn-workspace-nav" aria-label="Settings categories" hidden></aside>
+        <div class="mn-workspace-body">
+          ${feature.nav?.length ? '<nav class="mn-workspace-nav" aria-label="Settings categories"></nav>' : ''}
           <main class="mn-workspace-content"></main>
         </div>
         <div class="mn-workspace-status" role="status" aria-live="polite"></div>
@@ -70,12 +73,11 @@ export function openWorkspaceModal(type: Exclude<WorkspaceModalType, null>): voi
   const backdrop = mount.querySelector<HTMLElement>('.mn-workspace-backdrop')!;
   const dialog = mount.querySelector<HTMLElement>('.mn-workspace-modal')!;
   const content = mount.querySelector<HTMLElement>('.mn-workspace-content')!;
-  const nav = mount.querySelector<HTMLElement>('.mn-workspace-nav')!;
+  const nav = mount.querySelector<HTMLElement>('.mn-workspace-nav');
   mount.querySelector<HTMLElement>('#mn-workspace-title')!.textContent = feature.title;
   mount.querySelector<HTMLElement>('.mn-workspace-subtitle')!.textContent = feature.subtitle;
 
-  if (feature.nav?.length) {
-    nav.hidden = false;
+  if (feature.nav?.length && nav) {
     feature.nav.forEach(([id, label], index) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -134,4 +136,3 @@ export function openWorkspaceModal(type: Exclude<WorkspaceModalType, null>): voi
   cleanupWorkspaceModal = close;
   requestAnimationFrame(() => (dialog.querySelector<HTMLElement>('button, input, select, textarea, [tabindex]') || dialog).focus());
 }
-

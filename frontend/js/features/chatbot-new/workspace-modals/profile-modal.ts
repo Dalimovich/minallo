@@ -4,6 +4,7 @@ export const profileWorkspace: WorkspaceFeature = {
   title: 'Profile',
   subtitle: 'Your identity and study information',
   sectionId: 'psec-profile',
+  layout: 'full',
   afterMount(section) {
     section.classList.add('mn-profile-workspace');
     const hero = section.querySelector<HTMLElement>('.profile-hero');
