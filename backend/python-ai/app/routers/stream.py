@@ -980,6 +980,29 @@ async def ask_stream_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
     if len(question) > _MAX_STREAM_QUESTION_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
+    # Backward-compatible rollout: an older cached frontend may have already
+    # persisted the durable turn through /conversations/ensure but omit the
+    # same IDs from this body. Recover them from the authoritative request row
+    # using the shared X-Request-ID rather than failing the user's message.
+    if payload.durableConversation and request_id and not all((
+        payload.clientMessageId, payload.assistantMessageId,
+    )):
+        from ..services.conversation_store import get_tutor_request  # noqa: WPS433
+        durable_turn = await run_in_threadpool(lambda: get_tutor_request(
+            user_id=user_id, request_id=request_id,
+        ))
+        if durable_turn and (
+            not payload.conversationId
+            or str(durable_turn.get("conversation_id") or "") == payload.conversationId
+        ):
+            payload.conversationId = str(durable_turn.get("conversation_id") or payload.conversationId or "")
+            payload.clientMessageId = str(durable_turn.get("user_client_message_id") or "") or None
+            payload.assistantMessageId = str(durable_turn.get("assistant_client_message_id") or "") or None
+            payload.requestSnapshot = payload.requestSnapshot or dict(durable_turn.get("request_snapshot") or {})
+            log.info(
+                "durable_turn_identity_restored request_id=%s conversation_id=%s",
+                request_id, payload.conversationId,
+            )
     if payload.durableConversation and not all((
         payload.conversationId,
         payload.clientMessageId,

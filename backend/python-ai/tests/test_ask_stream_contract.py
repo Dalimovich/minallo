@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from app.routers.stream import AskStreamRequest
+
+
+STREAM = (Path(__file__).parents[3] / "backend/python-ai/app/routers/stream.py").read_text(encoding="utf-8")
 
 
 def test_ask_stream_request_accepts_durable_turn_ids():
@@ -26,3 +31,10 @@ def test_ask_stream_request_rejects_too_short_request_id():
     except ValueError:
         return
     raise AssertionError("short request ID was accepted")
+
+
+def test_cached_frontend_identity_is_restored_from_durable_request():
+    assert "durable_turn_identity_restored" in STREAM
+    restored = STREAM.index("get_tutor_request(")
+    rejected = STREAM.index('"code": "incomplete_durable_turn_identity"')
+    assert restored < rejected
