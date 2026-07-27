@@ -3829,12 +3829,12 @@ function appendUserBubble(
     currentPage: file.currentPage, status: file.status || 'ready'
   }));
   const allAttachments = [...imageItems, ...fileItems];
-  const attachments = allAttachments.map(renderAttachmentCard).join('');
+  const attachments = allAttachments.map((item) => renderAttachmentCard(item, messageId)).join('');
   row.innerHTML = `
-    <div class="ncb-bubble ncb-bubble--user">
-      ${attachments ? `<div class="ncb-bubble-files">${attachments}</div>` : ''}
-      ${text ? `<p class="ncb-bubble-text">${escapeHtml(text)}</p>` : ''}
-    </div>
+    <article class="chat-user-message">
+      ${attachments ? `<div class="chat-message-attachments">${attachments}</div>` : ''}
+      ${text ? `<div class="ncb-bubble ncb-bubble--user chat-user-message__text"><p class="ncb-bubble-text">${escapeHtml(text)}</p></div>` : ''}
+    </article>
   `;
   row.querySelectorAll<HTMLElement>('[data-chat-attachment-id]').forEach((card) => {
     const attachment = allAttachments.find((item) => item.id === card.dataset.chatAttachmentId);

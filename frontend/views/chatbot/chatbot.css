@@ -3542,11 +3542,14 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 
 /* Reusable chat attachment card. Kept within the message column even when a
    filename is extremely long; minmax(0,1fr) is essential for ellipsis. */
+.chat-user-message { display: flex; flex-direction: column; align-items: flex-end; width: min(680px, 78%); max-width: 78%; min-width: 0; }
+.chat-message-attachments { display: flex; flex-direction: column; align-self: stretch; gap: 8px; width: min(430px, 100%); max-width: 100%; min-width: 0; margin: 0 0 10px auto; }
+.chat-user-message__text { width: fit-content; max-width: 100%; }
 .ncb-bubble-files { display: grid; gap: 8px; width: min(430px, 100%); max-width: 100%; min-width: 0; }
 .chat-file-card {
   display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 11px;
   width: 100%; max-width: 100%; min-width: 0; min-height: 66px; padding: 9px 11px;
-  box-sizing: border-box; color: var(--on-glass, #eef6ff); text-align: left; cursor: pointer;
+  appearance: none; box-sizing: border-box; color: var(--on-glass, #eef6ff); text-align: left; cursor: pointer;
   background: linear-gradient(135deg, rgba(19, 43, 75, .88), rgba(11, 27, 49, .78));
   border: 1px solid rgba(96, 165, 250, .24); border-radius: 15px;
   backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
@@ -3561,9 +3564,9 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 .chat-file-card__type--pdf { color: #fecaca; background: rgba(239,68,68,.22); }
 .chat-file-card__content { display: block; min-width: 0; overflow: hidden; }
 .chat-file-card__filename, .chat-file-card__metadata { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-file-card__filename { font-size: 14px; font-weight: 600; }
-.chat-file-card__metadata { margin-top: 3px; color: rgba(191,219,254,.65); font-size: 12px; font-weight: 400; }
-.chat-file-card__action { color: #93c5fd; font-size: 12px; font-weight: 500; }
+.chat-file-card__filename { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.chat-file-card__metadata { margin-top: 4px; color: rgba(191,219,254,.65); font-size: 12px; font-weight: 400; line-height: 1.25; }
+.chat-file-card__action { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: #93c5fd; font-size: 13px; font-weight: 600; }
 .chat-file-card__status { font-size: 11px; color: #93c5fd; text-transform: capitalize; }
 .chat-file-card__status--failed { color: #fca5a5; }
 
@@ -3590,7 +3593,7 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 .chat-file-viewer__send:disabled { cursor: wait; opacity: .55; }
 .chat-file-viewer__error { margin: 7px 0 0; color: #fca5a5; font-size: 12px; }
 @keyframes chat-file-fade { from { opacity: 0; } } @keyframes chat-file-rise { from { transform: translateY(8px) scale(.99); opacity: .75; } }
-@media (max-width: 640px) { .chat-file-viewer-overlay { padding: 0; } .chat-file-viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; } .chat-file-card { grid-template-columns: 42px minmax(0,1fr) auto; } .chat-file-card__preview { width: 42px; height: 42px; } }
+@media (max-width: 640px) { .chat-file-viewer-overlay { padding: 0; } .chat-file-viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; } .chat-user-message { width: 92%; max-width: 92%; } .chat-message-attachments { width: 100%; } .chat-file-card { grid-template-columns: 42px minmax(0,1fr) auto; } .chat-file-card__preview { width: 42px; height: 42px; } }
 @media (prefers-reduced-motion: reduce) { .chat-file-viewer-overlay, .chat-file-viewer, .chat-file-card { animation: none; transition: none; } }
 
 .ncb-msg-row--ai {

@@ -15,6 +15,17 @@ test('chat files use one accessible reusable attachment card', () => {
   assert.match(css, /text-overflow:\s*ellipsis/);
 });
 
+test('sent attachments are separate siblings above the user text bubble', () => {
+  const attachments = shell.indexOf('class="chat-message-attachments"');
+  const text = shell.indexOf('class="ncb-bubble ncb-bubble--user chat-user-message__text"');
+  assert.ok(attachments >= 0 && text > attachments);
+  assert.match(shell, /<article class="chat-user-message">/);
+  assert.match(component, /data-file-id=/);
+  assert.match(component, /data-message-id=/);
+  assert.match(component, /Open <span>›<\/span>/);
+  assert.match(css, /\.chat-message-attachments\s*\{[^}]*margin:\s*0 0 10px auto/s);
+});
+
 test('attachment viewer has working modal and question composer controls', () => {
   assert.match(component, /role="dialog" aria-modal="true"/);
   assert.match(component, /Ask Minallo about this file/);

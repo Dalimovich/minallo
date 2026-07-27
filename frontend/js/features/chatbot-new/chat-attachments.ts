@@ -31,7 +31,7 @@ export function attachmentType(item: ChatAttachmentView): string {
   return ext;
 }
 
-export function renderAttachmentCard(item: ChatAttachmentView): string {
+export function renderAttachmentCard(item: ChatAttachmentView, messageId?: string): string {
   const type = attachmentType(item);
   const image = item.mimeType?.startsWith('image/') && item.dataUrl;
   const metadata = [type, formatAttachmentSize(item.size)].filter(Boolean).join(' · ');
@@ -40,10 +40,10 @@ export function renderAttachmentCard(item: ChatAttachmentView): string {
     : `<span class="chat-file-card__type chat-file-card__type--${type.toLowerCase()}">${esc(type.length <= 4 ? type : 'DOC')}</span>`;
   const status = item.status && item.status !== 'ready'
     ? `<span class="chat-file-card__status chat-file-card__status--${item.status}">${esc(item.status)}</span>` : '';
-  return `<button type="button" class="chat-file-card" data-chat-attachment-id="${esc(item.id)}" title="${esc(item.name)}" aria-label="Open ${esc(item.name)}">
+  return `<button type="button" class="chat-file-card chat-file-card--${type.toLowerCase()}" data-chat-attachment-id="${esc(item.id)}" data-file-id="${esc(item.fileId || '')}" data-message-id="${esc(messageId || '')}" title="${esc(item.name)}" aria-label="Open ${esc(item.name)}">
     <span class="chat-file-card__preview">${preview}</span>
     <span class="chat-file-card__content"><span class="chat-file-card__filename">${esc(item.name)}</span><span class="chat-file-card__metadata">${esc(metadata)}</span></span>
-    ${status}<span class="chat-file-card__action">Open</span>
+    ${status}<span class="chat-file-card__action" aria-hidden="true">Open <span>›</span></span>
   </button>`;
 }
 
