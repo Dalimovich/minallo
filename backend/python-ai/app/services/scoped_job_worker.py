@@ -81,12 +81,33 @@ def _run_claimed_job(job: dict[str, Any], worker_id: str) -> None:
 
 async def _execute(job: dict[str, Any]) -> None:
     # Import lazily to avoid a router/service cycle during app startup.
-    from ..routers.stream import AskStreamRequest, _prepare_ask_stream_response
+    from ..routers.stream import (
+        AskStreamRequest,
+        _load_authorized_documents,
+        _prepare_ask_stream_response,
+    )
     from .conversation_store import update_tutor_request
 
     payload = AskStreamRequest.model_validate(dict(job.get("request_payload") or {}))
+    document_ids = list(job.get("document_ids") or [])
+    documents = _load_authorized_documents(
+        str(job["user_id"]), str(job["course_id"]), document_ids,
+    )
+    preflight = {
+        "resolved_document_ids": document_ids,
+        "document_name_resolution": None,
+        "doc_name_map": {
+            document_id: str(row.get("file_name") or "")
+            for document_id, row in documents.items()
+        },
+        "documents": documents,
+    }
     response = await _prepare_ask_stream_response(
-        payload, {"id": str(job["user_id"])}, None, str(job.get("request_id") or uuid.uuid4().hex), None,
+        payload,
+        {"id": str(job["user_id"])},
+        None,
+        str(job.get("request_id") or uuid.uuid4().hex),
+        preflight,
     )
     async for _event in response.body_iterator:
         # The authoritative pipeline persists manifests, checkpoints, item

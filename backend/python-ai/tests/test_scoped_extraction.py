@@ -225,3 +225,11 @@ def test_existing_indexer_persists_logical_units_alongside_chunks():
     question = next(row for row in written if row["block_type"] == "exam_question")
     assert question["question_number"] == "2.1"
     assert question["stable_block_id"] == "rev:exam_question:2.1"
+    for row in written:
+        assert row["continues_on_next_page"] is not None
+        assert row["has_diagram"] is not None
+        assert row["previous_stable_keys"] is not None
+        assert row["diagram_region_ids"] is not None
+        assert row["solution_block_ids"] is not None
+        assert row["source_text"] is not None
+        assert row["metadata"] is not None

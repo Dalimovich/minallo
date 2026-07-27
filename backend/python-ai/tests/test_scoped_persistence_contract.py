@@ -65,6 +65,19 @@ def test_offline_result_is_persisted_and_returned_by_snapshot():
     assert '"finalText": job.get("final_text")' in STORE
 
 
+def test_job_state_and_renderable_result_have_separate_persistence_boundaries():
+    state_start = STORE.index("def persist_job_state")
+    result_start = STORE.index("def persist_scoped_result")
+    snapshot_start = STORE.index("def load_job_snapshot")
+    state_body = STORE[state_start:result_start]
+    result_body = STORE[result_start:snapshot_start]
+    assert '"status": status' in state_body
+    assert 'state.discovery_status.value' in state_body
+    assert '"final_text": final_text' in result_body
+    assert '"status": status' not in result_body
+    assert 'state.discovery_status.value' not in result_body
+
+
 def test_manifest_items_reuse_structural_multi_page_ranges():
     assert "load_question_unit_ranges" in STORE
     assert 'structural_range.get("page_start")' in STREAM

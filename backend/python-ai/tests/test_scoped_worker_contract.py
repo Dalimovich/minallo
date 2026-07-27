@@ -28,6 +28,14 @@ def test_worker_starts_from_application_lifespan_and_consumes_pipeline():
     assert "async for _event in response.body_iterator" in WORKER
 
 
+def test_worker_reconstructs_authorized_preflight_for_canonical_job_reuse():
+    assert "_load_authorized_documents" in WORKER
+    assert '"resolved_document_ids": document_ids' in WORKER
+    assert '"documents": documents' in WORKER
+    assert "_prepare_ask_stream_response(" in WORKER
+    assert "preflight," in WORKER
+
+
 def test_sse_observes_persisted_job_instead_of_running_extraction():
     branch = STREAM[STREAM.index("if precreated_scoped_job:"):]
     poll = branch.index("load_job_snapshot")

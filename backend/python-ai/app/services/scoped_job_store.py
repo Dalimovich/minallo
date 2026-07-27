@@ -473,23 +473,6 @@ def persist_job_state(job_id: str, state: ScopedJobState) -> None:
         "processing" if state.discovery_complete else
         "discovering"
     )
-
-
-def persist_scoped_result(
-    *, job_id: str, final_text: str, learning_journey: dict[str, Any] | None,
-    sources: list[dict[str, Any]], answer_mode: str,
-) -> None:
-    """Save enough presentation state to restore a result missed while offline."""
-    now = datetime.now(timezone.utc).isoformat()
-    get_supabase().table("complete_document_jobs").update({
-        "final_text": final_text,
-        "result_payload": {
-            "learningJourney": learning_journey,
-            "sources": sources,
-            "answerMode": answer_mode,
-        },
-        "updated_at": now,
-    }).eq("id", job_id).execute()
     get_supabase().table("complete_document_jobs").update({
         "status": status,
         "discovery_status": state.discovery_status.value,
@@ -527,6 +510,23 @@ def persist_scoped_result(
             "failed_count": state.failed_count,
         },
     )
+
+
+def persist_scoped_result(
+    *, job_id: str, final_text: str, learning_journey: dict[str, Any] | None,
+    sources: list[dict[str, Any]], answer_mode: str,
+) -> None:
+    """Save enough presentation state to restore a result missed while offline."""
+    now = datetime.now(timezone.utc).isoformat()
+    get_supabase().table("complete_document_jobs").update({
+        "final_text": final_text,
+        "result_payload": {
+            "learningJourney": learning_journey,
+            "sources": sources,
+            "answerMode": answer_mode,
+        },
+        "updated_at": now,
+    }).eq("id", job_id).execute()
 
 
 def load_job_snapshot(*, user_id: str, job_id: str) -> dict[str, Any] | None:

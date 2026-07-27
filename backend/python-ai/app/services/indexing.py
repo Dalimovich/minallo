@@ -1215,6 +1215,22 @@ def _replace_logical_units(
             "extraction_confidence": 0.85,
         })
         order += 1
+    # PostgREST bulk upserts materialize omitted keys as NULL when another row
+    # in the same payload contains that key. Normalize every NOT NULL column
+    # explicitly so mixed block types cannot violate database defaults.
+    logical_unit_defaults = {
+        "previous_stable_keys": [],
+        "continues_on_next_page": False,
+        "has_diagram": False,
+        "diagram_region_ids": [],
+        "solution_block_ids": [],
+        "source_text": "",
+        "metadata": {},
+    }
+    rows = [
+        {**logical_unit_defaults, **row}
+        for row in rows
+    ]
     (
         sb.table("document_logical_units").delete()
         .eq("document_id", document_id)
