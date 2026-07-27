@@ -35,7 +35,7 @@ test('workspace shell is contained, responsive and uses the Minallo glass tokens
   assert.match(css, /--mn-modal-bg/);
   assert.match(css, /width:\s*min\(1320px, 96vw\)/);
   assert.match(css, /height:\s*min\(860px, 94vh\)/);
-  assert.match(css, /overscroll-behavior:\s*contain/);
+  assert.match(css, /overscroll-behavior-y:\s*contain/);
   assert.match(css, /@media \(max-width: 820px\)[\s\S]*width:\s*100vw[\s\S]*height:\s*100dvh/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion/);
@@ -48,6 +48,13 @@ test('full workspaces occupy one explicit track without an empty shell column', 
   assert.match(profile, /layout:\s*'full'/);
   assert.match(subscription, /layout:\s*'full'/);
   assert.match(lounge, /layout:\s*'full'/);
+});
+
+test('workspace content has a definite constrained height and owns vertical scrolling', () => {
+  assert.match(css, /\.mn-workspace-body\s*\{[^}]*flex:\s*1 1 0[^}]*height:\s*0[^}]*min-height:\s*0[^}]*overflow:\s*hidden/);
+  assert.match(css, /\.mn-workspace-content\s*\{[^}]*height:\s*100%[^}]*max-height:\s*100%[^}]*overflow-y:\s*auto/);
+  assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
+  assert.match(css, /touch-action:\s*pan-y/);
 });
 
 test('feature adapters use real profile, billing and lounge refresh paths', () => {
