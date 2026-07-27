@@ -32,6 +32,44 @@ def _import_retrieval():
     return retrieval
 
 
+def test_numbered_section_reference_survives_a_range_followup() -> None:
+    r = _import_retrieval()
+    ref = r.find_numbered_section_reference(
+        "what about 12.1 to 12.6 and 12.16 to 12.21?",
+        [{
+            "role": "user",
+            "text": "12. Rechenaufgabe 1 - Standzeit [Fortsetzung] in detail",
+        }],
+    )
+    assert ref.number == "12"
+    assert ref.title == "Rechenaufgabe 1 - Standzeit [Fortsetzung]"
+
+
+def test_numbered_section_rows_include_every_continuation_page() -> None:
+    r = _import_retrieval()
+    ref = r.NumberedSectionReference(
+        "12", "Rechenaufgabe 1 - Standzeit [Fortsetzung]",
+        "12. Rechenaufgabe 1 - Standzeit [Fortsetzung]",
+    )
+    rows = [
+        {
+            "id": f"p{page}", "document_id": "doc", "chunk_index": page,
+            "page_start": page, "page_end": page,
+            "chunk_text": (
+                "12. Rechenaufgabe 1 - Standzeit [Fortsetzung]\n"
+                f"12.{page - 14} Frage"
+            ),
+        }
+        for page in range(15, 26)
+    ] + [{
+        "id": "p26", "document_id": "doc", "chunk_index": 26,
+        "page_start": 26, "page_end": 26,
+        "chunk_text": "13. Rechenaufgabe 2 - Kosten\n13.1 Frage",
+    }]
+    selected = r._select_numbered_section_rows(rows, ref)
+    assert [row["page_start"] for row in selected] == list(range(15, 26))
+
+
 # ── Exercise reference detection ────────────────────────────────────────────
 
 

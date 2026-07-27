@@ -1198,6 +1198,149 @@ def _load_page_qualities(sb, rows: list[dict[str, Any]]) -> dict[tuple[str, int]
 # ── Exact-match exercise lookup (Phase 5/6) ─────────────────────────────────
 
 
+@dataclass(frozen=True)
+class NumberedSectionReference:
+    number: str
+    title: str
+    heading: str
+
+
+_NUMBERED_SECTION_HEADING_RE = re.compile(
+    r"(?im)(?<![\d.])(?P<number>\d{1,3})\.\s+"
+    r"(?P<title>[^\r\n]{3,180})"
+)
+
+
+def find_numbered_section_reference(
+    question: str,
+    previous_turns: list[dict[str, str]] | None = None,
+) -> NumberedSectionReference | None:
+    """Resolve a top-level heading from this turn or the latest user turn."""
+    current = question or ""
+    candidates = [current]
+    inherits_section = bool(re.search(
+        r"\b(?:what about|rest|remaining|continue|continuation|missing|didn't answer|"
+        r"fortsetzung|weiter|restlichen|fehlend)\b|"
+        r"\b\d+(?:\.\d+)+\s*(?:to|bis|-|â€“|â€”|and|und)\s*\d+(?:\.\d+)+\b",
+        current, re.IGNORECASE,
+    ))
+    if inherits_section:
+        candidates.extend(
+            str(turn.get("text") or "")
+            for turn in reversed(previous_turns or [])
+            if str(turn.get("role") or "").casefold() == "user"
+        )
+    for value in candidates:
+        match = _NUMBERED_SECTION_HEADING_RE.search(value)
+        if not match:
+            continue
+        title = re.sub(r"\s+", " ", match.group("title")).strip(" -*_:;,.?")
+        title = re.split(
+            r"\s{2,}|\b(?:what about|you didn't|please answer|in detail|"
+            r"detailed|explained|explain it|please)\b",
+            title, 1, flags=re.IGNORECASE,
+        )[0].strip()
+        if title and not title[0].isdigit():
+            number = match.group("number")
+            return NumberedSectionReference(number, title, f"{number}. {title}")
+    return None
+
+
+def _normalise_section_match(value: str) -> str:
+    return " ".join(re.findall(r"\w+", (value or "").casefold(), re.UNICODE))
+
+
+def _select_numbered_section_rows(
+    rows: list[dict[str, Any]],
+    reference: NumberedSectionReference,
+) -> list[dict[str, Any]]:
+    """Select the complete page span for a named numbered section."""
+    ordered = sorted(rows, key=lambda row: (
+        int(row.get("page_start") or 0), int(row.get("chunk_index") or 0)
+    ))
+    heading_key = _normalise_section_match(reference.heading)
+    title_tokens = _normalise_section_match(reference.title).split()
+    title_key = " ".join(title_tokens[: min(8, len(title_tokens))])
+    anchors: list[dict[str, Any]] = []
+    for row in ordered:
+        searchable = _normalise_section_match(
+            f"{row.get('section_title') or ''}\n{row.get('chunk_text') or ''}"
+        )
+        if heading_key in searchable or (
+            f"{reference.number} " in searchable and title_key and title_key in searchable
+        ):
+            anchors.append(row)
+    if not anchors:
+        return []
+    start_page = min(int(row.get("page_start") or 1) for row in anchors)
+    if len({int(row.get("page_start") or 1) for row in anchors}) > 1:
+        end_page = max(int(row.get("page_end") or row.get("page_start") or 1) for row in anchors)
+    else:
+        end_page = max(int(row.get("page_end") or start_page) for row in ordered)
+        next_heading_re = re.compile(r"(?im)^\s*(\d{1,3})\.\s+(?!\d)[^\r\n]{3,180}$")
+        for row in ordered:
+            page = int(row.get("page_start") or 0)
+            if page <= start_page:
+                continue
+            headings = next_heading_re.findall(str(row.get("chunk_text") or ""))
+            if any(number != reference.number for number in headings):
+                end_page = page - 1
+                break
+    selected = [
+        row for row in ordered
+        if start_page <= int(row.get("page_start") or start_page) <= end_page
+    ]
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for row in selected:
+        key = (
+            int(row.get("page_start") or 0),
+            re.sub(r"\s+", " ", str(row.get("chunk_text") or "")).strip()[:2000],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+    return unique[:80]
+
+
+def retrieve_numbered_section_chunks(
+    *, user_id: str, course_id: str, document_ids: list[str], question: str,
+    previous_turns: list[dict[str, str]] | None = None,
+) -> list[RetrievedChunk]:
+    """Load a named section deterministically instead of trusting vector top-k."""
+    reference = find_numbered_section_reference(question, previous_turns)
+    if not reference or not document_ids:
+        return []
+    sb = get_supabase()
+    docs = (
+        sb.table("documents").select("id,active_index_revision")
+        .eq("user_id", user_id).eq("course_id", course_id)
+        .in_("id", list(dict.fromkeys(document_ids))).execute()
+    ).data or []
+    rows: list[dict[str, Any]] = []
+    for doc in docs:
+        rows.extend((
+            sb.table("document_chunks")
+            .select("id,document_id,chunk_index,page_start,page_end,chunk_text,chunk_type,section_title,index_revision")
+            .eq("document_id", doc["id"])
+            .eq("index_revision", str(doc.get("active_index_revision") or ""))
+            .order("chunk_index").range(0, 1999).execute()
+        ).data or [])
+    return [
+        RetrievedChunk(
+            chunk_id=str(row.get("id") or f"section:{row.get('document_id')}:{index}"),
+            document_id=str(row.get("document_id") or ""),
+            page_start=row.get("page_start"), page_end=row.get("page_end"),
+            text=str(row.get("chunk_text") or ""), score=120.0, similarity=1.0,
+            chunk_type=str(row.get("chunk_type") or "section"),
+            section_title=str(row.get("section_title") or reference.heading),
+            is_synthetic=True,
+        )
+        for index, row in enumerate(_select_numbered_section_rows(rows, reference))
+    ]
+
+
 @dataclass
 class ExerciseHit:
     """A direct hit on a document_exercises row — surfaces ahead of vector

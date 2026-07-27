@@ -45,7 +45,13 @@ from ..services.answer_intent import (
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
-from ..services.retrieval import retrieve_chunks, retrieve_exercise_block, retrieve_formula_block
+from ..services.retrieval import (
+    find_numbered_section_reference,
+    retrieve_chunks,
+    retrieve_exercise_block,
+    retrieve_formula_block,
+    retrieve_numbered_section_chunks,
+)
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.reliability import (
     GroundedRequestContext,
@@ -126,6 +132,8 @@ def _automatic_context_conversation_id(payload: "AskStreamRequest") -> str:
     return "autoctx:" + hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 _BROAD_RETRIEVAL_RE = re.compile(
+    r"\b(rest|remaining|continuation|fortsetzung|restlichen)\b|"
+    r"\b\d+(?:\.\d+)?\s*(?:to|bis|-|â€“|â€”|and)\s*\d+(?:\.\d+)?\b|"
     r"\b(whole|entire|complete|all|every|compare|study guide|full course|across)\b|"
     r"\b(gesamte|alle|jeder|vergleiche|lernplan|vollständig)\b",
     re.IGNORECASE,
@@ -1946,6 +1954,28 @@ async def _prepare_ask_stream_response(
             requested_response_language=dialogue.response_language,
         )
     resolved_question = dialogue.resolved_request
+    numbered_section = find_numbered_section_reference(
+        question, previous_turns_payload,
+    )
+    requested_subpart_range = bool(re.search(
+        r"\b\d+(?:\.\d+)+\s*(?:to|bis|-|â€“|â€”|and|und)\s*"
+        r"\d+(?:\.\d+)+\b",
+        question, re.IGNORECASE,
+    ))
+    requests_section_coverage = bool(numbered_section and re.search(
+        r"\b(?:answer|solve|explain|in detail|detailed|all|every|"
+        r"beantworte|lÃ¶se|erklÃ¤re|ausfÃ¼hrlich|alle)\b",
+        question, re.IGNORECASE,
+    ))
+    if numbered_section and (requested_subpart_range or requests_section_coverage):
+        coverage_instruction = (
+            "Answer and explain every explicitly requested numbered subpart; "
+            "do not omit either requested range."
+            if requested_subpart_range else
+            f"Answer and explain every numbered subpart in section {numbered_section.number}; "
+            "do not replace the answers with an overview."
+        )
+        resolved_question = f"{resolved_question}\n\n{coverage_instruction}"
     selected_region = payload.selectedRegion
     selection_stale = _selection_is_stale(
         selected_region,
@@ -2367,6 +2397,7 @@ async def _prepare_ask_stream_response(
     visual_identity_model = None
     initial_identity_gate_required = bool(
         payload.activeDocumentId
+        and page_bound_request
         and (
             grounded_identity.exercise_reference
             or preliminary_traits.requires_visual_evidence
@@ -3591,6 +3622,7 @@ async def _prepare_ask_stream_response(
             )
         identity_gate_required = bool(
             payload.activeDocumentId
+            and page_bound_request
             and (
                 grounded_identity.exercise_reference
                 or preliminary_traits.requires_visual_evidence
@@ -3806,10 +3838,23 @@ async def _prepare_ask_stream_response(
                     active_document_id=payload.activeDocumentId,
                 )
             )
-            exercise_hit, chunks, formula_hits = await asyncio.gather(
+            section_document_ids = (
+                [payload.activeDocumentId]
+                if payload.activeDocumentId else list(retrieval_document_ids or [])
+            )
+            section_task = run_in_threadpool(
+                lambda: retrieve_numbered_section_chunks(
+                    user_id=user_id, course_id=payload.courseId,
+                    document_ids=section_document_ids,
+                    question=resolved_question,
+                    previous_turns=previous_turns_payload,
+                )
+            )
+            exercise_hit, chunks, formula_hits, section_chunks = await asyncio.gather(
                 exercise_task,
                 chunks_task,
                 formula_task,
+                section_task,
             )
         except EmbeddingServiceUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -3825,6 +3870,9 @@ async def _prepare_ask_stream_response(
         if formula_hits:
             from .ask import _prepend_formula_chunks  # reuse the same helper
             chunks = _prepend_formula_chunks(formula_hits, chunks)
+        if section_chunks:
+            section_ids = {chunk.chunk_id for chunk in section_chunks}
+            chunks = section_chunks + [chunk for chunk in chunks if chunk.chunk_id not in section_ids]
         if visible_page_chunks:
             visible_ids = {c.chunk_id for c in visible_page_chunks}
             chunks = visible_page_chunks + [c for c in chunks if c.chunk_id not in visible_ids]

@@ -176,10 +176,14 @@ def is_page_bound_request(
     has_selected_region: bool = False,
     active_document_id: str | None = None,
 ) -> bool:
+    # A numbered exercise plus an open document identifies a DOCUMENT target,
+    # not necessarily the currently visible page. Only explicit deictic wording
+    # or a selected region makes the request page-bound. This lets continuations
+    # and subpart ranges traverse the same file instead of failing pre-retrieval.
+    del active_document_id
     return bool(
         has_selected_region
         or _VISIBLE_REFERENCE_RE.search(question or "")
-        or (active_document_id and _EXERCISE_WITH_NUMBER_RE.search(question or ""))
     )
 
 
@@ -201,18 +205,20 @@ def classify_task_traits(
             VisualTaskKind.TECHNICAL_DRAWING_MAPPING, True, True, False, True, True, False,
         )
     if _CALCULATION_RE.search(text):
+        referenced_exercise = _EXERCISE_REFERENCE_RE.search(text)
+        referenced_exercise_visible = bool(
+            active_document_id
+            and visible_text.strip()
+            and referenced_exercise
+            and re.search(
+                rf"(?<![\d.]){re.escape(referenced_exercise.group(1))}(?![\d.])",
+                visible_text,
+            )
+        )
         visible_dependency = bool(
             has_visible_image
             or _VISIBLE_REFERENCE_RE.search(text)
-            or (
-                active_document_id
-                and _EXERCISE_WITH_NUMBER_RE.search(text)
-            )
-            or (
-                active_document_id
-                and visible_text.strip()
-                and _EXERCISE_REFERENCE_RE.search(text)
-            )
+            or referenced_exercise_visible
         )
         return TaskTraits(
             VisualTaskKind.NUMERICAL_CALCULATION,
@@ -715,7 +721,21 @@ def build_retrieval_scope(
             or has_valid_selected_region
         )
     )
-    task_page = identity.resolved_task_page or identity.page or visible_page
+    page_specific = bool(
+        not identity.exercise_reference
+        or refers_to_current_page
+        or has_valid_selected_region
+        or traits.requires_visual_evidence
+        or identity.exercise_visible_on_page
+        or identity.exercise_visible_on_visible_page
+        or identity.requested_quantities
+        or identity.visible_answer_options
+        or identity.visible_mapping_labels
+        or identity.visible_values
+    )
+    task_page = (
+        identity.resolved_task_page or identity.page or visible_page
+    ) if page_specific else None
     pages = (
         [page for page in (task_page - 1, task_page, task_page + 1) if page >= 1]
         if task_page else []

@@ -45,6 +45,7 @@ from app.services.reliability import (
     derive_grounding_state,
     evidence_requirement,
     identity_is_sufficient,
+    is_page_bound_request,
     identify_draft_task,
     identify_grounded_task,
     extract_text_visible_options,
@@ -765,6 +766,36 @@ def test_page_bound_exercise_requires_exact_page_evidence() -> None:
     assert identity_is_sufficient(
         user_only, traits=traits, page_bound_request=True,
     )
+
+
+def test_numbered_exercise_is_document_bound_unless_user_points_to_visible_page() -> None:
+    assert not is_page_bound_request(
+        "Solve Aufgabe 14.4", active_document_id="doc",
+    )
+    assert not is_page_bound_request(
+        "Explain 12.1 to 12.6 and 12.16 to 12.21",
+        active_document_id="doc",
+    )
+    assert is_page_bound_request(
+        "Solve Aufgabe 14.4 on this page", active_document_id="doc",
+    )
+    traits = classify_task_traits("Solve Aufgabe 14.4", active_document_id="doc")
+    assert traits.calculation_context is CalculationContext.TEXT_ONLY
+
+
+def test_document_section_request_has_no_fake_current_page_preference() -> None:
+    traits = classify_task_traits("Solve Aufgabe 12.1")
+    identity = GroundedTaskIdentity(
+        document_id="doc", page=2, visible_page=2,
+        exercise_reference="12.1", source_confidence=0.4,
+    )
+    scope = build_retrieval_scope(
+        active_document_id="doc", visible_page=2, identity=identity,
+        traits=traits, fallback_document_ids=["doc"],
+        question="Solve Aufgabe 12.1", has_valid_selected_region=False,
+    )
+    assert scope.document_ids == ["doc"]
+    assert scope.preferred_pages == []
 
 
 def test_selected_region_has_identity_priority_and_provenance() -> None:
