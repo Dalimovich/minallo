@@ -676,6 +676,13 @@ def test_selected_document_readiness_accepts_usable_legacy_index() -> None:
         "active_index_revision": "",
         "index_revision_status": "structural_reindex_required",
     }) is None
+    # This is the projected row shape used by _load_authorized_documents in
+    # production; it exposes structural_index_status, not index_revision_status.
+    assert _selected_document_readiness_issue({
+        **base,
+        "active_index_revision": "",
+        "structural_index_status": "structural_reindex_required",
+    }) is None
 
 
 def test_page_classifier_skips_irrelevant_and_routes_specialised_pages() -> None:

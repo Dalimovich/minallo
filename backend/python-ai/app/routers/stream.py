@@ -224,7 +224,11 @@ def _selected_document_readiness_issue(row: dict[str, Any]) -> str | None:
     # here made every ordinary question fail until an unnecessary full
     # reindex. Revision-sensitive exhaustive jobs already derive a stable
     # fallback from document_hash/updated_at downstream.
-    revision_status = str(row.get("index_revision_status") or "").casefold()
+    revision_status = str(
+        row.get("index_revision_status")
+        or row.get("structural_index_status")
+        or ""
+    ).casefold()
     if (
         not str(row.get("active_index_revision") or "").strip()
         and revision_status not in {"legacy", "structural_reindex_required"}
