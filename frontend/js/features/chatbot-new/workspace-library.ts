@@ -10,6 +10,7 @@ import {
   resetStudyLibraryMemory, setCourseEntry, studyLibraryState,
   type CachedCourseFile, type CachedSavedItem,
 } from './study-library-store.js';
+import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js';
 
 type CourseFile = {
   name: string;
@@ -1727,6 +1728,15 @@ async function openPortalView(root: HTMLElement, view: string): Promise<void> {
     settings: 'Settings',
     notifications: 'Notifications'
   };
+  const modalTypes: Record<string, 'profile' | 'settings' | 'subscription' | 'study-lounge'> = {
+    profile: 'profile', settings: 'settings', subscription: 'subscription', lounge: 'study-lounge'
+  };
+  if (modalTypes[view]) {
+    await window._ssLoadFeatureSection?.(view);
+    await window._ssLoadPortalFeature?.(view);
+    openWorkspaceModal(modalTypes[view]);
+    return;
+  }
   const body = openOverlay(root, titles[view] || 'Minallo');
   if (!body) return;
   const overlay = body.closest<HTMLElement>('[data-workspace-overlay]');
