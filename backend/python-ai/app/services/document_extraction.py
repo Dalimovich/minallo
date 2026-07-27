@@ -2714,7 +2714,21 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
          f"## Extrahierte {result.target} mit Antworten")
     )
     blocks = [heading]
+    rendered_section: str | None = None
+    family_sections = result.resolved_family.matched_sections if result.resolved_family else []
     for item in result.items:
+        item_section = next(
+            (
+                section for section in family_sections
+                if section.expected_item_prefix
+                and normalise_item_id(item.item_id).startswith(section.expected_item_prefix)
+            ),
+            None,
+        )
+        section_heading = item_section.matched_heading if item_section else None
+        if section_heading and section_heading != rendered_section:
+            blocks.append(f"### {section_heading}")
+            rendered_section = section_heading
         if item.answer:
             answer = item.answer
         elif result.answer_recovery_incomplete:
@@ -2730,7 +2744,7 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
                 "Nach Textsuche und gezielter visueller PrÃ¼fung wurde keine offizielle Antwort gefunden."
             )
         blocks.append(
-            f"### {item.item_id}\n\n"
+            f"{'####' if section_heading else '###'} {item.item_id}\n\n"
             f"**{'Question' if english else 'Frage'}:** {item.question}\n\n"
             f"**{'Answer' if english else 'Antwort'}:** {answer}"
         )
@@ -2739,9 +2753,9 @@ def format_document_extraction(result: DocumentExtractionResult, language: str) 
         if gap.status in {GapStatus.CONFIRMED_MISSING, GapStatus.UNRESOLVED}
     })
     coverage_lines = [
-        f"**Coverage:** {len(result.scanned_pages)}/{result.total_pages} pages scanned"
+        f"**Coverage:** {len(result.cumulative_scanned_pages or result.scanned_pages)}/{result.total_pages} pages scanned"
         if english else
-        f"**Abdeckung:** {len(result.scanned_pages)}/{result.total_pages} Seiten geprÃ¼ft",
+        f"**Abdeckung:** {len(result.cumulative_scanned_pages or result.scanned_pages)}/{result.total_pages} Seiten geprÃ¼ft",
         f"Questions found: {len(result.extracted_questions)}" if english else
         f"Gefundene Fragen: {len(result.extracted_questions)}",
         f"Answers paired: {sum(1 for item in result.paired_items if item.answer_text)}"

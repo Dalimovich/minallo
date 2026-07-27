@@ -420,6 +420,37 @@ def test_english_framing_preserves_german_source_text() -> None:
     assert "I scanned all 1 pages" in rendered
 
 
+def test_all_kurzfragen_output_groups_items_under_exact_detected_section_labels() -> None:
+    family = extraction.ResolvedSectionFamily(
+        "Kurzfragen",
+        [
+            extraction.ResolvedDocumentSection(
+                "2", "Grundlagen", "2. Kurzfragen - Grundlagen", 2, 2, "2.", 0.98,
+            ),
+            extraction.ResolvedDocumentSection(
+                "3", "Urformen", "3. Kurzfragen - Urformen", 3, 3, "3.", 0.98,
+            ),
+        ],
+        [],
+        0.98,
+    )
+    result = extraction.DocumentExtractionResult(
+        document_id="doc", target="Kurzfragen", total_pages=43,
+        scanned_pages=[], cumulative_scanned_pages=list(range(1, 44)),
+        complete=True, resolved_family=family,
+        items=[
+            extraction.ExtractedQAItem("2.1", "Grundfrage?", "A", 2),
+            extraction.ExtractedQAItem("3.1", "Urformfrage?", "B", 3),
+        ],
+    )
+
+    rendered = extraction.format_document_extraction(result, "en")
+
+    assert "### 2. Kurzfragen - Grundlagen\n\n#### 2.1" in rendered
+    assert "### 3. Kurzfragen - Urformen\n\n#### 3.1" in rendered
+    assert "**Coverage:** 43/43 pages scanned" in rendered
+
+
 def test_missing_index_rows_are_unprocessed_not_unreadable(monkeypatch) -> None:
     monkeypatch.setattr(
         extraction,
