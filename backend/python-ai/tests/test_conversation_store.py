@@ -23,6 +23,9 @@ class FakeTable:
     def limit(self, _value):
         return self
 
+    def order(self, _value):
+        return self
+
     def insert(self, payload):
         self.operation, self.payload = "insert", payload
         return self
@@ -114,6 +117,25 @@ def test_validation_is_user_scoped(monkeypatch) -> None:
     assert not conversation_store.validate_durable_conversation(
         user_id="different-user", conversation_id="conversation",
     )
+
+
+def test_full_transcript_hydration_is_ordered_and_user_scoped(monkeypatch) -> None:
+    db = FakeSupabase()
+    db.rows["ai_chat_conversations"].append({"id": "conversation", "user_id": "owner"})
+    db.rows["ai_chat_messages"].extend([
+        {"conversation_id": "conversation", "user_id": "owner", "client_message_id": "u-1", "role": "user", "content": "First"},
+        {"conversation_id": "conversation", "user_id": "owner", "client_message_id": "a-1", "role": "assistant", "content": "Answer"},
+        {"conversation_id": "conversation", "user_id": "other", "client_message_id": "secret", "role": "user", "content": "Private"},
+    ])
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    rows = conversation_store.get_durable_conversation_messages(
+        user_id="owner", conversation_id="conversation",
+    )
+    assert [row["client_message_id"] for row in rows] == ["u-1", "a-1"]
+    assert conversation_store.get_durable_conversation_messages(
+        user_id="other", conversation_id="conversation",
+    ) == []
 
 
 def test_create_turn_uses_atomic_database_function(monkeypatch) -> None:

@@ -6051,7 +6051,6 @@ function ncbScopedKey(base: string): string {
   return uid ? base + ':' + uid : base;
 }
 const NCB_MAX_STORED_CHATS = 200;
-const NCB_MAX_STORED_MESSAGES_PER_CHAT = 120;
 const NCB_MAX_STORED_MESSAGE_CHARS = 80000;
 const NCB_MAX_SOURCE_ITEMS = 120;
 const NCB_MAX_SOURCE_DOCS_PER_ITEM = 20;
@@ -6211,7 +6210,11 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
 }
 
 function compactChatForStorage(c: SavedChat): SavedChat {
-  const messages = c.messages.slice(-NCB_MAX_STORED_MESSAGES_PER_CHAT);
+  // Never discard the beginning of a conversation. The previous tail-only
+  // slice made a refresh permanently hide older turns (and then wrote that
+  // shortened transcript back as the new cache). Message bodies are already
+  // bounded individually; the server transcript remains authoritative.
+  const messages = c.messages;
   return {
     id: c.id,
     persistedId: c.persistedId || null,
@@ -6725,6 +6728,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   stage.dataset.state = (chat.messages.length > 0 || pending) ? 'active' : 'empty';
 
   renderConversationMessages(msgs, chat.messages, pending?.row);
+  void hydrateDurableTranscript(chat, root);
   void reconcileDurableRequestMessages(chat, root);
 
   // Re-render attached folders + sources panel + saved-replies count.
@@ -6881,6 +6885,65 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
 
 const durableRequestReconciliations = new Set<string>();
 const scopedJourneyReconciliations = new Set<string>();
+const durableTranscriptHydrations = new Set<string>();
+
+async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Promise<void> {
+  if (!chat.persistedId || durableTranscriptHydrations.has(chat.id)) return;
+  const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
+  if (!aiHost) return;
+  durableTranscriptHydrations.add(chat.id);
+  try {
+    const response = await authenticatedFetch(
+      aiHost + '/conversations/' + encodeURIComponent(chat.persistedId) + '/messages',
+      { method: 'GET' }, { safeToRetry: true }
+    ).catch(() => null);
+    if (!response?.ok) return;
+    const body = await response.json() as { messages?: Array<Record<string, unknown>> };
+    const localById = new Map(chat.messages.map((message) => [message.id, message]));
+    let changed = false;
+    for (const row of body.messages || []) {
+      const id = String(row.client_message_id || '');
+      const role = row.role === 'assistant' ? 'assistant' : row.role === 'user' ? 'user' : null;
+      if (!id || !role) continue;
+      const serverText = String(row.content || '');
+      const existing = localById.get(id);
+      if (existing) {
+        // Prefer a complete/richer durable answer, but never replace a longer
+        // live answer with an older partial checkpoint.
+        if (serverText.length > (existing.text || '').length) {
+          existing.text = serverText;
+          changed = true;
+        }
+        if (row.completion_state && existing.completionState !== row.completion_state) {
+          existing.completionState = String(row.completion_state) as ChatMessage['completionState'];
+          changed = true;
+        }
+        continue;
+      }
+      const restored: ChatMessage = {
+        id, role, text: serverText,
+        completionState: row.completion_state ? String(row.completion_state) as ChatMessage['completionState'] : undefined,
+        errorCode: row.error_code ? String(row.error_code) : undefined,
+        failureStage: row.failure_stage ? String(row.failure_stage) : undefined,
+        retryable: row.retryable !== false,
+        exportable: role === 'assistant' && row.completion_state === 'complete',
+        createdAt: String(row.created_at || new Date().toISOString()),
+        updatedAt: String(row.updated_at || row.created_at || new Date().toISOString()),
+      };
+      chat.messages.push(restored);
+      localById.set(id, restored);
+      changed = true;
+    }
+    if (!changed) return;
+    chat.messages.sort((a, b) => Date.parse(a.createdAt || '') - Date.parse(b.createdAt || ''));
+    repairConversationIntegrity(chat.messages);
+    chat.updatedAt = Date.now();
+    saveChatStore();
+    if (chatStore.activeId === chat.id) loadActiveChatIntoCenter(root);
+  } finally {
+    durableTranscriptHydrations.delete(chat.id);
+  }
+}
 
 function isValidErrorReference(value?: string): boolean {
   return !!value && value.length >= 12 && /^(?:ncb_msg_|req_|job_|[0-9a-f]{8}-)/i.test(value);

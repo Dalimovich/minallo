@@ -861,43 +861,20 @@ function _showModal() {
 
 // Try to get a fresh access token using the stored refresh token
 function _sbRefreshAccessToken() {
-  var ref = null;
-  try {
-    ref = _sbStoredRefresh();
-  } catch (e) {}
-  if (!ref) return Promise.resolve(null);
-  // 5s timeout: this fetch gates the whole boot on refresh. Without a
-  // timeout, any Supabase auth slowness (rate-limit, transient outage,
-  // proxy hiccup) leaves the user stuck on the splash forever because
-  // _verifyAndEnter waits on this promise.
-  var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  var timer = controller ? setTimeout(function () { controller.abort(); }, 5000) : null;
-  return fetch(SUPA_URL + '/auth/v1/token?grant_type=refresh_token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPA_KEY },
-    body: JSON.stringify({ refresh_token: ref }),
-    signal: controller ? controller.signal : undefined
-  })
-    .then(function (r) {
-      if (timer) clearTimeout(timer);
-      return r.json();
-    })
-    .then(function (d) {
-      if (d && d.access_token) {
-        _sbToken = d.access_token;
-        window._sbToken = _sbToken;
-        _sbStoreSession(d.access_token, d.refresh_token || ref);
-        return d.access_token;
-      }
-      return null;
-    })
+  if (!_sbStoredRefresh()) return Promise.resolve(null);
+  // Use the one canonical, single-flight refresh implementation. The previous
+  // duplicate fetch raced refresh-token rotation and converted timeouts/5xx
+  // responses into a logout via _showModalClean(). refreshSession preserves
+  // recoverable sessions and coalesces every caller in this tab.
+  return _sb.auth.refreshSession()
+    .then(function (user) { return user && user.id ? _sbToken : null; })
     .catch(function (err) {
-      if (timer) clearTimeout(timer);
-      console.warn('[Auth] refresh failed/timed out:', err && err.name);
+      console.warn('[Auth] refresh temporarily unavailable:', err && err.message);
       return null;
     });
 }
 
+var _sbBootRecoveryAttempts = 0;
 function _verifyAndEnter(tok) {
   _ssAuth('checking', { source: 'verifyAndEnter' });
   _ssEmit('auth:verify:start', { hasToken: !!tok });
@@ -906,6 +883,22 @@ function _verifyAndEnter(tok) {
 
   function _giveUp() {
     _ssAuth('failed', { source: 'verifyAndEnter' });
+    // A temporary auth outage is not a logout. Preserve the refresh token and
+    // retry boot; only an actually absent/revoked session may clear user state.
+    if (_sbStoredRefresh()) {
+      if (_sbBootRecoveryAttempts < 3) {
+        _sbBootRecoveryAttempts += 1;
+        setTimeout(function () {
+          _sbRefreshAccessToken().then(function (newTok) {
+            if (newTok) _verifyAndEnter(newTok);
+            else _giveUp();
+          });
+        }, 500 * Math.pow(2, _sbBootRecoveryAttempts));
+        return;
+      }
+      _ssForceSplashOff('Authentication is temporarily unavailable; session preserved.');
+      return;
+    }
     _showModal();
   }
 
@@ -928,6 +921,7 @@ function _verifyAndEnter(tok) {
     Promise.race([_sb.auth.getUser(), timeoutPromise])
       .then(function (user) {
         if (user && user.id) {
+          _sbBootRecoveryAttempts = 0;
           _ssEmit('auth:verify:success', { userId: user.id, refreshed: refreshedAlready });
           _enterApp(user);
         } else {
@@ -1085,6 +1079,11 @@ window.addEventListener('ss-ready', function () {
 
     if (tok) {
       _verifyAndEnter(tok);
+    } else if (_sbStoredRefresh()) {
+      _sbRefreshAccessToken().then(function (newTok) {
+        if (newTok) _verifyAndEnter(newTok);
+        else _ssForceSplashOff('Saved session could not be refreshed yet.');
+      });
     } else {
       _showModalClean();
     }
@@ -1125,6 +1124,11 @@ window.addEventListener('ss-ready', function () {
     );
     if (tok2) {
       _verifyAndEnter(tok2);
+    } else if (_sbStoredRefresh()) {
+      _sbRefreshAccessToken().then(function (newTok) {
+        if (newTok) _verifyAndEnter(newTok);
+        else _ssForceSplashOff('Session refresh is temporarily unavailable.');
+      });
     } else {
       console.log('[Auth] alreadyIn but no token → showModalClean');
       _showModalClean();

@@ -847,6 +847,20 @@ async def ensure_conversation_endpoint(
     return {"conversationId": durable.conversation_id, "created": durable.created}
 
 
+@router.get("/conversations/{conversation_id}/messages")
+async def conversation_messages_endpoint(
+    conversation_id: str,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Return the authoritative transcript used to repair refresh-time cache loss."""
+    _require_uuid(conversation_id, "conversationId")
+    from ..services.conversation_store import get_durable_conversation_messages  # noqa: WPS433
+    rows = await run_in_threadpool(lambda: get_durable_conversation_messages(
+        user_id=user["id"], conversation_id=conversation_id,
+    ))
+    return {"messages": rows}
+
+
 @router.get("/requests/{request_id}")
 async def tutor_request_status_endpoint(
     request_id: str,

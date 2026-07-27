@@ -90,6 +90,21 @@ def validate_durable_conversation(*, user_id: str, conversation_id: str) -> bool
     return bool(rows)
 
 
+def get_durable_conversation_messages(*, user_id: str, conversation_id: str) -> list[dict[str, Any]]:
+    """Return the complete ordered transcript after verifying ownership."""
+    if not validate_durable_conversation(user_id=user_id, conversation_id=conversation_id):
+        return []
+    rows = (
+        get_supabase().table("ai_chat_messages")
+        .select("client_message_id,role,content,completion_state,error_code,failure_stage,retryable,created_at,updated_at")
+        .eq("conversation_id", conversation_id)
+        .eq("user_id", user_id)
+        .order("created_at")
+        .execute()
+    ).data or []
+    return [dict(row) for row in rows]
+
+
 def create_durable_tutor_turn(
     *, user_id: str, conversation_id: str, user_message_id: str,
     user_content: str, assistant_message_id: str, request_id: str,
@@ -168,4 +183,5 @@ def get_tutor_request(*, user_id: str, request_id: str) -> dict[str, Any] | None
 __all__ = [
     "DurableConversation", "ensure_durable_conversation", "validate_durable_conversation",
     "create_durable_tutor_turn", "update_tutor_request", "get_tutor_request",
+    "get_durable_conversation_messages",
 ]
