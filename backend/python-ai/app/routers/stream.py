@@ -219,7 +219,16 @@ def _selected_document_readiness_issue(row: dict[str, Any]) -> str | None:
         return "missing_pages"
     if chunk_count <= 0:
         return "missing_chunks"
-    if not str(row.get("active_index_revision") or "").strip():
+    # Documents indexed before revisioned swaps have no active revision, but
+    # their ready chunks remain valid retrieval input. Rejecting those rows
+    # here made every ordinary question fail until an unnecessary full
+    # reindex. Revision-sensitive exhaustive jobs already derive a stable
+    # fallback from document_hash/updated_at downstream.
+    revision_status = str(row.get("index_revision_status") or "").casefold()
+    if (
+        not str(row.get("active_index_revision") or "").strip()
+        and revision_status not in {"legacy", "structural_reindex_required"}
+    ):
         return "missing_active_revision"
     return None
 
