@@ -6100,14 +6100,15 @@ body.ncb-pdf-workspace-open #drDrawer {
 
 .ncb-file-chip--markdown {
   display: inline-grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  width: min(100%, 340px);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  width: min(100%, 520px);
   max-width: 100%;
   min-width: 0;
   height: auto;
-  min-height: 52px;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  min-height: 56px;
+  padding-top: 8px;
+  padding-bottom: 8px;
   box-sizing: border-box;
   overflow: hidden;
   background: linear-gradient(135deg, rgba(20, 42, 72, .78), rgba(9, 22, 40, .72));
@@ -6118,6 +6119,7 @@ body.ncb-pdf-workspace-open #drDrawer {
 }
 
 .ncb-file-chip--markdown .ncb-file-chip-text {
+  min-width: 0;
   width: 100%;
   overflow: hidden;
 }
@@ -6129,8 +6131,17 @@ body.ncb-pdf-workspace-open #drDrawer {
 }
 
 .ncb-file-chip--markdown .ncb-file-chip-kind {
-  white-space: normal;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ncb-file-chip-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
 }
 
 .ncb-file-chip--markdown .ncb-file-chip-icon {
@@ -6153,6 +6164,11 @@ body.ncb-pdf-workspace-open #drDrawer {
 
 .ncb-file-chip-preview:hover,
 .ncb-file-chip-preview:focus-visible { background: rgba(72, 139, 232, .14); outline: none; }
+
+@media (max-width: 520px) {
+  .ncb-file-chip--markdown .ncb-file-chip-kind { font-size: 12px; }
+  .ncb-file-chip--markdown .ncb-file-chip-preview { padding-inline: 6px; }
+}
 
 .ncb-markdown-preview-overlay {
   position: fixed;

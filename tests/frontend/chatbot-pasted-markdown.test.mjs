@@ -22,14 +22,17 @@ test('pasted Markdown is a pending text attachment in the same user message', ()
   assert.match(shell, /source:\s*'clipboard'/);
   assert.match(shell, /mimeType:\s*'text\/markdown'/);
   assert.match(shell, /const files = state\.files\.slice\(\)/);
-  assert.match(shell, /state\.messages\.push\(\{[\s\S]*?role: 'user', text, images, files[\s\S]*?\}\)/);
+  assert.match(shell, /const userMessage:\s*ChatMessage = \{[\s\S]*?role: 'user', text, images, files/);
+  assert.match(shell, /state\.messages\.push\(userMessage\)/);
   assert.match(shell, /source="' \+ escapeHtml\(f\.source \|\| 'upload'\)/);
 });
 
 test('pasted Markdown attachment text remains inside its responsive card', () => {
-  assert.match(css, /\.ncb-file-chip--markdown\s*\{[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto auto/);
-  assert.match(css, /\.ncb-file-chip--markdown\s*\{[\s\S]*height:\s*auto;[\s\S]*min-height:\s*52px/);
-  assert.match(css, /\.ncb-file-chip--markdown \.ncb-file-chip-kind\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(css, /\.ncb-file-chip--markdown\s*\{[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.ncb-file-chip--markdown\s*\{[\s\S]*height:\s*auto;[\s\S]*min-height:\s*56px/);
+  assert.match(css, /\.ncb-file-chip--markdown \.ncb-file-chip-kind\s*\{[\s\S]*white-space:\s*nowrap;[\s\S]*text-overflow:\s*ellipsis/);
+  assert.match(shell, /data-testid="pasted-markdown-attachment"/);
+  assert.match(shell, /data-testid="pasted-markdown-meta" title=/);
 });
 
 test('pasted Markdown can be previewed, edited, renamed and removed safely', () => {

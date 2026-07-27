@@ -7,8 +7,8 @@ const workspace = fs.readFileSync('frontend/js/features/chatbot-new/workspace-li
 const workflow = fs.readFileSync('frontend/js/features/chatbot-new/study-tool-workflow.ts', 'utf8');
 
 test('chat submission gates study tools before RAG and never falls through after routing', () => {
-  const gate = shell.indexOf('await handleIntentRoute(state, bubble, thinking, controller)');
-  const rag = shell.indexOf('const rag = ragEligibility(originMessages)', gate);
+  const gate = shell.indexOf('await handleIntentRoute(requestState, bubble, thinking, controller)');
+  const rag = shell.indexOf('const rag = initialRag;', gate);
   assert.ok(gate > 0 && rag > gate);
   assert.match(shell.slice(gate, rag), /if \(routed\)[\s\S]*return(?: true)?;/);
 });
@@ -23,7 +23,7 @@ test('interactive commands render structured configuration and suppress RAG', ()
 test('configuration is editable inline and generation does not open a workspace', () => {
   assert.match(workflow, /data-field=/);
   assert.match(workflow, /data-source/);
-  assert.match(workflow, /Create exam/);
+  assert.match(workflow, /Create interactive quiz/);
   assert.match(workflow, /await generate\(marker\)/);
   const configurationHandler = workflow.slice(workflow.indexOf('export function renderStudyToolConfiguration'));
   assert.doesNotMatch(configurationHandler, /openStudyToolWorkspace/);

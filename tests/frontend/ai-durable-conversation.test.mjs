@@ -10,7 +10,7 @@ test('local and persisted conversation identities are separate and creation is s
   assert.match(shell, /inFlightConversationCreates/);
   assert.match(shell, /clientConversationId:\s*chat\.id/);
   assert.match(shell, /clientMessageId:\s*context\.message\?\.id/);
-  assert.match(shell, /durable\.conversationId/);
+  assert.match(shell, /durable!\.conversationId/);
 });
 
 test('grounded requests fail closed and artifact matching excludes broad creation words', () => {

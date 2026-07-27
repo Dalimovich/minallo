@@ -20,6 +20,7 @@ const CSS = read('frontend/css/styles.css');
 const DOCUMENT_RAIL_CSS = read('frontend/css/document-rail.css');
 const MESSAGE_NAVIGATOR = read('frontend/js/features/message-navigator/message-navigator.ts');
 const NEW_CHATBOT = read('frontend/js/features/chatbot-new/shell.ts');
+const CHATBOT = read('frontend/views/chatbot/chatbot.js');
 const ACTIVE_PDF_CONTEXT = read('frontend/js/features/pdf-viewer/active-pdf-context.ts');
 
 test('Ctrl/Cmd + wheel resizing works across the complete AI drawer', () => {
@@ -41,8 +42,11 @@ test('production app bundle uses the deployment asset version instead of a fixed
   assert.match(MAIN, /appAssetVersion/);
   assert.match(MAIN, /\.\/app\.js\?v=['"] \+ encodeURIComponent\(appAssetVersion\)/);
   assert.doesNotMatch(MAIN, /app\.js\?v=12/);
-  assert.match(CONFIG, /assetVersion:\s*['"]20260726-course-row-updates-v1['"]/);
-  assert.match(INDEX, /config\.js\?v=20260726-course-row-updates-v1/);
+  assert.match(CONFIG, /assetVersion:\s*['"][^'"]+['"]/);
+  assert.match(INDEX, /config\.js\?v=[^'"]+/);
+  assert.match(CHATBOT, /window\.MinalloConfig[\s\S]*assetVersion/);
+  assert.match(CHATBOT, /shell\.js\?v=['"] \+ encodeURIComponent\(av\)/);
+  assert.doesNotMatch(CHATBOT, /shell\.js\?v=\d+&av=/);
 });
 
 test('Manrope is the single shared interface font while technical text stays monospace', () => {

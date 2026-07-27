@@ -7119,18 +7119,20 @@ function renderFilesRow(root: HTMLElement, state: ConversationState): void {
         ? `${(f.characterCount || f.textContent?.length || 0).toLocaleString()} characters · Markdown`
         : f.kind === 'image' ? 'Image' : f.kind === 'text' ? 'Document' : 'File';
       return `
-        <span class="ncb-file-chip${pastedMarkdown ? ' ncb-file-chip--markdown' : ''}" data-id="${escapeAttr(f.id)}" title="${escapeAttr(f.name)}">
+        <span class="ncb-file-chip${pastedMarkdown ? ' ncb-file-chip--markdown' : ''}" data-id="${escapeAttr(f.id)}"${pastedMarkdown ? ' data-testid="pasted-markdown-attachment"' : ''} title="${escapeAttr(f.name)}">
           <span class="ncb-file-chip-icon">
             <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>
           </span>
           <span class="ncb-file-chip-text">
-            <span class="ncb-file-chip-name">${escapeHtml(f.name)}</span>
-            <span class="ncb-file-chip-kind">${kindLabel}</span>
+            <span class="ncb-file-chip-name" title="${escapeAttr(f.name)}">${escapeHtml(f.name)}</span>
+            <span class="ncb-file-chip-kind"${pastedMarkdown ? ` data-testid="pasted-markdown-meta" title="${escapeAttr(kindLabel)}"` : ''}>${kindLabel}</span>
           </span>
-          ${pastedMarkdown ? '<button type="button" class="ncb-file-chip-preview">Preview</button>' : ''}
-          <button type="button" class="ncb-file-chip-x" aria-label="Remove ${escapeAttr(f.name)}">
+          <span class="ncb-file-chip-actions">
+            ${pastedMarkdown ? '<button type="button" class="ncb-file-chip-preview">Preview</button>' : ''}
+            <button type="button" class="ncb-file-chip-x" aria-label="Remove ${escapeAttr(f.name)}">
             <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-          </button>
+            </button>
+          </span>
         </span>
       `;
     })

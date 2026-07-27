@@ -30,7 +30,7 @@
       attempts++;
       var s = document.createElement('script');
       s.type = 'module';
-    s.src = 'js/features/chatbot-new/shell.js?v=9&av=' + encodeURIComponent(av);
+      s.src = 'js/features/chatbot-new/shell.js?v=' + encodeURIComponent(av);
       s.onload = function () { resolve(); };
       s.onerror = function () {
         s.remove();
