@@ -667,6 +667,8 @@ interface ChatMessage {
   completionState?: 'pending' | 'processing' | 'streaming' | 'recovering' | 'complete' | 'stopped' | 'interrupted' | 'failed_recoverable' | 'failed_terminal';
   requestId?: string;
   scopedJobId?: string;
+  scopedManifestId?: string;
+  lastScopedEventId?: string;
   parentUserMessageId?: string;
   regeneratedFromMessageId?: string;
   generationVariant?: number;
@@ -6009,6 +6011,9 @@ interface SavedChat {
   pinned: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Runtime-only guards for authoritative transcript hydration. */
+  durableHydrated?: boolean;
+  hydrationRevision?: string;
 }
 
 interface ChatStore {
@@ -6124,6 +6129,9 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     text: truncateForStorage(m.text || '', NCB_MAX_STORED_MESSAGE_CHARS),
     completionState: m.completionState,
     requestId: m.requestId,
+    scopedJobId: m.scopedJobId,
+    scopedManifestId: m.scopedManifestId,
+    lastScopedEventId: m.lastScopedEventId,
     parentUserMessageId: m.parentUserMessageId,
     regeneratedFromMessageId: m.regeneratedFromMessageId,
     generationVariant: m.generationVariant,
@@ -6283,7 +6291,6 @@ let _ncbLoadedUid: string | null = null;
 
 function repairConversationIntegrity(messages: ChatMessage[]): void {
   let latestUser: ChatMessage | null = null;
-  const answered = new Set<string>();
   messages.forEach((message) => {
     if (!message.id) message.id = newChatMessageId();
     if (!message.createdAt) message.createdAt = new Date().toISOString();
@@ -6293,32 +6300,9 @@ function repairConversationIntegrity(messages: ChatMessage[]): void {
       return;
     }
     if (!message.parentUserMessageId) message.parentUserMessageId = latestUser?.id;
-    if (message.parentUserMessageId) answered.add(message.parentUserMessageId);
     if (!message.completionState) message.completionState = message.text.trim() ? 'complete' : 'failed_recoverable';
     if (message.exportable == null) message.exportable = message.text.trim().length > 0
       && (message.completionState === 'complete' || message.completionState === 'interrupted');
-    if (message.completionState === 'pending' || message.completionState === 'processing'
-      || message.completionState === 'streaming' || message.completionState === 'recovering') {
-      message.completionState = 'failed_recoverable';
-      message.retryable = true;
-      message.exportable = false;
-      message.errorCode ||= 'interrupted_while_processing';
-      message.failureStage ||= 'stream_transport';
-      message.recoveryAction ||= 'retry';
-    }
-  });
-  const orphans = messages.filter((message) => message.role === 'user' && message.id && !answered.has(message.id));
-  orphans.forEach((user) => {
-    const index = messages.findIndex((message) => message.id === user.id);
-    if (index < 0) return;
-    messages.splice(index + 1, 0, {
-      id: newChatMessageId(), role: 'assistant', text: '', parentUserMessageId: user.id,
-      completionState: 'failed_recoverable', exportable: false, retryable: true,
-      errorCode: 'orphaned_response', failureStage: 'unknown', recoveryAction: 'retry',
-      requestSnapshot: { userText: user.text, sourceMode: 'auto', selectedSourceIds: [] },
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-    });
-    console.warn('[ncb] orphaned user message repaired', { messageId: user.id });
   });
 }
 
@@ -6690,7 +6674,12 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   if (!stage || !msgs) return;
 
   const chat = chatStore.getActive();
-  if (repairOrphanedAssistantMessages(chat)) saveChatStore();
+  // A persisted chat must first receive its authoritative transcript. Running
+  // orphan repair before that fetch can manufacture a failure card for an
+  // assistant row that simply has not arrived from the server yet.
+  if ((!chat.persistedId || chat.durableHydrated) && repairOrphanedAssistantMessages(chat)) {
+    saveChatStore();
+  }
 
   // A reply for this chat may still be streaming in the background (the user
   // switched away and came back). Re-attach its live row below the history and
@@ -6886,6 +6875,18 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
 const durableRequestReconciliations = new Set<string>();
 const scopedJourneyReconciliations = new Set<string>();
 const durableTranscriptHydrations = new Set<string>();
+const durablePollTimers = new Map<string, number>();
+const scopedPollTimers = new Map<string, number>();
+
+function updateStoredMessageRow(root: HTMLElement, message: ChatMessage): void {
+  if (!message.id) return;
+  const current = root.querySelector<HTMLElement>(`[data-message-id="${cssEscape(message.id)}"]`);
+  if (!current) return;
+  const holder = document.createElement('div');
+  appendStoredMessage(holder, message);
+  const replacement = holder.firstElementChild;
+  if (replacement) current.replaceWith(replacement);
+}
 
 async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Promise<void> {
   if (!chat.persistedId || durableTranscriptHydrations.has(chat.id)) return;
@@ -6898,9 +6899,15 @@ async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Pro
       { method: 'GET' }, { safeToRetry: true }
     ).catch(() => null);
     if (!response?.ok) return;
-    const body = await response.json() as { messages?: Array<Record<string, unknown>> };
+    const body = await response.json() as { revision?: string; messages?: Array<Record<string, unknown>> };
+    if (body.revision && body.revision === chat.hydrationRevision) {
+      chat.durableHydrated = true;
+      return;
+    }
     const localById = new Map(chat.messages.map((message) => [message.id, message]));
     let changed = false;
+    let structuralChanged = false;
+    const changedMessages: ChatMessage[] = [];
     for (const row of body.messages || []) {
       const id = String(row.client_message_id || '');
       const role = row.role === 'assistant' ? 'assistant' : row.role === 'user' ? 'user' : null;
@@ -6913,15 +6920,26 @@ async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Pro
         if (serverText.length > (existing.text || '').length) {
           existing.text = serverText;
           changed = true;
+          changedMessages.push(existing);
         }
-        if (row.completion_state && existing.completionState !== row.completion_state) {
+        // A completed answer is terminal. Never let an older transcript
+        // checkpoint downgrade it while request reconciliation catches up.
+        if (row.completion_state && existing.completionState !== 'complete'
+          && existing.completionState !== row.completion_state) {
           existing.completionState = String(row.completion_state) as ChatMessage['completionState'];
           changed = true;
+          if (!changedMessages.includes(existing)) changedMessages.push(existing);
         }
+        const requestId = row.request_id ? String(row.request_id) : undefined;
+        const scopedJobId = row.scoped_job_id ? String(row.scoped_job_id) : undefined;
+        if (requestId && existing.requestId !== requestId) { existing.requestId = requestId; changed = true; }
+        if (scopedJobId && existing.scopedJobId !== scopedJobId) { existing.scopedJobId = scopedJobId; changed = true; }
         continue;
       }
       const restored: ChatMessage = {
         id, role, text: serverText,
+        requestId: row.request_id ? String(row.request_id) : undefined,
+        scopedJobId: row.scoped_job_id ? String(row.scoped_job_id) : undefined,
         completionState: row.completion_state ? String(row.completion_state) as ChatMessage['completionState'] : undefined,
         errorCode: row.error_code ? String(row.error_code) : undefined,
         failureStage: row.failure_stage ? String(row.failure_stage) : undefined,
@@ -6933,13 +6951,27 @@ async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Pro
       chat.messages.push(restored);
       localById.set(id, restored);
       changed = true;
+      structuralChanged = true;
+    }
+    chat.durableHydrated = true;
+    chat.hydrationRevision = body.revision;
+    if (repairOrphanedAssistantMessages(chat)) {
+      changed = true;
+      structuralChanged = true;
     }
     if (!changed) return;
     chat.messages.sort((a, b) => Date.parse(a.createdAt || '') - Date.parse(b.createdAt || ''));
     repairConversationIntegrity(chat.messages);
     chat.updatedAt = Date.now();
     saveChatStore();
-    if (chatStore.activeId === chat.id) loadActiveChatIntoCenter(root);
+    if (chatStore.activeId === chat.id) {
+      if (structuralChanged) {
+        const msgs = root.querySelector<HTMLElement>('.ncb-msgs');
+        if (msgs) renderConversationMessages(msgs, chat.messages);
+      } else {
+        changedMessages.forEach((message) => updateStoredMessageRow(root, message));
+      }
+    }
   } finally {
     durableTranscriptHydrations.delete(chat.id);
   }
@@ -6964,6 +6996,7 @@ async function reconcileScopedJourney(
 ): Promise<void> {
   const marker = message.learningJourney;
   if (!marker?.jobId || scopedJourneyReconciliations.has(marker.jobId)) return;
+  const jobId = marker.jobId;
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) return;
   scopedJourneyReconciliations.add(marker.jobId);
@@ -7016,14 +7049,23 @@ async function reconcileScopedJourney(
       section.statistics.unresolved = section.questions.length - section.statistics.answersVerified;
     }
     saveChatStore();
-    bubble.innerHTML = '';
-    renderRichBubble(bubble, message.text, !!message.allowDiagrams);
-    enhanceDocumentLearningJourney(bubble, marker);
+    if (bubble.isConnected) {
+      bubble.innerHTML = '';
+      renderRichBubble(bubble, message.text, !!message.allowDiagrams);
+      enhanceDocumentLearningJourney(bubble, marker);
+    }
     shouldPoll = !snapshot.processingFinished;
   } finally {
-    scopedJourneyReconciliations.delete(marker.jobId);
+    scopedJourneyReconciliations.delete(jobId);
+    const previousTimer = scopedPollTimers.get(jobId);
+    if (previousTimer != null) window.clearTimeout(previousTimer);
+    scopedPollTimers.delete(jobId);
     if (shouldPoll) {
-      window.setTimeout(() => { void reconcileScopedJourney(message, bubble); }, 3_000);
+      const timer = window.setTimeout(() => {
+        scopedPollTimers.delete(jobId);
+        if (bubble.isConnected) void reconcileScopedJourney(message, bubble);
+      }, 3_000);
+      scopedPollTimers.set(jobId, timer);
     }
   }
 }
@@ -7039,6 +7081,7 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
   durableRequestReconciliations.add(chat.id);
   let changed = false;
   let needsPoll = false;
+  const changedMessages: ChatMessage[] = [];
   try {
     for (const message of candidates) {
       const before = JSON.stringify([
@@ -7134,16 +7177,26 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
       if (after !== before) {
         message.updatedAt = new Date().toISOString();
         changed = true;
+        changedMessages.push(message);
       }
     }
     if (changed) {
       saveChatStore();
-      if (chatStore.activeId === chat.id) loadActiveChatIntoCenter(root);
+      if (chatStore.activeId === chat.id) {
+        changedMessages.forEach((message) => updateStoredMessageRow(root, message));
+      }
     }
   } finally {
     durableRequestReconciliations.delete(chat.id);
+    const previousTimer = durablePollTimers.get(chat.id);
+    if (previousTimer != null) window.clearTimeout(previousTimer);
+    durablePollTimers.delete(chat.id);
     if (needsPoll && chatStore.activeId === chat.id) {
-      window.setTimeout(() => { void reconcileDurableRequestMessages(chat, root); }, 3_000);
+      const timer = window.setTimeout(() => {
+        durablePollTimers.delete(chat.id);
+        if (chatStore.activeId === chat.id) void reconcileDurableRequestMessages(chat, root);
+      }, 3_000);
+      durablePollTimers.set(chat.id, timer);
     }
   }
 }

@@ -19,3 +19,27 @@ test('boot uses the canonical single-flight refresh and preserves recoverable se
   assert.match(auth, /else if \(_sbStoredRefresh\(\)\)/);
   assert.match(auth, /_sbBootRecoveryAttempts < 3/);
 });
+
+test('durable hydration cannot oscillate active state or rebuild the whole center', () => {
+  const integrity = shell.slice(
+    shell.indexOf('function repairConversationIntegrity'),
+    shell.indexOf('async function downloadAssistantResponsePdf')
+  );
+  assert.doesNotMatch(integrity, /completionState = 'failed_recoverable'/);
+  assert.match(shell, /body\.revision === chat\.hydrationRevision/);
+  assert.match(shell, /changedMessages\.forEach\(\(message\) => updateStoredMessageRow/);
+  assert.match(shell, /if \(\(!chat\.persistedId \|\| chat\.durableHydrated\)/);
+});
+
+test('scoped recovery identity survives browser compaction and hydration', () => {
+  const compact = shell.slice(
+    shell.indexOf('function compactMessageForStorage'),
+    shell.indexOf('function compactChatForStorage')
+  );
+  assert.match(compact, /scopedJobId: m\.scopedJobId/);
+  assert.match(compact, /scopedManifestId: m\.scopedManifestId/);
+  assert.match(compact, /lastScopedEventId: m\.lastScopedEventId/);
+  assert.match(shell, /scopedJobId: row\.scoped_job_id/);
+  assert.match(shell, /const durablePollTimers = new Map/);
+  assert.match(shell, /const scopedPollTimers = new Map/);
+});

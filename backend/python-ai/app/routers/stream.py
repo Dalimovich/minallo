@@ -855,10 +855,30 @@ async def conversation_messages_endpoint(
     """Return the authoritative transcript used to repair refresh-time cache loss."""
     _require_uuid(conversation_id, "conversationId")
     from ..services.conversation_store import get_durable_conversation_messages  # noqa: WPS433
-    rows = await run_in_threadpool(lambda: get_durable_conversation_messages(
-        user_id=user["id"], conversation_id=conversation_id,
-    ))
-    return {"messages": rows}
+    rows = None
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            rows = await run_in_threadpool(lambda: get_durable_conversation_messages(
+                user_id=user["id"], conversation_id=conversation_id,
+            ))
+            break
+        except Exception as exc:  # transient Supabase HTTP/2 disconnects are retryable
+            last_error = exc
+            if attempt == 0:
+                await asyncio.sleep(0.15)
+    if rows is None:
+        log.warning("durable_transcript_hydration_failed conversation=%s error=%s",
+                    conversation_id, type(last_error).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "code": "transcript_hydration_unavailable", "retryable": True,
+        }) from last_error
+    revision = hashlib.sha256(json.dumps([
+        [row.get("client_message_id"), row.get("updated_at"), row.get("completion_state"),
+         len(str(row.get("content") or "")), row.get("request_id"), row.get("scoped_job_id")]
+        for row in rows
+    ], sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    return {"messages": rows, "revision": revision}
 
 
 @router.get("/requests/{request_id}")

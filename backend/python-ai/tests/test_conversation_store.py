@@ -127,12 +127,19 @@ def test_full_transcript_hydration_is_ordered_and_user_scoped(monkeypatch) -> No
         {"conversation_id": "conversation", "user_id": "owner", "client_message_id": "a-1", "role": "assistant", "content": "Answer"},
         {"conversation_id": "conversation", "user_id": "other", "client_message_id": "secret", "role": "user", "content": "Private"},
     ])
+    db.rows["ai_tutor_requests"].append({
+        "conversation_id": "conversation", "user_id": "owner",
+        "request_id": "request-1", "user_client_message_id": "u-1",
+        "assistant_client_message_id": "a-1", "scoped_job_id": "job-1",
+    })
     monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
 
     rows = conversation_store.get_durable_conversation_messages(
         user_id="owner", conversation_id="conversation",
     )
     assert [row["client_message_id"] for row in rows] == ["u-1", "a-1"]
+    assert rows[1]["request_id"] == "request-1"
+    assert rows[1]["scoped_job_id"] == "job-1"
     assert conversation_store.get_durable_conversation_messages(
         user_id="other", conversation_id="conversation",
     ) == []

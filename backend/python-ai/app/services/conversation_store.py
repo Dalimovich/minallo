@@ -102,7 +102,26 @@ def get_durable_conversation_messages(*, user_id: str, conversation_id: str) -> 
         .order("created_at")
         .execute()
     ).data or []
-    return [dict(row) for row in rows]
+    result = [dict(row) for row in rows]
+    requests = (
+        get_supabase().table("ai_tutor_requests")
+        .select("request_id,user_client_message_id,assistant_client_message_id,scoped_job_id")
+        .eq("conversation_id", conversation_id)
+        .eq("user_id", user_id)
+        .execute()
+    ).data or []
+    durable_by_message: dict[str, dict[str, Any]] = {}
+    for request in requests:
+        for key in ("user_client_message_id", "assistant_client_message_id"):
+            message_id = str(request.get(key) or "")
+            if message_id:
+                durable_by_message[message_id] = {
+                    "request_id": request.get("request_id"),
+                    "scoped_job_id": request.get("scoped_job_id"),
+                }
+    for row in result:
+        row.update(durable_by_message.get(str(row.get("client_message_id") or ""), {}))
+    return result
 
 
 def create_durable_tutor_turn(
