@@ -131,6 +131,8 @@ def create_or_resume_job(
     *, user_id: str, course_id: str, document_id: str,
     document_revision_id: str, source_fingerprint: str, request_text: str,
     spec: ScopedRequestSpec,
+    conversation_id: str | None = None, user_message_id: str | None = None,
+    assistant_message_id: str | None = None, request_id: str | None = None,
 ) -> dict[str, Any]:
     sb = get_supabase()
     existing = _one(
@@ -141,7 +143,13 @@ def create_or_resume_job(
         .contains("document_ids", [document_id])
         .order("updated_at", desc=True).limit(1).execute()
     )
-    if existing and str(existing.get("status")) not in {"failed", "superseded"}:
+    if existing and str(existing.get("status")) not in {"failed", "failed_terminal", "superseded"}:
+        if conversation_id and assistant_message_id and request_id:
+            bind_job_to_tutor_turn(
+                job_id=str(existing["id"]), user_id=user_id,
+                conversation_id=conversation_id, user_message_id=user_message_id or "",
+                assistant_message_id=assistant_message_id, request_id=request_id,
+            )
         emit_job_event(
             job_id=str(existing["id"]), event_key="job.resumed",
             event_type="scoped_job_resumed", payload={"status": existing.get("status")},
@@ -170,7 +178,30 @@ def create_or_resume_job(
         event_type="scoped_job_created",
         payload={"retrieval_mode": spec.retrieval_mode.value, "canonical_target": spec.canonical_target},
     )
+    if conversation_id and assistant_message_id and request_id:
+        bind_job_to_tutor_turn(
+            job_id=str(row["id"]), user_id=user_id,
+            conversation_id=conversation_id, user_message_id=user_message_id or "",
+            assistant_message_id=assistant_message_id, request_id=request_id,
+        )
     return row
+
+
+def bind_job_to_tutor_turn(
+    *, job_id: str, user_id: str, conversation_id: str,
+    user_message_id: str, assistant_message_id: str, request_id: str,
+) -> None:
+    """Atomically expose the durable scoped job to refresh/reconnect clients."""
+    get_supabase().rpc("bind_scoped_job_to_tutor_turn", {
+        "p_job_id": job_id, "p_user_id": user_id,
+        "p_request_id": request_id, "p_conversation_id": conversation_id,
+        "p_user_message_id": user_message_id,
+        "p_assistant_message_id": assistant_message_id,
+    }).execute()
+    log.info(
+        "assistant_job_binding_persisted job_id=%s request_id=%s assistant_message_id=%s",
+        job_id, request_id, assistant_message_id,
+    )
 
 
 def emit_job_event(
@@ -198,6 +229,38 @@ def mark_job_discovery(job_id: str, status: DiscoveryStatus) -> None:
         event_key=f"discovery.{status.value}",
         event_type=f"scope.discovery.{status.value}",
         payload={"discovery_status": status.value},
+    )
+
+
+def persist_structural_checkpoint(
+    *, job_id: str, document_revision_id: str, pages_total: int,
+    pages_inspected: list[int], unresolved_pages: list[int] | None = None,
+) -> None:
+    """Persist bounded structural progress independently of answer prose."""
+    checkpoint_id = str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"{job_id}:structural:{','.join(map(str, sorted(set(pages_inspected))))}",
+    ))
+    checkpoint = {
+        "checkpointId": checkpoint_id,
+        "documentRevisionId": document_revision_id,
+        "pagesTotal": pages_total,
+        "pagesInspected": sorted(set(pages_inspected)),
+        "unresolvedPages": sorted(set(unresolved_pages or [])),
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    get_supabase().table("complete_document_jobs").update({
+        "checkpoint_id": checkpoint_id,
+        "structural_checkpoint": checkpoint,
+        "current_stage": "structural_discovery",
+        "last_checkpoint_at": checkpoint["updatedAt"],
+        "updated_at": checkpoint["updatedAt"],
+    }).eq("id", job_id).execute()
+    emit_job_event(
+        job_id=job_id,
+        event_key=f"structural.checkpoint.{checkpoint_id}",
+        event_type="structural_checkpoint_saved",
+        payload={"checkpoint_id": checkpoint_id, "pages_inspected": len(checkpoint["pagesInspected"])},
     )
 
 
@@ -408,4 +471,6 @@ def load_job_snapshot(*, user_id: str, job_id: str) -> dict[str, Any] | None:
         "questionPages": list(manifest_row.get("question_pages") or []) if manifest_row else [],
         "items": item_rows,
         "events": events,
+        "checkpointId": job.get("checkpoint_id"),
+        "checkpoint": dict(job.get("structural_checkpoint") or {}),
     }

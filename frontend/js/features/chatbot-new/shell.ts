@@ -627,6 +627,7 @@ interface ChatMessage {
   interrupted?: boolean;
   completionState?: 'pending' | 'processing' | 'streaming' | 'recovering' | 'complete' | 'interrupted' | 'failed_recoverable' | 'failed_terminal';
   requestId?: string;
+  scopedJobId?: string;
   parentUserMessageId?: string;
   regeneratedFromMessageId?: string;
   generationVariant?: number;
@@ -1353,13 +1354,12 @@ async function streamAiReply(
         appendBubbleActions(aiRow, partialText, assistantMessage);
       } else {
         const failure = classifiedFailure;
-        const requestId = err instanceof AskStreamError && typeof err.metadata?.requestId === 'string'
-          ? err.metadata.requestId : '';
+        const referenceId = durableErrorReference(assistantMessage);
         bubble.innerHTML =
           '<section class="ncb-tutor-recovery" role="alert">' +
             '<strong>' + escapeHtml(failure.title) + '</strong>' +
             '<p>' + escapeHtml(failure.message) + '</p>' +
-            (requestId ? '<small>Reference: ' + escapeHtml(requestId.slice(0, 8)) + '</small>' : '') +
+            (referenceId ? '<small>Reference: ' + escapeHtml(referenceId) + '</small>' : '') +
           '</section>';
         attachStructuredRecoveryAction(aiRow, bubble, assistantMessage, failure);
       }
@@ -6462,7 +6462,7 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
       escapeHtml(m.errorCode === 'orphaned_response' ? 'This response did not complete' : failure.title) +
       '</strong><p>' + escapeHtml(m.errorCode === 'orphaned_response'
         ? 'Your request is preserved and can be tried again.' : failure.message) + '</p>' +
-      (m.requestId ? '<small>Reference: ' + escapeHtml(m.requestId.slice(0, 8)) + '</small>' : '') + '</section>';
+      (durableErrorReference(m) ? '<small>Reference: ' + escapeHtml(durableErrorReference(m)!) + '</small>' : '') + '</section>';
     attachStructuredRecoveryAction(row, bubble, m, failure);
     return;
   }
@@ -6564,6 +6564,19 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
 const durableRequestReconciliations = new Set<string>();
 const scopedJourneyReconciliations = new Set<string>();
 
+function isValidErrorReference(value?: string): boolean {
+  return !!value && value.length >= 12 && /^(?:ncb_msg_|req_|job_|[0-9a-f]{8}-)/i.test(value);
+}
+
+function durableErrorReference(message: ChatMessage): string | undefined {
+  const candidate = message.scopedJobId || message.requestId || message.id;
+  if (isValidErrorReference(candidate)) return candidate;
+  window.dispatchEvent(new CustomEvent('minallo:rag-telemetry', {
+    detail: { event: 'invalid_error_reference_id', candidate: candidate || null },
+  }));
+  return undefined;
+}
+
 async function reconcileScopedJourney(
   message: ChatMessage,
   bubble: HTMLElement,
@@ -6658,8 +6671,35 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
       if (!response?.ok) continue;
       const record = await response.json() as {
         status: string; stage?: string; partial_answer?: string; final_answer?: string;
-        error_code?: string; retryable?: boolean;
+        error_code?: string; retryable?: boolean; scoped_job_id?: string;
       };
+      if (record.scoped_job_id) {
+        message.scopedJobId = record.scoped_job_id;
+        const jobResponse = await authenticatedFetch(
+          aiHost + '/scoped-jobs/' + encodeURIComponent(record.scoped_job_id),
+          { method: 'GET' }, { safeToRetry: true },
+        ).catch(() => null);
+        if (jobResponse?.ok) {
+          const job = await jobResponse.json() as {
+            status: string; manifestId?: string; discoveryComplete: boolean;
+            processingFinished: boolean; discoveredCount: number; answeredCount: number;
+            pendingCount: number; processingCount: number; unresolvedCount: number;
+            failedCount: number; checkpoint?: { pagesTotal?: number; pagesInspected?: number[] };
+          };
+          if (!job.processingFinished) {
+            const inspected = job.checkpoint?.pagesInspected?.length || 0;
+            const total = job.checkpoint?.pagesTotal || 0;
+            message.text = job.discoveryComplete
+              ? `${job.discoveredCount} questions discovered\n\n${job.answeredCount} answered · ${job.processingCount} processing · ${job.pendingCount} pending · ${job.unresolvedCount} unresolved`
+              : `Discovering all Kurzfragen…\n\nRebuilding the document section map…${total ? `\n\n${inspected} of ${total} pages checked` : ''}`;
+            message.completionState = 'recovering';
+            message.retryable = true;
+            message.errorCode = undefined;
+            message.failureStage = job.discoveryComplete ? 'answer_processing' : 'structural_discovery';
+            needsPoll = true;
+          }
+        }
+      }
       if (record.status === 'completed' && record.final_answer) {
         Object.assign(message, {
           text: record.final_answer, completionState: 'complete', exportable: true,
@@ -6707,7 +6747,7 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
 function repairOrphanedAssistantMessages(chat: SavedChat): boolean {
   let changed = false;
   for (const message of chat.messages) {
-    if (message.role === 'assistant' && message.completionState
+    if (message.role === 'assistant' && !message.requestId && message.completionState
       && ['pending', 'processing', 'recovering'].includes(message.completionState)) {
       message.completionState = 'failed_recoverable';
       message.errorCode ||= 'interrupted_while_processing';

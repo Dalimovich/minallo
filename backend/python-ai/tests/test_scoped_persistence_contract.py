@@ -3,7 +3,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[3]
 MIGRATION = (ROOT / "supabase" / "migrations" / "20260726_000007_scoped_document_jobs.sql").read_text(encoding="utf-8")
+REFRESH_MIGRATION = (ROOT / "supabase" / "migrations" / "20260727_000008_scoped_job_message_binding.sql").read_text(encoding="utf-8")
 STREAM = (ROOT / "backend" / "python-ai" / "app" / "routers" / "stream.py").read_text(encoding="utf-8")
+STORE = (ROOT / "backend" / "python-ai" / "app" / "services" / "scoped_job_store.py").read_text(encoding="utf-8")
 
 
 def test_scoped_schema_persists_jobs_manifests_items_events_and_units():
@@ -29,3 +31,22 @@ def test_stream_uses_manifest_seal_checkpoint_before_authoritative_finalizer():
 def test_refresh_endpoint_reuses_persisted_job_engine():
     assert '@router.get("/scoped-jobs/{job_id}")' in STREAM
     assert "load_job_snapshot" in STREAM
+
+
+def test_job_is_persisted_and_bound_before_structural_reindex():
+    job = STREAM.index("scoped_job = await run_in_threadpool")
+    reindex = STREAM.index("lambda: index_document(payload.activeDocumentId")
+    assert job < reindex
+    assert "bind_scoped_job_to_tutor_turn" in REFRESH_MIGRATION
+    assert "scoped_job_id" in REFRESH_MIGRATION
+
+
+def test_structural_progress_is_checkpointed_on_the_durable_job():
+    assert "structural_checkpoint jsonb" in REFRESH_MIGRATION
+    assert "def persist_structural_checkpoint" in STORE
+    assert "persist_structural_checkpoint(" in STREAM
+
+
+def test_verified_manifest_skips_warm_structural_rebuild():
+    assert 'active_manifest is None' in STREAM
+    assert 'structural_index_status") != "structured_ready"' in STREAM

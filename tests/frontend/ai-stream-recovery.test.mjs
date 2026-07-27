@@ -100,6 +100,21 @@ test('Continue preserves partial text and uses the existing logical request', ()
   assert.doesNotMatch(shell, /aiRow\.remove\(\);\s*void streamAiReply/);
 });
 
+test('refresh restores scoped jobs before rendering a generic failure', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /record\.scoped_job_id/);
+  assert.match(shell, /\/scoped-jobs\/.*record\.scoped_job_id/s);
+  assert.match(shell, /Discovering all Kurzfragen/);
+  assert.match(shell, /!message\.requestId && message\.completionState/);
+});
+
+test('error references are validated and never truncated to ncb_msg_', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /function durableErrorReference/);
+  assert.match(shell, /invalid_error_reference_id/);
+  assert.doesNotMatch(shell, /requestId\.slice\(0, 8\)/);
+});
+
 test('page-reading recovery reopens the exact saved PDF page before retrying', () => {
   const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
   assert.match(shell, /activeDocumentName: pdf\?\.fileName/);

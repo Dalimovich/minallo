@@ -159,7 +159,7 @@ def update_tutor_request(
 def get_tutor_request(*, user_id: str, request_id: str) -> dict[str, Any] | None:
     rows = (
         get_supabase().table("ai_tutor_requests")
-        .select("request_id,conversation_id,user_client_message_id,assistant_client_message_id,status,stage,partial_answer,final_answer,error_code,retryable,request_snapshot,last_event_id,automatic_retry_count,fallback_used,updated_at")
+        .select("request_id,conversation_id,user_client_message_id,assistant_client_message_id,scoped_job_id,status,stage,partial_answer,final_answer,error_code,retryable,request_snapshot,last_event_id,automatic_retry_count,fallback_used,updated_at")
         .eq("request_id", request_id).eq("user_id", user_id).limit(1).execute()
     ).data or []
     return dict(rows[0]) if rows else None

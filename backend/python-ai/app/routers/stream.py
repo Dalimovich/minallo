@@ -2385,6 +2385,7 @@ async def _prepare_ask_stream_response(
         persist_item_state,
         persist_job_state,
         persist_manifest_candidate,
+        persist_structural_checkpoint,
     )
     document_extraction, extraction_correction, extraction_target = (
         classify_document_extraction(question, previous_turns_payload)
@@ -2466,20 +2467,6 @@ async def _prepare_ask_stream_response(
                 {},
             )
         )
-        if active_document.get("structural_index_status") != "structured_ready":
-            if status_sink:
-                status_sink("preparing_document_structure")
-            from ..services.indexing import index_document  # noqa: WPS433
-            observer.event(
-                "structural_reindex_required",
-                activeDocumentId=payload.activeDocumentId,
-            )
-            await run_in_threadpool(
-                lambda: index_document(payload.activeDocumentId or "", force=True)
-            )
-            active_document = await run_in_threadpool(lambda: _load_authorized_documents(
-                user_id, payload.courseId, [payload.activeDocumentId or ""]
-            ).get(payload.activeDocumentId or "", {}))
         document_revision = str(
             active_document.get("active_index_revision")
             or active_document.get("updated_at")
@@ -2505,6 +2492,10 @@ async def _prepare_ask_stream_response(
             source_fingerprint=source_fingerprint,
             request_text=question,
             spec=scoped_request,
+            conversation_id=payload.conversationId,
+            user_message_id=payload.clientMessageId,
+            assistant_message_id=payload.assistantMessageId,
+            request_id=request_id,
         ))
         scoped_job_id = str(scoped_job["id"])
         active_manifest = await run_in_threadpool(lambda: load_active_manifest(
@@ -2514,6 +2505,28 @@ async def _prepare_ask_stream_response(
             canonical_target=scoped_request.canonical_target,
             source_fingerprint=source_fingerprint,
         ))
+        # A durable job/message binding now exists before any expensive work.
+        # A verified same-revision manifest is sufficient for a warm request;
+        # never force structural reconstruction merely because the auxiliary
+        # logical-unit index is marked stale.
+        if (
+            active_manifest is None
+            and active_document.get("structural_index_status") != "structured_ready"
+        ):
+            if status_sink:
+                status_sink("preparing_document_structure")
+            from ..services.indexing import index_document  # noqa: WPS433
+            observer.event(
+                "structural_reindex_required",
+                activeDocumentId=payload.activeDocumentId,
+                scopedJobId=scoped_job_id,
+            )
+            await run_in_threadpool(
+                lambda: index_document(payload.activeDocumentId or "", force=True)
+            )
+            active_document = await run_in_threadpool(lambda: _load_authorized_documents(
+                user_id, payload.courseId, [payload.activeDocumentId or ""]
+            ).get(payload.activeDocumentId or "", {}))
         manifest_holder: dict[str, RequestScopeManifest | None] = {
             "manifest": active_manifest,
         }
@@ -2660,6 +2673,13 @@ async def _prepare_ask_stream_response(
                 ),
             )
             save_extraction_context(partial_context)
+            persist_structural_checkpoint(
+                job_id=scoped_job_id,
+                document_revision_id=document_revision or source_fingerprint,
+                pages_total=int(active_document.get("page_count") or 0),
+                pages_inspected=partial_scanned,
+                unresolved_pages=list(progress.get("unreadable_pages") or []),
+            )
             if tutor_state:
                 tutor_state.document_extraction_context = extraction_context_to_api(
                     partial_context
