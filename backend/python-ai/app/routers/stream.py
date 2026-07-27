@@ -903,6 +903,34 @@ async def scoped_job_events_endpoint(
     return {"jobId": job_id, "events": events}
 
 
+async def _requeue_scoped_job(job_id: str, user_id: str, statuses: set[str] | None = None):
+    _require_uuid(job_id, "job_id")
+    from ..services.scoped_job_store import enqueue_scoped_job  # noqa: WPS433
+    job = await run_in_threadpool(lambda: enqueue_scoped_job(
+        user_id=user_id, job_id=job_id, retry_statuses=statuses,
+    ))
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+            "code": "scoped_job_not_found", "retryable": False,
+        })
+    return {"jobId": job_id, "status": "queued"}
+
+
+@router.post("/scoped-jobs/{job_id}/resume")
+async def scoped_job_resume_endpoint(job_id: str, user: dict = Depends(verify_supabase_jwt)):
+    return await _requeue_scoped_job(job_id, user["id"])
+
+
+@router.post("/scoped-jobs/{job_id}/retry-failed")
+async def scoped_job_retry_failed_endpoint(job_id: str, user: dict = Depends(verify_supabase_jwt)):
+    return await _requeue_scoped_job(job_id, user["id"], {"failed"})
+
+
+@router.post("/scoped-jobs/{job_id}/retry-unresolved")
+async def scoped_job_retry_unresolved_endpoint(job_id: str, user: dict = Depends(verify_supabase_jwt)):
+    return await _requeue_scoped_job(job_id, user["id"], {"unresolved"})
+
+
 @router.post("/ask-stream")
 async def ask_stream_endpoint(
     payload: AskStreamRequest,
@@ -1084,6 +1112,46 @@ async def ask_stream_endpoint(
         )
     preflight_ms = (time.perf_counter() - started) * 1000
 
+    # Exhaustive document work is queued before the SSE generator starts. The
+    # browser stream observes durable state; it does not execute the job.
+    precreated_scoped_job: dict[str, Any] | None = None
+    if (
+        payload.durableConversation and payload.conversationId
+        and payload.clientMessageId and payload.assistantMessageId
+        and payload.activeDocumentId
+    ):
+        from ..services.scoped_extraction import (  # noqa: WPS433
+            RetrievalMode, classify_scoped_request,
+        )
+        early_spec = classify_scoped_request(question)
+        if early_spec.retrieval_mode is RetrievalMode.COVERAGE:
+            from ..services.scoped_job_store import create_or_resume_job  # noqa: WPS433
+            active_row = dict(preflight_documents.get(payload.activeDocumentId) or {})
+            early_revision = str(
+                active_row.get("active_index_revision") or active_row.get("updated_at") or ""
+            )
+            early_fingerprint = str(
+                active_row.get("document_hash") or early_revision or payload.activeDocumentId
+            )
+            worker_payload = payload.model_dump(mode="json")
+            worker_payload["requestId"] = request_id
+            precreated_scoped_job = await run_in_threadpool(lambda: create_or_resume_job(
+                user_id=user_id, course_id=payload.courseId,
+                document_id=payload.activeDocumentId or "",
+                document_revision_id=early_revision,
+                source_fingerprint=early_fingerprint,
+                request_text=question, spec=early_spec,
+                conversation_id=payload.conversationId,
+                user_message_id=payload.clientMessageId,
+                assistant_message_id=payload.assistantMessageId,
+                request_id=request_id,
+                request_payload=worker_payload,
+            ))
+            log.info(
+                "scoped_job_created_before_expensive_work request_id=%s job_id=%s",
+                request_id, precreated_scoped_job["id"],
+            )
+
     async def persist_request_state(**fields: Any) -> None:
         if not payload.durableConversation:
             return
@@ -1176,6 +1244,70 @@ async def ask_stream_endpoint(
             request_id, access_ms, preflight_ms, first_sse_ms,
         )
         try:
+            if precreated_scoped_job:
+                scoped_id = str(precreated_scoped_job["id"])
+                yield _sse_bytes(json.dumps({
+                    "event": "scope.job.created",
+                    "eventId": f"job:{scoped_id}:created",
+                    "jobId": scoped_id,
+                    "requestId": request_id,
+                    "conversationId": payload.conversationId,
+                    "userMessageId": payload.clientMessageId,
+                    "assistantMessageId": payload.assistantMessageId,
+                    "status": str(precreated_scoped_job.get("status") or "queued"),
+                }, ensure_ascii=False))
+                log.info(
+                    "scope_job_created_event_emitted request_id=%s job_id=%s",
+                    request_id, scoped_id,
+                )
+                from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
+                seen_scoped_event_ids: set[str] = set()
+                while True:
+                    snapshot = await run_in_threadpool(lambda: load_job_snapshot(
+                        user_id=user_id, job_id=scoped_id,
+                    ))
+                    if not snapshot:
+                        raise TutorPipelineError(
+                            code="scoped_job_state_unavailable", stage="job_state",
+                            message="The exhaustive job state is temporarily unavailable.",
+                            retryable=True, recoverable=True,
+                        )
+                    for scoped_event in snapshot.get("events") or []:
+                        event_id = str(scoped_event.get("event_id") or "")
+                        if not event_id or event_id in seen_scoped_event_ids:
+                            continue
+                        yield _sse_bytes(json.dumps({
+                            "event": scoped_event.get("event_type"),
+                            "eventId": event_id,
+                            "jobId": scoped_id,
+                            "payload": scoped_event.get("payload") or {},
+                        }, ensure_ascii=False))
+                        seen_scoped_event_ids.add(event_id)
+                    if snapshot.get("finalText") and snapshot.get("processingFinished"):
+                        persisted_answer = str(snapshot["finalText"])
+                        yield _sse_bytes(json.dumps({"t": persisted_answer}, ensure_ascii=False))
+                        yield _sse_bytes(json.dumps({
+                            "meta": True, "scopedJobId": scoped_id,
+                            "manifestId": snapshot.get("manifestId"),
+                            "learningJourney": snapshot.get("learningJourney"),
+                            "sources": snapshot.get("sources") or [],
+                            "answerMode": snapshot.get("answerMode"),
+                        }, ensure_ascii=False))
+                        terminal_event_sent = True
+                        yield _sse_bytes(json.dumps({"done": True, "requestId": request_id}, ensure_ascii=False))
+                        return
+                    if snapshot.get("status") in {"failed_recoverable", "failed_terminal", "cancelled"}:
+                        raise TutorPipelineError(
+                            code="scoped_worker_interrupted", stage=str(snapshot.get("status")),
+                            message="The exhaustive job paused and can be resumed.",
+                            retryable=snapshot.get("status") != "failed_terminal", recoverable=True,
+                        )
+                    stage = str(snapshot.get("status") or "discovering")
+                    yield _status_sse(
+                        "preparing_document_structure" if stage in {"queued", "structural_indexing", "discovering", "recovering"}
+                        else "extracting_items"
+                    )
+                    await asyncio.sleep(1.5)
             status_queue: asyncio.Queue[Any] = asyncio.Queue()
             prepared_task = asyncio.create_task(
                 _prepare_ask_stream_response(

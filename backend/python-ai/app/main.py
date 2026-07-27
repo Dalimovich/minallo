@@ -54,6 +54,9 @@ async def _lifespan(_app: FastAPI):
         name="indexing-recovery",
         daemon=True,
     ).start()
+    from .services.scoped_job_worker import start_scoped_job_worker
+
+    start_scoped_job_worker()
     yield
 
 

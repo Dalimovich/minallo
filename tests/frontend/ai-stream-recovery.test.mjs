@@ -122,6 +122,13 @@ test('an offline scoped result restores text and Learning Journey', () => {
   assert.match(shell, /scoped_job_completed_while_offline/);
 });
 
+test('scoped restoration suppresses generic request failure state', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /let scopedStateRestored = false/);
+  assert.match(shell, /scopedStateRestored = true/);
+  assert.match(shell, /else if \(!scopedStateRestored\)/);
+});
+
 test('error references are validated and never truncated to ncb_msg_', () => {
   const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
   assert.match(shell, /function durableErrorReference/);

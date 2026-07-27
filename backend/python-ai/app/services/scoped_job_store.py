@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .scoped_extraction import (
@@ -151,17 +151,30 @@ def create_or_resume_job(
     spec: ScopedRequestSpec,
     conversation_id: str | None = None, user_message_id: str | None = None,
     assistant_message_id: str | None = None, request_id: str | None = None,
+    request_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     sb = get_supabase()
-    existing = _one(
+    existing_query = (
         sb.table("complete_document_jobs").select("*")
         .eq("user_id", user_id).eq("course_id", course_id)
         .eq("canonical_target", spec.canonical_target)
         .eq("source_fingerprint", source_fingerprint)
         .contains("document_ids", [document_id])
-        .order("updated_at", desc=True).limit(1).execute()
     )
+    # A document manifest is reusable across chats, but each visible request
+    # owns a distinct execution job. Only the same durable request may resume
+    # an existing job row.
+    if request_id:
+        existing_query = existing_query.eq("request_id", request_id)
+    existing = _one(existing_query.order("updated_at", desc=True).limit(1).execute())
     if existing and str(existing.get("status")) not in {"failed", "failed_terminal", "superseded"}:
+        if request_payload and not existing.get("request_payload"):
+            get_supabase().table("complete_document_jobs").update({
+                "request_payload": request_payload,
+                "status": "queued",
+                "current_stage": "queued",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", existing["id"]).execute()
         if conversation_id and assistant_message_id and request_id:
             bind_job_to_tutor_turn(
                 job_id=str(existing["id"]), user_id=user_id,
@@ -187,6 +200,9 @@ def create_or_resume_job(
         "source_fingerprint": source_fingerprint,
         "status": "discovering",
         "discovery_status": DiscoveryStatus.PENDING.value,
+        "request_payload": request_payload or {},
+        "status": "queued" if request_payload else "discovering",
+        "current_stage": "queued" if request_payload else "discovering",
     }
     row = _one(sb.table("complete_document_jobs").insert(payload).execute())
     if not row:
@@ -203,6 +219,42 @@ def create_or_resume_job(
             assistant_message_id=assistant_message_id, request_id=request_id,
         )
     return row
+
+
+def claim_next_scoped_job(*, worker_id: str, lease_seconds: int = 300) -> dict[str, Any] | None:
+    return _one(get_supabase().rpc("claim_next_scoped_job", {
+        "p_worker_id": worker_id, "p_lease_seconds": lease_seconds,
+    }).execute())
+
+
+def renew_scoped_job_lease(*, job_id: str, worker_id: str, lease_seconds: int = 300) -> None:
+    get_supabase().table("complete_document_jobs").update({
+        "lease_expires_at": (
+            datetime.now(timezone.utc) + timedelta(seconds=max(lease_seconds, 30))
+        ).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", job_id).eq("worker_id", worker_id).execute()
+
+
+def enqueue_scoped_job(
+    *, user_id: str, job_id: str, retry_statuses: set[str] | None = None,
+) -> dict[str, Any] | None:
+    """Requeue an owned job, optionally resetting selected item states."""
+    sb = get_supabase()
+    job = _one(sb.table("complete_document_jobs").select("id,manifest_id")
+               .eq("id", job_id).eq("user_id", user_id).limit(1).execute())
+    if not job:
+        return None
+    if retry_statuses and job.get("manifest_id"):
+        for item_status in retry_statuses:
+            (sb.table("request_scope_items").update({"status": "pending"})
+             .eq("manifest_id", job["manifest_id"]).eq("status", item_status).execute())
+    return _one(sb.table("complete_document_jobs").update({
+        "status": "queued", "current_stage": "resume",
+        "worker_id": None, "lease_expires_at": None,
+        "failure_code": None, "failure_message": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", job_id).eq("user_id", user_id).execute())
 
 
 def bind_job_to_tutor_turn(

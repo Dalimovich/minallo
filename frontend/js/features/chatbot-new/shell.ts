@@ -6684,6 +6684,7 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
         status: string; stage?: string; partial_answer?: string; final_answer?: string;
         error_code?: string; retryable?: boolean; scoped_job_id?: string;
       };
+      let scopedStateRestored = false;
       if (record.scoped_job_id) {
         message.scopedJobId = record.scoped_job_id;
         const jobResponse = await authenticatedFetch(
@@ -6691,6 +6692,7 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
           { method: 'GET' }, { safeToRetry: true },
         ).catch(() => null);
         if (jobResponse?.ok) {
+          scopedStateRestored = true;
           const job = await jobResponse.json() as {
             status: string; manifestId?: string; discoveryComplete: boolean;
             processingFinished: boolean; discoveredCount: number; answeredCount: number;
@@ -6724,27 +6726,32 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
             window.dispatchEvent(new CustomEvent('minallo:rag-telemetry', {
               detail: { event: 'scoped_job_completed_while_offline', jobId: record.scoped_job_id },
             }));
+          } else {
+            Object.assign(message, {
+              completionState: 'failed_recoverable', retryable: true,
+              errorCode: 'scoped_worker_interrupted', failureStage: job.status,
+            });
           }
         }
       }
-      if (record.status === 'completed' && record.final_answer) {
+      if (!scopedStateRestored && record.status === 'completed' && record.final_answer) {
         Object.assign(message, {
           text: record.final_answer, completionState: 'complete', exportable: true,
           retryable: false, errorCode: undefined, failureStage: undefined,
         });
-      } else if (record.partial_answer) {
+      } else if (!scopedStateRestored && record.partial_answer) {
         Object.assign(message, {
           text: record.partial_answer, completionState: 'interrupted', exportable: true,
           retryable: true, errorCode: record.error_code || 'stream_transport_interrupted',
           failureStage: record.stage,
         });
-      } else if (['queued', 'running', 'recovering'].includes(record.status)) {
+      } else if (!scopedStateRestored && ['queued', 'running', 'recovering'].includes(record.status)) {
         Object.assign(message, {
           completionState: 'recovering', retryable: true,
           errorCode: undefined, failureStage: record.stage,
         });
         needsPoll = true;
-      } else {
+      } else if (!scopedStateRestored) {
         Object.assign(message, {
           completionState: 'failed_recoverable', retryable: record.retryable !== false,
           errorCode: record.error_code || 'internal_error', failureStage: record.stage,
