@@ -36,7 +36,7 @@ export interface CachedSavedItem {
 }
 
 interface StudyLibraryCache {
-  version: 1;
+  version: 2;
   userId: string;
   activeTab: 'courses' | 'saved';
   activeCourseId: string | null;
@@ -50,7 +50,9 @@ interface StudyLibraryCache {
   savedError: string | null;
 }
 
-const CACHE_PREFIX = 'minallo:study-library:v1:';
+// v2 deliberately invalidates the first Study cache release, which could
+// persist a false empty course when auth/storage hydration had not completed.
+const CACHE_PREFIX = 'minallo:study-library:v2:';
 const COURSE_TTL = 3 * 60 * 1000;
 const SAVED_TTL = 3 * 60 * 1000;
 const inFlight = new Map<string, Promise<unknown>>();
@@ -58,7 +60,7 @@ let active: StudyLibraryCache | null = null;
 
 function empty(userId: string): StudyLibraryCache {
   return {
-    version: 1, userId, activeTab: 'courses', activeCourseId: null,
+    version: 2, userId, activeTab: 'courses', activeCourseId: null,
     activeSavedKind: null, courseScrollTop: 0, savedScrollTop: 0,
     courseEntries: {}, savedItems: [], savedStatus: 'idle', savedFetchedAt: null, savedError: null,
   };
@@ -76,7 +78,7 @@ export function studyLibraryState(): StudyLibraryCache {
   if (active?.userId === userId) return active;
   try {
     const parsed = JSON.parse(localStorage.getItem(CACHE_PREFIX + userId) || 'null') as StudyLibraryCache | null;
-    active = parsed?.version === 1 && parsed.userId === userId ? parsed : empty(userId);
+    active = parsed?.version === 2 && parsed.userId === userId ? parsed : empty(userId);
   } catch { active = empty(userId); }
   return active;
 }

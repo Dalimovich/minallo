@@ -158,6 +158,13 @@ test('persistent Study Library cache is user-scoped, survives remount, and dedup
   }
 });
 
+test('an empty Study cache cannot overwrite known Fertigungstechnik files', () => {
+  assert.match(moduleSource, /inMemoryCount > cachedCourseFileCount\(cached\)/);
+  assert.match(moduleSource, /cachedCourseFileCount\(cached\) === 0\) && restoreCanonicalCourseCache/);
+  assert.match(moduleSource, /cachedCourseFileCount\(cached\) === 0 && expectedCourseFileCount\(course\.id\) > 0/);
+  assert.match(moduleSource, /cached\.fetchedAt = null/);
+});
+
 test('course drawer can add subjects and manage course files in place', () => {
   assert.match(moduleSource, /class="ncb-add-subject"/);
   assert.match(moduleSource, /id="ncbSubjectSearch" type="search"/);

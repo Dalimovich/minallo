@@ -318,6 +318,15 @@ function applyCourseCache(
   }));
 }
 
+function cachedCourseFileCount(entry: { files: CachedCourseFile[]; folders: Array<{ files: CachedCourseFile[] }> }): number {
+  return entry.files.length + entry.folders.reduce((sum, folder) => sum + folder.files.length, 0);
+}
+
+function expectedCourseFileCount(courseId: string): number {
+  try { return Math.max(0, Number.parseInt(localStorage.getItem(`ss_fc_${courseId}`) || '0', 10) || 0); }
+  catch { return 0; }
+}
+
 function persistCanonicalCourseCache(course: LibraryCourse): void {
   try {
     const uid = currentUid();
@@ -338,14 +347,22 @@ function restoreCanonicalCourseCache(course: LibraryCourse): boolean {
       version?: number; userId?: string; courseId?: string; fetchedAt?: number;
       files?: CachedCourseFile[]; folders?: Array<{ name: string; files: CachedCourseFile[] }>;
     } | null;
-    if (!parsed || parsed.version !== 2 || parsed.userId !== currentUid() || parsed.courseId !== course.id
-      || !Number.isFinite(parsed.fetchedAt) || !Array.isArray(parsed.files) || !Array.isArray(parsed.folders)) return false;
+    if (!parsed || !currentUid() || !Array.isArray(parsed.files) || !Array.isArray(parsed.folders)) return false;
+    const scopedV2 = parsed.version === 2 && parsed.userId === currentUid() && parsed.courseId === course.id
+      && Number.isFinite(parsed.fetchedAt);
+    const legacy = parsed.version == null;
+    if (!scopedV2 && !legacy) return false;
     if (!parsed.files.every((file) => file && typeof file.name === 'string')
       || !parsed.folders.every((folder) => folder && typeof folder.name === 'string' && Array.isArray(folder.files))) return false;
-    applyCourseCache(course, parsed.files, parsed.folders);
+    const files = parsed.files.map((file) => ({ ...file, uploaded: file.uploaded ?? true }));
+    const folders = parsed.folders.map((folder) => ({
+      name: folder.name,
+      files: folder.files.map((file) => ({ ...file, uploaded: file.uploaded ?? true, folder: file.folder || folder.name })),
+    }));
+    applyCourseCache(course, files, folders);
     setCourseEntry(course.id, {
-      files: parsed.files, folders: parsed.folders, hydrated: true, status: 'ready',
-      fetchedAt: parsed.fetchedAt!, error: null, scrollTop: 0,
+      files, folders, hydrated: true, status: 'ready',
+      fetchedAt: scopedV2 ? parsed.fetchedAt! : null, error: null, scrollTop: 0,
     });
     return true;
   } catch { return false; }
@@ -636,7 +653,13 @@ function renderCourses(panel: HTMLElement): void {
   const all = courses();
   all.forEach((course) => {
     let cached = courseEntry(course.id);
-    if (!cached && restoreCanonicalCourseCache(course)) cached = courseEntry(course.id);
+    const inMemoryCount = fileCount(course);
+    if (cached && inMemoryCount > cachedCourseFileCount(cached)) {
+      syncCourseCache(course);
+      cached = courseEntry(course.id);
+    } else if ((!cached || cachedCourseFileCount(cached) === 0) && restoreCanonicalCourseCache(course)) {
+      cached = courseEntry(course.id);
+    }
     if (cached) applyCourseCache(course, cached.files, cached.folders);
   });
   const recentId = recentCourseId();
@@ -745,6 +768,11 @@ async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Pr
   persistStudyLibrary();
 
   const cached = courseEntry(course.id);
+  if (cached && cachedCourseFileCount(cached) === 0 && expectedCourseFileCount(course.id) > 0) {
+    cached.fetchedAt = null;
+    cached.status = 'refreshing';
+    setCourseEntry(course.id, cached);
+  }
   if (cached) applyCourseCache(course, cached.files, cached.folders);
   if (cached) paintCourseDetail(panel, course, cached.scrollTop);
   else paintCourseLoading(panel, course);
