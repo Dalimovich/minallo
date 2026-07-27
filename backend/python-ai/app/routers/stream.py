@@ -981,12 +981,72 @@ async def _requeue_scoped_job(job_id: str, user_id: str, statuses: set[str] | No
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
             "code": "scoped_job_not_found", "retryable": False,
         })
-    return {"jobId": job_id, "status": "queued"}
+    return {"jobId": job_id, "status": str(job.get("status") or "queued")}
 
 
 @router.post("/scoped-jobs/{job_id}/resume")
 async def scoped_job_resume_endpoint(job_id: str, user: dict = Depends(verify_supabase_jwt)):
     return await _requeue_scoped_job(job_id, user["id"])
+
+
+@router.post("/requests/{request_id}/resume")
+async def tutor_request_resume_endpoint(
+    request_id: str,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Idempotently resume the same durable request and assistant message."""
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", request_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid request id")
+    from ..services.conversation_store import (  # noqa: WPS433
+        get_tutor_request, update_tutor_request,
+    )
+    record = await run_in_threadpool(
+        lambda: get_tutor_request(user_id=user["id"], request_id=request_id)
+    )
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+            "code": "request_state_not_found", "retryable": True,
+        })
+    if record.get("final_answer"):
+        return record
+    scoped_job_id = str(record.get("scoped_job_id") or "")
+    if scoped_job_id:
+        from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
+        snapshot = await run_in_threadpool(
+            lambda: load_job_snapshot(user_id=user["id"], job_id=scoped_job_id)
+        )
+        if snapshot and snapshot.get("finalText") and snapshot.get("processingFinished"):
+            await run_in_threadpool(lambda: update_tutor_request(
+                user_id=user["id"], request_id=request_id,
+                status="completed", stage="completion_repaired",
+                final_answer=str(snapshot["finalText"]), retryable=False,
+            ))
+            return await run_in_threadpool(
+                lambda: get_tutor_request(user_id=user["id"], request_id=request_id)
+            )
+        retry_count = int(record.get("automatic_retry_count") or 0)
+        if retry_count >= 2:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+                "code": "automatic_resume_exhausted", "retryable": True,
+            })
+        resume = await _requeue_scoped_job(scoped_job_id, user["id"])
+        if resume.get("status") != "queued":
+            # A live valid lease already owns the job; repeated resume calls
+            # must not create a new attempt or mutate its authoritative stage.
+            return record
+        await run_in_threadpool(lambda: update_tutor_request(
+            user_id=user["id"], request_id=request_id,
+            status="recovering", stage="automatic_resume",
+            error_code=None, retryable=True,
+            automatic_retry_count=retry_count + 1,
+        ))
+        return await run_in_threadpool(
+            lambda: get_tutor_request(user_id=user["id"], request_id=request_id)
+        )
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+        "code": "automatic_resume_exhausted", "retryable": True,
+        "message": "This request requires the saved Continue response action.",
+    })
 
 
 @router.post("/scoped-jobs/{job_id}/retry-failed")
@@ -1500,7 +1560,9 @@ async def ask_stream_endpoint(
                         terminal_event_sent = True
                         yield _sse_bytes(json.dumps({"done": True, "requestId": request_id}, ensure_ascii=False))
                         return
-                    if snapshot.get("status") in {"failed_recoverable", "failed_terminal", "cancelled"}:
+                    if snapshot.get("status") in {
+                        "failed", "failed_recoverable", "failed_terminal", "cancelled", "superseded",
+                    }:
                         raise TutorPipelineError(
                             code="scoped_worker_interrupted", stage=str(snapshot.get("status")),
                             message="The exhaustive job paused and can be resumed.",

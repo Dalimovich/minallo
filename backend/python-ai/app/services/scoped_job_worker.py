@@ -74,6 +74,16 @@ def _run_claimed_job(job: dict[str, Any], worker_id: str) -> None:
             "failure_message": type(exc).__name__,
             "lease_expires_at": None,
         }).eq("id", job_id).eq("worker_id", worker_id).execute()
+        if job.get("request_id"):
+            try:
+                from .conversation_store import update_tutor_request
+                update_tutor_request(
+                    user_id=str(job["user_id"]), request_id=str(job["request_id"]),
+                    status="failed", stage="scoped_worker_execution",
+                    error_code="scoped_worker_interrupted", retryable=True,
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("scoped_job_request_failure_sync_failed job_id=%s", job_id)
     finally:
         stop_heartbeat.set()
         heartbeat_thread.join(timeout=1)
@@ -126,6 +136,20 @@ async def _execute(job: dict[str, Any]) -> None:
             user_id=str(job["user_id"]), request_id=str(job["request_id"]),
             status="completed", stage="completed",
             final_answer=str(snapshot["finalText"]), retryable=False,
+        )
+    elif (
+        snapshot
+        and str(snapshot.get("status") or "")
+        in {"failed", "failed_recoverable", "failed_terminal", "cancelled", "superseded"}
+        and job.get("request_id")
+    ):
+        terminal = str(snapshot.get("status") or "")
+        update_tutor_request(
+            user_id=str(job["user_id"]), request_id=str(job["request_id"]),
+            status="failed",
+            stage=str(snapshot.get("currentStage") or terminal),
+            error_code=str(snapshot.get("failureCode") or "scoped_worker_interrupted"),
+            retryable=terminal not in {"failed_terminal", "cancelled"},
         )
     log.info("scoped_job_worker_finished job_id=%s", job["id"])
 

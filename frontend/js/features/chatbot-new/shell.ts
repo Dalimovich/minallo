@@ -669,6 +669,7 @@ interface ChatMessage {
   scopedJobId?: string;
   scopedManifestId?: string;
   lastScopedEventId?: string;
+  durableActivityVerified?: boolean;
   parentUserMessageId?: string;
   regeneratedFromMessageId?: string;
   generationVariant?: number;
@@ -6757,7 +6758,9 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
       model_generation: 'Solving and explaining the exercise…',
       recovering_response: 'Reconnecting to the active response…',
     };
-    const progress = stageLabels[m.failureStage || ''] || 'Minallo is continuing this response…';
+    const progress = m.durableActivityVerified
+      ? stageLabels[m.failureStage || ''] || 'Minallo is continuing this response…'
+      : 'Checking the saved response state…';
     const updated = m.updatedAt ? new Date(m.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
     bubble.innerHTML = '<section class="ncb-tutor-recovery"><strong>' + escapeHtml(progress) +
       '</strong><p>Your question and saved context are preserved.' +
@@ -6893,6 +6896,7 @@ const durableTranscriptHydrations = new Set<string>();
 const durablePollTimers = new Map<string, number>();
 const scopedPollTimers = new Map<string, number>();
 const durablePollFailures = new Map<string, number>();
+const automaticResumeAttempts = new Set<string>();
 
 function updateStoredMessageRow(root: HTMLElement, message: ChatMessage): void {
   if (!message.id) return;
@@ -7147,8 +7151,63 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
             failedCount: number; checkpoint?: { pagesTotal?: number; pagesInspected?: number[] };
             finalText?: string; learningJourney?: LearningJourneyMarker; sources?: SrcItem[];
             answerMode?: string;
+            workerId?: string; workerAttempts?: number; leaseExpiresAt?: string;
+            lastProgressAt?: string; currentStage?: string; isWorkerLive?: boolean;
+            lastHeartbeatAt?: string; isProgressStalled?: boolean; isActivelyProcessing?: boolean;
+            failureCode?: string; failureMessage?: string;
           };
-          if (!job.processingFinished) {
+          const terminalJobFailure = [
+            'failed', 'failed_recoverable', 'failed_terminal', 'cancelled', 'superseded'
+          ].includes(job.status);
+          if (terminalJobFailure) {
+            let automaticResumeAccepted = false;
+            const canAutomaticallyResume = !['failed_terminal', 'cancelled'].includes(job.status)
+              && !automaticResumeAttempts.has(message.requestId!);
+            if (canAutomaticallyResume) {
+              automaticResumeAttempts.add(message.requestId!);
+              const resumeResponse = await authenticatedFetch(
+                aiHost + '/requests/' + encodeURIComponent(message.requestId!) + '/resume',
+                { method: 'POST' }, { safeToRetry: true },
+              ).catch(() => null);
+              if (resumeResponse?.ok) {
+                automaticResumeAccepted = true;
+                Object.assign(message, {
+                  completionState: 'recovering', retryable: true,
+                  errorCode: undefined, failureStage: 'automatic_resume',
+                  durableActivityVerified: false,
+                });
+                needsPoll = true;
+              }
+            }
+            if (!automaticResumeAccepted) {
+              Object.assign(message, {
+                completionState: job.status === 'failed_terminal' ? 'failed_terminal' : 'failed_recoverable',
+                retryable: job.status !== 'failed_terminal' && job.status !== 'cancelled',
+                errorCode: job.status === 'cancelled'
+                  ? 'request_cancelled'
+                  : (job.failureCode || 'scoped_worker_interrupted'),
+                failureStage: job.currentStage || job.status,
+                durableActivityVerified: false,
+              });
+            }
+          } else if (!job.processingFinished && job.isProgressStalled) {
+            const requestId = message.requestId!;
+            if (!automaticResumeAttempts.has(requestId)) {
+              automaticResumeAttempts.add(requestId);
+              const resumeResponse = await authenticatedFetch(
+                aiHost + '/requests/' + encodeURIComponent(requestId) + '/resume',
+                { method: 'POST' }, { safeToRetry: true },
+              ).catch(() => null);
+              if (resumeResponse?.ok) needsPoll = true;
+            }
+            Object.assign(message, {
+              completionState: 'failed_recoverable', retryable: true,
+              errorCode: 'request_progress_stalled',
+              failureStage: job.currentStage || 'worker_progress',
+              durableActivityVerified: false,
+              recoveryAction: 'continue',
+            });
+          } else if (!job.processingFinished && job.isActivelyProcessing) {
             const inspected = job.checkpoint?.pagesInspected?.length || 0;
             const total = job.checkpoint?.pagesTotal || 0;
             message.text = job.discoveryComplete
@@ -7158,8 +7217,17 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
             message.retryable = true;
             message.errorCode = undefined;
             message.failureStage = job.discoveryComplete ? 'answer_processing' : 'structural_discovery';
+            message.durableActivityVerified = true;
             needsPoll = true;
+          } else if (!job.processingFinished) {
+            Object.assign(message, {
+              completionState: 'failed_recoverable', retryable: true,
+              errorCode: 'worker_lease_expired',
+              failureStage: job.currentStage || 'worker_liveness',
+              durableActivityVerified: false,
+            });
           } else if (job.finalText) {
+            automaticResumeAttempts.delete(message.requestId!);
             Object.assign(message, {
               text: job.finalText,
               learningJourney: job.learningJourney,
@@ -7169,6 +7237,7 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
               retryable: false,
               errorCode: undefined,
               failureStage: undefined,
+              durableActivityVerified: false,
             });
             window.dispatchEvent(new CustomEvent('minallo:rag-telemetry', {
               detail: { event: 'scoped_job_completed_while_offline', jobId: record.scoped_job_id },
@@ -7196,6 +7265,10 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
         Object.assign(message, {
           completionState: 'recovering', retryable: true,
           errorCode: undefined, failureStage: record.stage || 'processing',
+          // Focused legacy execution is tied to the live SSE handler and has
+          // no independently leased worker. Never claim it is continuing after
+          // restoration merely because its database string still says active.
+          durableActivityVerified: false,
         });
         needsPoll = true;
       } else if (!scopedStateRestored) {

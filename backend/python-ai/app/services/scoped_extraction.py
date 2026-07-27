@@ -71,12 +71,23 @@ _KURZFRAGEN = re.compile(r"kurzfragen?|short\s+questions?", re.I)
 
 def classify_scoped_request(text: str) -> ScopedRequestSpec:
     normalized = " ".join((text or "").split())
-    exhaustive = bool(_ALL.search(normalized))
+    # "all questions in exercise/section 12" is complete coverage of one
+    # explicitly bounded target, not a whole-document extraction. The old
+    # keyword-only classifier sent the Standzeit request to the exhaustive
+    # manifest worker merely because it contained "all the questions".
+    exact_bounded_target = bool(re.search(
+        r"(?:^\s*\d{1,3}(?:\.\d{1,3})?\s*[.):-]?\s+.{2,}|"
+        r"\b(?:section|chapter|exercise|problem|task|aufgabe)\s+"
+        r"\d{1,3}(?:\.\d{1,3})?\b)",
+        normalized, re.I,
+    ))
+    exhaustive = bool(_ALL.search(normalized)) and not exact_bounded_target
     canonical_target = "kurzfragen" if _KURZFRAGEN.search(normalized) else "questions"
     return ScopedRequestSpec(
         retrieval_mode=RetrievalMode.COVERAGE if exhaustive else RetrievalMode.RELEVANCE,
         coverage_intent=CoverageIntent.ALL if exhaustive else CoverageIntent.SINGLE,
-        target_type="section_family" if canonical_target == "kurzfragen" else "document_items",
+        target_type=("focused_numbered_target" if exact_bounded_target else
+                     "section_family" if canonical_target == "kurzfragen" else "document_items"),
         canonical_target=canonical_target,
         include_answers=bool(re.search(r"answer|solve|beantwort|lös(?:e|en)|loes", normalized, re.I)),
         include_explanations=bool(re.search(r"explain|erklär|erklaer", normalized, re.I)),

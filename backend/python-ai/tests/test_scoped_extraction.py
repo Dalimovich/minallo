@@ -44,6 +44,25 @@ def test_equivalent_prompts_use_coverage_target(prompt):
     assert spec.canonical_target == "kurzfragen"
 
 
+@pytest.mark.parametrize("prompt", [
+    "12. Rechenaufgabe 1 - Standzeit [Fortsetzung]\n"
+    "I want you to give me the answer to this exercise. explain all the questions in detail",
+    "Aufgabe 14.4: answer all the questions in this exercise",
+    "Exercise 7.2 - explain every question and give every answer",
+])
+def test_explicit_numbered_target_is_not_misrouted_as_whole_document(prompt):
+    spec = classify_scoped_request(prompt)
+    assert spec.retrieval_mode is RetrievalMode.RELEVANCE
+    assert spec.coverage_intent is CoverageIntent.SINGLE
+    assert spec.target_type == "focused_numbered_target"
+
+
+def test_true_document_wide_request_remains_exhaustive():
+    spec = classify_scoped_request("Find and answer all questions in this entire exam")
+    assert spec.retrieval_mode is RetrievalMode.COVERAGE
+    assert spec.coverage_intent is CoverageIntent.ALL
+
+
 def test_canonical_manifest_has_exact_45_ids():
     assert len(CANONICAL_KURZFRAGEN_IDS) == 45
     assert CANONICAL_KURZFRAGEN_IDS == tuple(

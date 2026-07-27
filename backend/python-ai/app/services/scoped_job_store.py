@@ -25,6 +25,13 @@ from ..supabase_client import get_supabase
 
 
 log = logging.getLogger(__name__)
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
 EXTRACTOR_SCHEMA_VERSION = "scoped-v1"
 
 
@@ -241,10 +248,23 @@ def enqueue_scoped_job(
 ) -> dict[str, Any] | None:
     """Requeue an owned job, optionally resetting selected item states."""
     sb = get_supabase()
-    job = _one(sb.table("complete_document_jobs").select("id,manifest_id")
+    job = _one(sb.table("complete_document_jobs").select(
+        "id,manifest_id,status,worker_id,lease_expires_at"
+    )
                .eq("id", job_id).eq("user_id", user_id).limit(1).execute())
     if not job:
         return None
+    status = str(job.get("status") or "")
+    lease_expires = _parse_dt(job.get("lease_expires_at"))
+    if status in {"processing_finished", "answers_verified"}:
+        return job
+    if (
+        status in {"structural_indexing", "discovering", "processing", "recovering"}
+        and job.get("worker_id") and lease_expires
+        and lease_expires > datetime.now(timezone.utc)
+    ):
+        # Resume is idempotent while a valid worker owns this attempt.
+        return job
     if retry_statuses and job.get("manifest_id"):
         for item_status in retry_statuses:
             (sb.table("request_scope_items").update({"status": "pending"})
@@ -554,10 +574,36 @@ def load_job_snapshot(*, user_id: str, job_id: str) -> dict[str, Any] | None:
         sb.table("scope_job_events").select("event_id,event_key,event_type,payload,created_at")
         .eq("job_id", job_id).order("created_at").execute().data or []
     )
+    now = datetime.now(timezone.utc)
+    lease_expires = _parse_dt(job.get("lease_expires_at"))
+    last_heartbeat = _parse_dt(job.get("updated_at"))
+    last_progress = _parse_dt(job.get("last_checkpoint_at") or job.get("updated_at"))
+    terminal = str(job.get("status") or "") in {
+        "failed", "failed_recoverable", "failed_terminal", "cancelled", "superseded",
+        "processing_finished", "answers_verified",
+    }
+    is_worker_live = bool(
+        not terminal and job.get("worker_id") and lease_expires and lease_expires > now
+        and last_heartbeat and (now - last_heartbeat).total_seconds() <= 90
+    )
+    is_progress_stalled = bool(
+        not terminal and last_progress and (now - last_progress).total_seconds() > 180
+    )
     return {
         "jobId": job_id,
         "manifestId": manifest_id,
         "status": job.get("status"),
+        "workerId": job.get("worker_id"),
+        "workerAttempts": int(job.get("worker_attempts") or 0),
+        "leaseExpiresAt": job.get("lease_expires_at"),
+        "lastHeartbeatAt": job.get("updated_at"),
+        "lastProgressAt": job.get("last_checkpoint_at") or job.get("updated_at"),
+        "currentStage": job.get("current_stage"),
+        "failureCode": job.get("failure_code"),
+        "failureMessage": job.get("failure_message"),
+        "isWorkerLive": is_worker_live,
+        "isProgressStalled": is_progress_stalled,
+        "isActivelyProcessing": is_worker_live and not is_progress_stalled,
         "discoveryStatus": job.get("discovery_status"),
         "manifestSealed": bool(manifest_row and manifest_row.get("manifest_sealed")),
         "discoveryComplete": bool(
