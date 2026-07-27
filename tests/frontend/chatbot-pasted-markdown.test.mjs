@@ -26,6 +26,12 @@ test('pasted Markdown is a pending text attachment in the same user message', ()
   assert.match(shell, /source="' \+ escapeHtml\(f\.source \|\| 'upload'\)/);
 });
 
+test('pasted Markdown attachment text remains inside its responsive card', () => {
+  assert.match(css, /\.ncb-file-chip--markdown\s*\{[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto auto/);
+  assert.match(css, /\.ncb-file-chip--markdown\s*\{[\s\S]*height:\s*auto;[\s\S]*min-height:\s*52px/);
+  assert.match(css, /\.ncb-file-chip--markdown \.ncb-file-chip-kind\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
+});
+
 test('pasted Markdown can be previewed, edited, renamed and removed safely', () => {
   assert.match(shell, /openMarkdownAttachmentPreview/);
   assert.match(shell, /attachment\.textContent = content/);

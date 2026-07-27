@@ -6099,12 +6099,38 @@ body.ncb-pdf-workspace-open #drDrawer {
 }
 
 .ncb-file-chip--markdown {
-  min-width: min(100%, 300px);
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  width: min(100%, 340px);
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 52px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
   background: linear-gradient(135deg, rgba(20, 42, 72, .78), rgba(9, 22, 40, .72));
   border-color: rgba(103, 165, 255, .24);
   box-shadow: 0 12px 30px rgba(0, 8, 24, .2), inset 0 1px rgba(255, 255, 255, .045);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+}
+
+.ncb-file-chip--markdown .ncb-file-chip-text {
+  width: 100%;
+  overflow: hidden;
+}
+
+.ncb-file-chip--markdown .ncb-file-chip-name,
+.ncb-file-chip--markdown .ncb-file-chip-kind {
+  max-width: 100%;
+  line-height: 1.25;
+}
+
+.ncb-file-chip--markdown .ncb-file-chip-kind {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .ncb-file-chip--markdown .ncb-file-chip-icon {
