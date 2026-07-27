@@ -127,6 +127,24 @@ def load_active_manifest(
     return _manifest_from_rows(row, list(item_rows))
 
 
+def load_question_unit_ranges(
+    *, user_id: str, document_id: str, document_revision_id: str,
+) -> dict[str, dict[str, Any]]:
+    """Return persisted structural spans keyed by semantic question number."""
+    rows = (
+        get_supabase().table("document_logical_units")
+        .select("question_number,page_start,page_end,stable_block_id,parent_question")
+        .eq("user_id", user_id).eq("document_id", document_id)
+        .eq("document_revision_id", document_revision_id)
+        .in_("block_type", ["exam_question", "exam_subquestion"])
+        .order("document_order").execute().data or []
+    )
+    return {
+        str(row.get("question_number")): dict(row)
+        for row in rows if row.get("question_number")
+    }
+
+
 def create_or_resume_job(
     *, user_id: str, course_id: str, document_id: str,
     document_revision_id: str, source_fingerprint: str, request_text: str,
@@ -235,24 +253,48 @@ def mark_job_discovery(job_id: str, status: DiscoveryStatus) -> None:
 def persist_structural_checkpoint(
     *, job_id: str, document_revision_id: str, pages_total: int,
     pages_inspected: list[int], unresolved_pages: list[int] | None = None,
+    text_pages_inspected: list[int] | None = None,
+    ocr_pages_inspected: list[int] | None = None,
+    visual_pages_inspected: list[int] | None = None,
+    detected_headings: list[dict[str, Any]] | None = None,
+    included_sections: list[str] | None = None,
+    excluded_sections: list[str] | None = None,
+    remaining_visual_pages: list[int] | None = None,
+    candidate_manifest_version: int | None = None,
+    current_stage: str = "structural_discovery",
 ) -> None:
     """Persist bounded structural progress independently of answer prose."""
     checkpoint_id = str(uuid.uuid5(
         uuid.NAMESPACE_URL,
         f"{job_id}:structural:{','.join(map(str, sorted(set(pages_inspected))))}",
     ))
+    existing_row = _one(
+        get_supabase().table("complete_document_jobs")
+        .select("structural_checkpoint").eq("id", job_id).limit(1).execute()
+    )
+    existing = dict((existing_row or {}).get("structural_checkpoint") or {})
     checkpoint = {
+        **existing,
         "checkpointId": checkpoint_id,
         "documentRevisionId": document_revision_id,
         "pagesTotal": pages_total,
         "pagesInspected": sorted(set(pages_inspected)),
         "unresolvedPages": sorted(set(unresolved_pages or [])),
+        "textPagesInspected": sorted(set(text_pages_inspected or existing.get("textPagesInspected") or [])),
+        "ocrPagesInspected": sorted(set(ocr_pages_inspected or existing.get("ocrPagesInspected") or [])),
+        "visualPagesInspected": sorted(set(visual_pages_inspected or existing.get("visualPagesInspected") or [])),
+        "detectedHeadings": detected_headings if detected_headings is not None else list(existing.get("detectedHeadings") or []),
+        "includedSections": included_sections if included_sections is not None else list(existing.get("includedSections") or []),
+        "excludedSections": excluded_sections if excluded_sections is not None else list(existing.get("excludedSections") or []),
+        "remainingVisualPages": sorted(set(remaining_visual_pages or existing.get("remainingVisualPages") or [])),
+        "candidateManifestVersion": candidate_manifest_version or existing.get("candidateManifestVersion") or 1,
+        "currentStage": current_stage,
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
     get_supabase().table("complete_document_jobs").update({
         "checkpoint_id": checkpoint_id,
         "structural_checkpoint": checkpoint,
-        "current_stage": "structural_discovery",
+        "current_stage": current_stage,
         "last_checkpoint_at": checkpoint["updatedAt"],
         "updated_at": checkpoint["updatedAt"],
     }).eq("id", job_id).execute()
@@ -379,6 +421,23 @@ def persist_job_state(job_id: str, state: ScopedJobState) -> None:
         "processing" if state.discovery_complete else
         "discovering"
     )
+
+
+def persist_scoped_result(
+    *, job_id: str, final_text: str, learning_journey: dict[str, Any] | None,
+    sources: list[dict[str, Any]], answer_mode: str,
+) -> None:
+    """Save enough presentation state to restore a result missed while offline."""
+    now = datetime.now(timezone.utc).isoformat()
+    get_supabase().table("complete_document_jobs").update({
+        "final_text": final_text,
+        "result_payload": {
+            "learningJourney": learning_journey,
+            "sources": sources,
+            "answerMode": answer_mode,
+        },
+        "updated_at": now,
+    }).eq("id", job_id).execute()
     get_supabase().table("complete_document_jobs").update({
         "status": status,
         "discovery_status": state.discovery_status.value,
@@ -473,4 +532,11 @@ def load_job_snapshot(*, user_id: str, job_id: str) -> dict[str, Any] | None:
         "events": events,
         "checkpointId": job.get("checkpoint_id"),
         "checkpoint": dict(job.get("structural_checkpoint") or {}),
+        "requestId": job.get("request_id"),
+        "assistantMessageId": job.get("assistant_message_id"),
+        "documentRevisionIds": list(job.get("document_revision_ids") or []),
+        "finalText": job.get("final_text"),
+        "learningJourney": dict(job.get("result_payload") or {}).get("learningJourney"),
+        "sources": list(dict(job.get("result_payload") or {}).get("sources") or []),
+        "answerMode": dict(job.get("result_payload") or {}).get("answerMode"),
     }

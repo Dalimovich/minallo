@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[3]
 MIGRATION = (ROOT / "supabase" / "migrations" / "20260726_000007_scoped_document_jobs.sql").read_text(encoding="utf-8")
 REFRESH_MIGRATION = (ROOT / "supabase" / "migrations" / "20260727_000008_scoped_job_message_binding.sql").read_text(encoding="utf-8")
+RESULT_MIGRATION = (ROOT / "supabase" / "migrations" / "20260727_000009_scoped_job_results.sql").read_text(encoding="utf-8")
 STREAM = (ROOT / "backend" / "python-ai" / "app" / "routers" / "stream.py").read_text(encoding="utf-8")
 STORE = (ROOT / "backend" / "python-ai" / "app" / "services" / "scoped_job_store.py").read_text(encoding="utf-8")
 
@@ -50,3 +51,21 @@ def test_structural_progress_is_checkpointed_on_the_durable_job():
 def test_verified_manifest_skips_warm_structural_rebuild():
     assert 'active_manifest is None' in STREAM
     assert 'structural_index_status") != "structured_ready"' in STREAM
+
+
+def test_early_scoped_job_event_precedes_document_extraction():
+    created = STREAM.index('"event": "scope.job.created"')
+    extraction = STREAM.index("extraction = await run_in_threadpool", created)
+    assert created < extraction
+
+
+def test_offline_result_is_persisted_and_returned_by_snapshot():
+    assert "final_text text" in RESULT_MIGRATION
+    assert "def persist_scoped_result" in STORE
+    assert '"finalText": job.get("final_text")' in STORE
+
+
+def test_manifest_items_reuse_structural_multi_page_ranges():
+    assert "load_question_unit_ranges" in STORE
+    assert 'structural_range.get("page_start")' in STREAM
+    assert 'structural_range.get("page_end")' in STREAM

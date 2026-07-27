@@ -1243,7 +1243,7 @@ async function streamAiReply(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
         rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams,
         rag.activePdfContext, durable!.conversationId, requestMessages.at(-1)?.images || [], true,
-        assistantMessage.requestId
+        assistantMessage.requestId, assistantMessage
       );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
       if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
@@ -2958,7 +2958,8 @@ async function streamFromAskStream(
   conversationId?: string,
   userImages: PastedImage[] = [],
   durableConversation = false,
-  logicalRequestId?: string
+  logicalRequestId?: string,
+  assistantMessage?: ChatMessage,
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {
@@ -3216,6 +3217,16 @@ async function streamFromAskStream(
         lastEventType = evt.done === true ? 'done' : evt.error ? 'error'
           : typeof evt.t === 'string' ? 'token' : evt.meta === true ? 'meta' : 'status';
         if (typeof evt.requestId === 'string') streamRequestId = evt.requestId;
+        if (evt.event === 'scope.job.created' && typeof evt.jobId === 'string' && assistantMessage) {
+          assistantMessage.scopedJobId = evt.jobId;
+          assistantMessage.completionState = 'recovering';
+          assistantMessage.failureStage = 'structural_discovery';
+          assistantMessage.updatedAt = new Date().toISOString();
+          saveChatStore();
+          window.dispatchEvent(new CustomEvent('minallo:rag-telemetry', {
+            detail: { event: 'scope_job_created_event_received', jobId: evt.jobId },
+          }));
+        }
         // Live status: backend pipeline events ("collecting_sources",
         // "writing_answer", …) update the pending bubble's status line before
         // any answer token arrives. Once a token creates the real bubble
@@ -6685,6 +6696,8 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
             processingFinished: boolean; discoveredCount: number; answeredCount: number;
             pendingCount: number; processingCount: number; unresolvedCount: number;
             failedCount: number; checkpoint?: { pagesTotal?: number; pagesInspected?: number[] };
+            finalText?: string; learningJourney?: LearningJourneyMarker; sources?: SrcItem[];
+            answerMode?: string;
           };
           if (!job.processingFinished) {
             const inspected = job.checkpoint?.pagesInspected?.length || 0;
@@ -6697,6 +6710,20 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
             message.errorCode = undefined;
             message.failureStage = job.discoveryComplete ? 'answer_processing' : 'structural_discovery';
             needsPoll = true;
+          } else if (job.finalText) {
+            Object.assign(message, {
+              text: job.finalText,
+              learningJourney: job.learningJourney,
+              sources: job.sources || [],
+              completionState: 'complete',
+              exportable: true,
+              retryable: false,
+              errorCode: undefined,
+              failureStage: undefined,
+            });
+            window.dispatchEvent(new CustomEvent('minallo:rag-telemetry', {
+              detail: { event: 'scoped_job_completed_while_offline', jobId: record.scoped_job_id },
+            }));
           }
         }
       }

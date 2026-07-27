@@ -860,6 +860,49 @@ async def scoped_job_status_endpoint(
     return snapshot
 
 
+@router.get("/scoped-jobs/{job_id}/items")
+async def scoped_job_items_endpoint(
+    job_id: str,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Return only persisted item state for an owned exhaustive job."""
+    _require_uuid(job_id, "job_id")
+    from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
+    snapshot = await run_in_threadpool(
+        lambda: load_job_snapshot(user_id=user["id"], job_id=job_id)
+    )
+    if not snapshot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+            "code": "scoped_job_not_found", "retryable": False,
+        })
+    return {"jobId": job_id, "manifestId": snapshot.get("manifestId"), "items": snapshot["items"]}
+
+
+@router.get("/scoped-jobs/{job_id}/events")
+async def scoped_job_events_endpoint(
+    job_id: str,
+    after: str | None = None,
+    user: dict = Depends(verify_supabase_jwt),
+):
+    """Replay stable scoped events after the caller's last observed event."""
+    _require_uuid(job_id, "job_id")
+    from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
+    snapshot = await run_in_threadpool(
+        lambda: load_job_snapshot(user_id=user["id"], job_id=job_id)
+    )
+    if not snapshot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+            "code": "scoped_job_not_found", "retryable": False,
+        })
+    events = list(snapshot["events"])
+    if after:
+        matching = next((index for index, event in enumerate(events)
+                         if str(event.get("event_id")) == after), None)
+        if matching is not None:
+            events = events[matching + 1:]
+    return {"jobId": job_id, "events": events}
+
+
 @router.post("/ask-stream")
 async def ask_stream_endpoint(
     payload: AskStreamRequest,
@@ -1133,7 +1176,7 @@ async def ask_stream_endpoint(
             request_id, access_ms, preflight_ms, first_sse_ms,
         )
         try:
-            status_queue: asyncio.Queue[str] = asyncio.Queue()
+            status_queue: asyncio.Queue[Any] = asyncio.Queue()
             prepared_task = asyncio.create_task(
                 _prepare_ask_stream_response(
                     payload, user, status_queue.put_nowait, request_id,
@@ -1147,7 +1190,7 @@ async def ask_stream_endpoint(
             )
             while not prepared_task.done():
                 try:
-                    status_key = await asyncio.wait_for(status_queue.get(), timeout=0.1)
+                    status_event = await asyncio.wait_for(status_queue.get(), timeout=0.1)
                     # The preparation task claims the persisted generation.
                     # Checking shared state before that claim races against the
                     # previous turn after a reload.
@@ -1165,6 +1208,11 @@ async def ask_stream_endpoint(
                             request_id=request_id,
                         )
                         return
+                    if isinstance(status_event, dict):
+                        last_heartbeat = time.monotonic()
+                        yield _sse_bytes(json.dumps(status_event, ensure_ascii=False))
+                        continue
+                    status_key = str(status_event)
                     last_status_key = status_key
                     last_heartbeat = time.monotonic()
                     yield _status_sse(status_key)
@@ -1210,7 +1258,11 @@ async def ask_stream_endpoint(
                         request_id=request_id,
                     )
                     return
-                yield _status_sse(status_queue.get_nowait())
+                queued_event = status_queue.get_nowait()
+                if isinstance(queued_event, dict):
+                    yield _sse_bytes(json.dumps(queued_event, ensure_ascii=False))
+                else:
+                    yield _status_sse(str(queued_event))
             body_iterator = prepared.body_iterator.__aiter__()
             next_event_task: asyncio.Task | None = None
             generation_recovery_attempts = 0
@@ -2381,11 +2433,13 @@ async def _prepare_ask_stream_response(
         create_or_resume_job,
         emit_job_event,
         load_active_manifest,
+        load_question_unit_ranges,
         mark_job_discovery,
         persist_item_state,
         persist_job_state,
         persist_manifest_candidate,
         persist_structural_checkpoint,
+        persist_scoped_result,
     )
     document_extraction, extraction_correction, extraction_target = (
         classify_document_extraction(question, previous_turns_payload)
@@ -2498,6 +2552,15 @@ async def _prepare_ask_stream_response(
             request_id=request_id,
         ))
         scoped_job_id = str(scoped_job["id"])
+        if status_sink:
+            status_sink({
+                "event": "scope.job.created",
+                "eventId": f"job:{scoped_job_id}:created",
+                "jobId": scoped_job_id,
+                "requestId": request_id,
+                "assistantMessageId": payload.assistantMessageId,
+                "status": str(scoped_job.get("status") or "discovering"),
+            })
         active_manifest = await run_in_threadpool(lambda: load_active_manifest(
             user_id=user_id,
             document_id=payload.activeDocumentId or "",
@@ -2530,9 +2593,26 @@ async def _prepare_ask_stream_response(
         manifest_holder: dict[str, RequestScopeManifest | None] = {
             "manifest": active_manifest,
         }
-        await run_in_threadpool(
-            lambda: mark_job_discovery(scoped_job_id, DiscoveryStatus.RUNNING)
-        )
+        structural_question_ranges = await run_in_threadpool(lambda: load_question_unit_ranges(
+            user_id=user_id,
+            document_id=payload.activeDocumentId or "",
+            document_revision_id=document_revision or "",
+        ))
+        await run_in_threadpool(lambda: mark_job_discovery(
+            scoped_job_id,
+            DiscoveryStatus.COMPLETE if active_manifest else DiscoveryStatus.RUNNING,
+        ))
+        if active_manifest:
+            emit_job_event(
+                job_id=scoped_job_id,
+                event_key=f"manifest.reused.{active_manifest.id}",
+                event_type="warm_manifest_reused",
+                payload={"manifest_id": active_manifest.id},
+            )
+            log.info(
+                "warm_manifest_reused request_id=%s job_id=%s manifest_id=%s",
+                request_id, scoped_job_id, active_manifest.id,
+            )
         observer.event(
             "coverage_mode_selected",
             jobId=scoped_job_id,
@@ -2679,6 +2759,11 @@ async def _prepare_ask_stream_response(
                 pages_total=int(active_document.get("page_count") or 0),
                 pages_inspected=partial_scanned,
                 unresolved_pages=list(progress.get("unreadable_pages") or []),
+                text_pages_inspected=partial_scanned,
+                ocr_pages_inspected=list(progress.get("ocr_pages_inspected") or []),
+                visual_pages_inspected=list(progress.get("visual_pages_inspected") or []),
+                remaining_visual_pages=list(progress.get("remaining_visual_pages") or []),
+                current_stage=str(progress.get("current_stage") or "scope_discovery"),
             )
             if tutor_state:
                 tutor_state.document_extraction_context = extraction_context_to_api(
@@ -2708,6 +2793,23 @@ async def _prepare_ask_stream_response(
             family = discovery.get("resolved_family")
             questions = list(discovery.get("questions") or [])
             sealed = bool(discovery.get("manifest_sealed"))
+            matched_sections = list(getattr(family, "matched_sections", []) or []) if family else []
+            persist_structural_checkpoint(
+                job_id=scoped_job_id,
+                document_revision_id=document_revision or source_fingerprint,
+                pages_total=int(active_document.get("page_count") or 0),
+                pages_inspected=list(discovery.get("question_pages") or []),
+                unresolved_pages=list(discovery.get("numbering_gaps") or []),
+                detected_headings=[{
+                    "number": str(getattr(section, "requested_number", "")),
+                    "title": str(getattr(section, "requested_title", "") or ""),
+                    "page": int(getattr(section, "start_page", 0) or 0),
+                } for section in matched_sections],
+                included_sections=[str(getattr(section, "requested_number", "")) for section in matched_sections],
+                excluded_sections=["12", "13", "14"] if scoped_request.canonical_target == "kurzfragen" else [],
+                candidate_manifest_version=1,
+                current_stage="manifest_validation",
+            )
             if not family or not sealed:
                 emit_job_event(
                     job_id=scoped_job_id,
@@ -2729,6 +2831,7 @@ async def _prepare_ask_stream_response(
             for order, extracted in enumerate(questions):
                 number = str(extracted.item_id)
                 section_number = number.split(".", 1)[0]
+                structural_range = structural_question_ranges.get(number, {})
                 stable_key = stable_scope_key(
                     document_revision or source_fingerprint,
                     "exam_question",
@@ -2746,9 +2849,11 @@ async def _prepare_ask_stream_response(
                     block_type="exam_question",
                     section_number=section_number,
                     section_title=section_titles.get(section_number),
-                    page_start=extracted.question_page,
-                    page_end=extracted.question_page,
+                    page_start=(structural_range.get("page_start") or extracted.question_page),
+                    page_end=(structural_range.get("page_end") or extracted.question_page),
                     document_order=order,
+                    source_block_ids=[str(structural_range["stable_block_id"])]
+                    if structural_range.get("stable_block_id") else [],
                     status=ScopeItemStatus.PENDING,
                 ))
             candidate = RequestScopeManifest(
@@ -3041,6 +3146,13 @@ async def _prepare_ask_stream_response(
             }
             for index, page in enumerate(cited_pages, start=1)
         ]
+        await run_in_threadpool(lambda: persist_scoped_result(
+            job_id=scoped_job_id,
+            final_text=answer_text,
+            learning_journey=learning_journey,
+            sources=extraction_sources,
+            answer_mode="document_wide_extraction",
+        ))
         log.info(
             "document_extraction_completed request_id=%s task_type=document_wide_extraction "
             "document=%s total_pages=%d scanned_pages=%d unreadable_pages=%s "

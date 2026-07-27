@@ -80,7 +80,7 @@ test('durable tutor turns persist the assistant placeholder and request snapshot
   assert.match(shell, /assistantMessageId: context\.assistantMessage\?\.id/);
   assert.match(shell, /requestId: context\.assistantMessage\?\.requestId/);
   assert.match(shell, /requestSnapshot: context\.assistantMessage\?\.requestSnapshot/);
-  assert.match(shell, /assistantMessage\.requestId\s*\n\s*\)/);
+  assert.match(shell, /assistantMessage\.requestId, assistantMessage\s*\n\s*\)/);
 });
 
 test('inactivity checks durable request state before abandoning the stream', () => {
@@ -106,6 +106,20 @@ test('refresh restores scoped jobs before rendering a generic failure', () => {
   assert.match(shell, /\/scoped-jobs\/.*record\.scoped_job_id/s);
   assert.match(shell, /Discovering all Kurzfragen/);
   assert.match(shell, /!message\.requestId && message\.completionState/);
+});
+
+test('early scoped job event is saved before a Learning Journey exists', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /evt\.event === 'scope\.job\.created'/);
+  assert.match(shell, /assistantMessage\.scopedJobId = evt\.jobId/);
+  assert.match(shell, /scope_job_created_event_received/);
+});
+
+test('an offline scoped result restores text and Learning Journey', () => {
+  const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+  assert.match(shell, /else if \(job\.finalText\)/);
+  assert.match(shell, /learningJourney: job\.learningJourney/);
+  assert.match(shell, /scoped_job_completed_while_offline/);
 });
 
 test('error references are validated and never truncated to ncb_msg_', () => {
