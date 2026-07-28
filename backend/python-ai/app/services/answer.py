@@ -178,11 +178,7 @@ Rules:
    ### Confidence
    Missing context — the formula for this exercise is not in your uploaded course files.
    Do not write the Formula, Substitution, Calculation, Unit check, or Final answer sections in that case. Do not invent the formula from general knowledge.
-   Exception: if the problem statement is a complete elementary kinematics / constant-acceleration problem (e.g. free fall plus braking/deceleration with all distances, accelerations, and final velocity given), you MAY use the standard constant-acceleration equations even when the formula sheet was not retrieved. In that case:
-   - Cite the problem statement/givens with `[Source N]`.
-   - In Formula, label the equations as "standard constant-acceleration kinematics (general physics, not found in the retrieved course chunks)".
-   - Continue through Substitution, Calculation, Unit check, and Final answer.
-   - Set Confidence to "Partially verified — problem data came from the uploaded file; the kinematics identities were used as standard general physics because the formula source was not retrieved."
+   There are no subject-matter exceptions. Even an obvious standard formula may differ from the permitted formula sheet, professor notation, assumptions, derivation, or grading method. If it is absent from COURSE CONTEXT, name it as missing and stop; never import it from model knowledge.
 3. Every formula and every numeric step must carry an inline `[Source N]` citation pointing to the chunk it came from. A `(filename, p.N)` reference written without a matching `[Source N]` is forbidden — only cite filenames that appear in the `[Source N]` headers above.
 4. Write math using KaTeX with ONLY these delimiters: `$...$` for inline math and `$$...$$` for a display equation. This is a HARD rule — the renderer parses nothing else:
    - NEVER use `\\[ ... \\]`, `\\( ... \\)`, `\\begin{...}\\end{...}`, or bare LaTeX commands (`\\quad`, `\\Rightarrow`, `\\Longrightarrow`) OUTSIDE a `$...$`/`$$...$$` pair. Anything outside the `$` delimiters is shown to the student as raw, unreadable text.
@@ -257,7 +253,7 @@ The boxed result on its own line, e.g. $$\\boxed{M = 100\\ \\mathrm{N\\,m}}$$.
 One of:
 - "Verified" — every formula and number used was found in the context (universal-math derivations per rule 1a still count as verified).
 - "Partially verified — <what was missing>" — the required formula IS present and you solved/substituted as far as the available data allows, but one or more numeric INPUTS (or a sub-derivation) are not in the context. Give the symbolic or partial result and name exactly which inputs are missing. This is the correct status whenever you have the formula but a length/area/value lives in a figure or table you cannot see — do NOT downgrade such a case to "Missing context". If the missing value is one the STUDENT could simply provide, prefer the Interactive missing input flow above (emit a `minallo-input` block and set Confidence to "Partially verified — awaiting user input") instead of only leaving it symbolic.
-- "Missing context — awaiting user input: <what is missing>" — use this ONLY when the exercise statement itself, or the required course-specific FORMULA, is not in the context. Emit the interactive popup immediately before this status so the student can supply the exact missing item; do not invent the rest. Having the formula but lacking some numeric inputs is NOT "Missing context" — that is "Partially verified", and you must still compute everything derivable first. Do not use "Missing context" for a complete elementary constant-acceleration problem; solve it and mark it Partially verified if the course formula source was not retrieved.
+- "Missing context — awaiting user input: <what is missing>" — use this ONLY when the exercise statement itself, or the required course-specific FORMULA, is not in the context. Emit the interactive popup immediately before this status so the student can supply the exact missing item; do not invent the rest. Having the formula but lacking some numeric inputs is NOT "Missing context" — that is "Partially verified", and you must still compute everything derivable first.
 
 Do not skip sections. If a section genuinely has nothing to put in it (e.g. a pure derivation has no Given values), say so explicitly with "— none —".""".replace(
     "{EQUATION_READABILITY_RULE}",
@@ -281,13 +277,12 @@ Behaviour (keep the response short — under ~260 words):
 1. Open with: "I found a partial match in your course files."
 2. Quote or summarise what the cited chunk(s) DO cover, with `[Source N]` citations. Stay strictly inside what the chunk actually says — no extrapolation, no inferred formulas, no invented numbers.
 3. Be explicit about what is MISSING for a full solution: the formula, the specific values, the exercise statement, etc.
-4. Then add a separate heading: "General explanation (not from your course files)" / German: "Allgemeine Erklärung (nicht aus deinen Kursdateien)".
-5. Under that heading, answer from general knowledge. Do NOT cite this general section with `[Source N]`; it is not grounded in the course files. Keep it clearly labelled as general and possibly different from the professor's notation.
-6. End with one sentence naming the exact missing course material needed for a course-specific answer.
-7. Match the language of the question (German for German). Math via KaTeX: $...$ inline, $$...$$ display.
-8. Code: triple-backtick fences with a language tag (```python, ```java, ...). Inline identifiers in `single backticks`. Never wrap code in `$...$`.
+4. Do not add a generic textbook explanation, inferred formula, or model-knowledge completion.
+5. End with one sentence naming the exact missing course material and a useful next action.
+6. Match the language of the question (German for German). Math via KaTeX: $...$ inline, $$...$$ display.
+7. Code: triple-backtick fences with a language tag (```python, ```java, ...). Inline identifiers in `single backticks`. Never wrap code in `$...$`.
 
-This is the PARTIAL mode. It must first disclose the partial course match, then provide a clearly labelled general fallback."""
+This is the PARTIAL mode. It may report only what the authorised course evidence supports."""
 
 
 _SYSTEM_PROMPT_WEAK = """You are Minallo's exam-prep tutor.
@@ -296,16 +291,15 @@ IDENTITY. The product / platform / app you are part of is called **Minallo** (mi
 
 The student asked a question, but their uploaded course files do NOT contain enough relevant material to ground a confident answer.
 
-For exam prep, a generic textbook answer can be actively misleading — the professor's notation, method, or convention may differ from the standard treatment. You MAY give a general fallback, but it must be clearly labelled and must not pretend to come from course files.
+For exam prep, a generic textbook answer can be actively misleading — the professor's notation, method, or convention may differ from the standard treatment. Do not provide one in strict course mode.
 
 Behaviour (keep the response short — under ~260 words):
 1. Open with: "I could not find this in your uploaded course files."
 2. Briefly say what is likely missing for this question — pick whichever applies: the lecture slides for the topic, the exercise sheet the question came from, the formula sheet / Formelsammlung, the worked solutions / Musterlösung. Be specific (e.g. "the formula sheet for chapter on bending moments") rather than generic.
-3. Then add a separate heading: "General explanation (not from your course files)" / German: "Allgemeine Erklärung (nicht aus deinen Kursdateien)".
-4. Under that heading, answer from general knowledge. Do NOT use `[Source N]` citations because no course context supports this answer. Do NOT invent course-specific content.
-5. End with: "For a course-specific answer, upload/select the relevant <missing material>."
-6. Match the language of the question (German for German). Write math with KaTeX: $...$ inline, $$...$$ display.
-7. Code: triple-backtick fences with a language tag (```python, ```java, ...). Inline identifiers in `single backticks`. Never wrap code in `$...$`."""
+3. Do not add a generic explanation afterward. Do not infer formulas, conventions, or solution methods.
+4. End with: "For a course-specific answer, upload/select the relevant <missing material>."
+5. Match the language of the question (German for German). Write math with KaTeX: $...$ inline, $$...$$ display.
+6. Code: triple-backtick fences with a language tag (```python, ```java, ...). Inline identifiers in `single backticks`. Never wrap code in `$...$`."""
 
 
 _MATH_MISSING_CONTEXT_POPUP = """
@@ -1055,6 +1049,38 @@ def normalise_tutor_mode(value: Any) -> str:
     return DEFAULT_TUTOR_MODE
 
 
+def build_strict_course_prompt(base_prompt: str) -> str:
+    return base_prompt + "\n\nGROUNDING POLICY: STRICT COURSE. Use only authorised COURSE CONTEXT."
+
+
+def build_course_plus_general_prompt(base_prompt: str) -> str:
+    return base_prompt + """
+
+GROUNDING POLICY: COURSE PLUS GENERAL KNOWLEDGE (explicitly selected).
+Present the supported course answer first with `[Source N]` citations. If a
+supplement is useful, place it under the exact heading "General knowledge supplement (not from course files)".
+Never attach course citations to that section and never present it as the professor's convention or required method.
+"""
+
+
+def build_general_prompt(base_prompt: str) -> str:
+    return base_prompt + "\n\nGROUNDING POLICY: GENERAL KNOWLEDGE. Do not claim access to course evidence."
+
+
+def build_internet_prompt(base_prompt: str) -> str:
+    return base_prompt + "\n\nGROUNDING POLICY: INTERNET. Cite only actually retrieved web sources."
+
+
+def apply_grounding_policy_prompt(base_prompt: str, grounding_policy: str) -> str:
+    if grounding_policy == "course_plus_general":
+        return build_course_plus_general_prompt(base_prompt)
+    if grounding_policy == "general":
+        return build_general_prompt(base_prompt)
+    if grounding_policy == "internet":
+        return build_internet_prompt(base_prompt)
+    return build_strict_course_prompt(base_prompt)
+
+
 def pick_system_prompt(
     question: str,
     strength: str,
@@ -1275,6 +1301,16 @@ def _context_strength(chunks: list[RetrievedChunk]) -> str:
     """
     if not chunks:
         return "none"
+    # Coverage-first multi-item retrieval assigns score >= 2 only to exact
+    # normalized heading/technical-term matches from the authorised course
+    # inventory. These matches remain strong evidence even when a bilingual or
+    # OCR-split phrase has modest embedding similarity.
+    exact_lexical = [
+        chunk for chunk in chunks
+        if float(getattr(chunk, "score", 0.0) or 0.0) >= 2.0
+    ]
+    if exact_lexical and sum(len(chunk.text) for chunk in exact_lexical) >= 80:
+        return "strong"
     # Exact-match exercise/formula chunks are synthetic, but they can still be
     # the best context we have. If the combined context contains the exercise
     # statement, formula, and givens, let the answerer solve instead of falling
@@ -1309,6 +1345,7 @@ def _build_context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]
         else:
             pages = "no-page"
         header = f"[Source {i}] {file_name}, {pages}"
+        header += f"\nChunk ID: {c.chunk_id}"
         if c.section_title:
             header += f"\nSection: {c.section_title}"
         parts.append(f"{header}\n{c.text}")
@@ -1805,6 +1842,8 @@ def generate_answer(
     user_id: str | None = None,
     course_id: str | None = None,
     active_document_id: str | None = None,
+    grounding_policy: str = "strict_course",
+    request_plan_overlay: str | None = None,
 ) -> dict[str, Any]:
     """Return the structured answer dict the API surface exposes.
 
@@ -1847,6 +1886,8 @@ def generate_answer(
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks))
     system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE
+    if request_plan_overlay:
+        system_prompt += request_plan_overlay
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file the student didn't select.
@@ -1877,6 +1918,7 @@ def generate_answer(
             question=question, user_id=user_id, course_id=course_id,
             active_document_id=active_document_id,
         )
+        system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
         if reference_overlay:
             system_prompt += reference_overlay
             if references:

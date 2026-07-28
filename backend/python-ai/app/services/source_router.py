@@ -15,7 +15,17 @@ from typing import Any
 class SourceMode(str, Enum):
     AUTO = "auto"
     COURSE_FILES = "course_files"
+    COURSE_PLUS_GENERAL = "course_plus_general"
     INTERNET = "internet"
+    GENERAL = "general"
+
+
+class GroundingPolicy(str, Enum):
+    STRICT_COURSE = "strict_course"
+    SELECTED_FILES_ONLY = "selected_files_only"
+    COURSE_PLUS_GENERAL = "course_plus_general"
+    INTERNET = "internet"
+    GENERAL = "general"
 
 
 class SourceScope(str, Enum):
@@ -42,6 +52,8 @@ class SourceDecision:
     web_search_used: bool = False
     sanitized_web_query: str | None = None
     needs_clarification_message: str | None = None
+    grounding_policy: GroundingPolicy = GroundingPolicy.STRICT_COURSE
+    evidence_report: dict[str, Any] | None = None
 
     def metadata(self, *, include_debug: bool = False, cache_hit: bool | None = None) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -49,6 +61,7 @@ class SourceDecision:
             "sourceScope": self.source_scope.value,
             "courseFileScope": self.course_file_scope.value,
             "sourceLabel": self.source_label,
+            "groundingPolicy": self.grounding_policy.value,
         }
         if include_debug:
             out["sourceDebug"] = {
@@ -59,6 +72,8 @@ class SourceDecision:
                 "relevanceScore": self.relevance_score,
                 "webSearchUsed": self.web_search_used,
                 "cacheHit": cache_hit,
+                "groundingPolicy": self.grounding_policy.value,
+                "evidenceReport": self.evidence_report,
             }
         return out
 
@@ -78,6 +93,11 @@ _INTERNET_SIGNAL_RE = re.compile(
     r"official website|online sources?|find sources online|202[5-9]|"
     r"youtube|website|webseite|wikipedia|google"
     r")\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_WEB_REQUEST_RE = re.compile(
+    r"\b(?:search|find|look up|browse|check)\b[\s\S]{0,30}\b(?:internet|web|online|website|google|wikipedia|youtube)\b"
+    r"|\b(?:according to|from)\b[\s\S]{0,20}\b(?:the internet|the web|online sources?)\b",
     re.IGNORECASE,
 )
 # A pasted link is the strongest possible internet signal: the answer cannot
@@ -138,6 +158,32 @@ def source_label(scope: SourceScope) -> str:
     return ""
 
 
+def resolve_grounding_policy(
+    *,
+    source_mode: str | None,
+    course_file_scope: str | None,
+    course_id: str | None,
+) -> GroundingPolicy:
+    """Resolve the factual-source contract independently of UI wording."""
+    mode = normalise_source_mode(source_mode)
+    scope = normalise_course_file_scope(course_file_scope)
+    if mode == SourceMode.INTERNET:
+        return GroundingPolicy.INTERNET
+    if mode == SourceMode.GENERAL:
+        return GroundingPolicy.GENERAL
+    if mode == SourceMode.COURSE_PLUS_GENERAL:
+        return GroundingPolicy.COURSE_PLUS_GENERAL
+    if course_id or mode in {SourceMode.AUTO, SourceMode.COURSE_FILES}:
+        if scope == CourseFileScope.SPECIFIC_FILES:
+            return GroundingPolicy.SELECTED_FILES_ONLY
+        return GroundingPolicy.STRICT_COURSE
+    return GroundingPolicy.GENERAL
+
+
+def policy_allows_general_knowledge(policy: GroundingPolicy) -> bool:
+    return policy in {GroundingPolicy.COURSE_PLUS_GENERAL, GroundingPolicy.GENERAL}
+
+
 def effective_document_ids(
     *,
     document_ids: list[str] | None,
@@ -168,9 +214,13 @@ def classify_source_scope(
     retrieved_chunks: list[Any] | None = None,
     inside_pdf_side_rail: bool = False,
 ) -> SourceDecision:
-    del selected_course_id
     mode = normalise_source_mode(source_mode)
     file_scope = normalise_course_file_scope(course_file_scope)
+    policy = resolve_grounding_policy(
+        source_mode=source_mode,
+        course_file_scope=course_file_scope,
+        course_id=selected_course_id,
+    )
     used_ids = effective_document_ids(
         document_ids=document_ids,
         active_document_id=active_document_id,
@@ -187,8 +237,9 @@ def classify_source_scope(
                 needs_clarification_message=(
                     "Which file should I use? Please select a PDF or switch to All course files."
                 ),
+                grounding_policy=policy,
             )
-        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [])
+        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
 
     if mode == SourceMode.INTERNET:
         return SourceDecision(
@@ -198,7 +249,14 @@ def classify_source_scope(
             source_label(SourceScope.INTERNET),
             used_ids or [],
             sanitized_web_query=sanitize_web_query(question),
+            grounding_policy=policy,
         )
+
+    if policy == GroundingPolicy.GENERAL:
+        return SourceDecision(mode, SourceScope.GENERAL_KNOWLEDGE, file_scope, source_label(SourceScope.GENERAL_KNOWLEDGE), grounding_policy=policy)
+
+    if policy == GroundingPolicy.COURSE_PLUS_GENERAL:
+        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
 
     q = question or ""
     has_context = bool((selected_text or "").strip() or (open_file_context or "").strip())
@@ -214,14 +272,15 @@ def classify_source_scope(
             source_label(SourceScope.INTERNET),
             used_ids or [],
             sanitized_web_query=sanitize_web_query(q),
+            grounding_policy=GroundingPolicy.INTERNET,
         )
     # An explicitly selected/active file is a deliberate "use this" signal, so
     # it outranks internet keywords that may just be part of a question *about*
     # that file (e.g. "explain the current method in this PDF" — "current"
     # shouldn't yank the answer to web search).
     if has_specific_file:
-        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [])
-    if _INTERNET_SIGNAL_RE.search(q):
+        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
+    if _INTERNET_SIGNAL_RE.search(q) and _EXPLICIT_WEB_REQUEST_RE.search(q):
         return SourceDecision(
             mode,
             SourceScope.INTERNET,
@@ -229,6 +288,7 @@ def classify_source_scope(
             source_label(SourceScope.INTERNET),
             used_ids or [],
             sanitized_web_query=sanitize_web_query(q),
+            grounding_policy=GroundingPolicy.INTERNET,
         )
     if has_context or inside_pdf_side_rail or _COURSE_SIGNAL_RE.search(q):
         if file_scope == CourseFileScope.SPECIFIC_FILES and not has_specific_file and not has_context:
@@ -240,8 +300,9 @@ def classify_source_scope(
                 needs_clarification_message=(
                     "Which file should I use? Please select a PDF or switch to All course files."
                 ),
+                grounding_policy=policy,
             )
-        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [])
+        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
 
     if retrieved_chunks:
         rel = course_relevance_score(q, retrieved_chunks)
@@ -253,6 +314,7 @@ def classify_source_scope(
                 source_label(SourceScope.COURSE_FILES),
                 used_ids or [],
                 relevance_score=rel,
+                grounding_policy=policy,
             )
 
     # Auto mode, no explicit internet / file / context / keyword signal. Default
@@ -263,7 +325,7 @@ def classify_source_scope(
     # obvious course keyword (e.g. "what is urformen?") never consulted the
     # user's files at all. (No-course chats don't reach here — the frontend
     # routes those to the generic chat path instead of /ask-stream.)
-    return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [])
+    return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
 
 
 def sanitize_web_query(question: str, selected_text: str | None = None) -> str:
@@ -299,8 +361,14 @@ def course_relevance_score(question: str, chunks: list[Any] | None) -> float:
 
 def course_not_found_answer() -> str:
     return (
-        "I could not find this topic in your uploaded course files. "
-        "You can switch to Internet mode if you want a general or current answer."
+        "I could not find enough authorised evidence for this topic in the selected course files.\n\n"
+        "Still missing:\n"
+        "- the professor's definition or convention;\n"
+        "- the applicable formula;\n"
+        "- the worked solution;\n"
+        "- the relevant diagram or table.\n\n"
+        "I cannot give the remaining course-specific answer reliably without that material. "
+        "Select another course file, upload the relevant lecture, or open the formula sheet."
     )
 
 
@@ -319,6 +387,7 @@ __all__ = (
     "AUTO_ROUTE_RELEVANCE_THRESHOLD",
     "COURSE_ANCHOR_RELEVANCE_THRESHOLD",
     "CourseFileScope",
+    "GroundingPolicy",
     "SourceDecision",
     "SourceMode",
     "SourceScope",
@@ -329,6 +398,8 @@ __all__ = (
     "effective_document_ids",
     "normalise_course_file_scope",
     "normalise_source_mode",
+    "policy_allows_general_knowledge",
+    "resolve_grounding_policy",
     "sanitize_web_query",
     "side_rail_unrelated_answer",
     "source_label",

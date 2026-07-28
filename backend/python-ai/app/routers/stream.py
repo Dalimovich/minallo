@@ -45,6 +45,15 @@ from ..services.answer_intent import (
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
+from ..services.multi_item_retrieval import (
+    answer_plan_overlay,
+    retrieve_multi_item_course_evidence,
+)
+from ..services.course_grounding import (
+    assert_authorised_course_chunks,
+    build_course_evidence_report,
+    rank_course_chunks,
+)
 from ..services.retrieval import (
     find_numbered_section_reference,
     retrieve_chunks,
@@ -72,6 +81,7 @@ from ..services.source_router import (
     course_not_found_answer,
     course_relevance_score,
     effective_document_ids,
+    policy_allows_general_knowledge,
 )
 from ..services.web_answer import generate_web_answer
 from ..services.usage_meter import record_usage
@@ -2760,7 +2770,7 @@ async def _prepare_ask_stream_response(
         ),
         "response_language": language_context.requested_response_language,
         "viewer_revision": payload.viewerRevision,
-        "grounding_mode": "strict-course-files",
+        "grounding_mode": source_decision.grounding_policy.value,
         "conversation_generation": payload.conversationGeneration,
         "model_version": (
             f"{get_settings().openai_generate_model}|"
@@ -4055,6 +4065,16 @@ async def _prepare_ask_stream_response(
             chunkCount=len(chunks),
         )
 
+    multi_item_result = await run_in_threadpool(lambda: retrieve_multi_item_course_evidence(
+        user_id=user_id,
+        course_id=payload.courseId,
+        question=question,
+        document_ids=retrieval_document_ids,
+        active_document_id=payload.activeDocumentId,
+        initial_chunks=chunks,
+    ))
+    chunks = multi_item_result.chunks
+
     retrieved_doc_ids = list(dict.fromkeys(
         c.document_id for c in chunks
         if c.document_id and not c.document_id.startswith("__")
@@ -4069,6 +4089,7 @@ async def _prepare_ask_stream_response(
             )
         )
         doc_name_map.update(verified_retrieved_names)
+    assert_authorised_course_chunks(chunks, set(retrieved_doc_ids))
 
     missing_ids = [c.document_id for c in chunks if c.document_id not in doc_name_map]
     if missing_ids:
@@ -4086,6 +4107,19 @@ async def _prepare_ask_stream_response(
                 doc_name_map[row["id"]] = row["file_name"]
         except Exception:
             log.exception("doc_name backfill failed")
+
+    chunks = rank_course_chunks(chunks, doc_name_map, question)
+    evidence_report = build_course_evidence_report(
+        course_id=payload.courseId,
+        searched_document_ids=retrieval_document_ids or retrieved_doc_ids,
+        chunks=chunks,
+        doc_names=doc_name_map,
+        question=question,
+    )
+    evidence_payload = evidence_report.to_dict()
+    if multi_item_result.evidence:
+        evidence_payload["multiItem"] = multi_item_result.to_dict()
+    source_decision = replace(source_decision, evidence_report=evidence_payload)
 
     relevance_score = course_relevance_score(question, chunks)
     # Selection→retrieval diagnostic: shows whether the client's file selection
@@ -4128,7 +4162,7 @@ async def _prepare_ask_stream_response(
     if app_or_workspace or not dialogue.requires_new_retrieval:
         has_strong_course_anchor = True
     if not has_strong_course_anchor:
-        if source_decision.selected_source_mode.value == "course_files":
+        if not policy_allows_general_knowledge(source_decision.grounding_policy):
             return _stream_static_answer(
                 text=course_not_found_answer(),
                 decision=source_decision,
@@ -4313,6 +4347,8 @@ async def _prepare_ask_stream_response(
             visible_page=payload.visiblePage,
             request_id=request_id,
             response_language=language_context.requested_response_language,
+            grounding_policy=source_decision.grounding_policy.value,
+            request_plan_overlay=answer_plan_overlay(multi_item_result),
             dialogue_overlay=(
                 dialogue.prompt_overlay()
                 + state_overlay
@@ -5039,6 +5075,7 @@ async def _prepare_ask_stream_response(
                         "sourceScope": captured_meta.get("sourceScope"),
                         "courseFileScope": captured_meta.get("courseFileScope"),
                         "sourceLabel": captured_meta.get("sourceLabel"),
+                        "groundingPolicy": captured_meta.get("groundingPolicy"),
                         "sourceDebug": captured_meta.get("sourceDebug") if _source_debug_enabled() else None,
                     },
                     # Same key args as the lookup — symmetry is mandatory or the

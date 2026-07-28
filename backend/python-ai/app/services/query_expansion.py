@@ -104,6 +104,26 @@ _TECHNICAL_CONCEPTS: tuple[tuple[str, ...], ...] = (
     ("flächenträgheitsmoment", "flaechentraegheitsmoment", "second moment of area"),
     ("parallelachsen-satz", "parallelachsensatz", "steinerscher satz", "parallel-axis theorem"),
     ("randbedingung", "boundary condition"),
+    (
+        "main groups of forming processes", "hauptgruppen der umformverfahren",
+        "einteilung der umformverfahren", "massivumformen", "blechumformen",
+        "inkrementelles umformen",
+    ),
+    (
+        "din 8582", "stress-state classification", "spannungszustand",
+        "druckumformen", "zugdruckumformen", "zugumformen", "biegeumformen",
+        "schubumformen",
+    ),
+    (
+        "gesenkschmieden", "die forging", "arten des gesenkschmiedens",
+        "gesenkschmieden mit grat", "gesenkschmieden ohne grat",
+        "präzisionsschmieden",
+    ),
+    (
+        "verzahnungswalzen", "gear rolling", "vorteile verzahnungswalzen",
+        "eigenschaften gewalzter verzahnungen", "kaltverfestigung",
+        "faserverlauf", "oberflächengüte",
+    ),
 )
 
 

@@ -21,6 +21,15 @@ from ..services.answer import DEFAULT_TUTOR_MODE, generate_answer, is_app_questi
 from ..services.answer_intent import chitchat_answer, is_non_academic_chitchat
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.general_answer import generate_general_answer
+from ..services.multi_item_retrieval import (
+    answer_plan_overlay,
+    retrieve_multi_item_course_evidence,
+)
+from ..services.course_grounding import (
+    assert_authorised_course_chunks,
+    build_course_evidence_report,
+    rank_course_chunks,
+)
 from ..services.retrieval import (
     ExerciseHit,
     FormulaHit,
@@ -42,6 +51,7 @@ from ..services.source_router import (
     course_not_found_answer,
     course_relevance_score,
     effective_document_ids,
+    policy_allows_general_knowledge,
 )
 from ..services.web_answer import generate_web_answer
 from ..supabase_client import get_supabase
@@ -291,6 +301,7 @@ class AskResponse(BaseModel):
     courseFileScope: str | None = None
     sourceLabel: str | None = None
     sourceDebug: dict[str, Any] | None = None
+    groundingPolicy: str | None = None
 
 
 def _source_debug_enabled() -> bool:
@@ -401,6 +412,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=answer.get("courseFileScope"),
             sourceLabel=answer.get("sourceLabel"),
             sourceDebug=answer.get("sourceDebug"),
+            groundingPolicy=answer.get("groundingPolicy"),
         )
 
     if is_app_question(question):
@@ -442,6 +454,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=answer.get("courseFileScope"),
             sourceLabel=answer.get("sourceLabel"),
             sourceDebug=answer.get("sourceDebug"),
+            groundingPolicy=answer.get("groundingPolicy"),
         )
 
     if source_decision.source_scope == SourceScope.NEEDS_CLARIFICATION:
@@ -464,6 +477,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=answer.get("courseFileScope"),
             sourceLabel=answer.get("sourceLabel"),
             sourceDebug=answer.get("sourceDebug"),
+            groundingPolicy=answer.get("groundingPolicy"),
         )
 
     if source_decision.source_scope == SourceScope.INTERNET:
@@ -490,6 +504,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=answer.get("courseFileScope"),
             sourceLabel=answer.get("sourceLabel"),
             sourceDebug=answer.get("sourceDebug"),
+            groundingPolicy=answer.get("groundingPolicy"),
         )
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE:
@@ -512,6 +527,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=answer.get("courseFileScope"),
             sourceLabel=answer.get("sourceLabel"),
             sourceDebug=answer.get("sourceDebug"),
+            groundingPolicy=answer.get("groundingPolicy"),
         )
 
     # ── 1. Cache lookup ──────────────────────────────────────────────────────
@@ -550,6 +566,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         "source_scope": source_decision.source_scope.value,
         "course_file_scope": source_decision.course_file_scope.value,
         "selected_document_ids": retrieval_document_ids,
+        "grounding_mode": source_decision.grounding_policy.value,
     }
     if not payload.bypassCache and cacheable:
         version_hash = fetch_course_version_hash(payload.userId, payload.courseId)
@@ -592,6 +609,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=cached.get("courseFileScope"),
             sourceLabel=cached.get("sourceLabel"),
             sourceDebug=cached.get("sourceDebug") if _source_debug_enabled() else None,
+            groundingPolicy=cached.get("groundingPolicy"),
         )
 
     # ── 2. Retrieve ──────────────────────────────────────────────────────────
@@ -650,6 +668,16 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     if formula_hits:
         chunks = _prepend_formula_chunks(formula_hits, chunks)
 
+    multi_item_result = retrieve_multi_item_course_evidence(
+        user_id=payload.userId,
+        course_id=payload.courseId,
+        question=question,
+        document_ids=retrieval_document_ids,
+        active_document_id=payload.activeDocumentId,
+        initial_chunks=chunks,
+    )
+    chunks = multi_item_result.chunks
+
     if open_file_context:
         open_doc_id = "__open_file_context__"
         doc_name_map[open_doc_id] = payload.activeFileName or "Open PDF"
@@ -665,6 +693,28 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             section_title="Open PDF (visible page)",
             is_synthetic=False,
         ))
+
+    retrieved_document_ids = list(dict.fromkeys(
+        chunk.document_id for chunk in chunks
+        if chunk.document_id and not chunk.document_id.startswith("__")
+    ))
+    if retrieved_document_ids:
+        doc_name_map.update(_verify_user_owns_documents(
+            payload.userId, payload.courseId, retrieved_document_ids,
+        ))
+    assert_authorised_course_chunks(chunks, set(retrieved_document_ids))
+    chunks = rank_course_chunks(chunks, doc_name_map, question)
+    evidence_report = build_course_evidence_report(
+        course_id=payload.courseId,
+        searched_document_ids=retrieval_document_ids or retrieved_document_ids,
+        chunks=chunks,
+        doc_names=doc_name_map,
+        question=question,
+    )
+    evidence_payload = evidence_report.to_dict()
+    if multi_item_result.evidence:
+        evidence_payload["multiItem"] = multi_item_result.to_dict()
+    source_decision = replace(source_decision, evidence_report=evidence_payload)
 
     # Backfill doc_name_map for any chunk pointing at a doc we didn't ask
     # about explicitly (e.g. when documentIds is None and we let retrieval
@@ -699,7 +749,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         or ((explicit_course_files or explicit_selection) and chunks)
     )
     if not has_strong_course_anchor:
-        if source_decision.selected_source_mode.value == "course_files":
+        if not policy_allows_general_knowledge(source_decision.grounding_policy):
             answer = _simple_source_answer(course_not_found_answer(), source_decision)
         else:
             general_decision = replace(
@@ -728,6 +778,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             courseFileScope=answer.get("courseFileScope"),
             sourceLabel=answer.get("sourceLabel"),
             sourceDebug=answer.get("sourceDebug"),
+            groundingPolicy=answer.get("groundingPolicy"),
         )
 
     # ── 3. Generate ──────────────────────────────────────────────────────────
@@ -750,6 +801,8 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             user_id=payload.userId,
             course_id=payload.courseId,
             active_document_id=payload.activeDocumentId,
+            grounding_policy=source_decision.grounding_policy.value,
+            request_plan_overlay=answer_plan_overlay(multi_item_result),
         )
         answer = _with_source_meta(answer, source_decision)
     except Exception as e:  # noqa: BLE001
@@ -839,4 +892,5 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         courseFileScope=answer.get("courseFileScope"),
         sourceLabel=answer.get("sourceLabel"),
         sourceDebug=answer.get("sourceDebug"),
+        groundingPolicy=answer.get("groundingPolicy"),
     )

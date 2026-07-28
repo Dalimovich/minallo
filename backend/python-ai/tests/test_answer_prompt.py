@@ -79,7 +79,8 @@ def test_none_retrieval_uses_weak_prompt() -> None:
     prompt, mode = pick_system_prompt("Aufgabe 1.2", "none")
     assert prompt.startswith(_SYSTEM_PROMPT_WEAK)
     assert mode == "weak"
-    assert "General explanation (not from your course files)" in prompt
+    assert "Do not add a generic explanation afterward" in prompt
+    assert "General explanation (not from your course files)" not in prompt
     assert "reply 'general'" not in prompt
 
 
@@ -263,12 +264,11 @@ def test_math_prompt_requires_piecewise_kinematics_continuity() -> None:
     assert "second vertical segment must start with the velocity gained" in body
 
 
-def test_math_prompt_allows_complete_kinematics_general_formula_fallback() -> None:
+def test_math_prompt_has_no_kinematics_general_formula_exception() -> None:
     body = _SYSTEM_PROMPT_MATH.lower()
-    assert "complete elementary kinematics" in body
-    assert "standard constant-acceleration equations" in body
-    assert "continue through substitution, calculation, unit check, and final answer" in body
-    assert "do not use \"missing context\" for a complete elementary constant-acceleration problem" in body
+    assert "complete elementary kinematics" not in body
+    assert "general physics, not found in the retrieved course chunks" not in body
+    assert "there are no subject-matter exceptions" in body
 
 
 def test_math_prompt_documents_interactive_missing_input() -> None:

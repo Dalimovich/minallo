@@ -421,6 +421,20 @@ def verify_answer(
     details["invalidSourceIndices"] = invalid_source_indices
     if invalid_source_indices:
         reasons.append("citation references a source index outside the supplied evidence")
+    claim_source_map: list[dict[str, object]] = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        claim = paragraph.strip()
+        if not claim or claim.startswith("#") or claim.startswith("```"):
+            continue
+        indices = [int(match.group(1)) for match in _SOURCE_INDEX_RE.finditer(claim)]
+        if indices:
+            claim_source_map.append({"claim": claim[:240], "supportingChunkIndices": indices})
+    details["claimSourceMap"] = claim_source_map
+    details["allClaimSourcesAuthorised"] = all(
+        0 <= index <= len(chunk_texts)
+        for item in claim_source_map
+        for index in item["supportingChunkIndices"]
+    )
 
     fake_solution_phrases = [m.group(0) for m in _FAKE_SOLUTION_RE.finditer(text)]
     details["fakeSolutionPhrases"] = fake_solution_phrases

@@ -25,7 +25,7 @@ from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
-_ANSWER_CACHE_SCHEMA = "answer-v10-verified-pairing-provenance"
+_ANSWER_CACHE_SCHEMA = "answer-v11-multi-item-course-coverage"
 _PROMPT_VERSION = "tutor-dialogue-v3"
 _VALIDATOR_VERSION = "numerical-validator-v3"
 _SOURCE_PRIORITY_POLICY_VERSION = "active-question-first-v2"
@@ -167,7 +167,7 @@ def question_hash(
 # ("### Course material found" + "I will use these uploaded course sources…")
 # baked into the body; answers now open with the substance and sources ride
 # the metadata only.
-_CACHE_SCHEMA_VERSION = "v13-2026-07-28-safe-answer-pairing"
+_CACHE_SCHEMA_VERSION = "v14-2026-07-28-multi-item-course-coverage"
 
 
 def document_version_hash(document_hashes: list[str | None]) -> str:

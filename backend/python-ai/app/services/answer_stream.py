@@ -59,6 +59,7 @@ from .answer import (
     is_app_question,
     normalise_tutor_mode,
     pick_system_prompt,
+    apply_grounding_policy_prompt,
 )
 from .document_context import understanding_block_for_ids
 from .retrieval import RetrievedChunk
@@ -1486,6 +1487,8 @@ def stream_answer(
     request_id: str | None = None,
     response_language: str | None = None,
     dialogue_overlay: str | None = None,
+    grounding_policy: str = "strict_course",
+    request_plan_overlay: str | None = None,
 ) -> Generator[bytes, None, None]:
     """Generator that yields SSE byte chunks. Pluggable into FastAPI's
     StreamingResponse with media_type='text/event-stream'.
@@ -1693,6 +1696,8 @@ def stream_answer(
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks or (has_open and deictic)))
     system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE
+    if request_plan_overlay:
+        system_prompt += request_plan_overlay
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file (e.g. a chapter the student didn't select).
@@ -1729,6 +1734,7 @@ def stream_answer(
             question=question, user_id=user_id, course_id=course_id,
             active_document_id=active_document_id,
         )
+        system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
         if reference_overlay:
             system_prompt += reference_overlay
             if references:
