@@ -5162,10 +5162,6 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-file-retry { padding: 5px 7px; border: 1px solid rgba(248,113,113,.32); border-radius: 7px; background: rgba(127,29,29,.2); color: #fca5a5; font: 650 .67rem/1.2 var(--font-main, sans-serif); cursor: pointer; }
 .ncb-file-retry:disabled { cursor: wait; opacity: .65; }
 
-@media (max-width: 420px) {
-  .ncb-file-doctype .doc-type-review.is-editing { flex-wrap: wrap; }
-}
-
 .ncb-file-row--pending { border-color: rgba(96, 165, 250, 0.28); }
 .ncb-file-row--pending .ncb-file-row-main { cursor: default; }
 .ncb-index-state {
