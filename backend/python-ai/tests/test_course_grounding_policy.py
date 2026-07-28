@@ -34,13 +34,13 @@ class Chunk:
     chunk_type: str = "paragraph"
 
 
-def test_auto_in_active_course_is_strict_and_never_general() -> None:
+def test_auto_in_active_course_is_course_first() -> None:
     decision = classify_source_scope(
         question="Explain the professor's convention",
         source_mode="auto",
         selected_course_id="course-a",
     )
-    assert decision.grounding_policy == GroundingPolicy.STRICT_COURSE
+    assert decision.grounding_policy == GroundingPolicy.COURSE_FIRST
     assert decision.source_scope == SourceScope.COURSE_FILES
 
 
@@ -50,7 +50,7 @@ def test_current_academic_question_does_not_silently_become_internet() -> None:
         source_mode="auto",
         selected_course_id="course-a",
     )
-    assert decision.grounding_policy == GroundingPolicy.STRICT_COURSE
+    assert decision.grounding_policy == GroundingPolicy.COURSE_FIRST
     assert decision.source_scope == SourceScope.COURSE_FILES
 
 
@@ -98,7 +98,7 @@ def test_all_course_files_keeps_open_pdf_as_hint_not_filter() -> None:
 def test_general_supplement_requires_explicit_policy() -> None:
     strict = classify_source_scope(question="Define X", source_mode="auto", selected_course_id="course-a")
     mixed = classify_source_scope(question="Define X", source_mode="course_plus_general", selected_course_id="course-a")
-    assert strict.grounding_policy == GroundingPolicy.STRICT_COURSE
+    assert strict.grounding_policy == GroundingPolicy.COURSE_FIRST
     assert mixed.grounding_policy == GroundingPolicy.COURSE_PLUS_GENERAL
 
 

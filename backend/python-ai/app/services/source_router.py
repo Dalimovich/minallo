@@ -21,6 +21,7 @@ class SourceMode(str, Enum):
 
 
 class GroundingPolicy(str, Enum):
+    COURSE_FIRST = "course_first"
     STRICT_COURSE = "strict_course"
     SELECTED_FILES_ONLY = "selected_files_only"
     COURSE_PLUS_GENERAL = "course_plus_general"
@@ -52,7 +53,7 @@ class SourceDecision:
     web_search_used: bool = False
     sanitized_web_query: str | None = None
     needs_clarification_message: str | None = None
-    grounding_policy: GroundingPolicy = GroundingPolicy.STRICT_COURSE
+    grounding_policy: GroundingPolicy = GroundingPolicy.COURSE_FIRST
     evidence_report: dict[str, Any] | None = None
 
     def metadata(self, *, include_debug: bool = False, cache_hit: bool | None = None) -> dict[str, Any]:
@@ -173,15 +174,23 @@ def resolve_grounding_policy(
         return GroundingPolicy.GENERAL
     if mode == SourceMode.COURSE_PLUS_GENERAL:
         return GroundingPolicy.COURSE_PLUS_GENERAL
-    if course_id or mode in {SourceMode.AUTO, SourceMode.COURSE_FILES}:
+    if mode == SourceMode.COURSE_FILES:
         if scope == CourseFileScope.SPECIFIC_FILES:
             return GroundingPolicy.SELECTED_FILES_ONLY
         return GroundingPolicy.STRICT_COURSE
+    if course_id or mode == SourceMode.AUTO:
+        if scope == CourseFileScope.SPECIFIC_FILES:
+            return GroundingPolicy.SELECTED_FILES_ONLY
+        return GroundingPolicy.COURSE_FIRST
     return GroundingPolicy.GENERAL
 
 
 def policy_allows_general_knowledge(policy: GroundingPolicy) -> bool:
-    return policy in {GroundingPolicy.COURSE_PLUS_GENERAL, GroundingPolicy.GENERAL}
+    return policy in {
+        GroundingPolicy.COURSE_FIRST,
+        GroundingPolicy.COURSE_PLUS_GENERAL,
+        GroundingPolicy.GENERAL,
+    }
 
 
 def effective_document_ids(

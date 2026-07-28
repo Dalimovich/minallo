@@ -1734,12 +1734,12 @@ def stream_answer(
             question=question, user_id=user_id, course_id=course_id,
             active_document_id=active_document_id,
         )
-        system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
         if reference_overlay:
             system_prompt += reference_overlay
             if references:
                 exam_style = "authentic-reference"
         log.info("exam style resolved: %s", exam_style)
+    system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
     # An exercise/figure page bitmap will be attached below whenever retrieval
     # surfaced a figure-bearing chunk on a math/exercise question — even if the
     # rigid math worksheet template wasn't picked (e.g. the formula sheet wasn't

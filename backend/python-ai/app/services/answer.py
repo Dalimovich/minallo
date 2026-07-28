@@ -1063,6 +1063,20 @@ Never attach course citations to that section and never present it as the profes
 """
 
 
+def build_course_first_prompt(base_prompt: str) -> str:
+    return base_prompt + """
+
+GROUNDING POLICY: COURSE FIRST WITH TRANSPARENT FALLBACK.
+Search and prefer authorised COURSE CONTEXT for every requested item. For any
+item that the course context does not fully support, still give the most useful
+answer from stable general academic knowledge. Label that section exactly
+"Source basis: General knowledge" or "Source basis: Course files + general
+knowledge". Never attach `[Source N]` citations to fallback claims, never call
+fallback knowledge the professor's wording, and mention briefly that course
+terminology may differ. Every requested item must receive its own answer.
+"""
+
+
 def build_general_prompt(base_prompt: str) -> str:
     return base_prompt + "\n\nGROUNDING POLICY: GENERAL KNOWLEDGE. Do not claim access to course evidence."
 
@@ -1072,6 +1086,8 @@ def build_internet_prompt(base_prompt: str) -> str:
 
 
 def apply_grounding_policy_prompt(base_prompt: str, grounding_policy: str) -> str:
+    if grounding_policy == "course_first":
+        return build_course_first_prompt(base_prompt)
     if grounding_policy == "course_plus_general":
         return build_course_plus_general_prompt(base_prompt)
     if grounding_policy == "general":
@@ -1918,11 +1934,11 @@ def generate_answer(
             question=question, user_id=user_id, course_id=course_id,
             active_document_id=active_document_id,
         )
-        system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
         if reference_overlay:
             system_prompt += reference_overlay
             if references:
                 exam_style = "authentic-reference"
+    system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
     # Route by answer mode: math/exercise questions hit the strong model,
     # everything else stays on the cheaper mini model. Math reasoning is
     # where mini gets variable distinctions wrong (d vs d_3) and silently

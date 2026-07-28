@@ -25,6 +25,14 @@ class EvidenceStatus(StrEnum):
     CONFLICTING = "conflicting_evidence"
 
 
+class IndexHealthStatus(StrEnum):
+    HEALTHY = "healthy"
+    INCOMPLETE = "incomplete"
+    STALE = "stale"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class RequestedItem:
     id: str
@@ -53,6 +61,7 @@ class RequestedItemEvidence:
     status: EvidenceStatus = EvidenceStatus.NOT_FOUND
     missing_requirements: list[str] = field(default_factory=list)
     error_code: str | None = None
+    index_health: IndexHealthStatus = IndexHealthStatus.UNKNOWN
 
 
 @dataclass
@@ -258,12 +267,14 @@ def _load_course_inventory(
         if not active_revisions.get(str(row.get("document_id")))
         or str(row.get("index_revision") or "") == active_revisions[str(row.get("document_id"))]
     ]
-    page_count = sum(int(row.get("page_count") or 0) for row in documents)
-    indexed_pages = {(row.get("document_id"), row.get("page_start")) for row in rows if row.get("page_start")}
-    index_gap = bool(
-        any(str(row.get("processing_status") or "") != "ready" for row in documents)
-        or (page_count and len(indexed_pages) < page_count)
-    )
+    # Empty/textless PDF pages are valid and need not produce chunks. A mere
+    # difference between PDF page_count and chunk-bearing pages therefore does
+    # not prove an index defect. Only positive document/index state does.
+    index_gap = bool(any(
+        str(row.get("processing_status") or "") != "ready"
+        or not str(row.get("active_index_revision") or "").strip()
+        for row in documents
+    ))
     return authorized_ids, rows, index_gap
 
 
@@ -332,6 +343,10 @@ def retrieve_multi_item_course_evidence(
             status=status,
             missing_requirements=[] if status is EvidenceStatus.SUPPORTED else [item.expected_answer_shape],
             error_code=error_code,
+            index_health=(
+                IndexHealthStatus.INCOMPLETE if index_gap
+                else IndexHealthStatus.HEALTHY
+            ),
         ))
     ordered: list[RetrievedChunk] = []
     for item_evidence in evidence:
@@ -355,22 +370,27 @@ def answer_plan_overlay(result: MultiItemRetrievalResult) -> str:
         "\n\nMULTI-ITEM ANSWER CONTRACT:",
         "Answer each requested item in this exact order. Cite only that item's supporting chunks.",
         "Do not let an unresolved item suppress supported items.",
+        f"Produce exactly {len(result.manifest.requested_items)} numbered sections, one for every item.",
+        "Use each original question verbatim as its section heading.",
+        "Never print internal enum names or diagnostic labels in the student answer.",
     ]
     by_id = {item.id: item for item in result.manifest.requested_items}
     for evidence in result.evidence:
         item = by_id[evidence.item_id]
         lines.append(
             f"- {item.id}: {item.original_text} | shape={item.expected_answer_shape} | "
-            f"status={evidence.status.value} | chunks={','.join(evidence.supporting_chunk_ids) or 'none'}"
+            f"evidence={evidence.status.value} | chunks={','.join(evidence.supporting_chunk_ids) or 'none'}"
         )
     lines.append(
-        "When status is index_gap or retrieval_failed, say that precisely; never ask to upload an already indexed file."
+        "For an unresolved item, provide transparent fallback knowledge when the grounding policy allows it; "
+        "otherwise use a natural unresolved notice. Never ask to upload an already indexed file. "
+        "End every section with a natural 'Source basis:' label, and never cite a course chunk for fallback claims."
     )
     return "\n".join(lines)
 
 
 __all__ = [
-    "EvidenceStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
+    "EvidenceStatus", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
     "RequestedItemEvidence", "analyse_request", "answer_plan_overlay",
     "controlled_course_terms", "is_multi_item_request", "retrieve_multi_item_course_evidence",
 ]

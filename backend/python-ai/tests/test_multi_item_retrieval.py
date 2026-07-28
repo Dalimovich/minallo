@@ -154,3 +154,17 @@ def test_stream_and_non_stream_use_the_same_multi_item_orchestrator():
         source = (app_root / router_name).read_text(encoding="utf-8")
         assert "retrieve_multi_item_course_evidence(" in source
         assert "answer_plan_overlay(multi_item_result)" in source
+
+
+def test_answer_contract_preserves_all_questions_and_hides_internal_statuses():
+    result = retrieve_multi_item_course_evidence(
+        user_id="u", course_id="c", question=REQUEST,
+        inventory_loader=lambda **_: (["forming"], ROWS[:2], False),
+        semantic_retriever=no_semantic,
+    )
+    overlay = answer_plan_overlay(result)
+    assert "Produce exactly 4 numbered sections" in overlay
+    assert all(item.original_text in overlay for item in result.manifest.requested_items)
+    assert "Status:" not in overlay
+    assert "status=" not in overlay
+    assert "Source basis:" in overlay
