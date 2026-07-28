@@ -187,7 +187,7 @@ def fetch_document_version_hash(user_id: str, course_id: str, document_ids: list
     try:
         resp = (
             sb.table("documents")
-            .select("id, document_hash")
+            .select("id, document_hash, user_document_type_override, updated_at")
             .eq("user_id", user_id)
             .eq("course_id", course_id)
             .in_("id", document_ids)
@@ -196,7 +196,10 @@ def fetch_document_version_hash(user_id: str, course_id: str, document_ids: list
     except Exception:
         log.exception("fetch document_hashes failed")
         return ""
-    hashes = [row.get("document_hash") for row in (resp.data or [])]
+    hashes = [
+        f"{row.get('document_hash') or ''}:{row.get('user_document_type_override') or ''}:{row.get('updated_at') or ''}"
+        for row in (resp.data or [])
+    ]
     return document_version_hash(hashes)
 
 
@@ -212,7 +215,7 @@ def fetch_course_version_hash(user_id: str, course_id: str) -> str:
     try:
         resp = (
             sb.table("documents")
-            .select("document_hash")
+            .select("document_hash,user_document_type_override,updated_at")
             .eq("user_id", user_id)
             .eq("course_id", course_id)
             .execute()
@@ -220,9 +223,13 @@ def fetch_course_version_hash(user_id: str, course_id: str) -> str:
     except Exception:
         log.exception("fetch course document_hashes failed")
         return ""
-    hashes = [row.get("document_hash") for row in (resp.data or [])]
-    if not any(hashes):
+    rows = list(resp.data or [])
+    if not any(row.get("document_hash") for row in rows):
         return ""
+    hashes = [
+        f"{row.get('document_hash') or ''}:{row.get('user_document_type_override') or ''}:{row.get('updated_at') or ''}"
+        for row in rows
+    ]
     return document_version_hash(hashes)
 
 

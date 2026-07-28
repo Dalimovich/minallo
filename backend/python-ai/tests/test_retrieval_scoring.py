@@ -39,6 +39,17 @@ def test_study_score_boosts_formula_text() -> None:
     assert score_with_formula > score_plain
 
 
+def test_user_document_type_override_controls_retrieval_boost() -> None:
+    from app.services.retrieval import _study_score
+
+    row = {"document_id": "d1", "similarity": 0.5, "source_type": "other", "chunk_text": "Worked problem with complete values and derivation"}
+    overridden = {"d1": {"document_type": "exam", "effective_document_type": "exercise_sheet"}}
+    detected_only = {"d1": {"document_type": "exam", "effective_document_type": "exam"}}
+    assert _study_score(row, question_intent="exercise_sheet", doc_meta=overridden) > _study_score(
+        row, question_intent="exercise_sheet", doc_meta=detected_only,
+    )
+
+
 def _row(doc_id: str, chunk_id: str) -> dict:
     return {"id": chunk_id, "document_id": doc_id}
 

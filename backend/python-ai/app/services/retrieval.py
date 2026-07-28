@@ -380,16 +380,16 @@ def _study_score(
     if exercise_number and exercise_number in chunk_text:
         score += _EXERCISE_MATCH_BOOST
 
-    # +0.15: document_type matches inferred question intent.
+    # +0.15: the effective document type (user override first) matches intent.
     if question_intent and doc_meta_row:
-        if doc_meta_row.get("document_type") == question_intent:
+        if (doc_meta_row.get("effective_document_type") or doc_meta_row.get("document_type")) == question_intent:
             score += _DOC_TYPE_MATCH_BOOST
 
     # Exercise questions need the professor's lecture/formula context, not only
     # the exercise sheet. Give lecture chunks a modest lift for math/exercise
     # requests so they make the prompt as references alongside the task.
     if query_is_math and question_intent in {"exercise_sheet", "solution_sheet"}:
-        doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
+        doc_type = (doc_meta_row.get("effective_document_type") or doc_meta_row.get("document_type")) if doc_meta_row else None
         if source == "lecture" or doc_type == "lecture":
             score += _LECTURE_REFERENCE_BOOST
 
@@ -406,7 +406,7 @@ def _study_score(
     # variables. This fixes cases like "explain why we square and sum x,z to
     # eliminate alpha", where solution PDFs over-ranked the actual lecture.
     if conceptual_explanation:
-        doc_type = doc_meta_row.get("document_type") if doc_meta_row else None
+        doc_type = (doc_meta_row.get("effective_document_type") or doc_meta_row.get("document_type")) if doc_meta_row else None
         if source == "lecture" or doc_type == "lecture":
             score += _LECTURE_CONCEPT_BOOST
         elif source == "solution" or doc_type == "solution_sheet":
@@ -751,7 +751,7 @@ def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None
     try:
         resp = (
             sb.table("documents")
-            .select("id, document_type, file_name, active_index_revision")
+            .select("id,document_type,user_document_type_override,document_type_confidence,file_name,active_index_revision,authority,updated_at")
             .in_("id", list(set(doc_ids)))
             .execute()
         )
@@ -760,10 +760,17 @@ def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None
         return {}
     out: dict[str, dict[str, str | None]] = {}
     for r in resp.data or []:
+        detected = r.get("document_type") or "unknown"
+        effective = r.get("user_document_type_override") or detected
         out[r["id"]] = {
-            "document_type": r.get("document_type"),
+            "document_type": detected,
+            "user_document_type_override": r.get("user_document_type_override"),
+            "effective_document_type": effective,
             "file_name":     r.get("file_name"),
             "active_index_revision": r.get("active_index_revision"),
+            "document_type_confidence": r.get("document_type_confidence"),
+            "authority": r.get("authority"),
+            "metadata_revision": r.get("updated_at"),
         }
     return out
 
