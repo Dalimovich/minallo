@@ -65,6 +65,7 @@ from ..services.course_grounding import (
 from ..services.retrieval import (
     find_numbered_section_reference,
     retrieve_chunks,
+    retrieve_routed_chunks,
     retrieve_exercise_block,
     retrieve_formula_block,
     retrieve_numbered_section_chunks,
@@ -2785,6 +2786,11 @@ async def _prepare_ask_stream_response(
             f"{get_settings().openai_generate_model_strong}"
         ),
     }
+    from ..services.question_routing import build_question_routing_plan  # noqa: WPS433
+    cache_routing_plan = build_question_routing_plan(question)
+    cache_key_kwargs["routing_fingerprint"] = json.dumps(
+        cache_routing_plan.trace(), sort_keys=True, ensure_ascii=False,
+    )
     if cacheable:
         if status_sink:
             status_sink("checking_cache")
@@ -4004,7 +4010,7 @@ async def _prepare_ask_stream_response(
                 )
             )
             chunks_task = run_in_threadpool(
-                lambda: retrieve_chunks(
+                lambda: retrieve_routed_chunks(
                     user_id=user_id, course_id=payload.courseId,
                     query=retrieval_query, document_ids=retrieval_document_ids,
                     preferred_document_ids=retrieval_document_ids,
@@ -4015,6 +4021,7 @@ async def _prepare_ask_stream_response(
                     # explicit multi-doc selection: guarantee every selected doc
                     # contributes a candidate so none is silently starved.
                     guarantee_documents=generative_request,
+                    request_id=request_id,
                 )
             )
             formula_query = (
@@ -4468,6 +4475,7 @@ async def _prepare_ask_stream_response(
                         abort_meter["promptTokens"] = int(evt.get("estPromptTokens") or 0)
                     continue
                 if evt.get("meta"):
+                    evt["retrievalRouting"] = cache_routing_plan.trace()
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
                     evt["learningRecommendations"] = learning_recommendations
@@ -4497,6 +4505,7 @@ async def _prepare_ask_stream_response(
                         pending_token_events.append(chunk_bytes)
                         continue
                 if evt.get("done"):
+                    evt["retrievalRouting"] = cache_routing_plan.trace()
                     evt.update(event_identity)
                     evt["event"] = "answer.completed"
                     observer.finish("draft_generated")

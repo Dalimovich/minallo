@@ -280,7 +280,7 @@ def test_route_resolves_identity_and_scope_before_primary_retrieval() -> None:
     identity_position = source.index("grounded_identity = identify_grounded_task(")
     scope_position = source.index("final_grounding_state = derive_grounding_state(")
     started_position = source.index('"primary_retrieval_started"')
-    retrieval_position = source.index("lambda: retrieve_chunks(")
+    retrieval_position = source.index("lambda: retrieve_routed_chunks(")
     completed_position = source.index('"primary_retrieval_completed"')
     assert identity_position < scope_position < started_position < retrieval_position
     assert retrieval_position < completed_position

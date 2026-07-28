@@ -79,9 +79,13 @@ def authority_priority(authority: DocumentAuthority, question: str) -> int:
 
 def rank_course_chunks(chunks: list[Any], doc_names: dict[str, str], question: str) -> list[Any]:
     """Stable authority-aware ordering; semantic score remains the tie-breaker."""
+    def stage_priority(chunk: Any) -> int:
+        stage = getattr(chunk, "retrieval_stage", None)
+        return -(stage if stage is not None else 999)
     return sorted(
         chunks,
         key=lambda chunk: (
+            stage_priority(chunk),
             authority_priority(
                 infer_document_authority(doc_names.get(getattr(chunk, "document_id", ""), "")),
                 question,
@@ -144,4 +148,3 @@ def assert_authorised_course_chunks(chunks: list[Any], authorised_document_ids: 
     }
     if unauthorised:
         raise ValueError("retrieval returned documents outside the authorised course manifest")
-

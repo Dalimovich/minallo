@@ -11,7 +11,8 @@ from enum import StrEnum
 from typing import Any
 
 from ..supabase_client import get_supabase
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, retrieve_routed_chunks
+from .question_routing import build_question_routing_plan
 
 log = logging.getLogger(__name__)
 
@@ -268,6 +269,13 @@ def _row_to_chunk(row: dict[str, Any], *, score: float) -> RetrievedChunk:
         similarity=float(row.get("similarity") or 0.0),
         chunk_type=str(row.get("chunk_type") or "general"),
         section_title=str(row.get("section_title") or "") or None,
+        document_type=str(row.get("document_type") or "") or None,
+        source_type=str(row.get("source_type") or "") or None,
+        primary_topic=str(row.get("primary_topic") or "") or None,
+        topics=tuple(row.get("topics") or ()),
+        authority=str(row.get("authority") or "") or None,
+        document_type_confidence=(float(row["document_type_confidence"])
+                                  if row.get("document_type_confidence") is not None else None),
     )
 
 
@@ -310,26 +318,38 @@ def _load_course_inventory(
     *, user_id: str, course_id: str, document_ids: list[str] | None,
 ) -> tuple[list[str], list[dict[str, Any]], bool]:
     sb = get_supabase()
-    documents_query = (
-        sb.table("documents").select(
-            "id,page_count,active_index_revision,processing_status",
+    def load_documents(fields: str) -> list[dict[str, Any]]:
+        query = sb.table("documents").select(fields).eq("user_id", user_id).eq("course_id", course_id)
+        if document_ids:
+            query = query.in_("id", document_ids)
+        return list(query.execute().data or [])
+    try:
+        documents = load_documents(
+            "id,page_count,active_index_revision,processing_status,document_type,"
+            "document_type_confidence,authority,source_type"
         )
-        .eq("user_id", user_id).eq("course_id", course_id)
-    )
-    if document_ids:
-        documents_query = documents_query.in_("id", document_ids)
-    documents = list(documents_query.execute().data or [])
+    except Exception:
+        documents = load_documents(
+            "id,page_count,active_index_revision,processing_status,document_type,"
+            "document_type_confidence,source_type"
+        )
     authorized_ids = [str(row["id"]) for row in documents]
     if not authorized_ids:
         return [], [], False
     response = (
         sb.table("document_chunks")
-        .select("id,document_id,page_start,page_end,chunk_text,chunk_type,section_title,index_revision")
+        .select("id,document_id,page_start,page_end,chunk_text,chunk_type,section_title,"
+                "index_revision,source_type,primary_topic,topics")
         .in_("document_id", authorized_ids).limit(5000).execute()
     )
     active_revisions = {str(row["id"]): str(row.get("active_index_revision") or "") for row in documents}
+    document_meta = {str(row["id"]): row for row in documents}
     rows = [
-        row for row in (response.data or [])
+        {**row,
+         "document_type": document_meta.get(str(row.get("document_id")), {}).get("document_type"),
+         "document_type_confidence": document_meta.get(str(row.get("document_id")), {}).get("document_type_confidence"),
+         "authority": document_meta.get(str(row.get("document_id")), {}).get("authority")}
+        for row in (response.data or [])
         if not active_revisions.get(str(row.get("document_id")))
         or str(row.get("index_revision") or "") == active_revisions[str(row.get("document_id"))]
     ]
@@ -349,7 +369,7 @@ def retrieve_multi_item_course_evidence(
     document_ids: list[str] | None = None,
     active_document_id: str | None = None,
     initial_chunks: list[RetrievedChunk] | None = None,
-    semantic_retriever: Callable[..., list[RetrievedChunk]] = retrieve_chunks,
+    semantic_retriever: Callable[..., list[RetrievedChunk]] = retrieve_routed_chunks,
     inventory_loader: Callable[..., tuple[list[str], list[dict[str, Any]], bool]] = _load_course_inventory,
 ) -> MultiItemRetrievalResult:
     manifest = analyse_request(question)
@@ -369,7 +389,13 @@ def retrieve_multi_item_course_evidence(
         ])
     merged: dict[str, RetrievedChunk] = {chunk.chunk_id: chunk for chunk in initial_chunks or []}
     evidence: list[RequestedItemEvidence] = []
+    course_topics = tuple(dict.fromkeys(
+        str(value).strip() for row in rows
+        for value in ([row.get("primary_topic")] + list(row.get("topics") or []))
+        if value and str(value).strip()
+    ))
     for item in manifest.requested_items:
+        routing_plan = build_question_routing_plan(item.original_text, course_topics)
         lexical = _lexical_matches(item, rows)
         try:
             semantic = semantic_retriever(
@@ -377,6 +403,7 @@ def retrieve_multi_item_course_evidence(
                 query=" ".join(item.search_terms), document_ids=document_ids,
                 preferred_document_ids=document_ids,
                 active_document_id=active_document_id, top_k=8,
+                routing_plan=routing_plan, course_topics=course_topics,
             )
             error_code = None
         except Exception:

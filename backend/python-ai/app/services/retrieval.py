@@ -454,6 +454,14 @@ class RetrievedChunk:
     similarity: float
     chunk_type: str
     section_title: str | None
+    document_type: str | None = None
+    source_type: str | None = None
+    primary_topic: str | None = None
+    topics: tuple[str, ...] = ()
+    authority: str | None = None
+    document_type_confidence: float | None = None
+    retrieval_stage: int | None = None
+    retrieval_reason: str | None = None
     # Review-2 finding #3 — synthetic chunks (those prepended by
     # _prepend_exercise_chunks / _prepend_formula_chunks from
     # document_exercises / document_formulas exact-match lookups) carry
@@ -475,6 +483,14 @@ class RetrievedChunk:
             "similarity": round(self.similarity, 4),
             "chunkType": self.chunk_type,
             "sectionTitle": self.section_title,
+            "documentType": self.document_type,
+            "sourceType": self.source_type,
+            "primaryTopic": self.primary_topic,
+            "topics": list(self.topics),
+            "authority": self.authority,
+            "documentTypeConfidence": self.document_type_confidence,
+            "retrievalStage": self.retrieval_stage,
+            "retrievalReason": self.retrieval_reason,
         }
 
 
@@ -531,6 +547,12 @@ def retrieve_chunks(
     top_k: int = 12,
     min_similarity: float = _MIN_SIMILARITY,
     guarantee_documents: bool = False,
+    document_types: tuple[str, ...] | list[str] | None = None,
+    primary_topics: tuple[str, ...] | list[str] | None = None,
+    topics: tuple[str, ...] | list[str] | None = None,
+    chunk_types: tuple[str, ...] | list[str] | None = None,
+    retrieval_stage: int | None = None,
+    retrieval_reason: str | None = None,
 ) -> list[RetrievedChunk]:
     """Return up to top_k chunks for the question, reranked by study value.
 
@@ -571,6 +593,14 @@ def retrieve_chunks(
     }
     if document_ids:
         payload["p_document_ids"] = list(document_ids)
+    optional_filter_keys: list[str] = []
+    for key, values in (
+        ("p_document_types", document_types), ("p_primary_topics", primary_topics),
+        ("p_topics", topics), ("p_chunk_types", chunk_types),
+    ):
+        if values:
+            payload[key] = list(values)
+            optional_filter_keys.append(key)
 
     named_document_ids = set()
     if not document_ids:
@@ -589,8 +619,15 @@ def retrieve_chunks(
         else:
             resp = sb.rpc("match_chunks_hybrid", payload).execute()
     except Exception:
-        log.exception("match_chunks_hybrid failed")
-        return []
+        if optional_filter_keys:
+            # An older RPC cannot honour this stage. Returning no stage result
+            # lets retrieve_routed_chunks use its explicit unfiltered fallback;
+            # never mislabel broad candidates as lecture/solution evidence.
+            log.warning("filtered match_chunks_hybrid unavailable; deferring to course-wide fallback")
+            return []
+        else:
+            log.exception("match_chunks_hybrid failed")
+            return []
 
     rows: list[dict[str, Any]] = resp.data or []
 
@@ -709,17 +746,17 @@ def retrieve_chunks(
 
     # Fetch chunk_type for each in one batch — RPC predates the new column.
     chunk_ids = [r["id"] for _, r in chosen if r.get("id")]
-    type_map: dict[str, str] = {}
+    type_map: dict[str, dict[str, Any]] = {}
     if chunk_ids:
         try:
             ct_resp = (
                 sb.table("document_chunks")
-                .select("id, chunk_type")
+                .select("id,chunk_type,source_type,primary_topic,topics")
                 .in_("id", chunk_ids)
                 .execute()
             )
             for ct in ct_resp.data or []:
-                type_map[ct["id"]] = ct.get("chunk_type") or "general"
+                type_map[ct["id"]] = ct
         except Exception:
             log.exception("chunk_type lookup failed; defaulting to 'general'")
 
@@ -732,14 +769,88 @@ def retrieve_chunks(
             text=row.get("chunk_text") or "",
             score=score,
             similarity=row.get("similarity") or 0.0,
-            chunk_type=type_map.get(row["id"], "general"),
+            chunk_type=str((type_map.get(row["id"]) or {}).get("chunk_type") or row.get("chunk_type") or "general"),
             section_title=row.get("section_title"),
+            document_type=str((doc_meta.get(row["document_id"]) or {}).get("effective_document_type") or row.get("document_type") or "") or None,
+            source_type=str(row.get("source_type") or (type_map.get(row["id"]) or {}).get("source_type") or "") or None,
+            primary_topic=str(row.get("primary_topic") or (type_map.get(row["id"]) or {}).get("primary_topic") or "") or None,
+            topics=tuple(row.get("topics") or (type_map.get(row["id"]) or {}).get("topics") or ()),
+            authority=str(row.get("authority") or (doc_meta.get(row["document_id"]) or {}).get("authority") or "") or None,
+            document_type_confidence=float(row.get("document_type_confidence")) if row.get("document_type_confidence") is not None else None,
+            retrieval_stage=retrieval_stage,
+            retrieval_reason=retrieval_reason,
         )
         for score, row in chosen
     ]
 
 
 # ── Page-quality lookup ──────────────────────────────────────────────────────
+
+
+def retrieve_routed_chunks(
+    *, user_id: str, course_id: str, query: str,
+    document_ids: list[str] | None = None,
+    preferred_document_ids: list[str] | None = None,
+    active_document_id: str | None = None,
+    top_k: int = 12,
+    course_topics: tuple[str, ...] | None = None,
+    routing_plan: Any | None = None,
+    request_id: str | None = None,
+    document_name_query: str | None = None,
+    guarantee_documents: bool = False,
+) -> list[RetrievedChunk]:
+    """Execute source stages before final top-K selection."""
+    from .question_routing import build_question_routing_plan, evidence_is_sufficient, load_course_topic_inventory
+    inventory = course_topics if course_topics is not None else load_course_topic_inventory(user_id, course_id)
+    plan = routing_plan or build_question_routing_plan(query, inventory)
+    collected: dict[str, RetrievedChunk] = {}
+    stage_trace: list[dict[str, Any]] = []
+    topic = plan.topic.primary_topic
+    strict_topic = bool(topic and plan.topic.confidence >= 0.80)
+    for stage in plan.source_stages:
+        common = dict(
+            user_id=user_id, course_id=course_id, query=query,
+            document_ids=document_ids, preferred_document_ids=preferred_document_ids,
+            active_document_id=active_document_id, top_k=stage.max_candidates,
+            document_name_query=document_name_query,
+            guarantee_documents=guarantee_documents,
+            document_types=stage.document_types,
+            primary_topics=(topic,) if strict_topic else None,
+            topics=None if strict_topic else tuple(plan.topic.matched_course_topics),
+            retrieval_stage=stage.stage, retrieval_reason=stage.purpose,
+        )
+        stage_chunks = retrieve_chunks(**common, chunk_types=stage.chunk_types)
+        if not stage_chunks:
+            stage_chunks = retrieve_chunks(**common)
+        if not stage_chunks and topic:
+            common["primary_topics"] = None
+            common["topics"] = None
+            common["retrieval_reason"] = stage.purpose + "; course-wide topic fallback"
+            stage_chunks = retrieve_chunks(**common, chunk_types=stage.chunk_types)
+        for chunk in stage_chunks:
+            collected.setdefault(chunk.chunk_id, chunk)
+        stage_trace.append({"stage": stage.stage, "documentTypes": list(stage.document_types),
+                            "chunkTypes": list(stage.chunk_types), "candidates": len(stage_chunks),
+                            "selected": len(stage_chunks),
+                            "evidenceSufficient": evidence_is_sufficient(plan, collected.values())})
+    if not collected:
+        fallback = retrieve_chunks(
+            user_id=user_id, course_id=course_id, query=query,
+            document_ids=document_ids, preferred_document_ids=preferred_document_ids,
+            active_document_id=active_document_id, top_k=top_k,
+            retrieval_stage=len(plan.source_stages) + 1,
+            retrieval_reason="course-wide semantic fallback",
+        )
+        collected.update((chunk.chunk_id, chunk) for chunk in fallback)
+    ordered = sorted(collected.values(), key=lambda chunk: (chunk.retrieval_stage or 999, -chunk.score))
+    log.info(
+        "question_routing_trace request_id=%s intents=%s topic=%s topic_confidence=%.2f stages=%s selected=%s",
+        request_id or "unknown", [intent.value for intent in plan.intents], plan.topic.primary_topic,
+        plan.topic.confidence, stage_trace,
+        [{"chunkId": chunk.chunk_id, "documentId": chunk.document_id,
+          "stage": chunk.retrieval_stage, "reason": chunk.retrieval_reason} for chunk in ordered[:top_k]],
+    )
+    return ordered[:top_k]
 
 
 def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None]]:

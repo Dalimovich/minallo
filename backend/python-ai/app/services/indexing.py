@@ -623,6 +623,15 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             update_payload["document_type_confidence"] = doc_type_confidence
         if understanding_json:
             update_payload["document_understanding"] = understanding_json
+            update_payload["document_type_signals"] = understanding_json.get("document_type_signals", [])
+        if doc_type:
+            from .course_grounding import infer_document_authority  # noqa: WPS433
+            update_payload["authority"] = infer_document_authority(
+                str(doc.get("file_name") or ""), doc_type,
+            ).value
+            update_payload["document_origin"] = (
+                "generated" if doc_type == "summary" else "course_upload"
+            )
         if rollup_quality:
             update_payload["extraction_quality"] = rollup_quality
         if ocr_assessment_json:
@@ -639,6 +648,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             )
             for _k in (
                 "document_type_confidence", "document_understanding",
+                "document_type_signals", "authority", "document_origin",
                 "structural_index_status",
             ):
                 update_payload.pop(_k, None)

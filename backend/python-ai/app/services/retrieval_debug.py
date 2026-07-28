@@ -66,6 +66,12 @@ def chunk_to_meta(chunk: Any, doc_names: dict[str, str] | None = None) -> dict[s
         "similarity":   get("similarity"),
         "chunkType":    get("chunk_type") or get("chunkType"),
         "sectionTitle": get("section_title") or get("sectionTitle"),
+        "documentType": get("document_type") or get("documentType"),
+        "primaryTopic": get("primary_topic") or get("primaryTopic"),
+        "topics": list(get("topics") or []),
+        "authority": get("authority"),
+        "retrievalStage": get("retrieval_stage") or get("retrievalStage"),
+        "retrievalReason": get("retrieval_reason") or get("retrievalReason"),
         "synthetic":    bool(get("is_synthetic") or get("isSynthetic")),
         "excerpt":      _excerpt(get("text")),
     }

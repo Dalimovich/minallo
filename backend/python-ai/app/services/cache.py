@@ -25,7 +25,7 @@ from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
-_ANSWER_CACHE_SCHEMA = "answer-v13-validated-fallback-coverage"
+_ANSWER_CACHE_SCHEMA = "answer-v14-intent-topic-stages"
 _PROMPT_VERSION = "tutor-dialogue-v3"
 _VALIDATOR_VERSION = "numerical-validator-v3"
 _SOURCE_PRIORITY_POLICY_VERSION = "active-question-first-v2"
@@ -62,6 +62,7 @@ def question_hash(
     source_priority_policy_version: str = _SOURCE_PRIORITY_POLICY_VERSION,
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
+    routing_fingerprint: str | None = None,
 ) -> str:
     """Composite cache key for an answer.
 
@@ -141,6 +142,8 @@ def question_hash(
         parts.append("rev=" + hashlib.sha256(viewer_revision.encode("utf-8")).hexdigest()[:16])
     if grounding_mode:
         parts.append(f"ground={grounding_mode}")
+    if routing_fingerprint:
+        parts.append("routing=" + hashlib.sha256(routing_fingerprint.encode("utf-8")).hexdigest()[:24])
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -261,6 +264,7 @@ def lookup_answer(
     source_priority_policy_version: str = _SOURCE_PRIORITY_POLICY_VERSION,
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
+    routing_fingerprint: str | None = None,
 ) -> dict[str, Any] | None:
     """Return the cached answer JSON, or None on miss. Bumps usage stats on hit.
 
@@ -297,6 +301,7 @@ def lookup_answer(
         source_priority_policy_version=source_priority_policy_version,
         index_version=index_version,
         conversation_generation=conversation_generation,
+        routing_fingerprint=routing_fingerprint,
     )
     sb = get_supabase()
     try:
@@ -356,6 +361,7 @@ def save_answer(
     source_priority_policy_version: str = _SOURCE_PRIORITY_POLICY_VERSION,
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
+    routing_fingerprint: str | None = None,
 ) -> None:
     """Upsert the answer for next time. Safe to no-op on errors.
 
@@ -392,6 +398,7 @@ def save_answer(
             source_priority_policy_version=source_priority_policy_version,
             index_version=index_version,
             conversation_generation=conversation_generation,
+            routing_fingerprint=routing_fingerprint,
         ),
         "normalized_question":   _normalize_question(question),
         "document_version_hash": version_hash,
