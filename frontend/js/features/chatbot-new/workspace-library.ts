@@ -997,7 +997,7 @@ function replacePendingWithFileRow(
 
 function verifyStudyPanelTypePickers(root: ParentNode): void {
   const rows = Array.from(root.querySelectorAll<HTMLElement>('.ncb-file-row:not(.ncb-file-row--pending)'));
-  const missing = rows.filter((row) => !row.querySelector('.ncb-file-doctype .study-file-type-select'));
+  const missing = rows.filter((row) => !row.querySelector('.ncb-file-doctype .doc-type-review, .ncb-file-doctype .doc-type-confirmed'));
   if (missing.length) {
     console.error('study_panel_file_type_picker_missing', {
       fileRows: rows.length,
@@ -1337,6 +1337,8 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
   const doc = file._document;
+  const filename = String(file.name || file._storageName || '').trim() || 'Untitled document';
+  if (!String(file.name || '').trim()) console.error('study_panel_file_name_missing', { documentId: doc?.id || null });
   const picker = doc
     ? correctionSelectHtml(doc)
     : '<label class="doc-type-review doc-type-review--unavailable"><span class="doc-type-review-label">File type</span><select class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type unavailable for this document" disabled><option>Unknown</option></select></label>';
@@ -1345,7 +1347,7 @@ function fileButton(file: CourseFile, course: LibraryCourse, folder: string | nu
       : doc?.processing_status ? 'Indexing…' : 'Status unavailable';
   const retry = doc?.processing_status === 'failed' && file._storageName
     ? '<button type="button" class="ncb-file-retry" data-retry-index aria-label="Retry indexing">Retry</button>' : '';
-  return `<div class="ncb-file-row"${doc?.id ? ` data-document-id="${escapeHtml(doc.id)}"` : ''}><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small></span><b>Open</b></button><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}<button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
+  return `<div class="ncb-file-row study-file-card"${doc?.id ? ` data-document-id="${escapeHtml(doc.id)}"` : ''}><div class="study-file-card__identity"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong class="study-file-card__filename" title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong><small class="study-file-card__meta">${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small></span><b>Open</b></button><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div><div class="study-file-card__actions"><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}</div></div>`;
 }
 
 function trashIcon(): string {

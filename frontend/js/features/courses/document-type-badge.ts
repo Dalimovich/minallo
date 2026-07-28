@@ -98,24 +98,44 @@ export function badgeHtml(doc: DocUnderstanding): string {
   );
 }
 
-/** Always-visible effective-type picker. The automatic option clears an override. */
-export function correctionSelectHtml(doc: DocUnderstanding): string {
-  const m = documentTypeMeta(doc);
-  if (!doc.id) return '';
-  const opts = CORRECTION_CHOICES.map(
-    (c) => '<option value="' + esc(c.value) + '"' +
-      (c.value === m.type ? ' selected' : '') + '>' + esc(c.label) + '</option>'
+function typeOptions(selected: string): string {
+  return CORRECTION_CHOICES.map(
+    (choice) => '<option value="' + esc(choice.value) + '"' +
+      (choice.value === selected ? ' selected' : '') + '>' + esc(choice.label) + '</option>'
   ).join('');
+}
+
+function editorHtml(doc: DocUnderstanding, editing = false): string {
+  const m = documentTypeMeta(doc);
   const detected = doc.document_type || 'unknown';
   return (
-    '<div class="doc-type-review" data-doc-id="' + esc(doc.id) + '">' +
-    '<label class="doc-type-review-label" for="doc-type-' + esc(doc.id) + '">File type</label>' +
-    '<select id="doc-type-' + esc(doc.id) + '" class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type for this document" ' +
+    '<div class="doc-type-review' + (editing ? ' is-editing' : '') + '" data-doc-id="' + esc(doc.id || '') +
+    '" data-detected-type="' + esc(detected) + '" data-effective-type="' + esc(m.type) + '">' +
+    '<label class="doc-type-review-label" for="doc-type-' + esc(doc.id || '') + '">File type</label>' +
+    '<select id="doc-type-' + esc(doc.id || '') + '" class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type for this document" ' +
     'title="Detected type: ' + esc(TYPE_LABEL[detected] || detected) + '. This affects retrieval.">' +
-    opts + '<option value="__detected__">Use detected type (' +
+    typeOptions(m.type) + '<option value="__detected__">Use detected type (' +
     esc(TYPE_LABEL[detected] || detected) + ')</option></select>' +
+    '<button type="button" class="doc-type-action doc-type-save" data-doc-type-save>' + (editing ? 'Save' : 'Confirm') + '</button>' +
+    (editing ? '<button type="button" class="doc-type-action doc-type-cancel" data-doc-type-cancel>Cancel</button>' : '') +
     '</div>'
   );
+}
+
+function confirmedHtml(doc: DocUnderstanding): string {
+  const m = documentTypeMeta(doc);
+  const detected = doc.document_type || 'unknown';
+  return '<div class="doc-type-confirmed" data-doc-id="' + esc(doc.id || '') +
+    '" data-detected-type="' + esc(detected) + '" data-effective-type="' + esc(m.type) + '">' +
+    '<span class="doc-type-fixed doc-type-' + esc(m.type) + '">' + esc(m.label) + '</span>' +
+    '<button type="button" class="doc-type-action doc-type-edit" data-doc-type-edit aria-label="Edit file type">Edit</button>' +
+    '</div>';
+}
+
+/** Unconfirmed files show a picker + Confirm; confirmed overrides show a fixed badge + Edit. */
+export function correctionSelectHtml(doc: DocUnderstanding): string {
+  if (!doc.id) return '';
+  return documentTypeMeta(doc).userSet ? confirmedHtml(doc) : editorHtml(doc);
 }
 
 /** POST the user's correction to /api/documents/set-type. */
@@ -205,7 +225,7 @@ export function decorateFileTypeBadges(
         const doc = docs.find((item) => item.id === documentId);
         if (doc) {
           doc.effective_document_type = effectiveType;
-          doc.user_document_type_override = effectiveType === doc.document_type ? null : effectiveType;
+          doc.user_document_type_override = effectiveType;
           const badge = wrap.querySelector('.doc-type-badge');
           if (badge) badge.outerHTML = badgeHtml(doc);
         }
@@ -217,43 +237,60 @@ export function decorateFileTypeBadges(
   }
 }
 
-/** Wire change-handlers for any correction selectors inside `root`. On a choice
- *  it persists the override and calls `onApplied` so the list can refresh. */
+/** Wire the explicit Confirm/Edit/Save/Cancel lifecycle. Selecting alone never persists. */
 export function wireCorrectionSelectors(
   root: ParentNode,
   onApplied?: (documentId: string, effectiveType: string) => void
 ): void {
-  root.querySelectorAll<HTMLSelectElement>('.doc-type-review .doc-type-select').forEach((sel) => {
-    if ((sel as unknown as { _dtBound?: boolean })._dtBound) return;
-    (sel as unknown as { _dtBound?: boolean })._dtBound = true;
-    sel.dataset.effectiveValue = sel.value;
-    for (const eventName of ['click', 'pointerdown', 'mousedown', 'keydown'] as const) {
-      sel.addEventListener(eventName, (event) => event.stopPropagation());
+  const stop = (element: HTMLElement): void => {
+    for (const eventName of ['click', 'pointerdown', 'mousedown'] as const) {
+      element.addEventListener(eventName, (event) => event.stopPropagation());
     }
-    sel.addEventListener('change', async (event) => {
-      event.stopPropagation();
-      const wrap = sel.closest('.doc-type-review') as HTMLElement | null;
-      const docId = wrap?.getAttribute('data-doc-id');
-      const previous = sel.dataset.effectiveValue || 'unknown';
-      const requested = sel.value;
-      const value = requested === '__detected__' ? null : requested;
-      if (!docId) return;
-      sel.disabled = true;
+  };
+  root.querySelectorAll<HTMLElement>('.doc-type-review, .doc-type-confirmed').forEach((control) => {
+    if ((control as unknown as { _dtBound?: boolean })._dtBound) return;
+    (control as unknown as { _dtBound?: boolean })._dtBound = true;
+    control.querySelectorAll<HTMLElement>('select, button').forEach(stop);
+    const docId = control.dataset.docId || '';
+    const detectedType = control.dataset.detectedType || 'unknown';
+    const effectiveType = control.dataset.effectiveType || detectedType;
+    control.querySelector<HTMLButtonElement>('[data-doc-type-edit]')?.addEventListener('click', () => {
+      control.outerHTML = editorHtml({ id: docId, document_type: detectedType, effective_document_type: effectiveType, user_document_type_override: effectiveType }, true);
+      wireCorrectionSelectors(root, onApplied);
+      root.querySelector<HTMLSelectElement>('.doc-type-review[data-doc-id="' + docId + '"] .doc-type-select')?.focus();
+    });
+    const cancel = (): void => {
+      control.outerHTML = confirmedHtml({ id: docId, document_type: detectedType, effective_document_type: effectiveType, user_document_type_override: effectiveType });
+      wireCorrectionSelectors(root, onApplied);
+    };
+    control.querySelector<HTMLButtonElement>('[data-doc-type-cancel]')?.addEventListener('click', cancel);
+    control.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && control.classList.contains('is-editing')) cancel();
+    });
+    control.querySelector<HTMLButtonElement>('[data-doc-type-save]')?.addEventListener('click', async () => {
+      const select = control.querySelector<HTMLSelectElement>('.doc-type-select');
+      const save = control.querySelector<HTMLButtonElement>('[data-doc-type-save]');
+      if (!select || !save || !docId) return;
+      const requested = select.value;
+      const resetToDetected = requested === '__detected__';
+      select.disabled = true;
+      save.disabled = true;
       try {
-        const res = await setDocumentTypeOverride(docId, value);
+        const res = await setDocumentTypeOverride(docId, resetToDetected ? null : requested);
         if (!res) throw new Error('save failed');
-        sel.dataset.effectiveValue = res.effectiveDocumentType;
+        const nextDoc = { id: docId, document_type: detectedType, effective_document_type: res.effectiveDocumentType,
+          user_document_type_override: resetToDetected ? null : requested };
+        control.outerHTML = resetToDetected ? editorHtml(nextDoc) : confirmedHtml(nextDoc);
+        wireCorrectionSelectors(root, onApplied);
         if (onApplied) onApplied(docId, res.effectiveDocumentType);
         window.dispatchEvent(new CustomEvent('minallo:document-type-changed', {
           detail: { documentId: docId, effectiveDocumentType: res.effectiveDocumentType },
         }));
       } catch {
-        sel.value = previous;
-        sel.dataset.effectiveValue = previous;
+        select.disabled = false;
+        save.disabled = false;
         const w = window as unknown as { showToast?: (title: string, message: string) => void };
-        w.showToast?.('Could not update the file type.', 'The previous type was restored. Please retry.');
-      } finally {
-        sel.disabled = false;
+        w.showToast?.('Could not update the file type.', 'Your selection was kept. Please retry.');
       }
     });
   });
