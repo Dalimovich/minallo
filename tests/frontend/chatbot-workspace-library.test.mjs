@@ -30,6 +30,16 @@ test('Study Panel distinguishes authoritative indexing failure from network unce
   assert.match(moduleSource, /failure\.processingStatus === 'failed'/);
   assert.match(moduleSource, /Backend indexing failed:/);
   assert.match(moduleSource, /Status unavailable · Retry/);
+  assert.match(moduleSource, /<em>Status unavailable<\/em>/);
+  assert.match(moduleSource, /reconcilePendingIndexState/);
+  assert.doesNotMatch(moduleSource, /state === 'error' \|\| state === 'unknown'/);
+});
+
+test('new Study Panel rows wire their picker and uploads do not claim to be lectures', () => {
+  assert.match(moduleSource, /wireCorrectionSelectors\(row\)/);
+  assert.match(moduleSource, /sourceType: 'unknown'/);
+  assert.doesNotMatch(moduleSource, /sourceType: 'lecture'/);
+  assert.match(moduleSource, /study_panel_file_type_picker_missing/);
 });
 const pdfViewerSource = fs.readFileSync(
   'frontend/js/features/pdf-viewer/pdf-viewer.ts',

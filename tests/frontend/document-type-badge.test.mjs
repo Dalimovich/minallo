@@ -68,7 +68,7 @@ test('high-confidence documents still render an editable picker', () => {
     id: 'd2', document_type: 'lecture', effective_document_type: 'lecture',
     document_type_confidence: 0.99,
   });
-  assert.ok(html.includes('class="doc-type-select"'));
+  assert.ok(html.includes('class="doc-type-select study-file-type-select"'));
   assert.ok(html.includes('value="lecture" selected'));
   assert.ok(html.includes('Use detected type (Lecture)'));
 });

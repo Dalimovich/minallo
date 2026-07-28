@@ -849,6 +849,7 @@ function paintCourseDetail(panel: HTMLElement, course: LibraryCourse, scrollTop 
   const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   bindCourseFileActions(panel, detail, course);
   wireCorrectionSelectors(detail);
+  verifyStudyPanelTypePickers(detail);
   panel.querySelectorAll<HTMLDetailsElement>('.ncb-folder').forEach((folder) => folder.addEventListener('toggle', () => {
     const entry = courseEntry(course.id);
     const cachedFolder = entry?.folders.find((item) => item.name === folder.dataset.dropFolder);
@@ -914,7 +915,7 @@ async function uploadIntoCourse(
       const response = await fetch('/api/documents/index-existing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` },
-        body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'lecture' })
+        body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'unknown' })
       });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({})) as { processingStatus?: string; error?: string };
@@ -930,6 +931,7 @@ async function uploadIntoCourse(
       const message = error instanceof Error ? error.message : String(error);
       if (!message.startsWith('Backend indexing failed:')) {
         setPendingFileState(pendingRow, 'unknown', 'Status unavailable · Retry');
+        window.setTimeout(() => void reconcilePendingIndexState(panel, detail, course, uploaded, folder, pendingRow), 2500);
       }
       throw error;
     }
@@ -966,9 +968,11 @@ function setPendingFileState(row: HTMLElement | undefined, state: 'indexing' | '
   status.className = `ncb-index-state is-${state}`;
   status.innerHTML = state === 'ready'
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><em>Indexed</em>'
-    : state === 'error' || state === 'unknown'
-      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3h.01"/></svg><em>Failed</em>'
-      : `<i aria-hidden="true"></i><em>${escapeHtml(label)}</em>`;
+    : state === 'error'
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3h.01"/></svg><em>Indexing failed</em>'
+      : state === 'unknown'
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10m0 4v.01"/></svg><em>Status unavailable</em>'
+        : `<i aria-hidden="true"></i><em>${escapeHtml(label)}</em>`;
   if (secondary) secondary.textContent = label;
 }
 
@@ -987,6 +991,49 @@ function replacePendingWithFileRow(
   if (!row) return;
   pendingRow.replaceWith(row);
   bindSingleFileRow(panel, detail, course, row);
+  wireCorrectionSelectors(row);
+  verifyStudyPanelTypePickers(detail);
+}
+
+function verifyStudyPanelTypePickers(root: ParentNode): void {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>('.ncb-file-row:not(.ncb-file-row--pending)'));
+  const missing = rows.filter((row) => !row.querySelector('.ncb-file-doctype .study-file-type-select'));
+  if (missing.length) {
+    console.error('study_panel_file_type_picker_missing', {
+      fileRows: rows.length,
+      missing: missing.length,
+      filenames: missing.map((row) => row.querySelector('strong')?.textContent || '')
+    });
+  }
+}
+
+async function reconcilePendingIndexState(
+  panel: HTMLElement,
+  detail: HTMLElement,
+  course: LibraryCourse,
+  file: CourseFile | undefined,
+  folder: string | null,
+  row: HTMLElement | undefined
+): Promise<void> {
+  if (!file?._storageName || !row?.isConnected) return;
+  try {
+    const docs = await listCourseDocuments(course.id, { force: true });
+    const suffix = '/' + (folder ? folder.replace(/\\/g, '/') + '/' : '') + file._storageName;
+    const matches = docs.filter((doc) => String(doc.storage_path || '').replace(/\\/g, '/').endsWith(suffix));
+    if (matches.length !== 1) return;
+    const doc = matches[0]!;
+    file._document = doc;
+    if (doc.processing_status === 'ready') {
+      setPendingFileState(row, 'ready', 'Indexed');
+      window.setTimeout(() => replacePendingWithFileRow(panel, detail, course, file, folder, row), 500);
+    } else if (doc.processing_status === 'failed') {
+      setPendingFileState(row, 'error', doc.processing_error || 'Indexing failed');
+    } else {
+      setPendingFileState(row, 'indexing', 'Indexing for AI');
+    }
+  } catch (error) {
+    console.error('study_panel_index_status_reconcile_failed', { courseId: course.id, error });
+  }
 }
 
 function updateCourseDetailCount(panel: HTMLElement, course: LibraryCourse, optimisticDelta = 0): void {
@@ -1292,7 +1339,7 @@ function fileButton(file: CourseFile, course: LibraryCourse, folder: string | nu
   const doc = file._document;
   const picker = doc
     ? correctionSelectHtml(doc)
-    : '<label class="doc-type-review doc-type-review--unavailable"><span class="doc-type-review-label">File type</span><select class="doc-type-select" aria-label="File type unavailable for this document" disabled><option>Unknown</option></select></label>';
+    : '<label class="doc-type-review doc-type-review--unavailable"><span class="doc-type-review-label">File type</span><select class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type unavailable for this document" disabled><option>Unknown</option></select></label>';
   const status = doc?.processing_status === 'ready' ? 'Ready'
     : doc?.processing_status === 'failed' ? 'Indexing failed'
       : doc?.processing_status ? 'Indexing…' : 'Status unavailable';

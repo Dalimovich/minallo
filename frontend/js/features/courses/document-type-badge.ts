@@ -110,7 +110,7 @@ export function correctionSelectHtml(doc: DocUnderstanding): string {
   return (
     '<div class="doc-type-review" data-doc-id="' + esc(doc.id) + '">' +
     '<label class="doc-type-review-label" for="doc-type-' + esc(doc.id) + '">File type</label>' +
-    '<select id="doc-type-' + esc(doc.id) + '" class="doc-type-select" aria-label="File type for this document" ' +
+    '<select id="doc-type-' + esc(doc.id) + '" class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type for this document" ' +
     'title="Detected type: ' + esc(TYPE_LABEL[detected] || detected) + '. This affects retrieval.">' +
     opts + '<option value="__detected__">Use detected type (' +
     esc(TYPE_LABEL[detected] || detected) + ')</option></select>' +
@@ -158,7 +158,7 @@ export function normalizeDocumentFileName(value: string | null | undefined): str
 function unavailablePickerHtml(): string {
   return '<label class="doc-type-review doc-type-review--unavailable">' +
     '<span class="doc-type-review-label">File type</span>' +
-    '<select class="doc-type-select" aria-label="File type unavailable for this document" ' +
+    '<select class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type unavailable for this document" ' +
     'title="File type metadata is not available yet" disabled>' +
     '<option selected>Unknown</option></select></label>';
 }
