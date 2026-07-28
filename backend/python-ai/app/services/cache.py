@@ -170,7 +170,7 @@ def question_hash(
 # ("### Course material found" + "I will use these uploaded course sources…")
 # baked into the body; answers now open with the substance and sources ride
 # the metadata only.
-_CACHE_SCHEMA_VERSION = "v16-2026-07-28-validated-fallback-coverage"
+_CACHE_SCHEMA_VERSION = "v17-2026-07-28-explicit-question-priority"
 
 
 def document_version_hash(document_hashes: list[str | None]) -> str:

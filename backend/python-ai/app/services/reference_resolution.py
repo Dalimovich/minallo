@@ -11,6 +11,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from .explicit_questions import detect_explicit_questions
+
 
 ReferenceStatus = Literal["resolved", "ambiguous", "not_found"]
 EvidenceAction = Literal["answer", "clarify", "report_missing_evidence"]
@@ -209,6 +211,7 @@ def resolve_question_reference(
     visible_text: str | None,
     has_visible_image: bool,
 ) -> QuestionReference:
+    explicit_questions = detect_explicit_questions(question)
     selected = (selected_text or "").strip()
     page_text = selected or (visible_text or "").strip()
     explicit = _EXPLICIT_LABEL_RE.search(question or "")
@@ -275,11 +278,14 @@ def resolve_question_reference(
             # lookup; never substitute a partial semantic match here.
             ref.status = "not_found"
             ref.confidence = 0.2
-    elif active_document_id and visible_page and (selected or page_text or has_visible_image):
+    elif (not explicit_questions.self_contained
+          and active_document_id and visible_page
+          and (selected or page_text or has_visible_image)):
         ref.question_text = page_text or None
         ref.status = "resolved"
         ref.confidence = 0.95 if selected else (0.82 if page_text and has_visible_image else 0.7)
-    elif _VISUAL_REFERENCE_RE.search(question or "") or _CORRECTION_RE.search(question or ""):
+    elif ((not explicit_questions.self_contained and _VISUAL_REFERENCE_RE.search(question or ""))
+          or _CORRECTION_RE.search(question or "")):
         ref.status = "not_found"
         ref.confidence = 0.0
     return ref
@@ -291,8 +297,10 @@ def decide_evidence(
     question: str,
     has_history: bool,
 ) -> EvidenceDecision:
+    explicit_questions = detect_explicit_questions(question)
     visual_or_correction = bool(
-        _VISUAL_REFERENCE_RE.search(question or "") or _CORRECTION_RE.search(question or "")
+        (not explicit_questions.self_contained and _VISUAL_REFERENCE_RE.search(question or ""))
+        or _CORRECTION_RE.search(question or "")
     )
     if reference.status == "ambiguous":
         return EvidenceDecision(

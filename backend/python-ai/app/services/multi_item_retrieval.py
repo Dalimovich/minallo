@@ -13,6 +13,7 @@ from typing import Any
 from ..supabase_client import get_supabase
 from .retrieval import RetrievedChunk, retrieve_routed_chunks
 from .question_routing import build_question_routing_plan
+from .explicit_questions import detect_explicit_questions
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +229,9 @@ def analyse_request(text: str) -> RequestManifest:
             candidates.extend(line_candidates)
         elif _ENUM_PREFIX_RE.match(line) and _QUESTION_START_RE.match(stripped):
             candidates.append(stripped)
+    explicit = detect_explicit_questions(text)
+    if explicit.question_count > len(candidates):
+        candidates = list(explicit.questions)
     if len(candidates) < 2:
         candidates = [text.strip()] if text.strip() else []
     items: list[RequestedItem] = []
@@ -250,6 +254,7 @@ def analyse_request(text: str) -> RequestManifest:
             r"\b(?:course files?|kursdateien)\b", text, re.IGNORECASE,
         ) else "",
         "answer every requested item" if len(items) > 1 else "",
+        "exact scope: no extra answer sections" if explicit.exact_scope else "",
     )))
     return RequestManifest(text, language, tuple(items), constraints)
 
@@ -468,6 +473,8 @@ def answer_plan_overlay(result: MultiItemRetrievalResult) -> str:
         "Never print internal enum names or diagnostic labels in the student answer.",
         "Begin each section with a compact Kurzantwort, then explain it. Satisfy every explicit requested count.",
     ]
+    if "exact scope: no extra answer sections" in result.manifest.global_constraints:
+        lines.append("Exact scope is mandatory: add no introduction, conclusion, unrelated topic, or extra answer section.")
     by_id = {item.id: item for item in result.manifest.requested_items}
     for evidence in result.evidence:
         item = by_id[evidence.item_id]

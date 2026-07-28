@@ -11,6 +11,7 @@ import { attachMessageNavigator } from '../message-navigator/message-navigator.j
 import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
   captureStablePdfSnapshot,
+  currentMessageUsesSelectedRegion,
   getActivePdfContext,
   isPdfViewerVisible,
   type ActivePdfContext,
@@ -2919,7 +2920,15 @@ function ragEligibility(
   if (!messages.length) return null;
   const last = messages[messages.length - 1]!;
   if (last.role !== 'user') return null;
-  if (!last.text || !last.text.trim()) return null;
+  const attachedClipboardText = (last.files || [])
+    .filter((file) => file.kind === 'text' && file.source === 'clipboard' && !!file.textContent?.trim())
+    .map((file) => file.textContent!.trim());
+  // Long pastes are represented as Markdown attachment cards for the UI, but
+  // their contents are still part of this user turn. Merge them before intent
+  // analysis so the backend sees the actual questions, not just a short
+  // instruction such as "answer all of these".
+  const currentQuestion = [...attachedClipboardText, last.text.trim()].filter(Boolean).join('\n\n');
+  if (!currentQuestion) return null;
   const active = chatStore.getActive();
   const explicitAttachment = last.attachmentRefs?.[0];
   if (explicitAttachment?.fileId && explicitAttachment.courseId) {
@@ -2934,7 +2943,7 @@ function ragEligibility(
       compatibleOpenPdf?.fileName
     ].filter(Boolean) as string[]));
     return {
-      question: last.text.trim(),
+      question: currentQuestion,
       courseId: explicitAttachment.courseId,
       // The attachment is first (preferred), while a genuinely open PDF is
       // included too. The backend may broaden ordinary academic retrieval to
@@ -2961,7 +2970,7 @@ function ragEligibility(
   // they bind to that page; without one they are the sole visual source and
   // must never be silently omitted by the generic attachment path.
   if ((last.files || []).length) return null;
-  const normalQuestion = last.text.toLocaleLowerCase();
+  const normalQuestion = currentQuestion.toLocaleLowerCase();
   const explicitlyNamed = sourceLibrary.items.filter((source) => {
     const full = source.name.trim().toLocaleLowerCase();
     const stem = full.replace(/\.(?:pdf|docx?|txt|pptx?)$/i, '');
@@ -3049,10 +3058,10 @@ function ragEligibility(
     // INTERNET branch (mirrors _URL_RE in source_router.py). Course Files
     // stays on the generic path when there's no course to ground against.
     const mode = normaliseSourceMode(active.sourceMode);
-    const hasUrl = /(?:https?:\/\/|www\.)\S+|\byoutu\.be\/\S+|\b(?:youtube|wikipedia|github|stackoverflow)\.(?:com|org)\b/i.test(last.text);
+    const hasUrl = /(?:https?:\/\/|www\.)\S+|\byoutu\.be\/\S+|\b(?:youtube|wikipedia|github|stackoverflow)\.(?:com|org)\b/i.test(currentQuestion);
     if ((last.images || []).length || mode === 'internet' || (mode === 'auto' && hasUrl)) {
       return {
-        question: last.text.trim(), courseId: '', documentIds: [], documentNames: [],
+        question: currentQuestion, courseId: '', documentIds: [], documentNames: [],
         activePdfContext: null, explicitSourceOverride: false
       };
     }
@@ -3060,7 +3069,7 @@ function ragEligibility(
   }
 
   return {
-    question: last.text.trim(), courseId, documentIds, documentNames,
+    question: currentQuestion, courseId, documentIds, documentNames,
     activePdfContext, explicitSourceOverride
   };
 }
@@ -3224,6 +3233,7 @@ async function streamFromAskStream(
   const generatedArtifactIsExplicit = !!generatedDoc && /\b(?:cheat\s*-?sheets?|summar(?:y|ies)|formula sheets?|spickzettel|zusammenfassungen?)\b/i.test(question);
   const useGeneratedArtifact = generatedArtifactIsExplicit || (!activePdf && !!generatedDoc);
   const payloadPdf = useGeneratedArtifact ? null : activePdf;
+  const attachSelectedRegion = currentMessageUsesSelectedRegion(question);
   const currentPageContext = payloadPdf
     ? `[CURRENTLY VISIBLE PDF PAGE]\nFile: ${payloadPdf.fileName}\nPage: ${payloadPdf.visiblePage} of ${payloadPdf.pageCount}\n\n${payloadPdf.pageText}`.slice(0, 16000)
     : undefined;
@@ -3287,8 +3297,8 @@ async function streamFromAskStream(
           pageTextStatus: payloadPdf.pageTextStatus,
           capturedImagePages: openFileImages.map((image) => image.page)
         },
-        selectedText: payloadPdf.selectedRegion?.text,
-        selectedRegion: payloadPdf.selectedRegion
+        selectedText: attachSelectedRegion ? payloadPdf.selectedRegion?.text : undefined,
+        selectedRegion: attachSelectedRegion ? payloadPdf.selectedRegion : undefined
       } : openFileImages.length ? {
         openFileImages,
         visualEvidenceExpected: true,

@@ -162,9 +162,22 @@ export function getActivePdfContext(): ActivePdfContext | null {
 }
 
 export function requiresVisualPdfEvidence(question: string, context: ActivePdfContext): boolean {
+  if (isSelfContainedExplicitQuestionRequest(question)) return false;
   const sectionExtraction = /\b(?:all|every|alle|jede[nrsm]?|sämtliche)\b[\s\S]*\b(?:questions?|fragen|kurzfragen|aufgaben)\b/i.test(question)
     && /\b\d+\s*\.\s*(?:kurzfragen?|fragen|questions?|aufgaben)\b/i.test(question);
   return sectionExtraction || !!context.selectedRegion || context.pageTextStatus !== 'ready' || context.pageText.length < 500 || /\b(?:checked|checkbox|marked|green|arrow|diagram|drawing|figure|table|grid|option|formula|shown|visible|number\s+\d+|angekreuzt|markiert|pfeil|abbildung|zeichnung|tabelle|formel)\b/i.test(question);
+}
+
+const EXPLICIT_VISUAL_REFERENCE_RE = /\b(?:this|that)\s+(?:image|page|diagram|figure|table|marked question|highlighted area|selection)|\b(?:explain|show|read)\s+this\b|\b(?:dieses|diese|dieser)\s+(?:bild|seite|abbildung|diagramm|tabelle)|\b(?:die\s+)?markierte(?:n|r|s)?\s+(?:aufgabe|frage|bereich)|\b(?:der\s+)?markierte(?:n|r|s)?\s+bereich|\b(?:erkl[aä]re|lies|zeige)\s+(?:mir\s+)?das\s+hier\b/i;
+
+export function isSelfContainedExplicitQuestionRequest(question: string): boolean {
+  const questionCount = (question.match(/\?/g) || []).length;
+  return questionCount > 0 && !EXPLICIT_VISUAL_REFERENCE_RE.test(question);
+}
+
+export function currentMessageUsesSelectedRegion(question: string): boolean {
+  return !isSelfContainedExplicitQuestionRequest(question)
+    && EXPLICIT_VISUAL_REFERENCE_RE.test(question);
 }
 
 export async function capturePdfPage(request: PdfPageCaptureRequest): Promise<OpenFileImage[]> {

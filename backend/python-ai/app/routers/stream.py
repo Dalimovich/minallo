@@ -2153,7 +2153,19 @@ async def _prepare_ask_stream_response(
             "do not replace the answers with an overview."
         )
         resolved_question = f"{resolved_question}\n\n{coverage_instruction}"
-    selected_region = payload.selectedRegion
+    from ..services.explicit_questions import detect_explicit_questions  # noqa: WPS433
+    explicit_questions = detect_explicit_questions(question)
+    log.info(
+        "explicit_question_detection request_id=%s question_count=%d self_contained=%s "
+        "visual_reference=%s exact_scope=%s inventory_hash=%s",
+        request_id, explicit_questions.question_count, explicit_questions.self_contained,
+        explicit_questions.contains_visual_reference, explicit_questions.exact_scope,
+        explicit_questions.inventory_hash[:16] or None,
+    )
+    # A complete current-message request outranks passive viewer state. A PDF
+    # may still contribute retrieval evidence, but an old selection cannot turn
+    # ten written questions into a marked-region follow-up.
+    selected_region = None if explicit_questions.self_contained else payload.selectedRegion
     selection_stale = _selection_is_stale(
         selected_region,
         visible_page=payload.visiblePage,
@@ -2788,9 +2800,13 @@ async def _prepare_ask_stream_response(
     }
     from ..services.question_routing import build_question_routing_plan  # noqa: WPS433
     cache_routing_plan = build_question_routing_plan(question)
-    cache_key_kwargs["routing_fingerprint"] = json.dumps(
-        cache_routing_plan.trace(), sort_keys=True, ensure_ascii=False,
-    )
+    cache_key_kwargs["routing_fingerprint"] = json.dumps({
+        **cache_routing_plan.trace(),
+        "explicitQuestionInventoryHash": explicit_questions.inventory_hash or None,
+        "explicitQuestionCount": explicit_questions.question_count,
+        "exactScope": explicit_questions.exact_scope,
+        "visualReference": explicit_questions.contains_visual_reference,
+    }, sort_keys=True, ensure_ascii=False)
     if cacheable:
         if status_sink:
             status_sink("checking_cache")
@@ -2804,6 +2820,19 @@ async def _prepare_ask_stream_response(
                     **cache_key_kwargs,
                 )
             )
+        if cached and explicit_questions.question_count:
+            cached_answer = str(cached.get("answer") or "")
+            forbidden_visual_fallback = (
+                "I cannot reliably identify the marked question" in cached_answer
+                or "Please open that page or select the question area" in cached_answer
+                or "Ich kann die markierte Aufgabe" in cached_answer
+            )
+            if forbidden_visual_fallback or not cached_answer.strip():
+                log.info(
+                    "invalid_explicit_question_cache_rejected request_id=%s question_count=%d",
+                    request_id, explicit_questions.question_count,
+                )
+                cached = None
         log.info(
             "ai_stream_timing request_id=%s phase=cache cache_ms=%.0f cache_hit=%s",
             request_id, (time.perf_counter() - cache_started) * 1000, bool(cached),
@@ -4226,7 +4255,7 @@ async def _prepare_ask_stream_response(
         resolved_question,
         weak_topics=weak_topics,
         previous_turns=previous_turns_payload,
-        has_selected_region=bool(payload.selectedRegion),
+        has_selected_region=verified_region is not None,
         has_page_image=bool(open_file_images),
     )
     visual_aids = await run_in_threadpool(
@@ -4236,7 +4265,7 @@ async def _prepare_ask_stream_response(
                 document_id=payload.activeDocumentId,
                 document_revision=payload.viewerRevision,
                 page_number=payload.visiblePage,
-                selected_region=(payload.selectedRegion.model_dump() if payload.selectedRegion else None),
+                selected_region=(selected_region.model_dump() if selected_region else None),
                 page_image_available=bool(open_file_images),
             ),
             user_id=user_id,
@@ -4444,6 +4473,10 @@ async def _prepare_ask_stream_response(
             request_id=request_id,
             response_language=language_context.requested_response_language,
             grounding_policy=source_decision.grounding_policy.value,
+            max_tokens=(
+                max(2500, min(12000, len(multi_item_result.manifest.requested_items) * 900))
+                if multi_item_result.evidence else 2500
+            ),
             request_plan_overlay=(
                 answer_plan_overlay(multi_item_result)
                 + fallback_research.prompt_overlay()
@@ -4475,6 +4508,14 @@ async def _prepare_ask_stream_response(
                         abort_meter["promptTokens"] = int(evt.get("estPromptTokens") or 0)
                     continue
                 if evt.get("meta"):
+                    evt["requestIntent"] = {
+                        "primaryIntent": "multi_question" if explicit_questions.question_count > 1 else None,
+                        "questionCount": explicit_questions.question_count,
+                        "exactScope": explicit_questions.exact_scope,
+                        "answerLanguage": language_context.requested_response_language,
+                        "visualInterpretation": explicit_questions.contains_visual_reference,
+                        "followUpReference": False if explicit_questions.self_contained else None,
+                    }
                     evt["retrievalRouting"] = cache_routing_plan.trace()
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
