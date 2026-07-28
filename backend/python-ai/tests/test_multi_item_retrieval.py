@@ -216,7 +216,11 @@ def test_final_validator_repairs_a_skipped_question_without_raw_status():
     assert not validate_final_answer(result, partial).complete
     repaired, validation = ensure_complete_answer(
         result, partial, allow_general_fallback=True,
-        fallback_generator=lambda question: f"Fallback for {question}",
+        fallback_generator=lambda question: (
+            "1. Verified answer point with a concrete technical cause.\n"
+            "2. A second verified point explains the practical consequence in sufficient detail.\n"
+            "3. A third verified point gives an applicable engineering example and explanation."
+        ),
     )
     assert validation.complete
     assert result.manifest.requested_items[3].original_text in repaired
@@ -233,8 +237,64 @@ def test_german_fallback_template_stays_german():
     )
     repaired, validation = ensure_complete_answer(
         result, "", allow_general_fallback=True,
-        fallback_generator=lambda question: "Sachliche deutsche Antwort.",
+        fallback_generator=lambda question: (
+            "1. Sachliche deutsche Antwort mit einer ausführlichen technischen Begründung.\n"
+            "2. Der Zusammenhang wird verständlich erklärt und durch ein praktisches Beispiel ergänzt.\n"
+            "3. Dadurch ist die Antwort vollständig und für die Prüfung nachvollziehbar."
+        ),
     )
     assert validation.complete
     assert "Grundlage: Allgemeines Fachwissen" in repaired
     assert "Source basis:" not in repaired
+
+
+def test_placeholder_heading_is_not_substantive_coverage_and_is_repaired():
+    result = retrieve_multi_item_course_evidence(
+        user_id="u", course_id="c", question=REQUEST,
+        inventory_loader=inventory_loader, semantic_retriever=no_semantic,
+    )
+    placeholder = "\n\n".join(
+        f"## {item.original_text}\nThe authorised course material did not provide enough reliable evidence for this item."
+        for item in result.manifest.requested_items
+    )
+    before = validate_final_answer(result, placeholder)
+    assert len(before.rendered_item_ids) == 4
+    assert not before.complete
+    assert all(item.unresolved_placeholder_only for item in before.item_coverage)
+
+    repaired, after = ensure_complete_answer(
+        result, placeholder, allow_general_fallback=True,
+        fallback_generator=lambda _: (
+            "1. First substantive technical answer with a clear causal explanation.\n"
+            "2. Second substantive point explains its practical engineering significance.\n"
+            "3. Third substantive point includes a concrete application example for context."
+        ),
+    )
+    assert after.complete
+    assert "authorised course material did not provide" not in repaired
+    assert all(item.substantive_answer_present for item in after.item_coverage)
+    assert all(item.explanation_present for item in after.item_coverage)
+
+
+def test_exact_ten_question_request_requires_ten_substantive_explanations():
+    result = retrieve_multi_item_course_evidence(
+        user_id="u", course_id="c", question=EXACT_TEN_REQUEST,
+        inventory_loader=lambda **_: (["forming"], [], False),
+        semantic_retriever=no_semantic,
+    )
+    repaired, validation = ensure_complete_answer(
+        result, "", allow_general_fallback=True,
+        fallback_generator=lambda _: "\n".join(
+            f"{index}. Fachlich geprüfter Punkt {index} mit technischer Ursache, "
+            "praktischer Bedeutung und einer nachvollziehbaren ausführlichen Erklärung."
+            for index in range(1, 7)
+        ),
+    )
+    assert len(validation.expected_item_ids) == 10
+    assert len(validation.rendered_item_ids) == 10
+    assert validation.complete
+    assert all(item.substantive_answer_present for item in validation.item_coverage)
+    assert all(item.explanation_present for item in validation.item_coverage)
+    assert all(item.requested_counts_satisfied for item in validation.item_coverage)
+    assert "The authorised course material" not in repaired
+    assert repaired.count("Grundlage: Allgemeines Fachwissen") == 10

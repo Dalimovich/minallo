@@ -4569,7 +4569,11 @@ async def _prepare_ask_stream_response(
                                 source_decision.grounding_policy,
                             ),
                             fallback_generator=lambda item_question: generate_general_answer(
-                                item_question,
+                                (
+                                    f"{item_question}\n\nAnswer this item substantively in the user's language. "
+                                    "Include a concise answer, a detailed technical explanation, and satisfy every "
+                                    "requested numerical/list constraint. Do not return an evidence placeholder."
+                                ),
                                 max_tokens=700,
                             )["answer"],
                         )
@@ -4578,6 +4582,7 @@ async def _prepare_ask_stream_response(
                             "renderedItemIds": list(coverage.rendered_item_ids),
                             "missingItemIds": list(coverage.missing_item_ids),
                             "complete": coverage.complete,
+                            "items": [item.__dict__ for item in coverage.item_coverage],
                         }
                         if completed_text != original_text:
                             full_text_buf.clear()

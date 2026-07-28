@@ -103,10 +103,77 @@ class FinalAnswerValidation:
     contains_internal_status_labels: bool
     extra_item_ids: tuple[str, ...] = ()
     duplicate_item_ids: tuple[str, ...] = ()
+    item_coverage: tuple["ItemAnswerCoverage", ...] = ()
 
     @property
     def complete(self) -> bool:
-        return not (self.missing_item_ids or self.extra_item_ids or self.duplicate_item_ids or self.contains_internal_status_labels)
+        structural_failure = bool(
+            self.missing_item_ids
+            or self.extra_item_ids
+            or self.duplicate_item_ids
+            or self.contains_internal_status_labels
+        )
+        return not structural_failure and all(
+            item.substantive_answer_present
+            and item.explanation_present
+            and item.requested_counts_satisfied
+            and not item.unresolved_placeholder_only
+            for item in self.item_coverage
+        )
+
+
+@dataclass(frozen=True)
+class ItemAnswerCoverage:
+    item_id: str
+    section_rendered: bool
+    substantive_answer_present: bool
+    explanation_present: bool
+    requested_counts_satisfied: bool
+    unresolved_placeholder_only: bool
+
+
+_UNRESOLVED_ANSWER_RE = re.compile(
+    r"(?:authori[sz]ed course material did not provide|not enough (?:reliable )?evidence|"
+    r"insufficient (?:course )?evidence|keine ausreichenden .*?(?:belege|informationen)|"
+    r"nicht (?:eindeutig|ausreichend) .*?(?:enthalten|gefunden))",
+    re.IGNORECASE | re.DOTALL,
+)
+_ANSWER_HEADING_RE = re.compile(r"(?m)^\s*#{1,6}\s+(.+?)\s*$")
+
+
+def _answer_sections(result: MultiItemRetrievalResult, answer_text: str) -> dict[str, str]:
+    """Return exact per-question sections without treating a heading as an answer."""
+    matches = list(_ANSWER_HEADING_RE.finditer(answer_text))
+    sections: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        heading = _normalise(re.sub(r"^\d+[.)]\s*", "", match.group(1)))
+        for item in result.manifest.requested_items:
+            if heading == _normalise(item.original_text):
+                end = matches[index + 1].start() if index + 1 < len(matches) else len(answer_text)
+                sections[item.id] = answer_text[match.start():end].strip()
+                break
+    return sections
+
+
+def _coverage_for(item: RequestedItem, section: str | None) -> ItemAnswerCoverage:
+    section = section or ""
+    body = _ANSWER_HEADING_RE.sub("", section, count=1).strip()
+    placeholder = bool(_UNRESOLVED_ANSWER_RE.search(body))
+    words = re.findall(r"\b[\wÄÖÜäöüß-]{2,}\b", body, re.UNICODE)
+    substantive = bool(body) and not placeholder and len(words) >= 8
+    # A useful explanation contains more than the requested labels themselves.
+    explanation = substantive and len(words) >= 18
+    enumerated = len(re.findall(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+\S", body))
+    required = max((requirement.expected_count for requirement in item.requirements), default=0)
+    counts_ok = not required or enumerated >= required
+    return ItemAnswerCoverage(
+        item_id=item.id,
+        section_rendered=bool(section),
+        substantive_answer_present=substantive,
+        explanation_present=explanation,
+        requested_counts_satisfied=counts_ok,
+        unresolved_placeholder_only=placeholder,
+    )
 
 
 _QUESTION_START_RE = re.compile(
@@ -529,11 +596,8 @@ def validate_final_answer(
     answer_text: str,
 ) -> FinalAnswerValidation:
     """Deterministically prove that every original question reached the answer."""
-    normalized_answer = _normalise(answer_text)
-    rendered = tuple(
-        item.id for item in result.manifest.requested_items
-        if _normalise(item.original_text) in normalized_answer
-    )
+    sections = _answer_sections(result, answer_text)
+    rendered = tuple(item.id for item in result.manifest.requested_items if item.id in sections)
     expected = tuple(item.id for item in result.manifest.requested_items)
     missing = tuple(item_id for item_id in expected if item_id not in rendered)
     raw_status = bool(re.search(
@@ -542,7 +606,11 @@ def validate_final_answer(
         answer_text,
         re.IGNORECASE,
     ))
-    return FinalAnswerValidation(expected, rendered, missing, raw_status)
+    coverage = tuple(
+        _coverage_for(item, sections.get(item.id))
+        for item in result.manifest.requested_items
+    )
+    return FinalAnswerValidation(expected, rendered, missing, raw_status, item_coverage=coverage)
 
 
 def ensure_complete_answer(
@@ -552,7 +620,7 @@ def ensure_complete_answer(
     allow_general_fallback: bool,
     fallback_generator: Callable[[str], str],
 ) -> tuple[str, FinalAnswerValidation]:
-    """Append explicit sections for omissions; never return a silently skipped item."""
+    """Regenerate missing or non-substantive sections through one answer path."""
     validation = validate_final_answer(result, answer_text)
     cleaned = re.sub(
         r"(?im)^\s*status\s*:\s*(?:index_gap|supported|partial|partially_supported|"
@@ -560,9 +628,19 @@ def ensure_complete_answer(
         "",
         answer_text,
     ).strip()
-    by_id = {item.id: item for item in result.manifest.requested_items}
-    for item_id in validation.missing_item_ids:
-        item = by_id[item_id]
+    sections = _answer_sections(result, cleaned)
+    coverage = {item.item_id: item for item in validation.item_coverage}
+    rebuilt: list[str] = []
+    for item in result.manifest.requested_items:
+        current = coverage[item.id]
+        if (
+            current.section_rendered
+            and current.substantive_answer_present
+            and current.explanation_present
+            and current.requested_counts_satisfied
+        ):
+            rebuilt.append(sections[item.id])
+            continue
         if allow_general_fallback:
             body = fallback_generator(item.original_text).strip()
             basis = (
@@ -580,12 +658,13 @@ def ensure_complete_answer(
                 if result.manifest.language == "de"
                 else "Source basis: Course files only"
             )
-        cleaned += f"\n\n## {item.original_text}\n\n{body}\n\n{basis}"
+        rebuilt.append(f"## {item.original_text}\n\n{body}\n\n{basis}")
+    cleaned = "\n\n".join(rebuilt).strip()
     return cleaned, validate_final_answer(result, cleaned)
 
 
 __all__ = [
-    "AnswerRequirement", "EvidenceStatus", "FinalAnswerValidation", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
+    "AnswerRequirement", "EvidenceStatus", "FinalAnswerValidation", "ItemAnswerCoverage", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
     "RequestedItemEvidence", "analyse_request", "answer_plan_overlay",
     "controlled_course_terms", "ensure_complete_answer", "is_multi_item_request",
     "retrieve_multi_item_course_evidence", "validate_final_answer",
