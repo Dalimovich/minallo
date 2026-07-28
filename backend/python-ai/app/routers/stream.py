@@ -49,6 +49,7 @@ from ..services.learning_recommendation import (
     build_explanation_plan,
     build_learning_recommendations,
 )
+from ..services.visual_aids import VisualContext, select_visual_aids
 from ..services.fallback_research import research_unresolved_items
 from ..services.multi_item_retrieval import (
     answer_plan_overlay,
@@ -2829,6 +2830,9 @@ async def _prepare_ask_stream_response(
             "sourceScope": cached.get("sourceScope"),
             "courseFileScope": cached.get("courseFileScope"),
             "sourceLabel": cached.get("sourceLabel"),
+            "pedagogicalAnalysis": cached.get("pedagogicalAnalysis"),
+            "learningRecommendations": cached.get("learningRecommendations") or [],
+            "visualAids": cached.get("visualAids") or [],
             "sourceDebug": cached.get("sourceDebug") if _source_debug_enabled() else None,
         }))
         cached_answer = cached.get("answer", "")
@@ -2849,6 +2853,9 @@ async def _prepare_ask_stream_response(
             "sourceScope": cached.get("sourceScope"),
             "courseFileScope": cached.get("courseFileScope"),
             "sourceLabel": cached.get("sourceLabel"),
+            "pedagogicalAnalysis": cached.get("pedagogicalAnalysis"),
+            "learningRecommendations": cached.get("learningRecommendations") or [],
+            "visualAids": cached.get("visualAids") or [],
             "sourceDebug": cached.get("sourceDebug") if _source_debug_enabled() else None,
         }))
 
@@ -4232,6 +4239,18 @@ async def _prepare_ask_stream_response(
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
+    visual_aids = await run_in_threadpool(
+        lambda: select_visual_aids(
+            explanation_plan,
+            context=VisualContext(
+                document_id=payload.activeDocumentId,
+                document_revision=payload.viewerRevision,
+                page_number=payload.visiblePage,
+                selected_region=(payload.selectedRegion.model_dump() if payload.selectedRegion else None),
+                page_image_available=bool(open_file_images),
+            ),
+        ),
+    )
     context_consistent = bool(
         retrieval_scope.exercise_reference == grounded_identity.exercise_reference
         and (
@@ -4419,6 +4438,7 @@ async def _prepare_ask_stream_response(
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
                     evt["learningRecommendations"] = learning_recommendations
+                    evt["visualAids"] = visual_aids
                     evt.update(_source_meta(source_decision, cache_hit=False))
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                 if evt.get("t"):
@@ -4431,6 +4451,7 @@ async def _prepare_ask_stream_response(
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
                     evt["learningRecommendations"] = learning_recommendations
+                    evt["visualAids"] = visual_aids
                     if multi_item_result.evidence:
                         original_text = "".join(full_text_buf)
                         completed_text, coverage = ensure_complete_answer(
@@ -5149,6 +5170,9 @@ async def _prepare_ask_stream_response(
                         "courseFileScope": captured_meta.get("courseFileScope"),
                         "sourceLabel": captured_meta.get("sourceLabel"),
                         "groundingPolicy": captured_meta.get("groundingPolicy"),
+                        "pedagogicalAnalysis": captured_meta.get("pedagogicalAnalysis"),
+                        "learningRecommendations": captured_meta.get("learningRecommendations") or [],
+                        "visualAids": captured_meta.get("visualAids") or [],
                         "sourceDebug": captured_meta.get("sourceDebug") if _source_debug_enabled() else None,
                     },
                     # Same key args as the lookup — symmetry is mandatory or the

@@ -1165,6 +1165,10 @@
     };
     options = options || {};
     var initial = options.initialParameters || {};
+    var initialDocumentIds = Array.isArray(options.initialDocumentIds)
+      ? options.initialDocumentIds.filter(Boolean) : [];
+    var initialVisualIds = Array.isArray(options.initialVisualIds)
+      ? options.initialVisualIds.filter(Boolean) : [];
     if (els.text && initial.topic) els.text.value = initial.topic;
     if (els.mode && initial.lessonMode) els.mode.value = initial.lessonMode;
     if (els.language && (initial.lessonLanguage || initial.language)) {
@@ -1221,6 +1225,10 @@
         .then(function (svc) {
           var opts = {};
           if (documentIds && documentIds.length) opts.documentIds = documentIds;
+          if (initialVisualIds.length) opts.visualIds = initialVisualIds;
+          if (Array.isArray(initial.learningGoals) && initial.learningGoals.length) {
+            opts.learningGoals = initial.learningGoals;
+          }
           if (els.mode && els.mode.value) opts.lessonMode = els.mode.value;
           if (els.language && els.language.value) opts.lessonLanguage = els.language.value;
           if (els.courseName) opts.courseName = els.courseName;
@@ -1264,5 +1272,16 @@
           els.result.innerHTML = '<div class="dl-msg dl-error">Could not load your files. Please try again.</div>';
         });
     });
+
+    // A chatbot recommendation is itself the explicit user click. Reuse the
+    // supplied authorised document scope and start exactly once after mount;
+    // ordinary navigation continues to show the source picker.
+    if (options.autoStart === true && initial.topic) {
+      setTimeout(function () {
+        if (!els.gen || els.gen.dataset.autoStarted === 'true') return;
+        els.gen.dataset.autoStarted = 'true';
+        doGenerate(initialDocumentIds.length ? initialDocumentIds : null);
+      }, 0);
+    }
   };
 })();

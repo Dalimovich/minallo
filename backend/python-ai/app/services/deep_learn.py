@@ -1378,6 +1378,8 @@ def generate_deep_learn(
     lesson_language: str | None = None,
     course_name: str | None = None,
     student_major: str | None = None,
+    visual_ids: list[str] | None = None,
+    learning_goals: list[str] | None = None,
     save: bool = True,
 ) -> dict[str, Any]:
     topic = (topic or "").strip()
@@ -1426,6 +1428,12 @@ def generate_deep_learn(
         + _language_prompt(language) + "\n\n"
         + (understanding + "\n\n" if understanding else "")
         + (student_ctx + "\n\n" if student_ctx else "")
+        + (
+            "CHAT LEARNING GOALS:\n- "
+            + "\n- ".join(str(goal).strip()[:240] for goal in learning_goals[:8] if str(goal).strip())
+            + "\n\n"
+            if learning_goals else ""
+        )
     )
     if facts_text:
         user += (
@@ -1454,6 +1462,10 @@ def generate_deep_learn(
         structured["courseName"] = course_name.strip()
     if student_major:
         structured["studentMajor"] = student_major.strip()
+    if visual_ids:
+        # Stable identities only. Deep Learn can resolve authorised course
+        # visual records later; temporary signed URLs are never persisted.
+        structured["sourceVisualIds"] = list(dict.fromkeys(visual_ids[:12]))
     _validate_lesson_content(
         structured,
         topic=topic,

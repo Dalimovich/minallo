@@ -4619,6 +4619,85 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   border-color: #2563eb;
 }
 
+.ncb-learning-recommendation {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.13), rgba(14, 165, 233, 0.07));
+  display: grid;
+  gap: 10px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.ncb-visual-aids {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.ncb-visual-aid {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.46);
+}
+.ncb-visual-aid a { display: block; }
+.ncb-visual-aid img { display: block; width: 100%; max-height: 250px; object-fit: contain; background: #fff; }
+.ncb-visual-aid figcaption { padding: 10px; overflow-wrap: anywhere; }
+.ncb-visual-aid figcaption strong { display: block; color: #e2e8f0; font-size: 0.78rem; }
+.ncb-visual-aid figcaption p { margin: 4px 0; color: #cbd5e1; font-size: 0.75rem; line-height: 1.45; }
+.ncb-visual-aid figcaption small { color: #94a3b8; font-size: 0.68rem; }
+.ncb-visual-aid__open-course {
+  width: 100%;
+  min-height: 96px;
+  border: 0;
+  color: #dbeafe;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(14, 165, 233, 0.12));
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+.ncb-visual-aid__open-course:focus-visible { outline: 2px solid #93c5fd; outline-offset: -3px; }
+.ncb-learning-recommendation__copy strong { color: #dbeafe; font-size: 0.83rem; }
+.ncb-learning-recommendation__copy p { margin: 4px 0 0; color: #cbd5e1; font-size: 0.78rem; line-height: 1.45; }
+.ncb-learning-recommendation__actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ncb-learning-recommendation__start {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 11px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ncb-learning-recommendation__start:hover { background: #1d4ed8; }
+.ncb-learning-recommendation__start:focus-visible,
+.ncb-learning-recommendation__dismiss:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.ncb-learning-recommendation__dismiss {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+@media (max-width: 520px) {
+  .ncb-learning-recommendation__actions { align-items: stretch; }
+  .ncb-learning-recommendation__start { flex: 1; }
+}
+
 .ncb-sidebar[data-collapsed="true"] .ncb-widget-launcher { align-self: center; }
 .ncb-sidebar[data-collapsed="true"] .ncb-widgets-btn { width: 48px; height: 48px; padding: 0; border-radius: 14px; }
 .ncb-sidebar[data-collapsed="true"] .ncb-widget-menu,

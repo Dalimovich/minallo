@@ -371,7 +371,7 @@ function bindSearch(sidebar: HTMLElement): void {
 // explanation behaviour. Persisted in localStorage so the choice survives reloads.
 
 type TutorMode = 'explain' | 'solve' | 'quiz';
-type SourceMode = 'auto' | 'course_files' | 'internet';
+type SourceMode = 'auto' | 'course_files' | 'course_plus_general' | 'internet' | 'general';
 type CourseFileScope = 'all_course_files' | 'specific_files';
 const TUTOR_MODE_STORAGE_KEY = 'ncb_tutor_mode';
 const TUTOR_MODE_MIGRATION_KEY = 'ncb_tutor_mode_direct_default_v1';
@@ -459,7 +459,8 @@ function getCurrentTutorMode(): TutorMode {
 }
 
 function normaliseSourceMode(v: unknown): SourceMode {
-  return v === 'course_files' || v === 'internet' || v === 'auto' ? v : 'auto';
+  return v === 'course_files' || v === 'course_plus_general' || v === 'internet'
+    || v === 'general' || v === 'auto' ? v : 'course_files';
 }
 
 function normaliseCourseFileScope(v: unknown): CourseFileScope {
@@ -525,9 +526,9 @@ function updateSourceControls(root: HTMLElement): void {
   // Reflect the current mode on the collapsed trigger, and hide the file-scope
   // section when Internet mode is selected (no course files involved then).
   const label = root.querySelector<HTMLElement>('.ncb-source-trigger-label');
-  if (label) label.textContent = activeModeLabel || 'Auto';
+  if (label) label.textContent = activeModeLabel || 'Course files';
   const scopeSection = root.querySelector<HTMLElement>('.ncb-source-scope-section');
-  if (scopeSection) scopeSection.hidden = mode === 'internet';
+  if (scopeSection) scopeSection.hidden = mode === 'internet' || mode === 'general';
 }
 
 function initSourceControls(root: HTMLElement): void {
@@ -696,6 +697,9 @@ interface ChatMessage {
   sourceLabel?: string;
   courseFileScope?: CourseFileScope;
   sources?: SrcItem[];
+  pedagogicalAnalysis?: Record<string, unknown>;
+  learningRecommendations?: Array<Record<string, unknown>>;
+  visualAids?: Array<Record<string, unknown>>;
   /** Lightweight marker stored instead of the serialised mission HTML.
    *  On history replay the mission panel is re-fetched and re-rendered fresh. */
   missionMarker?: MissionMarker;
@@ -1433,6 +1437,11 @@ async function streamAiReply(
         sourceLabel: streamed.meta?.sourceLabel as string | undefined,
         courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
         sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
+        pedagogicalAnalysis: streamed.meta?.pedagogicalAnalysis as Record<string, unknown> | undefined,
+        learningRecommendations: Array.isArray(streamed.meta?.learningRecommendations)
+          ? streamed.meta.learningRecommendations as Array<Record<string, unknown>> : undefined,
+        visualAids: Array.isArray(streamed.meta?.visualAids)
+          ? streamed.meta.visualAids as Array<Record<string, unknown>> : undefined,
         learningJourney: streamed.meta?.taskType === 'document_wide_extraction'
           ? learningJourneyMarkerFromMeta(streamed.meta) : undefined,
         examPractice: GENERATED_EXAM_REQUEST_RE.test(sourceUser?.text || ''),
@@ -3211,6 +3220,7 @@ async function streamFromAskStream(
     } satisfies OpenFileImage];
   });
   const openFileImages = [...(snapshot?.images || []), ...pastedImages].slice(0, 3);
+  const effectiveCourseFileScope = courseFileScopeForActiveChat();
   const generatedArtifactIsExplicit = !!generatedDoc && /\b(?:cheat\s*-?sheets?|summar(?:y|ies)|formula sheets?|spickzettel|zusammenfassungen?)\b/i.test(question);
   const useGeneratedArtifact = generatedArtifactIsExplicit || (!activePdf && !!generatedDoc);
   const payloadPdf = useGeneratedArtifact ? null : activePdf;
@@ -3245,8 +3255,7 @@ async function streamFromAskStream(
       // When we send a document selection, tell the backend to hard-scope to
       // it (specific_files); otherwise it would treat the default
       // all_course_files scope as "search everything" and ignore the ids.
-      courseFileScope:
-        documentIds.length || documentNames.length ? 'specific_files' : courseFileScopeForActiveChat(),
+      courseFileScope: effectiveCourseFileScope,
       previousTurns,
       // UI location (page / course tab / open document) for the backend's
       // live-workspace block. In the standalone Chatbot this mostly carries
@@ -3256,8 +3265,8 @@ async function streamFromAskStream(
       // documents. The client knows file names, not document ids, so names are
       // the working path (backend resolves them); ids are sent when known.
       // Both omitted for "All files" (whole-course search).
-      ...(documentIds.length ? { documentIds } : {}),
-      ...(documentNames.length ? { documentNames } : {}),
+      ...(effectiveCourseFileScope === 'specific_files' && documentIds.length ? { documentIds } : {}),
+      ...(effectiveCourseFileScope === 'specific_files' && documentNames.length ? { documentNames } : {}),
       ...(payloadPdf ? {
         activeDocumentId: payloadPdf.documentId,
         activePdfVisible: isPdfViewerVisible(),
@@ -3599,6 +3608,12 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
   }
   const sources = Array.isArray(meta.sources) ? meta.sources : [];
   const sourceLabel = typeof meta.sourceLabel === 'string' ? meta.sourceLabel : '';
+  const recommendations = Array.isArray(meta.learningRecommendations)
+    ? meta.learningRecommendations as Array<Record<string, unknown>>
+    : [];
+  const visualAids = Array.isArray(meta.visualAids)
+    ? meta.visualAids as Array<Record<string, unknown>>
+    : [];
 
   let footerHtml = '';
   if (sourceLabel) footerHtml += '<div class="ncb-source-used">' + escapeHtml(sourceLabel) + '</div>';
@@ -3654,6 +3669,119 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
       a.addEventListener('click', (ev) => ev.stopPropagation());
     });
     bubble.appendChild(footer);
+  }
+  if (visualAids.length) {
+    const gallery = document.createElement('section');
+    gallery.className = 'ncb-visual-aids';
+    gallery.setAttribute('aria-label', 'Visual aids');
+    visualAids.slice(0, 3).forEach((visual) => {
+      const sourceType = String(visual.sourceType || '');
+      const figure = document.createElement('figure');
+      figure.className = 'ncb-visual-aid ncb-visual-aid--' + sourceType.replace(/[^a-z_]/g, '');
+      const safeThumb = typeof visual.thumbnailUrl === 'string' && /^https:\/\//i.test(visual.thumbnailUrl)
+        ? visual.thumbnailUrl : '';
+      if (sourceType === 'web' && safeThumb) {
+        const sourceUrl = typeof visual.sourcePageUrl === 'string' && /^https:\/\//i.test(visual.sourcePageUrl)
+          ? visual.sourcePageUrl : '';
+        const link = document.createElement('a');
+        link.href = sourceUrl || safeThumb;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer nofollow';
+        const img = document.createElement('img');
+        img.src = safeThumb;
+        img.alt = String(visual.altText || visual.title || 'Educational visual');
+        img.loading = 'lazy';
+        img.addEventListener('error', () => figure.remove());
+        link.appendChild(img);
+        figure.appendChild(link);
+      } else if (sourceType === 'course_file') {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'ncb-visual-aid__open-course';
+        open.textContent = 'Open course visual';
+        open.addEventListener('click', async () => {
+          await ensureChatCourseFilesLoaded();
+          const w = window as unknown as { __minalloPdfRegion?: unknown };
+          w.__minalloPdfRegion = visual.boundingBox || null;
+          handleSourceClick({
+            documentId: String(visual.documentId || ''),
+            page: Number(visual.pageNumber || 1),
+          }, 'popup');
+        });
+        figure.appendChild(open);
+      }
+      const caption = document.createElement('figcaption');
+      const label = sourceType === 'course_file' ? 'Visual from your course' : 'External visual example';
+      caption.innerHTML = '<strong>' + escapeHtml(label + ': ' + String(visual.title || '')) + '</strong>' +
+        '<p>' + escapeHtml(String(visual.explanation || '')) + '</p>';
+      if (sourceType === 'web') {
+        caption.innerHTML += '<small>' + escapeHtml([
+          visual.provider, visual.creator, visual.licence
+        ].filter(Boolean).map(String).join(' · ')) + '</small>';
+      } else if (visual.pageNumber) {
+        caption.innerHTML += '<small>Page ' + escapeHtml(String(visual.pageNumber)) + '</small>';
+      }
+      figure.appendChild(caption);
+      gallery.appendChild(figure);
+    });
+    if (gallery.children.length) bubble.appendChild(gallery);
+  }
+  const recommendation = recommendations.find((item) =>
+    item.kind === 'deep_learn' && typeof item.topic === 'string' && item.action
+  );
+  if (recommendation) {
+    const id = String(recommendation.id || '');
+    const dismissedAt = Number(localStorage.getItem('ncb_deep_learn_dismissed_' + id) || 0);
+    if (!dismissedAt || Date.now() - dismissedAt > 7 * 24 * 60 * 60 * 1000) {
+      const action = recommendation.action as Record<string, unknown>;
+      const card = document.createElement('aside');
+      card.className = 'ncb-learning-recommendation';
+      card.setAttribute('aria-label', 'Deep Learn recommendation');
+      card.innerHTML =
+        '<div class="ncb-learning-recommendation__copy">' +
+          '<strong>Deep Learn</strong>' +
+          '<p>' + escapeHtml(String(recommendation.reasonText || 'A guided lesson may help with this topic.')) + '</p>' +
+        '</div>' +
+        '<div class="ncb-learning-recommendation__actions">' +
+          '<button type="button" class="ncb-learning-recommendation__start">' +
+            escapeHtml(String(action.label || 'Start Deep Learn')) +
+          '</button>' +
+          '<button type="button" class="ncb-learning-recommendation__dismiss" aria-label="Dismiss Deep Learn recommendation">×</button>' +
+        '</div>';
+      card.querySelector<HTMLButtonElement>('.ncb-learning-recommendation__dismiss')?.addEventListener('click', () => {
+        if (id) localStorage.setItem('ncb_deep_learn_dismissed_' + id, String(Date.now()));
+        card.remove();
+      });
+      card.querySelector<HTMLButtonElement>('.ncb-learning-recommendation__start')?.addEventListener('click', () => {
+        const launch = {
+          courseId: String(recommendation.courseId || ''),
+          topic: String(recommendation.topic || ''),
+          documentIds: Array.isArray(recommendation.documentIds) ? recommendation.documentIds.map(String) : [],
+          sourceChunkIds: Array.isArray(recommendation.sourceChunkIds) ? recommendation.sourceChunkIds.map(String) : [],
+          visualIds: Array.isArray(recommendation.visualIds) ? recommendation.visualIds.map(String) : [],
+          lessonMode: String(recommendation.lessonMode || 'simple'),
+          lessonLanguage: String(recommendation.lessonLanguage || 'same'),
+          learningGoals: Array.isArray(recommendation.learningGoals) ? recommendation.learningGoals.map(String) : [],
+          autoStart: true,
+        };
+        const w = window as unknown as {
+          __minalloDeepLearnLaunch?: typeof launch;
+          activeCourseRef?: unknown;
+          openCourse?: (course: unknown) => void;
+          showCourseSection?: (course: unknown, section: string) => void;
+          showToast?: (title: string, message?: string) => void;
+        };
+        w.__minalloDeepLearnLaunch = launch;
+        if (w.activeCourseRef && typeof w.openCourse === 'function' && typeof w.showCourseSection === 'function') {
+          w.openCourse(w.activeCourseRef);
+          w.showCourseSection(w.activeCourseRef, 'deeplearn');
+          card.querySelector<HTMLButtonElement>('.ncb-learning-recommendation__start')!.disabled = true;
+        } else {
+          w.showToast?.('Open the course first', 'Deep Learn needs the active course workspace.');
+        }
+      });
+      bubble.appendChild(card);
+    }
   }
 }
 
@@ -6202,7 +6330,7 @@ const chatStore: ChatStore = {
       messages: [],
       attachedFolders: [],
       selectedSourceIds: [],
-      sourceMode: 'auto',
+    sourceMode: 'course_files',
       courseFileScope: 'all_course_files',
       savedReplies: [],
       pinned: false,
@@ -6296,6 +6424,9 @@ function compactMessageForStorage(m: ChatMessage): ChatMessage {
     compact.sourceLabel = m.sourceLabel;
     compact.courseFileScope = m.courseFileScope;
     compact.sources = m.sources;
+    compact.pedagogicalAnalysis = m.pedagogicalAnalysis;
+    compact.learningRecommendations = m.learningRecommendations;
+    compact.visualAids = m.visualAids;
     compact.allowDiagrams = !!m.allowDiagrams;
     if (m.learningJourney) compact.learningJourney = {
       ...m.learningJourney,
@@ -6983,13 +7114,16 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
     void reconcileScopedJourney(m, bubble);
   }
   if (bubble && m.role === 'assistant') enhanceGeneratedExamPractice(bubble);
-  if (bubble && (m.sourceLabel || m.sources?.length)) {
+  if (bubble && (m.sourceLabel || m.sources?.length || m.learningRecommendations?.length || m.visualAids?.length)) {
     appendAskStreamMeta(bubble, {
       sourceLabel: m.sourceLabel,
       selectedSourceMode: m.selectedSourceMode,
       sourceScope: m.sourceScope,
       courseFileScope: m.courseFileScope,
       sources: m.sources || [],
+      pedagogicalAnalysis: m.pedagogicalAnalysis,
+      learningRecommendations: m.learningRecommendations || [],
+      visualAids: m.visualAids || [],
     });
   }
   if (m.completionState === 'interrupted' && bubble) {

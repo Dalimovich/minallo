@@ -666,7 +666,24 @@ function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse):
     sec === 'cheatsheet' ? '#coCheatsheetPanel' :
     '#coDeepLearnPanel';
   const panel = co.querySelector<HTMLElement>(panelSelector);
-  if (panel && panel.getAttribute('data-mounted-course') === course.id) return;
+  const launchWindow = window as unknown as {
+    __minalloDeepLearnLaunch?: {
+      courseId?: string;
+      topic?: string;
+      documentIds?: string[];
+      sourceChunkIds?: string[];
+      visualIds?: string[];
+      lessonMode?: string;
+      lessonLanguage?: string;
+      learningGoals?: string[];
+      autoStart?: boolean;
+    };
+  };
+  const queuedLaunch = sec === 'deeplearn' &&
+    launchWindow.__minalloDeepLearnLaunch?.courseId === String(course.id)
+    ? launchWindow.__minalloDeepLearnLaunch
+    : undefined;
+  if (panel && panel.getAttribute('data-mounted-course') === course.id && !queuedLaunch) return;
   const loadFeature = (window as unknown as {
     _ssLoadPortalFeature?: (name: string) => Promise<void>;
   })._ssLoadPortalFeature;
@@ -679,7 +696,26 @@ function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse):
       window.mountDeepLearn;
     if (typeof mountFn === 'function') {
       if (panel && panel.isConnected) {
-        mountFn(panel, course, { generate: window._generateStudyTool });
+        const launch = queuedLaunch;
+        const mountFeature = mountFn as unknown as (
+          target: HTMLElement,
+          selectedCourse: LegacyCourse,
+          options: Record<string, unknown>
+        ) => void;
+        mountFeature(panel, course, launch ? {
+          generate: window._generateStudyTool,
+          initialParameters: {
+            topic: launch.topic,
+            lessonMode: launch.lessonMode,
+            lessonLanguage: launch.lessonLanguage,
+            learningGoals: launch.learningGoals,
+          },
+          initialDocumentIds: launch.documentIds,
+          initialSourceChunkIds: launch.sourceChunkIds,
+          initialVisualIds: launch.visualIds,
+          autoStart: launch.autoStart === true,
+        } : { generate: window._generateStudyTool });
+        if (launch) delete launchWindow.__minalloDeepLearnLaunch;
         panel.setAttribute('data-mounted-course', course.id);
       }
     } else if (tries > 0) {
