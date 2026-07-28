@@ -140,6 +140,7 @@ async def health() -> dict[str, Any]:
         "service": "minallo-ai",
         "version": app.version,
         "environment": settings.environment,
+        "revision": os.getenv("MINALLO_REVISION", "unknown"),
     }
 
 

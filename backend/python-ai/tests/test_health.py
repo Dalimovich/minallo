@@ -34,6 +34,7 @@ def test_health_unauthenticated(client: TestClient) -> None:
     body = r.json()
     assert body["status"] == "ok"
     assert body["service"] == "minallo-ai"
+    assert body["revision"] == os.getenv("MINALLO_REVISION", "unknown")
 
 
 def test_db_smoke_requires_internal_token(client: TestClient) -> None:
