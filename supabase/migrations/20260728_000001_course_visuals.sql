@@ -113,6 +113,8 @@ create table if not exists public.deep_learn_generation_claims (
   primary key (user_id, idempotency_key)
 );
 alter table public.deep_learn_generation_claims enable row level security;
+drop policy if exists "users read own deep learn claims"
+  on public.deep_learn_generation_claims;
 create policy "users read own deep learn claims" on public.deep_learn_generation_claims
   for select using (auth.uid() = user_id);
 grant select on public.deep_learn_generation_claims to authenticated;
