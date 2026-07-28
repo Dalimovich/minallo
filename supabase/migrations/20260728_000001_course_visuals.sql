@@ -57,7 +57,7 @@ create or replace function public.match_course_visuals(
   p_user_id uuid,
   p_course_id text,
   p_document_revision text,
-  p_query_embedding vector(1536),
+  p_query_embedding extensions.vector(1536),
   p_limit integer default 12
 ) returns table (
   id uuid, document_id uuid, document_revision text, page_number integer,
@@ -65,22 +65,23 @@ create or replace function public.match_course_visuals(
   section_title text, detected_labels jsonb, detected_topics jsonb,
   ocr_text text, visual_description text, quality_score double precision,
   thumbnail_path text, perceptual_hash text, similarity double precision
-) language sql stable security definer set search_path = public as $$
+) language sql stable security definer set search_path = public, extensions as $$
   select cv.id, cv.document_id, cv.document_revision, cv.page_number,
     cv.visual_type, cv.bounding_box, cv.caption, cv.nearby_text,
     cv.section_title, cv.detected_labels, cv.detected_topics, cv.ocr_text,
     cv.visual_description, cv.quality_score, cv.thumbnail_path,
-    cv.perceptual_hash, 1 - (cv.relevance_embedding <=> p_query_embedding) as similarity
+    cv.perceptual_hash,
+    1 - (cv.relevance_embedding OPERATOR(extensions.<=>) p_query_embedding) as similarity
   from public.course_visuals cv
   join public.documents d on d.id = cv.document_id
   where cv.user_id = p_user_id and cv.course_id = p_course_id
     and cv.document_revision = d.document_hash
     and (p_document_revision = '' or cv.document_revision = p_document_revision)
-  order by cv.relevance_embedding <=> p_query_embedding
+  order by cv.relevance_embedding OPERATOR(extensions.<=>) p_query_embedding
   limit greatest(1, least(coalesce(p_limit, 12), 30));
 $$;
-revoke all on function public.match_course_visuals(uuid, text, text, vector, integer) from public;
-grant execute on function public.match_course_visuals(uuid, text, text, vector, integer) to service_role;
+revoke all on function public.match_course_visuals(uuid, text, text, extensions.vector, integer) from public;
+grant execute on function public.match_course_visuals(uuid, text, text, extensions.vector, integer) to service_role;
 
 alter table public.notes
   add column if not exists topic_fingerprint text,
