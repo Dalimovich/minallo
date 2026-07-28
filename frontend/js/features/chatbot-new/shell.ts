@@ -101,6 +101,7 @@ export function initNewChatbotShell(): void {
   newRoot.style.display = '';
 
   loadChatStore(); // PR-05 — must run before rendering sidebar or conversation.
+  initActiveChatCourseBinding();
 
   initSidebar(newRoot);
   initConversation(newRoot);
@@ -461,11 +462,47 @@ function getCurrentTutorMode(): TutorMode {
 
 function normaliseSourceMode(v: unknown): SourceMode {
   return v === 'course_files' || v === 'course_plus_general' || v === 'internet'
-    || v === 'general' || v === 'auto' ? v : 'course_files';
+    || v === 'general' || v === 'auto' ? v : 'auto';
 }
 
 function normaliseCourseFileScope(v: unknown): CourseFileScope {
   return v === 'specific_files' || v === 'all_course_files' ? v : 'all_course_files';
+}
+
+const NCB_RECENT_COURSE_KEY = 'minallo:chatbot-recent-course';
+
+function recentStudyPanelCourseId(): string {
+  try { return localStorage.getItem(NCB_RECENT_COURSE_KEY) || ''; } catch { return ''; }
+}
+
+function currentVisibleCourseId(): string {
+  return String((window as unknown as { activeCourseId?: string | null }).activeCourseId || '')
+    || recentStudyPanelCourseId();
+}
+
+function resolveRequestCourseId(chat: SavedChat): string {
+  return String(chat.courseId || '') || currentVisibleCourseId();
+}
+
+function restoreActiveChatCourse(): void {
+  const chat = chatStore.getActive();
+  (window as unknown as { activeCourseId?: string | null }).activeCourseId = chat.courseId || null;
+}
+
+function initActiveChatCourseBinding(): void {
+  const host = window as unknown as { _ncbCourseBindingBound?: boolean };
+  if (host._ncbCourseBindingBound) return;
+  host._ncbCourseBindingBound = true;
+  window.addEventListener('minallo:active-chat-course-changed', (event) => {
+    const detail = (event as CustomEvent<{ courseId?: string }>).detail;
+    const courseId = String(detail?.courseId || '').trim();
+    if (!courseId) return;
+    const chat = chatStore.getActive();
+    chat.courseId = courseId;
+    chat.updatedAt = Date.now();
+    saveChatStore();
+  });
+  restoreActiveChatCourse();
 }
 
 function sourceModeForActiveChat(): SourceMode {
@@ -527,7 +564,7 @@ function updateSourceControls(root: HTMLElement): void {
   // Reflect the current mode on the collapsed trigger, and hide the file-scope
   // section when Internet mode is selected (no course files involved then).
   const label = root.querySelector<HTMLElement>('.ncb-source-trigger-label');
-  if (label) label.textContent = activeModeLabel || 'Course files';
+  if (label) label.textContent = activeModeLabel || 'Auto';
   const scopeSection = root.querySelector<HTMLElement>('.ncb-source-scope-section');
   if (scopeSection) scopeSection.hidden = mode === 'internet' || mode === 'general';
 }
@@ -683,6 +720,8 @@ interface ChatMessage {
   requestSnapshot?: {
     userText: string;
     sourceMode: SourceMode;
+    courseFileScope: CourseFileScope;
+    courseId?: string;
     selectedSourceIds: string[];
     activeDocumentId?: string;
     activeDocumentName?: string;
@@ -909,12 +948,13 @@ function createSubmissionSnapshot(
 ): ChatSubmission {
   const chat = chatStore.getActive();
   const files = state.files.slice();
-  const courseId = String((window as unknown as { activeCourseId?: string | null }).activeCourseId || '');
+  const courseId = resolveRequestCourseId(chat);
   return Object.freeze({
     text: textarea.value.trim(),
     images: state.pasted.map(clonePendingImage),
     files: files.map(clonePendingFile),
     sourceMode: normaliseSourceMode(chat.sourceMode),
+    courseFileScope: normaliseCourseFileScope(chat.courseFileScope),
     selectedFileIds: chat.selectedSourceIds.slice(),
     courseId: courseId || undefined,
     draftRevision: state.draftRevision
@@ -1306,6 +1346,8 @@ async function streamAiReply(
     assistantMessage.requestSnapshot = {
       userText: sourceUser?.text || '',
       sourceMode: normaliseSourceMode(originChat.sourceMode),
+      courseFileScope: normaliseCourseFileScope(originChat.courseFileScope),
+      courseId: resolveRequestCourseId(originChat) || undefined,
       selectedSourceIds: originChat.selectedSourceIds.slice(),
       // A file attached to this exact message always wins over a PDF that may
       // merely still be open elsewhere in the UI.
@@ -1449,16 +1491,11 @@ async function streamAiReply(
       });
       if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
     } else if (normaliseSourceMode(originChat.sourceMode) === 'course_files') {
-      // Locked to Course Files but no course files are attached to this chat,
-      // so there's nothing to search. Honour the mode's contract — never answer
-      // from general knowledge here — and tell the user how to attach files
-      // instead of silently falling back to the generic model.
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
-      raw = tStr(
-        'cb_course_files_none',
-        "You're in **Course Files** mode, but no course files are attached to this chat yet, so there's nothing for me to search. Click the **import** button (the folder icon next to the message box) to add files from one of your courses, then ask again — or switch the source selector to **Auto** or **Internet**."
-      );
+      raw = normaliseCourseFileScope(originChat.courseFileScope) === 'specific_files'
+        ? 'No files are selected for this request. Select one or more files, or switch to **All course files**.'
+        : 'No active course is bound to this chat. Open a course in the Study Panel, or switch the source selector to **Auto** or **Internet**.';
       if (isOriginActive() && bubble) renderRichBubble(bubble, raw, false);
       Object.assign(assistantMessage, { text: raw, allowDiagrams: false, completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString() });
       if (isOriginActive()) setBubbleSubtitle(aiRow, 'course_files');
@@ -3042,11 +3079,19 @@ function ragEligibility(
     documentNames = [activePdfContext.fileName];
   }
 
+  if (
+    normaliseCourseFileScope(active.courseFileScope) === 'specific_files'
+    && documentIds.length === 0
+    && documentNames.length === 0
+  ) {
+    return null;
+  }
+
   // All selected sources are expected to come from the same course (the
   // import UI scopes by course). Pick the first one's courseId as the
   // request scope. If they ever mix courses we still pick the first —
   // worst case is RAG searches a smaller-than-expected universe.
-  const fallbackCourseId = String((window as unknown as { activeCourseId?: string | null }).activeCourseId || '');
+  const fallbackCourseId = resolveRequestCourseId(active);
   const courseId = namedCourseFiles[0]?.courseId || requestSources[0]?.courseId || activePdfContext?.courseId || fallbackCourseId;
   if (!courseId) {
     // No course context. Internet mode still works — a web search needs no
@@ -6273,6 +6318,7 @@ interface SavedChat {
   attachedFolders: ImportedFolder[];
   /** IDs of sources from the global library that are active for this chat. */
   selectedSourceIds: string[];
+  courseId: string | null;
   sourceMode: SourceMode;
   courseFileScope: CourseFileScope;
   savedReplies: SavedReply[];
@@ -6359,7 +6405,8 @@ const chatStore: ChatStore = {
       messages: [],
       attachedFolders: [],
       selectedSourceIds: [],
-    sourceMode: 'course_files',
+      courseId: currentVisibleCourseId() || null,
+      sourceMode: 'auto',
       courseFileScope: 'all_course_files',
       savedReplies: [],
       pinned: false,
@@ -6504,6 +6551,7 @@ function compactChatForStorage(c: SavedChat): SavedChat {
     messages: messages.map(compactMessageForStorage),
     attachedFolders: [],
     selectedSourceIds: Array.isArray(c.selectedSourceIds) ? c.selectedSourceIds.slice() : [],
+    courseId: c.courseId || null,
     sourceMode: normaliseSourceMode(c.sourceMode),
     courseFileScope: normaliseCourseFileScope(c.courseFileScope),
     savedReplies: (c.savedReplies || []).map((r) => ({
@@ -6705,6 +6753,7 @@ function loadChatStore(): void {
     repairConversationIntegrity(c.messages);
     if (!Array.isArray(c.attachedFolders)) c.attachedFolders = [];
     if (!Array.isArray(c.selectedSourceIds)) c.selectedSourceIds = [];
+    if (typeof c.courseId !== 'string' || !c.courseId) c.courseId = null;
     if (!Array.isArray(c.savedReplies)) c.savedReplies = [];
     c.sourceMode = normaliseSourceMode(c.sourceMode);
     c.courseFileScope = normaliseCourseFileScope(c.courseFileScope);
@@ -6928,6 +6977,7 @@ function switchActiveChat(root: HTMLElement, chatId: string): void {
   // still present when the user returns. (Aborting here used to drop the reply
   // entirely, and re-pointing state.messages landed it in the wrong chat.)
   chatStore.activeId = chatId;
+  restoreActiveChatCourse();
   saveChatStore();
   updateActiveSidebarItem(root, chatId);
   if (activeChatLoadRaf != null) window.cancelAnimationFrame(activeChatLoadRaf);
@@ -6947,6 +6997,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   if (!stage || !msgs) return;
 
   const chat = chatStore.getActive();
+  restoreActiveChatCourse();
   // A persisted chat must first receive its authoritative transcript. Running
   // orphan repair before that fetch can manufacture a failure card for an
   // assistant row that simply has not arrived from the server yet.
@@ -7629,6 +7680,8 @@ function repairOrphanedAssistantMessages(chat: SavedChat): boolean {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       requestSnapshot: {
         userText: message.text, sourceMode: normaliseSourceMode(chat.sourceMode),
+        courseFileScope: normaliseCourseFileScope(chat.courseFileScope),
+        courseId: chat.courseId || undefined,
         selectedSourceIds: chat.selectedSourceIds.slice(),
       },
     });
@@ -8086,9 +8139,13 @@ function regenerateLastReal(aiRow: HTMLElement, root: HTMLElement): void {
   const requestMessages = state.messages.slice(0, parentIndex + 1).filter((message) => message.id !== alternative.id);
   const activeChat = chatStore.getActive();
   const previousMode = activeChat.sourceMode;
+  const previousScope = activeChat.courseFileScope;
+  const previousCourseId = activeChat.courseId;
   const previousSources = activeChat.selectedSourceIds.slice();
   if (original.requestSnapshot) {
     activeChat.sourceMode = original.requestSnapshot.sourceMode;
+    activeChat.courseFileScope = normaliseCourseFileScope(original.requestSnapshot.courseFileScope);
+    activeChat.courseId = original.requestSnapshot.courseId || null;
     activeChat.selectedSourceIds = original.requestSnapshot.selectedSourceIds.slice();
     alternative.requestSnapshot = { ...original.requestSnapshot };
   }
@@ -8098,6 +8155,8 @@ function regenerateLastReal(aiRow: HTMLElement, root: HTMLElement): void {
     requestMessages
   }).finally(() => {
     activeChat.sourceMode = previousMode;
+    activeChat.courseFileScope = previousScope;
+    activeChat.courseId = previousCourseId;
     activeChat.selectedSourceIds = previousSources;
     saveChatStore();
     if (clicked) { clicked.disabled = false; clicked.removeAttribute('aria-busy'); }
@@ -8522,9 +8581,13 @@ function attachStructuredRecoveryAction(
       ? chat.messages.slice(0, Math.max(messageIndex, parentIndex) + 1).concat(continuationPrompt)
       : chat.messages.slice(0, parentIndex + 1);
     const previousMode = chat.sourceMode;
+    const previousScope = chat.courseFileScope;
+    const previousCourseId = chat.courseId;
     const previousSources = chat.selectedSourceIds.slice();
     if (message.requestSnapshot) {
       chat.sourceMode = message.requestSnapshot.sourceMode;
+      chat.courseFileScope = normaliseCourseFileScope(message.requestSnapshot.courseFileScope);
+      chat.courseId = message.requestSnapshot.courseId || null;
       chat.selectedSourceIds = message.requestSnapshot.selectedSourceIds.slice();
     }
     message.completionState = 'recovering';
@@ -8537,6 +8600,8 @@ function attachStructuredRecoveryAction(
       continuationText, resumeExistingRequest: true,
     }).finally(() => {
       chat.sourceMode = previousMode;
+      chat.courseFileScope = previousScope;
+      chat.courseId = previousCourseId;
       chat.selectedSourceIds = previousSources;
       saveChatStore();
     });

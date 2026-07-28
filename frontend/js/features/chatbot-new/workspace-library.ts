@@ -112,6 +112,13 @@ function rememberCourse(course: LibraryCourse): void {
   try { localStorage.setItem(RECENT_COURSE_KEY, course.id); } catch { /* ignore */ }
 }
 
+function bindCourseToActiveChat(course: LibraryCourse): void {
+  window.activeCourseId = course.id;
+  window.dispatchEvent(new CustomEvent('minallo:active-chat-course-changed', {
+    detail: { courseId: course.id, source: 'study_panel' }
+  }));
+}
+
 function refitWorkspacePdf(): void {
   const viewer = window as typeof window & {
     _refitPdfWidth?: () => void;
@@ -719,6 +726,7 @@ function renderCourses(panel: HTMLElement): void {
       const course = all.find((item) => item.id === row.dataset.courseId);
       if (!course) return;
       studyLibraryState().courseScrollTop = panel.scrollTop;
+      bindCourseToActiveChat(course);
       rememberCourse(course);
       void renderCourseDetail(panel, course);
     });

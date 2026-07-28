@@ -81,6 +81,15 @@ test('course library has glass cards and persists a larger most-recent course', 
   assert.match(css, /\.ncb-folder\s*\{[\s\S]*backdrop-filter:\s*blur\(16px\)/);
 });
 
+test('Study Panel course selection binds the active chat course before rendering', () => {
+  assert.match(moduleSource, /function bindCourseToActiveChat\(course: LibraryCourse\)/);
+  assert.match(moduleSource, /window\.activeCourseId = course\.id/);
+  assert.match(moduleSource, /minallo:active-chat-course-changed/);
+  assert.match(moduleSource, /bindCourseToActiveChat\(course\);[\s\S]*rememberCourse\(course\);[\s\S]*renderCourseDetail\(panel, course\)/);
+  assert.match(shellSource, /chat\.courseId = courseId/);
+  assert.match(shellSource, /restoreActiveChatCourse\(\)/);
+});
+
 test('chatbot removes the legacy icon rail and uses a slimmer AI chats sidebar', () => {
   assert.match(css, /body\.ncb-fullbleed #portal \.sidebar \{ display:\s*none !important; \}/);
   assert.match(css, /@media \(min-width: 1025px\)[\s\S]*\.ncb-sidebar \{ width:\s*252px;/);
