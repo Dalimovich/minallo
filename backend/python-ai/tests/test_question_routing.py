@@ -69,3 +69,18 @@ def test_staged_executor_keeps_lecture_before_exercise(monkeypatch):
                                     course_topics=("Gesenkschmieden",), routing_plan=plan)
     assert chunks[0].document_type == "lecture"
     assert calls[0]["primary_topics"] == ("Gesenkschmieden",)
+
+
+def test_calculation_reserves_one_candidate_from_every_evidence_stage(monkeypatch):
+    def fake_retrieve(**kwargs):
+        stage = kwargs["retrieval_stage"]
+        return [RetrievedChunk(f"c-{stage}-{i}", f"d-{stage}", 1, 1, "T = 12 s",
+                               10 - i, .8, "worked_example", None,
+                               document_type=kwargs["document_types"][0],
+                               retrieval_stage=stage, retrieval_reason=kwargs["retrieval_reason"])
+                for i in range(8)]
+    monkeypatch.setattr("app.services.retrieval.retrieve_chunks", fake_retrieve)
+    plan = build_question_routing_plan("Löse Aufgabe 13.1 und erkläre jeden Schritt.")
+    chunks = retrieve_routed_chunks(user_id="u", course_id="c", query=plan.original_question,
+                                    course_topics=(), routing_plan=plan, top_k=6)
+    assert {1, 2, 3, 4}.issubset({chunk.retrieval_stage for chunk in chunks})

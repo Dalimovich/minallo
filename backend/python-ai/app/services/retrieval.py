@@ -843,6 +843,21 @@ def retrieve_routed_chunks(
         )
         collected.update((chunk.chunk_id, chunk) for chunk in fallback)
     ordered = sorted(collected.values(), key=lambda chunk: (chunk.retrieval_stage or 999, -chunk.score))
+    # Preserve source mixing: reserve the best candidate from each non-empty
+    # stage, then fill remaining slots by stage precedence and score. This
+    # prevents eight exercise chunks from crowding out the lecture method and
+    # formula-sheet notation that a mixed calculation plan explicitly needs.
+    representatives: list[RetrievedChunk] = []
+    represented: set[int] = set()
+    for chunk in ordered:
+        stage = chunk.retrieval_stage or 999
+        if stage not in represented:
+            representatives.append(chunk)
+            represented.add(stage)
+    selected = representatives[:top_k]
+    selected_ids = {chunk.chunk_id for chunk in selected}
+    selected.extend(chunk for chunk in ordered if chunk.chunk_id not in selected_ids)
+    ordered = selected[:top_k]
     log.info(
         "question_routing_trace request_id=%s intents=%s topic=%s topic_confidence=%.2f stages=%s selected=%s",
         request_id or "unknown", [intent.value for intent in plan.intents], plan.topic.primary_topic,
@@ -850,7 +865,7 @@ def retrieve_routed_chunks(
         [{"chunkId": chunk.chunk_id, "documentId": chunk.document_id,
           "stage": chunk.retrieval_stage, "reason": chunk.retrieval_reason} for chunk in ordered[:top_k]],
     )
-    return ordered[:top_k]
+    return ordered
 
 
 def _load_doc_metadata(sb, doc_ids: list[str]) -> dict[str, dict[str, str | None]]:
