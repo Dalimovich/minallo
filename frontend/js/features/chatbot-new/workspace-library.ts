@@ -11,6 +11,7 @@ import {
   type CachedCourseFile, type CachedSavedItem,
 } from './study-library-store.js';
 import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js';
+import { decorateFileTypeBadges } from '../courses/document-type-badge.js';
 
 type CourseFile = {
   name: string;
@@ -825,6 +826,7 @@ function paintCourseDetail(panel: HTMLElement, course: LibraryCourse, scrollTop 
   panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => returnToCourseList(panel));
   const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   bindCourseFileActions(panel, detail, course);
+  void listCourseDocuments(course.id).then((docs) => decorateFileTypeBadges(detail, docs)).catch(() => undefined);
   panel.querySelectorAll<HTMLDetailsElement>('.ncb-folder').forEach((folder) => folder.addEventListener('toggle', () => {
     const entry = courseEntry(course.id);
     const cachedFolder = entry?.folders.find((item) => item.name === folder.dataset.dropFolder);
@@ -1235,7 +1237,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
-  return `<div class="ncb-file-row"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b></button><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
+  return `<div class="ncb-file-row"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b></button><div class="co-file-doctype ncb-file-doctype" data-file-type-slot="${escapeHtml(file.name)}"></div><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
 }
 
 function trashIcon(): string {

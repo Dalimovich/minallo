@@ -2232,6 +2232,29 @@ body.minallo-in-course .welcome-state {
   color: rgba(226, 232, 240, 0.5);
   margin-top: 2px;
 }
+
+.co-inner-v2 .co-file-doctype {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 5px;
+}
+
+.co-inner-v2 .co-file-doctype .doc-type-badge { display: none; }
+.co-inner-v2 .doc-type-review { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.co-inner-v2 .doc-type-review-label { color: var(--text-muted, #94a3b8); font-size: 11px; white-space: nowrap; }
+.co-inner-v2 .doc-type-select {
+  max-width: 150px;
+  min-width: 0;
+  padding: 4px 24px 4px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--card-bg, #111827) 92%, transparent);
+  color: inherit;
+  font: 600 11px/1.2 var(--font-main, sans-serif);
+}
+.co-inner-v2 .doc-type-select:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
 .co-inner-v2 .co-file.co-file-v2 .co-file-actions {
   display: flex;
   align-items: center;

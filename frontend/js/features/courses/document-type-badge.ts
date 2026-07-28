@@ -46,6 +46,7 @@ export const CORRECTION_CHOICES: Array<{ value: string; label: string }> = [
   { value: 'solution_sheet', label: 'Solution' },
   { value: 'summary', label: 'Summary' },
   { value: 'formula_sheet', label: 'Cheat sheet / Formula sheet' },
+  { value: 'unknown', label: 'Unknown' },
 ];
 
 export interface BadgeMeta {
@@ -97,18 +98,22 @@ export function badgeHtml(doc: DocUnderstanding): string {
   );
 }
 
-/** Low-confidence correction selector. Returns '' when no review is needed. */
+/** Always-visible effective-type picker. The automatic option clears an override. */
 export function correctionSelectHtml(doc: DocUnderstanding): string {
   const m = documentTypeMeta(doc);
-  if (!m.needsReview || !doc.id) return '';
+  if (!doc.id) return '';
   const opts = CORRECTION_CHOICES.map(
-    (c) => '<option value="' + esc(c.value) + '">' + esc(c.label) + '</option>'
+    (c) => '<option value="' + esc(c.value) + '"' +
+      (c.value === m.type ? ' selected' : '') + '>' + esc(c.label) + '</option>'
   ).join('');
+  const detected = doc.document_type || 'unknown';
   return (
     '<div class="doc-type-review" data-doc-id="' + esc(doc.id) + '">' +
-    '<span class="doc-type-review-label">Source type uncertain. Please choose:</span> ' +
-    '<select class="doc-type-select" aria-label="Correct source type">' +
-    '<option value="">—</option>' + opts + '</select>' +
+    '<label class="doc-type-review-label" for="doc-type-' + esc(doc.id) + '">File type</label>' +
+    '<select id="doc-type-' + esc(doc.id) + '" class="doc-type-select" aria-label="File type for this document" ' +
+    'title="Detected type: ' + esc(TYPE_LABEL[detected] || detected) + '. This affects retrieval.">' +
+    opts + '<option value="__detected__">Use detected type (' +
+    esc(TYPE_LABEL[detected] || detected) + ')</option></select>' +
     '</div>'
   );
 }
@@ -168,15 +173,23 @@ export function decorateFileTypeBadges(
       wrap.innerHTML = badgeHtml(doc) + correctionSelectHtml(doc);
       textEl.appendChild(wrap);
     });
+    root.querySelectorAll<HTMLElement>('[data-file-type-slot]').forEach((slot) => {
+      const fname = (slot.getAttribute('data-file-type-slot') || '').toLowerCase();
+      const doc = byName.get(fname);
+      if (!doc || doc.processing_status !== 'ready' || slot.querySelector('.doc-type-select')) return;
+      slot.innerHTML = badgeHtml(doc) + correctionSelectHtml(doc);
+    });
     wireCorrectionSelectors(root, (documentId, effectiveType) => {
       const review = root.querySelector('.doc-type-review[data-doc-id="' + documentId + '"]');
       const wrap = review?.closest('.co-file-doctype');
       if (wrap) {
-        wrap.innerHTML = badgeHtml({
-          id: documentId,
-          effective_document_type: effectiveType,
-          user_document_type_override: effectiveType,
-        });
+        const doc = docs.find((item) => item.id === documentId);
+        if (doc) {
+          doc.effective_document_type = effectiveType;
+          doc.user_document_type_override = effectiveType === doc.document_type ? null : effectiveType;
+          const badge = wrap.querySelector('.doc-type-badge');
+          if (badge) badge.outerHTML = badgeHtml(doc);
+        }
       }
       if (onApplied) onApplied(documentId, effectiveType);
     });
@@ -194,15 +207,35 @@ export function wireCorrectionSelectors(
   root.querySelectorAll<HTMLSelectElement>('.doc-type-review .doc-type-select').forEach((sel) => {
     if ((sel as unknown as { _dtBound?: boolean })._dtBound) return;
     (sel as unknown as { _dtBound?: boolean })._dtBound = true;
-    sel.addEventListener('change', async () => {
+    sel.dataset.effectiveValue = sel.value;
+    for (const eventName of ['click', 'pointerdown', 'mousedown', 'keydown'] as const) {
+      sel.addEventListener(eventName, (event) => event.stopPropagation());
+    }
+    sel.addEventListener('change', async (event) => {
+      event.stopPropagation();
       const wrap = sel.closest('.doc-type-review') as HTMLElement | null;
       const docId = wrap?.getAttribute('data-doc-id');
-      const value = sel.value;
-      if (!docId || !value) return;
+      const previous = sel.dataset.effectiveValue || 'unknown';
+      const requested = sel.value;
+      const value = requested === '__detected__' ? null : requested;
+      if (!docId) return;
       sel.disabled = true;
-      const res = await setDocumentTypeOverride(docId, value);
-      sel.disabled = false;
-      if (res && onApplied) onApplied(docId, res.effectiveDocumentType || value);
+      try {
+        const res = await setDocumentTypeOverride(docId, value);
+        if (!res) throw new Error('save failed');
+        sel.dataset.effectiveValue = res.effectiveDocumentType;
+        if (onApplied) onApplied(docId, res.effectiveDocumentType);
+        window.dispatchEvent(new CustomEvent('minallo:document-type-changed', {
+          detail: { documentId: docId, effectiveDocumentType: res.effectiveDocumentType },
+        }));
+      } catch {
+        sel.value = previous;
+        sel.dataset.effectiveValue = previous;
+        const w = window as unknown as { showToast?: (title: string, message: string) => void };
+        w.showToast?.('Could not update the file type.', 'The previous type was restored. Please retry.');
+      } finally {
+        sel.disabled = false;
+      }
     });
   });
 }

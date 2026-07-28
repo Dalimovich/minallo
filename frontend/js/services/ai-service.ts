@@ -212,6 +212,10 @@ export function clearCourseDocumentCache(courseId?: string): void {
   else _courseDocumentCache.clear();
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('minallo:document-type-changed', () => clearCourseDocumentCache());
+}
+
 export function prefetchCourseDocuments(courseId: string): Promise<CourseDocument[]> {
   return listCourseDocuments(courseId).catch(() => []);
 }

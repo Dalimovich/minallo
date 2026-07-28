@@ -27,9 +27,9 @@ test('low confidence → needsReview + correction selector rendered', () => {
   const m = documentTypeMeta(doc);
   assert.equal(m.needsReview, true);
   const sel = correctionSelectHtml(doc);
-  assert.ok(sel.includes('Source type uncertain. Please choose:'));
+  assert.ok(sel.includes('>File type</label>'));
   assert.ok(sel.includes('data-doc-id="d1"'));
-  assert.ok(sel.includes('<option value="exam">Exam</option>'));
+  assert.ok(sel.includes('<option value="exam" selected>Exam</option>'));
 });
 
 test('unknown type needs review', () => {
@@ -48,7 +48,8 @@ test('user override → "you set this", no confidence, no review', () => {
   assert.equal(m.needsReview, false);
   assert.equal(m.confidenceLabel, '');
   assert.ok(badgeHtml(doc).includes('Source type: Solution (you set this)'));
-  assert.equal(correctionSelectHtml(doc), '');
+  assert.ok(correctionSelectHtml(doc).includes('value="solution_sheet" selected'));
+  assert.ok(correctionSelectHtml(doc).includes('Use detected type'));
 });
 
 test('cheat_sheet and formula_sheet share one label', () => {
@@ -60,4 +61,24 @@ test('cheat_sheet and formula_sheet share one label', () => {
 
 test('correction selector empty without an id', () => {
   assert.equal(correctionSelectHtml({ effective_document_type: 'unknown', document_type_confidence: 0 }), '');
+});
+
+test('high-confidence documents still render an editable picker', () => {
+  const html = correctionSelectHtml({
+    id: 'd2', document_type: 'lecture', effective_document_type: 'lecture',
+    document_type_confidence: 0.99,
+  });
+  assert.ok(html.includes('class="doc-type-select"'));
+  assert.ok(html.includes('value="lecture" selected'));
+  assert.ok(html.includes('Use detected type (Lecture)'));
+});
+
+test('picker isolates parent-card events and contains rollback handling', async () => {
+  const source = await (await import('node:fs/promises')).readFile(
+    new URL('../../frontend/js/features/courses/document-type-badge.ts', import.meta.url), 'utf8'
+  );
+  assert.match(source, /\['click', 'pointerdown', 'mousedown', 'keydown'\]/);
+  assert.match(source, /event\.stopPropagation\(\)/);
+  assert.match(source, /sel\.value = previous/);
+  assert.match(source, /document-type-changed/);
 });

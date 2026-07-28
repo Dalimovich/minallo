@@ -54,10 +54,10 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
 
   // Verify ownership before writing.
-  const owned = await supaRequest<Array<{ id: string }>>(
+  const owned = await supaRequest<Array<{ id: string; course_id: string; updated_at: string }>>(
     'GET',
     'documents?id=eq.' + encodeURIComponent(documentId) +
-      '&user_id=eq.' + encodeURIComponent(user.id) + '&select=id&limit=1',
+      '&user_id=eq.' + encodeURIComponent(user.id) + '&select=id,course_id,updated_at&limit=1',
     null, serviceKey
   );
   if (!Array.isArray(owned.body) || owned.body.length === 0) {
@@ -68,7 +68,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     'PATCH',
     'documents?id=eq.' + encodeURIComponent(documentId) +
       '&user_id=eq.' + encodeURIComponent(user.id) +
-      '&select=id,document_type,document_type_confidence,user_document_type_override',
+      '&select=id,document_type,document_type_confidence,user_document_type_override,updated_at',
     { user_document_type_override: override, updated_at: new Date().toISOString() },
     serviceKey,
     { Prefer: 'return=representation' }
@@ -87,7 +87,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     'unknown';
   return jsonResponse(200, {
     documentId,
+    detectedType: classifierType || 'unknown',
     userDocumentTypeOverride: override,
     effectiveDocumentType: effective,
+    metadataRevision: row?.updated_at ?? null,
   });
 };
