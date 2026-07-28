@@ -21,7 +21,7 @@ from .learning_recommendation import ExplanationPlan
 log = logging.getLogger(__name__)
 
 _SAFE_HOSTS = {"commons.wikimedia.org", "upload.wikimedia.org"}
-_PRIVATE_TOKEN_RE = re.compile(r"(?:\.pdf\b|[0-9a-f]{8}-[0-9a-f-]{27,}|[/\\])", re.I)
+_PRIVATE_TOKEN_RE = re.compile(r"(?:\.pdf\b|[0-9a-f]{8}-[0-9a-f-]{27,}|[/\\])", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -74,14 +74,14 @@ def _wikimedia_visuals(topic: str, limit: int = 2) -> list[dict[str, Any]]:
         headers={"User-Agent": "MinalloEducationalVisuals/1.0"},
     )
     try:
-        with urlopen(request, timeout=3.5) as response:  # noqa: S310 - fixed trusted host
+        with urlopen(request, timeout=3.5) as response:
             payload = json.loads(response.read(1_500_000).decode("utf-8"))
     except Exception:
         log.info("wikimedia visual lookup unavailable", exc_info=True)
         return []
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for page in (payload.get("query", {}).get("pages", []) if isinstance(payload, dict) else []):
+    for page in payload.get("query", {}).get("pages", []) if isinstance(payload, dict) else []:
         info = (page.get("imageinfo") or [{}])[0]
         meta = info.get("extmetadata") or {}
         mime = str(info.get("mime") or "")
@@ -99,22 +99,24 @@ def _wikimedia_visuals(topic: str, limit: int = 2) -> list[dict[str, Any]]:
         seen.add(canonical)
         title = _clean(page.get("title")).removeprefix("File:")
         description = _clean((meta.get("ImageDescription") or {}).get("value"))
-        results.append({
-            "sourceType": "web",
-            "id": f"wikimedia-{canonical}",
-            "topic": topic,
-            "title": title or topic,
-            "altText": description[:240] or f"Educational visual related to {topic}",
-            "explanation": f"External visual example for understanding {topic}.",
-            "thumbnailUrl": thumb,
-            "sourcePageUrl": source,
-            "provider": "Wikimedia Commons",
-            "creator": _clean((meta.get("Artist") or {}).get("value")) or None,
-            "licence": licence or usage,
-            "licenceUrl": _safe_url(str((meta.get("LicenseUrl") or {}).get("value") or "")),
-            "safeToDisplay": True,
-            "educationalRelevance": 0.7,
-        })
+        results.append(
+            {
+                "sourceType": "web",
+                "id": f"wikimedia-{canonical}",
+                "topic": topic,
+                "title": title or topic,
+                "altText": description[:240] or f"Educational visual related to {topic}",
+                "explanation": f"External visual example for understanding {topic}.",
+                "thumbnailUrl": thumb,
+                "sourcePageUrl": source,
+                "provider": "Wikimedia Commons",
+                "creator": _clean((meta.get("Artist") or {}).get("value")) or None,
+                "licence": licence or usage,
+                "licenceUrl": _safe_url(str((meta.get("LicenseUrl") or {}).get("value") or "")),
+                "safeToDisplay": True,
+                "educationalRelevance": 0.7,
+            }
+        )
         if len(results) >= limit:
             break
     return results
@@ -129,20 +131,25 @@ def select_visual_aids(
         return []
     if context.document_id and (context.selected_region or context.page_image_available):
         region = context.selected_region or {}
-        return [{
-            "sourceType": "course_file",
-            "visualId": str(region.get("id") or f"page-{context.document_id}-{context.page_number or 1}"),
-            "documentId": context.document_id,
-            "documentRevision": context.document_revision or "",
-            "pageNumber": context.page_number or int(region.get("page") or 1),
-            "boundingBox": {
-                key: region[key] for key in ("x", "y", "width", "height") if key in region
-            } or None,
-            "title": f"Visual from your course: {plan.topic}",
-            "altText": f"Course visual used to explain {plan.topic}",
-            "explanation": "This selected course visual is the primary visual evidence for the explanation.",
-            "displayMode": "open_in_pdf",
-        }]
+        return [
+            {
+                "sourceType": "course_file",
+                "visualId": str(
+                    region.get("id") or f"page-{context.document_id}-{context.page_number or 1}"
+                ),
+                "documentId": context.document_id,
+                "documentRevision": context.document_revision or "",
+                "pageNumber": context.page_number or int(region.get("page") or 1),
+                "boundingBox": {
+                    key: region[key] for key in ("x", "y", "width", "height") if key in region
+                }
+                or None,
+                "title": f"Visual from your course: {plan.topic}",
+                "altText": f"Course visual used to explain {plan.topic}",
+                "explanation": "This selected course visual is the primary visual evidence for the explanation.",
+                "displayMode": "open_in_pdf",
+            }
+        ]
     return _wikimedia_visuals(plan.topic)
 
 

@@ -39,27 +39,34 @@ _EXPLAIN_RE = re.compile(
     r"\b(explain|why|how did|what does .{0,80} mean|step[ -]?by[ -]?step|"
     r"give (?:me )?an example|visuali[sz]e|make this clearer|erkl[aä]r(?:e| mir)?|"
     r"warum|wie kommt man darauf|schritt f[uü]r schritt|gib mir ein beispiel)\b",
-    re.I,
+    re.IGNORECASE,
 )
 _CONFUSION_RE = re.compile(
     r"\b(i (?:do not|don't|dont) understand|i(?:'m| am) confused|doesn(?:'t|t) make sense|"
     r"ich verstehe (?:das|es) nicht|ich bin verwirrt|noch einfacher)\b",
-    re.I,
+    re.IGNORECASE,
 )
-_DEEP_RE = re.compile(r"\b(full derivation|derive|in depth|deep(?:ly)?|ausf[uü]hrlich|herleit(?:e|ung))\b", re.I)
-_QUICK_RE = re.compile(r"\b(brief|quick(?:ly)?|one sentence|kurz|knapp)\b", re.I)
+_DEEP_RE = re.compile(
+    r"\b(full derivation|derive|in depth|deep(?:ly)?|ausf[uü]hrlich|herleit(?:e|ung))\b",
+    re.IGNORECASE,
+)
+_QUICK_RE = re.compile(r"\b(brief|quick(?:ly)?|one sentence|kurz|knapp)\b", re.IGNORECASE)
 _MULTI_STEP_RE = re.compile(
     r"\b(process|procedure|method|calculate|deriv|stages?|steps?|verfahren|ablauf|"
     r"berechn|herleit|vorgehen|prozess)\b",
-    re.I,
+    re.IGNORECASE,
 )
 _VISUAL_RE = re.compile(
     r"\b(diagram|figure|image|graph|table|visual|geometry|cross[ -]?section|material flow|"
     r"abbildung|schaubild|grafik|tabelle|bild|querschnitt|werkstofffluss)\b",
-    re.I,
+    re.IGNORECASE,
 )
-_ADMIN_RE = re.compile(r"\b(deadline|upload|login|subscription|account|folder|anmeld|hochladen|konto)\b", re.I)
-_TRIVIAL_RE = re.compile(r"^\s*(hi|hello|hey|hallo|danke|thanks|translate|übersetze)\b", re.I)
+_ADMIN_RE = re.compile(
+    r"\b(deadline|upload|login|subscription|account|folder|anmeld|hochladen|konto)\b", re.IGNORECASE
+)
+_TRIVIAL_RE = re.compile(
+    r"^\s*(hi|hello|hey|hallo|danke|thanks|translate|übersetze)\b", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -113,9 +120,14 @@ def _topic_from_question(question: str) -> str:
         r"why is|why does|how does|how do|erkl[aä]r(?:e| mir)?|was ist|was sind|wie funktioniert)\s+",
         "",
         text,
-        flags=re.I,
+        flags=re.IGNORECASE,
     )
-    text = re.split(r"\b(?:in detail|step[ -]?by[ -]?step|ausf[uü]hrlich)\b", text, maxsplit=1, flags=re.I)[0]
+    text = re.split(
+        r"\b(?:in detail|step[ -]?by[ -]?step|ausf[uü]hrlich)\b",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
     words = text.split()
     return " ".join(words[:14]).strip(" ,:;-") or "this course topic"
 
@@ -134,7 +146,8 @@ def build_explanation_plan(
     visual = bool(_VISUAL_RE.search(question) or has_selected_region)
     topic = _topic_from_question(question)
     repetitions = sum(
-        1 for turn in (previous_turns or [])
+        1
+        for turn in (previous_turns or [])
         if turn.get("role") == "user" and topic.lower() in turn.get("text", "").lower()
     )
     intents = ["direct_answer"]
@@ -153,7 +166,9 @@ def build_explanation_plan(
         depth = ExplanationDepth.DEEP
     elif explicit or confusion or multi_step:
         depth = ExplanationDepth.DETAILED
-    weak_match = next((item for item in (weak_topics or []) if item.lower() in question.lower()), None)
+    weak_match = next(
+        (item for item in (weak_topics or []) if item.lower() in question.lower()), None
+    )
     if weak_match and "deep_learn_recommendation" not in intents:
         intents.append("deep_learn_recommendation")
     return ExplanationPlan(
@@ -161,11 +176,14 @@ def build_explanation_plan(
         depth=depth,
         answer_intents=intents,
         explanation_requested=explicit,
-        include_step_by_step=multi_step or depth in {ExplanationDepth.DETAILED, ExplanationDepth.DEEP},
-        include_formula_breakdown=bool(re.search(r"[=λµσεν]|formula|equation|gleichung|formel", question, re.I)),
+        include_step_by_step=multi_step
+        or depth in {ExplanationDepth.DETAILED, ExplanationDepth.DEEP},
+        include_formula_breakdown=bool(
+            re.search(r"[=λµσεν]|formula|equation|gleichung|formel", question, re.IGNORECASE)
+        ),
         include_assumptions=multi_step,
         include_common_mistakes=depth in {ExplanationDepth.DETAILED, ExplanationDepth.DEEP},
-        include_exam_tip=bool(re.search(r"exam|klausur|prüfung", question, re.I)),
+        include_exam_tip=bool(re.search(r"exam|klausur|prüfung", question, re.IGNORECASE)),
         include_visual_aids=visual or (has_page_image and multi_step),
     )
 
@@ -183,9 +201,12 @@ def build_learning_recommendations(
 ) -> list[dict[str, Any]]:
     if not course_id or _ADMIN_RE.search(plan.topic) or _TRIVIAL_RE.search(plan.topic):
         return []
-    weak_match = next((item for item in (weak_topics or []) if item.lower() in plan.topic.lower()), None)
+    weak_match = next(
+        (item for item in (weak_topics or []) if item.lower() in plan.topic.lower()), None
+    )
     repetitions = sum(
-        1 for turn in (previous_turns or [])
+        1
+        for turn in (previous_turns or [])
         if turn.get("role") == "user" and plan.topic.lower() in turn.get("text", "").lower()
     )
     if weak_match:
@@ -194,7 +215,9 @@ def build_learning_recommendations(
         confidence, priority = 0.9, "high"
     elif "prerequisite_repair" in plan.answer_intents:
         reason = DeepLearnReasonCode.USER_CONFUSION_STATEMENT
-        reason_text = "A guided lesson can rebuild the prerequisite ideas and then return to this question."
+        reason_text = (
+            "A guided lesson can rebuild the prerequisite ideas and then return to this question."
+        )
         confidence, priority = 0.9, "high"
     elif repetitions >= 2:
         reason = DeepLearnReasonCode.REPEATED_CLARIFICATION
@@ -221,28 +244,30 @@ def build_learning_recommendations(
     topic = plan.topic
     digest = hashlib.sha256(f"{course_id}:{topic.lower()}:{reason.value}".encode()).hexdigest()[:16]
     is_de = str(response_language or "").lower().startswith("de")
-    return [{
-        "id": f"deep-learn-{digest}",
-        "kind": "deep_learn",
-        "topic": topic,
-        "displayTopic": topic,
-        "reasonCode": reason.value,
-        "reasonText": reason_text,
-        "confidence": confidence,
-        "priority": priority,
-        "courseId": course_id,
-        "documentIds": list(dict.fromkeys(document_ids or [])),
-        "sourceChunkIds": list(dict.fromkeys(source_chunk_ids or [])),
-        "visualIds": list(dict.fromkeys(visual_ids or [])),
-        "lessonMode": "professor" if priority == "high" else "simple",
-        "lessonLanguage": "de" if is_de else "en",
-        "prerequisites": plan.prerequisite_topics,
-        "learningGoals": [f"Explain {topic}", f"Apply {topic} to a course example"],
-        "action": {
-            "label": ("Deep Learn starten: " if is_de else "Start Deep Learn: ") + topic,
-            "type": "open_deep_learn",
-        },
-    }]
+    return [
+        {
+            "id": f"deep-learn-{digest}",
+            "kind": "deep_learn",
+            "topic": topic,
+            "displayTopic": topic,
+            "reasonCode": reason.value,
+            "reasonText": reason_text,
+            "confidence": confidence,
+            "priority": priority,
+            "courseId": course_id,
+            "documentIds": list(dict.fromkeys(document_ids or [])),
+            "sourceChunkIds": list(dict.fromkeys(source_chunk_ids or [])),
+            "visualIds": list(dict.fromkeys(visual_ids or [])),
+            "lessonMode": "professor" if priority == "high" else "simple",
+            "lessonLanguage": "de" if is_de else "en",
+            "prerequisites": plan.prerequisite_topics,
+            "learningGoals": [f"Explain {topic}", f"Apply {topic} to a course example"],
+            "action": {
+                "label": ("Deep Learn starten: " if is_de else "Start Deep Learn: ") + topic,
+                "type": "open_deep_learn",
+            },
+        }
+    ]
 
 
 __all__ = (

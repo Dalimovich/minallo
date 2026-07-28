@@ -45,12 +45,15 @@ def test_low_mastery_requires_real_matching_record() -> None:
 
 def test_trivial_question_does_not_recommend() -> None:
     plan = build_explanation_plan("Hello")
-    assert build_learning_recommendations(
-        plan,
-        course_id="course-a",
-        document_ids=[],
-        source_chunk_ids=[],
-    ) == []
+    assert (
+        build_learning_recommendations(
+            plan,
+            course_id="course-a",
+            document_ids=[],
+            source_chunk_ids=[],
+        )
+        == []
+    )
 
 
 def test_selected_course_region_precedes_web_lookup() -> None:
@@ -65,7 +68,14 @@ def test_selected_course_region_precedes_web_lookup() -> None:
             document_id="doc-a",
             document_revision="rev-a",
             page_number=18,
-            selected_region={"id": "region-a", "page": 18, "x": 0.1, "y": 0.2, "width": 0.5, "height": 0.4},
+            selected_region={
+                "id": "region-a",
+                "page": 18,
+                "x": 0.1,
+                "y": 0.2,
+                "width": 0.5,
+                "height": 0.4,
+            },
             page_image_available=True,
         ),
     )
@@ -86,4 +96,3 @@ def test_visual_ids_transfer_to_deep_learn_launch() -> None:
         visual_ids=["region-a", "region-a"],
     )
     assert recommendations[0]["visualIds"] == ["region-a"]
-
