@@ -21,8 +21,10 @@ from ..services.answer import DEFAULT_TUTOR_MODE, generate_answer, is_app_questi
 from ..services.answer_intent import chitchat_answer, is_non_academic_chitchat
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.general_answer import generate_general_answer
+from ..services.fallback_research import research_unresolved_items
 from ..services.multi_item_retrieval import (
     answer_plan_overlay,
+    ensure_complete_answer,
     retrieve_multi_item_course_evidence,
 )
 from ..services.course_grounding import (
@@ -715,6 +717,12 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     if multi_item_result.evidence:
         evidence_payload["multiItem"] = multi_item_result.to_dict()
     source_decision = replace(source_decision, evidence_report=evidence_payload)
+    fallback_research = research_unresolved_items(
+        multi_item_result,
+        grounding_policy=source_decision.grounding_policy.value,
+    )
+    if fallback_research.sources:
+        source_decision = replace(source_decision, web_search_used=True)
 
     # Backfill doc_name_map for any chunk pointing at a doc we didn't ask
     # about explicitly (e.g. when documentIds is None and we let retrieval
@@ -802,8 +810,41 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             course_id=payload.courseId,
             active_document_id=payload.activeDocumentId,
             grounding_policy=source_decision.grounding_policy.value,
-            request_plan_overlay=answer_plan_overlay(multi_item_result),
+            request_plan_overlay=(
+                answer_plan_overlay(multi_item_result)
+                + fallback_research.prompt_overlay()
+            ),
         )
+        if fallback_research.sources:
+            answer["groundedSources"] = [
+                *(answer.get("groundedSources") or []),
+                *_web_sources_to_payload(fallback_research.sources),
+            ]
+        if multi_item_result.evidence:
+            completed_text, coverage = ensure_complete_answer(
+                multi_item_result,
+                answer.get("answer") or "",
+                allow_general_fallback=policy_allows_general_knowledge(
+                    source_decision.grounding_policy,
+                ),
+                fallback_generator=lambda item_question: generate_general_answer(
+                    item_question,
+                    max_tokens=700,
+                )["answer"],
+            )
+            answer["answer"] = completed_text
+            if not isinstance(answer.get("verification"), dict):
+                answer["verification"] = {
+                    "status": "partially_verified",
+                    "reasons": [],
+                    "details": {},
+                }
+            answer["verification"].setdefault("details", {})["multiItemCoverage"] = {
+                "expectedItemIds": list(coverage.expected_item_ids),
+                "renderedItemIds": list(coverage.rendered_item_ids),
+                "missingItemIds": list(coverage.missing_item_ids),
+                "complete": coverage.complete,
+            }
         answer = _with_source_meta(answer, source_decision)
     except Exception as e:  # noqa: BLE001
         log.exception("answer generation failed")
@@ -811,7 +852,12 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     _meter("ask", answer, payload.userId)
 
     # ── 4. Save to cache for next time ───────────────────────────────────────
-    if version_hash and not payload.bypassCache and cacheable:
+    if (
+        version_hash
+        and not payload.bypassCache
+        and cacheable
+        and not fallback_research.sources
+    ):
         # Same key args as the lookup above — symmetry is mandatory or the row
         # we save is unreachable on the next request. source_scope is unchanged
         # on this path (the general-knowledge fallback returns earlier), so the

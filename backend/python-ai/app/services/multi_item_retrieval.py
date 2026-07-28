@@ -84,6 +84,18 @@ class MultiItemRetrievalResult:
         }
 
 
+@dataclass(frozen=True)
+class FinalAnswerValidation:
+    expected_item_ids: tuple[str, ...]
+    rendered_item_ids: tuple[str, ...]
+    missing_item_ids: tuple[str, ...]
+    contains_internal_status_labels: bool
+
+    @property
+    def complete(self) -> bool:
+        return not self.missing_item_ids and not self.contains_internal_status_labels
+
+
 _QUESTION_START_RE = re.compile(
     r"^(?:what|how|why|which|name|list|explain|compare|calculate|"
     r"was|wie|warum|welche|welcher|nennen|erkl[aä]r|vergleichen|berechnen)\b",
@@ -389,8 +401,61 @@ def answer_plan_overlay(result: MultiItemRetrievalResult) -> str:
     return "\n".join(lines)
 
 
+def validate_final_answer(
+    result: MultiItemRetrievalResult,
+    answer_text: str,
+) -> FinalAnswerValidation:
+    """Deterministically prove that every original question reached the answer."""
+    normalized_answer = _normalise(answer_text)
+    rendered = tuple(
+        item.id for item in result.manifest.requested_items
+        if _normalise(item.original_text) in normalized_answer
+    )
+    expected = tuple(item.id for item in result.manifest.requested_items)
+    missing = tuple(item_id for item_id in expected if item_id not in rendered)
+    raw_status = bool(re.search(
+        r"\bstatus\s*:\s*(?:index_gap|supported|partial|partially_supported|"
+        r"retrieval_failed|not_found|conflicting_evidence)\b",
+        answer_text,
+        re.IGNORECASE,
+    ))
+    return FinalAnswerValidation(expected, rendered, missing, raw_status)
+
+
+def ensure_complete_answer(
+    result: MultiItemRetrievalResult,
+    answer_text: str,
+    *,
+    allow_general_fallback: bool,
+    fallback_generator: Callable[[str], str],
+) -> tuple[str, FinalAnswerValidation]:
+    """Append explicit sections for omissions; never return a silently skipped item."""
+    validation = validate_final_answer(result, answer_text)
+    cleaned = re.sub(
+        r"(?im)^\s*status\s*:\s*(?:index_gap|supported|partial|partially_supported|"
+        r"retrieval_failed|not_found|conflicting_evidence)\s*$",
+        "",
+        answer_text,
+    ).strip()
+    by_id = {item.id: item for item in result.manifest.requested_items}
+    for item_id in validation.missing_item_ids:
+        item = by_id[item_id]
+        if allow_general_fallback:
+            body = fallback_generator(item.original_text).strip()
+            basis = "Source basis: General knowledge"
+        else:
+            body = (
+                "The authorised course material did not provide enough reliable "
+                "evidence for this item."
+            )
+            basis = "Source basis: Course files only"
+        cleaned += f"\n\n## {item.original_text}\n\n{body}\n\n{basis}"
+    return cleaned, validate_final_answer(result, cleaned)
+
+
 __all__ = [
-    "EvidenceStatus", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
+    "EvidenceStatus", "FinalAnswerValidation", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
     "RequestedItemEvidence", "analyse_request", "answer_plan_overlay",
-    "controlled_course_terms", "is_multi_item_request", "retrieve_multi_item_course_evidence",
+    "controlled_course_terms", "ensure_complete_answer", "is_multi_item_request",
+    "retrieve_multi_item_course_evidence", "validate_final_answer",
 ]

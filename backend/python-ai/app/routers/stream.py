@@ -45,8 +45,14 @@ from ..services.answer_intent import (
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
+from ..services.learning_recommendation import (
+    build_explanation_plan,
+    build_learning_recommendations,
+)
+from ..services.fallback_research import research_unresolved_items
 from ..services.multi_item_retrieval import (
     answer_plan_overlay,
+    ensure_complete_answer,
     retrieve_multi_item_course_evidence,
 )
 from ..services.course_grounding import (
@@ -4120,6 +4126,12 @@ async def _prepare_ask_stream_response(
     if multi_item_result.evidence:
         evidence_payload["multiItem"] = multi_item_result.to_dict()
     source_decision = replace(source_decision, evidence_report=evidence_payload)
+    fallback_research = await run_in_threadpool(lambda: research_unresolved_items(
+        multi_item_result,
+        grounding_policy=source_decision.grounding_policy.value,
+    ))
+    if fallback_research.sources:
+        source_decision = replace(source_decision, web_search_used=True)
 
     relevance_score = course_relevance_score(question, chunks)
     # Selection→retrieval diagnostic: shows whether the client's file selection
@@ -4195,6 +4207,31 @@ async def _prepare_ask_stream_response(
     captured_meta: dict[str, Any] = {}
     pending_token_events: list[bytes] = []
     task_traits = preliminary_traits
+    explanation_plan = build_explanation_plan(
+        resolved_question,
+        weak_topics=weak_topics,
+        previous_turns=previous_turns_payload,
+        has_selected_region=bool(payload.selectedRegion),
+        has_page_image=bool(open_file_images),
+    )
+    visual_context_ids = (
+        [str(payload.selectedRegion.id)]
+        if payload.selectedRegion and payload.selectedRegion.id
+        else []
+    )
+    learning_recommendations = build_learning_recommendations(
+        explanation_plan,
+        course_id=payload.courseId,
+        document_ids=[
+            chunk.document_id for chunk in chunks
+            if chunk.document_id and not chunk.document_id.startswith("__")
+        ],
+        source_chunk_ids=[chunk.chunk_id for chunk in chunks if chunk.chunk_id],
+        visual_ids=visual_context_ids,
+        weak_topics=weak_topics,
+        previous_turns=previous_turns_payload,
+        response_language=language_context.requested_response_language,
+    )
     context_consistent = bool(
         retrieval_scope.exercise_reference == grounded_identity.exercise_reference
         and (
@@ -4270,7 +4307,7 @@ async def _prepare_ask_stream_response(
             tutor_state and tutor_state.reusable_results()
         ),
         task_traits=task_traits,
-    )
+    ) or bool(multi_item_result.evidence)
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
     # Consulted by gen_with_abort_meter when the stream dies early.
@@ -4348,11 +4385,15 @@ async def _prepare_ask_stream_response(
             request_id=request_id,
             response_language=language_context.requested_response_language,
             grounding_policy=source_decision.grounding_policy.value,
-            request_plan_overlay=answer_plan_overlay(multi_item_result),
+            request_plan_overlay=(
+                answer_plan_overlay(multi_item_result)
+                + fallback_research.prompt_overlay()
+            ),
             dialogue_overlay=(
                 dialogue.prompt_overlay()
                 + state_overlay
                 + grounded_request_context.prompt_overlay()
+                + explanation_plan.prompt_overlay()
             ),
         )
         for chunk_bytes in gen_iter:
@@ -4376,6 +4417,8 @@ async def _prepare_ask_stream_response(
                     continue
                 if evt.get("meta"):
                     evt["dialogueResolution"] = dialogue.to_api()
+                    evt["pedagogicalAnalysis"] = explanation_plan.to_api()
+                    evt["learningRecommendations"] = learning_recommendations
                     evt.update(_source_meta(source_decision, cache_hit=False))
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                 if evt.get("t"):
@@ -4386,6 +4429,34 @@ async def _prepare_ask_stream_response(
                 if evt.get("done"):
                     observer.finish("draft_generated")
                     evt["dialogueResolution"] = dialogue.to_api()
+                    evt["pedagogicalAnalysis"] = explanation_plan.to_api()
+                    evt["learningRecommendations"] = learning_recommendations
+                    if multi_item_result.evidence:
+                        original_text = "".join(full_text_buf)
+                        completed_text, coverage = ensure_complete_answer(
+                            multi_item_result,
+                            original_text,
+                            allow_general_fallback=policy_allows_general_knowledge(
+                                source_decision.grounding_policy,
+                            ),
+                            fallback_generator=lambda item_question: generate_general_answer(
+                                item_question,
+                                max_tokens=700,
+                            )["answer"],
+                        )
+                        evt["multiItemCoverage"] = {
+                            "expectedItemIds": list(coverage.expected_item_ids),
+                            "renderedItemIds": list(coverage.rendered_item_ids),
+                            "missingItemIds": list(coverage.missing_item_ids),
+                            "complete": coverage.complete,
+                        }
+                        if completed_text != original_text:
+                            full_text_buf.clear()
+                            full_text_buf.append(completed_text)
+                            pending_token_events.clear()
+                            yield _sse_bytes(json.dumps(
+                                {"t": completed_text}, ensure_ascii=False,
+                            ))
                     if tutor_state and automatic_context_section:
                         section_answer = "".join(full_text_buf).strip()
                         tutor_state.recent_section_turns = (
@@ -5003,6 +5074,7 @@ async def _prepare_ask_stream_response(
                             "documentId": s.get("documentId") or s.get("document_id"),
                             "pageStart": page_start,
                         })
+                    sources_js.extend(_web_sources_to_js(fallback_research.sources))
                     evt["sources"] = sources_js
                     evt["cacheHit"] = False
                     evt.update(_source_meta(source_decision, cache_hit=False))
@@ -5025,6 +5097,7 @@ async def _prepare_ask_stream_response(
             and cache_verified
             and not captured_meta.get("heavyCapped")
             and not captured_meta.get("recovery")
+            and not fallback_research.sources
         ):
             from ..services.request_generation import is_current_generation  # noqa: WPS433
             if not is_current_generation(

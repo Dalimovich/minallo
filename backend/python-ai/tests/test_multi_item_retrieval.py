@@ -5,7 +5,9 @@ from app.services.multi_item_retrieval import (
     analyse_request,
     answer_plan_overlay,
     controlled_course_terms,
+    ensure_complete_answer,
     retrieve_multi_item_course_evidence,
+    validate_final_answer,
 )
 from app.services.retrieval import RetrievedChunk
 
@@ -168,3 +170,22 @@ def test_answer_contract_preserves_all_questions_and_hides_internal_statuses():
     assert "Status:" not in overlay
     assert "status=" not in overlay
     assert "Source basis:" in overlay
+
+
+def test_final_validator_repairs_a_skipped_question_without_raw_status():
+    result = retrieve_multi_item_course_evidence(
+        user_id="u", course_id="c", question=REQUEST,
+        inventory_loader=inventory_loader, semantic_retriever=no_semantic,
+    )
+    partial = "\n".join(
+        f"## {item.original_text}\nAnswer" for item in result.manifest.requested_items[:3]
+    ) + "\nStatus: index_gap"
+    assert not validate_final_answer(result, partial).complete
+    repaired, validation = ensure_complete_answer(
+        result, partial, allow_general_fallback=True,
+        fallback_generator=lambda question: f"Fallback for {question}",
+    )
+    assert validation.complete
+    assert result.manifest.requested_items[3].original_text in repaired
+    assert "Status: index_gap" not in repaired
+    assert "Source basis: General knowledge" in repaired
