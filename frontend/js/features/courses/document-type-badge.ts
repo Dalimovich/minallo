@@ -146,6 +146,23 @@ export interface RowDoc extends DocUnderstanding {
   processing_status?: string;
 }
 
+/** Match storage-file names and document rows consistently, including legacy
+ * rows that retained a folder prefix or encoded filename. */
+export function normalizeDocumentFileName(value: string | null | undefined): string {
+  let name = String(value || '').trim();
+  try { name = decodeURIComponent(name); } catch { /* keep the original text */ }
+  name = name.replace(/\\/g, '/').split('/').pop() || name;
+  return name.normalize('NFKC').trim().toLocaleLowerCase();
+}
+
+function unavailablePickerHtml(): string {
+  return '<label class="doc-type-review doc-type-review--unavailable">' +
+    '<span class="doc-type-review-label">File type</span>' +
+    '<select class="doc-type-select" aria-label="File type unavailable for this document" ' +
+    'title="File type metadata is not available yet" disabled>' +
+    '<option selected>Unknown</option></select></label>';
+}
+
 /** Decorate already-rendered `.co-file[data-fname]` rows with the source-type
  *  badge + (when uncertain) the correction selector, matching docs by file name.
  *  Purely additive and self-contained — never throws into the caller. */
@@ -158,13 +175,13 @@ export function decorateFileTypeBadges(
   try {
     const byName = new Map<string, RowDoc>();
     for (const d of docs || []) {
-      const n = (d.file_name || d.fileName || '').toLowerCase();
+      const n = normalizeDocumentFileName(d.file_name || d.fileName);
       if (n) byName.set(n, d);
     }
     root.querySelectorAll<HTMLElement>('.co-file[data-fname]').forEach((row) => {
-      const fname = (row.getAttribute('data-fname') || '').toLowerCase();
+      const fname = normalizeDocumentFileName(row.getAttribute('data-fname'));
       const doc = byName.get(fname);
-      if (!doc || doc.processing_status !== 'ready') return;
+      if (!doc) return;
       if (row.querySelector('.co-file-doctype')) return; // already decorated
       const textEl = row.querySelector('.co-file-text');
       if (!textEl) return;
@@ -174,10 +191,12 @@ export function decorateFileTypeBadges(
       textEl.appendChild(wrap);
     });
     root.querySelectorAll<HTMLElement>('[data-file-type-slot]').forEach((slot) => {
-      const fname = (slot.getAttribute('data-file-type-slot') || '').toLowerCase();
+      const fname = normalizeDocumentFileName(slot.getAttribute('data-file-type-slot'));
       const doc = byName.get(fname);
-      if (!doc || doc.processing_status !== 'ready' || slot.querySelector('.doc-type-select')) return;
-      slot.innerHTML = badgeHtml(doc) + correctionSelectHtml(doc);
+      if (slot.querySelector('.doc-type-select:not([disabled])')) return;
+      slot.innerHTML = doc
+        ? badgeHtml(doc) + correctionSelectHtml(doc)
+        : unavailablePickerHtml();
     });
     wireCorrectionSelectors(root, (documentId, effectiveType) => {
       const review = root.querySelector('.doc-type-review[data-doc-id="' + documentId + '"]');

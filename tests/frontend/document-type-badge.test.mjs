@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 globalThis.window = globalThis.window || {};
 
-const { documentTypeMeta, badgeHtml, correctionSelectHtml } = await import(
+const { documentTypeMeta, badgeHtml, correctionSelectHtml, normalizeDocumentFileName } = await import(
   '../../frontend/js/features/courses/document-type-badge.ts'
 );
 
@@ -81,4 +81,17 @@ test('picker isolates parent-card events and contains rollback handling', async 
   assert.match(source, /event\.stopPropagation\(\)/);
   assert.match(source, /sel\.value = previous/);
   assert.match(source, /document-type-changed/);
+});
+
+test('document matching handles folder prefixes, URL encoding, and Unicode consistently', () => {
+  assert.equal(normalizeDocumentFileName('Vorlesung\\Formelsammlung%20WS.pdf'), 'formelsammlung ws.pdf');
+  assert.equal(normalizeDocumentFileName('  FORMELSAMMLUNG WS.PDF  '), 'formelsammlung ws.pdf');
+});
+
+test('file-card decoration is not restricted to ready documents', async () => {
+  const source = await (await import('node:fs/promises')).readFile(
+    new URL('../../frontend/js/features/courses/document-type-badge.ts', import.meta.url), 'utf8'
+  );
+  assert.doesNotMatch(source, /doc\.processing_status !== 'ready'/);
+  assert.match(source, /unavailablePickerHtml/);
 });

@@ -16,6 +16,12 @@ const notificationsTs = fs.readFileSync(
   'utf8'
 );
 const shellSource = fs.readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+
+test('Study Panel file cards always reserve a visible type control and refresh metadata', () => {
+  assert.match(moduleSource, /data-file-type-slot=.*Loading type&hellip;/);
+  assert.match(moduleSource, /listCourseDocuments\(course\.id, \{ force: true \}\)/);
+  assert.match(moduleSource, /catch\(\(\) => decorateFileTypeBadges\(detail, \[\]\)\)/);
+});
 const pdfViewerSource = fs.readFileSync(
   'frontend/js/features/pdf-viewer/pdf-viewer.ts',
   'utf8'

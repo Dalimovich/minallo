@@ -826,7 +826,11 @@ function paintCourseDetail(panel: HTMLElement, course: LibraryCourse, scrollTop 
   panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => returnToCourseList(panel));
   const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   bindCourseFileActions(panel, detail, course);
-  void listCourseDocuments(course.id).then((docs) => decorateFileTypeBadges(detail, docs)).catch(() => undefined);
+  // Force a fresh lookup for this drill-in view: a dashboard prefetch may have
+  // cached an empty response while authentication or indexing was still settling.
+  void listCourseDocuments(course.id, { force: true })
+    .then((docs) => decorateFileTypeBadges(detail, docs))
+    .catch(() => decorateFileTypeBadges(detail, []));
   panel.querySelectorAll<HTMLDetailsElement>('.ncb-folder').forEach((folder) => folder.addEventListener('toggle', () => {
     const entry = courseEntry(course.id);
     const cachedFolder = entry?.folders.find((item) => item.name === folder.dataset.dropFolder);
@@ -1237,7 +1241,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
-  return `<div class="ncb-file-row"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b></button><div class="co-file-doctype ncb-file-doctype" data-file-type-slot="${escapeHtml(file.name)}"></div><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
+  return `<div class="ncb-file-row"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b></button><div class="co-file-doctype ncb-file-doctype" data-file-type-slot="${escapeHtml(file.name)}"><span class="ncb-file-type-loading" role="status">Loading type&hellip;</span></div><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
 }
 
 function trashIcon(): string {
