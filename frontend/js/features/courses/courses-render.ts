@@ -119,8 +119,7 @@ function _computeProgress(courseId: string, files: number): CourseProgress {
 function _hydrateCardCount(
   courseId: string,
   badge: HTMLElement,
-  initialCount: number,
-  onCountChanged?: (newCount: number) => void
+  _initialCount: number
 ): void {
   const _applyBadge = (n: number): void => {
     if (badge.isConnected) badge.textContent = n + ' file' + (n !== 1 ? 's' : '');
@@ -131,9 +130,6 @@ function _hydrateCardCount(
   // showing "10 files" in the chip but "No files yet" below. Whenever the
   // resolved count differs from initialCount, the caller re-renders so the
   // body is rebuilt from the new count.
-  const _maybeRerender = (n: number): void => {
-    if (n !== initialCount && onCountChanged) onCountChanged(n);
-  };
   // Keep dashboard rendering local-only. Opening a course refreshes real files.
   try {
     const cached = localStorage.getItem('ss_fc_' + courseId);
@@ -141,7 +137,6 @@ function _hydrateCardCount(
       const n = Number(cached);
       if (Number.isFinite(n)) {
         _applyBadge(n);
-        _maybeRerender(n);
       }
     }
   } catch { /* quota / parse */ }
@@ -354,12 +349,7 @@ export function sdRenderCourses(state: CoursesRenderState): void {
 
     const badgeEl = card.querySelector<HTMLElement>('[data-file-badge]');
     if (!liveCount && badgeEl) {
-      _hydrateCardCount(c.id, badgeEl, count, (newCount) => {
-        // Body was rendered for the old count (e.g. "No files yet" when the
-        // cache said 0). Re-render the whole grid so the progress block
-        // matches the freshly-fetched count.
-        if (newCount !== count) sdRenderCourses(state);
-      });
+      _hydrateCardCount(c.id, badgeEl, count);
     }
 
     if (count === 0) card.classList.add('sd-course-card-empty');
@@ -621,6 +611,8 @@ function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLEle
   const course = sem?.courses?.find((c) => c.id);
   const courseId = course?.id || null;
   const courseName = course?.name || 'your selected course';
+  const requestKey = `${courseId || 'none'}:${state.sdActiveSemId}`;
+  host.dataset.requestKey = requestKey;
 
   const openAi = (): void => {
     try { sessionStorage.setItem('ss_daily_mission_seed', 'to-do'); } catch { /* ignore */ }
@@ -769,6 +761,7 @@ function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLEle
   import('../../services/study-service.js')
     .then((mod) => mod.getDailyMissionSummary(courseId))
     .then((summary) => {
+      if (!host?.isConnected || host.dataset.requestKey !== requestKey) return;
       if (summary.noValidCandidates) {
         paint(
           'Daily Study Mission',
@@ -817,7 +810,9 @@ function _renderDailyMissionPreview(state: CoursesRenderState, beforeEl: HTMLEle
         { tasks: summary.totalTasks, minutes: summary.minutesRemaining, focus: courseName, state: 'Active today', hasActiveTasks: true }
       );
     })
-    .catch(() => {
+    .catch((error: unknown) => {
+      if (!host?.isConnected || host.dataset.requestKey !== requestKey) return;
+      console.error('daily_mission_summary_load_failed', { courseId, error });
       paint('Daily Study Mission', 'Confirm your course sources to generate trusted tasks.', 'Review Course Map', false, { focus: courseName, state: 'Needs sources' });
     });
 }

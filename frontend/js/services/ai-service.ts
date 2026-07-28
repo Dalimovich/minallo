@@ -168,6 +168,7 @@ export interface CourseDocument {
   fileName?: string;
   file_type?: string;
   source_type?: string;
+  storage_path?: string;
   processing_status?: string;
   processing_error?: string | null;
   page_count?: number;

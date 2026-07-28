@@ -7,6 +7,12 @@ export interface CachedCourseFile {
   uploaded?: boolean;
   uid?: string;
   size?: string;
+  document?: {
+    id: string; file_name: string; storage_path?: string; processing_status?: string;
+    processing_error?: string | null; document_type?: string | null;
+    document_type_confidence?: number | null; user_document_type_override?: string | null;
+    effective_document_type?: string | null;
+  };
 }
 
 export interface CachedCourseFolder {
@@ -36,7 +42,7 @@ export interface CachedSavedItem {
 }
 
 interface StudyLibraryCache {
-  version: 2;
+  version: 3;
   userId: string;
   activeTab: 'courses' | 'saved';
   activeCourseId: string | null;
@@ -50,9 +56,8 @@ interface StudyLibraryCache {
   savedError: string | null;
 }
 
-// v2 deliberately invalidates the first Study cache release, which could
-// persist a false empty course when auth/storage hydration had not completed.
-const CACHE_PREFIX = 'minallo:study-library:v2:';
+// v3 adds document identity and type metadata to every cached Study file.
+const CACHE_PREFIX = 'minallo:study-library:v3:';
 const COURSE_TTL = 3 * 60 * 1000;
 const SAVED_TTL = 3 * 60 * 1000;
 const inFlight = new Map<string, Promise<unknown>>();
@@ -60,7 +65,7 @@ let active: StudyLibraryCache | null = null;
 
 function empty(userId: string): StudyLibraryCache {
   return {
-    version: 2, userId, activeTab: 'courses', activeCourseId: null,
+    version: 3, userId, activeTab: 'courses', activeCourseId: null,
     activeSavedKind: null, courseScrollTop: 0, savedScrollTop: 0,
     courseEntries: {}, savedItems: [], savedStatus: 'idle', savedFetchedAt: null, savedError: null,
   };
@@ -78,7 +83,7 @@ export function studyLibraryState(): StudyLibraryCache {
   if (active?.userId === userId) return active;
   try {
     const parsed = JSON.parse(localStorage.getItem(CACHE_PREFIX + userId) || 'null') as StudyLibraryCache | null;
-    active = parsed?.version === 2 && parsed.userId === userId ? parsed : empty(userId);
+    active = parsed?.version === 3 && parsed.userId === userId ? parsed : empty(userId);
   } catch { active = empty(userId); }
   return active;
 }

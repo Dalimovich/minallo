@@ -17,10 +17,19 @@ const notificationsTs = fs.readFileSync(
 );
 const shellSource = fs.readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
 
-test('Study Panel file cards always reserve a visible type control and refresh metadata', () => {
-  assert.match(moduleSource, /data-file-type-slot=.*Loading type&hellip;/);
-  assert.match(moduleSource, /listCourseDocuments\(course\.id, \{ force: true \}\)/);
-  assert.match(moduleSource, /catch\(\(\) => decorateFileTypeBadges\(detail, \[\]\)\)/);
+test('Study Panel file cards render document-bound type controls without post-render decoration', () => {
+  assert.match(moduleSource, /data-document-id=/);
+  assert.match(moduleSource, /correctionSelectHtml\(doc\)/);
+  assert.match(moduleSource, /bindDocumentsToCourseFiles\(course, docs\)/);
+  assert.match(moduleSource, /wireCorrectionSelectors\(detail\)/);
+  assert.doesNotMatch(moduleSource, /data-file-type-slot=/);
+  assert.doesNotMatch(moduleSource, /decorateFileTypeBadges\(detail/);
+});
+
+test('Study Panel distinguishes authoritative indexing failure from network uncertainty', () => {
+  assert.match(moduleSource, /failure\.processingStatus === 'failed'/);
+  assert.match(moduleSource, /Backend indexing failed:/);
+  assert.match(moduleSource, /Status unavailable · Retry/);
 });
 const pdfViewerSource = fs.readFileSync(
   'frontend/js/features/pdf-viewer/pdf-viewer.ts',

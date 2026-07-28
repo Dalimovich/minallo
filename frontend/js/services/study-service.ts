@@ -59,6 +59,10 @@ export interface DailyMissionSummary {
   hasUnavailableSources?: boolean;
 }
 
+const DAILY_SUMMARY_TTL_MS = 45_000;
+const dailySummaryInFlight = new Map<string, Promise<DailyMissionSummary>>();
+const dailySummaryCache = new Map<string, { value: DailyMissionSummary; expiresAt: number }>();
+
 function authHeaders(): HeadersInit {
   const token = (window as unknown as { _sbToken?: string })._sbToken || '';
   return {
@@ -133,10 +137,29 @@ export async function getDailyMissionSummary(courseId: string): Promise<DailyMis
     });
   }
 
-  const qs = new URLSearchParams({ courseId, date: todayLocalDate(), timezone: timezone() });
-  const res = await fetch('/api/study/daily-plan/summary?' + qs.toString(), { headers: authHeaders() });
-  if (!res.ok) throw new Error('Daily Mission summary could not be loaded');
-  return res.json() as Promise<DailyMissionSummary>;
+  const date = todayLocalDate();
+  const zone = timezone();
+  const key = [courseId, date, zone].join(':');
+  const cached = dailySummaryCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const existing = dailySummaryInFlight.get(key);
+  if (existing) return existing;
+  const request = (async () => {
+    const qs = new URLSearchParams({ courseId, date, timezone: zone });
+    const res = await fetch('/api/study/daily-plan/summary?' + qs.toString(), { headers: authHeaders() });
+    if (!res.ok) throw new Error('Daily Mission summary could not be loaded');
+    const value = await res.json() as DailyMissionSummary;
+    dailySummaryCache.set(key, { value, expiresAt: Date.now() + DAILY_SUMMARY_TTL_MS });
+    return value;
+  })().finally(() => dailySummaryInFlight.delete(key));
+  dailySummaryInFlight.set(key, request);
+  return request;
+}
+
+export function invalidateDailyMissionSummary(courseId?: string): void {
+  for (const key of dailySummaryCache.keys()) {
+    if (!courseId || key.startsWith(courseId + ':')) dailySummaryCache.delete(key);
+  }
 }
 
 export async function updateDailyMissionTask(taskId: string, status: DailyMissionTask['status']): Promise<void> {
@@ -153,6 +176,7 @@ export async function updateDailyMissionTask(taskId: string, status: DailyMissio
       throw new Error('Task update failed (HTTP ' + res.status + ')');
     }
   }
+  invalidateDailyMissionSummary();
 }
 
 /** Document ids the user has marked as already studied for a course. */

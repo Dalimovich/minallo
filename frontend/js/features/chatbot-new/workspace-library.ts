@@ -1,4 +1,4 @@
-import { clearCourseDocumentCache, getNoteById, listCourseDocuments, listCourseNotes, type SavedNote } from '../../services/ai-service.js';
+import { clearCourseDocumentCache, getNoteById, indexExistingDocument, listCourseDocuments, listCourseNotes, type CourseDocument, type SavedNote } from '../../services/ai-service.js';
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { checkAdminStatus } from '../../services/admin-service.js';
@@ -11,7 +11,7 @@ import {
   type CachedCourseFile, type CachedSavedItem,
 } from './study-library-store.js';
 import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js';
-import { decorateFileTypeBadges } from '../courses/document-type-badge.js';
+import { correctionSelectHtml, wireCorrectionSelectors } from '../courses/document-type-badge.js';
 
 type CourseFile = {
   name: string;
@@ -21,6 +21,7 @@ type CourseFile = {
   _uid?: string;
   _course?: LibraryCourse;
   size?: string;
+  _document?: CourseDocument;
 };
 type CourseFolder = { name: string; files?: CourseFile[] };
 type LibraryCourse = LegacyCourse & { files?: CourseFile[]; userFolders?: CourseFolder[] };
@@ -298,7 +299,7 @@ function hydrate(course: LibraryCourse): Promise<void> {
 function cachedFile(file: CourseFile): CachedCourseFile {
   return {
     name: file.name, storageName: file._storageName, folder: file._folder,
-    uploaded: file._uploaded, uid: file._uid, size: file.size,
+    uploaded: file._uploaded, uid: file._uid, size: file.size, document: file._document,
   };
 }
 
@@ -309,15 +310,34 @@ function applyCourseCache(
 ): void {
   course.files = files.map((file) => ({
     name: file.name, _storageName: file.storageName, _folder: file.folder,
-    _uploaded: file.uploaded, _uid: file.uid, size: file.size, _course: course,
+    _uploaded: file.uploaded, _uid: file.uid, size: file.size, _document: file.document as CourseDocument | undefined, _course: course,
   }));
   course.userFolders = folders.map((folder) => ({
     name: folder.name,
     files: folder.files.map((file) => ({
       name: file.name, _storageName: file.storageName, _folder: folder.name,
-      _uploaded: file.uploaded, _uid: file.uid, size: file.size, _course: course,
+      _uploaded: file.uploaded, _uid: file.uid, size: file.size, _document: file.document as CourseDocument | undefined, _course: course,
     })),
   }));
+}
+
+function bindDocumentsToCourseFiles(course: LibraryCourse, docs: CourseDocument[]): void {
+  const byStoragePath = new Map<string, CourseDocument>();
+  docs.forEach((doc) => {
+    const path = String(doc.storage_path || '').replace(/\\/g, '/');
+    if (path) byStoragePath.set(path, doc);
+  });
+  const bind = (file: CourseFile, folder: string | null): void => {
+    const storageName = String(file._storageName || '').replace(/\\/g, '/');
+    if (!storageName) return;
+    const suffix = '/' + (folder ? folder.replace(/\\/g, '/') + '/' : '') + storageName;
+    const matches = Array.from(byStoragePath.entries()).filter(([path]) => path.endsWith(suffix));
+    file._document = matches.length === 1 ? matches[0]![1] : undefined;
+  };
+  ((course.files || []) as CourseFile[]).forEach((file) => bind(file, null));
+  ((course.userFolders || []) as CourseFolder[]).forEach((folder) =>
+    (folder.files || []).forEach((file) => bind(file, folder.name))
+  );
 }
 
 function cachedCourseFileCount(entry: { files: CachedCourseFile[]; folders: Array<{ files: CachedCourseFile[] }> }): number {
@@ -334,7 +354,7 @@ function persistCanonicalCourseCache(course: LibraryCourse): void {
     const uid = currentUid();
     if (!uid) return;
     localStorage.setItem(`ss_uf_cache_${course.id}`, JSON.stringify({
-      version: 2, userId: uid, courseId: course.id, fetchedAt: Date.now(),
+      version: 3, userId: uid, courseId: course.id, fetchedAt: Date.now(),
       files: ((course.files || []) as CourseFile[]).filter((file) => file._uploaded && !file._folder).map(cachedFile),
       folders: ((course.userFolders || []) as CourseFolder[]).map((folder) => ({
         name: folder.name, files: (folder.files || []).map(cachedFile),
@@ -350,7 +370,7 @@ function restoreCanonicalCourseCache(course: LibraryCourse): boolean {
       files?: CachedCourseFile[]; folders?: Array<{ name: string; files: CachedCourseFile[] }>;
     } | null;
     if (!parsed || !currentUid() || !Array.isArray(parsed.files) || !Array.isArray(parsed.folders)) return false;
-    const scopedV2 = parsed.version === 2 && parsed.userId === currentUid() && parsed.courseId === course.id
+    const scopedV2 = parsed.version === 3 && parsed.userId === currentUid() && parsed.courseId === course.id
       && Number.isFinite(parsed.fetchedAt);
     const legacy = parsed.version == null;
     if (!scopedV2 && !legacy) return false;
@@ -378,6 +398,8 @@ function ensureCourseHydrated(course: LibraryCourse, force = false): Promise<voi
   }
   return dedupeStudyRequest(`course:${course.id}`, async () => {
     await hydrate(course);
+    const docs = await listCourseDocuments(course.id, { force: true });
+    bindDocumentsToCourseFiles(course, docs);
     const previous = courseEntry(course.id);
     setCourseEntry(course.id, {
       files: ((course.files || []) as CourseFile[]).map(cachedFile),
@@ -826,11 +848,7 @@ function paintCourseDetail(panel: HTMLElement, course: LibraryCourse, scrollTop 
   panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => returnToCourseList(panel));
   const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   bindCourseFileActions(panel, detail, course);
-  // Force a fresh lookup for this drill-in view: a dashboard prefetch may have
-  // cached an empty response while authentication or indexing was still settling.
-  void listCourseDocuments(course.id, { force: true })
-    .then((docs) => decorateFileTypeBadges(detail, docs))
-    .catch(() => decorateFileTypeBadges(detail, []));
+  wireCorrectionSelectors(detail);
   panel.querySelectorAll<HTMLDetailsElement>('.ncb-folder').forEach((folder) => folder.addEventListener('toggle', () => {
     const entry = courseEntry(course.id);
     const cachedFolder = entry?.folders.find((item) => item.name === folder.dataset.dropFolder);
@@ -898,11 +916,21 @@ async function uploadIntoCourse(
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` },
         body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'lecture' })
       });
-      if (!response.ok) throw new Error(`Indexing failed (${response.status})`);
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({})) as { processingStatus?: string; error?: string };
+        if (failure.processingStatus === 'failed') {
+          setPendingFileState(pendingRow, 'error', failure.error || 'Indexing failed');
+          throw new Error(`Backend indexing failed: ${failure.error || response.status}`);
+        }
+        throw new Error(`Indexing status unavailable (${response.status})`);
+      }
       setPendingFileState(pendingRow, 'ready', 'Indexed');
       window.setTimeout(() => replacePendingWithFileRow(panel, detail, course, uploaded, folder, pendingRow), 2200);
     } catch (error) {
-      setPendingFileState(pendingRow, 'error', 'Indexing failed');
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.startsWith('Backend indexing failed:')) {
+        setPendingFileState(pendingRow, 'unknown', 'Status unavailable · Retry');
+      }
       throw error;
     }
   }));
@@ -930,7 +958,7 @@ function appendPendingFileRow(detail: HTMLElement, file: File, folder: string | 
   return row;
 }
 
-function setPendingFileState(row: HTMLElement | undefined, state: 'indexing' | 'ready' | 'error', label: string): void {
+function setPendingFileState(row: HTMLElement | undefined, state: 'indexing' | 'ready' | 'error' | 'unknown', label: string): void {
   if (!row) return;
   const status = row.querySelector<HTMLElement>('.ncb-index-state');
   const secondary = row.querySelector<HTMLElement>('.ncb-file-row-main small');
@@ -938,7 +966,7 @@ function setPendingFileState(row: HTMLElement | undefined, state: 'indexing' | '
   status.className = `ncb-index-state is-${state}`;
   status.innerHTML = state === 'ready'
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><em>Indexed</em>'
-    : state === 'error'
+    : state === 'error' || state === 'unknown'
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3h.01"/></svg><em>Failed</em>'
       : `<i aria-hidden="true"></i><em>${escapeHtml(label)}</em>`;
   if (secondary) secondary.textContent = label;
@@ -1058,6 +1086,27 @@ function bindSingleFileRow(panel: HTMLElement, detail: HTMLElement, course: Libr
   });
   const remove = row.querySelector<HTMLButtonElement>('[data-delete-file]');
   remove?.addEventListener('click', () => void deleteFileCompletely(panel, detail, course, remove.dataset.deleteFile || '', remove.dataset.folder || null, row));
+  const retry = row.querySelector<HTMLButtonElement>('[data-retry-index]');
+  retry?.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (retry.disabled) return;
+    const folder = open?.dataset.folder || null;
+    const file = findCourseFile(course, open?.dataset.libraryFile || '', folder);
+    if (!file?._storageName) return;
+    retry.disabled = true;
+    retry.textContent = 'Retrying…';
+    try {
+      await indexExistingDocument(course.id, file._storageName, file.name, file._document?.source_type || 'lecture', folder, { forceReindex: true });
+      clearCourseDocumentCache(course.id);
+      await ensureCourseHydrated(course, true);
+      paintCourseDetail(panel, course, panel.scrollTop);
+    } catch (error) {
+      console.error('study_panel_index_retry_failed', { courseId: course.id, documentId: file._document?.id, error });
+      retry.disabled = false;
+      retry.textContent = 'Retry';
+      window.showToast?.('Retry failed', file._document?.processing_error || 'Indexing could not be restarted.');
+    }
+  });
 }
 
 function findCourseFile(course: LibraryCourse, name: string, folder: string | null): CourseFile | undefined {
@@ -1089,8 +1138,7 @@ async function deleteFileCompletely(panel: HTMLElement, detail: HTMLElement, cou
   if (deleteButton) deleteButton.disabled = true;
   try {
     const file = findCourseFile(course, name, folder);
-    const docs = await listCourseDocuments(course.id, { force: true });
-    const matches = docs.filter((doc) => String(doc.file_name || doc.fileName) === name);
+    const matches = file?._document ? [file._document] : [];
     for (const doc of matches) {
       const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
       if (!response.ok) throw new Error('Database deletion failed');
@@ -1241,7 +1289,16 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
 }
 
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
-  return `<div class="ncb-file-row"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')}</small></span><b>Open</b></button><div class="co-file-doctype ncb-file-doctype" data-file-type-slot="${escapeHtml(file.name)}"><span class="ncb-file-type-loading" role="status">Loading type&hellip;</span></div><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
+  const doc = file._document;
+  const picker = doc
+    ? correctionSelectHtml(doc)
+    : '<label class="doc-type-review doc-type-review--unavailable"><span class="doc-type-review-label">File type</span><select class="doc-type-select" aria-label="File type unavailable for this document" disabled><option>Unknown</option></select></label>';
+  const status = doc?.processing_status === 'ready' ? 'Ready'
+    : doc?.processing_status === 'failed' ? 'Indexing failed'
+      : doc?.processing_status ? 'Indexing…' : 'Status unavailable';
+  const retry = doc?.processing_status === 'failed' && file._storageName
+    ? '<button type="button" class="ncb-file-retry" data-retry-index aria-label="Retry indexing">Retry</button>' : '';
+  return `<div class="ncb-file-row"${doc?.id ? ` data-document-id="${escapeHtml(doc.id)}"` : ''}><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small></span><b>Open</b></button><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}<button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div>`;
 }
 
 function trashIcon(): string {

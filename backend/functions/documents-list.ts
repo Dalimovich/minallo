@@ -27,7 +27,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   // 20260505_000001 rag_foundation + 20260506_000001 processing_error). Always
   // present, so this is the last-resort fallback that never 400s on a stale DB.
   const MINIMAL_COLS =
-    'id,file_name,file_type,source_type,processing_status,processing_error,' +
+    'id,file_name,file_type,source_type,storage_path,processing_status,processing_error,' +
     'page_count,chunk_count,created_at,updated_at';
   // Document classification fields (migrations 20260518_000004 / _000005).
   const CLASSIFICATION_COLS = ',extraction_quality,ocr_assessment,document_type';
