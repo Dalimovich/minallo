@@ -36,6 +36,16 @@ class DialogueAct(str, Enum):
     GENERAL_CONVERSATION = "general_conversation"
 
 
+class ConversationIntent(str, Enum):
+    NEW_QUESTION = "new_question"
+    FOLLOW_UP_EXPLANATION = "follow_up_explanation"
+    FOLLOW_UP_WHY = "follow_up_why"
+    FOLLOW_UP_DERIVATION = "follow_up_derivation"
+    FOLLOW_UP_EXAMPLE = "follow_up_example"
+    FOLLOW_UP_CORRECTION = "follow_up_correction"
+    FOLLOW_UP_REFERENCE = "follow_up_reference"
+
+
 _EXERCISE_RE = re.compile(
     r"\b(?:aufgabe|uebung|übung|task|exercise|problem|question|ex)\s*"
     r"(\d+(?:[.,]\d+){0,3}(?:\s*(?:[.(]\s*)?[a-z]\s*\)?)?)(?!\w)",
@@ -78,8 +88,12 @@ _DETAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _PREVIOUS_STEP_RE = re.compile(
-    r"\b(?:where did|why (?:did|is|does)|what does .* mean|"
-    r"woher (?:kommt|kam)|warum|was bedeutet)\b",
+    r"\b(?:explain (?:this|that|the) (?:step|formula|equation|result|point)|"
+    r"where did|where does (?:this|that) come from|how did we get (?:this|that|\d+)|"
+    r"why(?: (?:did|is|does))?|what does .* mean|the (?:first|second|third|previous) "
+    r"(?:step|point|formula|result)|woher (?:kommt|kam)|warum|wie kommt man darauf|"
+    r"erkl[aÃ¤]r(?:e)? (?:diesen|diese|das|den)|was bedeutet|der (?:erste|zweite|dritte) "
+    r"(?:schritt|punkt))\b",
     re.IGNORECASE,
 )
 _VERIFY_RE = re.compile(
@@ -158,10 +172,14 @@ class DialogueResolution:
     invalidate_previous_answer: bool
     requested_depth: str
     explanation_attempt: int
+    conversation_intent: ConversationIntent = ConversationIntent.NEW_QUESTION
+    referent_type: str = "unknown"
+    referent_text: str | None = None
 
     def to_api(self) -> dict[str, Any]:
         data = asdict(self)
         data["dialogue_act"] = self.dialogue_act.value
+        data["conversation_intent"] = self.conversation_intent.value
         return data
 
     def prompt_overlay(self) -> str:
@@ -272,6 +290,9 @@ def resolve_dialogue(
     invalidate = False
     depth = "normal"
     language = response_language
+    conversation_intent = ConversationIntent.NEW_QUESTION
+    referent_type = "unknown"
+    referent_text = None
 
     translation = _TRANSLATION_RE.match(text)
     continuation = _BARE_CONTINUATION_RE.match(text)
@@ -317,16 +338,28 @@ def resolve_dialogue(
     elif _DETAIL_RE.search(text) and last_assistant:
         act = DialogueAct.REQUEST_MORE_DETAIL
         depth = "detailed"
+        conversation_intent = ConversationIntent.FOLLOW_UP_EXPLANATION
+        referent_type = "calculation_step"
+        referent_text = last_assistant
         resolved = (
-            f"Explain the requested step of exercise {active or 'the active question'} "
-            "in detail, tied to the verified givens and professor's work."
+            "Explain the most recently discussed calculation step in detail. "
+            f"Use the preceding answer and question as the primary referent: {last_user or ''}"
         )
-    elif _PREVIOUS_STEP_RE.search(text) and last_assistant:
+    elif _PREVIOUS_STEP_RE.search(text) and last_assistant and not _FIRST_STEP_RE.search(text):
         act = DialogueAct.ASK_ABOUT_PREVIOUS_STEP
         depth = "brief"
+        conversation_intent = (
+            ConversationIntent.FOLLOW_UP_WHY
+            if re.search(r"\b(?:why|warum)\b", text, re.IGNORECASE)
+            else ConversationIntent.FOLLOW_UP_EXPLANATION
+        )
+        referent_type = "calculation_step"
+        referent_text = last_assistant
         resolved = (
-            f"Answer the student's focused question about the previous step in "
-            f"exercise {active or 'the active question'}: {text}"
+            "Resolve the demonstrative reference from the immediately preceding "
+            f"assistant answer and user question, then answer it: {text}. "
+            "Do not claim the exercise is unspecified and do not ask the student "
+            "to repeat context already present in the conversation."
         )
     elif _VERIFY_RE.match(text) and last_assistant:
         act = DialogueAct.VERIFY_PREVIOUS_ANSWER
@@ -410,7 +443,10 @@ def resolve_dialogue(
         invalidate_previous_answer=invalidate,
         requested_depth=depth,
         explanation_attempt=_explanation_attempt(turns),
+        conversation_intent=conversation_intent,
+        referent_type=referent_type,
+        referent_text=referent_text,
     )
 
 
-__all__ = ["DialogueAct", "DialogueResolution", "resolve_dialogue"]
+__all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "resolve_dialogue"]

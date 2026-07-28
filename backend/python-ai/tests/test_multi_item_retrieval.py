@@ -18,6 +18,23 @@ REQUEST = """Explain all of these questions in German using course files:
 4. Name the advantages of Verzahnungswalzen?
 """
 
+EXACT_TEN_REQUEST = """Wie können Umformverfahren eingeteilt werden (drei Gruppen)?
+§ Wie kann das Umformen nach der DIN 8582 bzw. dem Spannungszustand eingeteilt werden?
+§ Was kann beim Gesenkschmieden unterschieden werden?
+§ Nennen Sie drei Vorteile des Verzahnungswalzens.
+Urformen ist das Fertigen eines festen Körpers aus formlosem Stoff durch Schaffen des Zusammenhaltes.
+DIN 8580
+M.Sc. Lena Brömstrup | Fertigungstechnik | Übung – Klausurvorbereitung | Seite 6
+Institut für Füge- und Schweißtechnik
+Beispielhafte Kurzfrageninhalte
+§ Nennen Sie die sechs Hauptgruppen des Trennens nach der DIN 8580.
+§ Welche beiden Schneidenarten werden beim Trennen unterschieden? Nennen Sie je ein Beispiel.
+§ Wie setzt sich die Schweißbarkeit eines Bauteils zusammen? (Schweißdreieck)
+§ Nennen Sie zwei Beschichtungsgruppen nach der DIN 8580.
+§ Nennen Sie zwei Vor- und zwei Nachteile der Stereolithographie.
+§ Was sind die drei Zonen einer Standard-3-Zonen-Schnecke?
+I want the answers to all of these questions from the course files. in detail please and explained. The terms should be in german. I want these questions to be answered and none other"""
+
 
 def row(chunk_id, page, text, section=None):
     return {
@@ -50,6 +67,22 @@ def test_four_questions_produce_four_retrieval_items():
     manifest = analyse_request(REQUEST)
     assert len(manifest.requested_items) == 4
     assert [item.id for item in manifest.requested_items] == ["item-1", "item-2", "item-3", "item-4"]
+
+
+def test_exact_ten_question_slide_inventory_excludes_noise_and_merges_continuation():
+    manifest = analyse_request(EXACT_TEN_REQUEST)
+    assert len(manifest.requested_items) == 10
+    assert [item.id for item in manifest.requested_items] == [f"item-{i}" for i in range(1, 11)]
+    questions = [item.original_text for item in manifest.requested_items]
+    assert "Urformen ist das Fertigen" not in "\n".join(questions)
+    assert not any(question == "DIN 8580" for question in questions)
+    assert "Lena Brömstrup" not in "\n".join(questions)
+    assert questions[5] == "Welche beiden Schneidenarten werden beim Trennen unterschieden? Nennen Sie je ein Beispiel."
+    q9 = manifest.requested_items[8]
+    requirements = {(item.category, item.expected_count) for item in q9.requirements}
+    assert ("advantage", 2) in requirements
+    assert ("disadvantage", 2) in requirements
+    assert manifest.language == "de"
 
 
 def test_english_request_expands_to_controlled_german_course_terms():

@@ -40,6 +40,15 @@ class RequestedItem:
     item_type: str
     expected_answer_shape: str
     search_terms: tuple[str, ...]
+    requirements: tuple["AnswerRequirement", ...] = ()
+
+
+@dataclass(frozen=True)
+class AnswerRequirement:
+    category: str
+    expected_count: int
+    polarity: str | None = None
+    per_item_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -90,10 +99,12 @@ class FinalAnswerValidation:
     rendered_item_ids: tuple[str, ...]
     missing_item_ids: tuple[str, ...]
     contains_internal_status_labels: bool
+    extra_item_ids: tuple[str, ...] = ()
+    duplicate_item_ids: tuple[str, ...] = ()
 
     @property
     def complete(self) -> bool:
-        return not self.missing_item_ids and not self.contains_internal_status_labels
+        return not (self.missing_item_ids or self.extra_item_ids or self.duplicate_item_ids or self.contains_internal_status_labels)
 
 
 _QUESTION_START_RE = re.compile(
@@ -106,7 +117,11 @@ _INSTRUCTION_RE = re.compile(
     r"lass|bitte|terms?|language|sprache)\b",
     re.IGNORECASE,
 )
-_ENUM_PREFIX_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s*")
+_ENUM_PREFIX_RE = re.compile(r"^\s*(?:[-*•§]|\d+[.)])\s*")
+_CONTINUATION_RE = re.compile(
+    r"^(?:nennen sie|give|name|erkl[aä]ren sie|begr[uü]nden sie)\b", re.IGNORECASE,
+)
+_COUNT_WORDS = {"one": 1, "ein": 1, "eine": 1, "two": 2, "zwei": 2, "three": 3, "drei": 3, "six": 6, "sechs": 6}
 
 
 _CONTROLLED_CONCEPTS: tuple[tuple[str, ...], ...] = (
@@ -162,8 +177,31 @@ def _item_shape(text: str) -> tuple[str, str]:
     return "explanation", "definition and detailed course explanation"
 
 
+def _requirements(text: str) -> tuple[AnswerRequirement, ...]:
+    normalized = _normalise(text)
+    found: list[AnswerRequirement] = []
+    for word, count in _COUNT_WORDS.items():
+        if not re.search(rf"\b{word}\b", normalized):
+            continue
+        tail = normalized[normalized.find(word) + len(word):]
+        category, polarity = "item", None
+        if re.search(r"\bvorteil|\badvantage", tail): category, polarity = "advantage", "positive"
+        elif re.search(r"\bnachteil|\bdisadvantage", tail): category, polarity = "disadvantage", "negative"
+        elif re.search(r"\bgruppe|\bgroup", tail): category = "group"
+        elif re.search(r"\bzone", tail): category = "zone"
+        elif re.search(r"\bschneidenart|\bcutting edge", tail): category = "cutting_edge_type"
+        elif re.search(r"\bbeispiel|\bexample", tail): category = "example"
+        found.append(AnswerRequirement(category, count, polarity, count if " je " in f" {normalized} " else None))
+    if re.search(r"\bzwei\s+vor", normalized) and re.search(r"\bzwei\s+nachteil", normalized):
+        found.extend((
+            AnswerRequirement("advantage", 2, "positive"),
+            AnswerRequirement("disadvantage", 2, "negative"),
+        ))
+    return tuple(dict.fromkeys(found))
+
+
 def analyse_request(text: str) -> RequestManifest:
-    cleaned = re.sub(r"[●◦]", "\n- ", text or "")
+    cleaned = re.sub(r"[§●◦]", "\n- ", text or "")
     raw_lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     candidates: list[str] = []
     for line in raw_lines:
@@ -171,7 +209,22 @@ def analyse_request(text: str) -> RequestManifest:
         if _INSTRUCTION_RE.match(stripped) and "?" not in stripped:
             continue
         if "?" in stripped:
-            candidates.extend(part.strip() + "?" for part in stripped.split("?") if part.strip())
+            parts = [part.strip() for part in stripped.split("?") if part.strip()]
+            line_candidates: list[str] = []
+            for part in parts:
+                question_start = re.search(
+                    r"\b(?:what|how|why|which|name|list|explain|compare|calculate|"
+                    r"was|wie|warum|welche|welcher|nennen|erkl[aä]r|vergleichen|berechnen)\b",
+                    part, re.IGNORECASE,
+                )
+                question_part = part[question_start.start():] if question_start else part
+                if line_candidates and _CONTINUATION_RE.match(question_part):
+                    line_candidates[-1] += " " + question_part.rstrip(".") + "."
+                elif line_candidates and re.fullmatch(r"\([^)]{2,80}\)", question_part):
+                    line_candidates[-1] += " " + question_part
+                elif _QUESTION_START_RE.match(question_part):
+                    line_candidates.append(question_part + "?")
+            candidates.extend(line_candidates)
         elif _ENUM_PREFIX_RE.match(line) and _QUESTION_START_RE.match(stripped):
             candidates.append(stripped)
     if len(candidates) < 2:
@@ -183,6 +236,7 @@ def analyse_request(text: str) -> RequestManifest:
             id=f"item-{index}", original_text=candidate,
             item_type=item_type, expected_answer_shape=shape,
             search_terms=controlled_course_terms(candidate),
+            requirements=_requirements(candidate),
         ))
     language = "de" if re.search(
         r"\b(?:wie|was|nennen|erklären|vorteile)\b", text, re.IGNORECASE,
@@ -385,12 +439,14 @@ def answer_plan_overlay(result: MultiItemRetrievalResult) -> str:
         f"Produce exactly {len(result.manifest.requested_items)} numbered sections, one for every item.",
         "Use each original question verbatim as its section heading.",
         "Never print internal enum names or diagnostic labels in the student answer.",
+        "Begin each section with a compact Kurzantwort, then explain it. Satisfy every explicit requested count.",
     ]
     by_id = {item.id: item for item in result.manifest.requested_items}
     for evidence in result.evidence:
         item = by_id[evidence.item_id]
         lines.append(
             f"- {item.id}: {item.original_text} | shape={item.expected_answer_shape} | "
+            f"requirements={','.join(f'{r.category}:{r.expected_count}' for r in item.requirements) or 'none'} | "
             f"evidence={evidence.status.value} | chunks={','.join(evidence.supporting_chunk_ids) or 'none'}"
         )
     lines.append(
@@ -454,7 +510,7 @@ def ensure_complete_answer(
 
 
 __all__ = [
-    "EvidenceStatus", "FinalAnswerValidation", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
+    "AnswerRequirement", "EvidenceStatus", "FinalAnswerValidation", "IndexHealthStatus", "MultiItemRetrievalResult", "RequestManifest", "RequestedItem",
     "RequestedItemEvidence", "analyse_request", "answer_plan_overlay",
     "controlled_course_terms", "ensure_complete_answer", "is_multi_item_request",
     "retrieve_multi_item_course_evidence", "validate_final_answer",

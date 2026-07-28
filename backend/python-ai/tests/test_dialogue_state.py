@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.dialogue_state import DialogueAct, resolve_dialogue
+from app.services.dialogue_state import ConversationIntent, DialogueAct, resolve_dialogue
 
 
 def turns(*items):
@@ -186,3 +186,20 @@ def test_mixed_confusion_targets_only_substitution():
     assert result.dialogue_act == DialogueAct.REQUEST_SIMPLIFICATION
     assert result.requested_depth == "one_step"
     assert "only the substitution step" in result.resolved_request
+
+
+def test_explain_this_step_resolves_against_previous_answer():
+    result = resolve_dialogue(
+        "Explain this step in detail.",
+        previous_turns=turns(
+            ("user", "Solve Aufgabe 1b."),
+            ("assistant", "Step 2: Θ_A = Θ_S + md²."),
+        ),
+        response_language="en",
+    )
+    assert result.dialogue_act == DialogueAct.REQUEST_MORE_DETAIL
+    assert result.conversation_intent == ConversationIntent.FOLLOW_UP_EXPLANATION
+    assert result.referent_type == "calculation_step"
+    assert result.referent_text == "Step 2: Θ_A = Θ_S + md²."
+    assert "unspecified" not in result.resolved_request
+    assert "active source evidence" not in result.resolved_request
