@@ -10,7 +10,9 @@ from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
-EXTRACTOR_SCHEMA_VERSION = 1
+EXTRACTOR_SCHEMA_VERSION = 2
+PAIRING_SCHEMA_VERSION = 2
+ANSWER_VALIDATION_VERSION = 2
 
 
 @dataclass(frozen=True)

@@ -274,6 +274,18 @@ def classify_document_extraction(
 ) -> tuple[bool, bool, str | None]:
     """Return (is_extraction, is_correction, target)."""
     current = question or ""
+    # A user-provided list of concrete questions is a bounded QA request, not
+    # permission to enumerate the document's entire exam inventory.
+    explicit_question_list = (
+        current.count("?") >= 2
+        and bool(re.search(
+            r"\b(?:these|following|diese[nr]?|folgenden)\b",
+            current,
+            re.IGNORECASE,
+        ))
+    )
+    if explicit_question_list:
+        return False, False, None
     exhaustive = bool(_EXHAUSTIVE_RE.search(current) and _EXTRACTION_RE.search(current))
     correction = bool(_CONTINUATION_RE.search(current))
     prior_request = ""
@@ -336,6 +348,10 @@ class ExtractedQuestion:
     confidence: float = 0.0
     options: list[ExtractedQuestionOption] = field(default_factory=list)
     answer_type: str | None = None
+    document_id: str | None = None
+    document_revision: str | None = None
+    scope_fingerprint: str | None = None
+    source_structure: str | None = None
 
 
 @dataclass
@@ -348,6 +364,13 @@ class ExtractedSolutionEvidence:
     referenced_question_text: str | None = None
     question_fingerprint: str | None = None
     confidence: float = 0.0
+    document_id: str | None = None
+    document_revision: str | None = None
+    scope_fingerprint: str | None = None
+    source_structure: str | None = None
+    evidence_origin: str = "official_source_answer"
+    pairing_schema_version: int = 2
+    answer_validation_version: int = 2
 
 
 @dataclass
@@ -360,6 +383,11 @@ class PairedQAItem:
     pairing_method: str | None
     pairing_confidence: float
     answer_evidence_type: str | None
+    answer_origin: str = "unresolved"
+    validation_result: str = "unresolved"
+    error_code: str | None = None
+    question_fingerprint: str | None = None
+    document_revision: str | None = None
 
 
 class GapStatus(StrEnum):
@@ -578,33 +606,111 @@ def question_fingerprint(text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
 
 
+class QuestionIdentityConflict(ValueError):
+    """One printed item id identifies different canonical questions."""
+
+
+def canonicalize_questions(questions: list[ExtractedQuestion]) -> list[ExtractedQuestion]:
+    """Merge true duplicates and reject an id reused for different questions."""
+    canonical: dict[tuple[str, str], ExtractedQuestion] = {}
+    fingerprints_by_id: dict[str, set[str]] = {}
+    for question in questions:
+        fingerprint = question.question_fingerprint or question_fingerprint(question.question_text)
+        question.question_fingerprint = fingerprint
+        normalized_id = question.normalized_item_id or normalise_item_id(question.item_id)
+        fingerprints_by_id.setdefault(normalized_id, set()).add(fingerprint)
+        canonical.setdefault((normalized_id, fingerprint), question)
+    conflicting = [item_id for item_id, values in fingerprints_by_id.items() if len(values) > 1]
+    if conflicting:
+        log.error("question_identity_conflict item_ids=%s", sorted(conflicting))
+        raise QuestionIdentityConflict(
+            "same item id has different question fingerprints: " + ", ".join(sorted(conflicting))
+        )
+    return sorted(
+        canonical.values(),
+        key=lambda item: (_natural_item_id_key(item.item_id), item.question_page),
+    )
+
+
+_SCORE_MARKER_RE = re.compile(r"^\s*[01]\s*(?:P|Pkt\.?|Punkte?)\s*$", re.IGNORECASE)
+
+
+def _compatible_solution(question: ExtractedQuestion, solution: ExtractedSolutionEvidence) -> bool:
+    checks = (
+        ("document", question.document_id, solution.document_id),
+        ("revision", question.document_revision, solution.document_revision),
+        ("scope", question.scope_fingerprint, solution.scope_fingerprint),
+        ("source_structure", question.source_structure, solution.source_structure),
+    )
+    for label, expected, actual in checks:
+        if expected is not None and actual != expected:
+            log.warning("solution_candidate_rejected_%s_mismatch item=%s", label, question.item_id)
+            return False
+    if solution.question_fingerprint and solution.question_fingerprint != question.question_fingerprint:
+        log.warning("solution_candidate_rejected_fingerprint_mismatch item=%s", question.item_id)
+        return False
+    if solution.evidence_origin not in {"official_source_answer", "verified_visual_mark"}:
+        log.warning("previous_evidence_discarded item=%s origin=%s", question.item_id, solution.evidence_origin)
+        return False
+    if solution.pairing_schema_version != 2 or solution.answer_validation_version != 2:
+        log.warning("contaminated_cache_invalidated item=%s", question.item_id)
+        return False
+    return True
+
+
+def _validated_answer(
+    question: ExtractedQuestion, solution: ExtractedSolutionEvidence,
+) -> tuple[str | None, str | None]:
+    answer = re.sub(r"\s+", " ", solution.answer_text).strip()
+    if _SCORE_MARKER_RE.fullmatch(answer):
+        marked = [option.text for option in question.options if _SCORE_MARKER_RE.fullmatch(option.label or "") and (option.label or "").lstrip().startswith("1")]
+        if len(marked) == 1:
+            return marked[0], None
+        log.warning("score_marker_rejected_as_answer item=%s", question.item_id)
+        return None, "score_marker_is_not_answer"
+    if question.answer_type == "multiple_choice" and question.options:
+        normalized = re.sub(r"\W+", " ", answer.casefold()).strip()
+        option_values = [re.sub(r"\W+", " ", option.text.casefold()).strip() for option in question.options]
+        if normalized not in option_values:
+            log.warning("answer_shape_validation_failed item=%s", question.item_id)
+            return None, "answer_shape_mismatch"
+    return answer, None
+
+
 def pair_questions_and_solutions(
     questions: list[ExtractedQuestion],
     solutions: list[ExtractedSolutionEvidence],
 ) -> list[PairedQAItem]:
-    """Deterministically pair exact IDs first, then fingerprints/text."""
+    """Pair only identity-compatible, non-conflicting verified evidence."""
+    questions = canonicalize_questions(questions)
     unused = list(solutions)
     paired: list[PairedQAItem] = []
     for question in questions:
-        candidate = next(
-            (
-                item for item in unused
-                if item.normalized_item_id
-                and item.normalized_item_id == question.normalized_item_id
-            ),
-            None,
-        )
+        exact_candidates = [
+            item for item in unused
+            if item.normalized_item_id == question.normalized_item_id
+            and _compatible_solution(question, item)
+        ]
+        distinct_answers = {
+            re.sub(r"\s+", " ", item.answer_text).casefold().strip()
+            for item in exact_candidates
+        }
+        conflict = len(distinct_answers) > 1
+        if conflict:
+            log.error("solution_conflict_detected item=%s", question.item_id)
+        candidate = None if conflict else (exact_candidates[0] if exact_candidates else None)
         method = "normalized_item_id" if candidate else None
-        if candidate is None and question.question_fingerprint:
+        if candidate is None and not conflict and question.question_fingerprint:
             candidate = next(
                 (
                     item for item in unused
                     if item.question_fingerprint == question.question_fingerprint
+                    and _compatible_solution(question, item)
                 ),
                 None,
             )
             method = "question_fingerprint" if candidate else None
-        if candidate is None:
+        if candidate is None and not conflict:
             question_tokens = set(re.findall(r"\w+", question.question_text.casefold()))
             scored = [
                 (
@@ -614,19 +720,19 @@ def pair_questions_and_solutions(
                     item,
                 )
                 for item in unused
-                if item.referenced_question_text
+                if item.referenced_question_text and _compatible_solution(question, item)
             ]
             if scored:
                 score, possible = max(scored, key=lambda value: value[0])
                 if score >= 0.72:
                     candidate, method = possible, "referenced_question_similarity"
-        if candidate is None and question.options:
+        if candidate is None and not conflict and question.options:
             option_texts = {
                 re.sub(r"\W+", " ", option.text.casefold()).strip()
                 for option in question.options if option.text.strip()
             }
             candidate = next((
-                item for item in unused
+                item for item in unused if _compatible_solution(question, item)
                 if any(
                     option and (
                         option in re.sub(r"\W+", " ", item.answer_text.casefold()).strip()
@@ -636,17 +742,23 @@ def pair_questions_and_solutions(
                 )
             ), None)
             method = "option_text_match" if candidate else None
+        answer_text, validation_error = _validated_answer(question, candidate) if candidate else (None, None)
         if candidate:
             unused.remove(candidate)
         paired.append(PairedQAItem(
             item_id=question.item_id,
             question_text=question.question_text,
-            answer_text=candidate.answer_text if candidate else None,
+            answer_text=answer_text,
             question_page=question.question_page,
             answer_page=candidate.answer_page if candidate else None,
             pairing_method=method,
             pairing_confidence=min(question.confidence, candidate.confidence) if candidate else 0.0,
             answer_evidence_type=candidate.evidence_type if candidate else None,
+            answer_origin=candidate.evidence_origin if candidate and answer_text else "unresolved",
+            validation_result="valid" if answer_text else "unresolved",
+            error_code=("conflicting_solution_evidence" if conflict else validation_error),
+            question_fingerprint=question.question_fingerprint,
+            document_revision=question.document_revision,
         ))
     return paired
 
@@ -2097,13 +2209,10 @@ def extract_document_qa(
         item_id for item_id, questions in questions_by_id.items()
         if len(questions) > 1
     )
-    # Deduplicate the independent passes, then pair them deterministically.
-    unique_questions: dict[str, ExtractedQuestion] = {}
-    for item in extracted_questions:
-        key = item.normalized_item_id or item.question_fingerprint
-        existing = unique_questions.get(key)
-        if existing is None or len(item.question_text) > len(existing.question_text):
-            unique_questions[key] = item
+    # Seal a canonical inventory. An id reused for different question text is
+    # a structural conflict, never a reason to keep whichever transcription is
+    # longer.
+    canonical_questions = canonicalize_questions(extracted_questions)
     unique_solutions: dict[tuple[str, int, str], ExtractedSolutionEvidence] = {}
     for item in solution_evidence:
         key = (
@@ -2112,8 +2221,26 @@ def extract_document_qa(
             item.answer_text,
         )
         unique_solutions[key] = item
-    result.extracted_questions = list(unique_questions.values())
+    result.extracted_questions = canonical_questions
     result.solution_evidence = list(unique_solutions.values())
+    document_revision = str(
+        document.get("active_index_revision") or document.get("updated_at") or ""
+    )
+    source_structure = result.resolved_heading or (
+        resolved_family.family_name if resolved_family else target
+    )
+    for item in result.extracted_questions:
+        item.document_id = document_id
+        item.document_revision = document_revision
+        item.scope_fingerprint = result.scope_fingerprint
+        item.source_structure = source_structure
+    for item in result.solution_evidence:
+        item.document_id = document_id
+        item.document_revision = document_revision
+        item.scope_fingerprint = result.scope_fingerprint
+        item.source_structure = source_structure
+        if item.evidence_type in {"visual_mark", "green_checkmark", "checked_option", "visual_answer_mark"}:
+            item.evidence_origin = "verified_visual_mark"
     if numbered_section:
         result.invalid_item_ids_rejected = sorted({
             item.item_id for item in result.extracted_questions
@@ -2702,6 +2829,17 @@ def build_learning_journey(
 
 def format_document_extraction(result: DocumentExtractionResult, language: str) -> str:
     english = language != "de"
+    scanned_count = len(result.cumulative_scanned_pages or result.scanned_pages)
+    if result.items and scanned_count == 0:
+        log.error(
+            "impossible_coverage_state_blocked document=%s questions=%d",
+            result.document_id, len(result.items),
+        )
+        return (
+            "I could not verify the document coverage. No extracted answers were shown."
+            if english else
+            "Die Dokumentabdeckung konnte nicht verifiziert werden. Es wurden keine extrahierten Antworten angezeigt."
+        )
     if not result.section_resolved:
         return result.message or (
             f'Minallo found the document, but it could not reliably read section "{result.target}".'
