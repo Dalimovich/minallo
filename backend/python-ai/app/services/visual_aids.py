@@ -16,7 +16,9 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from .embeddings import embed_query
 from .learning_recommendation import ExplanationPlan
+from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +33,19 @@ class VisualContext:
     page_number: int | None = None
     selected_region: dict[str, Any] | None = None
     page_image_available: bool = False
+
+
+@dataclass(frozen=True)
+class VisualRetrievalRequest:
+    user_id: str
+    course_id: str
+    topic: str
+    question: str
+    current_document_id: str | None = None
+    current_page: int | None = None
+    selected_region: dict[str, Any] | None = None
+    preferred_types: tuple[str, ...] = ()
+    max_results: int = 3
 
 
 def _safe_url(value: str) -> str | None:
@@ -122,15 +137,111 @@ def _wikimedia_visuals(topic: str, limit: int = 2) -> list[dict[str, Any]]:
     return results
 
 
+def _signed_thumbnail(sb: Any, path: str) -> str | None:
+    if not path:
+        return None
+    try:
+        result = sb.storage.from_("course-visuals").create_signed_url(path, 900)
+    except Exception:
+        return None
+    if isinstance(result, dict):
+        return str(result.get("signedURL") or result.get("signedUrl") or "") or None
+    return None
+
+
+def _word_overlap(left: str, right: str) -> float:
+    left_words = set(re.findall(r"[a-zäöüß]{4,}", left.lower()))
+    right_words = set(re.findall(r"[a-zäöüß]{4,}", right.lower()))
+    return len(left_words & right_words) / max(1, len(left_words))
+
+
+def retrieve_course_visuals(request: VisualRetrievalRequest) -> list[dict[str, Any]]:
+    """Dedicated vector visual search with active-revision and relevance guards."""
+    if not request.user_id or not request.course_id or not request.topic:
+        return []
+    sb = get_supabase()
+    try:
+        response = sb.rpc("match_course_visuals", {
+            "p_user_id": request.user_id,
+            "p_course_id": request.course_id,
+            "p_document_revision": "",
+            "p_query_embedding": embed_query(f"{request.topic}\n{request.question}"),
+            "p_limit": min(30, max(8, request.max_results * 5)),
+        }).execute()
+        rows = response.data or []
+    except Exception:
+        log.info("course visual search unavailable", exc_info=True)
+        return []
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for row in rows:
+        description = " ".join(str(row.get(key) or "") for key in (
+            "caption", "visual_description", "nearby_text", "section_title",
+        ))
+        overlap = _word_overlap(request.topic, description)
+        semantic = float(row.get("similarity") or 0)
+        quality = float(row.get("quality_score") or 0)
+        current_doc = str(row.get("document_id") or "") == str(request.current_document_id or "")
+        distance = (
+            abs(int(row.get("page_number") or 0) - int(request.current_page or 0))
+            if current_doc and request.current_page else 99
+        )
+        score = semantic * 0.46 + overlap * 0.28 + quality * 0.12
+        if current_doc: score += 0.08
+        if distance == 0: score += 0.18
+        elif distance <= 3: score += 0.05
+        if request.preferred_types and row.get("visual_type") in request.preferred_types:
+            score += 0.05
+        if score < (0.48 if distance == 0 else 0.58) or quality < 0.55:
+            continue
+        thumbnail = _signed_thumbnail(sb, str(row.get("thumbnail_path") or ""))
+        if thumbnail:
+            ranked.append((score, {**row, "_thumbnail": thumbnail}))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    output: list[dict[str, Any]] = []
+    seen_regions: set[tuple[str, int, str]] = set()
+    seen_hashes: set[str] = set()
+    for score, row in ranked:
+        region = row.get("bounding_box") or {}
+        region_key = (
+            str(row.get("document_id") or ""), int(row.get("page_number") or 0),
+            json.dumps(region, sort_keys=True),
+        )
+        image_hash = str(row.get("perceptual_hash") or "")
+        if region_key in seen_regions or (image_hash and image_hash in seen_hashes):
+            continue
+        seen_regions.add(region_key)
+        if image_hash: seen_hashes.add(image_hash)
+        title = str(row.get("caption") or row.get("section_title") or request.topic)
+        output.append({
+            "sourceType": "course_file", "visualId": str(row.get("id")),
+            "documentId": str(row.get("document_id")),
+            "documentRevision": str(row.get("document_revision")),
+            "pageNumber": int(row.get("page_number") or 1), "boundingBox": region,
+            "visualType": str(row.get("visual_type") or "unknown"), "title": title,
+            "altText": str(row.get("visual_description") or title)[:300],
+            "explanation": f"This course visual supports the explanation of {request.topic}.",
+            "thumbnailUrl": row["_thumbnail"],
+            "thumbnailEndpoint": f"/course-visuals/{row.get('id')}/thumbnail",
+            "sourceEndpoint": f"/course-visuals/{row.get('id')}/source",
+            "displayMode": "inline", "educationalRelevance": round(score, 4),
+        })
+        if len(output) >= request.max_results:
+            break
+    return output
+
+
 def select_visual_aids(
     plan: ExplanationPlan,
     *,
     context: VisualContext,
+    user_id: str | None = None,
+    course_id: str | None = None,
+    question: str = "",
 ) -> list[dict[str, Any]]:
     if not plan.include_visual_aids:
         return []
-    if context.document_id and (context.selected_region or context.page_image_available):
-        region = context.selected_region or {}
+    if context.document_id and context.selected_region:
+        region = context.selected_region
         return [
             {
                 "sourceType": "course_file",
@@ -150,7 +261,33 @@ def select_visual_aids(
                 "displayMode": "open_in_pdf",
             }
         ]
+    if user_id and course_id:
+        course_visuals = retrieve_course_visuals(VisualRetrievalRequest(
+            user_id=user_id, course_id=course_id, topic=plan.topic,
+            question=question, current_document_id=context.document_id,
+            current_page=context.page_number,
+            preferred_types=("diagram", "graph", "table", "flowchart", "formula_region"),
+            max_results=2,
+        ))
+        if course_visuals:
+            return course_visuals
+    if context.document_id and context.page_image_available:
+        return [{
+            "sourceType": "course_file",
+            "visualId": f"page-{context.document_id}-{context.page_number or 1}",
+            "documentId": context.document_id,
+            "documentRevision": context.document_revision or "",
+            "pageNumber": context.page_number or 1,
+            "boundingBox": None,
+            "title": f"Visual from your current course page: {plan.topic}",
+            "altText": f"Current PDF page used to explain {plan.topic}",
+            "explanation": "The current course page is used before any external visual.",
+            "displayMode": "open_in_pdf",
+        }]
     return _wikimedia_visuals(plan.topic)
 
 
-__all__ = ("VisualContext", "select_visual_aids")
+__all__ = (
+    "VisualContext", "VisualRetrievalRequest", "retrieve_course_visuals",
+    "select_visual_aids",
+)

@@ -623,6 +623,34 @@
       }).join('');
     }
 
+    var courseVisuals = _asList(lesson.courseVisuals);
+    if (courseVisuals.length) {
+      var article = els.result.querySelector('.dl-lesson-structured');
+      var visualSection = document.createElement('section');
+      visualSection.className = 'dl-section dl-course-visuals';
+      visualSection.innerHTML = '<h4>Professor\'s course visuals</h4><div class="dl-course-visual-grid"></div>';
+      var visualGrid = visualSection.querySelector('.dl-course-visual-grid');
+      courseVisuals.forEach(function (visual) {
+        var figure = document.createElement('figure');
+        figure.className = 'dl-course-visual';
+        figure.innerHTML = (visual.thumbnailUrl
+          ? '<img loading="lazy" alt="' + _esc(visual.title || 'Course visual') + '" src="' + _esc(visual.thumbnailUrl) + '">' : '') +
+          '<figcaption><strong>' + _esc(visual.title || 'Course visual') + '</strong>' +
+          '<p>' + _esc(visual.explanation || '') + '</p>' +
+          '<button type="button" class="dl-course-visual-open">Open source page ' + _esc(visual.pageNumber || '') + '</button></figcaption>';
+        figure.querySelector('.dl-course-visual-open').addEventListener('click', function () {
+          if (typeof window.openCitedSource === 'function') {
+            window.openCitedSource({
+              documentId: visual.documentId, page: visual.pageNumber,
+              boundingBox: visual.boundingBox || null,
+            }, 'popup');
+          }
+        });
+        visualGrid.appendChild(figure);
+      });
+      if (article) article.appendChild(visualSection);
+    }
+
     var sourceHost = els.result.querySelector('.dl-source-list');
     if (sourceHost) {
       sourceHost.innerHTML = sources.length ? sources.map(function (s) {
@@ -1169,6 +1197,7 @@
       ? options.initialDocumentIds.filter(Boolean) : [];
     var initialVisualIds = Array.isArray(options.initialVisualIds)
       ? options.initialVisualIds.filter(Boolean) : [];
+    var initialExistingLessonId = options.initialExistingLessonId || '';
     if (els.text && initial.topic) els.text.value = initial.topic;
     if (els.mode && initial.lessonMode) els.mode.value = initial.lessonMode;
     if (els.language && (initial.lessonLanguage || initial.language)) {
@@ -1200,6 +1229,7 @@
     _aiService().then(function (svc) {
       _populateTopics(svc, els.select);
       _loadSaved(svc, els, courseId);
+      if (initialExistingLessonId) _viewSaved(svc, els, initialExistingLessonId);
     });
     if (courseId) loadCourseDocs().catch(function () { /* retry on click */ });
 
@@ -1229,6 +1259,10 @@
           if (Array.isArray(initial.learningGoals) && initial.learningGoals.length) {
             opts.learningGoals = initial.learningGoals;
           }
+          if (Array.isArray(options.initialSourceChunkIds) && options.initialSourceChunkIds.length) {
+            opts.sourceChunkIds = options.initialSourceChunkIds;
+          }
+          if (options.recommendationId) opts.recommendationId = options.recommendationId;
           if (els.mode && els.mode.value) opts.lessonMode = els.mode.value;
           if (els.language && els.language.value) opts.lessonLanguage = els.language.value;
           if (els.courseName) opts.courseName = els.courseName;
@@ -1276,7 +1310,7 @@
     // A chatbot recommendation is itself the explicit user click. Reuse the
     // supplied authorised document scope and start exactly once after mount;
     // ordinary navigation continues to show the source picker.
-    if (options.autoStart === true && initial.topic) {
+    if (options.autoStart === true && initial.topic && !initialExistingLessonId) {
       setTimeout(function () {
         if (!els.gen || els.gen.dataset.autoStarted === 'true') return;
         els.gen.dataset.autoStarted = 'true';

@@ -49,6 +49,7 @@ from ..services.learning_recommendation import (
     build_explanation_plan,
     build_learning_recommendations,
 )
+from ..services.deep_learn_reuse import course_revision_hash, find_existing_lesson
 from ..services.visual_aids import VisualContext, select_visual_aids
 from ..services.fallback_research import research_unresolved_items
 from ..services.multi_item_retrieval import (
@@ -4221,24 +4222,6 @@ async def _prepare_ask_stream_response(
         has_selected_region=bool(payload.selectedRegion),
         has_page_image=bool(open_file_images),
     )
-    visual_context_ids = (
-        [str(payload.selectedRegion.id)]
-        if payload.selectedRegion and payload.selectedRegion.id
-        else []
-    )
-    learning_recommendations = build_learning_recommendations(
-        explanation_plan,
-        course_id=payload.courseId,
-        document_ids=[
-            chunk.document_id for chunk in chunks
-            if chunk.document_id and not chunk.document_id.startswith("__")
-        ],
-        source_chunk_ids=[chunk.chunk_id for chunk in chunks if chunk.chunk_id],
-        visual_ids=visual_context_ids,
-        weak_topics=weak_topics,
-        previous_turns=previous_turns_payload,
-        response_language=language_context.requested_response_language,
-    )
     visual_aids = await run_in_threadpool(
         lambda: select_visual_aids(
             explanation_plan,
@@ -4249,8 +4232,53 @@ async def _prepare_ask_stream_response(
                 selected_region=(payload.selectedRegion.model_dump() if payload.selectedRegion else None),
                 page_image_available=bool(open_file_images),
             ),
+            user_id=user_id,
+            course_id=payload.courseId,
+            question=resolved_question,
         ),
     )
+    persistent_visual_ids = [
+        str(item.get("visualId")) for item in visual_aids
+        if item.get("sourceType") == "course_file"
+        and item.get("visualId")
+        and not str(item.get("visualId")).startswith("page-")
+    ]
+    learning_recommendations = build_learning_recommendations(
+        explanation_plan,
+        course_id=payload.courseId,
+        document_ids=[
+            chunk.document_id for chunk in chunks
+            if chunk.document_id and not chunk.document_id.startswith("__")
+        ],
+        source_chunk_ids=[chunk.chunk_id for chunk in chunks if chunk.chunk_id],
+        visual_ids=persistent_visual_ids,
+        weak_topics=weak_topics,
+        previous_turns=previous_turns_payload,
+        response_language=language_context.requested_response_language,
+    )
+    if learning_recommendations:
+        try:
+            recommendation_doc_ids = learning_recommendations[0].get("documentIds") or []
+            recommendation_revision_hash = await run_in_threadpool(
+                lambda: course_revision_hash(user_id, payload.courseId, recommendation_doc_ids)
+            )
+            existing_lesson = await run_in_threadpool(
+                lambda: find_existing_lesson(
+                    user_id=user_id, course_id=payload.courseId,
+                    topic=str(learning_recommendations[0].get("topic") or ""),
+                    revision_hash=recommendation_revision_hash,
+                )
+            )
+            learning_recommendations[0]["documentRevisionHash"] = recommendation_revision_hash
+            if existing_lesson:
+                learning_recommendations[0]["existingLessonId"] = existing_lesson.get("id")
+                learning_recommendations[0]["existingLessonStatus"] = existing_lesson.get("lesson_status") or "complete"
+                learning_recommendations[0]["action"] = {
+                    "label": "Continue Deep Learn" if existing_lesson.get("lesson_status") != "complete" else "Open Deep Learn lesson",
+                    "type": "open_deep_learn",
+                }
+        except Exception:
+            log.exception("deep learn reuse lookup failed (recommendation remains usable)")
     context_consistent = bool(
         retrieval_scope.exercise_reference == grounded_identity.exercise_reference
         and (
@@ -4337,6 +4365,11 @@ async def _prepare_ask_stream_response(
 
     def gen():
         import json
+        event_identity = {
+            "requestId": request_id,
+            "conversationId": payload.conversationId,
+            "assistantMessageId": payload.assistantMessageId,
+        }
         observer.start("draft_generated")
         if app_or_workspace:
             yield _status_sse("checking_app_context")
@@ -4440,13 +4473,32 @@ async def _prepare_ask_stream_response(
                     evt["learningRecommendations"] = learning_recommendations
                     evt["visualAids"] = visual_aids
                     evt.update(_source_meta(source_decision, cache_hit=False))
+                    evt.update(event_identity)
+                    evt["event"] = "sources.ready"
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
+                    yield chunk_bytes
+                    if visual_aids:
+                        yield _sse_bytes(json.dumps({
+                            **event_identity, "event": "visual_aids.ready",
+                            "visualAids": visual_aids,
+                        }, ensure_ascii=False))
+                    if learning_recommendations:
+                        yield _sse_bytes(json.dumps({
+                            **event_identity, "event": "learning_recommendation.ready",
+                            "learningRecommendations": learning_recommendations,
+                        }, ensure_ascii=False))
+                    continue
                 if evt.get("t"):
+                    evt.update(event_identity)
+                    evt["event"] = "answer.delta"
+                    chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                     full_text_buf.append(evt["t"])
                     if high_risk_validation:
                         pending_token_events.append(chunk_bytes)
                         continue
                 if evt.get("done"):
+                    evt.update(event_identity)
+                    evt["event"] = "answer.completed"
                     observer.finish("draft_generated")
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()

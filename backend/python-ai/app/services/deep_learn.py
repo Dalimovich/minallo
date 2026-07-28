@@ -412,6 +412,48 @@ def _student_context_prompt(course_name: str | None, student_major: str | None) 
     )
 
 
+def _authorised_course_visuals(
+    user_id: str, course_id: str, visual_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    if not visual_ids:
+        return []
+    try:
+        sb = get_supabase()
+        rows = (
+            sb.table("course_visuals")
+            .select("id,document_id,document_revision,page_number,bounding_box,visual_type,"
+                    "caption,visual_description,thumbnail_path")
+            .eq("user_id", user_id).eq("course_id", course_id)
+            .in_("id", list(dict.fromkeys(visual_ids))[:12]).execute()
+        ).data or []
+        doc_ids = list({str(row.get("document_id")) for row in rows if row.get("document_id")})
+        docs = (
+            sb.table("documents").select("id,document_hash")
+            .eq("user_id", user_id).eq("course_id", course_id).in_("id", doc_ids).execute()
+        ).data or [] if doc_ids else []
+        active = {str(row.get("id")): str(row.get("document_hash") or "") for row in docs}
+        verified = []
+        for row in rows:
+            if active.get(str(row.get("document_id"))) != str(row.get("document_revision") or ""):
+                continue
+            signed = sb.storage.from_("course-visuals").create_signed_url(
+                str(row.get("thumbnail_path") or ""), 900,
+            )
+            url = (signed.get("signedURL") or signed.get("signedUrl")) if isinstance(signed, dict) else None
+            verified.append({
+                "visualId": row.get("id"), "documentId": row.get("document_id"),
+                "documentRevision": row.get("document_revision"), "pageNumber": row.get("page_number"),
+                "boundingBox": row.get("bounding_box"), "visualType": row.get("visual_type"),
+                "title": row.get("caption") or row.get("visual_description") or "Course visual",
+                "explanation": row.get("visual_description") or row.get("caption") or "",
+                "thumbnailUrl": url,
+            })
+        return verified
+    except Exception:
+        log.exception("deep learn visual resolution failed (continuing without visuals)")
+        return []
+
+
 def _lesson_mode(value: str | None) -> str:
     mode = (value or "exam").strip().lower()
     return mode if mode in _VALID_LESSON_MODES else "exam"
@@ -1419,6 +1461,19 @@ def generate_deep_learn(
     facts_text = _format_extracted_facts(extracted_facts)
 
     student_ctx = _student_context_prompt(course_name, student_major)
+    course_visuals = _authorised_course_visuals(user_id, course_id, visual_ids)
+    visual_context = ""
+    if course_visuals:
+        visual_context = (
+            "AUTHORISED COURSE VISUALS (active revisions only):\n"
+            + "\n".join(
+                f"- Visual {item['visualId']} on page {item['pageNumber']} "
+                f"({item['visualType']}): {item['explanation']}"
+                for item in course_visuals
+            )
+            + "\nExplain only the visuals that materially improve a lesson section. "
+            "Link their interpretation to the cited PDF page.\n\n"
+        )
     # Document Understanding Layer: adapt behaviour to the selected source types
     # (exam → understanding mode, solution sheet → explain reasoning, …).
     understanding = understanding_block_for_ids(document_ids, user_id=user_id)
@@ -1428,6 +1483,7 @@ def generate_deep_learn(
         + _language_prompt(language) + "\n\n"
         + (understanding + "\n\n" if understanding else "")
         + (student_ctx + "\n\n" if student_ctx else "")
+        + visual_context
         + (
             "CHAT LEARNING GOALS:\n- "
             + "\n- ".join(str(goal).strip()[:240] for goal in learning_goals[:8] if str(goal).strip())
@@ -1466,6 +1522,8 @@ def generate_deep_learn(
         # Stable identities only. Deep Learn can resolve authorised course
         # visual records later; temporary signed URLs are never persisted.
         structured["sourceVisualIds"] = list(dict.fromkeys(visual_ids[:12]))
+    if course_visuals:
+        structured["courseVisuals"] = course_visuals
     _validate_lesson_content(
         structured,
         topic=topic,

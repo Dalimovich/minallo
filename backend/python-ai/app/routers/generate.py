@@ -222,6 +222,9 @@ class GenerateDeepLearnRequest(BaseModel):
     studentMajor: str | None = None
     visualIds: list[str] | None = None
     learningGoals: list[str] | None = None
+    sourceChunkIds: list[str] | None = None
+    recommendationId: str | None = None
+    idempotencyKey: str | None = None
 
 
 class GenerateDeepLearnResponse(BaseModel):
@@ -240,6 +243,8 @@ class GenerateDeepLearnResponse(BaseModel):
     model: str | None = None
     promptTokens: int | None = None
     completionTokens: int | None = None
+    reused: bool = False
+    lessonStatus: str | None = None
 
 
 @router.post("/generate-quiz", response_model=GenerateQuizResponse)
@@ -425,6 +430,41 @@ def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> GenerateD
             warning="None of the selected files are indexed yet. Wait for indexing to finish, or pick ready files.",
         )
 
+    from ..services.deep_learn_reuse import (  # noqa: WPS433
+        claim_generation, course_revision_hash, find_existing_lesson,
+        finish_claim, launch_idempotency_key, topic_fingerprint,
+    )
+    revision_hash = course_revision_hash(payload.userId, payload.courseId, doc_ids or None)
+    canonical_key = launch_idempotency_key(
+        user_id=payload.userId, course_id=payload.courseId, topic=payload.topic,
+        revision_hash=revision_hash, lesson_mode=payload.lessonMode or "exam",
+        lesson_language=payload.lessonLanguage or "same",
+        recommendation_id=payload.recommendationId,
+    )
+    existing = find_existing_lesson(
+        user_id=payload.userId, course_id=payload.courseId,
+        topic=payload.topic, revision_hash=revision_hash,
+    )
+    if existing:
+        return GenerateDeepLearnResponse(
+            noteId=existing.get("id"), topic=payload.topic,
+            title=existing.get("title") or payload.topic,
+            lesson=existing.get("content_markdown") or "", reused=True,
+            lessonStatus=existing.get("lesson_status") or "complete",
+        )
+    claim = claim_generation(
+        user_id=payload.userId, course_id=payload.courseId,
+        idempotency_key=canonical_key, topic=payload.topic,
+        revision_hash=revision_hash,
+    )
+    if claim.status in {"processing", "complete"}:
+        return GenerateDeepLearnResponse(
+            noteId=claim.note_id, topic=payload.topic, title=payload.topic,
+            reused=True, lessonStatus=claim.status,
+            warning=("This Deep Learn lesson is already being created."
+                     if claim.status == "processing" else None),
+        )
+
     out = generate_deep_learn(
         user_id=payload.userId,
         course_id=payload.courseId,
@@ -438,6 +478,25 @@ def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> GenerateD
         visual_ids=payload.visualIds,
         learning_goals=payload.learningGoals,
     )
+    note_id = out.get("noteId")
+    try:
+        if note_id:
+            get_supabase().table("notes").update({
+                "topic_fingerprint": topic_fingerprint(payload.topic),
+                "document_revision_hash": revision_hash,
+                "lesson_mode": payload.lessonMode or "exam",
+                "lesson_language": payload.lessonLanguage or "same",
+                "lesson_status": "complete", "recommendation_id": payload.recommendationId,
+                "launch_idempotency_key": canonical_key,
+                "visual_ids": list(dict.fromkeys(payload.visualIds or []))[:12],
+                "source_chunk_ids": list(dict.fromkeys(payload.sourceChunkIds or []))[:40],
+            }).eq("id", note_id).eq("user_id", payload.userId).execute()
+        finish_claim(
+            user_id=payload.userId, idempotency_key=canonical_key,
+            note_id=note_id, success=bool(note_id),
+        )
+    except Exception:
+        log.exception("deep learn idempotency metadata persistence failed")
     return GenerateDeepLearnResponse(
         noteId=out.get("noteId"),
         topic=out.get("topic", payload.topic),
@@ -454,6 +513,8 @@ def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> GenerateD
         model=out.get("model"),
         promptTokens=out.get("promptTokens"),
         completionTokens=out.get("completionTokens"),
+        reused=False,
+        lessonStatus="complete" if note_id else None,
     )
 
 

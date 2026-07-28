@@ -675,7 +675,12 @@ function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse):
       visualIds?: string[];
       lessonMode?: string;
       lessonLanguage?: string;
-      learningGoals?: string[];
+            learningGoals?: string[];
+            origin?: string;
+            originConversationId?: string;
+            originMessageId?: string;
+            recommendationId?: string;
+            existingLessonId?: string;
       autoStart?: boolean;
     };
   };
@@ -713,6 +718,11 @@ function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse):
           initialDocumentIds: launch.documentIds,
           initialSourceChunkIds: launch.sourceChunkIds,
           initialVisualIds: launch.visualIds,
+          initialExistingLessonId: launch.existingLessonId,
+          recommendationId: launch.recommendationId,
+          origin: launch.origin,
+          originConversationId: launch.originConversationId,
+          originMessageId: launch.originMessageId,
           autoStart: launch.autoStart === true,
         } : { generate: window._generateStudyTool });
         if (launch) delete launchWindow.__minalloDeepLearnLaunch;

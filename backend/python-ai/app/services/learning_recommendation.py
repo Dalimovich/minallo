@@ -21,6 +21,23 @@ class ExplanationDepth(str, Enum):
     DEEP = "deep"
 
 
+class ExplanationIntent(str, Enum):
+    DIRECT_ANSWER = "direct_answer"
+    CONCEPT_EXPLANATION = "concept_explanation"
+    DETAILED_EXPLANATION = "detailed_explanation"
+    STEP_BY_STEP_DERIVATION = "step_by_step_derivation"
+    WORKED_EXAMPLE = "worked_example"
+    VISUAL_EXPLANATION = "visual_explanation"
+    DIAGRAM_INTERPRETATION = "diagram_interpretation"
+    GRAPH_INTERPRETATION = "graph_interpretation"
+    TABLE_INTERPRETATION = "table_interpretation"
+    PROCESS_EXPLANATION = "process_explanation"
+    COMPARISON = "comparison"
+    PREREQUISITE_REPAIR = "prerequisite_repair"
+    EXAM_PREPARATION = "exam_preparation"
+    DEEP_LEARN_RECOMMENDATION = "deep_learn_recommendation"
+
+
 class DeepLearnReasonCode(str, Enum):
     USER_REQUESTED_DETAILED_EXPLANATION = "user_requested_detailed_explanation"
     CONCEPT_COMPLEXITY = "concept_complexity"
@@ -53,14 +70,25 @@ _DEEP_RE = re.compile(
 _QUICK_RE = re.compile(r"\b(brief|quick(?:ly)?|one sentence|kurz|knapp)\b", re.IGNORECASE)
 _MULTI_STEP_RE = re.compile(
     r"\b(process|procedure|method|calculate|deriv|stages?|steps?|verfahren|ablauf|"
-    r"berechn|herleit|vorgehen|prozess)\b",
+    r"berechn|herleit|vorgehen|prozess|wie\b.{0,80}\bfunktioniert)\b",
     re.IGNORECASE,
 )
 _VISUAL_RE = re.compile(
     r"\b(diagram|figure|image|graph|table|visual|geometry|cross[ -]?section|material flow|"
-    r"abbildung|schaubild|grafik|tabelle|bild|querschnitt|werkstofffluss)\b",
+    r"abbildung|schaubild|grafik|tabelle|bild|querschnitt|werkstofffluss|zeige\b.{0,80}\bwie)\b",
     re.IGNORECASE,
 )
+_INCORRECT_RE = re.compile(
+    r"\b(my (?:answer|attempt|calculation) (?:is|was) wrong|where did i go wrong|"
+    r"correct my|mein(?:e|er) (?:antwort|rechnung|versuch) ist falsch|wo ist mein fehler)\b",
+    re.IGNORECASE,
+)
+_FAILED_CHECK_RE = re.compile(
+    r"\b(failed (?:the )?(?:quiz|self-check|test)|got (?:the answer|it) wrong|"
+    r"quiz nicht bestanden|selbsttest nicht bestanden|falsch beantwortet)\b",
+    re.IGNORECASE,
+)
+_COMPARISON_RE = re.compile(r"\b(compare|difference between|versus|vs\.?|vergleich|unterschied)\b", re.I)
 _ADMIN_RE = re.compile(
     r"\b(deadline|upload|login|subscription|account|folder|anmeld|hochladen|konto)\b", re.IGNORECASE
 )
@@ -78,18 +106,45 @@ class ExplanationPlan:
     prerequisite_topics: list[str] = field(default_factory=list)
     include_definition: bool = True
     include_intuition: bool = True
+    include_course_wording: bool = True
     include_step_by_step: bool = False
     include_example: bool = True
+    include_derivation: bool = False
+    include_analogy: bool = False
     include_formula_breakdown: bool = False
     include_assumptions: bool = False
     include_common_mistakes: bool = False
     include_exam_tip: bool = False
     include_visual_aids: bool = False
+    recommend_deep_learn: bool = False
+    detected_topics: list[dict[str, Any]] = field(default_factory=list)
+    prerequisite_gaps: list[dict[str, Any]] = field(default_factory=list)
+    misunderstanding_signals: list[dict[str, Any]] = field(default_factory=list)
 
     def to_api(self) -> dict[str, Any]:
-        data = asdict(self)
-        data["depth"] = self.depth.value
-        return data
+        return {
+            "explanationRequested": self.explanation_requested,
+            "explanationDepth": self.depth.value,
+            "answerIntents": self.answer_intents,
+            "detectedTopics": self.detected_topics,
+            "prerequisiteGaps": self.prerequisite_gaps,
+            "misunderstandingSignals": self.misunderstanding_signals,
+            "recommendedStructure": {
+                "includeDefinition": self.include_definition,
+                "includeIntuition": self.include_intuition,
+                "includeCourseWording": self.include_course_wording,
+                "includeStepByStep": self.include_step_by_step,
+                "includeExample": self.include_example,
+                "includeDerivation": self.include_derivation,
+                "includeAnalogy": self.include_analogy,
+                "includeFormulaBreakdown": self.include_formula_breakdown,
+                "includeAssumptions": self.include_assumptions,
+                "includeCommonMistakes": self.include_common_mistakes,
+                "includeExamTip": self.include_exam_tip,
+                "includeVisualAids": self.include_visual_aids,
+            },
+            "recommendDeepLearn": self.recommend_deep_learn,
+        }
 
     def prompt_overlay(self) -> str:
         blocks = []
@@ -142,23 +197,41 @@ def build_explanation_plan(
 ) -> ExplanationPlan:
     explicit = bool(_EXPLAIN_RE.search(question))
     confusion = bool(_CONFUSION_RE.search(question))
+    incorrect_attempt = bool(_INCORRECT_RE.search(question))
+    failed_check = bool(_FAILED_CHECK_RE.search(question))
     multi_step = bool(_MULTI_STEP_RE.search(question))
     visual = bool(_VISUAL_RE.search(question) or has_selected_region)
+    formula_requested = bool(
+        re.search(r"[=λµσεν]|formula|equation|gleichung|formel", question, re.IGNORECASE)
+    )
     topic = _topic_from_question(question)
     repetitions = sum(
         1
         for turn in (previous_turns or [])
         if turn.get("role") == "user" and topic.lower() in turn.get("text", "").lower()
     )
-    intents = ["direct_answer"]
+    intents = [ExplanationIntent.DIRECT_ANSWER.value]
+    if explicit:
+        intents.append(ExplanationIntent.CONCEPT_EXPLANATION.value)
     if explicit or confusion or multi_step:
-        intents.append("detailed_explanation")
+        intents.append(ExplanationIntent.DETAILED_EXPLANATION.value)
     if multi_step:
-        intents.append("process_explanation")
+        intents.extend([
+            ExplanationIntent.PROCESS_EXPLANATION.value,
+            ExplanationIntent.STEP_BY_STEP_DERIVATION.value,
+        ])
     if visual:
-        intents.append("diagram_interpretation" if has_selected_region else "visual_explanation")
-    if confusion:
-        intents.append("prerequisite_repair")
+        if re.search(r"\b(graph|grafik|kennlinie)\b", question, re.I):
+            intents.append(ExplanationIntent.GRAPH_INTERPRETATION.value)
+        elif re.search(r"\b(table|tabelle)\b", question, re.I):
+            intents.append(ExplanationIntent.TABLE_INTERPRETATION.value)
+        else:
+            intents.append(ExplanationIntent.DIAGRAM_INTERPRETATION.value if has_selected_region else ExplanationIntent.VISUAL_EXPLANATION.value)
+    if confusion or incorrect_attempt or failed_check:
+        intents.append(ExplanationIntent.PREREQUISITE_REPAIR.value)
+    if _COMPARISON_RE.search(question): intents.append(ExplanationIntent.COMPARISON.value)
+    if re.search(r"exam|klausur|prÃ¼fung", question, re.I): intents.append(ExplanationIntent.EXAM_PREPARATION.value)
+    if re.search(r"example|beispiel", question, re.I): intents.append(ExplanationIntent.WORKED_EXAMPLE.value)
     depth = ExplanationDepth.NORMAL
     if _QUICK_RE.search(question):
         depth = ExplanationDepth.BRIEF
@@ -169,8 +242,22 @@ def build_explanation_plan(
     weak_match = next(
         (item for item in (weak_topics or []) if item.lower() in question.lower()), None
     )
-    if weak_match and "deep_learn_recommendation" not in intents:
-        intents.append("deep_learn_recommendation")
+    recommend = bool(
+        weak_match or confusion or incorrect_attempt or failed_check or multi_step
+        or depth in {ExplanationDepth.DETAILED, ExplanationDepth.DEEP} or visual
+    )
+    if recommend:
+        intents.append(ExplanationIntent.DEEP_LEARN_RECOMMENDATION.value)
+    signals = []
+    for enabled, signal_type, strength in (
+        (confusion, "explicit_confusion", "strong"),
+        (incorrect_attempt, "incorrect_attempt", "strong"),
+        (failed_check, "failed_assessment", "strong"),
+        (repetitions >= 2, "repeated_clarification", "medium"),
+        (bool(weak_match), "low_mastery", "strong"),
+    ):
+        if enabled:
+            signals.append({"type": signal_type, "topic": topic, "strength": strength})
     return ExplanationPlan(
         topic=topic,
         depth=depth,
@@ -178,13 +265,20 @@ def build_explanation_plan(
         explanation_requested=explicit,
         include_step_by_step=multi_step
         or depth in {ExplanationDepth.DETAILED, ExplanationDepth.DEEP},
-        include_formula_breakdown=bool(
-            re.search(r"[=λµσεν]|formula|equation|gleichung|formel", question, re.IGNORECASE)
-        ),
+        include_formula_breakdown=formula_requested,
         include_assumptions=multi_step,
+        include_derivation=bool(_DEEP_RE.search(question) or formula_requested),
+        include_analogy=bool(explicit and not multi_step),
         include_common_mistakes=depth in {ExplanationDepth.DETAILED, ExplanationDepth.DEEP},
         include_exam_tip=bool(re.search(r"exam|klausur|prüfung", question, re.IGNORECASE)),
         include_visual_aids=visual or (has_page_image and multi_step),
+        recommend_deep_learn=recommend,
+        detected_topics=[{
+            "canonicalName": topic, "displayName": topic, "aliases": [],
+            "scope": "method" if multi_step else "concept", "confidence": 0.82,
+        }],
+        prerequisite_gaps=([{"topic": topic, "reason": "required_for_current_question"}] if confusion else []),
+        misunderstanding_signals=signals,
     )
 
 
@@ -213,7 +307,7 @@ def build_learning_recommendations(
         reason = DeepLearnReasonCode.LOW_MASTERY
         reason_text = "Your recorded practice results indicate that a guided lesson on this topic may be useful."
         confidence, priority = 0.9, "high"
-    elif "prerequisite_repair" in plan.answer_intents:
+    elif ExplanationIntent.PREREQUISITE_REPAIR.value in plan.answer_intents:
         reason = DeepLearnReasonCode.USER_CONFUSION_STATEMENT
         reason_text = (
             "A guided lesson can rebuild the prerequisite ideas and then return to this question."
@@ -227,7 +321,7 @@ def build_learning_recommendations(
         reason = DeepLearnReasonCode.USER_REQUESTED_DETAILED_EXPLANATION
         reason_text = "This topic benefits from a guided lesson with examples and self-checks."
         confidence, priority = 0.82, "medium"
-    elif "process_explanation" in plan.answer_intents:
+    elif ExplanationIntent.PROCESS_EXPLANATION.value in plan.answer_intents:
         reason = DeepLearnReasonCode.MULTI_STEP_METHOD
         reason_text = "This is a multi-step method, so a guided lesson could help you practise the complete sequence."
         confidence, priority = 0.76, "medium"
@@ -273,6 +367,7 @@ def build_learning_recommendations(
 __all__ = (
     "DeepLearnReasonCode",
     "ExplanationDepth",
+    "ExplanationIntent",
     "ExplanationPlan",
     "build_explanation_plan",
     "build_learning_recommendations",

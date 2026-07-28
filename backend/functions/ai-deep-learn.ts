@@ -65,6 +65,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const learningGoals = Array.isArray(body.learningGoals)
     ? body.learningGoals.filter((value): value is string => typeof value === 'string').slice(0, 8)
     : [];
+  const sourceChunkIds = Array.isArray(body.sourceChunkIds)
+    ? body.sourceChunkIds.filter((value): value is string => typeof value === 'string').slice(0, 40)
+    : [];
   // Personalization the lesson prompt consumes (deep_learn._student_context_prompt).
   const courseName = typeof body.courseName === 'string' ? body.courseName : null;
   const studentMajor = typeof body.studentMajor === 'string' ? body.studentMajor : null;
@@ -102,6 +105,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     studentMajor,
     visualIds,
     learningGoals,
+    sourceChunkIds,
+    recommendationId: typeof body.recommendationId === 'string' ? body.recommendationId : null,
+    idempotencyKey: typeof body.idempotencyKey === 'string' ? body.idempotencyKey : null,
   });
   if (!upstream.ok) {
     const err = (upstream.body as { error?: string }).error;

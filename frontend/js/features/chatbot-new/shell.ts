@@ -3439,6 +3439,15 @@ async function streamFromAskStream(
     while (parsedEvents.length) {
       const evt = parsedEvents.shift()!;
       if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        const eventRequestId = typeof evt.requestId === 'string' ? evt.requestId : '';
+        const eventConversationId = typeof evt.conversationId === 'string' ? evt.conversationId : '';
+        const eventAssistantId = typeof evt.assistantMessageId === 'string' ? evt.assistantMessageId : '';
+        if ((eventRequestId && eventRequestId !== requestId)
+          || (eventConversationId && eventConversationId !== conversationId)
+          || (eventAssistantId && assistantMessage && eventAssistantId !== assistantMessage.id)) {
+          console.warn('[ncb] ignored mismatched stream event', evt.event || 'unknown');
+          continue;
+        }
         eventCount += 1;
         lastEventType = evt.done === true ? 'done' : evt.error ? 'error'
           : typeof evt.t === 'string' ? 'token' : evt.meta === true ? 'meta' : 'status';
@@ -3478,6 +3487,12 @@ async function streamFromAskStream(
           reveal.push(evt.t);
         }
         if (evt.meta === true) streamMeta = { ...streamMeta, ...evt };
+        if (evt.event === 'visual_aids.ready' && Array.isArray(evt.visualAids)) {
+          streamMeta = { ...streamMeta, visualAids: evt.visualAids };
+        }
+        if (evt.event === 'learning_recommendation.ready' && Array.isArray(evt.learningRecommendations)) {
+          streamMeta = { ...streamMeta, learningRecommendations: evt.learningRecommendations };
+        }
         if (evt.done === true) doneMeta = { ...streamMeta, ...evt };
         if (evt.error) {
           throw new AskStreamError({
@@ -3701,11 +3716,10 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
         open.textContent = 'Open course visual';
         open.addEventListener('click', async () => {
           await ensureChatCourseFilesLoaded();
-          const w = window as unknown as { __minalloPdfRegion?: unknown };
-          w.__minalloPdfRegion = visual.boundingBox || null;
           handleSourceClick({
             documentId: String(visual.documentId || ''),
             page: Number(visual.pageNumber || 1),
+            boundingBox: visual.boundingBox as { x: number; y: number; width: number; height: number } | null,
           }, 'popup');
         });
         figure.appendChild(open);
@@ -3762,7 +3776,12 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
           lessonMode: String(recommendation.lessonMode || 'simple'),
           lessonLanguage: String(recommendation.lessonLanguage || 'same'),
           learningGoals: Array.isArray(recommendation.learningGoals) ? recommendation.learningGoals.map(String) : [],
-          autoStart: true,
+          origin: 'ai_chat_recommendation',
+          originConversationId: chatStore.getActive().id,
+          originMessageId: bubble.closest<HTMLElement>('[data-message-id]')?.dataset.messageId,
+          recommendationId: id,
+          existingLessonId: recommendation.existingLessonId ? String(recommendation.existingLessonId) : undefined,
+          autoStart: !recommendation.existingLessonId,
         };
         const w = window as unknown as {
           __minalloDeepLearnLaunch?: typeof launch;

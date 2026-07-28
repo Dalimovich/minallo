@@ -4663,6 +4663,17 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   font-weight: 700;
 }
 .ncb-visual-aid__open-course:focus-visible { outline: 2px solid #93c5fd; outline-offset: -3px; }
+.src-pdf-page { position: relative; }
+.src-pdf-region-highlight {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  border: 3px solid #38bdf8;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.72), 0 0 24px rgba(56, 189, 248, 0.38);
+  pointer-events: none;
+}
 .ncb-learning-recommendation__copy strong { color: #dbeafe; font-size: 0.83rem; }
 .ncb-learning-recommendation__copy p { margin: 4px 0 0; color: #cbd5e1; font-size: 0.78rem; line-height: 1.45; }
 .ncb-learning-recommendation__actions { display: flex; align-items: center; gap: 8px; min-width: 0; }

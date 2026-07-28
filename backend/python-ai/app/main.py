@@ -20,6 +20,7 @@ from .config import get_settings
 from .routers import ask as ask_router
 from .routers import chat as chat_router
 from .routers import corrections as corrections_router
+from .routers import course_visuals as course_visuals_router
 from .routers import email as email_router
 from .routers import generate as generate_router
 from .routers import index as index_router
@@ -124,6 +125,7 @@ app.include_router(misc_router.router)
 app.include_router(notes_full_router.router)
 app.include_router(writing_coach_router.router)
 app.include_router(corrections_router.router)
+app.include_router(course_visuals_router.router)
 app.include_router(learning_router.router)
 app.include_router(study_planner_router.router)
 app.include_router(suggestions_router.router)

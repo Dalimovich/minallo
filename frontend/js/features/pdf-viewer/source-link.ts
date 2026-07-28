@@ -19,6 +19,7 @@ export interface CitedSource {
   fileName?: string | null;
   documentId?: string | null;
   page?: number | null;
+  boundingBox?: { x: number; y: number; width: number; height: number } | null;
 }
 
 interface CourseFileRec {
@@ -212,7 +213,8 @@ export function closeSourcePopup(): void {
 export async function openSourcePopup(
   file: CourseFileRec,
   course: CourseLike,
-  page: number
+  page: number,
+  boundingBox?: CitedSource['boundingBox']
 ): Promise<void> {
   closeSourcePopup();
   const overlay = document.createElement('div');
@@ -239,7 +241,7 @@ export async function openSourcePopup(
 
   const body = overlay.querySelector('.src-pdf-body') as HTMLElement;
   try {
-    await _renderPdfInto(body, file, course, page);
+    await _renderPdfInto(body, file, course, page, boundingBox);
   } catch {
     body.innerHTML = '<div class="src-pdf-error">Could not open this PDF.</div>';
   }
@@ -250,6 +252,7 @@ async function _renderPdfInto(
   file: CourseFileRec,
   course: CourseLike,
   targetPage: number
+  , boundingBox?: CitedSource['boundingBox']
 ): Promise<void> {
   const w = window;
   await w._ssEnsurePdfJs?.();
@@ -319,6 +322,16 @@ async function _renderPdfInto(
     wrap.style.minHeight = '';
     wrap.replaceChildren(canvas);
     if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    if (p === tp && boundingBox) {
+      const marker = document.createElement('div');
+      marker.className = 'src-pdf-region-highlight';
+      marker.setAttribute('aria-label', 'Cited visual region');
+      marker.style.left = `${Math.max(0, boundingBox.x) * 100}%`;
+      marker.style.top = `${Math.max(0, boundingBox.y) * 100}%`;
+      marker.style.width = `${Math.min(1, boundingBox.width) * 100}%`;
+      marker.style.height = `${Math.min(1, boundingBox.height) * 100}%`;
+      wrap.appendChild(marker);
+    }
   };
 
   const build = (): void => {
@@ -422,7 +435,7 @@ export function handleSourceClick(src: CitedSource, surface: 'sidebar' | 'popup'
 
   // Popup surface (chatbot / ExamForge), or side rail that couldn't open a tab.
   if (resolved) {
-    void openSourcePopup(resolved.file, resolved.course, page);
+    void openSourcePopup(resolved.file, resolved.course, page, src.boundingBox);
   } else {
     window.showToast?.('Source unavailable', 'Could not locate "' + fileName + '" in your courses.');
   }

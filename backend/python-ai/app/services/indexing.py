@@ -644,6 +644,38 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 update_payload.pop(_k, None)
             sb.table("documents").update(update_payload).eq("id", document_id).execute()
 
+        # Durable visual regions are additive: indexing remains usable if the
+        # visual bucket/migration/provider is temporarily unavailable. Run only
+        # after the document revision is active so visual retrieval can never
+        # expose candidate/stale page geometry.
+        try:
+            from .course_visual_indexing import index_course_visuals  # noqa: WPS433
+
+            page_sections = []
+            for rendered_page in page_md:
+                heading = re.search(r"^#{1,4}\s+(.+)$", rendered_page.markdown, re.M)
+                page_sections.append(heading.group(1).strip() if heading else None)
+            visual_count = index_course_visuals(
+                sb=sb,
+                pdf_bytes=pdf_bytes,
+                user_id=user_id,
+                course_id=course_id,
+                document_id=document_id,
+                document_revision=content_hash,
+                pages=pages,
+                page_blocks=page_blocks,
+                page_sections=page_sections,
+            )
+            log.info(
+                "indexing.course_visuals document_id=%s revision=%s count=%d",
+                document_id, content_hash, visual_count,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception(
+                "course visual indexing failed document_id=%s (text index remains ready)",
+                document_id,
+            )
+
         return {
             "documentId": document_id,
             "status": "indexed",
