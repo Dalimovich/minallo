@@ -9,6 +9,9 @@ auth API the same way backend/lib/supabase-auth.js does it.
 from __future__ import annotations
 
 import logging
+import base64
+import json
+import time
 from typing import Any
 
 import httpx
@@ -19,16 +22,34 @@ from .config import get_settings
 log = logging.getLogger(__name__)
 
 
+def _auth_error(code: str, message: str, retryable: bool) -> dict[str, Any]:
+    return {"code": code, "message": message, "retryable": retryable}
+
+
+def _is_expired(token: str) -> bool:
+    """Classify an already-rejected JWT without trusting it for authentication."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload))
+        return float(data.get("exp", 0)) <= time.time()
+    except (ValueError, TypeError, IndexError, json.JSONDecodeError):
+        return False
+
+
 async def verify_supabase_jwt(authorization: str = Header(default="")) -> dict[str, Any]:
     """Return the verified Supabase user dict (id, email, …) or raise 401."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or malformed Authorization header",
+            detail=_auth_error("SESSION_INVALID", "Please sign in to continue.", False),
         )
     token = authorization.split(" ", 1)[1].strip()
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empty token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_auth_error("SESSION_INVALID", "Please sign in to continue.", False),
+        )
 
     settings = get_settings()
     url = settings.supabase_url.rstrip("/") + "/auth/v1/user"
@@ -45,14 +66,28 @@ async def verify_supabase_jwt(authorization: str = Header(default="")) -> dict[s
         log.warning("supabase auth verify network error: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Auth verification temporarily unavailable",
+            detail=_auth_error(
+                "AUTH_SERVICE_UNAVAILABLE",
+                "Authentication is temporarily unavailable. Please retry.",
+                True,
+            ),
         )
     if r.status_code != 200:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        code = "ACCESS_TOKEN_EXPIRED" if _is_expired(token) else "SESSION_INVALID"
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_auth_error(code, "Your session could not be verified.", code == "ACCESS_TOKEN_EXPIRED"),
+        )
     try:
         user = r.json()
     except Exception:  # noqa: BLE001
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed auth response")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_auth_error("AUTH_SERVICE_ERROR", "Authentication returned an invalid response.", True),
+        )
     if not user or not user.get("id"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No user id on token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_auth_error("SESSION_INVALID", "Your session could not be verified.", False),
+        )
     return user

@@ -52,7 +52,7 @@
   border: 1px solid rgba(59, 130, 246, 0.4);
   border-radius: 9px;
   padding: 6px 13px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.72rem;
   color: #3b82f6;

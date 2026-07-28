@@ -1,72 +1,62 @@
 # CLAUDE.md
 
 ## Stack
-Pure vanilla JS, no build tools. Open `index.html` in browser. All JS shares `window` scope.
+TypeScript compiled to JS with `tsc`. No runtime bundler — `loader.ts` injects HTML partials and JS runs via script tags sharing `window` scope. Hosted on Cloudflare Pages with Pages Functions for API routes.
 
 ## Folder Structure
 ```
-index.html          — app shell (entry point, stays at root)
-css/styles.css      — all CSS; light/dark via --dp-solid, --on-glass CSS vars
-js/loader.js        — fetches & injects all HTML sections; fires ss-ready when done
-js/app.js           — all UI logic — navigation, course/file rendering, AI panel, state
-js/supabase.js      — auth (_enterApp, _showModal), Supabase REST client, session restore
-pages/              — HTML sections injected by loader.js (scripts inside do NOT run)
-  landing.html      — logged-out landing page
-  auth.html         — login/signup modal (#authModal)
-  signup.html       — onboarding modal (#onboardModal)
-  portal.html       — main dashboard (#portal, #psbDashboard, etc.)
-  studip.html       — Stud.IP overlay (#studipDash, #sdCourseList) — position:fixed z-index:210
-  files.html        — files/PDF view (#app) — position:fixed z-index:10
-  modals.html       — misc modals
-  toast.html        — toast notification
-extension/          — Chrome browser extension (load this folder in chrome://extensions)
-assets/             — media files
+frontend/
+  index.html          — app shell (entry point)
+  css/                — all CSS; light/dark via CSS vars, body.night class
+  js/
+    loader.ts         — fetches & injects HTML sections; fires ss-ready when done
+    app.ts            — main UI logic — navigation, course/file rendering, AI panel, state
+    app-data.js       — SEMS course data, localStorage caching, save/load/migration
+    app-storage.js    — Supabase Storage file operations (upload, list, merge, delete)
+    supabase.js       — auth (_enterApp), Supabase REST client, session restore
+    config.js         — public config (Supabase URL, asset version, AI model)
+    core/             — navigation, state persistence, panels
+    config/           — icons, dependencies
+    features/         — feature modules (ai-chat, courses, pdf-viewer, auth, etc.)
+    pages/            — landing page JS
+    services/         — ai-service, storage-service wrappers
+  pages/              — HTML sections injected by loader
+  views/              — lazy-loaded feature views (chatbot, chat, quiz, flashcards, etc.)
+  extension/          — Chrome browser extension
+
+functions/api/        — Cloudflare Pages Functions (API routes)
+backend/lib/          — shared TS helpers (auth, cors, rate-limit, stripe, etc.)
+backend/python-ai/    — FastAPI AI/RAG service (Fly.io)
 ```
 
-## HTML Injection Order (loader.js)
+## HTML Injection Order (loader.ts)
 landing → auth → signup → toast → portal → modals → studip → files
 
-**Key rules for app.js:**
-- All DOM listeners are at top level (app.js executes after all HTML is injected by loader.js)
-- Night mode preference stored in `localStorage.ss_dark` (persists across restarts)
-- Chat history stored per-file in `localStorage` under key `ss_chat_<filename>`
+## Key Frontend Modules
 
-## Dev Agents (agents.py)
-
-Three sub-agents I invoke myself to work faster and avoid mistakes.
-Requires: `pip install claude-agent-sdk` (one-time setup).
-
-| Agent | When I use it | Command |
-|-------|--------------|---------|
-| **research** | Before implementing anything requiring external knowledge (API specs, browser APIs, Supabase features) | `python agents.py research "<question>"` |
-| **qa** | After editing any JS or HTML file — before telling the user I'm done | `python agents.py qa <file1> [file2 ...]` |
-| **review** | Before finishing a multi-file task or a complex function | `python agents.py review <file>` |
-
-### When I MUST use each agent
-
-**research** — use when:
-- Implementing Stud.IP API integration (endpoints, auth flows, response shapes)
-- Unsure about a browser API, Supabase method, or OAuth spec
-- The task involves an external system I haven't seen in this codebase
-
-**qa** — use when:
-- I edited app.js, supabase.js, loader.js, or index.html
-- I added new DOM IDs or renamed existing ones
-- I added new localStorage keys
-- Any async change was made
-
-**review** — use when:
-- I wrote more than ~30 lines of new code
-- I refactored an existing function
-- The task involved auth, tokens, or user data
-
-### Rules
-- Run qa BEFORE declaring any code task complete
-- Act on the findings — fix all CRITICAL and HIGH issues found
-- If agents.py isn't installed yet, note it to the user once, then proceed without
+| File | Responsibility |
+|---|---|
+| `loader.ts` | Injects HTML partials, fires `ss-ready` |
+| `app.ts` | UI shell, navigation, openFile, openCourse, theme |
+| `app-data.js` | SEMS course state, localStorage caching, Supabase profile sync |
+| `app-storage.js` | File upload/list/merge/delete via Supabase Storage |
+| `supabase.js` | Auth, session restore, Google Sign-In |
+| `core/navigation.ts` | Portal section switching, deep-link routing |
+| `core/state-persistence.ts` | Save/restore active course, section, file on refresh |
+| `features/courses/courses-render.ts` | Dashboard course card rendering |
+| `features/courses/course-view.ts` | Course detail view, file listing, _ufMerge |
+| `features/courses/course-files.ts` | Upload flow, indexing, processing progress |
+| `features/ai-chat/` | AI chat panel (ask, render, export, markdown, etc.) |
+| `features/pdf-viewer/` | PDF.js viewer with tabs, panes, text extraction |
+| `services/ai-service.ts` | Frontend AI API wrapper |
 
 ## Rules
 - **After every edit, tell the user which file(s) were modified.**
 - No frameworks — use `getElementById`, `querySelector`, event listeners
-- Light/dark mode: CSS vars in `styles.css`; night class is `body.night`
-- PDF rendering: pdf.js v3.11.174 from CDN
+- Light/dark mode: CSS vars in styles.css; night class is `body.night`
+- PDF rendering: PDF.js v3.11.174 from CDN
+- Math rendering: KaTeX v0.16.10 from CDN
+- Hosting: Cloudflare Pages (NOT Netlify)
+- Backend AI deploy: `flyctl deploy` from backend/python-ai/ (manual)
+- Bump `assetVersion` in `frontend/js/config.js` after any frontend CSS/JS edit
+- Edit `.ts` files, not compiled `.js` files

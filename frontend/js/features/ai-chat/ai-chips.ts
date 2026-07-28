@@ -1,4 +1,9 @@
-import { generateStudyTool, courseHasRagDocs } from '../../services/ai-service.js';
+import { generateStudyTool, courseHasRagDocs, generateCheatsheet } from '../../services/ai-service.js';
+import {
+  createAIThinkingStatus,
+  type AIThinkingStatus,
+  type ThinkingContext
+} from './ai-thinking-status.js';
 
 export function closeAllOpts(): void {
   document.querySelectorAll('.chip-drawer').forEach((el) => {
@@ -96,6 +101,32 @@ interface SendButton extends HTMLButtonElement {
 }
 
 let _ragAborted = false;
+let _activeRagThinking: AIThinkingStatus | null = null;
+
+function _removeActiveRagThinking(immediate = false): void {
+  if (_activeRagThinking) {
+    _activeRagThinking.remove(immediate);
+    _activeRagThinking = null;
+    return;
+  }
+  document.querySelectorAll('.typing-wrap').forEach((el) => el.remove());
+}
+
+function _startRagThinking(context: ThinkingContext): void {
+  const host = document.getElementById('aiMsgs') || document.querySelector<HTMLElement>('.ai-msgs');
+  _removeActiveRagThinking(true);
+  _activeRagThinking = createAIThinkingStatus({
+    context,
+    host,
+    surface: 'panel',
+    compact: true
+  });
+}
+
+async function _finishRagThinking(): Promise<void> {
+  if (_activeRagThinking) await _activeRagThinking.waitMinimum();
+  _removeActiveRagThinking(true);
+}
 
 function _ragSetGenerating(on: boolean): void {
   const btn = document.getElementById('aiSend') as SendButton | null;
@@ -108,7 +139,7 @@ function _ragSetGenerating(on: boolean): void {
       if (!btn.classList.contains('is-stop')) return;
       _ragAborted = true;
       _ragSetGenerating(false);
-      document.querySelectorAll('.typing-wrap').forEach((el) => el.remove());
+      _removeActiveRagThinking(true);
     };
     btn.addEventListener('click', btn._ragStopHandler);
   } else {
@@ -132,7 +163,11 @@ async function _generateWithRag(tool: string, level?: string, topic?: string): P
   if (window.addUserMsg) window.addUserMsg(label);
   _ragSetGenerating(true);
 
-  if (window.addTyping) window.addTyping();
+  _startRagThinking(
+    tool === 'summary' || tool === 'quiz' || tool === 'flashcards'
+      ? (tool as ThinkingContext)
+      : 'course-qa'
+  );
 
   try {
     const countMap: Record<string, number> = { easy: 5, medium: 6, hard: 8 };
@@ -149,14 +184,52 @@ async function _generateWithRag(tool: string, level?: string, topic?: string): P
 
     if (result.error) md = '⚠️ ' + result.error;
 
-    document.querySelectorAll('.typing-wrap').forEach((el) => el.remove());
+    await _finishRagThinking();
     _ragSetGenerating(false);
     if (!_ragAborted && window.addBotMsg) window.addBotMsg(md);
     return !_ragAborted;
   } catch {
-    document.querySelectorAll('.typing-wrap').forEach((el) => el.remove());
+    _removeActiveRagThinking(true);
     _ragSetGenerating(false);
     return false;
+  }
+}
+
+async function _generateCheatsheetChip(): Promise<void> {
+  const courseId = window.activeCourseId || window.currentCourseId || '';
+  if (!courseId) {
+    if (window.addBotMsg) window.addBotMsg('Open a course first to generate a cheatsheet.');
+    return;
+  }
+  const hasRag = await courseHasRagDocs(courseId).catch(() => false);
+  if (!hasRag) {
+    if (window.addBotMsg) window.addBotMsg('This course has no indexed materials to build a cheatsheet from yet.');
+    return;
+  }
+
+  if (window.addUserMsg) window.addUserMsg('🧾 Generate cheatsheet');
+  _ragSetGenerating(true);
+  _startRagThinking('summary');
+
+  try {
+    const result = await generateCheatsheet(courseId);
+    let md: string;
+    if (result.error) md = '⚠️ ' + result.error;
+    else if (!result.text || !result.text.trim()) {
+      md = result.warning || 'No cheatsheet could be generated from your course materials.';
+    } else {
+      const topics = (result.topicsCovered || []).filter(Boolean);
+      md = '## ' + (result.title || 'Cheatsheet') + '\n\n' + result.text;
+      if (topics.length) md += '\n\n*Topics covered: ' + topics.join(' · ') + '*';
+      if (result.noteId) md += '\n\n*Saved to your notes.*';
+    }
+    await _finishRagThinking();
+    _ragSetGenerating(false);
+    if (!_ragAborted && window.addBotMsg) window.addBotMsg(md);
+  } catch {
+    _removeActiveRagThinking(true);
+    _ragSetGenerating(false);
+    if (window.addBotMsg) window.addBotMsg('⚠️ Cheatsheet generation failed. Please try again.');
   }
 }
 
@@ -191,7 +264,7 @@ export function chipPrompt(type: string, level?: string): void {
     },
     formulas:
       base +
-      'extract and explain every formula, equation and mathematical expression in the document. For each one: show the formula, define every symbol, and give a brief explanation of what it calculates.',
+      'extract and explain every formula, equation and mathematical expression in the document. For each one: show the original formula, define every symbol, explain what it calculates, then show a simplified or factored final form if that makes the expression clearer.',
     quiz: {
       easy:
         base +
@@ -259,6 +332,10 @@ export function initChipListeners(): void {
         );
       }
     });
+  });
+  document.getElementById('chip-cheatsheet')?.addEventListener('click', () => {
+    closeAllOpts();
+    void _generateCheatsheetChip();
   });
   document.querySelectorAll<HTMLElement>('.chip-sub').forEach((opt) => {
     opt.addEventListener('click', () => {

@@ -1,4 +1,4 @@
-﻿// â”€â”€ Shared solitaire card-flight animator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+﻿// -- Shared solitaire card-flight animator --------------------------------
 // fromRect : DOMRect of the source card (snapshot BEFORE render destroys it)
 // html     : innerHTML of source card (to display rank/suit on the flying clone)
 // cls      : className of source card

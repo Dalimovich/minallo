@@ -80,11 +80,11 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   let kicked = 0;
   let failed = 0;
   for (const doc of docs) {
-    await supaRequest('PATCH', 'documents?id=eq.' + doc.id,
+    await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(doc.id),
       { processing_status: 'uploaded' }, serviceKey);
-    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + doc.id, null, serviceKey)
+    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
-    await supaRequest('DELETE', 'document_pages?document_id=eq.' + doc.id, null, serviceKey)
+    await supaRequest('DELETE', 'document_pages?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
       .catch(() => {});
     const ok = await kickIndex(doc.id, userId, courseId, doc.storage_path);
     if (ok) kicked++; else failed++;

@@ -1,6 +1,11 @@
 import { fetchPdfBytes } from '../../services/pdf-service.js';
 import { panelShow, panelHide, selectTopLevelView } from '../../core/panels.js';
+import { setNavActive } from '../../core/navigation.js';
 import { escapeHtml } from '../../utils/escape-html.js';
+import { notePdfTabOpen } from './pdf-tabs.js';
+import { setActivePane, snapshotWindowInto, type PaneId, isPaneOpen } from './pdf-panes.js';
+import { clearCompareDoc } from './pdf-compare.js';
+import { setActivePdfViewerState } from './active-pdf-context.js';
 import type { LegacyCourse } from '../../../globals.js';
 
 interface FileLite {
@@ -16,33 +21,95 @@ interface StorageError extends Error {
   _storageError?: boolean;
 }
 
-function _bookmarkKey(fileName: string | null | undefined): string {
-  return 'ss_page_' + (fileName || '');
+export function pageKey(
+  courseId: string | number | null | undefined,
+  storageOrName: string | null | undefined
+): string {
+  const cid = courseId != null && courseId !== '' ? String(courseId) : 'demo';
+  return 'ss_page_' + cid + '::' + (storageOrName || '');
+}
+
+function _activePageKey(): string | null {
+  const id = window.activeStorageName || window.activeFileName;
+  if (!id) return null;
+  return pageKey(window.activeCourseId, id);
 }
 
 function _savePageBookmark(): void {
-  const name = window.activeFileName;
+  const key = _activePageKey();
   const page = window.pdfPage;
-  if (name && page && page > 1) {
-    try { sessionStorage.setItem(_bookmarkKey(name), String(page)); } catch { /* ignore */ }
+  if (key && page && page > 1) {
+    try { sessionStorage.setItem(key, String(page)); } catch { /* ignore */ }
   }
 }
 
-function _restorePageBookmark(fileName: string): number | null {
+function _restorePageBookmark(
+  courseId: string | number | null | undefined,
+  storageOrName: string
+): number | null {
   try {
-    const saved = sessionStorage.getItem(_bookmarkKey(fileName));
+    const saved = sessionStorage.getItem(pageKey(courseId, storageOrName));
     return saved ? parseInt(saved, 10) : null;
   } catch { return null; }
 }
 
-export function openFile(f: FileLite, course: LegacyCourse): void {
+function _withFileOpenTimeout<T>(promise: Promise<T>, timeoutMs = 45000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error('file open timeout');
+      err.name = 'AbortError';
+      reject(err);
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left'): void {
   _savePageBookmark();
+  notePdfTabOpen(f, course);
+  setActivePane(pane);
 
   const mySeq = ++(window._pdfOpenSeq as number);
   window.activeFileName = f.name;
+  window.activeStorageName = f._storageName || null;
   window.currentCourseShort = course.short;
   window.activeCourseRef = course;
   if (course.id) window.activeCourseId = course.id;
+  setActivePdfViewerState({
+    courseId: course.id ? String(course.id) : null,
+    documentId: null,
+    fileName: f.name,
+    pdfDoc: null,
+    visiblePage: 1,
+    pageTexts: {},
+    pageTextErrors: {},
+    openSequence: mySeq
+  });
+
+  // Resolve this PDF's indexed document UUID so the AI panel can scope
+  // retrieval directly via documentIds (no fragile filename-match fallback
+  // at every question). Reset first so a stale value from the previous file
+  // never leaks into the new one if the lookup fails or runs slowly.
+  (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId = null;
+  if (course.id) {
+    void import('../../services/ai-service.js').then((mod) => {
+      // Bail if the user opened a different file before the lookup resolved.
+      if ((window._pdfOpenSeq as number) !== mySeq) return;
+      return mod.listCourseDocuments(course.id!).then((docs) => {
+        if ((window._pdfOpenSeq as number) !== mySeq) return;
+        const target = (f.name || '').toLowerCase();
+        const match = docs.find(
+          (d) => d.processing_status === 'ready' && (d.file_name || '').toLowerCase() === target
+        );
+        if (match?.id) {
+          setActivePdfViewerState({ documentId: match.id });
+        }
+      });
+    }).catch(() => { /* best effort */ });
+  }
 
   if (typeof window._statsTrackFile === 'function') {
     window._statsTrackFile(f.name, course.short || course.name || '');
@@ -50,15 +117,38 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
 
   // Top-level switch first — guarantees portal sections and studip view are
   // hidden so no ghost page lingers under the PDF.
-  selectTopLevelView('file', { stRunning: !!(window as unknown as { _stRunning?: boolean })._stRunning });
+  const inChatbotWorkspace = !!window._ncbPdfWorkspaceActive;
+  if (!inChatbotWorkspace) {
+    selectTopLevelView('file', {
+      stRunning: !!(window as unknown as { _stRunning?: boolean })._stRunning
+    });
+  }
+  // The PDF viewer lives under the Courses route — reflect that in the sidebar so
+  // whichever section the user opened the file from (e.g. Dashboard) doesn't stay
+  // highlighted.
+  if (!inChatbotWorkspace) setNavActive('pcStudip');
   panelHide(document.getElementById('welcomeState'));
   panelHide(document.getElementById('courseOverview'));
   const pv = document.getElementById('pdfView');
   panelShow(pv, true);
-  if (typeof window.saveState === 'function') window.saveState();
+  if (!inChatbotWorkspace) {
+    (window as unknown as {
+      __minalloDocRail?: { setRouteVisibility: (route: 'pdf' | 'courses' | 'other') => void };
+    }).__minalloDocRail?.setRouteVisibility('pdf');
+  }
+  if (!inChatbotWorkspace && typeof window.saveState === 'function') window.saveState();
 
   const pdfFileName = document.getElementById('pdfFileName');
   if (pdfFileName) pdfFileName.textContent = f.name;
+
+  // Subtitle under the bold filename: "PDF viewer · <course name>"
+  const pdfHeaderTitle = document.getElementById('pdfHeaderTitle');
+  if (pdfHeaderTitle) {
+    const courseLabel = course.name || course.short || '';
+    pdfHeaderTitle.textContent = courseLabel
+      ? 'PDF viewer · ' + courseLabel
+      : 'PDF viewer';
+  }
 
   const crumb = document.getElementById('breadcrumb');
   if (crumb) {
@@ -83,23 +173,40 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
     const isHtml = /\.html?$/i.test(f.name);
     const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(f.name);
 
-    window
-      ._ufFetchBytes?.(uid, f._course || course, f._storageName || f.name, f._folder || null)
+    const fetchBytesPromise = window._ufFetchBytes?.(
+      uid,
+      f._course || course,
+      f._storageName || f.name,
+      f._folder || null
+    );
+    const fileBytesPromise = fetchBytesPromise
+      ? _withFileOpenTimeout(fetchBytesPromise)
+      : Promise.reject(new Error('Storage fetch helper is not available'));
+    fileBytesPromise
       .then((bytes: Uint8Array) => {
         if (mySeq !== window._pdfOpenSeq) return;
         try {
-          window.saveState?.();
-          window._ssPushHistory?.(
-            {
-              view: 'file',
-              courseId: (f._course || course).id || null,
-              courseShort: (f._course || course).short || null,
-              fileName: f.name || null,
-              section: window.activeCourseSection || 'files',
-            },
-            '#file=' + encodeURIComponent(f.name || '')
-          );
+          if (!inChatbotWorkspace) {
+            window.saveState?.();
+            window._ssPushHistory?.(
+              {
+                view: 'file',
+                courseId: (f._course || course).id || null,
+                courseShort: (f._course || course).short || null,
+                fileName: f.name || null,
+                section: window.activeCourseSection || 'files',
+              },
+              '#file=' + encodeURIComponent(f.name || '')
+            );
+          }
         } catch { /* ignore */ }
+
+        // Split mode is a PDF-vs-PDF concept. If the user opens a non-PDF
+        // (image, HTML) in the left pane while a split is active, close the
+        // right pane — otherwise the split chrome stays visible, the AI
+        // compare path runs against a left side with no extractable text,
+        // and `bothPanesText()` returns only the right doc.
+        if ((isHtml || isImage) && isPaneOpen('right')) clearCompareDoc();
 
         if (isHtml) {
           const blob = new Blob([bytes as BlobPart], { type: 'text/html' });
@@ -112,6 +219,7 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
           window.pdfPage = 1;
           window.pdfFullText = '';
           if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
+          snapshotWindowInto(pane);
           return;
         }
 
@@ -168,6 +276,7 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
           };
 
           if (typeof window._annotLoad === 'function') window._annotLoad(f.name);
+          snapshotWindowInto(pane);
           return;
         }
 
@@ -188,8 +297,18 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
               }
               const pdfDoc = pdf as { numPages: number; getPage: (n: number) => Promise<unknown> };
               window.pdfDoc = pdfDoc;
+              setActivePdfViewerState({ pdfDoc, visiblePage: window.pdfPage || 1 });
               window.pdfTotal = pdfDoc.numPages;
-              window.pdfPage = 1;
+              const savedPage = _restorePageBookmark(
+                (f._course || course).id,
+                f._storageName || f.name
+              );
+              window.pdfPage = savedPage && savedPage <= pdfDoc.numPages ? savedPage : 1;
+              // Always open in all-pages (continuous) mode. Show-all is
+              // virtualized (app-pdf.ts renderPages uses an IntersectionObserver,
+              // rendering only pages that scroll into view), so even a 200-page
+              // Skript opens cheaply — the old single-page default for large PDFs
+              // is no longer needed. The toolbar button reflects the active mode.
               window.pdfShowAll = true;
               window.pdfFullText = '';
               if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
@@ -198,30 +317,55 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
               if (pdfAll) pdfAll.textContent = 'Single page';
               if (typeof window._annotLoad === 'function') window._annotLoad(f.name);
               if (typeof window.renderPages === 'function') window.renderPages();
-              const savedPage = _restorePageBookmark(f.name);
+              snapshotWindowInto(pane);
               if (savedPage && savedPage > 1 && savedPage <= pdfDoc.numPages) {
-                setTimeout(() => {
+                const restoreSavedPage = (attempt: number): void => {
                   if (window._pdfOpenSeq !== mySeq) return;
+                  // In all-pages (continuous) mode, scroll to the saved page and
+                  // stay in continuous mode — dispatching a page-input blur here
+                  // would flip pdfShowAll to false and drop us into single-page.
+                  if (window.pdfShowAll && typeof window._pdfScrollToPage === 'function') {
+                    window.pdfPage = savedPage;
+                    window._pdfScrollToPage(savedPage);
+                    const body = document.getElementById('pdfBody');
+                    const target = body?.querySelector<HTMLElement>('[data-page-num="' + savedPage + '"]');
+                    if (!target && attempt < 80) {
+                      setTimeout(() => restoreSavedPage(attempt + 1), 50);
+                      return;
+                    }
+                    if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
+                    return;
+                  }
                   const inp = document.getElementById('pdfPageInput') as HTMLInputElement | null;
                   if (inp) {
                     inp.value = String(savedPage);
                     inp.dispatchEvent(new Event('blur'));
                   }
-                }, 700);
+                };
+                setTimeout(() => restoreSavedPage(0), 0);
               }
-              setTimeout(() => {
-                const tp: Promise<string>[] = [];
-                for (let pi = 1; pi <= pdfDoc.numPages; pi++) {
-                  tp.push(
-                    (pdfDoc.getPage(pi) as Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }>).then((pg) =>
-                      pg.getTextContent().then((tc) => tc.items.map((it) => it.str).join(' '))
-                    )
-                  );
-                }
-                Promise.all(tp).then((pages) => {
-                  window.pdfFullText = pages.join('\n');
-                });
-              }, 400);
+              // Skip eager text extraction when the backend has already
+              // indexed this PDF — RAG retrieval covers AI answers, and
+              // ai-ask.ts falls back to on-demand extraction for chips.
+              const _ragIndexed = !!(window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId;
+              if (!_ragIndexed) {
+                setTimeout(() => {
+                  const maxPages = Math.min(pdfDoc.numPages, 30);
+                  const tp: Promise<string>[] = [];
+                  for (let pi = 1; pi <= maxPages; pi++) {
+                    tp.push(
+                      (pdfDoc.getPage(pi) as Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }>).then((pg) =>
+                        pg.getTextContent().then((tc) => tc.items.map((it) => it.str).join(' '))
+                      )
+                    );
+                  }
+                  Promise.all(tp).then((pages) => {
+                    if (window._pdfOpenSeq !== mySeq) return;
+                    window.pdfFullText = pages.join('\n');
+                    snapshotWindowInto(pane);
+                  });
+                }, 400);
+              }
             });
         });
       })
@@ -242,13 +386,15 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
           );
         }
         window.activeCourseSection = 'files';
-        try { window.saveState?.(); } catch { /* ignore */ }
-        try {
-          window._ssReplaceHistory?.(
-            { view: 'course', courseId: (f._course || course).id, section: 'files' },
-            '#course=' + encodeURIComponent((f._course || course).id || '')
-          );
-        } catch { /* ignore */ }
+        if (!inChatbotWorkspace) {
+          try { window.saveState?.(); } catch { /* ignore */ }
+          try {
+            window._ssReplaceHistory?.(
+              { view: 'course', courseId: (f._course || course).id, section: 'files' },
+              '#course=' + encodeURIComponent((f._course || course).id || '')
+            );
+          } catch { /* ignore */ }
+        }
         if (typeof window.renderCourses === 'function') window.renderCourses();
         pdfBody.innerHTML =
           '<div style="color:#fff;padding:40px;text-align:center;line-height:1.5">' +
@@ -295,8 +441,11 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
               }
               const pdfDoc = pdf as { numPages: number; getPage: (n: number) => Promise<unknown> };
               window.pdfDoc = pdfDoc;
+              setActivePdfViewerState({ pdfDoc, visiblePage: window.pdfPage || 1 });
               window.pdfTotal = pdfDoc.numPages;
               window.pdfPage = 1;
+              // Always open in all-pages (continuous) mode — see the note in the
+              // uploaded-file path above; show-all is virtualized so it's cheap.
               window.pdfShowAll = true;
               window.pdfFullText = '';
               if (typeof window.updatePageInfo === 'function') window.updatePageInfo();
@@ -305,9 +454,11 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
               if (pdfAll) pdfAll.textContent = 'Single page';
               if (typeof window._annotLoad === 'function') window._annotLoad(f.name);
               if (typeof window.renderPages === 'function') window.renderPages();
+              snapshotWindowInto(pane);
               setTimeout(() => {
+                const maxPages = Math.min(pdfDoc.numPages, 30);
                 const textPromises: Promise<string>[] = [];
-                for (let pi = 1; pi <= pdfDoc.numPages; pi++) {
+                for (let pi = 1; pi <= maxPages; pi++) {
                   textPromises.push(
                     (pdfDoc.getPage(pi) as Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }>).then((pg) =>
                       pg.getTextContent().then((tc) => tc.items.map((it) => it.str).join(' '))
@@ -315,7 +466,9 @@ export function openFile(f: FileLite, course: LegacyCourse): void {
                   );
                 }
                 Promise.all(textPromises).then((pages) => {
+                  if (window._pdfOpenSeq !== mySeq) return;
                   window.pdfFullText = pages.join('\n\n');
+                  snapshotWindowInto(pane);
                 });
               }, 800);
             });

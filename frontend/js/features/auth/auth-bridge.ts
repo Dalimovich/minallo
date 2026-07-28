@@ -51,8 +51,29 @@ export function initAuthBridge(options: AuthBridgeOptions): AuthBridge {
   function setAuthMode(mode: 'signin' | 'signup'): void {
     authModal.setAuthMode(mode);
   }
+  // The sidebar (#authName/#authAvatar) lives in portal.html, which the loader
+  // injects asynchronously. On a slow reload _enterApp can run BEFORE that
+  // markup exists; the update then silently no-oped and nothing retried, so
+  // the panel showed "Loading…" until the next login. Remember the latest
+  // user and re-apply once the elements appear (bounded retry, latest wins).
+  let _lastIndicatorUser: unknown = null;
+  let _indicatorAttempt = 0;
+  function _applyIndicator(): void {
+    if (_lastIndicatorUser === null) return;
+    if (!document.getElementById('authName')) {
+      if (_indicatorAttempt < 60) {
+        _indicatorAttempt += 1;
+        window.setTimeout(_applyIndicator, 350);
+      }
+      return;
+    }
+    _indicatorAttempt = 0;
+    authModal.updateAuthIndicator(_lastIndicatorUser);
+  }
   function updateAuthIndicator(user: unknown): void {
-    authModal.updateAuthIndicator(user);
+    _lastIndicatorUser = user;
+    _indicatorAttempt = 0;
+    _applyIndicator();
   }
   function handleAuthClick(): void {
     authModal.handleAuthClick();

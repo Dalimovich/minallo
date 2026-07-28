@@ -37,6 +37,8 @@ test.describe('Authentication', () => {
     await page.waitForFunction(
       () =>
         !!document.querySelector('#authEmail') ||
+        !!document.querySelector('#nlNavSignIn') ||
+        !!document.querySelector('#nlNavStartFree') ||
         !!document.querySelector('#landingLoginBtn') ||
         !!document.querySelector('[data-i18n="landing_nav_login"]') ||
         !!document.querySelector('#courseAddBtn') ||
@@ -61,7 +63,7 @@ test.describe('Authentication', () => {
 
     const loginBtn = page
       .locator(
-        '[data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
+        '#nlNavSignIn, [data-i18n="nav.signIn"], [data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
       )
       .first();
 

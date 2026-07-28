@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isUuid, cleanText, requireOneOf } from '../../backend/lib/validation.ts';
+import {
+  isUuid,
+  isSafeCourseId,
+  isSafePdfStorageName,
+  cleanText,
+  requireOneOf
+} from '../../backend/lib/validation.ts';
 
 test('isUuid accepts valid v4 UUID', () => {
   assert.equal(isUuid('550e8400-e29b-41d4-a716-446655440000'), true);
@@ -16,6 +22,23 @@ test('isUuid rejects arbitrary string', () => {
 
 test('isUuid rejects null', () => {
   assert.equal(isUuid(null), false);
+});
+
+test('isSafeCourseId accepts compact course keys', () => {
+  assert.equal(isSafeCourseId('math-101_WS26.1'), true);
+});
+
+test('isSafeCourseId rejects path separators and spaces', () => {
+  assert.equal(isSafeCourseId('../math 101'), false);
+});
+
+test('isSafePdfStorageName accepts PDF filenames', () => {
+  assert.equal(isSafePdfStorageName('lecture_01-final.pdf'), true);
+});
+
+test('isSafePdfStorageName rejects paths and non-PDF files', () => {
+  assert.equal(isSafePdfStorageName('../lecture.pdf'), false);
+  assert.equal(isSafePdfStorageName('lecture.txt'), false);
 });
 
 test('cleanText trims whitespace', () => {

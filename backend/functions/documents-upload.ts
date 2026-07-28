@@ -1,7 +1,6 @@
 // POST /api/documents/upload — accepts base64 PDF, stores in Storage, kicks off indexing.
 
 import crypto from 'crypto';
-import https from 'https';
 import { requireEnv, optionalEnv } from '../lib/env';
 import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
@@ -9,6 +8,7 @@ import { supaRequest } from '../lib/supabase-admin';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit } from '../lib/rate-limit';
 import { logSecurityEvent } from '../lib/logger';
+import { isSafeCourseId } from '../lib/validation';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
@@ -27,36 +27,25 @@ interface DocumentRow {
   storage_path: string;
 }
 
-function uploadToStorage(
+async function uploadToStorage(
   serviceKey: string, storagePath: string, fileBuffer: Buffer, mimeType: string
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const supaUrl = requireEnv('SUPABASE_URL');
-    const hostname = new URL(supaUrl).hostname;
-    const path = '/storage/v1/object/' + STORAGE_BUCKET + '/' + storagePath;
-    const req = https.request(
-      {
-        hostname, path, method: 'POST',
-        headers: {
-          apikey: serviceKey,
-          Authorization: 'Bearer ' + serviceKey,
-          'Content-Type': mimeType,
-          'Content-Length': fileBuffer.length
-        }
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (c) => { data += c; });
-        res.on('end', () => {
-          if (res.statusCode === 200 || res.statusCode === 201) resolve(storagePath);
-          else reject(new Error('Storage upload failed: ' + res.statusCode + ' ' + data));
-        });
-      }
-    );
-    req.on('error', reject);
-    req.write(fileBuffer);
-    req.end();
+  const supaUrl = requireEnv('SUPABASE_URL');
+  const url = supaUrl.replace(/\/$/, '') + '/storage/v1/object/' + STORAGE_BUCKET + '/' + storagePath;
+  // Buffer is a Uint8Array, which fetch accepts directly. Content-Length is
+  // set automatically by the runtime.
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: serviceKey,
+      Authorization: 'Bearer ' + serviceKey,
+      'Content-Type': mimeType
+    },
+    body: fileBuffer
   });
+  if (res.status === 200 || res.status === 201) return storagePath;
+  const data = await res.text().catch(() => '');
+  throw new Error('Storage upload failed: ' + res.status + ' ' + data);
 }
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
@@ -97,7 +86,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!mimeType || !ALLOWED_TYPES[mimeType]) return fail(400, 'Only PDF files are supported');
   if (!fileBase64 || typeof fileBase64 !== 'string') return fail(400, 'fileBase64 is required');
   if (!/^[A-Za-z0-9+/=\r\n]+$/.test(fileBase64)) return fail(400, 'fileBase64 is invalid');
-  if (!courseId || typeof courseId !== 'string') return fail(400, 'courseId is required');
+  if (!courseId || typeof courseId !== 'string' || !isSafeCourseId(courseId)) {
+    return fail(400, 'courseId is invalid');
+  }
 
   const fileBuffer = Buffer.from(fileBase64, 'base64');
   if (fileBuffer.length > MAX_BODY_BYTES) return fail(413, 'File too large (max 20 MB)');
@@ -142,6 +133,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const document = Array.isArray(insertResult.body) ? insertResult.body[0]! : insertResult.body as DocumentRow;
 
+  let indexingStarted = false;
+  let indexingErrorCode: string | null = null;
   if (pythonAiConfigured()) {
     const py = await forwardToPython('index-document', {
       userId: user.id, courseId, documentId: document.id, storagePath
@@ -149,9 +142,26 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (!py.ok) {
       const err = (py.body as { error?: string }).error;
       console.warn('[documents-upload] Python indexing failed:', py.status, err);
-    }
+      indexingErrorCode = 'indexing_start_failed';
+    } else indexingStarted = true;
   } else {
     console.warn('[documents-upload] AI service not configured — document stays unprocessed');
+    indexingErrorCode = 'indexing_service_unavailable';
+  }
+
+  if (!indexingStarted) {
+    await supaRequest(
+      'PATCH', 'documents?id=eq.' + encodeURIComponent(document.id),
+      { processing_status: 'failed', processing_error: indexingErrorCode }, serviceKey
+    );
+    return jsonResponse(503, {
+      documentId: document.id,
+      processingStatus: 'failed',
+      indexingStarted: false,
+      errorCode: indexingErrorCode,
+      retryable: true,
+      message: 'The file was uploaded, but AI indexing could not start.',
+    });
   }
 
   return jsonResponse(201, {
@@ -161,7 +171,9 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       courseId: document.course_id,
       sourceType: document.source_type,
       processingStatus: document.processing_status,
-      storagePath: document.storage_path
-    }
+      storagePath: document.storage_path,
+      indexingStarted: true
+    },
+    indexingStarted: true
   });
 };

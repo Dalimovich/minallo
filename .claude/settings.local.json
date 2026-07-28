@@ -3,7 +3,26 @@
     "allow": [
       "Bash(python -c \":*)",
       "mcp__claude-flow__system_health",
-      "mcp__claude-flow__memory_search"
+      "mcp__claude-flow__memory_search",
+      "Bash(npx tsc *)",
+      "Bash(Select-Object -First 40)",
+      "Bash(grep -E \"\\\\.\\(js|html|css|json\\)$\")",
+      "Bash(xargs -I {} basename {})"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "async": true,
+            "statusMessage": "Deploying python-ai to Fly…",
+            "command": "$root=(git rev-parse --show-toplevel).Trim(); $tree=(git rev-parse HEAD:backend/python-ai 2>$null); if(-not $tree){exit 0}; $tree=$tree.Trim(); $marker=Join-Path $root '.git/fly-python-ai-deployed'; $last=if(Test-Path $marker){(Get-Content $marker -Raw).Trim()}else{''}; if($tree -ne $last){ flyctl deploy (Join-Path $root 'backend/python-ai'); if($LASTEXITCODE -eq 0){ Set-Content -Path $marker -Value $tree -NoNewline } }"
+          }
+        ]
+      }
     ]
   }
 }

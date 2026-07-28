@@ -19,8 +19,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .llm_json import chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -43,44 +44,203 @@ def _system_prompt(length_cue: str) -> str:
 
 Write a {length_cue} markdown study document strictly using the COURSE CONTEXT below.
 
-Structure — use ALL of these sections in this order, with `##` markdown headings:
+## STEP 1: DETECT KNOWLEDGE TYPE (internal — do NOT output the classification)
 
-## Overview
-A short orientation: what the document is about, why a student would care, what they should be able to do after studying it.
+Before choosing a structure, silently classify the material as one of:
 
-## Main concepts
-The key ideas, in order of importance. Bullet points.
+- **math-heavy**: dominated by formulas, derivations, solved examples, calculation methods, proofs.
+  Examples: Mathematics, Mechanics, Statistics, Physics calculations, Circuits, Thermodynamics.
+- **concept-light-math**: mostly definitions, classifications, process descriptions, but small
+  calculations or technical parameters may appear.
+  Examples: Fertigungstechnik, Materials Science, Manufacturing, Chemistry theory, Economics concepts.
+- **no-math**: purely conceptual — no formulas. Student needs to understand, remember, compare,
+  argue, or explain.
+  Examples: History, Law, Political Science, Literature, Philosophy, Management, Languages.
+- **balanced**: both conceptual theory AND formulas/calculations are central.
+  Examples: Physics, Economics, Chemistry, Engineering Science, Finance, Data Science.
+
+## STEP 2: USE THE MATCHING STRUCTURE
+
+### IF math-heavy:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Concept Explanation
+Clear theory explanation connecting to the formulas that follow.
 
 ## Definitions
 Term — precise definition. Cite source as (filename, p.N).
 
-## Theorems & key results
-Statement, conditions, and significance. Cite source.
+## Formula / Theorem Cards
+Each formula in KaTeX ($...$ inline, $$...$$ display). For each: the formula, meaning of every
+variable with units, conditions for use, when to use it. Cite source.
 
-## Formulas
-KaTeX rendered ($...$ inline, $$...$$ display). Explain every symbol. Cite source.
+## Methods
+Method 1 / Method 2 / Method 3 — when to use each. Include a decision guide:
+"If the problem gives you X → use Method Y."
+
+## Step-by-Step Solving Recipe
+Topic-specific numbered steps. Not generic — tailored to the exact problem types in the material.
+
+## Worked Example: Basic
+A straightforward worked example from the material. Show every step.
+
+## Worked Example: Exam-Style
+A harder example that combines multiple concepts. Show the full solution.
+
+## Common Mistakes
+Calculation traps: sign errors, unit confusion, wrong formula choice, forgetting conditions.
+
+## Practice Tasks
+3-5 tasks at easy/medium/exam levels the student should be able to solve.
+
+## Quick Revision Box
+The 8-12 things to know cold: key formulas, method steps, special cases.
+
+## Sources
+Which files and pages were used.
+
+### IF concept-light-math:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Definition
+Core definitions quoted near-verbatim. Cite source as (filename, p.N).
+
+## Course Classification
+Where this topic fits in the broader course structure.
+
+## Main Categories / Subtypes
+All categories, subcategories, groups. List completely — do not omit groups.
+
+## Important Source Details
+Key facts, properties, parameters, DIN norms from the material.
+
+## Comparison Table
+Markdown table comparing types, methods, or concepts. Columns like:
+Type | Principle | Application | Advantage | Disadvantage | Exam clue.
+
+## Process Steps
+Step-by-step process descriptions where applicable.
+
+## Selection Criteria
+How to choose the right method/material/process for a given scenario.
+
+## Applications
+Real-world applications and typical use cases from the material.
+
+## Advantages / Disadvantages
+Structured pros and cons for each method or concept.
+
+## Common Mistakes
+Confusing similar terms, wrong classifications, incomplete lists.
+
+## Exam Questions with Model Answers
+3-5 questions that can be inferred from the material, with model answer structure:
+Define it. Classify it. Compare it. Choose the right process. Explain why.
+
+## Sources
+Which files and pages were used.
+
+### IF no-math:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Simple Explanation
+Plain-language overview in 3-5 sentences.
+
+## Key Terms
+Term + definition pairs. Cite source as (filename, p.N).
+
+## Background / Context
+Historical, legal, social, or theoretical background.
+
+## Main Ideas
+The 3-6 most important ideas, arguments, or theories.
+
+## Argument Map / Timeline / Rule Structure
+Choose the most fitting structure for the topic: timeline, argument map, cause-effect,
+rule-exception, concept hierarchy, theory comparison. Use markdown formatting.
+
+## Comparison of Viewpoints or Concepts
+Markdown table or structured comparison of different perspectives.
 
 ## Examples
-Worked examples from the material. Show the steps.
+Concrete examples from the material that illustrate the concepts.
 
-## Exercise patterns
-Typical exercise types the student should be able to solve, with the recipe.
+## Common Misunderstandings
+What students typically get wrong about this topic.
 
-## Common mistakes
-Pitfalls the source explicitly mentions, or that a careful reader would extract.
+## Exam Answer Structure
+How to write an exam answer for this topic:
+1. Define key term, 2. Give context, 3. Explain main idea, 4. Add example/evidence,
+5. Compare or evaluate, 6. Conclude clearly.
 
-## Exam-relevant points
-What's most likely to be tested. Make this section actionable.
+## Model Answer
+A sample exam answer demonstrating the structure above.
 
-## Summary
-4-7 bullet "Key Takeaways" lines.
+## Self-Check
+3-5 questions the student should be able to answer. Include expected keywords.
 
-Rules:
+## Sources
+Which files and pages were used.
+
+### IF balanced:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Big Picture
+How the concepts and formulas in this topic connect.
+
+## Theory Explanation
+Core principles, assumptions, conditions. Cite source as (filename, p.N).
+
+## Definitions
+Term — precise definition. Cite source.
+
+## Formula Cards
+Each formula in KaTeX. For each: the formula, meaning of every variable, conditions, when to apply.
+
+## When to Use Each Formula
+Decision guide linking problem type to formula choice.
+
+## Conceptual Example
+An example that tests understanding of the theory (explain, compare, interpret).
+
+## Calculation Example
+A worked example with full numeric/symbolic solution. Show every step.
+
+## Mixed Exam Example
+A task that requires: explain the concept → calculate → interpret the result.
+
+## Common Mistakes
+Both conceptual mistakes and calculation mistakes.
+
+## Exam Checklist
+What to know: key definitions, formulas, method selection, interpretation patterns.
+
+## Practice Tasks
+One conceptual, one calculation, one mixed task.
+
+## Sources
+Which files and pages were used.
+
+## RULES FOR ALL TYPES:
 1. Use ONLY material from the context. Do NOT invent.
 2. Inline citations like (filename, p.N) on every non-trivial claim.
-3. If a section has no material in the context, write a single italic line saying so — don't fabricate.
+3. If a section has no material in the context, OMIT it entirely — don't fabricate.
 4. Math in KaTeX.
 5. Match the language of the source.
+6. Do NOT write "No formula found" or "keine vorhanden". If a section type does not
+   apply to this knowledge type, simply omit it and use the correct sections instead.
 
 Return JSON: {{"text": "<markdown document>"}}"""
 
@@ -134,6 +294,9 @@ def generate_notes(
         document_ids=document_ids,
         top_k=40,
     )
+    # Review-2 finding #5 — backfill source filenames for course-wide
+    # generation (documentIds=None means doc_names starts empty).
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {"text": "", "warning": "No relevant material found in the selected documents."}
 
@@ -141,11 +304,12 @@ def generate_notes(
     max_tokens, length_cue = _length_target(len(chunks), total_pages)
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
 
     try:
         res = chat_json(
             system=_system_prompt(length_cue),
-            user="COURSE CONTEXT:\n\n" + context,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_tokens,
         )
     except Exception as e:  # noqa: BLE001
@@ -157,8 +321,14 @@ def generate_notes(
         "text": text,
         "pageCount": total_pages,
         "lengthCue": length_cue,
+        # Review-2 finding #6: `save_note` writes `note_sources` rows
+        # with a ``document_id`` column, but the response dict omitted it.
+        # Result: every saved note had NULL document_id and lost the
+        # chunk→source linkage. Include documentId in the payload so the
+        # save path can populate the FK.
         "groundedSources": [
             {
+                "documentId": c.document_id,
                 "fileName": doc_names.get(c.document_id, "Unknown"),
                 "pageStart": c.page_start,
                 "pageEnd": c.page_end,
@@ -180,6 +350,7 @@ def save_note(
     title: str,
     text: str,
     sources: list[dict[str, Any]],
+    note_type: str = "notes",
 ) -> str | None:
     if not text.strip():
         return None
@@ -190,7 +361,7 @@ def save_note(
             "course_id":        course_id,
             "document_id":      document_id,
             "title":            title[:180] or "Untitled notes",
-            "type":             "notes",
+            "type":             note_type,
             "content_markdown": text,
             "updated_at":       datetime.now(timezone.utc).isoformat(),
         }).execute()

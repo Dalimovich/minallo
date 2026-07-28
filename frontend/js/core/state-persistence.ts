@@ -92,13 +92,12 @@ export function initStatePersistence(options: StatePersistenceOptions): {
 
   function restoreState(): void {
     if (_stateRestored) return;
-    _stateRestored = true;
     options.setSsRestoring(true);
     try {
       const raw = localStorage.getItem('ss_state');
-      if (!raw) return;
+      if (!raw) { _stateRestored = true; return; }
       const st = JSON.parse(raw) as StoredState;
-      if (!st.inApp) return;
+      if (!st.inApp) { _stateRestored = true; return; }
 
       let lastTab: string | null = null;
       try {
@@ -106,9 +105,10 @@ export function initStatePersistence(options: StatePersistenceOptions): {
       } catch {
         /* sessionStorage disabled */
       }
-      if (lastTab && PORTAL_ONLY_SECTIONS.indexOf(lastTab) !== -1) return;
+      if (lastTab && PORTAL_ONLY_SECTIONS.indexOf(lastTab) !== -1) { _stateRestored = true; return; }
 
       if (st.view === 'studip') {
+        _stateRestored = true;
         options.showStudip();
         return;
       }
@@ -124,6 +124,7 @@ export function initStatePersistence(options: StatePersistenceOptions): {
       }
 
       if (st.courseId && st.courseId.indexOf('german-') === 0) {
+        _stateRestored = true;
         const skill = st.courseId.replace('german-', '');
         options.showPortal();
         options.setNavActive('psbGerman');
@@ -142,10 +143,14 @@ export function initStatePersistence(options: StatePersistenceOptions): {
       }
 
       if (st.courseId) {
-        const sem = sems[options.getActiveSemId()];
-        if (sem) {
-          const course = sem.courses.find((c) => c.id === st.courseId);
-          if (course) {
+        // Search ALL semesters for the course, not just the active one
+        let course: LegacyCourse | undefined;
+        for (const semData of Object.values(sems)) {
+          course = semData.courses.find((c) => c.id === st.courseId);
+          if (course) break;
+        }
+        if (course) {
+            _stateRestored = true;
             options.setActiveCourseId(st.courseId);
             if (!course.files) course.files = [];
             options.panelHide(document.getElementById('welcomeState'));
@@ -206,9 +211,17 @@ export function initStatePersistence(options: StatePersistenceOptions): {
               file: restFile,
             });
             return;
-          }
         }
+        // Course not found in SEMS — leave _stateRestored false so a later
+        // call (after courses load from network) can retry. Revert the file
+        // view we speculatively showed above so the user doesn't see a blank
+        // shell while waiting for courses to load.
+        options.showPortal();
+        return;
       }
+
+      // No courseId to restore — mark as done
+      _stateRestored = true;
     } catch (e) {
       console.warn('State restore failed:', e);
     } finally {
