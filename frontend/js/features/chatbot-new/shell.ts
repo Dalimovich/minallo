@@ -864,6 +864,101 @@ interface ConversationState {
   activeAssistantMessage?: ChatMessage | null;
   activeChatId?: string | null;
   lastSendFailed?: boolean;
+  draftRevision: number;
+  draftAutosaveTimer: number | null;
+}
+
+interface ChatSubmission {
+  readonly text: string;
+  readonly images: PastedImage[];
+  readonly files: PendingFile[];
+  readonly sourceMode: SourceMode;
+  readonly selectedFileIds: string[];
+  readonly courseId?: string;
+  readonly draftRevision: number;
+}
+
+interface SubmissionResult {
+  userMessageCommitted: boolean;
+  generationStarted: boolean;
+}
+
+interface PersistedComposerDraft {
+  revision: number;
+  text: string;
+}
+
+const NCB_DRAFT_KEY_BASE = 'ss_ncb_draft_v1';
+
+function clonePendingImage(image: PastedImage): PastedImage {
+  return { ...image };
+}
+
+function clonePendingFile(file: PendingFile): PendingFile {
+  return { ...file, pageImages: file.pageImages?.map((page) => ({ ...page })) };
+}
+
+function createSubmissionSnapshot(
+  state: ConversationState,
+  textarea: HTMLTextAreaElement
+): ChatSubmission {
+  const chat = chatStore.getActive();
+  const files = state.files.slice();
+  const courseId = String((window as unknown as { activeCourseId?: string | null }).activeCourseId || '');
+  return Object.freeze({
+    text: textarea.value.trim(),
+    images: state.pasted.map(clonePendingImage),
+    files: files.map(clonePendingFile),
+    sourceMode: normaliseSourceMode(chat.sourceMode),
+    selectedFileIds: chat.selectedSourceIds.slice(),
+    courseId: courseId || undefined,
+    draftRevision: state.draftRevision
+  });
+}
+
+function composerDraftStorageKey(chatId: string): string {
+  return ncbScopedKey(NCB_DRAFT_KEY_BASE) + ':' + chatId;
+}
+
+function cancelDraftAutosave(state: ConversationState): void {
+  if (state.draftAutosaveTimer != null) window.clearTimeout(state.draftAutosaveTimer);
+  state.draftAutosaveTimer = null;
+}
+
+function persistComposerDraft(chatId: string, draft: PersistedComposerDraft): void {
+  if (chatStore.activeId !== chatId || !liveState || draft.revision !== liveState.draftRevision) return;
+  try {
+    if (draft.text) localStorage.setItem(composerDraftStorageKey(chatId), JSON.stringify(draft));
+    else localStorage.removeItem(composerDraftStorageKey(chatId));
+  } catch { /* optional local draft */ }
+}
+
+function readComposerDraft(chatId: string): PersistedComposerDraft | null {
+  try {
+    const raw = localStorage.getItem(composerDraftStorageKey(chatId));
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<PersistedComposerDraft>;
+    if (typeof draft.text !== 'string' || !Number.isFinite(draft.revision)) return null;
+    return { text: draft.text, revision: Number(draft.revision) };
+  } catch { return null; }
+}
+
+function scheduleDraftAutosave(state: ConversationState, textarea: HTMLTextAreaElement): void {
+  cancelDraftAutosave(state);
+  const chatId = chatStore.activeId;
+  const draft = { revision: state.draftRevision, text: textarea.value };
+  state.draftAutosaveTimer = window.setTimeout(() => {
+    state.draftAutosaveTimer = null;
+    persistComposerDraft(chatId, draft);
+  }, 250);
+}
+
+function resetComposerTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.value = '';
+  textarea.style.height = 'auto';
+  textarea.scrollTop = 0;
+  textarea.style.overflowY = 'hidden';
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function initConversation(root: HTMLElement): void {
@@ -882,6 +977,11 @@ function initConversation(root: HTMLElement): void {
   const state = getOrInitLiveState();
   state.messages = chatStore.getActive().messages;
   liveState = state;
+
+  textarea.addEventListener('input', () => {
+    state.draftRevision++;
+    scheduleDraftAutosave(state, textarea);
+  });
 
   // Send / pause toggle
   sendBtn.addEventListener('click', () => {
@@ -1066,15 +1166,16 @@ async function doSend(
   sendBtn: HTMLButtonElement,
   pasteRow: HTMLElement,
   msgs: HTMLElement
-): Promise<void> {
+): Promise<SubmissionResult> {
   // Attachment persistence can take a little while (PDF indexing in particular).
   // Lock before that await so repeated clicks/Enter presses cannot create several
   // uploads and race different document identities into the same message.
-  if (state.isSending) return;
-  const text = textarea.value.trim();
-  const images = state.pasted.slice();
-  const files = state.files.slice();
-  if (!text && images.length === 0 && files.length === 0) return;
+  if (state.isSending) return { userMessageCommitted: false, generationStarted: false };
+  const submission = createSubmissionSnapshot(state, textarea);
+  const { text, images, files } = submission;
+  if (!text && images.length === 0 && files.length === 0) {
+    return { userMessageCommitted: false, generationStarted: false };
+  }
 
   // Switch to active-chat state on first send
   if (stage.dataset.state !== 'active') stage.dataset.state = 'active';
@@ -1092,7 +1193,7 @@ async function doSend(
     const detail = cause instanceof Error ? cause.message : 'The attachment could not be saved.';
     if (cause instanceof AttachmentSendError) console.error('chat_attachment_send_failed', cause.failure);
     (window as unknown as { showToast?: (title: string, detail?: string) => void }).showToast?.('Attachment not sent', detail + ' Your draft is still available.');
-    return;
+    return { userMessageCommitted: false, generationStarted: false };
   } finally {
     state.isSending = false;
     sendBtn.disabled = false;
@@ -1101,6 +1202,7 @@ async function doSend(
   appendUserBubble(msgs, text, images, files, userMessage.id);
   touchActiveChat();
   saveChatStore();
+  clearSentComposerDraft(state, stage, textarea, pasteRow, submission);
 
   if (isInternalTechnicalQuestion(text)) {
     const raw = technicalRefusal();
@@ -1117,13 +1219,14 @@ async function doSend(
     touchActiveChat();
     saveChatStore();
     appendBubbleActions(aiRow, raw, assistant);
-    clearSentComposerDraft(state, stage, textarea, pasteRow);
-    return;
+    return { userMessageCommitted: true, generationStarted: false };
   }
 
+  // Generation owns the committed snapshot/message. The textarea now belongs
+  // exclusively to the next draft and remains editable while this awaits.
   const sent = await streamAiReply(state, sendBtn, msgs);
-  clearSentComposerDraft(state, stage, textarea, pasteRow, text, files, images);
   state.lastSendFailed = !sent;
+  return { userMessageCommitted: true, generationStarted: true };
 }
 
 function newChatMessageId(): string {
@@ -1135,18 +1238,21 @@ function clearSentComposerDraft(
   stage: HTMLElement,
   textarea: HTMLTextAreaElement,
   pasteRow: HTMLElement,
-  sentText?: string,
-  sentFiles?: PendingFile[],
-  sentImages?: PastedImage[]
+  submission: ChatSubmission
 ): void {
-  if (sentText == null || textarea.value.trim() === sentText) textarea.value = '';
-  const imageIds = new Set((sentImages || state.pasted).map((item) => item.id));
-  const fileIds = new Set((sentFiles || state.files).map((item) => item.id));
+  cancelDraftAutosave(state);
+  const submittedDraftIsStillCurrent = state.draftRevision === submission.draftRevision;
+  if (submittedDraftIsStillCurrent) {
+    state.draftRevision++;
+    resetComposerTextarea(textarea);
+    try { localStorage.removeItem(composerDraftStorageKey(chatStore.activeId)); } catch { /* optional */ }
+  } else {
+    scheduleDraftAutosave(state, textarea);
+  }
+  const imageIds = new Set(submission.images.map((item) => item.id));
+  const fileIds = new Set(submission.files.map((item) => item.id));
   state.pasted = state.pasted.filter((item) => !imageIds.has(item.id));
   state.files = state.files.filter((item) => !fileIds.has(item.id));
-  textarea.style.height = '44px';
-  textarea.style.overflowY = 'hidden';
-  textarea.dispatchEvent(new Event('input', { bubbles: true }));
   renderPasteRow(state, pasteRow);
   renderFilesRow(stage.closest<HTMLElement>('.ncb-root')!, state);
 }
@@ -6117,6 +6223,8 @@ function getOrInitLiveState(): ConversationState {
     controller: null,
     isSending: false,
     lastSendFailed: false,
+    draftRevision: 0,
+    draftAutosaveTimer: null,
   };
   liveState = fresh;
   return fresh;
@@ -6695,6 +6803,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   // Reset transient live state.
   const state = getOrInitLiveState();
   state.messages = chat.messages;
+  cancelDraftAutosave(state);
   state.pasted = [];
   state.files = [];
   state.controller = pending ? pending.controller : null;
@@ -6706,9 +6815,11 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   state.activeChatId = pending ? chat.id : null;
   if (sendBtn) setSendBtnMode(sendBtn, pending ? 'pause' : 'send');
   if (textarea) {
-    textarea.value = '';
-    textarea.style.height = '44px';
-    textarea.style.overflowY = 'hidden';
+    const draft = readComposerDraft(chat.id);
+    state.draftRevision = Math.max(state.draftRevision + 1, (draft?.revision || 0) + 1);
+    textarea.value = draft?.text || '';
+    textarea.style.height = 'auto';
+    textarea.scrollTop = 0;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
   if (pasteRow) renderPasteRow(state, pasteRow);
