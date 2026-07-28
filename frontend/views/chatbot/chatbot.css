@@ -5133,7 +5133,7 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-file-row-main small { color: #7589a3; font-size: 0.67rem; }
 .ncb-course-row-main > b,
 .ncb-file-row-main > b { color: #8a9db5; font-size: 0.67rem; }
-.study-file-card.ncb-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; cursor: default; }
+.study-file-card.ncb-file-row { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; cursor: default; }
 .study-file-card__identity { min-width: 0; display: flex; align-items: center; gap: 12px; }
 .study-file-card__content { min-width: 0; }
 .study-file-card__filename { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
