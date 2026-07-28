@@ -116,7 +116,7 @@ function editorHtml(doc: DocUnderstanding, editing = false): string {
     'title="Detected type: ' + esc(TYPE_LABEL[detected] || detected) + '. This affects retrieval.">' +
     typeOptions(m.type) + '<option value="__detected__">Use detected type (' +
     esc(TYPE_LABEL[detected] || detected) + ')</option></select>' +
-    '<button type="button" class="doc-type-action doc-type-save" data-doc-type-save>' + (editing ? 'Save' : 'Confirm') + '</button>' +
+    '<button type="button" class="doc-type-action doc-type-save ' + (editing ? 'study-file-type-save' : 'study-file-type-confirm') + '" data-doc-type-save>' + (editing ? 'Save' : 'Confirm') + '</button>' +
     (editing ? '<button type="button" class="doc-type-action doc-type-cancel" data-doc-type-cancel>Cancel</button>' : '') +
     '</div>'
   );
@@ -127,8 +127,8 @@ function confirmedHtml(doc: DocUnderstanding): string {
   const detected = doc.document_type || 'unknown';
   return '<div class="doc-type-confirmed" data-doc-id="' + esc(doc.id || '') +
     '" data-detected-type="' + esc(detected) + '" data-effective-type="' + esc(m.type) + '">' +
-    '<span class="doc-type-fixed doc-type-' + esc(m.type) + '">' + esc(m.label) + '</span>' +
-    '<button type="button" class="doc-type-action doc-type-edit" data-doc-type-edit aria-label="Edit file type">Edit</button>' +
+    '<span class="doc-type-fixed study-file-type-badge doc-type-' + esc(m.type) + '" role="status" aria-label="File type: ' + esc(m.label) + '">' + esc(m.label) + '</span>' +
+    '<button type="button" class="doc-type-action doc-type-edit study-file-type-edit" data-doc-type-edit aria-label="Change file type for this document">Edit</button>' +
     '</div>';
 }
 
@@ -290,7 +290,7 @@ export function wireCorrectionSelectors(
         select.disabled = false;
         save.disabled = false;
         const w = window as unknown as { showToast?: (title: string, message: string) => void };
-        w.showToast?.('Could not update the file type.', 'Your selection was kept. Please retry.');
+        w.showToast?.('Could not save the file type.', 'Your selection was kept. Please retry.');
       }
     });
   });

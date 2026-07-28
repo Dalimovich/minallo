@@ -30,7 +30,7 @@ test('low confidence → needsReview + correction selector rendered', () => {
   assert.ok(sel.includes('>File type</label>'));
   assert.ok(sel.includes('data-doc-id="d1"'));
   assert.ok(sel.includes('<option value="exam" selected>Exam</option>'));
-  assert.ok(sel.includes('data-doc-type-save>Confirm</button>'));
+  assert.ok(sel.includes('study-file-type-confirm'));
 });
 
 test('unknown type needs review', () => {
@@ -49,7 +49,7 @@ test('user override → "you set this", no confidence, no review', () => {
   assert.equal(m.needsReview, false);
   assert.equal(m.confidenceLabel, '');
   assert.ok(badgeHtml(doc).includes('Source type: Solution (you set this)'));
-  assert.ok(correctionSelectHtml(doc).includes('class="doc-type-fixed doc-type-solution_sheet"'));
+  assert.ok(correctionSelectHtml(doc).includes('study-file-type-badge'));
   assert.ok(correctionSelectHtml(doc).includes('data-doc-type-edit'));
   assert.ok(!correctionSelectHtml(doc).includes('study-file-type-select'));
 });
@@ -73,7 +73,7 @@ test('unconfirmed high-confidence documents render a picker and explicit Confirm
   assert.ok(html.includes('class="doc-type-select study-file-type-select"'));
   assert.ok(html.includes('value="lecture" selected'));
   assert.ok(html.includes('Use detected type (Lecture)'));
-  assert.ok(html.includes('data-doc-type-save>Confirm</button>'));
+  assert.ok(html.includes('study-file-type-confirm'));
 });
 
 test('type control supports explicit confirmation, edit, cancel, Escape, and failure retry', async () => {
@@ -85,7 +85,7 @@ test('type control supports explicit confirmation, edit, cancel, Escape, and fai
   assert.match(source, /data-doc-type-edit/);
   assert.match(source, /data-doc-type-cancel/);
   assert.match(source, /event\.key === 'Escape'/);
-  assert.match(source, /Your selection was kept\. Please retry\./);
+  assert.match(source, /Could not save the file type\./);
   assert.doesNotMatch(source, /sel\.addEventListener\('change'/);
   assert.match(source, /document-type-changed/);
 });

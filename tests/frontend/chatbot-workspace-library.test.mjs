@@ -47,7 +47,9 @@ test('Study Panel file cards keep filename identity separate from type actions',
   assert.match(moduleSource, /study-file-card__filename/);
   assert.match(moduleSource, /study-file-card__actions/);
   assert.match(moduleSource, /file\.name \|\| file\._storageName/);
-  assert.match(moduleSource, /study_panel_file_name_missing/);
+  assert.match(moduleSource, /study_file_missing_filename/);
+  assert.match(moduleSource, /item\._document\?\.id === documentId/);
+  assert.match(moduleSource, /data-library-file="" data-document-id=/);
   assert.match(css, /\.study-file-card\s*\{[^}]*flex-direction:\s*column/);
   assert.match(css, /\.study-file-card__actions\s*\{[^}]*width:\s*100%/);
   assert.match(css, /@media \(max-width: 420px\)[\s\S]*\.study-file-card__actions \{ padding-left:\s*0/);

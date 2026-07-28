@@ -1128,17 +1128,28 @@ function bindSingleFileRow(panel: HTMLElement, detail: HTMLElement, course: Libr
     const collection = (folder
       ? (course.userFolders || []).find((item) => item.name === folder)?.files || []
       : course.files || []) as CourseFile[];
-    const file = collection.find((item) => item.name === open.dataset.libraryFile);
+    const documentId = open.dataset.documentId || row.dataset.documentId || '';
+    const file = collection.find((item) => documentId ? item._document?.id === documentId : item.name === open.dataset.fileName);
     if (file) openWorkspacePdf(rootFor(panel), file, course);
   });
   const remove = row.querySelector<HTMLButtonElement>('[data-delete-file]');
-  remove?.addEventListener('click', () => void deleteFileCompletely(panel, detail, course, remove.dataset.deleteFile || '', remove.dataset.folder || null, row));
+  remove?.addEventListener('click', () => {
+    const folder = remove.dataset.folder || null;
+    const documentId = remove.dataset.documentId || row.dataset.documentId || '';
+    const file = findCourseFileByIdentity(course, documentId, remove.dataset.fileName || '', folder);
+    if (file) void deleteFileCompletely(panel, detail, course, file.name, folder, row);
+  });
   const retry = row.querySelector<HTMLButtonElement>('[data-retry-index]');
   retry?.addEventListener('click', async (event) => {
     event.stopPropagation();
     if (retry.disabled) return;
     const folder = open?.dataset.folder || null;
-    const file = findCourseFile(course, open?.dataset.libraryFile || '', folder);
+    const file = findCourseFileByIdentity(
+      course,
+      open?.dataset.documentId || row.dataset.documentId || '',
+      open?.dataset.fileName || '',
+      folder
+    );
     if (!file?._storageName) return;
     retry.disabled = true;
     retry.textContent = 'Retrying…';
@@ -1162,6 +1173,13 @@ function findCourseFile(course: LibraryCourse, name: string, folder: string | nu
   return folder
     ? folders.find((item) => item.name === folder)?.files?.find((file) => file.name === name)
     : files.find((file) => file.name === name);
+}
+
+function findCourseFileByIdentity(course: LibraryCourse, documentId: string, name: string, folder: string | null): CourseFile | undefined {
+  const files = (folder
+    ? (course.userFolders || []).find((item) => item.name === folder)?.files || []
+    : course.files || []) as CourseFile[];
+  return files.find((file) => documentId ? file._document?.id === documentId : file.name === name);
 }
 
 function openUploadPopup(panel: HTMLElement, course: LibraryCourse): void {
@@ -1338,7 +1356,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
 function fileButton(file: CourseFile, course: LibraryCourse, folder: string | null): string {
   const doc = file._document;
   const filename = String(file.name || file._storageName || '').trim() || 'Untitled document';
-  if (!String(file.name || '').trim()) console.error('study_panel_file_name_missing', { documentId: doc?.id || null });
+  if (!String(file.name || file._storageName || '').trim()) console.error('study_file_missing_filename', { documentId: doc?.id || null, file });
   const picker = doc
     ? correctionSelectHtml(doc)
     : '<label class="doc-type-review doc-type-review--unavailable"><span class="doc-type-review-label">File type</span><select class="doc-type-select study-file-type-select" data-action="change-file-type" aria-label="File type unavailable for this document" disabled><option>Unknown</option></select></label>';
@@ -1347,7 +1365,7 @@ function fileButton(file: CourseFile, course: LibraryCourse, folder: string | nu
       : doc?.processing_status ? 'Indexing…' : 'Status unavailable';
   const retry = doc?.processing_status === 'failed' && file._storageName
     ? '<button type="button" class="ncb-file-retry" data-retry-index aria-label="Retry indexing">Retry</button>' : '';
-  return `<div class="ncb-file-row study-file-card"${doc?.id ? ` data-document-id="${escapeHtml(doc.id)}"` : ''}><div class="study-file-card__identity"><button type="button" class="ncb-file-row-main" data-library-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong class="study-file-card__filename" title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong><small class="study-file-card__meta">${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small></span><b>Open</b></button><button type="button" class="ncb-library-delete" data-delete-file="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete file" title="Delete file">${trashIcon()}</button></div><div class="study-file-card__actions"><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}</div></div>`;
+  return `<div class="ncb-file-row study-file-card"${doc?.id ? ` data-document-id="${escapeHtml(doc.id)}"` : ''}><div class="study-file-card__identity"><button type="button" class="ncb-file-row-main" data-library-file="" data-document-id="${escapeHtml(doc?.id || '')}" data-file-name="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">${icon('file')}<span><strong class="study-file-card__filename" title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong><small class="study-file-card__meta">${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small></span><b>Open</b></button><button type="button" class="ncb-library-delete" data-delete-file="" data-document-id="${escapeHtml(doc?.id || '')}" data-file-name="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete ${escapeHtml(filename)}" title="Delete file">${trashIcon()}</button></div><div class="study-file-card__actions"><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}</div></div>`;
 }
 
 function trashIcon(): string {
