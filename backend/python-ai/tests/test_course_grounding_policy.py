@@ -88,11 +88,21 @@ def test_all_course_files_keeps_open_pdf_as_hint_not_filter() -> None:
         selected_course_id="course-a",
         active_document_id="exercise",
     )
-    assert decision.grounding_policy == GroundingPolicy.STRICT_COURSE
+    assert decision.grounding_policy == GroundingPolicy.COURSE_FIRST
     assert effective_document_ids(
         document_ids=["exercise"], active_document_id="exercise",
         course_file_scope=decision.course_file_scope,
     ) is None
+
+
+def test_strict_course_requires_explicit_only_wording() -> None:
+    decision = classify_source_scope(
+        question="Use course files only for this answer",
+        source_mode="course_files",
+        course_file_scope="all_course_files",
+        selected_course_id="course-a",
+    )
+    assert decision.grounding_policy == GroundingPolicy.STRICT_COURSE
 
 
 def test_general_supplement_requires_explicit_policy() -> None:

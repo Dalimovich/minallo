@@ -222,3 +222,19 @@ def test_final_validator_repairs_a_skipped_question_without_raw_status():
     assert result.manifest.requested_items[3].original_text in repaired
     assert "Status: index_gap" not in repaired
     assert "Source basis: General knowledge" in repaired
+
+
+def test_german_fallback_template_stays_german():
+    request = "Nennen Sie drei Vorteile des Walzens? Was ist Umformen?"
+    result = retrieve_multi_item_course_evidence(
+        user_id="u", course_id="c", question=request,
+        inventory_loader=lambda **_: (["forming"], [], False),
+        semantic_retriever=no_semantic,
+    )
+    repaired, validation = ensure_complete_answer(
+        result, "", allow_general_fallback=True,
+        fallback_generator=lambda question: "Sachliche deutsche Antwort.",
+    )
+    assert validation.complete
+    assert "Grundlage: Allgemeines Fachwissen" in repaired
+    assert "Source basis:" not in repaired

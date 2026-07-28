@@ -53,3 +53,11 @@ def test_real_marked_question_request_still_requires_visual_resolution():
     assert detected.contains_visual_reference is True
     assert decision.can_answer is False
     assert decision.recovery_code == "exact_question_not_resolved"
+
+
+def test_multi_question_coverage_does_not_enable_exercise_validator():
+    from pathlib import Path
+    source = (Path(__file__).parents[1] / "app" / "routers" / "stream.py").read_text("utf-8")
+    assert "coverage_buffering = bool(multi_item_result.evidence)" in source
+    assert "buffer_answer_output = high_risk_validation or coverage_buffering" in source
+    assert ") or bool(multi_item_result.evidence)" not in source

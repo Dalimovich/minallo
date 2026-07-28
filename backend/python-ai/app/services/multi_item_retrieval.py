@@ -129,7 +129,7 @@ _COUNT_WORDS = {"one": 1, "ein": 1, "eine": 1, "two": 2, "zwei": 2, "three": 3, 
 _CONTROLLED_CONCEPTS: tuple[tuple[str, ...], ...] = (
     (
         "main groups of forming processes", "three main groups of forming processes",
-        "hauptgruppen der umformverfahren", "einteilung der umformverfahren",
+        "hauptgruppen der umformverfahren", "einteilung der umformverfahren", "umformverfahren",
         "massivumformen", "blechumformen", "inkrementelles umformen",
     ),
     (
@@ -145,6 +145,33 @@ _CONTROLLED_CONCEPTS: tuple[tuple[str, ...], ...] = (
         "verzahnungswalzen", "gear rolling", "vorteile verzahnungswalzen",
         "eigenschaften gewalzter verzahnungen", "kaltverfestigung", "faserverlauf",
         "oberflächengüte",
+    ),
+    (
+        "hauptgruppen des trennens", "trennen nach din 8580", "zerteilen",
+        "spanen mit geometrisch bestimmter schneide",
+        "spanen mit geometrisch unbestimmter schneide", "abtragen", "zerlegen", "reinigen",
+    ),
+    (
+        "schneidenarten", "geometrisch bestimmte schneide",
+        "geometrisch unbestimmte schneide", "spanen", "trennen",
+    ),
+    (
+        "schweißbarkeit", "schweissbarkeit", "schweißdreieck", "schweissdreieck",
+        "schweißeignung", "schweisseignung", "schweißsicherheit", "schweisssicherheit",
+        "schweißmöglichkeit", "schweissmoeglichkeit",
+    ),
+    (
+        "beschichtungsgruppen", "beschichten nach din 8580",
+        "beschichten aus dem gasförmigen zustand", "beschichten aus dem flüssigen zustand",
+        "beschichten aus dem ionisierten zustand", "beschichten aus dem festen zustand",
+    ),
+    (
+        "stereolithographie", "stereolithografie", "stereolithography", "sla",
+        "rapid prototyping", "additive fertigung photopolymer",
+    ),
+    (
+        "standard 3 zonen schnecke", "standard drei zonen schnecke", "schneckenmaschinen",
+        "einzugszone", "kompressionszone", "meteringzone", "ausstoßzone", "ausstosszone",
     ),
 )
 
@@ -361,11 +388,17 @@ def _load_course_inventory(
     # Empty/textless PDF pages are valid and need not produce chunks. A mere
     # difference between PDF page_count and chunk-bearing pages therefore does
     # not prove an index defect. Only positive document/index state does.
-    index_gap = bool(any(
+    chunk_document_ids = {str(row.get("document_id") or "") for row in rows}
+    # Ready legacy indexes use the empty revision introduced by the atomic
+    # revision migration. They remain valid and must not make every unresolved
+    # item look like an index failure. A positive gap requires a failed/in-flight
+    # document or a document with no usable chunks.
+    unhealthy_document_count = sum(
         str(row.get("processing_status") or "") != "ready"
-        or not str(row.get("active_index_revision") or "").strip()
+        or str(row.get("id") or "") not in chunk_document_ids
         for row in documents
-    ))
+    )
+    index_gap = unhealthy_document_count >= max(1, (len(documents) + 1) // 2)
     return authorized_ids, rows, index_gap
 
 
@@ -425,10 +458,10 @@ def retrieve_multi_item_course_evidence(
             status = EvidenceStatus.SUPPORTED
         elif error_code:
             status = EvidenceStatus.RETRIEVAL_FAILED
-        elif index_gap:
-            status = EvidenceStatus.INDEX_GAP
         elif semantic:
             status = EvidenceStatus.PARTIAL
+        elif index_gap:
+            status = EvidenceStatus.INDEX_GAP
         else:
             status = EvidenceStatus.NOT_FOUND
         evidence.append(RequestedItemEvidence(
@@ -532,13 +565,21 @@ def ensure_complete_answer(
         item = by_id[item_id]
         if allow_general_fallback:
             body = fallback_generator(item.original_text).strip()
-            basis = "Source basis: General knowledge"
+            basis = (
+                "Grundlage: Allgemeines Fachwissen"
+                if result.manifest.language == "de"
+                else "Source basis: General knowledge"
+            )
         else:
             body = (
                 "The authorised course material did not provide enough reliable "
                 "evidence for this item."
             )
-            basis = "Source basis: Course files only"
+            basis = (
+                "Grundlage: Nur Kursunterlagen"
+                if result.manifest.language == "de"
+                else "Source basis: Course files only"
+            )
         cleaned += f"\n\n## {item.original_text}\n\n{body}\n\n{basis}"
     return cleaned, validate_final_answer(result, cleaned)
 

@@ -230,6 +230,18 @@ def classify_source_scope(
         course_file_scope=course_file_scope,
         course_id=selected_course_id,
     )
+    if (
+        mode == SourceMode.COURSE_FILES
+        and file_scope == CourseFileScope.ALL_COURSE_FILES
+        and not re.search(
+            r"\b(?:course files? only|only (?:use|from) (?:the )?course files?|"
+            r"nur (?:die )?kurs(?:dateien|unterlagen)|ausschlie(?:ß|ss)lich (?:die )?kurs(?:dateien|unterlagen))\b",
+            question or "", re.IGNORECASE,
+        )
+    ):
+        # "Course files" is a preferred source, not an implicit refusal to
+        # answer. Strict course-only behavior requires explicit wording.
+        policy = GroundingPolicy.COURSE_FIRST
     used_ids = effective_document_ids(
         document_ids=document_ids,
         active_document_id=active_document_id,

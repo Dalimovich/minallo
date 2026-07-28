@@ -4390,7 +4390,13 @@ async def _prepare_ask_stream_response(
             tutor_state and tutor_state.reusable_results()
         ),
         task_traits=task_traits,
-    ) or bool(multi_item_result.evidence)
+    )
+    # Multi-item answers must be buffered until coverage repair is complete,
+    # but conceptual lists are not numerical/exercise drafts. Keeping these
+    # concerns separate prevents the active-exercise identity validator from
+    # replacing a valid ten-section answer with a quantity-mismatch warning.
+    coverage_buffering = bool(multi_item_result.evidence)
+    buffer_answer_output = high_risk_validation or coverage_buffering
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
     # Consulted by gen_with_abort_meter when the stream dies early.
@@ -4542,7 +4548,7 @@ async def _prepare_ask_stream_response(
                     evt["event"] = "answer.delta"
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                     full_text_buf.append(evt["t"])
-                    if high_risk_validation:
+                    if buffer_answer_output:
                         pending_token_events.append(chunk_bytes)
                         continue
                 if evt.get("done"):
@@ -4958,7 +4964,7 @@ async def _prepare_ask_stream_response(
                             "code": "critical_numerical_mismatch",
                             "action": "report_missing_evidence",
                         }
-                    elif high_risk_validation:
+                    elif buffer_answer_output:
                         for pending in pending_token_events:
                             yield pending
                         pending_token_events.clear()
