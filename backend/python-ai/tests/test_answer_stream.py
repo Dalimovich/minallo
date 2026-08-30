@@ -353,3 +353,68 @@ def test_question_hash_stable_for_same_previous_turns() -> None:
     h1 = question_hash("now substitute the values", previous_turns=prev)
     h2 = question_hash("now substitute the values", previous_turns=prev)
     assert h1 == h2
+
+
+# ── web search last resort (only when retrieval found NOTHING) ─────────────
+
+
+def test_web_search_last_resort_returns_text_and_sources_on_success(monkeypatch) -> None:
+    from app.services import answer_stream, web_answer
+
+    monkeypatch.setattr(
+        web_answer,
+        "generate_web_answer",
+        lambda question, *, query, max_tokens=1400: {
+            "answer": "The current version is 3.2, released last month.",
+            "model": "gpt-4.1-mini",
+            "webSources": [{"title": "Official docs", "url": "https://example.com/docs"}],
+            "promptTokens": 120,
+            "completionTokens": 40,
+        },
+    )
+    recorded: list[dict] = []
+    monkeypatch.setattr(
+        answer_stream, "record_usage", lambda **kwargs: recorded.append(kwargs)
+    )
+
+    text, sources = answer_stream._web_search_last_resort("what's the latest version?", user_id="u1")
+
+    assert text == "The current version is 3.2, released last month."
+    assert sources == [{"title": "Official docs", "url": "https://example.com/docs"}]
+    assert recorded and recorded[0]["feature"] == "ask_stream_web_fallback"
+    assert recorded[0]["model"] == "gpt-4.1-mini"
+
+
+def test_web_search_last_resort_is_empty_when_search_unavailable(monkeypatch) -> None:
+    """generate_web_answer's own 'unavailable' sentinel has model=None —
+    must not be mistaken for a real result."""
+    from app.services import answer_stream, web_answer
+
+    monkeypatch.setattr(
+        web_answer,
+        "generate_web_answer",
+        lambda question, *, query, max_tokens=1400: {
+            "answer": web_answer.INTERNET_UNAVAILABLE_MESSAGE,
+            "model": None,
+            "webSources": [],
+            "promptTokens": None,
+            "completionTokens": None,
+        },
+    )
+    text, sources = answer_stream._web_search_last_resort("anything", user_id=None)
+    assert text == ""
+    assert sources == []
+
+
+def test_web_search_last_resort_swallows_exceptions(monkeypatch) -> None:
+    """A real network/API failure must degrade to 'no web context' rather
+    than blocking or crashing the fallback answer."""
+    from app.services import answer_stream, web_answer
+
+    def _boom(question, *, query, max_tokens=1400):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(web_answer, "generate_web_answer", _boom)
+    text, sources = answer_stream._web_search_last_resort("anything", user_id=None)
+    assert text == ""
+    assert sources == []

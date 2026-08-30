@@ -1468,6 +1468,37 @@ should attempt them).
     return common + mode_rules.get(mode, "")
 
 
+def _web_search_last_resort(
+    question: str, *, user_id: str | None,
+) -> tuple[str, list[dict[str, str]]]:
+    """Run a live web search when course retrieval found nothing at all and
+    the grounding policy allows a general-knowledge fallback (see the
+    'fallback' branch of pick_system_prompt). Best-effort: any failure or a
+    disabled MINALLO_WEB_SEARCH_ENABLED setting just means the caller falls
+    back to the model's own training data alone, exactly as before this
+    existed — never raises, never blocks the answer on search succeeding.
+
+    Returns (context_text, sources); context_text is empty on any failure.
+    """
+    from .web_answer import generate_web_answer  # noqa: WPS433
+    try:
+        web_result = generate_web_answer(question, query=question, max_tokens=900)
+    except Exception:  # noqa: BLE001
+        log.exception("web search fallback failed")
+        return "", []
+    if not web_result or not web_result.get("model"):
+        return "", []
+    text = str(web_result.get("answer") or "").strip()
+    if not text:
+        return "", []
+    record_usage(
+        feature="ask_stream_web_fallback", model=web_result.get("model"),
+        prompt_tokens=web_result.get("promptTokens"),
+        completion_tokens=web_result.get("completionTokens"), user_id=user_id,
+    )
+    return text, list(web_result.get("webSources") or [])
+
+
 def stream_answer(
     *,
     question: str,
@@ -1621,6 +1652,8 @@ def stream_answer(
         (has_problem_source and bool(used_chunks))
         or ((has_open or has_open_image) and (deictic or problem_mode is not None)),
     )
+    web_fallback_context = ""
+    web_fallback_sources: list[dict[str, str]] = []
     if app_question:
         # App-only path: skip the tutor base prompt entirely so the model
         # doesn't get conflicting "ALWAYS base on document content"
@@ -1688,6 +1721,18 @@ def stream_answer(
                 "course_first", "course_plus_general", "general",
             ),
         )
+        # Last-resort fallback: retrieval found NOTHING in the course files
+        # (strength == "none", not just "weak" — a partial match is worth
+        # more than an extra paid search call) and the grounding policy
+        # allows answering anyway. Try a live web search before falling
+        # back to the model's frozen training data alone, so "general
+        # knowledge" isn't stuck at whatever it last learned. Best-effort:
+        # if search is disabled or fails, fallback proceeds without it
+        # exactly as before this was added.
+        if answer_mode == "fallback" and effective_strength == "none":
+            web_fallback_context, web_fallback_sources = _web_search_last_resort(
+                question, user_id=user_id,
+            )
         if problem_mode:
             system_prompt += _problem_solver_overlay(problem_mode, problem_solver or {})
         if visual_assignment_task:
@@ -1868,8 +1913,27 @@ def stream_answer(
         parts.append(f"[Source 0] {source_zero_name}\n" + "\n\n".join(source_zero_sections))
     if used_chunks:
         parts.append(_build_context_block(used_chunks, doc_names))
+    if web_fallback_context:
+        source_titles = ", ".join(
+            s.get("title") or s.get("url", "") for s in web_fallback_sources[:5] if s.get("title") or s.get("url")
+        )
+        parts.append(
+            "[WEB SEARCH RESULT] (not a course file — do not cite as [Source N];"
+            " mention sources by name/URL in prose instead)\n"
+            + web_fallback_context
+            + (f"\n\nSources: {source_titles}" if source_titles else "")
+        )
     context_block = "\n\n---\n\n".join(parts)
 
+    if web_fallback_context:
+        system_prompt += (
+            "\n\nNo course material covers this question, so a live web search was"
+            " run and its result is included above as [WEB SEARCH RESULT]. Base your"
+            " answer on it (and general knowledge) and open with a line making clear"
+            " this came from the web, not the course files — for example \"Your course"
+            " files don't cover this, so here's what I found online:\". Never attach a"
+            " [Source N] citation to it; mention any sources by name in prose instead."
+        )
     if active_file_name:
         system_prompt += (
             f"\n\nThe student is currently reading the file \"{active_file_name}\""
