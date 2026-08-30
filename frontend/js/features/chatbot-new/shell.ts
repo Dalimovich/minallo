@@ -3448,6 +3448,17 @@ async function streamFromAskStream(
     return null;
   };
 
+  // Stall detection while reconnecting: re-arming is fine as long as the
+  // backend's reported pipeline stage keeps moving (a long multi-page
+  // extraction job genuinely takes minutes and must not be cut off). Only
+  // give up once the SAME stage has been reported this many times in a row
+  // with no movement — that's no longer "slow", it's stuck. At 30s between
+  // checks this is a 5-minute floor before a truly stalled request finally
+  // surfaces as a retryable error instead of reconnecting forever.
+  const MAX_SAME_STAGE_RECHECKS = 10;
+  let lastObservedStage: string | null = null;
+  let sameStageStreak = 0;
+
   const readWithInactivityWatchdog = (): Promise<ReadableStreamReadResult<Uint8Array>> =>
     new Promise((resolve, reject) => {
       const warningTimer = window.setTimeout(
@@ -3455,6 +3466,21 @@ async function streamFromAskStream(
         STREAM_IDLE_WARNING_MS,
       );
       let failureTimer = 0;
+      const giveUp = (durableState: Awaited<ReturnType<typeof loadDurableRequestState>>): void => {
+        void reader.cancel('stream inactivity timeout').catch(() => undefined);
+        controller.abort();
+        reject(new AskStreamError({
+          code: durableState?.error_code || (durableState ? 'stream_transport_interrupted' : 'request_state_unavailable'),
+          message: 'The response connection stopped before completion.',
+          retryable: durableState?.retryable !== false,
+          metadata: {
+            requestId: streamRequestId, failureStage: durableState?.stage || 'sse_read',
+            partialAnswer: durableState?.partial_answer || answerBuf,
+            answerCharacterCount: (durableState?.partial_answer || answerBuf).length,
+            eventCount, lastEventType,
+          },
+        }));
+      };
       const failAfterStateCheck = async (): Promise<void> => {
         thinking?.set('Reconnecting to the response…');
         const durableState = await loadDurableRequestState();
@@ -3473,23 +3499,18 @@ async function streamFromAskStream(
           return;
         }
         if (durableState && ['queued', 'running', 'recovering'].includes(durableState.status)) {
+          const stage = durableState.stage || '';
+          sameStageStreak = stage && stage === lastObservedStage ? sameStageStreak + 1 : 0;
+          lastObservedStage = stage;
+          if (sameStageStreak >= MAX_SAME_STAGE_RECHECKS) {
+            giveUp({ ...durableState, error_code: 'request_progress_stalled', retryable: true });
+            return;
+          }
           thinking?.set('Minallo is still working. Keeping the response connected…');
           failureTimer = window.setTimeout(() => { void failAfterStateCheck(); }, 30_000);
           return;
         }
-        void reader.cancel('stream inactivity timeout').catch(() => undefined);
-        controller.abort();
-        reject(new AskStreamError({
-          code: durableState?.error_code || (durableState ? 'stream_transport_interrupted' : 'request_state_unavailable'),
-          message: 'The response connection stopped before completion.',
-          retryable: durableState?.retryable !== false,
-          metadata: {
-            requestId: streamRequestId, failureStage: durableState?.stage || 'sse_read',
-            partialAnswer: durableState?.partial_answer || answerBuf,
-            answerCharacterCount: (durableState?.partial_answer || answerBuf).length,
-            eventCount, lastEventType,
-          },
-        }));
+        giveUp(durableState);
       };
       failureTimer = window.setTimeout(() => { void failAfterStateCheck(); }, STREAM_IDLE_FAILURE_MS);
       reader.read().then(resolve, reject).finally(() => {
@@ -7244,6 +7265,12 @@ const durablePollTimers = new Map<string, number>();
 const scopedPollTimers = new Map<string, number>();
 const durablePollFailures = new Map<string, number>();
 const automaticResumeAttempts = new Set<string>();
+// How many consecutive reconciles have reported the SAME stage with no
+// movement, per requestId — a scoped multi-page job can legitimately stay
+// "running" for minutes as long as its stage keeps advancing, so this only
+// trips on a genuine stall, not on a slow-but-progressing job.
+const durablePollStageStreaks = new Map<string, { stage: string; streak: number }>();
+const MAX_RECONCILE_SAME_STAGE_STREAK = 10;
 
 function updateStoredMessageRow(root: HTMLElement, message: ChatMessage): void {
   if (!message.id) return;
@@ -7598,27 +7625,43 @@ async function reconcileDurableRequestMessages(chat: SavedChat, root: HTMLElemen
         }
       }
       if (!scopedStateRestored && record.status === 'completed' && record.final_answer) {
+        durablePollStageStreaks.delete(message.requestId!);
         Object.assign(message, {
           text: record.final_answer, completionState: 'complete', exportable: true,
           retryable: false, errorCode: undefined, failureStage: undefined,
         });
       } else if (!scopedStateRestored && record.partial_answer) {
+        durablePollStageStreaks.delete(message.requestId!);
         Object.assign(message, {
           text: record.partial_answer, completionState: 'interrupted', exportable: true,
           retryable: true, errorCode: record.error_code || 'stream_transport_interrupted',
           failureStage: record.stage,
         });
       } else if (!scopedStateRestored && ['queued', 'running', 'recovering'].includes(record.status)) {
-        Object.assign(message, {
-          completionState: 'recovering', retryable: true,
-          errorCode: undefined, failureStage: record.stage || 'processing',
-          // Focused legacy execution is tied to the live SSE handler and has
-          // no independently leased worker. Never claim it is continuing after
-          // restoration merely because its database string still says active.
-          durableActivityVerified: false,
-        });
-        needsPoll = true;
+        const stage = record.stage || '';
+        const prior = durablePollStageStreaks.get(message.requestId!);
+        const streak = stage && prior?.stage === stage ? prior.streak + 1 : 0;
+        if (streak >= MAX_RECONCILE_SAME_STAGE_STREAK) {
+          durablePollStageStreaks.delete(message.requestId!);
+          Object.assign(message, {
+            completionState: 'failed_recoverable', retryable: true,
+            errorCode: 'request_progress_stalled', failureStage: stage || 'processing',
+            durableActivityVerified: false,
+          });
+        } else {
+          durablePollStageStreaks.set(message.requestId!, { stage, streak });
+          Object.assign(message, {
+            completionState: 'recovering', retryable: true,
+            errorCode: undefined, failureStage: stage || 'processing',
+            // Focused legacy execution is tied to the live SSE handler and has
+            // no independently leased worker. Never claim it is continuing after
+            // restoration merely because its database string still says active.
+            durableActivityVerified: false,
+          });
+          needsPoll = true;
+        }
       } else if (!scopedStateRestored) {
+        durablePollStageStreaks.delete(message.requestId!);
         Object.assign(message, {
           completionState: 'failed_recoverable', retryable: record.retryable !== false,
           errorCode: record.error_code || 'internal_error', failureStage: record.stage,

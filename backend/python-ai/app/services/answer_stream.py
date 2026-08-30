@@ -24,7 +24,11 @@ from typing import Any, Generator
 
 from lingua import Language, LanguageDetectorBuilder
 
-from .openai_client import get_openai_client
+from .openai_client import (
+    INTERACTIVE_ANSWER_TIMEOUT,
+    INTERACTIVE_SUPPORT_TIMEOUT,
+    get_openai_client,
+)
 from .llm_json import _token_limit_param
 
 from ..config import get_settings
@@ -746,6 +750,7 @@ def rewrite_answer_in_resolved_language(
     response = get_openai_client().chat.completions.create(
         model=model,
         temperature=0,
+        timeout=INTERACTIVE_SUPPORT_TIMEOUT,
         **_token_limit_param(model, 4096),
         messages=[
             {
@@ -1112,6 +1117,7 @@ def _force_render_diagram(
         completion = client.chat.completions.create(
             model=model,
             response_format={"type": "json_schema", "json_schema": _DIAGRAM_JSON_SCHEMA},
+            timeout=INTERACTIVE_SUPPORT_TIMEOUT,
             messages=[
                 {"role": "system", "content": sys},
                 {"role": "user", "content": user},
@@ -1245,6 +1251,7 @@ def _force_render_plot(
         completion = client.chat.completions.create(
             model=model,
             response_format={"type": "json_schema", "json_schema": _PLOT_JSON_SCHEMA},
+            timeout=INTERACTIVE_SUPPORT_TIMEOUT,
             messages=[
                 {"role": "system", "content": sys},
                 {"role": "user", "content": user},
@@ -2188,6 +2195,7 @@ def stream_answer(
             model=target_model,
             stream=True,
             stream_options={"include_usage": True},
+            timeout=INTERACTIVE_ANSWER_TIMEOUT,
             messages=[
                 {"role": "system", "content": system_prompt},
                 *history_messages,

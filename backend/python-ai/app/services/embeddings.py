@@ -16,7 +16,7 @@ from typing import Sequence
 from openai import APIError, OpenAI, RateLimitError
 
 from ..config import get_settings
-from .openai_client import get_openai_client
+from .openai_client import INTERACTIVE_SUPPORT_TIMEOUT, get_openai_client
 from .usage_meter import record_usage, usage_from_response
 
 log = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
                 model=settings.openai_embedding_model,
                 input=batch,
                 dimensions=settings.openai_embedding_dim,
+                timeout=INTERACTIVE_SUPPORT_TIMEOUT,
             )
         except RateLimitError as exc:
             log.exception("embedding provider rate-limited retrieval")

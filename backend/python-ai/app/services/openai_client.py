@@ -38,9 +38,35 @@ def get_openai_client() -> OpenAI:
                 max_keepalive_connections=100,
                 keepalive_expiry=30.0,
             ),
-            # Match the SDK's generous default read budget (streaming answers
-            # and reasoning models can pause between tokens) while failing fast
-            # on connect/pool acquisition.
+            # Generous default read budget for background/batch callers (quiz,
+            # cheatsheet, flashcards, indexing, …) that have no live user
+            # waiting on a response. The interactive /ask-stream path overrides
+            # this per-call with INTERACTIVE_ANSWER_TIMEOUT /
+            # INTERACTIVE_SUPPORT_TIMEOUT below — see their docstrings for why.
             timeout=httpx.Timeout(600.0, connect=10.0, pool=10.0),
         ),
     )
+
+
+# Per-call timeout override for the interactive /ask-stream answer-generation
+# call (the model actually writing the answer the user is watching stream in).
+# httpx's read timeout is measured PER READ, not for the whole call, so a
+# model that keeps sending chunks — including a long "thinking" pause before
+# the first token from a reasoning model — is never cut off by this; only a
+# true stall (zero bytes) for this long trips it. 120s is chosen specifically
+# to sit above the frontend's own 90s stream-idle-failure threshold
+# (STREAM_IDLE_FAILURE_MS in shell.ts) so a genuinely slow-but-working answer
+# is never killed before the client would have given up on it anyway, while
+# still cutting the worst-case silent hang from the shared client's 600s down
+# to near what the user experiences as "stuck" — the request now reaches its
+# own error handling (and reports a real, retryable failure) in ~2 minutes
+# instead of ~10.
+INTERACTIVE_ANSWER_TIMEOUT = httpx.Timeout(120.0, connect=10.0, pool=10.0)
+
+# Per-call timeout override for small, synchronous support calls that sit in
+# the interactive /ask-stream request path before any token can reach the
+# client at all (language-rewrite pass, query embedding). These have no
+# reasoning-model "long pause" to accommodate, so a much tighter budget both
+# fails fast on a genuine provider stall and still comfortably covers normal
+# latency for a short, non-streaming completion.
+INTERACTIVE_SUPPORT_TIMEOUT = httpx.Timeout(45.0, connect=10.0, pool=10.0)
