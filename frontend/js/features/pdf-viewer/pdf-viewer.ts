@@ -15,6 +15,7 @@ interface FileLite {
   _folder?: string | null;
   _uid?: string;
   _course?: LegacyCourse;
+  _document?: { id?: string };
 }
 
 interface StorageError extends Error {
@@ -78,9 +79,22 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
   window.currentCourseShort = course.short;
   window.activeCourseRef = course;
   if (course.id) window.activeCourseId = course.id;
+  // The caller may already know this file's document id authoritatively
+  // (the Study Panel resolves it by exact storage path — see
+  // bindDocumentsToCourseFiles in workspace-library.ts). Use that directly
+  // instead of re-resolving by filename below: when a course has two
+  // document rows with the same filename (a re-upload/reindex that created
+  // a new row instead of replacing the old one), the filename-only lookup
+  // below silently picks whichever row happens to come back first — a
+  // DIFFERENT row than the one the Study Panel (and therefore the request's
+  // retrievalScope.documentIds) already committed to. That mismatch is what
+  // used to crash /ask-stream: the viewer's "open document" and the
+  // retrieval scope's "selected document" disagreed about which of the two
+  // rows was actually open.
+  const knownDocumentId = f._document?.id || null;
   setActivePdfViewerState({
     courseId: course.id ? String(course.id) : null,
-    documentId: null,
+    documentId: knownDocumentId,
     fileName: f.name,
     pdfDoc: null,
     visiblePage: 1,
@@ -92,20 +106,25 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
   // Resolve this PDF's indexed document UUID so the AI panel can scope
   // retrieval directly via documentIds (no fragile filename-match fallback
   // at every question). Reset first so a stale value from the previous file
-  // never leaks into the new one if the lookup fails or runs slowly.
+  // never leaks into the new one if the lookup fails or runs slowly. Only
+  // needed when the caller didn't already supply an authoritative id above.
   (window as unknown as { activeRagDocumentId?: string | null }).activeRagDocumentId = null;
-  if (course.id) {
+  if (course.id && !knownDocumentId) {
     void import('../../services/ai-service.js').then((mod) => {
       // Bail if the user opened a different file before the lookup resolved.
       if ((window._pdfOpenSeq as number) !== mySeq) return;
       return mod.listCourseDocuments(course.id!).then((docs) => {
         if ((window._pdfOpenSeq as number) !== mySeq) return;
         const target = (f.name || '').toLowerCase();
-        const match = docs.find(
+        const matches = docs.filter(
           (d) => d.processing_status === 'ready' && (d.file_name || '').toLowerCase() === target
         );
-        if (match?.id) {
-          setActivePdfViewerState({ documentId: match.id });
+        // Ambiguous — two ready documents share this filename. Leave
+        // documentId unset (null) rather than silently guessing one; a null
+        // activeDocumentId falls back to name-based, ambiguity-aware
+        // resolution server-side instead of locking onto the wrong row.
+        if (matches.length === 1 && matches[0]!.id) {
+          setActivePdfViewerState({ documentId: matches[0]!.id });
         }
       });
     }).catch(() => { /* best effort */ });
