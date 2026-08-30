@@ -5,6 +5,8 @@ import test from 'node:test';
 const source = fs.readFileSync(new URL('../../backend/functions/folder-delete.ts', import.meta.url), 'utf8');
 const routes = fs.readFileSync(new URL('../../scripts/generate-pages-shims.mjs', import.meta.url), 'utf8');
 const courseDelete = fs.readFileSync(new URL('../../backend/functions/course-delete.ts', import.meta.url), 'utf8');
+const pagesAdapter = fs.readFileSync(new URL('../../backend/lib/pages-adapter.ts', import.meta.url), 'utf8');
+const supabaseAdmin = fs.readFileSync(new URL('../../backend/lib/supabase-admin.ts', import.meta.url), 'utf8');
 
 test('folder deletion is authenticated and owner/course scoped', () => {
   assert.match(source, /verifySupabaseToken/);
@@ -32,4 +34,20 @@ test('course deletion recursively removes storage and database artifacts', () =>
   assert.match(courseDelete, /documents\?user_id=eq\.\$\{uid\}&course_id=eq\.\$\{cid\}/);
   assert.match(courseDelete, /COURSE_DELETE_DOCUMENTS_FAILED/);
   assert.match(courseDelete, /COURSE_DELETE_INTERNAL_FAILURE/);
+});
+
+test('an uncaught exception anywhere in a Pages Function handler cannot surface as Cloudflare\'s generic Error 1101 crash page', () => {
+  // requireEnv() throwing (missing env var), or a fetch() promise rejecting
+  // with no local catch, used to propagate straight out of pagesAdapter's
+  // handler invocation. Cloudflare then returns its own opaque HTML crash
+  // page instead of any JSON error body — invisible to the frontend and to
+  // anyone without direct Workers log access. Three layers must all hold:
+  // the adapter itself, the shared Supabase REST helper, and folder-delete's
+  // own direct Storage fetch call (which does not go through supaRequest).
+  assert.match(pagesAdapter, /try\s*\{\s*const result = await handler\(event, \{\} as NetlifyContext\);/);
+  assert.match(pagesAdapter, /catch \(raw: unknown\) \{/);
+  assert.match(supabaseAdmin, /catch \(err: unknown\) \{[\s\S]{0,1200}return \{ status: 0, body:/);
+  assert.match(source, /async function storageRequest\(/);
+  assert.match(source, /try \{\s*return await fetch\(supabaseUrl \+ path/);
+  assert.match(source, /catch \(err: unknown\) \{[\s\S]{0,700}status: 502/);
 });

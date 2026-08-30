@@ -72,6 +72,10 @@ function toResponse(r: LambdaResponse): Response {
  * ``onRequest`` handler. The default proxies env vars from Pages to
  * ``process.env`` so existing helpers (`requireEnv`, `optionalEnv`) keep
  * working without changes. */
+interface ErrorWithStatus extends Error {
+  statusCode?: number;
+}
+
 export function pagesAdapter(
   handler: NetlifyHandler,
   opts: { rawBody?: 'utf8' | 'base64' } = {}
@@ -90,7 +94,34 @@ export function pagesAdapter(
       }
     }
     const event = await toNetlifyEvent(ctx.request, opts.rawBody || 'utf8');
-    const result = await handler(event, {} as NetlifyContext);
-    return toResponse(result);
+    // Route-level handlers below this adapter are Netlify-style and mostly
+    // rely on withHandler (responses.ts) for exception safety — but that's
+    // opt-in per handler, and this adapter didn't apply it. An uncaught
+    // throw here (a missing env var from requireEnv(), a rejected fetch()
+    // with no local catch, anything unexpected) propagated straight out of
+    // this function, and Cloudflare Pages turns an uncaught Worker
+    // exception into its own generic "Error 1101" HTML crash page instead
+    // of the handler's own JSON error shape — invisible to the frontend's
+    // own error handling and to anyone without direct Workers log access.
+    // Mirrors withHandler's own catch shape so behavior is consistent
+    // whether or not the wrapped handler also applies it itself.
+    try {
+      const result = await handler(event, {} as NetlifyContext);
+      return toResponse(result);
+    } catch (raw: unknown) {
+      const err = raw as ErrorWithStatus;
+      console.error('[Pages Function Error]:', {
+        message: err && err.message,
+        path: event.path,
+        stack: err && err.stack
+      });
+      const status = err && err.statusCode ? err.statusCode : 500;
+      const message = status >= 500 ? 'Internal server error' : (err && err.message ? err.message : 'Request failed');
+      return toResponse({
+        statusCode: status,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        body: JSON.stringify({ error: { message } })
+      });
+    }
   };
 }

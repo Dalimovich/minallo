@@ -41,15 +41,28 @@ async function storageRequest(
   serviceKey: string
 ): Promise<Response> {
   const supabaseUrl = requireEnv('SUPABASE_URL').replace(/\/$/, '');
-  return fetch(supabaseUrl + path, {
-    ...init,
-    headers: {
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {})
-    }
-  });
+  try {
+    return await fetch(supabaseUrl + path, {
+      ...init,
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        ...(init.headers || {})
+      }
+    });
+  } catch (err: unknown) {
+    // fetch() rejecting (DNS/connection failure) previously propagated
+    // straight out of this handler uncaught — every caller below only
+    // checks `.ok` on the RESOLVED response, none expects the promise
+    // itself to reject. Return a synthetic non-ok Response instead so the
+    // existing `if (!...Response.ok)` checks catch it the same way they'd
+    // catch a real Supabase 5xx.
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: `Supabase Storage request failed: ${message}` }), {
+      status: 502
+    });
+  }
 }
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {

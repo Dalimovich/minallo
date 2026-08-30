@@ -28,6 +28,20 @@ async function _fetchJson<T>(
       body = text as unknown as T;
     }
     return { status: res.status, body };
+  } catch (err: unknown) {
+    // fetch() itself can reject — DNS failure, connection refused, or our
+    // own AbortController firing on timeout — none of which produce a
+    // Response to read a status from. Previously uncaught: this propagated
+    // out of every supaRequest() caller as an unhandled exception, and on
+    // Cloudflare Pages Functions that surfaces as a generic "Worker threw
+    // exception" crash page instead of the caller's own error handling
+    // (every caller already checks `successful(status)` / specific status
+    // codes on the RESOLVED result — none of them expect the promise
+    // itself to reject). Status 0 is never a real HTTP status, so it can't
+    // collide with a genuine Supabase response and callers checking
+    // successful()/status===404/etc. correctly treat it as a failure.
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: 0, body: { error: { message: `Supabase request failed: ${message}` } } as T };
   } finally {
     clearTimeout(timer);
   }
