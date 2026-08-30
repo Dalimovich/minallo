@@ -7,7 +7,7 @@
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwcmZramVpYXd4bGNuaXRzZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMjAyMzUsImV4cCI6MjA4OTc5NjIzNX0.LbJKG8J_jd2oKYAmQg0ycb-LBnQM1ItlseOLMT_24jc',
     paypalSdkUrl:
       'https://www.paypal.com/sdk/js?client-id=AXujeSZkOypAa2RuWUkmO0PX_BNMszy5rH_hvys2fTcwx-6gFCJOW1-ICXRGdDlB6X1BwdmFsy463rFN&vault=true&intent=subscription&currency=EUR',
-    assetVersion: '20260728-active-course-binding-v1',
+    assetVersion: '20260830-pdf-grounding-scope-fix-v1',
     ai: {
       model: 'claude-sonnet-4-5',
       maxTokens: 4096,
@@ -18,14 +18,16 @@
       pasteToMarkdownMinChars: 2000,
       pastedMarkdownMaxChars: 60000
     },
-    // Python AI service base URL (Fly.io). The streaming /ask-stream
+    // Python AI service base URL. The streaming /ask-stream
     // endpoint is called directly from the browser so the SSE connection
     // isn't capped by Cloudflare's function timeout. All other AI calls
     // still go through /api/* on Cloudflare Pages.
-    aiServiceUrl: 'https://python-ai.fly.dev'
+    aiServiceUrl: ''
   };
 
-  window.MinalloConfig = Object.assign({}, window.MinalloConfig || {}, cfg);
+  // runtime-config.js is generated at build time and may override public
+  // deployment-specific values without modifying this source file.
+  window.MinalloConfig = Object.assign({}, cfg, window.MinalloConfig || {});
 
   // Backwards-compatible globals used by existing feature files.
   window._GCID = window.MinalloConfig.googleClientId;

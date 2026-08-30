@@ -61,7 +61,7 @@ Project → Settings → Environment variables. Both **Production** and
 - `SUPABASE_SERVICE_ROLE_KEY`
 
 ### Python AI backend
-- `AI_SERVICE_URL` (e.g. `https://python-ai.fly.dev`)
+- `AI_SERVICE_URL` (e.g. `https://python-ai.fly.dev`; change to the tested Hetzner HTTPS origin during cutover). The production build also writes this public origin to `js/runtime-config.js` and the CSP, so it must be an HTTPS origin without a path.
 - `AI_UPSTREAM_TIMEOUT_MS`
 - `INTERNAL_SECRET`
 

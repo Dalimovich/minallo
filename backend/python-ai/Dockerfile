@@ -25,9 +25,15 @@ RUN pip install --upgrade pip \
  && pip install .
 
 # Copy application
-COPY app ./app
+RUN addgroup --system minallo \
+ && adduser --system --ingroup minallo --home /app minallo
+COPY --chown=minallo:minallo app ./app
 
 EXPOSE 8080
+
+# The service does not need root privileges. OCR/PDF temporary files are
+# written under /tmp, which the production Compose package mounts as tmpfs.
+USER minallo
 
 # Health check used by Fly / Render / Railway
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -106,7 +106,7 @@ page-level confidence, and `ocr_needs_review` flags for a correction workflow.
 
 ```bash
 docker build -t minallo-ai .
-docker run --rm -p 8000:8000 --env-file .env minallo-ai
+docker run --rm -p 8080:8080 --env-file .env minallo-ai
 ```
 
 ## Deployment
@@ -117,6 +117,9 @@ flyctl deploy
 ```
 
 Prefer the `fra` region to keep latency close to the European Supabase project.
+
+For a fixed-price Ubuntu/Docker deployment with automatic HTTPS, see
+[deploy/README.md](deploy/README.md).
 
 ## Environment Variables
 

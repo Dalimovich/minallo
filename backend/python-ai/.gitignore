@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .env
 .env.local
+.deploy-current
 .ruff_cache/
 *.egg-info/
 build/
