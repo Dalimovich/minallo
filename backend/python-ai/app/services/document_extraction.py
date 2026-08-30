@@ -21,7 +21,7 @@ from typing import Any, Awaitable, Callable
 from ..config import get_settings
 from ..supabase_client import get_supabase
 from .llm_json import chat_json
-from .scoped_extraction import EXHAUSTIVE_COVERAGE_RE
+from .scoped_extraction import EXHAUSTIVE_COVERAGE_RE, EXTRACTION_TARGET_RE
 
 log = logging.getLogger(__name__)
 
@@ -29,11 +29,7 @@ log = logging.getLogger(__name__)
 # to be separate, drifted regexes and what each one recognises that the
 # other didn't.
 _EXHAUSTIVE_RE = EXHAUSTIVE_COVERAGE_RE
-_EXTRACTION_RE = re.compile(
-    r"\b(?:extract|list|find|collect|questions?|answers?|items?|exercises?|"
-    r"fragen|antworten|aufgaben|kurzfragen)\b",
-    re.IGNORECASE,
-)
+_EXTRACTION_RE = EXTRACTION_TARGET_RE
 _CONTINUATION_RE = re.compile(
     r"\b(?:you\s+missed|missing|keep\s+extracting|continue|earlier\s+ones|"
     r"first\s+ones|not\s+all|incomplete|check\s+again|"

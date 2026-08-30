@@ -12,6 +12,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .scoped_extraction import (
+    EXTRACTION_TARGET_RE,
+    _EXHAUSTIVE_QUANTIFIER_PHRASES,
+    _EXHAUSTIVE_QUANTIFIER_WORDS,
+)
+
 
 class RequestedDocumentAccess(StrEnum):
     VISIBLE_PAGE = "visible_page"
@@ -74,12 +80,25 @@ class GroundingResolution(BaseModel):
     ]
 
 
+# Shares _EXHAUSTIVE_QUANTIFIER_WORDS/_PHRASES with scoped_extraction.py's
+# EXHAUSTIVE_COVERAGE_RE (same vocabulary for "all of them") but does NOT
+# just reuse that regex wholesale: EXHAUSTIVE_COVERAGE_RE is deliberately
+# bare (paired with an extraction-target check by its own callers), while
+# this decides "does the request concern the WHOLE DOCUMENT" and needs the
+# quantifier tied to a document/item-referring noun — otherwise "I need ALL
+# the details" would wrongly trigger full-document processing. A bounded
+# (?:\s+\w+){0,2} gap tolerates an intervening article/adjective ("alle
+# RESTLICHEN Aufgaben", "keine AUFGABE auslassen") without losing the
+# adjacency requirement entirely.
+_DOCUMENT_ITEM_NOUNS_EN = r"pdf|document|file|lecture|exam|script|page|chapter|section|question|exercise|kurzfrage"
+_DOCUMENT_ITEM_NOUNS_DE = r"pdf|dokument|datei|skript|vorlesung|pr[üu]fung|seite|kapitel|frage|aufgabe|kurzfrage"
 _FULL_DOCUMENT_RE = re.compile(
-    r"\b(?:entire|whole|complete|full)\s+(?:pdf|document|file|lecture|exam|script)\b|"
-    r"\b(?:all|every)\s+(?:page|chapter|section|question|exercise)s?\b|"
+    rf"\b(?:{_EXHAUSTIVE_QUANTIFIER_WORDS})\b(?:\s+\w+){{0,2}}\s+"
+    rf"(?:{_DOCUMENT_ITEM_NOUNS_EN})s?\b|"
+    rf"\b(?:{_EXHAUSTIVE_QUANTIFIER_WORDS})\b(?:\s+\w+){{0,2}}\s+"
+    rf"(?:{_DOCUMENT_ITEM_NOUNS_DE})[nrs]?\b|"
     r"\b(?:read|scan|process|summari[sz]e|analyse|analyze)\s+(?:the\s+)?(?:entire|whole|complete|full)\b|"
-    r"\b(?:gesamte[nmrs]?|komplette[nmrs]?)\s+(?:pdf|dokument|datei|skript|vorlesung|pr[üu]fung)\b|"
-    r"\b(?:alle|jede[nmrs]?)\s+(?:seiten?|kapitel|fragen?|aufgaben?)\b",
+    rf"\b(?:{_EXHAUSTIVE_QUANTIFIER_PHRASES})\b",
     re.IGNORECASE,
 )
 _VISIBLE_PAGE_RE = re.compile(
@@ -88,7 +107,22 @@ _VISIBLE_PAGE_RE = re.compile(
     r"(?:seite|formel|abbildung|diagramm|frage|abschnitt)\b",
     re.IGNORECASE,
 )
-_EXTRACTION_RE = re.compile(r"\b(?:extract|list|find|answer)\b.*\b(?:all|every)\b|\balle\b.*\b(?:fragen|aufgaben)\b", re.I)
+# By the time select_processing_pipeline runs, resolve_document_access has
+# already confirmed this is a FULL_DOCUMENT request (an exhaustive
+# quantifier matched) — so naming a find/list-able item type (the shared
+# EXTRACTION_TARGET_RE — "exercises", "Kurzfragen", "questions", ...) is
+# enough on its own to mean "extraction", without also requiring the
+# explicit verb+all/every ordering the original pattern demanded. That
+# ordering requirement is why "don't leave any exercises out" and "die
+# gesamten Kurzfragen auflisten" used to fall through to the generic
+# synthesis pipeline instead of the battle-tested Kurzfragen manifest/
+# pairing engine, even though document_extraction.py's own classifier
+# correctly called them extraction-shaped.
+_EXTRACTION_RE = re.compile(
+    rf"\b(?:extract|list|find|answer)\b.*\b(?:all|every)\b|\balle\b.*\b(?:fragen|aufgaben)\b|"
+    rf"{EXTRACTION_TARGET_RE.pattern}",
+    re.IGNORECASE,
+)
 _SUMMARY_RE = re.compile(r"\b(?:summari[sz]e|summary|zusammenfass)\w*\b", re.I)
 _COMPARE_RE = re.compile(r"\b(?:compare|comparison|contrast|vergleich)\w*\b", re.I)
 _GENERATE_RE = re.compile(r"\b(?:create|generate|make|erstelle|generiere)\w*\b", re.I)

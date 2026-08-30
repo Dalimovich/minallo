@@ -3342,6 +3342,31 @@ async def _prepare_ask_stream_response(
         # document map. Exact target identity is the stronger routing signal.
         document_extraction = False
         extraction_correction = False
+    # Compatibility-period reconciliation. classify_document_extraction() runs
+    # in this separate function, independently of resolve_document_access()
+    # in ask_stream_endpoint — they now share the same exhaustive-quantifier
+    # and extraction-target vocabulary, but classify_document_extraction()
+    # also has logic resolve_document_access() doesn't (explicit_question_
+    # list, continuation-context re-derivation), so they can still disagree.
+    # The structured contract must be the source of truth once that happens,
+    # not a bystander: nothing downstream (telemetry, a resumed request, the
+    # frontend's own requestSnapshot) may see exhaustive extraction actually
+    # run while GroundingResolution.documentAccess still claims relevance or
+    # visible_page.
+    if document_extraction:
+        grounding_resolution_snapshot = dict(
+            (payload.requestSnapshot or {}).get("groundingResolution") or {}
+        )
+        if grounding_resolution_snapshot.get("documentAccess") != "full_document":
+            grounding_resolution_snapshot.update({
+                "documentAccess": "full_document",
+                "resolutionReason": "legacy_extraction_classifier",
+                "processingPipeline": "extraction",
+            })
+            payload.requestSnapshot = {
+                **(payload.requestSnapshot or {}),
+                "groundingResolution": grounding_resolution_snapshot,
+            }
     if document_extraction:
         if not payload.conversationId or tutor_state is None:
             return _stream_static_answer(

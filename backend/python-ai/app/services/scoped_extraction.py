@@ -59,29 +59,57 @@ class ScopedRequestSpec:
     include_explanations: bool
 
 
-# The one authoritative "did the student ask for everything, not just one
-# thing" pattern. document_extraction.py's own classify_document_extraction()
-# used to keep a second, independently-drifted copy of this same idea: this
-# module's version was missing "full list", "without missing", "vollständig",
-# "gesamte", "komplett"; document_extraction's was missing "whole", "rest",
-# "remaining", "jede[rs]?" (only had bare "jede"), "restlichen?", and the
-# "don't leave any out" / "leave nothing out" / "without omitting" phrasings
-# entirely. A genuinely extraction-shaped request like "make sure you don't
-# leave any exercises out" or "list the remaining questions, komplett" could
-# name questions/exercises explicitly and still fail to route into the
-# exhaustive engine purely because it phrased "all of them" in the half of
-# the vocabulary the OTHER module happened to recognize. Merged here so
-# there's exactly one, most-complete definition of "exhaustive" both modules
-# agree on.
+# Shared exhaustive-quantifier vocabulary. document_extraction.py's own
+# classify_document_extraction() used to keep a second, independently-
+# drifted copy of this same idea; grounding_contract.py's _FULL_DOCUMENT_RE
+# was a THIRD, separately-drifted one. All three answer different questions
+# (bare quantifier vs. quantifier+extraction-target vs. quantifier+document/
+# item-noun-adjacency) but should share one vocabulary for what "all of
+# them" / "don't skip any" actually means, so a request can't fail to route
+# purely because it phrased completeness using the one module's regex
+# didn't happen to recognise. Exported as bare (uncompiled, un-\b-wrapped)
+# fragments so callers can embed them inside their own adjacency/boundary
+# constraints — see grounding_contract.py's _FULL_DOCUMENT_RE.
+#
+# _WORDS: single quantifier words/short phrases usable directly before a
+# noun ("every EXERCISE", "alle AUFGABEN"). Includes German adjective
+# declension endings (gesamte/gesamten/gesamter, komplett/komplette/...).
+_EXHAUSTIVE_QUANTIFIER_WORDS = (
+    r"all|every|complete|whole|rest|entire|remaining|full\s+list|"
+    r"alle|jede[rs]?|sämtliche|restlichen?|vollständig|gesamte[nrs]?|"
+    r"komplett|komplette[nrs]?"
+)
+# _PHRASES: self-contained "don't skip any of them" phrasings that don't
+# slot naturally before a noun the way _WORDS does — the "don't leave X out"
+# family already implies completeness of whatever's in the middle, and
+# "leave nothing out" / "without omitting" / "keine ... auslassen" name no
+# noun at all.  A bounded (?:\s+\w+){0,N} gap tolerates an article/adjective
+# between the quantifier and the verb ("keine AUFGABE auslassen", not just
+# bare "keine auslassen").
+_EXHAUSTIVE_QUANTIFIER_PHRASES = (
+    r"(?:do\s+not|don't|dont)\s+leave\s+(?:any|one|anything)(?:\s+\w+){0,5}\s+out|"
+    r"leave\s+nothing\s+out|without\s+omitting|without\s+missing|"
+    r"keine(?:\s+\w+){0,2}\s+auslassen"
+)
 EXHAUSTIVE_COVERAGE_RE = re.compile(
-    r"\b(?:all|every|complete|whole|rest|entire|remaining|full\s+list|"
-    r"alle|jede[rs]?|sämtliche|restlichen?|vollständig|gesamte|komplett)\b|"
-    r"\b(?:do\s+not|don't|dont)\s+leave\s+(?:any|one)(?:\s+\w+){0,5}\s+out\b|"
-    r"\b(?:leave\s+nothing\s+out|without\s+omitting|without\s+missing|"
-    r"keine\s+auslassen)\b",
-    re.I,
+    rf"\b(?:{_EXHAUSTIVE_QUANTIFIER_WORDS})\b|\b(?:{_EXHAUSTIVE_QUANTIFIER_PHRASES})\b",
+    re.IGNORECASE,
 )
 _ALL = EXHAUSTIVE_COVERAGE_RE
+
+# Shared "does this name a find/list-able item type" vocabulary. Originally
+# document_extraction.py's own private _EXTRACTION_RE; grounding_contract.py
+# needs the same check to decide whether a FULL_DOCUMENT-scoped request
+# should route to the extraction pipeline (the existing, battle-tested
+# Kurzfragen manifest/pairing engine) or fall through to the generic
+# synthesis map-reduce — a question naming "exercises"/"Aufgaben"/etc.
+# alongside an exhaustive quantifier is extraction-shaped regardless of
+# whether it also uses an explicit verb like "extract"/"list"/"find".
+EXTRACTION_TARGET_RE = re.compile(
+    r"\b(?:extract|list|find|collect|questions?|answers?|items?|exercises?|"
+    r"fragen|antworten|aufgaben|kurzfragen)\b",
+    re.IGNORECASE,
+)
 _KURZFRAGEN = re.compile(r"kurzfragen?|short\s+questions?", re.I)
 
 
