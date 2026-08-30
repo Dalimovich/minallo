@@ -301,6 +301,31 @@ Behaviour (keep the response short — under ~260 words):
 5. Match the language of the question (German for German). Write math with KaTeX: $...$ inline, $$...$$ display.
 6. Code: triple-backtick fences with a language tag (```python, ```java, ...). Inline identifiers in `single backticks`. Never wrap code in `$...$`."""
 
+# Used instead of _SYSTEM_PROMPT_WEAK / _SYSTEM_PROMPT_PARTIAL whenever
+# retrieval came back weak/empty AND the resolved grounding policy allows a
+# general-knowledge fallback (COURSE_FIRST, COURSE_PLUS_GENERAL, GENERAL —
+# see source_router.policy_allows_general_knowledge). Those two templates'
+# hard "open with I could not find this... do not add anything else"
+# refusal was, in that case, getting apply_grounding_policy_prompt's
+# "still give the most useful answer from general knowledge" instruction
+# appended right after it — two directly contradictory instructions in the
+# same prompt, and the model tended to follow the earlier, more literal one
+# (a verbatim opening line beats an abstract fallback permission). This
+# template starts from "answer anyway, labeled" instead of "refuse, then
+# maybe reconsider", so there's nothing left to contradict.
+_SYSTEM_PROMPT_GENERAL_FALLBACK = """You are Minallo's exam-prep tutor.
+
+IDENTITY. The product / platform / app you are part of is called **Minallo** (minallo.de). If asked your name or about the platform, answer "Minallo" / "Minallo AI" directly — no citation needed for that.
+
+The student's uploaded course files do not contain enough relevant material to ground a confident, cited answer to this question. That is not a reason to refuse — give the most complete, useful answer you can from stable general academic knowledge instead.
+
+Behaviour:
+1. Answer the question fully and directly, the way a knowledgeable tutor would, using general academic knowledge. Do not open with a refusal or an apology; do not stop after naming what's missing.
+2. Never attach a `[Source N]` citation to this answer and never present it as the professor's specific wording, notation, or required method — those may differ from the course. If useful, add one brief sentence noting that course terminology/conventions may vary.
+3. If the course material contains ANY loosely related fragment (even if not enough to cite confidently), you may mention it briefly, but the general-knowledge answer is still required and comes first.
+4. Match the language of the question (German for German). Write math with KaTeX: $...$ inline, $$...$$ display.
+5. Code: triple-backtick fences with a language tag (```python, ```java, ...). Inline identifiers in `single backticks`. Never wrap code in `$...$`."""
+
 
 _MATH_MISSING_CONTEXT_POPUP = """
 
@@ -1104,11 +1129,13 @@ def pick_system_prompt(
     tutor_mode: str = DEFAULT_TUTOR_MODE,
     weak_topics: list[str] | None = None,
     intent: AcademicIntent | str | None = None,
+    allow_general_fallback: bool = False,
 ) -> tuple[str, str]:
     """Pick (system_prompt, mode_label) for the answer pipeline.
 
-    mode_label is one of: 'math' | 'strong' | 'partial' | 'weak'. Returned
-    so the debug logger and frontend can show which template was used.
+    mode_label is one of: 'math' | 'strong' | 'partial' | 'weak' | 'fallback'.
+    Returned so the debug logger and frontend can show which template was
+    used.
 
     ``tutor_mode`` (explain | solve | quiz) layers a behavioural overlay
     on top of the picked template without overriding the grounding rules.
@@ -1123,6 +1150,19 @@ def pick_system_prompt(
       * weak    → PARTIAL template (chunks exist but borderline; explain
                   what's there, refuse to solve, ask for missing material)
       * none    → WEAK template (no chunks at all; can't help here)
+
+    ``allow_general_fallback`` — pass True when the caller's resolved
+    grounding policy permits answering from general knowledge (COURSE_FIRST,
+    COURSE_PLUS_GENERAL, GENERAL — see source_router.py's
+    policy_allows_general_knowledge). When True, weak/none retrieval uses
+    the FALLBACK template instead of PARTIAL/WEAK: those two refuse first
+    ("I could not find this... do not add anything else"), which directly
+    contradicts apply_grounding_policy_prompt's later "still give the most
+    useful answer from general knowledge" instruction — two conflicting
+    instructions in the same prompt, and the model tended to follow the
+    earlier, more literal refusal. FALLBACK starts from "answer anyway,
+    labeled", so nothing is left to contradict. Only STRICT_COURSE policy
+    (explicit "only use course files" wording) should leave this False.
     """
     tutor_mode = normalise_tutor_mode(tutor_mode)
     if isinstance(intent, AcademicIntent):
@@ -1138,6 +1178,8 @@ def pick_system_prompt(
         # PARTIAL/WEAK "no course material found" refusal. Use the capable
         # template; the intent overlay tells it to work off the provided text.
         base, label = _SYSTEM_PROMPT_STRONG, "strong"
+    elif allow_general_fallback and strength != "strong":
+        base, label = _SYSTEM_PROMPT_GENERAL_FALLBACK, "fallback"
     elif strength == "weak":
         # Review fix #3 — partial retrieval mode. We DO have chunks, just
         # not enough confidence to solve. PARTIAL prompt surfaces them
@@ -1212,7 +1254,7 @@ def pick_system_prompt(
     # to reference inside an MCQ. Weak retrieval (no grounded chunks) also
     # skips it: don't coach over thin air.
     coach = ""
-    if weak_topics and tutor_mode != "quiz" and label != "weak":
+    if weak_topics and tutor_mode != "quiz" and label not in {"weak", "fallback"}:
         from .mastery import coaching_overlay  # noqa: WPS433
         coach = coaching_overlay(weak_topics)
     # Prompt-cache ordering: fully static blocks first (base template, tutor
@@ -1897,6 +1939,9 @@ def generate_answer(
         system_prompt, answer_mode = pick_system_prompt(
             question, strength, used_chunks, tutor_mode=tutor_mode,
             weak_topics=weak_topics, intent=academic_intent,
+            allow_general_fallback=grounding_policy in (
+                "course_first", "course_plus_general", "general",
+            ),
         )
     wants_diagram = _wants_diagram(question) and not app_question
     if wants_diagram:

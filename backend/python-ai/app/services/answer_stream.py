@@ -1680,6 +1680,13 @@ def stream_answer(
         system_prompt, answer_mode = pick_system_prompt(
             routing_question, effective_strength, routing_chunks, tutor_mode=tutor_mode_norm,
             weak_topics=weak_topics, intent=academic_intent,
+            # Matches apply_grounding_policy_prompt's own string comparisons
+            # below — those three policies are the ones that later append a
+            # "still answer from general knowledge" instruction, so weak/none
+            # retrieval must not pick a template that refuses first.
+            allow_general_fallback=grounding_policy in (
+                "course_first", "course_plus_general", "general",
+            ),
         )
         if problem_mode:
             system_prompt += _problem_solver_overlay(problem_mode, problem_solver or {})

@@ -34,6 +34,7 @@ sys.modules.setdefault("app.services.embeddings", _fake_emb)
 
 from app.services.answer import (  # noqa: E402
     EQUATION_READABILITY_RULE,
+    _SYSTEM_PROMPT_GENERAL_FALLBACK,
     _SYSTEM_PROMPT_MATH,
     _SYSTEM_PROMPT_PARTIAL,
     _SYSTEM_PROMPT_STRONG,
@@ -82,6 +83,50 @@ def test_none_retrieval_uses_weak_prompt() -> None:
     assert "Do not add a generic explanation afterward" in prompt
     assert "General explanation (not from your course files)" not in prompt
     assert "reply 'general'" not in prompt
+
+
+def test_weak_or_none_retrieval_with_general_fallback_never_refuses() -> None:
+    """When the resolved grounding policy allows a general-knowledge fallback
+    (COURSE_FIRST/COURSE_PLUS_GENERAL/GENERAL — the default for ordinary Auto
+    or Course-files mode), weak/none retrieval must not use the PARTIAL/WEAK
+    refusal templates. Those refuse first ("I could not find this... do not
+    add anything else") and apply_grounding_policy_prompt then appends a
+    directly contradictory "still answer from general knowledge" instruction
+    right after it — the model tended to follow the earlier, more literal
+    refusal, which is what produced "not found" answers even when the policy
+    was supposed to permit a full answer."""
+    for strength in ("none", "weak"):
+        prompt, mode = pick_system_prompt(
+            "Aufgabe 1.2", strength, allow_general_fallback=True
+        )
+        assert prompt.startswith(_SYSTEM_PROMPT_GENERAL_FALLBACK), strength
+        assert mode == "fallback", strength
+        assert "I could not find this" not in prompt
+        assert "do not add anything else" not in prompt.lower()
+
+    # Strict mode (allow_general_fallback left False, the default — matches
+    # an explicit "only use course files" request or a specific-files
+    # selection) keeps refusing exactly as before.
+    strict_prompt, strict_mode = pick_system_prompt("Aufgabe 1.2", "none")
+    assert strict_mode == "weak"
+    assert strict_prompt.startswith(_SYSTEM_PROMPT_WEAK)
+
+
+def test_pick_system_prompt_call_sites_wire_allow_general_fallback() -> None:
+    """Guards against silently reintroducing the contradiction: both the
+    streaming and non-streaming answer pipelines must actually pass
+    allow_general_fallback derived from the resolved grounding_policy into
+    pick_system_prompt, not just have the parameter exist and go unused."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    expected = (
+        "allow_general_fallback=grounding_policy in (\n"
+        '                "course_first", "course_plus_general", "general",\n'
+        "            ),"
+    )
+    for relative in ("app/services/answer.py", "app/services/answer_stream.py"):
+        source = (root / relative).read_text(encoding="utf-8")
+        assert expected in source, relative
 
 
 # ── strong retrieval routes by question type ───────────────────────────────
