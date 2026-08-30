@@ -42,6 +42,8 @@ const ROUTES = [
   ['documents/upload',                'documents-upload'],
   ['documents/list',                  'documents-list'],
   ['documents/delete',                'documents-delete'],
+  ['folder-delete',                   'folder-delete'],
+  ['course-delete',                   'course-delete'],
   ['documents/index-existing',        'documents-index-existing'],
   ['documents/reindex-course',        'documents-reindex-course'],
   ['documents/review-pages',          'documents-review-pages'],

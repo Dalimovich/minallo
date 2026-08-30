@@ -304,11 +304,20 @@ test('course upload popup indexes uploaded PDFs for chatbot retrieval', () => {
 
 test('file and folder deletion update only their affected drawer rows', () => {
   const fileDelete = moduleSource.slice(moduleSource.indexOf('async function deleteFileCompletely'), moduleSource.indexOf('async function deleteFolderCompletely'));
-  const folderDelete = moduleSource.slice(moduleSource.indexOf('async function deleteFolderCompletely'), moduleSource.indexOf('async function deleteFileCompletelyWithoutConfirm'));
+  const folderDelete = moduleSource.slice(moduleSource.indexOf('async function deleteFolderCompletely'), moduleSource.indexOf('async function deleteCourseCompletely'));
   assert.match(fileDelete, /row\.remove\(\)/);
   assert.match(folderDelete, /details\?\.remove\(\)/);
   assert.doesNotMatch(fileDelete, /renderCourseDetail\(/);
   assert.doesNotMatch(folderDelete, /renderCourseDetail\(/);
+});
+
+test('folder deletion is server-confirmed before browser state is removed', () => {
+  const folderDelete = moduleSource.slice(moduleSource.indexOf('async function deleteFolderCompletely'), moduleSource.indexOf('async function deleteCourseCompletely'));
+  assert.match(folderDelete, /fetch\('\/api\/folder-delete'/);
+  assert.match(folderDelete, /body: JSON\.stringify\(\{ courseId: course\.id, folderName: name \}\)/);
+  assert.match(folderDelete, /if \(!response\.ok\) throw new Error/);
+  assert.ok(folderDelete.indexOf("fetch('/api/folder-delete'") < folderDelete.indexOf('window._ufDeleteFolder'));
+  assert.match(folderDelete, /showToast\?\.\('Delete failed'/);
 });
 
 test('tutor modes allow one selection or no selection', () => {

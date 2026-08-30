@@ -1238,28 +1238,45 @@ async function deleteFileCompletely(panel: HTMLElement, detail: HTMLElement, cou
 async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse, name: string): Promise<void> {
   const folder = ((course.userFolders || []) as CourseFolder[]).find((item) => item.name === name);
   if (!folder || !confirm(`Permanently delete "${name}" and all ${folder.files?.length || 0} files?`)) return;
-  for (const file of [...(folder.files || [])]) await deleteFileCompletelyWithoutConfirm(course, file, name);
-  window._ufDeleteFolder?.(currentUid(), course, name);
-  const folders = (course.userFolders || []) as CourseFolder[];
-  const folderIndex = folders.findIndex((item) => item.name === name);
-  if (folderIndex >= 0) folders.splice(folderIndex, 1);
-  syncCourseCache(course);
   const details = Array.from(panel.querySelectorAll<HTMLElement>('.ncb-folder[data-drop-folder]'))
     .find((item) => item.dataset.dropFolder === name);
+  const deleteButton = details?.querySelector<HTMLButtonElement>('[data-delete-folder]');
+  if (deleteButton) {
+    deleteButton.disabled = true;
+    deleteButton.setAttribute('aria-busy', 'true');
+  }
+  try {
+    const response = await fetch('/api/folder-delete', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken()}`
+      },
+      body: JSON.stringify({ courseId: course.id, folderName: name })
+    });
+    if (!response.ok) throw new Error('Database folder deletion failed');
+
+    // Mutate browser state only after the server confirms both database and
+    // Storage deletion. A failed request therefore leaves the folder visible.
+    window._ufDeleteFolder?.(currentUid(), course, name);
+    const folders = (course.userFolders || []) as CourseFolder[];
+    const folderIndex = folders.findIndex((item) => item.name === name);
+    if (folderIndex >= 0) folders.splice(folderIndex, 1);
+    syncCourseCache(course);
+    clearCourseDocumentCache(course.id);
+  } catch (error) {
+    console.error('study_panel_folder_delete_failed', { courseId: course.id, folderName: name, error });
+    if (deleteButton) {
+      deleteButton.disabled = false;
+      deleteButton.removeAttribute('aria-busy');
+    }
+    window.showToast?.('Delete failed', 'The folder and its files were not removed. Please try again.');
+    return;
+  }
   const group = details?.closest<HTMLElement>('.ncb-library-group');
   details?.remove();
   if (group && !group.querySelector('.ncb-folder')) group.remove();
   updateCourseDetailCount(panel, course);
-}
-
-async function deleteFileCompletelyWithoutConfirm(course: LibraryCourse, file: CourseFile, folder: string | null): Promise<void> {
-  const docs = await listCourseDocuments(course.id, { force: true });
-  for (const doc of docs.filter((item) => String(item.file_name || item.fileName) === file.name)) {
-    const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
-    if (!response.ok) throw new Error('Database deletion failed');
-  }
-  if (file._uploaded) await window._ufDeleteRemote?.(currentUid(), course, file.name, folder);
-  clearCourseDocumentCache(course.id);
 }
 
 async function deleteCourseCompletely(panel: HTMLElement, course: LibraryCourse): Promise<void> {
