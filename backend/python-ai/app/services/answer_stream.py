@@ -1468,18 +1468,72 @@ should attempt them).
     return common + mode_rules.get(mode, "")
 
 
+def _general_knowledge_likely_insufficient(question: str) -> bool:
+    """Cheap pre-check: is this the kind of question where the model's own
+    (frozen-at-training-time) general knowledge is unlikely to reliably
+    cover it — current events, a recent version/price/statistic, a specific
+    spec/standard/product detail — as opposed to an ordinary academic/
+    conceptual question general knowledge answers fine?
+
+    This is what decides whether a web search runs at all. General
+    knowledge is the default; search is reserved for the cases where a
+    fast, cheap check flags it's actually needed, not run unconditionally
+    just because course retrieval found nothing. A single 1-token
+    classification call, not a full answer generation — failure defaults
+    to False (general knowledge only), the cheaper and already-working
+    path, never blocks or adds latency beyond this one short call.
+    """
+    from .openai_client import INTERACTIVE_SUPPORT_TIMEOUT, get_openai_client  # noqa: WPS433
+    try:
+        response = get_openai_client().chat.completions.create(
+            model="gpt-4.1-mini",
+            timeout=INTERACTIVE_SUPPORT_TIMEOUT,
+            max_tokens=1,
+            temperature=0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Reply with exactly one word: YES or NO.\n"
+                        "YES — the question needs current, recent, or very specific "
+                        "factual/reference information (current events, a recent "
+                        "version/price/statistic/release, a specific product/standard/"
+                        "spec detail) that stable general academic knowledge from "
+                        "training data is unlikely to reliably cover.\n"
+                        "NO — it's an ordinary academic, conceptual, or how-to question "
+                        "that general knowledge answers fine without needing a live lookup."
+                    ),
+                },
+                {"role": "user", "content": question[:2000]},
+            ],
+        )
+        choice = response.choices[0] if response.choices else None
+        answer = ((choice.message.content if choice and choice.message else "") or "").strip().upper()
+        return answer.startswith("Y")
+    except Exception:  # noqa: BLE001
+        log.exception("general-knowledge-sufficiency check failed")
+        return False
+
+
 def _web_search_last_resort(
     question: str, *, user_id: str | None,
 ) -> tuple[str, list[dict[str, str]]]:
-    """Run a live web search when course retrieval found nothing at all and
-    the grounding policy allows a general-knowledge fallback (see the
-    'fallback' branch of pick_system_prompt). Best-effort: any failure or a
-    disabled MINALLO_WEB_SEARCH_ENABLED setting just means the caller falls
-    back to the model's own training data alone, exactly as before this
-    existed — never raises, never blocks the answer on search succeeding.
+    """Run a live web search, but ONLY when course retrieval found nothing at
+    all, the grounding policy allows a general-knowledge fallback (see the
+    'fallback' branch of pick_system_prompt), AND
+    _general_knowledge_likely_insufficient() says this question actually
+    needs it. General knowledge is the default path for a "nothing in the
+    documents" question; a web search is reserved for the narrower case
+    where general knowledge itself is unlikely to be reliable. Best-effort
+    beyond that: any failure or a disabled MINALLO_WEB_SEARCH_ENABLED
+    setting just means the caller falls back to the model's own training
+    data alone — never raises, never blocks the answer on search succeeding.
 
-    Returns (context_text, sources); context_text is empty on any failure.
+    Returns (context_text, sources); context_text is empty when no search
+    was needed, or on any failure.
     """
+    if not _general_knowledge_likely_insufficient(question):
+        return "", []
     from .web_answer import generate_web_answer  # noqa: WPS433
     try:
         web_result = generate_web_answer(question, query=question, max_tokens=900)
@@ -1724,11 +1778,13 @@ def stream_answer(
         # Last-resort fallback: retrieval found NOTHING in the course files
         # (strength == "none", not just "weak" — a partial match is worth
         # more than an extra paid search call) and the grounding policy
-        # allows answering anyway. Try a live web search before falling
-        # back to the model's frozen training data alone, so "general
-        # knowledge" isn't stuck at whatever it last learned. Best-effort:
-        # if search is disabled or fails, fallback proceeds without it
-        # exactly as before this was added.
+        # allows answering anyway. General knowledge is the default here;
+        # _web_search_last_resort only actually searches the web when its
+        # own cheap check decides general knowledge is unlikely to reliably
+        # cover this particular question — so the priority is genuinely
+        # course docs -> general knowledge -> web search, not search-first.
+        # Best-effort: if search is disabled, not needed, or fails, the
+        # fallback proceeds on general knowledge alone.
         if answer_mode == "fallback" and effective_strength == "none":
             web_fallback_context, web_fallback_sources = _web_search_last_resort(
                 question, user_id=user_id,

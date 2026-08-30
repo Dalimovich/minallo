@@ -355,12 +355,93 @@ def test_question_hash_stable_for_same_previous_turns() -> None:
     assert h1 == h2
 
 
-# ── web search last resort (only when retrieval found NOTHING) ─────────────
+# ── general-knowledge-first, web search only as the actual last resort ─────
+#
+# Priority is course docs -> general knowledge -> web search. The search
+# itself only runs when _general_knowledge_likely_insufficient() says this
+# particular question needs it — NOT unconditionally whenever retrieval
+# found nothing, which would make search happen BEFORE general knowledge
+# got a chance instead of only as its fallback.
+
+
+def _mock_openai_chat_response(monkeypatch, module, content: str) -> None:
+    """Patch module.get_openai_client() to return a fake client whose
+    chat.completions.create(...) always returns `content` as the message."""
+    class _FakeMessage:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class _FakeChoice:
+        def __init__(self, content: str) -> None:
+            self.message = _FakeMessage(content)
+
+    class _FakeResponse:
+        def __init__(self, content: str) -> None:
+            self.choices = [_FakeChoice(content)]
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    return _FakeResponse(content)
+
+    monkeypatch.setattr(module, "get_openai_client", lambda: _FakeClient())
+
+
+def test_general_knowledge_check_says_no_for_ordinary_academic_question(monkeypatch) -> None:
+    from app.services import answer_stream, openai_client
+
+    # _general_knowledge_likely_insufficient does a LOCAL
+    # `from .openai_client import get_openai_client` — the name resolves
+    # fresh from the openai_client module at call time, so that's what must
+    # be patched, not answer_stream's own namespace.
+    _mock_openai_chat_response(monkeypatch, openai_client, "NO")
+    assert answer_stream._general_knowledge_likely_insufficient("What is Newton's second law?") is False
+
+
+def test_general_knowledge_check_says_yes_for_current_information_question(monkeypatch) -> None:
+    from app.services import answer_stream, openai_client
+
+    _mock_openai_chat_response(monkeypatch, openai_client, "YES")
+    assert answer_stream._general_knowledge_likely_insufficient("What is the latest version of Python?") is True
+
+
+def test_general_knowledge_check_defaults_to_no_web_search_on_failure(monkeypatch) -> None:
+    """A classification failure must fail toward the cheaper, already-
+    working path (general knowledge only), not toward extra search cost."""
+    from app.services import answer_stream, openai_client
+
+    def _boom():
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(openai_client, "get_openai_client", _boom)
+    assert answer_stream._general_knowledge_likely_insufficient("anything") is False
+
+
+def test_web_search_last_resort_skips_search_when_general_knowledge_suffices(monkeypatch) -> None:
+    """The common case: course retrieval found nothing, but this is an
+    ordinary question general knowledge covers fine — no search call at all."""
+    from app.services import answer_stream, web_answer
+
+    monkeypatch.setattr(answer_stream, "_general_knowledge_likely_insufficient", lambda q: False)
+    called = []
+    monkeypatch.setattr(
+        web_answer, "generate_web_answer",
+        lambda *a, **k: called.append(1) or {"answer": "x", "model": "m", "webSources": []},
+    )
+
+    text, sources = answer_stream._web_search_last_resort("What is Newton's second law?", user_id=None)
+
+    assert text == ""
+    assert sources == []
+    assert called == []  # generate_web_answer must never have been invoked
 
 
 def test_web_search_last_resort_returns_text_and_sources_on_success(monkeypatch) -> None:
     from app.services import answer_stream, web_answer
 
+    monkeypatch.setattr(answer_stream, "_general_knowledge_likely_insufficient", lambda q: True)
     monkeypatch.setattr(
         web_answer,
         "generate_web_answer",
@@ -390,6 +471,7 @@ def test_web_search_last_resort_is_empty_when_search_unavailable(monkeypatch) ->
     must not be mistaken for a real result."""
     from app.services import answer_stream, web_answer
 
+    monkeypatch.setattr(answer_stream, "_general_knowledge_likely_insufficient", lambda q: True)
     monkeypatch.setattr(
         web_answer,
         "generate_web_answer",
@@ -410,6 +492,8 @@ def test_web_search_last_resort_swallows_exceptions(monkeypatch) -> None:
     """A real network/API failure must degrade to 'no web context' rather
     than blocking or crashing the fallback answer."""
     from app.services import answer_stream, web_answer
+
+    monkeypatch.setattr(answer_stream, "_general_knowledge_likely_insufficient", lambda q: True)
 
     def _boom(question, *, query, max_tokens=1400):
         raise RuntimeError("network down")
