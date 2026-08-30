@@ -21,14 +21,14 @@ from typing import Any, Awaitable, Callable
 from ..config import get_settings
 from ..supabase_client import get_supabase
 from .llm_json import chat_json
+from .scoped_extraction import EXHAUSTIVE_COVERAGE_RE
 
 log = logging.getLogger(__name__)
 
-_EXHAUSTIVE_RE = re.compile(
-    r"\b(?:all|every|complete|entire|full\s+list|without\s+missing|"
-    r"alle|sämtliche|vollständig|gesamte|komplett)\b",
-    re.IGNORECASE,
-)
+# Shared with scoped_extraction.py — see that module for why these two used
+# to be separate, drifted regexes and what each one recognises that the
+# other didn't.
+_EXHAUSTIVE_RE = EXHAUSTIVE_COVERAGE_RE
 _EXTRACTION_RE = re.compile(
     r"\b(?:extract|list|find|collect|questions?|answers?|items?|exercises?|"
     r"fragen|antworten|aufgaben|kurzfragen)\b",

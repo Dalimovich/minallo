@@ -59,13 +59,29 @@ class ScopedRequestSpec:
     include_explanations: bool
 
 
-_ALL = re.compile(
-    r"\b(?:all|every|complete|whole|rest|entire|remaining|alle|jede[rs]?|"
-    r"sämtliche|restlichen?)\b|"
+# The one authoritative "did the student ask for everything, not just one
+# thing" pattern. document_extraction.py's own classify_document_extraction()
+# used to keep a second, independently-drifted copy of this same idea: this
+# module's version was missing "full list", "without missing", "vollständig",
+# "gesamte", "komplett"; document_extraction's was missing "whole", "rest",
+# "remaining", "jede[rs]?" (only had bare "jede"), "restlichen?", and the
+# "don't leave any out" / "leave nothing out" / "without omitting" phrasings
+# entirely. A genuinely extraction-shaped request like "make sure you don't
+# leave any exercises out" or "list the remaining questions, komplett" could
+# name questions/exercises explicitly and still fail to route into the
+# exhaustive engine purely because it phrased "all of them" in the half of
+# the vocabulary the OTHER module happened to recognize. Merged here so
+# there's exactly one, most-complete definition of "exhaustive" both modules
+# agree on.
+EXHAUSTIVE_COVERAGE_RE = re.compile(
+    r"\b(?:all|every|complete|whole|rest|entire|remaining|full\s+list|"
+    r"alle|jede[rs]?|sämtliche|restlichen?|vollständig|gesamte|komplett)\b|"
     r"\b(?:do\s+not|don't|dont)\s+leave\s+(?:any|one)(?:\s+\w+){0,5}\s+out\b|"
-    r"\b(?:leave\s+nothing\s+out|without\s+omitting|keine\s+auslassen)\b",
+    r"\b(?:leave\s+nothing\s+out|without\s+omitting|without\s+missing|"
+    r"keine\s+auslassen)\b",
     re.I,
 )
+_ALL = EXHAUSTIVE_COVERAGE_RE
 _KURZFRAGEN = re.compile(r"kurzfragen?|short\s+questions?", re.I)
 
 

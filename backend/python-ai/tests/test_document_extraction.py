@@ -23,6 +23,43 @@ def test_numbered_kurzfragen_section_is_preserved() -> None:
     assert target == "2. Kurzfragen"
 
 
+def test_extraction_shaped_requests_route_regardless_of_which_all_phrasing_is_used() -> None:
+    """classify_document_extraction() and scoped_extraction.classify_scoped_request()
+    used to keep independently-drifted "does this mean ALL of them" regexes.
+    A request explicitly naming questions/exercises/Kurzfragen must route to
+    the exhaustive engine no matter which of the two vocabularies (or the
+    "don't leave any out" phrasing neither module's regex used to cover) it
+    happens to use."""
+    previously_missed = [
+        "Make sure you don't leave any exercises out",
+        "List the remaining questions",
+        "Give me the whole set of Kurzfragen",
+        "I need every exercise, please don't leave one out",
+        "Find the rest of the questions in this document",
+    ]
+    for question in previously_missed:
+        matched, _correction, _target = extraction.classify_document_extraction(question)
+        assert matched, question
+
+
+def test_summarize_or_study_whole_document_still_does_not_trigger_extraction() -> None:
+    """These have no extraction target (questions/exercises/Kurzfragen) at
+    all — they mean "read/summarize everything", which classify_document_
+    extraction() correctly does NOT handle (it only finds/lists items; a
+    "summarize the whole PDF" request routed through it would come back as
+    an extracted question list instead of a summary). Left as a known,
+    separate gap rather than silently mishandled — see the RAG audit."""
+    not_extraction = [
+        "Summarize the entire PDF",
+        "Read the whole document and tell me the key topics",
+        "Study the complete lecture before answering",
+        "Use everything in this document to answer",
+    ]
+    for question in not_extraction:
+        matched, _correction, _target = extraction.classify_document_extraction(question)
+        assert not matched, question
+
+
 def test_numbered_section_resolution_and_id_filter_are_exact() -> None:
     resolved = extraction.resolve_document_section(
         "2. Kurzfragen",
