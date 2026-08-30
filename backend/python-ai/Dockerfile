@@ -44,4 +44,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # from PDF rasterization on the 2 GB box. Set high so a recycle rarely lands on
 # a long generation/stream; graceful-timeout lets in-flight requests finish, and
 # Phase-2a recovery re-queues any indexing a recycle interrupts.
-CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8080", "--timeout", "120", "--graceful-timeout", "30", "--max-requests", "2000", "--max-requests-jitter", "200"]
+CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8080", "--timeout", "120", "--graceful-timeout", "30", "--max-requests", "2000", "--max-requests-jitter", "200", "--no-control-socket"]
