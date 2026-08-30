@@ -320,6 +320,13 @@ test('folder deletion is server-confirmed before browser state is removed', () =
   assert.match(folderDelete, /showToast\?\.\('Delete failed'/);
 });
 
+test('course deletion surfaces the failed server stage', () => {
+  const courseDelete = moduleSource.slice(moduleSource.indexOf('async function deleteCourseCompletely'), moduleSource.indexOf('function rootFor'));
+  assert.match(courseDelete, /payload\?\.error\?\.message/);
+  assert.match(courseDelete, /Server stage:/);
+  assert.match(courseDelete, /study_panel_course_delete_failed/);
+});
+
 test('tutor modes allow one selection or no selection', () => {
   assert.match(shellSource, /const selected = next === currentTutorMode \? null : next/);
   assert.match(shellSource, /currentTutorMode = selected/);

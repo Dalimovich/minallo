@@ -1282,7 +1282,12 @@ async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse,
 async function deleteCourseCompletely(panel: HTMLElement, course: LibraryCourse): Promise<void> {
   if (!confirm(`Permanently delete "${course.name || 'this course'}", all files, saved resources, and indexed data?`)) return;
   const response = await fetch('/api/course-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ courseId: course.id }) });
-  if (!response.ok) return window.showToast?.('Delete failed', 'Nothing was removed from the course list. Please try again.');
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+    const stage = payload?.error?.message || `HTTP ${response.status}`;
+    console.error('study_panel_course_delete_failed', { courseId: course.id, status: response.status, stage });
+    return window.showToast?.('Delete failed', `Nothing was removed from the course list. Server stage: ${stage}`);
+  }
   Object.values(window.SEMS || window._SEMS || {}).forEach((semester) => { semester.courses = (semester.courses || []).filter((item) => item.id !== course.id); });
   window._saveUserCourses?.();
   try {

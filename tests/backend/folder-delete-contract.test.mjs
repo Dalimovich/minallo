@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const source = fs.readFileSync(new URL('../../backend/functions/folder-delete.ts', import.meta.url), 'utf8');
 const routes = fs.readFileSync(new URL('../../scripts/generate-pages-shims.mjs', import.meta.url), 'utf8');
+const courseDelete = fs.readFileSync(new URL('../../backend/functions/course-delete.ts', import.meta.url), 'utf8');
 
 test('folder deletion is authenticated and owner/course scoped', () => {
   assert.match(source, /verifySupabaseToken/);
@@ -23,4 +24,12 @@ test('folder deletion removes storage, documents, and retrieval cache', () => {
 test('Cloudflare generator publishes folder and course deletion routes', () => {
   assert.match(routes, /\['folder-delete',\s+'folder-delete'\]/);
   assert.match(routes, /\['course-delete',\s+'course-delete'\]/);
+});
+
+test('course deletion recursively removes storage and database artifacts', () => {
+  assert.match(courseDelete, /async function listStorageTree/);
+  assert.match(courseDelete, /if \(entry\.id == null\)/);
+  assert.match(courseDelete, /documents\?user_id=eq\.\$\{uid\}&course_id=eq\.\$\{cid\}/);
+  assert.match(courseDelete, /COURSE_DELETE_DOCUMENTS_FAILED/);
+  assert.match(courseDelete, /COURSE_DELETE_INTERNAL_FAILURE/);
 });
