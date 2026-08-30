@@ -47,6 +47,17 @@ from ..services.answer_intent import (
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
+from ..services.grounding_contract import (
+    GroundingRequest,
+    GroundingResolution,
+    RequestedDocumentAccess,
+    ResolvedDocumentAccess,
+    ViewerContext,
+    resolve_document_access,
+    select_processing_pipeline,
+    grounding_cache_payload,
+)
+from ..services.index_manifest import validate_page_manifest
 from ..services.learning_recommendation import (
     build_explanation_plan,
     build_learning_recommendations,
@@ -236,6 +247,30 @@ def _load_authorized_documents(
         if row["user_id"] != user_id or row["course_id"] != course_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
     return {row["id"]: row for row in rows}
+
+
+def _load_authorized_course_candidates(user_id: str, course_id: str) -> list[dict[str, Any]]:
+    """List only the authenticated user's course documents for scope selection."""
+    rows = (
+        get_supabase().table("documents")
+        .select("id, file_name, user_id, course_id, active_index_revision")
+        .eq("user_id", user_id).eq("course_id", course_id).limit(100).execute()
+    ).data or []
+    # Defense in depth if a future client/query abstraction drops a filter.
+    return [row for row in rows if row.get("user_id") == user_id and row.get("course_id") == course_id]
+
+
+def _load_canonical_manifest(row: dict[str, Any]) -> list[Any]:
+    revision = str(row.get("active_index_revision") or "")
+    if not revision:
+        raise ValueError("missing active index revision")
+    manifest_rows = (
+        get_supabase().table("document_page_manifests")
+        .select("page_number, source_page_id, required_for_processing, status, exclusion_reason")
+        .eq("document_id", row["id"]).eq("index_revision", revision)
+        .order("page_number").execute()
+    ).data or []
+    return validate_page_manifest(manifest_rows, physical_page_count=len(manifest_rows))
 
 
 def _selected_document_readiness_issue(row: dict[str, Any]) -> str | None:
@@ -465,6 +500,10 @@ class AskStreamRequest(BaseModel):
     tutorMode: str | None = Field(default=None, max_length=40)
     sourceMode: str | None = Field(default="auto", max_length=40)
     courseFileScope: str | None = Field(default="all_course_files", max_length=40)
+    # New additive contract.  Legacy fields above remain accepted for one
+    # compatibility cycle and are normalised into this shape at preflight.
+    groundingRequest: GroundingRequest | None = None
+    visiblePageContext: str | None = None
     # Recent transcript for this file-scoped chat, newest last. The answer
     # service enforces per-turn, message-count, and total-character caps;
     # max_length here just bounds the list itself, generously above the 30
@@ -526,7 +565,8 @@ class TutorPipelineError(Exception):
 
 def _error_sse(*, code: str, message: str, retryable: bool, request_id: str,
                stage: str = "unknown", recoverable: bool | None = None,
-               partial_answer_available: bool = False) -> bytes:
+               partial_answer_available: bool = False,
+               metadata: dict[str, Any] | None = None) -> bytes:
     return _sse_bytes(json.dumps({
         "type": "error",
         "error": True,
@@ -536,6 +576,7 @@ def _error_sse(*, code: str, message: str, retryable: bool, request_id: str,
         "recoverable": retryable if recoverable is None else recoverable,
         "stage": stage,
         "partialAnswerAvailable": partial_answer_available,
+        "metadata": metadata or {},
         "requestId": request_id,
     }, ensure_ascii=False))
 
@@ -1191,6 +1232,58 @@ async def ask_stream_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
     if len(question) > _MAX_STREAM_QUESTION_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
+    # Structured grounding is authoritative when present.  Viewer context is
+    # copied only to viewer fields and can never mutate retrieval scope.
+    grounding_request = payload.groundingRequest
+    if grounding_request:
+        if grounding_request.retrievalScope.type == "documents":
+            payload.documentIds = list(grounding_request.retrievalScope.documentIds)
+            payload.courseFileScope = "specific_files"
+        else:
+            payload.documentIds = None
+            payload.documentNames = None
+            payload.courseFileScope = "all_course_files"
+        if grounding_request.viewerContext:
+            payload.activeDocumentId = grounding_request.viewerContext.documentId
+            payload.viewerRevision = grounding_request.viewerContext.revision
+            payload.visiblePage = grounding_request.viewerContext.visiblePage
+        if grounding_request.visiblePageContext is not None:
+            payload.visiblePageContext = grounding_request.visiblePageContext
+    else:
+        legacy_ids = list(payload.documentIds or [])
+        grounding_request = GroundingRequest.model_validate({
+            "retrievalScope": {
+                "type": "documents" if (
+                    (payload.courseFileScope or "").casefold() == "specific_files" and legacy_ids
+                ) else "course",
+                "documentIds": legacy_ids if (
+                    (payload.courseFileScope or "").casefold() == "specific_files" and legacy_ids
+                ) else [],
+            },
+            "viewerContext": ({
+                "documentId": payload.activeDocumentId,
+                "revision": payload.viewerRevision,
+                "visiblePage": payload.visiblePage,
+            } if payload.activeDocumentId and payload.visiblePage else None),
+            "visiblePageContext": payload.visiblePageContext or payload.openFileContext,
+        })
+    # visiblePageContext is the canonical name; keep the old field as an
+    # internal compatibility alias until all deployed clients have migrated.
+    payload.openFileContext = payload.visiblePageContext or payload.openFileContext
+    requested_access = (
+        grounding_request.documentAccess.requested
+        if grounding_request.documentAccess else None
+    )
+    resolved_access, resolution_reason = resolve_document_access(
+        question=question,
+        requested=requested_access,
+        viewer_context=grounding_request.viewerContext,
+    )
+    processing_pipeline = select_processing_pipeline(question, resolved_access)
+    for document_id in payload.documentIds or []:
+        _require_uuid(document_id, "documentId")
+    if payload.activeDocumentId:
+        _require_uuid(payload.activeDocumentId, "activeDocumentId")
     # Backward-compatible rollout: an older cached frontend may have already
     # persisted the durable turn through /conversations/ensure but omit the
     # same IDs from this body. Recover them from the authoritative request row
@@ -1389,6 +1482,44 @@ async def ask_stream_endpoint(
             return StreamingResponse(
                 ambiguous_document_name_stream(), media_type="text/event-stream",
             )
+    if (
+        resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT
+        and grounding_request.retrievalScope.type == "course"
+    ):
+        candidates = await run_in_threadpool(
+            lambda: _load_authorized_course_candidates(user_id, payload.courseId)
+        )
+        safe_candidates = [{
+            "id": row["id"],
+            "label": row.get("file_name") or "Document",
+        } for row in candidates]
+
+        async def full_document_scope_required_stream():
+            yield _sse_bytes(json.dumps({
+                "meta": True,
+                "requestId": request_id,
+                "streamProtocolVersion": 2,
+                "resolvedDocumentAccess": resolved_access.value,
+                "resolutionReason": resolution_reason.value,
+                "processingPipeline": processing_pipeline,
+                "fullDocumentScope": {
+                    "candidates": safe_candidates,
+                    "maxDocuments": get_settings().full_document_max_documents,
+                    "maxExpectedPages": get_settings().full_document_max_total_expected_pages,
+                },
+            }, ensure_ascii=False))
+            yield _error_sse(
+                code="FULL_DOCUMENT_SCOPE_REQUIRED",
+                message="Select the documents to process completely before starting this request.",
+                retryable=False,
+                request_id=request_id,
+                stage="grounding_resolution",
+                recoverable=True,
+            )
+
+        return StreamingResponse(
+            full_document_scope_required_stream(), media_type="text/event-stream"
+        )
     preflight_documents = await run_in_threadpool(
         lambda: _load_authorized_documents(user_id, payload.courseId, resolved_ids)
     )
@@ -1396,6 +1527,145 @@ async def ask_stream_endpoint(
         preflight_documents.update(await run_in_threadpool(
             lambda: _load_authorized_documents(user_id, payload.courseId, [payload.activeDocumentId])
         ))
+    # Authorization is complete at this point.  Only now may revision/page
+    # manifests be enumerated.  This ordering is a security invariant.
+    document_revisions = {
+        document_id: str(row.get("active_index_revision") or row.get("document_hash") or "")
+        for document_id, row in preflight_documents.items()
+    }
+    if payload.viewerRevision and payload.activeDocumentId:
+        available_revision = document_revisions.get(payload.activeDocumentId, "")
+        if available_revision and payload.viewerRevision != available_revision:
+            async def grounding_revision_unavailable_stream():
+                yield _error_sse(
+                    code="GROUNDING_REVISION_UNAVAILABLE",
+                    message="The document changed after this request started. Restart using the latest version.",
+                    retryable=False,
+                    request_id=request_id,
+                    stage="grounding_resolution",
+                    recoverable=True,
+                    metadata={
+                        "documentId": payload.activeDocumentId,
+                        "expectedRevision": payload.viewerRevision,
+                        "availableRevision": available_revision,
+                    },
+                )
+            return StreamingResponse(
+                grounding_revision_unavailable_stream(), media_type="text/event-stream"
+            )
+    canonical_manifests: dict[str, list[Any]] = {}
+    if resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT:
+        settings = get_settings()
+        if len(resolved_ids) > settings.full_document_max_documents:
+            expected_pages = 0
+        else:
+            try:
+                for document_id in resolved_ids:
+                    canonical_manifests[document_id] = await run_in_threadpool(
+                        lambda row=preflight_documents[document_id]: _load_canonical_manifest(row)
+                    )
+            except (ValueError, KeyError):
+                canonical_manifests = {}
+            expected_pages = sum(
+                1 for manifest in canonical_manifests.values()
+                for page in manifest if page.required_for_processing
+            )
+        if (
+            not canonical_manifests
+            or len(resolved_ids) > settings.full_document_max_documents
+            or expected_pages > settings.full_document_max_total_expected_pages
+        ):
+            code = (
+                "DOCUMENT_INDEXING" if not canonical_manifests
+                else "FULL_DOCUMENT_LIMIT_EXCEEDED"
+            )
+            async def full_document_preflight_failure_stream():
+                yield _error_sse(
+                    code=code,
+                    message=(
+                        "This document index is still being verified."
+                        if code == "DOCUMENT_INDEXING" else
+                        "The selected documents exceed the safe exhaustive-processing limit."
+                    ),
+                    retryable=code == "DOCUMENT_INDEXING",
+                    request_id=request_id,
+                    stage="VERIFYING_INDEX" if code == "DOCUMENT_INDEXING" else "grounding_resolution",
+                    recoverable=True,
+                    metadata={
+                        "documentCount": len(resolved_ids),
+                        "expectedPages": expected_pages,
+                        "maxDocuments": settings.full_document_max_documents,
+                        "maxExpectedPages": settings.full_document_max_total_expected_pages,
+                    },
+                )
+            return StreamingResponse(
+                full_document_preflight_failure_stream(), media_type="text/event-stream"
+            )
+    grounding_resolution = GroundingResolution(
+        documentIds=resolved_ids,
+        documentRevisions={key: document_revisions.get(key, "") for key in resolved_ids},
+        documentAccess=resolved_access,
+        resolutionReason=resolution_reason,
+        processingPipeline=processing_pipeline,
+    )
+    payload.requestSnapshot = {
+        **(payload.requestSnapshot or {}),
+        "groundingRequest": grounding_request.model_dump(mode="json"),
+        "groundingResolution": grounding_resolution.model_dump(mode="json"),
+    }
+    if (
+        resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT
+        and processing_pipeline != "extraction"
+    ):
+        async def exhaustive_document_stream():
+            yield _sse_bytes(json.dumps({
+                "meta": True,
+                "requestId": request_id,
+                "streamProtocolVersion": 2,
+                "resolvedDocumentAccess": resolved_access.value,
+                "resolutionReason": resolution_reason.value,
+                "processingPipeline": processing_pipeline,
+                "groundingRequest": grounding_request.model_dump(mode="json"),
+                "groundingResolution": grounding_resolution.model_dump(mode="json"),
+            }, ensure_ascii=False))
+            yield _status_sse("checking_completeness")
+            from ..services.full_document_processing import process_full_documents  # noqa: WPS433
+            result = await run_in_threadpool(lambda: process_full_documents(
+                user_id=user_id,
+                course_id=payload.courseId,
+                question=question,
+                pipeline=processing_pipeline,
+                documents={key: preflight_documents[key] for key in resolved_ids},
+                manifests=canonical_manifests,
+            ))
+            coverage = result["coverageResult"]
+            if not coverage.get("complete"):
+                yield _error_sse(
+                    code="FULL_DOCUMENT_COVERAGE_INCOMPLETE",
+                    message="Minallo could not process every expected page, so it did not claim a complete answer.",
+                    retryable=True,
+                    request_id=request_id,
+                    stage="document_coverage",
+                    recoverable=True,
+                    metadata={"coverageResult": coverage},
+                )
+                return
+            answer = str(result.get("answer") or "")
+            for start in range(0, len(answer), 28):
+                yield _sse_bytes(json.dumps({"t": answer[start:start + 28]}, ensure_ascii=False))
+            yield _sse_bytes(json.dumps({
+                "done": True,
+                "answer": answer,
+                "requestId": request_id,
+                "resolvedDocumentAccess": resolved_access.value,
+                "resolutionReason": resolution_reason.value,
+                "processingPipeline": processing_pipeline,
+                "groundingResolution": grounding_resolution.model_dump(mode="json"),
+                "coverageResult": coverage,
+                "sources": result.get("sources") or [],
+                "cacheHit": False,
+            }, ensure_ascii=False))
+        return StreamingResponse(exhaustive_document_stream(), media_type="text/event-stream")
     log.info(
         "ask_stream_preflight_checkpoint request_id=%s checkpoint=documents_authorized documents=%s",
         request_id,
@@ -1431,15 +1701,27 @@ async def ask_stream_endpoint(
                 },
             }, ensure_ascii=False))
             yield _error_sse(
-                code="selected_document_not_ready",
+                code=(
+                    "DOCUMENT_INDEXING"
+                    if document_status.casefold() != "failed"
+                    else "DOCUMENT_INDEXING_FAILED"
+                ),
                 message=(
-                    f'"{file_name}" is {document_status} and is not ready for AI questions yet. '
-                    "Minallo did not search any other course files."
+                    f'"{file_name}" is still being prepared for document search. '
+                    if document_status.casefold() != "failed" else
+                    f'Indexing failed for "{file_name}". Minallo did not use a partial index.'
                 ),
                 retryable=document_status.casefold() != "failed",
                 request_id=request_id,
-                stage="source_readiness",
+                stage=(
+                    "VERIFYING_INDEX" if document_status == "invalid_index_metadata"
+                    else "INDEXING"
+                ),
                 recoverable=True,
+                metadata={
+                    "documentId": blocked.get("id"),
+                    "stage": document_status,
+                },
             )
 
         return StreamingResponse(
@@ -1608,6 +1890,11 @@ async def ask_stream_endpoint(
             "meta": True,
             "requestId": request_id,
             "streamProtocolVersion": 2,
+            "resolvedDocumentAccess": resolved_access.value,
+            "resolutionReason": resolution_reason.value,
+            "processingPipeline": processing_pipeline,
+            "groundingRequest": grounding_request.model_dump(mode="json"),
+            "groundingResolution": grounding_resolution.model_dump(mode="json"),
         }, ensure_ascii=False))
         yield _status_sse("reading_question")
         await persist_request_state(status="running", stage="conversation_state")
@@ -2833,9 +3120,17 @@ async def _prepare_ask_stream_response(
     cache_obligations = final_grounding_state.answer_obligations
     reliability_cache_fingerprint = final_grounding_state.reliability_fingerprint
     cache_grounding_payload = final_grounding_state.cache_grounding_payload
+    structured_grounding_fingerprint = grounding_cache_payload(
+        user_id=user_id,
+        course_id=payload.courseId,
+        request=grounding_request,
+        resolution=grounding_resolution,
+        question=resolved_question,
+        conversation_grounding_state=json.dumps(previous_turns_payload, sort_keys=True),
+    )
     ws_fingerprint = hashlib.sha256(
         f"{base_ws_fingerprint}:{reliability_cache_fingerprint}:"
-        f"{cache_grounding_payload}".encode()
+        f"{cache_grounding_payload}:{structured_grounding_fingerprint}".encode()
     ).hexdigest()
     observer.event(
         "retrieval_scope_resolved",
@@ -4022,7 +4317,7 @@ async def _prepare_ask_stream_response(
             cache_grounding_payload = final_grounding_state.cache_grounding_payload
             ws_fingerprint = hashlib.sha256(
                 f"{base_ws_fingerprint}:{reliability_cache_fingerprint}:"
-                f"{cache_grounding_payload}".encode()
+                f"{cache_grounding_payload}:{structured_grounding_fingerprint}".encode()
             ).hexdigest()
             cache_key_kwargs["selected_document_ids"] = retrieval_document_ids
             cache_key_kwargs["workspace_fingerprint"] = ws_fingerprint or None

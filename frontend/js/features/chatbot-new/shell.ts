@@ -375,6 +375,27 @@ function bindSearch(sidebar: HTMLElement): void {
 type TutorMode = 'explain' | 'solve' | 'quiz';
 type SourceMode = 'auto' | 'course_files' | 'course_plus_general' | 'internet' | 'general';
 type CourseFileScope = 'all_course_files' | 'specific_files';
+type RequestedDocumentAccess = 'visible_page' | 'full_document';
+type ResolvedDocumentAccess = 'relevance' | 'visible_page' | 'full_document';
+interface GroundingRequest {
+  retrievalScope:
+    | { type: 'course'; documentIds?: never }
+    | { type: 'documents'; documentIds: string[] };
+  viewerContext?: {
+    documentId: string;
+    revision?: string;
+    visiblePage: number;
+  };
+  documentAccess?: { requested?: RequestedDocumentAccess };
+  visiblePageContext?: string;
+}
+interface GroundingResolution {
+  documentIds: string[];
+  documentRevisions: Record<string, string>;
+  documentAccess: ResolvedDocumentAccess;
+  resolutionReason: string;
+  processingPipeline: string;
+}
 const TUTOR_MODE_STORAGE_KEY = 'ncb_tutor_mode';
 const TUTOR_MODE_MIGRATION_KEY = 'ncb_tutor_mode_direct_default_v1';
 const TUTOR_MODE_DEFAULT: TutorMode = 'explain';
@@ -726,6 +747,8 @@ interface ChatMessage {
     activeDocumentId?: string;
     activeDocumentName?: string;
     visiblePage?: number;
+    groundingRequest?: GroundingRequest;
+    groundingResolution?: GroundingResolution;
   };
   createdAt?: string;
   updatedAt?: string;
@@ -1402,6 +1425,10 @@ async function streamAiReply(
   try {
     const latestFileLabel = latestUserFileLabel(requestMessages);
     const initialRag = ragEligibility(requestMessages);
+    if (initialRag && assistantMessage.requestSnapshot) {
+      assistantMessage.requestSnapshot.groundingRequest = initialRag.groundingRequest;
+      saveChatStore();
+    }
     if (options.resumeExistingRequest && assistantMessage.requestSnapshot?.activeDocumentId) {
       const active = initialRag?.activePdfContext;
       if (!active || active.documentId !== assistantMessage.requestSnapshot.activeDocumentId) {
@@ -1465,7 +1492,7 @@ async function streamAiReply(
       const followUpDoc = await resolveFollowUpDoc(requestMessages, rag.courseId || null);
       const streamed = await streamFromAskStream(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
-        rag.documentIds, rag.documentNames, followUpDoc, allowDiagrams,
+        rag.documentIds, rag.documentNames, rag.groundingRequest, followUpDoc, allowDiagrams,
         rag.activePdfContext, durable!.conversationId, requestMessages.at(-1)?.images || [], true,
         assistantMessage.requestId, assistantMessage
       );
@@ -1479,6 +1506,10 @@ async function streamAiReply(
         sourceScope: streamed.meta?.sourceScope as string | undefined,
         sourceLabel: streamed.meta?.sourceLabel as string | undefined,
         courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
+        requestSnapshot: assistantMessage.requestSnapshot ? {
+          ...assistantMessage.requestSnapshot,
+          groundingResolution: streamed.meta?.groundingResolution as GroundingResolution | undefined
+        } : undefined,
         sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
         pedagogicalAnalysis: streamed.meta?.pedagogicalAnalysis as Record<string, unknown> | undefined,
         learningRecommendations: Array.isArray(streamed.meta?.learningRecommendations)
@@ -2953,6 +2984,7 @@ function ragEligibility(
   documentNames: string[];
   activePdfContext: ActivePdfContext | null;
   explicitSourceOverride: boolean;
+  groundingRequest: GroundingRequest;
 } | null {
   if (!messages.length) return null;
   const last = messages[messages.length - 1]!;
@@ -2990,7 +3022,15 @@ function ragEligibility(
       // Only claim live page context for the PDF the viewer is actually
       // showing; an attachment chip by itself is not a rendered PDF page.
       activePdfContext: compatibleOpenPdf,
-      explicitSourceOverride: true
+      explicitSourceOverride: true,
+      groundingRequest: {
+        retrievalScope: { type: 'documents', documentIds: [explicitAttachment.fileId] },
+        viewerContext: compatibleOpenPdf ? {
+          documentId: compatibleOpenPdf.documentId,
+          revision: compatibleOpenPdf.documentRevision,
+          visiblePage: compatibleOpenPdf.visiblePage
+        } : undefined
+      }
     };
   }
   const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
@@ -3095,10 +3135,9 @@ function ragEligibility(
   const activePdfContext = rawActivePdfContext && rawActivePdfContext.courseId === courseId
     ? rawActivePdfContext
     : null;
-  if (activePdfContext) {
-    documentIds = [activePdfContext.documentId];
-    documentNames = [activePdfContext.fileName];
-  }
+  // Invariant: viewerContext MUST NEVER mutate retrievalScope.  The open PDF
+  // is a priority/page hint only; explicit selections remain intact and an
+  // all-course request stays course-wide.
 
   if (
     normaliseCourseFileScope(active.courseFileScope) === 'specific_files'
@@ -3122,15 +3161,34 @@ function ragEligibility(
     if ((last.images || []).length || mode === 'internet' || (mode === 'auto' && hasUrl)) {
       return {
         question: currentQuestion, courseId: '', documentIds: [], documentNames: [],
-        activePdfContext: null, explicitSourceOverride: false
+        activePdfContext: null, explicitSourceOverride: false,
+        groundingRequest: { retrievalScope: { type: 'course' } }
       };
     }
     return null;
   }
 
+  const stableDocumentIds = Array.from(new Set(documentIds.filter(Boolean)));
+  if (scopeToSelection && stableDocumentIds.length === 0) {
+    throw new AskStreamError({
+      code: 'document_identity_unavailable',
+      message: 'Reopen the selected file so Minallo can resolve its stable document identity.',
+      retryable: true
+    });
+  }
+  const groundingRequest: GroundingRequest = {
+    retrievalScope: scopeToSelection
+      ? { type: 'documents', documentIds: stableDocumentIds }
+      : { type: 'course' },
+    viewerContext: activePdfContext ? {
+      documentId: activePdfContext.documentId,
+      revision: activePdfContext.documentRevision,
+      visiblePage: activePdfContext.visiblePage
+    } : undefined
+  };
   return {
     question: currentQuestion, courseId, documentIds, documentNames,
-    activePdfContext, explicitSourceOverride
+    activePdfContext, explicitSourceOverride, groundingRequest
   };
 }
 
@@ -3242,6 +3300,7 @@ async function streamFromAskStream(
   thinking?: AIThinkingStatus | null,
   documentIds: string[] = [],
   documentNames: string[] = [],
+  groundingRequest: GroundingRequest | undefined = undefined,
   generatedDoc: GeneratedDoc | null = null,
   allowDiagrams = true,
   activePdfContext: ActivePdfContext | null = null,
@@ -3290,6 +3349,16 @@ async function streamFromAskStream(
   });
   const openFileImages = [...(snapshot?.images || []), ...pastedImages].slice(0, 3);
   const effectiveCourseFileScope = courseFileScopeForActiveChat();
+  const effectiveGroundingRequest: GroundingRequest = groundingRequest || {
+    retrievalScope: effectiveCourseFileScope === 'specific_files' && documentIds.length
+      ? { type: 'documents', documentIds: Array.from(new Set(documentIds)) }
+      : { type: 'course' },
+    viewerContext: activePdfContext ? {
+      documentId: activePdfContext.documentId,
+      revision: activePdfContext.documentRevision,
+      visiblePage: activePdfContext.visiblePage
+    } : undefined
+  };
   const generatedArtifactIsExplicit = !!generatedDoc && /\b(?:cheat\s*-?sheets?|summar(?:y|ies)|formula sheets?|spickzettel|zusammenfassungen?)\b/i.test(question);
   const useGeneratedArtifact = generatedArtifactIsExplicit || (!activePdf && !!generatedDoc);
   const payloadPdf = useGeneratedArtifact ? null : activePdf;
@@ -3319,6 +3388,18 @@ async function streamFromAskStream(
       assistantMessageId: assistantMessage?.id,
       requestId,
       requestSnapshot: assistantMessage?.requestSnapshot,
+      groundingRequest: (
+        assistantMessage?.requestSnapshot?.groundingResolution && durableConversation
+          ? {
+              retrievalScope: {
+                type: 'documents',
+                documentIds: assistantMessage.requestSnapshot.groundingResolution.documentIds
+              },
+              viewerContext: assistantMessage.requestSnapshot.groundingRequest?.viewerContext,
+              documentAccess: assistantMessage.requestSnapshot.groundingRequest?.documentAccess
+            }
+          : effectiveGroundingRequest
+      ),
       question,
       tutorMode: getCurrentTutorMode(),
       sourceMode: sourceModeForActiveChat(),
@@ -3344,6 +3425,7 @@ async function streamFromAskStream(
         visiblePage: payloadPdf.visiblePage,
         viewerRevision: payloadPdf.documentRevision,
         openFileContext: currentPageContext,
+        visiblePageContext: currentPageContext,
         openFileImages: openFileImages.length ? openFileImages : undefined,
         visualEvidenceExpected: !!snapshot?.visualEvidenceExpected,
         visualContextMeta: {
@@ -3563,6 +3645,7 @@ async function streamFromAskStream(
             collecting_sources: 'Checking the relevant document sections…',
             extracting_items: 'Working through the questions in order…',
             preparing_document_structure: 'Preparing this document for complete extraction…',
+            checking_completeness: 'Checking every expected document page…',
             writing_answer: 'Preparing the explanation…',
             recovering_response: 'A step took longer than expected. Recovering your response…',
             verifying_answer: 'Verifying the final result…',
@@ -3577,7 +3660,15 @@ async function streamFromAskStream(
           const reveal = await ensureLiveReveal();
           reveal.push(evt.t);
         }
-        if (evt.meta === true) streamMeta = { ...streamMeta, ...evt };
+        if (evt.meta === true) {
+          streamMeta = { ...streamMeta, ...evt };
+          if (assistantMessage?.requestSnapshot && evt.groundingResolution) {
+            assistantMessage.requestSnapshot.groundingResolution =
+              evt.groundingResolution as GroundingResolution;
+            assistantMessage.updatedAt = new Date().toISOString();
+            saveChatStore();
+          }
+        }
         if (evt.event === 'visual_aids.ready' && Array.isArray(evt.visualAids)) {
           streamMeta = { ...streamMeta, visualAids: evt.visualAids };
         }
@@ -3595,7 +3686,7 @@ async function streamFromAskStream(
               : typeof evt.error === 'string' ? evt.error : 'The AI request failed.',
             retryable: evt.retryable === true,
             metadata: {
-              ...evt, requestId: streamRequestId, partialAnswer: answerBuf,
+              ...streamMeta, ...evt, requestId: streamRequestId, partialAnswer: answerBuf,
               failureStage: 'backend_error', answerCharacterCount: answerBuf.length,
               eventCount, lastEventType,
             },

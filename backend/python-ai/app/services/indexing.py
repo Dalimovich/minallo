@@ -1158,6 +1158,33 @@ def _replace_pages(
         for start in range(0, len(stripped), 100):
             sb.table("document_pages").insert(stripped[start:start + 100]).execute()
 
+    # The page manifest is the canonical coverage inventory.  It is written
+    # before revision activation so READY can never be based on the documents
+    # roll-up counters alone.  Empty extracted text remains a required page;
+    # it cannot silently disappear from exhaustive processing.
+    sb.table("document_page_manifests").delete().eq(
+        "document_id", document_id
+    ).eq("index_revision", index_revision).execute()
+    manifest_rows = [{
+        "document_id": document_id,
+        "user_id": user_id,
+        "course_id": course_id,
+        "index_revision": index_revision,
+        "page_number": row["page_number"],
+        "source_page_id": f"{index_revision}:{row['page_number']}",
+        "required_for_processing": True,
+        "status": (
+            "indexed"
+            if row.get("page_processing_status") in {"embedded_text_reliable", "ocr_complete"}
+            else "failed"
+        ),
+        "exclusion_reason": None,
+    } for row in rows]
+    for start in range(0, len(manifest_rows), 100):
+        sb.table("document_page_manifests").insert(
+            manifest_rows[start:start + 100]
+        ).execute()
+
 
 def _replace_logical_units(
     sb,
