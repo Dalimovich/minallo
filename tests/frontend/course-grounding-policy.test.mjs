@@ -37,6 +37,22 @@ test('bound active course reaches whole-course retrieval without selected files'
   assert.match(shell, /normaliseCourseFileScope\(active\.courseFileScope\) === 'specific_files'[\s\S]*documentIds\.length === 0[\s\S]*return null/);
 });
 
+test('a chat\'s own bound course wins over a stale open PDF from a different course', () => {
+  // Nothing closes the embedded PDF viewer on a chat switch, so an open PDF
+  // can outlive the course it belongs to. The chat's own bound course must
+  // be resolved before falling back to the open PDF's course, and an open
+  // PDF whose course doesn't match the resolved course must be dropped
+  // rather than leaking its document context into the wrong course's request.
+  assert.match(
+    shell,
+    /const courseId = namedCourseFiles\[0\]\?\.courseId \|\| requestSources\[0\]\?\.courseId\s*\n\s*\|\| fallbackCourseId \|\| rawActivePdfContext\?\.courseId;/
+  );
+  assert.match(
+    shell,
+    /const activePdfContext = rawActivePdfContext && rawActivePdfContext\.courseId === courseId\s*\n\s*\? rawActivePdfContext\s*\n\s*: null;/
+  );
+});
+
 test('request snapshots preserve course identity and file scope', () => {
   assert.match(shell, /requestSnapshot\?: \{[\s\S]*courseFileScope: CourseFileScope;[\s\S]*courseId\?: string;/);
   assert.match(shell, /courseId: resolveRequestCourseId\(originChat\) \|\| undefined/);

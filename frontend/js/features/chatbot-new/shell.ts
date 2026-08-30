@@ -3073,7 +3073,28 @@ function ragEligibility(
     explicitlyNamed.length === 0 && namedCourseFiles.length === 0
     && selected.length > 0 && !selectedMatchesOpenPdf
   );
-  const activePdfContext = explicitSourceOverride ? null : openPdf;
+  const rawActivePdfContext = explicitSourceOverride ? null : openPdf;
+
+  // All selected sources are expected to come from the same course (the
+  // import UI scopes by course). Pick the first one's courseId as the
+  // request scope. The chat's own bound course (or the visible/recent
+  // course fallback) takes priority over a merely-still-open PDF — nothing
+  // closes the PDF viewer on a chat switch, so an open PDF can outlive the
+  // course it belongs to once the user moves to a different conversation.
+  // If they ever mix courses we still pick the first — worst case is RAG
+  // searches a smaller-than-expected universe.
+  const fallbackCourseId = resolveRequestCourseId(active);
+  const courseId = namedCourseFiles[0]?.courseId || requestSources[0]?.courseId
+    || fallbackCourseId || rawActivePdfContext?.courseId;
+
+  // An open PDF from a course other than the one this request is actually
+  // scoped to cannot ground this answer — sending it would mix document
+  // context from the wrong course into the request instead of just being
+  // ignored, so drop it rather than let a stale open viewer leak across a
+  // chat switch.
+  const activePdfContext = rawActivePdfContext && rawActivePdfContext.courseId === courseId
+    ? rawActivePdfContext
+    : null;
   if (activePdfContext) {
     documentIds = [activePdfContext.documentId];
     documentNames = [activePdfContext.fileName];
@@ -3087,12 +3108,6 @@ function ragEligibility(
     return null;
   }
 
-  // All selected sources are expected to come from the same course (the
-  // import UI scopes by course). Pick the first one's courseId as the
-  // request scope. If they ever mix courses we still pick the first —
-  // worst case is RAG searches a smaller-than-expected universe.
-  const fallbackCourseId = resolveRequestCourseId(active);
-  const courseId = namedCourseFiles[0]?.courseId || requestSources[0]?.courseId || activePdfContext?.courseId || fallbackCourseId;
   if (!courseId) {
     // No course context. Internet mode still works — a web search needs no
     // course — so route it through /ask-stream with an empty courseId (the
@@ -5903,7 +5918,14 @@ export function selectChatbotPdfSource(
   const active = chatStore.getActive();
   active.selectedSourceIds = [sourceId];
   active.sourceMode = 'course_files';
-  active.courseFileScope = 'specific_files';
+  // Deliberately NOT forcing courseFileScope to 'specific_files' here: that
+  // used to hard-scope every later question in this chat to just this one
+  // file (and, once the PDF was closed, to zero files — "No files are
+  // selected for this request") until the user noticed and manually
+  // switched back. The open PDF still grounds answers via activeDocumentId
+  // (a retrieval ranking boost, not a filter — see source_router.py's
+  // effective_document_ids) without blocking questions about the rest of
+  // the course.
   addToSourceLibraryAndSelect(
     root,
     [{

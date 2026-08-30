@@ -422,15 +422,25 @@ test('workspace PDF toolbar stays movable and keeps annotation controls visible'
   assert.match(globalCss, /\.annotate-popover\[data-placement="top"\]::before/);
 });
 
-test('opening a workspace PDF keeps the chatbot route and scopes RAG to that PDF', () => {
+test('opening a workspace PDF keeps the chatbot route and grounds RAG on that PDF without excluding the rest of the course', () => {
   assert.match(pdfViewerSource, /const inChatbotWorkspace = !!window\._ncbPdfWorkspaceActive/);
   assert.match(pdfViewerSource, /if \(!inChatbotWorkspace\) \{[\s\S]*selectTopLevelView\('file'/);
   assert.match(pdfViewerSource, /if \(!inChatbotWorkspace\) \{[\s\S]*window\._ssPushHistory\?\.\(/);
   assert.match(moduleSource, /window\.selectChatbotPdfSource\?\.\(course, file\)/);
   assert.match(shellSource, /export function selectChatbotPdfSource/);
+  assert.match(shellSource, /active\.selectedSourceIds = \[sourceId\]/);
   assert.match(shellSource, /active\.sourceMode = 'course_files'/);
-  assert.match(shellSource, /active\.courseFileScope = 'specific_files'/);
   assert.match(shellSource, /documents: \[\{ name: file\.name, text: '' \}\]/);
+  // Opening a PDF must NOT force 'specific_files' scope: that used to hard-scope
+  // every later question in the chat to just this one file, and once the PDF
+  // was closed, to zero files ("No files are selected for this request") until
+  // the user noticed and manually switched back. The open PDF still grounds
+  // answers via activeDocumentId (a retrieval ranking boost, not a filter).
+  const selectChatbotPdfSourceBody = shellSource.slice(
+    shellSource.indexOf('export function selectChatbotPdfSource'),
+    shellSource.indexOf('export function selectChatbotPdfSource') + 700
+  );
+  assert.doesNotMatch(selectChatbotPdfSourceBody, /active\.courseFileScope = 'specific_files'/);
 });
 
 test('refresh restores the chatbot PDF and Back restores its originating course', () => {
