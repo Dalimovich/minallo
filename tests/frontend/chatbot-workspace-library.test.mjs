@@ -152,6 +152,24 @@ test('closing the workspace PDF restores the preserved drawer DOM without course
   assert.doesNotMatch(closeBody, /renderCourseDetail|ensureCourseHydrated|_ufMerge/);
 });
 
+test('closing the workspace PDF clears the canonical active-PDF state and deselects its source', () => {
+  // Without this, nothing resets getActivePdfContext()'s underlying state on
+  // close — the AI kept treating a PDF the user had closed as still open,
+  // and the Sources card kept showing it as selected.
+  const closeBody = moduleSource.slice(
+    moduleSource.indexOf('function closeWorkspacePdf'),
+    moduleSource.indexOf('function openWorkspacePdf')
+  );
+  assert.match(closeBody, /clearActivePdfViewerState\(\)/);
+  assert.match(closeBody, /window\.deselectChatbotSource\?\.\(openWorkspacePdfSourceId\)/);
+  assert.match(moduleSource, /import \{ clearActivePdfViewerState \} from '\.\.\/pdf-viewer\/active-pdf-context\.js'/);
+  assert.match(moduleSource, /let openWorkspacePdfSourceId: string \| null = null/);
+  assert.match(
+    moduleSource,
+    /openWorkspacePdfSourceId = 'workspace-pdf:' \+ course\.id \+ ':' \+ file\.name/
+  );
+});
+
 test('Study Library remount removes document listeners before binding replacements', () => {
   assert.match(moduleSource, /let workspaceLibraryCleanup: \(\(\) => void\) \| null = null/);
   assert.match(moduleSource, /workspaceLibraryCleanup\?\.\(\)/);
@@ -430,7 +448,10 @@ test('opening a workspace PDF keeps the chatbot route and grounds RAG on that PD
   assert.match(shellSource, /export function selectChatbotPdfSource/);
   assert.match(shellSource, /active\.selectedSourceIds = \[sourceId\]/);
   assert.match(shellSource, /active\.sourceMode = 'course_files'/);
-  assert.match(shellSource, /documents: \[\{ name: file\.name, text: '' \}\]/);
+  // The real document id rides along when the caller has it, so duplicate
+  // filenames in the same course can still be told apart (the backend
+  // otherwise has to fall back to ambiguous filename-only resolution).
+  assert.match(shellSource, /documents: \[\{ id: file\._document\?\.id, name: file\.name, text: '' \}\]/);
   // Opening a PDF must NOT force 'specific_files' scope: that used to hard-scope
   // every later question in the chat to just this one file, and once the PDF
   // was closed, to zero files ("No files are selected for this request") until
@@ -438,7 +459,7 @@ test('opening a workspace PDF keeps the chatbot route and grounds RAG on that PD
   // answers via activeDocumentId (a retrieval ranking boost, not a filter).
   const selectChatbotPdfSourceBody = shellSource.slice(
     shellSource.indexOf('export function selectChatbotPdfSource'),
-    shellSource.indexOf('export function selectChatbotPdfSource') + 700
+    shellSource.indexOf('export function selectChatbotPdfSource') + 1100
   );
   assert.doesNotMatch(selectChatbotPdfSourceBody, /active\.courseFileScope = 'specific_files'/);
 });

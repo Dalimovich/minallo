@@ -255,8 +255,9 @@ declare global {
     _ncbPdfWorkspaceActive?: boolean;
     selectChatbotPdfSource?: (
       course: { id: string; name?: string; short?: string },
-      file: { name: string }
+      file: { name: string; _document?: { id?: string } }
     ) => void;
+    deselectChatbotSource?: (sourceId: string) => void;
     _userIsAdmin?: boolean;
     _userIsPro?: boolean;
     _showPaywall?: () => void;

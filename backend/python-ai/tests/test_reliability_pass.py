@@ -418,6 +418,25 @@ def test_document_name_resolution_rejects_partial_multi_file_match(monkeypatch) 
     assert result["ambiguous_candidates"] == []
 
 
+def test_document_name_resolution_normalizes_paths_encoding_and_extension(monkeypatch) -> None:
+    monkeypatch.setattr(
+        stream_router,
+        "get_supabase",
+        lambda: _DocumentResolutionClient([
+            {"id": "doc-a", "file_name": "Lecture Notes.docx"},
+        ]),
+    )
+    result = stream_router._resolve_document_names(
+        "user", "course",
+        # A URL-encoded name with a Windows-style path prefix and a
+        # different (but equivalent, case-insensitive) supported extension.
+        ["folder%5CLecture%20Notes.DOCX"],
+    )
+    assert result["resolved_ids"] == ["doc-a"]
+    assert result["unresolved_names"] == []
+    assert result["ambiguous_candidates"] == []
+
+
 def test_document_name_resolution_returns_verified_ambiguous_candidates(monkeypatch) -> None:
     monkeypatch.setattr(
         stream_router,

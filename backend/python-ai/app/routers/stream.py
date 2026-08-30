@@ -17,6 +17,8 @@ import logging
 import json
 import re
 import time
+import unicodedata
+import urllib.parse
 import uuid
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -24,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..config import get_settings
 from ..jwt_auth import verify_supabase_jwt
@@ -312,8 +314,20 @@ def _resolve_document_names(
         return result
 
     def _norm(value: str) -> str:
-        value = (value or "").strip().casefold()
-        return value.removesuffix(".pdf")
+        # Mirrors the frontend's normalizeDocumentFileName (document-type-
+        # badge.ts): URL-decode, take the last path segment (both separators
+        # — a full path or a mixed-slash upload path can slip through),
+        # Unicode-normalise (NFKC — otherwise a composed vs. decomposed
+        # accented character silently fails to match), then strip whichever
+        # of the supported extensions is present before casefolding.
+        value = (value or "").strip()
+        try:
+            value = urllib.parse.unquote(value)
+        except Exception:  # noqa: BLE001
+            pass
+        value = value.replace("\\", "/").rsplit("/", 1)[-1]
+        value = unicodedata.normalize("NFKC", value).casefold()
+        return re.sub(r"\.(?:pdf|docx?|txt|pptx?)$", "", value)
 
     rows = [
         {"id": str(row.get("id") or ""), "name": str(row.get("file_name") or "")}
@@ -350,14 +364,17 @@ class PreviousTurn(BaseModel):
     The streaming endpoint accepts a short list of these so the model can
     resolve follow-up references like "the formula above" or "explain
     the same thing in simpler terms" without re-running retrieval."""
-    role: str   # "user" | "assistant"
-    text: str
+    role: str = Field(max_length=20)   # "user" | "assistant"
+    # _trim_previous_turns further truncates each turn to 1200 chars and the
+    # whole list to 30 entries — this is just a schema-level ceiling so an
+    # oversized payload is rejected before any of that trimming work runs.
+    text: str = Field(max_length=20000)
 
 
 class ProblemSolverPayload(BaseModel):
-    mode: str
-    problem: str
-    studentWork: str | None = None
+    mode: str = Field(max_length=40)
+    problem: str = Field(max_length=20000)
+    studentWork: str | None = Field(default=None, max_length=20000)
 
 
 class OpenFileImagePayload(BaseModel):
@@ -410,11 +427,15 @@ class SelectedRegionPayload(BaseModel):
 
 
 class AskStreamRequest(BaseModel):
-    courseId: str
-    documentIds: list[str] | None = None
+    courseId: str = Field(max_length=200)
+    # _require_uuid validates each entry is a real UUID below; max_length here
+    # bounds the LIST (how many ids a single request can name), not one id's
+    # length — matching _resolve_document_names' own 50-name cap so an
+    # oversized payload is rejected before any resolution work runs.
+    documentIds: list[str] | None = Field(default=None, max_length=50)
     # "Selected file(s)" scope from the chatbot, which only knows storage file
     # NAMES (the document id lives server-side). Resolved to document ids here.
-    documentNames: list[str] | None = None
+    documentNames: list[str] | None = Field(default=None, max_length=50)
     activeDocumentId: str | None = None
     activePdfVisible: bool = False
     question: str
@@ -422,11 +443,11 @@ class AskStreamRequest(BaseModel):
     # looking at in the PDF reader. Surfaced into the user message so the
     # model can ground "this question / this section" references even when
     # retrieval doesn't surface the exact chunk. Both optional.
-    activeFileName: str | None = None
+    activeFileName: str | None = Field(default=None, max_length=500)
     visiblePage: int | None = None
     selectedText: str | None = None
     selectedRegion: SelectedRegionPayload | None = None
-    viewerRevision: str | None = None
+    viewerRevision: str | None = Field(default=None, max_length=200)
     conversationId: str | None = None
     durableConversation: bool = False
     clientMessageId: str | None = Field(default=None, min_length=1, max_length=160)
@@ -434,19 +455,22 @@ class AskStreamRequest(BaseModel):
     requestId: str | None = Field(default=None, min_length=8, max_length=128)
     requestSnapshot: dict[str, Any] | None = None
     conversationGeneration: int | None = Field(default=None, ge=0)
-    responseLanguage: str | None = None
+    responseLanguage: str | None = Field(default=None, max_length=40)
     openFileContext: str | None = None
-    openFileImages: list[OpenFileImagePayload] | None = None
+    openFileImages: list[OpenFileImagePayload] | None = Field(default=None, max_length=3)
     visualEvidenceExpected: bool = False
     visualUpload: bool = False
     visualContextMeta: VisualContextMeta | None = None
     # Tutor-mode overlay: explain | solve | quiz. Defaults to 'explain'.
-    tutorMode: str | None = None
-    sourceMode: str | None = "auto"
-    courseFileScope: str | None = "all_course_files"
+    tutorMode: str | None = Field(default=None, max_length=40)
+    sourceMode: str | None = Field(default="auto", max_length=40)
+    courseFileScope: str | None = Field(default="all_course_files", max_length=40)
     # Recent transcript for this file-scoped chat, newest last. The answer
-    # service enforces per-turn, message-count, and total-character caps.
-    previousTurns: list[PreviousTurn] | None = None
+    # service enforces per-turn, message-count, and total-character caps;
+    # max_length here just bounds the list itself, generously above the 30
+    # entries actually used (_MAX_HISTORY_MESSAGES in answer_stream.py), so
+    # an oversized payload is rejected before any trimming work runs.
+    previousTurns: list[PreviousTurn] | None = Field(default=None, max_length=200)
     problemSolver: ProblemSolverPayload | None = None
     # Current UI location (page / course tab / open document title). Optional;
     # sanitised server-side. Lets the assistant answer "where am I, what can I
@@ -456,6 +480,17 @@ class AskStreamRequest(BaseModel):
     # is keyed by document_version_hash so it invalidates automatically when
     # documents change; letting the client opt out defeats the single biggest
     # cost mitigation. Any field the client sends is ignored.
+
+    @field_validator("requestSnapshot")
+    @classmethod
+    def _bound_request_snapshot_size(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        # requestSnapshot is meant to be a small resend of this chat's own
+        # settings (source mode, scope, selected ids, course id) — not
+        # arbitrary client data. Reject anything implausibly large rather
+        # than doing unbounded JSON work on it downstream.
+        if value is not None and len(json.dumps(value, ensure_ascii=False)) > 20_000:
+            raise ValueError("requestSnapshot is too large")
+        return value
 
 
 class EnsureConversationRequest(BaseModel):
@@ -1319,6 +1354,41 @@ async def ask_stream_endpoint(
             lambda: _resolve_document_names(user_id, payload.courseId, payload.documentNames)
         )
         resolved_ids = list(document_name_resolution["resolved_ids"])
+        ambiguous = document_name_resolution["ambiguous_candidates"]
+        if ambiguous and not resolved_ids:
+            # Two or more documents share a requested filename and none of the
+            # OTHER requested names resolved unambiguously either — proceeding
+            # would silently drop the file from retrieval, indistinguishable
+            # from "no such file". Ask which one instead of guessing.
+            requested_name = str(ambiguous[0].get("requestedName") or ambiguous[0].get("name") or "that file")
+            candidate_count = len({c.get("id") for c in ambiguous if c.get("requestedName") == ambiguous[0].get("requestedName")})
+
+            async def ambiguous_document_name_stream():
+                yield _sse_bytes(json.dumps({
+                    "meta": True,
+                    "requestId": request_id,
+                    "streamProtocolVersion": 2,
+                    "ambiguousDocumentName": {
+                        "requestedName": requested_name,
+                        "candidateCount": candidate_count,
+                    },
+                }, ensure_ascii=False))
+                yield _error_sse(
+                    code="ambiguous_document_name",
+                    message=(
+                        f'There are {candidate_count} files named "{requested_name}" in this course. '
+                        "Open the one you mean from the Study Panel instead of naming it in the "
+                        "message, so Minallo knows exactly which one to use."
+                    ),
+                    retryable=False,
+                    request_id=request_id,
+                    stage="source_readiness",
+                    recoverable=True,
+                )
+
+            return StreamingResponse(
+                ambiguous_document_name_stream(), media_type="text/event-stream",
+            )
     preflight_documents = await run_in_threadpool(
         lambda: _load_authorized_documents(user_id, payload.courseId, resolved_ids)
     )

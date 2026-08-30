@@ -7,9 +7,12 @@
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwcmZramVpYXd4bGNuaXRzZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMjAyMzUsImV4cCI6MjA4OTc5NjIzNX0.LbJKG8J_jd2oKYAmQg0ycb-LBnQM1ItlseOLMT_24jc',
     paypalSdkUrl:
       'https://www.paypal.com/sdk/js?client-id=AXujeSZkOypAa2RuWUkmO0PX_BNMszy5rH_hvys2fTcwx-6gFCJOW1-ICXRGdDlB6X1BwdmFsy463rFN&vault=true&intent=subscription&currency=EUR',
-    assetVersion: '20260830-ask-stream-stall-detection-v1',
+    assetVersion: '20260830-pdf-context-audit-fixes-v1',
     ai: {
-      model: 'claude-sonnet-4-5',
+      // The generic /chat endpoint always uses gpt-4o server-side regardless
+      // of what's sent (see backend/python-ai/app/routers/chat.py) — this
+      // just keeps the client's own default in sync with that reality.
+      model: 'gpt-4o',
       maxTokens: 4096,
       pdfCharacterCap: 100000,
       imageMax: 5

@@ -5931,7 +5931,7 @@ function addToSourceLibraryAndSelect(
 
 export function selectChatbotPdfSource(
   course: { id: string; name?: string; short?: string },
-  file: { name: string }
+  file: { name: string; _document?: { id?: string } }
 ): void {
   const root = document.getElementById('ncbRoot');
   if (!root || !course?.id || !file?.name) return;
@@ -5953,11 +5953,31 @@ export function selectChatbotPdfSource(
       id: sourceId,
       name: file.name,
       count: 'Open PDF',
-      documents: [{ name: file.name, text: '' }]
+      // Carry the real document id through when the caller has it (the
+      // Study Panel always does — file._document.id). Without it, duplicate
+      // filenames in the same course can't be told apart and the backend
+      // has to fall back to ambiguous filename resolution.
+      documents: [{ id: file._document?.id, name: file.name, text: '' }]
     }],
     course.id,
     course.name || course.short || course.id
   );
+}
+
+// The inverse of selectChatbotPdfSource: drop a workspace PDF from the
+// chat's selected sources when the viewer closes, so the Sources card and
+// context pill stop showing a file the user no longer has open.
+export function deselectChatbotSource(sourceId: string): void {
+  const root = document.getElementById('ncbRoot');
+  if (!root || !sourceId) return;
+  const active = chatStore.getActive();
+  const index = active.selectedSourceIds.indexOf(sourceId);
+  if (index === -1) return;
+  active.selectedSourceIds.splice(index, 1);
+  saveChatStore();
+  renderSourcesCard(root);
+  updateSourceControls(root);
+  updateContextPill(root);
 }
 
 // Reflect the active chat's selected sources in the header context pill.
@@ -8806,3 +8826,6 @@ function initKeyboardShortcuts(root: HTMLElement): void {
 (window as unknown as {
   selectChatbotPdfSource?: typeof selectChatbotPdfSource;
 }).selectChatbotPdfSource = selectChatbotPdfSource;
+(window as unknown as {
+  deselectChatbotSource?: typeof deselectChatbotSource;
+}).deselectChatbotSource = deselectChatbotSource;

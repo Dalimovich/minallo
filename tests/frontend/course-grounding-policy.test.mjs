@@ -53,6 +53,12 @@ test('a chat\'s own bound course wins over a stale open PDF from a different cou
   );
 });
 
+test('deselectChatbotSource exists and is exposed for the PDF-close path to call', () => {
+  assert.match(shell, /export function deselectChatbotSource\(sourceId: string\): void/);
+  assert.match(shell, /active\.selectedSourceIds\.splice\(index, 1\)/);
+  assert.match(shell, /\.deselectChatbotSource = deselectChatbotSource/);
+});
+
 test('request snapshots preserve course identity and file scope', () => {
   assert.match(shell, /requestSnapshot\?: \{[\s\S]*courseFileScope: CourseFileScope;[\s\S]*courseId\?: string;/);
   assert.match(shell, /courseId: resolveRequestCourseId\(originChat\) \|\| undefined/);

@@ -16,7 +16,7 @@ var _curRawText = '';
 var _curBubble = null;
 var _curAnswWrap = null;
 
-var AI_MODEL = AI_CFG.model || 'claude-sonnet-4-5';
+var AI_MODEL = AI_CFG.model || 'gpt-4o'; // the /chat endpoint ignores this and always uses gpt-4o server-side
 var AI_MAX_TOK = AI_CFG.maxTokens || 4096; // allows long, thorough answers
 var AI_PDF_CAP = AI_CFG.pdfCharacterCap || 100000; // covers long PDFs
 

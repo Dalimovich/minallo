@@ -161,11 +161,20 @@ export function getActivePdfContext(): ActivePdfContext | null {
   };
 }
 
+const VISUAL_EVIDENCE_KEYWORD_RE = /\b(?:checked|checkbox|marked|green|arrow|diagram|drawing|figure|table|grid|option|formula|shown|visible|number\s+\d+|angekreuzt|markiert|pfeil|abbildung|zeichnung|tabelle|formel)\b/i;
+
 export function requiresVisualPdfEvidence(question: string, context: ActivePdfContext): boolean {
+  // An explicit visual keyword ("Welche Antwort ist angekreuzt?") always needs
+  // the page image, even though it also reads as a self-contained "?"
+  // question — checking this BEFORE the self-contained short-circuit below is
+  // the whole point: that short-circuit exists for ordinary self-answerable
+  // questions ("how many steps are necessary?"), not for questions that ask
+  // about something only visible on the rendered page.
+  if (VISUAL_EVIDENCE_KEYWORD_RE.test(question)) return true;
   if (isSelfContainedExplicitQuestionRequest(question)) return false;
   const sectionExtraction = /\b(?:all|every|alle|jede[nrsm]?|sämtliche)\b[\s\S]*\b(?:questions?|fragen|kurzfragen|aufgaben)\b/i.test(question)
     && /\b\d+\s*\.\s*(?:kurzfragen?|fragen|questions?|aufgaben)\b/i.test(question);
-  return sectionExtraction || !!context.selectedRegion || context.pageTextStatus !== 'ready' || context.pageText.length < 500 || /\b(?:checked|checkbox|marked|green|arrow|diagram|drawing|figure|table|grid|option|formula|shown|visible|number\s+\d+|angekreuzt|markiert|pfeil|abbildung|zeichnung|tabelle|formel)\b/i.test(question);
+  return sectionExtraction || !!context.selectedRegion || context.pageTextStatus !== 'ready' || context.pageText.length < 500;
 }
 
 const EXPLICIT_VISUAL_REFERENCE_RE = /\b(?:this|that)\s+(?:image|page|diagram|figure|table|marked question|highlighted area|selection)|\b(?:explain|show|read)\s+this\b|\b(?:dieses|diese|dieser)\s+(?:bild|seite|abbildung|diagramm|tabelle)|\b(?:die\s+)?markierte(?:n|r|s)?\s+(?:aufgabe|frage|bereich)|\b(?:der\s+)?markierte(?:n|r|s)?\s+bereich|\b(?:erkl[aä]re|lies|zeige)\s+(?:mir\s+)?das\s+hier\b/i;

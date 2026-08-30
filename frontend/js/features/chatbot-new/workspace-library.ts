@@ -12,6 +12,7 @@ import {
 } from './study-library-store.js';
 import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js';
 import { correctionSelectHtml, wireCorrectionSelectors } from '../courses/document-type-badge.js';
+import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 
 type CourseFile = {
   name: string;
@@ -51,6 +52,7 @@ let pdfHost: HTMLElement | null = null;
 let pdfContextInner: HTMLElement | null = null;
 let pdfAiDisplay = '';
 let pdfResizeCleanup: (() => void) | null = null;
+let openWorkspacePdfSourceId: string | null = null;
 
 const PDF_WIDTH_KEY = 'minallo:chatbot-pdf-width';
 const PDF_SESSION_KEY = 'minallo:chatbot-open-pdf';
@@ -1307,6 +1309,14 @@ function closeWorkspacePdf(root: HTMLElement): void {
   window._ncbPdfWorkspaceActive = false;
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
   clearWorkspacePdfSession();
+  // Without this the AI kept treating a closed PDF as still open: nothing
+  // else resets the canonical viewer state, so getActivePdfContext() would
+  // keep returning the last-open document's id/course/page indefinitely.
+  clearActivePdfViewerState();
+  if (openWorkspacePdfSourceId) {
+    window.deselectChatbotSource?.(openWorkspacePdfSourceId);
+    openWorkspacePdfSourceId = null;
+  }
 }
 
 function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCourse): void {
@@ -1356,6 +1366,7 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
   window._ncbPdfWorkspaceActive = true;
   root.querySelector<HTMLElement>('.ncb-card')?.setAttribute('data-context-open', 'true');
   bindWorkspacePdfResize(context, pdfHost);
+  openWorkspacePdfSourceId = 'workspace-pdf:' + course.id + ':' + file.name;
   window.selectChatbotPdfSource?.(course, file);
   refitWorkspacePdfAfterRender();
   window.openFile(file, course);
