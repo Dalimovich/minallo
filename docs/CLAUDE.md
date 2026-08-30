@@ -26,7 +26,7 @@ frontend/
 
 functions/api/        — Cloudflare Pages Functions (API routes)
 backend/lib/          — shared TS helpers (auth, cors, rate-limit, stripe, etc.)
-backend/python-ai/    — FastAPI AI/RAG service (Fly.io)
+backend/python-ai/    — FastAPI AI/RAG service (Hetzner Docker/Caddy)
 ```
 
 ## HTML Injection Order (loader.ts)
@@ -57,6 +57,9 @@ landing → auth → signup → toast → portal → modals → studip → files
 - PDF rendering: PDF.js v3.11.174 from CDN
 - Math rendering: KaTeX v0.16.10 from CDN
 - Hosting: Cloudflare Pages (NOT Netlify)
-- Backend AI deploy: `flyctl deploy` from backend/python-ai/ (manual)
+- **Backend deployment invariant:** deploy only to the Hetzner server at
+  `ai.minallo.de`, using `/opt/minallo/backend/python-ai/deploy/update.sh`.
+  Never run `flyctl deploy` and never treat Fly.io as the active deployment
+  target. The old Fly service is rollback-only until it is decommissioned.
 - Bump `assetVersion` in `frontend/js/config.js` after any frontend CSS/JS edit
 - Edit `.ts` files, not compiled `.js` files

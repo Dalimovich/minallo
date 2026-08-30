@@ -112,11 +112,13 @@ docker run --rm -p 8080:8080 --env-file .env minallo-ai
 ## Deployment
 
 ```bash
-cd backend/python-ai
-flyctl deploy
+ssh deploy@ai.minallo.de
+cd /opt/minallo/backend/python-ai
+./deploy/update.sh
 ```
 
-Prefer the `fra` region to keep latency close to the European Supabase project.
+Deploy only to the Hetzner server. Do not run `flyctl deploy`; the old Fly
+service is retained only as a temporary rollback target.
 
 For a fixed-price Ubuntu/Docker deployment with automatic HTTPS, see
 [deploy/README.md](deploy/README.md).

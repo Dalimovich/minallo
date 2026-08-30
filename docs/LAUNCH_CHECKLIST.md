@@ -93,19 +93,19 @@ If you also use the PayPal Sandbox in a non-production Netlify deploy
 context, register a separate sandbox webhook and scope a separate
 `PAYPAL_WEBHOOK_ID` value to those contexts.
 
-## 5. Fly.io (Python AI service)
+## 5. Hetzner (Python AI service)
 
 The Schreibtrainer routes (`/writing-coach-analyse`) live in the Python
 service. After merging today's branch:
 
 ```bash
-cd backend/python-ai
-flyctl deploy
+ssh deploy@ai.minallo.de
+cd /opt/minallo/backend/python-ai
+./deploy/update.sh
 ```
 
-If the deploy fails with `x509: certificate signed by unknown authority`
-on the depot builder, that's a local network/cert issue — retry from a
-different network or behind a known-good proxy.
+Never deploy this backend to Fly.io. The legacy Fly instance is rollback-only
+until it is explicitly decommissioned.
 
 ## 6. Domain-level
 

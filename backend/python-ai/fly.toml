@@ -1,3 +1,5 @@
+# LEGACY ROLLBACK CONFIG ONLY. DO NOT DEPLOY TO FLY.IO.
+# Production backend deployments go to Hetzner via deploy/update.sh.
 # fly.toml app configuration file generated for python-ai on 2026-05-12T19:37:38+02:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.

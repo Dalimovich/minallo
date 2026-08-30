@@ -64,7 +64,7 @@ Payments:
 | Frontend | HTML, CSS, TypeScript compiled to JS, custom loader (no runtime bundler) |
 | Hosting | Cloudflare Pages |
 | Functions | Cloudflare Pages Functions, TypeScript |
-| AI service | FastAPI, Python 3.11+, deployed on Fly.io |
+| AI service | FastAPI, Python 3.11+, deployed on Hetzner with Docker and Caddy |
 | LLM | OpenAI (gpt-4o, gpt-4o-mini, gpt-4.1-mini, gpt-4.1-nano) |
 | Embeddings | OpenAI text-embedding-3-small (1536 dim) |
 | Database | Supabase Postgres with pgvector |
@@ -264,9 +264,13 @@ Frontend deploys automatically via Cloudflare Pages on push to `main`.
 Python AI service requires manual deploy:
 
 ```bash
-cd backend/python-ai
-flyctl deploy
+ssh deploy@ai.minallo.de
+cd /opt/minallo/backend/python-ai
+./deploy/update.sh
 ```
+
+Fly.io is not a deployment target. Keep the old Fly service rollback-only
+until it is explicitly decommissioned.
 
 After deploys that touch subscriptions, webhooks, RLS, or retrieval, run the relevant verification queries from the migration files.
 
