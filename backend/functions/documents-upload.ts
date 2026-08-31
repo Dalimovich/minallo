@@ -126,12 +126,52 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     document_hash: documentHash
   };
 
-  const insertResult = await supaRequest<DocumentRow | DocumentRow[]>(
-    'POST', 'documents', docRow, serviceKey, { Prefer: 'return=representation' }
+  // documents_user_course_storage_uniq (user_id, course_id, storage_path) —
+  // storage_path is content-hash-derived, so two near-simultaneous uploads of
+  // the SAME bytes to the SAME course (double-click, retry-on-timeout, two
+  // tabs) used to create two independent `documents` rows (confirmed in
+  // production: 9 such pairs, all created milliseconds apart). ignore-
+  // duplicates makes the insert a no-op ON CONFLICT instead of a second row;
+  // return=representation then returns nothing for an ignored row, so a
+  // conflict is detected by an empty body and resolved with a follow-up
+  // fetch of the row that already exists.
+  const insertResult = await supaRequest<DocumentRow[]>(
+    'POST', 'documents', docRow, serviceKey,
+    { Prefer: 'resolution=ignore-duplicates,return=representation' }
   );
-  if (insertResult.status !== 201) return fail(500, 'Failed to record document');
+  if (insertResult.status !== 201 && insertResult.status !== 200) {
+    return fail(500, 'Failed to record document');
+  }
 
-  const document = Array.isArray(insertResult.body) ? insertResult.body[0]! : insertResult.body as DocumentRow;
+  let document: DocumentRow;
+  const inserted = Array.isArray(insertResult.body) ? insertResult.body[0] : insertResult.body as DocumentRow | undefined;
+  if (inserted) {
+    document = inserted;
+  } else {
+    // Conflict: a row for this exact (user_id, course_id, storage_path)
+    // already exists — reuse it instead of erroring or duplicating.
+    const existing = await supaRequest<DocumentRow[]>(
+      'GET',
+      'documents?user_id=eq.' + encodeURIComponent(user.id) +
+        '&course_id=eq.' + encodeURIComponent(courseId) +
+        '&storage_path=eq.' + encodeURIComponent(storagePath) +
+        '&select=id,file_name,course_id,source_type,processing_status,storage_path&limit=1',
+      null, serviceKey
+    );
+    const existingDoc = Array.isArray(existing.body) ? existing.body[0] : undefined;
+    if (!existingDoc) return fail(500, 'Failed to record document');
+    document = existingDoc;
+    if (document.processing_status === 'ready') {
+      return jsonResponse(200, {
+        document: {
+          id: document.id, fileName: document.file_name, courseId: document.course_id,
+          sourceType: document.source_type, processingStatus: 'ready',
+          storagePath: document.storage_path, indexingStarted: false
+        },
+        alreadyIndexed: true, indexingStarted: false
+      });
+    }
+  }
 
   let indexingStarted = false;
   let indexingErrorCode: string | null = null;
