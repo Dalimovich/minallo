@@ -908,6 +908,35 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
             cloned_rows[start:start + 100]
         ).execute()
 
+    # activate_document_index_revision (supabase/migrations/
+    # 20260830_000001_canonical_page_manifests.sql) now also requires a
+    # complete, failure-free document_page_manifests row per page under the
+    # candidate revision — without this, activation always returns false and
+    # every correction silently never applies. Mirrors _replace_pages' own
+    # manifest write above.
+    sb.table("document_page_manifests").delete().eq(
+        "document_id", document_id
+    ).eq("index_revision", new_revision).execute()
+    manifest_rows = [{
+        "document_id": document_id,
+        "user_id": user_id,
+        "course_id": course_id,
+        "index_revision": new_revision,
+        "page_number": row["page_number"],
+        "source_page_id": f"{new_revision}:{row['page_number']}",
+        "required_for_processing": True,
+        "status": (
+            "indexed"
+            if row.get("page_processing_status") in {"embedded_text_reliable", "ocr_complete"}
+            else "failed"
+        ),
+        "exclusion_reason": None,
+    } for row in cloned_rows]
+    for start in range(0, len(manifest_rows), 100):
+        sb.table("document_page_manifests").insert(
+            manifest_rows[start:start + 100]
+        ).execute()
+
     page_md = [page_to_markdown(t, i + 1) for i, t in enumerate(texts)]
     chunks = chunk_pages(page_md)
     if not chunks:

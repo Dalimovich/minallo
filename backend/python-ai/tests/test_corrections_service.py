@@ -76,7 +76,24 @@ class _FakeSB:
     def table(self, name: str) -> _Query:
         return _Query(name, self.store)
 
-    def rpc(self, _name: str, _params: dict) -> _Result:
+    def rpc(self, name: str, params: dict) -> _Result:
+        self.store.setdefault("rpc_calls", []).append((name, params))
+        if name == "activate_document_index_revision":
+            # Mirror the real activate_document_index_revision's manifest
+            # completeness gate (supabase/migrations/20260830_000001_
+            # canonical_page_manifests.sql): require one non-failed manifest
+            # row per expected page under this exact revision, or refuse.
+            manifest_rows = [
+                row for (table, rows) in self.store["inserts"]
+                if table == "document_page_manifests"
+                for row in rows
+                if row.get("index_revision") == params.get("p_revision")
+            ]
+            ok = (
+                len(manifest_rows) == params.get("p_expected_pages")
+                and all(row.get("status") != "failed" for row in manifest_rows)
+            )
+            return _Result(ok)
         return _Result(True)
 
 
@@ -112,10 +129,13 @@ def test_reindex_orders_and_gap_fills_pages(monkeypatch, _stub_pipeline) -> None
             "source_type": "lecture", "file_name": "notes.pdf",
             "active_index_revision": "rev-1",
         }],
-        # Deliberately out of order, and missing page 2 (a gap).
+        # Deliberately out of order, and missing page 2 (a gap). Real
+        # document_pages rows always carry page_processing_status (written by
+        # _replace_pages) — set it here so the manifest-status derivation
+        # below sees the same shape production does.
         "document_pages": [
-            {"document_id": _DOC_ID, "user_id": "u", "course_id": "c", "index_revision": "rev-1", "page_number": 3, "cleaned_text": "Third page introduces the bending moment diagram and its sign convention."},
-            {"document_id": _DOC_ID, "user_id": "u", "course_id": "c", "index_revision": "rev-1", "page_number": 1, "cleaned_text": "First page covers static equilibrium of a simply supported beam under load."},
+            {"document_id": _DOC_ID, "user_id": "u", "course_id": "c", "index_revision": "rev-1", "page_number": 3, "cleaned_text": "Third page introduces the bending moment diagram and its sign convention.", "page_processing_status": "embedded_text_reliable"},
+            {"document_id": _DOC_ID, "user_id": "u", "course_id": "c", "index_revision": "rev-1", "page_number": 1, "cleaned_text": "First page covers static equilibrium of a simply supported beam under load.", "page_processing_status": "embedded_text_reliable"},
         ],
         "document_page_corrections": [{
             "id": "correction-1",
@@ -139,6 +159,29 @@ def test_reindex_orders_and_gap_fills_pages(monkeypatch, _stub_pipeline) -> None
     # documents.chunk_count updated.
     doc_updates = [p for (t, p) in sb.store["updates"] if t == "documents"]
     assert doc_updates and doc_updates[-1]["chunk_count"] == 2
+
+    # Regression: reindex_chunks_from_pages must write document_page_manifests
+    # for its candidate revision, or activate_document_index_revision's
+    # manifest-completeness check (added 2026-08-30) always refuses and every
+    # correction silently never applies. One manifest row per CLONED page row
+    # (the fixture only has real document_pages rows for pages 1 and 3 — page
+    # 2 is a gap that exists only in the derived chunking text, not as a
+    # clonable row), under the NEW revision, none marked "failed".
+    manifest_inserts = [
+        row
+        for (t, rows) in sb.store["inserts"]
+        if t == "document_page_manifests"
+        for row in rows
+    ]
+    assert len(manifest_inserts) == 2
+    page_numbers = sorted(row["page_number"] for row in manifest_inserts)
+    assert page_numbers == [1, 3]
+    revisions = {row["index_revision"] for row in manifest_inserts}
+    assert len(revisions) == 1 and revisions != {"rev-1"}
+    assert all(row["status"] != "failed" for row in manifest_inserts)
+    # The fake RPC enforces the same completeness gate as production —
+    # reaching "reindexed" (asserted above) already proves activation
+    # succeeded, i.e. the manifest satisfied it.
 
 
 def test_correct_document_page_writes_and_recounts_unclear(monkeypatch) -> None:
