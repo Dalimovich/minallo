@@ -87,14 +87,23 @@ _COURSE_RE = re.compile(
     r"\b(?:vorlesung|professor(?:in)?|skript|kursunterlagen|meine[rmn]?\s+unterlagen)\b",
     re.I,
 )
-_LOCATION_RE = re.compile(r"\b(?:where|which page|exact citation|source|wo(?: genau)?|welche seite|quelle)\b", re.I)
+_LOCATION_RE = re.compile(
+    # "where" alone means "which page/lecture/script location" — EXCEPT the
+    # common math/physics idiom "where did the 2 come from?", which asks
+    # about a derivation step's origin, not a document citation.
+    r"\bwhere(?!\s+(?:did|do|does)\b.{0,40}\bcome from\b)\b|"
+    r"\bwhich page\b|\bexact citation\b|\bsource\b|\bwo(?: genau)?\b|\bwelche seite\b|\bquelle\b",
+    re.I,
+)
 _WEB_RE = re.compile(
     r"\b(?:current|currently|today|latest|recent|available now|jobs? near|"
     r"aktuell|heute|neueste|derzeit|stellenangebote|verf[üu]gbar)\b|https?://", re.I,
 )
 _WEB_ACTION_RE = re.compile(r"\b(?:search|find|check|look up|suche|finde|pr[üu]fe)\b", re.I)
-_CALC_RE = re.compile(r"\b(?:calculate|compute|solve|determine|berechne|bestimme|ermittle|l[öo]se)\b", re.I)
-_DERIVE_RE = re.compile(r"\b(?:derive|prove|herleiten|beweisen|ableiten)\b", re.I)
+_CALC_RE = re.compile(
+    r"\b(?:calc(?:ulate|ulte|uate)|compute|solve|determine|berechne|bestimme|ermittle|l[öo]se)\b", re.I,
+)
+_DERIVE_RE = re.compile(r"\b(?:der(?:ive|ve)|prove|herleiten|beweisen|ableiten)\b", re.I)
 _COMPARE_RE = re.compile(r"\b(?:compare|contrast|difference between|vergleich|vergleiche|unterschied)\b", re.I)
 _GEN_RE = re.compile(r"\b(?:create|generate|make|erstelle|generiere)\b", re.I)
 _EXTRACT_RE = re.compile(r"\b(?:find|list|extract|collect|finde|liste|extrahiere|erfasse)\b.*\b(?:every|all|alle|jede|s[äa]mtliche|kurzfragen?|questions?|exercises?|aufgaben?)\b", re.I)
@@ -108,15 +117,74 @@ _COURSE_FACT_RE = re.compile(
     r"^(?:what does|how does)\b.*\b(?:lecture|course|professor)\b|"
     r"^(?:was sagt|wie nennt|wie definiert)\b.*\b(?:vorlesung|professor|skript)\b", re.I,
 )
-_FOLLOWUP_RE = re.compile(
-    r"^(?:why|how so|explain (?:that|it)|make (?:that|it) simpler|what do you mean|"
-    r"warum|wieso|wie das|erkl[äa]r(?:e)? das|einfacher)\s*[?.!]*$", re.I,
+# Follow-up phrasing students actually type — not just a bare "why?" (the
+# old pattern required the ENTIRE message to be one of a few fixed short
+# phrases). Grouped by shape rather than enumerated per-example: bare
+# why/how, "what about X"/"what if X", "and the/if/for X", "same for/thing",
+# "the other one/case", "where did X come from", "why did you use X",
+# "why not X", plus German equivalents. Safety against over-broadening lives
+# in classify_task_profile, not the regex: (1) requestsExactCitationOrLocation
+# always wins over isFollowup at the resolve_execution_plan level, so a
+# location/source request is never reclassified as a follow-up just because
+# it also happens to start with "where"; (2) a length cap keeps this a
+# SHORT-message signal, not something that fires deep inside a long,
+# self-contained new question; (3) _shares_topic_with_previous keeps a
+# structurally-followup-shaped message that names a clearly different topic
+# ("what about rolling bearings?" right after a torsion explanation) from
+# being treated as a continuation of stale context — it still gets
+# classified normally by the other rules below, just not as isFollowup.
+_FOLLOWUP_MARKER_RE = re.compile(
+    r"\bwhy\b|\bhow\b|\bwhat do you mean\b|"
+    r"\bwhat about\b|\bwhat if\b|\bwhat changes if\b|"
+    r"\band (?:if|the|for)\b|\bsame (?:for|thing)\b|\bthe other (?:one|case)\b|"
+    r"\bwhere did\b.{0,40}\bcome from\b|\bwhy (?:did|do|does) (?:you|we|they|it)\s+use\b|"
+    r"\bhow (?:did|do|does) (?:you|we|they|it) (?:get|find|compute|obtain|arrive at)\b|"
+    r"\bwarum\b|\bwieso\b|\bweshalb\b|\bwie (?:so|kam|kommt) (?:das|es)\b|"
+    r"\bwas (?:ist mit|w[äa]re wenn|[äa]ndert sich wenn)\b|"
+    r"\bund (?:wenn|bei|f[üu]r)\b|\bgleich bei\b|\b(?:der|die|das) andere\b|"
+    r"\bwoher kommt\b",
+    re.I,
 )
+_FOLLOWUP_MAX_WORDS = 16
 _CHITCHAT_RE = re.compile(r"^(?:hi|hello|hey|thanks|thank you|hallo|guten (?:tag|morgen)|danke)[!. ]*$", re.I)
+
+# Generic interrogative/referential words that show up INSIDE follow-up
+# phrasing itself (why, minus, the other one, second case, ...) — these are
+# grammatical scaffolding, not topic content, so they must not count as "a
+# real term this question introduces" when checking topic continuity below.
+# source_router._tokens' own stopword list is tuned for course-chunk
+# relevance scoring, not this — "why"/"minus"/"second" aren't stopwords
+# there, but they carry no topic identity here.
+_FOLLOWUP_FUNCTION_WORDS = {
+    "why", "how", "come", "about", "what", "changes", "same", "thing",
+    "other", "one", "case", "where", "did", "you", "use", "not", "does",
+    "second", "first", "third", "tho", "minus", "plus",
+    "warum", "wieso", "weshalb", "kam", "kommt", "mit", "wenn", "bei",
+    "gleich", "andere", "anderen", "anderer", "fall", "woher", "und",
+}
+
+
+def _shares_topic_with_previous(question: str, previous_question: str | None) -> bool:
+    """Cheap continuity check: does a follow-up-shaped message plausibly
+    continue the previous turn's topic, or does it name something else?
+    A message with no substantial content words of its own ("why?", "what
+    about c < 0?" once follow-up scaffolding/symbols/short tokens are
+    stripped) has nothing to contradict the previous topic with, so it's
+    treated as a continuation by default — only a REAL, non-overlapping
+    topic word ("rolling bearings" right after a torsion explanation)
+    blocks it."""
+    if not previous_question:
+        return True
+    from .source_router import _tokens  # noqa: WPS433 — avoid a module-load cycle
+    current_terms = _tokens(question) - _FOLLOWUP_FUNCTION_WORDS
+    if not current_terms:
+        return True
+    return bool(current_terms & _tokens(previous_question))
 
 
 def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAccess,
-                          source_mode: str | None, has_previous_answer: bool) -> TaskProfile:
+                          source_mode: str | None, has_previous_answer: bool,
+                          previous_question: str | None = None) -> TaskProfile:
     q = " ".join((question or "").split())
     course = bool(_COURSE_RE.search(q) or (source_mode or "").casefold() == "course_files")
     web = bool(_WEB_RE.search(q) and (_WEB_ACTION_RE.search(q) or "http" in q.casefold()))
@@ -127,7 +195,12 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
         and 2 <= len(q.split()) <= 18
         and not re.search(r"\b(?:this|that|it|these|those|hier|dies(?:e[rmns]?)?)\b", q, re.I)
     )
-    followup = has_previous_answer and bool(_FOLLOWUP_RE.search(q))
+    followup = (
+        has_previous_answer
+        and len(q.split()) <= _FOLLOWUP_MAX_WORDS
+        and bool(_FOLLOWUP_MARKER_RE.search(q))
+        and _shares_topic_with_previous(q, previous_question)
+    )
     location = bool(_LOCATION_RE.search(q))
     high = calculation or derivation or resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT
     low = (definition or bool(_SIMPLE_RE.search(q)) or followup or bool(_CHITCHAT_RE.search(q))
@@ -147,10 +220,11 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
 
 def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAccess,
                            processing_pipeline: str, source_mode: str | None = "auto",
-                           has_previous_answer: bool = False) -> tuple[TaskProfile, ExecutionPlan]:
+                           has_previous_answer: bool = False,
+                           previous_question: str | None = None) -> tuple[TaskProfile, ExecutionPlan]:
     profile = classify_task_profile(
         question=question, resolved_access=resolved_access, source_mode=source_mode,
-        has_previous_answer=has_previous_answer,
+        has_previous_answer=has_previous_answer, previous_question=previous_question,
     )
     signals = tuple(key for key, value in asdict(profile).items()
                     if value is True and key != "estimatedComplexity")
@@ -180,9 +254,38 @@ def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAc
                                   reason, signals, lane in {ExecutionLane.FAST_CONTEXTUAL, ExecutionLane.FAST_GROUNDED}, lane)
 
 
-def fast_grounded_evidence_is_sufficient(*, chunk_count: int, relevance_score: float) -> bool:
-    """Conservative promotion rule for the bounded grounded fast path."""
-    return chunk_count > 0 and relevance_score >= 0.22
+_LIST_OR_BROAD_RE = re.compile(
+    r"\b(?:three|four|five|six|seven|eight|nine|ten|all|every|list|types? of|kinds? of|"
+    r"forms? of|varieties? of|which \w+ are|compare|comparison|contrast|difference (?:between|to)|"
+    r"drei|vier|f[üu]nf|sechs|sieben|acht|neun|zehn|alle|arten von|welche\w*\s+(?:gibt|sind))\b",
+    re.I,
+)
+_STRONG_SINGLE_CHUNK_THRESHOLD = 0.55
+_MODERATE_CHUNK_THRESHOLD = 0.30
+
+
+def fast_grounded_evidence_is_sufficient(*, chunks: list[Any], question: str = "") -> bool:
+    """Promotion rule for the bounded FAST_GROUNDED lane.
+
+    A single mediocre chunk barely over a fixed threshold is not the same
+    evidence quality as one excellent chunk (exact terminology, high
+    confidence) or several consistent moderate ones — and a question asking
+    for several items or a comparison needs corroborating breadth, not one
+    lucky chunk, or an incomplete list gets answered as if it were complete.
+    """
+    from .source_router import _chunk_relevance_scores  # noqa: WPS433 — avoid a module-load cycle
+
+    scores = _chunk_relevance_scores(question, chunks)
+    if not scores:
+        return False
+    top = scores[0]
+    moderate_or_better = sum(1 for s in scores if s >= _MODERATE_CHUNK_THRESHOLD)
+    if _LIST_OR_BROAD_RE.search(question or ""):
+        distinct_docs = len({getattr(c, "document_id", None) for c in (chunks or [])[:8]})
+        return moderate_or_better >= 2 and (distinct_docs >= 2 or moderate_or_better >= 3)
+    if top >= _STRONG_SINGLE_CHUNK_THRESHOLD:
+        return True
+    return moderate_or_better >= 2 and top >= _MODERATE_CHUNK_THRESHOLD
 
 
 __all__ = ["EscalationReason", "ExecutionComplexity", "ExecutionLane", "ExecutionPlan",

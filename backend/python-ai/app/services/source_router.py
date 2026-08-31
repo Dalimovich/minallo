@@ -363,21 +363,31 @@ def _tokens(text: str) -> set[str]:
     }
 
 
-def course_relevance_score(question: str, chunks: list[Any] | None) -> float:
+def _chunk_relevance_scores(question: str, chunks: list[Any] | None) -> list[float]:
+    """Per-chunk relevance (word overlap + embedding similarity + a small
+    type bonus for exercise/solution/formula chunks), for the first 8
+    candidates, sorted highest first. Shared by course_relevance_score (top-1
+    only) and execution_router's richer FAST_GROUNDED sufficiency check,
+    which needs more than just the single best score."""
     if not chunks:
-        return 0.0
+        return []
     q_tokens = _tokens(question)
     if not q_tokens:
-        return 0.0
-    best = 0.0
+        return []
+    scores = []
     for chunk in chunks[:8]:
         text = getattr(chunk, "text", "") or ""
         c_tokens = _tokens(text)
         overlap = len(q_tokens & c_tokens) / max(len(q_tokens), 1)
         similarity = float(getattr(chunk, "similarity", 0.0) or 0.0)
         type_bonus = 0.08 if (getattr(chunk, "chunk_type", "") or "") in {"exercise", "solution", "formula"} else 0.0
-        best = max(best, min(1.0, overlap * 0.65 + similarity * 0.35 + type_bonus))
-    return round(best, 4)
+        scores.append(round(min(1.0, overlap * 0.65 + similarity * 0.35 + type_bonus), 4))
+    return sorted(scores, reverse=True)
+
+
+def course_relevance_score(question: str, chunks: list[Any] | None) -> float:
+    scores = _chunk_relevance_scores(question, chunks)
+    return scores[0] if scores else 0.0
 
 
 def course_not_found_answer() -> str:
@@ -416,6 +426,7 @@ __all__ = (
     "classify_source_scope",
     "course_not_found_answer",
     "course_relevance_score",
+    "_chunk_relevance_scores",
     "effective_document_ids",
     "normalise_course_file_scope",
     "normalise_source_mode",

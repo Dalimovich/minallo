@@ -1325,6 +1325,15 @@ async def ask_stream_endpoint(
     )
     processing_pipeline = select_processing_pipeline(question, resolved_access)
     routing_started = time.perf_counter()
+    # The most recent USER turn (not this current question) — used only to
+    # keep a follow-up-shaped message ("what about c < 0?") from being
+    # treated as a continuation when it actually names a new topic ("what
+    # about rolling bearings?" right after a torsion explanation).
+    previous_user_question = next(
+        (turn.text for turn in reversed(payload.previousTurns or [])
+         if turn.role == "user" and turn.text.strip()),
+        None,
+    )
     _task_profile, execution_plan = resolve_execution_plan(
         question=question,
         resolved_access=resolved_access,
@@ -1334,6 +1343,7 @@ async def ask_stream_endpoint(
             turn.role == "assistant" and bool(turn.text.strip())
             for turn in (payload.previousTurns or [])
         ),
+        previous_question=previous_user_question,
     )
     routing_ms = (time.perf_counter() - routing_started) * 1000
     for document_id in payload.documentIds or []:
@@ -4850,9 +4860,7 @@ async def _prepare_ask_stream_response(
     fast_evidence_sufficient = bool(
         execution_plan
         and execution_plan.executionLane is ExecutionLane.FAST_GROUNDED
-        and fast_grounded_evidence_is_sufficient(
-            chunk_count=len(chunks), relevance_score=course_relevance_score(question, chunks),
-        )
+        and fast_grounded_evidence_is_sufficient(chunks=chunks, question=question)
     )
     if fast_evidence_sufficient:
         multi_item_result = SimpleNamespace(
