@@ -1699,7 +1699,15 @@ async def ask_stream_endpoint(
                     canonical_manifests[document_id] = await run_in_threadpool(
                         lambda row=preflight_documents[document_id]: _load_canonical_manifest(row)
                     )
-            except (ValueError, KeyError):
+            except Exception:
+                # ValueError/KeyError = a genuinely bad/missing manifest; any
+                # other exception here is a transient failure of the
+                # document_page_manifests read itself (e.g. a Supabase
+                # blip) — this whole block runs before ask_stream_endpoint's
+                # early_stream try/except exists, so an uncaught exception
+                # here previously crashed with a raw 500 instead of the
+                # DOCUMENT_INDEXING typed error this empty-manifests fallback
+                # already produces a few lines below.
                 canonical_manifests = {}
             expected_pages = sum(
                 1 for manifest in canonical_manifests.values()
@@ -1813,14 +1821,36 @@ async def ask_stream_endpoint(
                 ))
             yield _status_sse("checking_completeness")
             from ..services.full_document_processing import process_full_documents  # noqa: WPS433
-            result = await run_in_threadpool(lambda: process_full_documents(
-                user_id=user_id,
-                course_id=payload.courseId,
-                question=question,
-                pipeline=processing_pipeline,
-                documents={key: preflight_documents[key] for key in resolved_ids},
-                manifests=canonical_manifests,
-            ))
+            # process_full_documents makes one OpenAI call per page batch per
+            # document — by far the most API-call-heavy path in this router —
+            # and, unlike the rest of ask-stream, this whole generator is
+            # returned directly as a StreamingResponse with no surrounding
+            # try/except at all. Before this guard, a bare OpenAI rate-limit/
+            # timeout/API error here silently killed the SSE connection with
+            # NO error frame whatsoever (worse than falling through to
+            # internal_error) since meta/commentary frames had already been
+            # sent. Distinct code from FULL_DOCUMENT_COVERAGE_INCOMPLETE,
+            # which is reserved for "coverage was computed but incomplete".
+            try:
+                result = await run_in_threadpool(lambda: process_full_documents(
+                    user_id=user_id,
+                    course_id=payload.courseId,
+                    question=question,
+                    pipeline=processing_pipeline,
+                    documents={key: preflight_documents[key] for key in resolved_ids},
+                    manifests=canonical_manifests,
+                ))
+            except Exception:
+                log.exception("full_document_processing_failed request_id=%s", request_id)
+                yield _error_sse(
+                    code="FULL_DOCUMENT_PROCESSING_FAILED",
+                    message="Minallo could not finish processing the full document.",
+                    retryable=True,
+                    request_id=request_id,
+                    stage="document_processing",
+                    recoverable=True,
+                )
+                return
             coverage = result["coverageResult"]
             if not coverage.get("complete"):
                 processed_pages = sum(

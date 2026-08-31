@@ -13,11 +13,14 @@ never have to trust the cache alone again.
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 from typing import Any
 
 from ..supabase_client import get_supabase
 from .index_manifest import validate_page_manifest
+
+log = logging.getLogger(__name__)
 
 _IN_FLIGHT_STATUSES = {"extracting_text", "chunking", "embedding"}
 _INCONSISTENT_REVISION_STATUSES = {"building", "failed"}
@@ -33,6 +36,13 @@ class DocumentIndexHealth(StrEnum):
     MANIFEST_INVALID = "MANIFEST_INVALID"
     REVISION_INCONSISTENT = "REVISION_INCONSISTENT"
     FAILED = "FAILED"
+    # The check itself couldn't run (a Supabase blip, not a document defect).
+    # This is a SECOND-LAYER check that only ever runs once the cheap cached
+    # check has already passed — best-effort, fail-open: a transient outage
+    # here must not block an already-cached-healthy document (matching this
+    # codebase's "progress lookup is best-effort, never a hard dependency"
+    # principle elsewhere), so callers should treat this the same as READY.
+    UNKNOWN = "UNKNOWN"
 
 
 def _result(document_id: str, health: DocumentIndexHealth, reason: str | None, **extra: Any) -> dict[str, Any]:
@@ -42,7 +52,17 @@ def _result(document_id: str, health: DocumentIndexHealth, reason: str | None, *
 def validate_active_document_index(document_id: str) -> dict[str, Any]:
     """Compare ``documents`` metadata against the actual live rows for its
     ``active_index_revision``. Never raises — every defect maps to a typed
-    health state instead of an unhandled exception."""
+    health state instead of an unhandled exception (including a failure of
+    the check's own Supabase calls, which maps to UNKNOWN rather than
+    propagating)."""
+    try:
+        return _validate_active_document_index(document_id)
+    except Exception:  # noqa: BLE001
+        log.exception("validate_active_document_index failed document_id=%s", document_id)
+        return _result(document_id, DocumentIndexHealth.UNKNOWN, "health_check_failed")
+
+
+def _validate_active_document_index(document_id: str) -> dict[str, Any]:
     sb = get_supabase()
     rows = (
         sb.table("documents")

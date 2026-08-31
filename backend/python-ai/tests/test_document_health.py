@@ -215,6 +215,22 @@ def test_partial_chunk_loss_is_not_ready(monkeypatch) -> None:
     assert result["metadataChunkCount"] == 120
 
 
+def test_supabase_failure_maps_to_unknown_not_a_raised_exception(monkeypatch) -> None:
+    """The docstring promises this never raises — including when its OWN
+    Supabase calls fail (a transient blip), not just when the document's data
+    is defective. A raw exception here used to crash the whole ask-stream
+    endpoint (this check runs before the endpoint's own try/except exists)."""
+
+    class _BoomSupabase:
+        def table(self, _name: str):
+            raise ConnectionError("simulated Supabase outage")
+
+    monkeypatch.setattr(health_mod, "get_supabase", lambda: _BoomSupabase())
+    result = validate_active_document_index("doc-boom")
+    assert result["health"] == DocumentIndexHealth.UNKNOWN
+    assert result["reason"] == "health_check_failed"
+
+
 def test_truncated_manifest_no_longer_validates_against_itself(monkeypatch) -> None:
     """Reviewer-flagged gap: a manifest with only 93 of an expected 100 rows
     must be caught (MANIFEST_INVALID), not validated against its own count

@@ -912,22 +912,28 @@ def _filter_active_revision_rows(
     })
     if not chunk_ids or not document_ids:
         return []
-    docs = (
-        sb.table("documents")
-        .select("id, active_index_revision")
-        .in_("id", document_ids)
-        .execute()
-    ).data or []
-    active = {
-        row["id"]: str(row.get("active_index_revision") or "")
-        for row in docs
-    }
-    chunks = (
-        sb.table("document_chunks")
-        .select("id, document_id, index_revision")
-        .in_("id", chunk_ids)
-        .execute()
-    ).data or []
+    try:
+        docs = (
+            sb.table("documents")
+            .select("id, active_index_revision")
+            .in_("id", document_ids)
+            .execute()
+        ).data or []
+        active = {
+            row["id"]: str(row.get("active_index_revision") or "")
+            for row in docs
+        }
+        chunks = (
+            sb.table("document_chunks")
+            .select("id, document_id, index_revision")
+            .in_("id", chunk_ids)
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — a transient Supabase failure degrades
+        # to "no candidates survive the filter" rather than raising raw
+        # through retrieve_chunks into the generic internal_error handler.
+        log.exception("_filter_active_revision_rows failed")
+        return []
     allowed = {
         row["id"]
         for row in chunks
@@ -940,12 +946,16 @@ def _filter_active_revision_rows(
 def _active_revision_map(sb: Any, document_ids: list[str]) -> dict[str, str]:
     if not document_ids:
         return {}
-    rows = (
-        sb.table("documents")
-        .select("id, active_index_revision")
-        .in_("id", list(set(document_ids)))
-        .execute()
-    ).data or []
+    try:
+        rows = (
+            sb.table("documents")
+            .select("id, active_index_revision")
+            .in_("id", list(set(document_ids)))
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — same degrade-on-failure as above.
+        log.exception("_active_revision_map failed")
+        return {}
     return {
         row["id"]: str(row.get("active_index_revision") or "")
         for row in rows
@@ -1446,20 +1456,27 @@ def retrieve_numbered_section_chunks(
     if not reference or not document_ids:
         return []
     sb = get_supabase()
-    docs = (
-        sb.table("documents").select("id,active_index_revision")
-        .eq("user_id", user_id).eq("course_id", course_id)
-        .in_("id", list(dict.fromkeys(document_ids))).execute()
-    ).data or []
-    rows: list[dict[str, Any]] = []
-    for doc in docs:
-        rows.extend((
-            sb.table("document_chunks")
-            .select("id,document_id,chunk_index,page_start,page_end,chunk_text,chunk_type,section_title,index_revision")
-            .eq("document_id", doc["id"])
-            .eq("index_revision", str(doc.get("active_index_revision") or ""))
-            .order("chunk_index").range(0, 1999).execute()
-        ).data or [])
+    try:
+        docs = (
+            sb.table("documents").select("id,active_index_revision")
+            .eq("user_id", user_id).eq("course_id", course_id)
+            .in_("id", list(dict.fromkeys(document_ids))).execute()
+        ).data or []
+        rows: list[dict[str, Any]] = []
+        for doc in docs:
+            rows.extend((
+                sb.table("document_chunks")
+                .select("id,document_id,chunk_index,page_start,page_end,chunk_text,chunk_type,section_title,index_revision")
+                .eq("document_id", doc["id"])
+                .eq("index_revision", str(doc.get("active_index_revision") or ""))
+                .order("chunk_index").range(0, 1999).execute()
+            ).data or [])
+    except Exception:  # noqa: BLE001 — this is a best-effort deterministic
+        # shortcut on top of normal vector retrieval, not a hard dependency;
+        # a transient Supabase failure should fall back to plain retrieval
+        # rather than raising raw through the caller's asyncio.gather.
+        log.exception("retrieve_numbered_section_chunks failed")
+        return []
     return [
         RetrievedChunk(
             chunk_id=str(row.get("id") or f"section:{row.get('document_id')}:{index}"),
