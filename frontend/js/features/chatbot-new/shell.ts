@@ -3506,10 +3506,23 @@ async function streamFromAskStream(
   let lastEventType = 'none';
   let liveReveal: ReturnType<typeof createSoftStreamReveal> | null = null;
   let hasLiveReveal = false;
+  let pendingFastCommentary: ExecutionCommentaryEvent[] = [];
+  let fastCommentaryTimer: number | null = null;
+
+  const flushFastCommentary = (): void => {
+    if (!assistantMessage || !bubble) return;
+    const row = bubble.closest<HTMLElement>('.ncb-msg-row');
+    if (!row) return;
+    for (const event of pendingFastCommentary) applyCommentaryEvent(row, assistantMessage, event);
+    pendingFastCommentary = [];
+    fastCommentaryTimer = null;
+  };
 
   const ensureLiveReveal = async (): Promise<ReturnType<typeof createSoftStreamReveal>> => {
     if (liveReveal) return liveReveal;
-    if (thinking) await thinking.waitMinimum();
+    const isFastLane = typeof streamMeta.executionLane === 'string'
+      && streamMeta.executionLane.startsWith('fast_');
+    if (thinking && !isFastLane) await thinking.waitMinimum();
     thinking?.remove(true);
     liveReveal = createSoftStreamReveal(bubble, { allowDiagrams });
     hasLiveReveal = true;
@@ -3642,9 +3655,17 @@ async function streamFromAskStream(
         if (evt.type === 'commentary' && typeof evt.eventId === 'string'
           && typeof evt.message === 'string' && typeof evt.stage === 'string') {
           const commentaryRow = bubble?.closest<HTMLElement>('.ncb-msg-row');
-          if (commentaryRow) applyCommentaryEvent(
-            commentaryRow, assistantMessage, evt as unknown as ExecutionCommentaryEvent,
-          );
+          const commentaryEvent = evt as unknown as ExecutionCommentaryEvent;
+          const fastLane = typeof streamMeta.executionLane === 'string'
+            && streamMeta.executionLane.startsWith('fast_');
+          if (fastLane) {
+            pendingFastCommentary.push(commentaryEvent);
+            if (fastCommentaryTimer == null) {
+              fastCommentaryTimer = window.setTimeout(flushFastCommentary, 850);
+            }
+          } else if (commentaryRow) {
+            applyCommentaryEvent(commentaryRow, assistantMessage, commentaryEvent);
+          }
           lastEventType = 'commentary';
         }
         if (evt.event === 'scope.job.created' && typeof evt.jobId === 'string' && assistantMessage) {
@@ -3675,6 +3696,9 @@ async function streamFromAskStream(
           thinking?.set(statusMessages[evt.status] || 'Still working on your answer…');
         }
         if (typeof evt.t === 'string') {
+          if (fastCommentaryTimer != null) window.clearTimeout(fastCommentaryTimer);
+          fastCommentaryTimer = null;
+          pendingFastCommentary = [];
           answerBuf += evt.t;
           if (assistantMessage) assistantMessage.text = sanitizeChatbotDiagrams(
             stripSourceMarkers(answerBuf), allowDiagrams
@@ -3699,6 +3723,8 @@ async function streamFromAskStream(
         }
         if (evt.done === true) doneMeta = { ...streamMeta, ...evt };
         if (evt.error) {
+          if (fastCommentaryTimer != null) window.clearTimeout(fastCommentaryTimer);
+          flushFastCommentary();
           throw new AskStreamError({
             code: typeof evt.errorCode === 'string'
               ? evt.errorCode

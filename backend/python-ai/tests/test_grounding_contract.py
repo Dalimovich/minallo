@@ -64,6 +64,23 @@ def test_resolution_reason_does_not_change_cache_identity() -> None:
     assert grounding_cache_payload(resolution=one, **kwargs) == grounding_cache_payload(resolution=two, **kwargs)
 
 
+def test_cache_identity_separates_execution_lanes() -> None:
+    request = GroundingRequest.model_validate({"retrievalScope": {"type": "course"}})
+    resolution = GroundingResolution(
+        documentIds=[], documentRevisions={},
+        documentAccess=ResolvedDocumentAccess.RELEVANCE,
+        resolutionReason=AccessResolutionReason.RELEVANCE_DEFAULT,
+        processingPipeline="synthesis",
+    )
+    kwargs = dict(
+        user_id="u", course_id="c", request=request, resolution=resolution,
+        question="What is torsion?",
+    )
+    assert grounding_cache_payload(execution_lane="fast_grounded", **kwargs) != grounding_cache_payload(
+        execution_lane="standard_rag", **kwargs,
+    )
+
+
 # ── canonical resolution agrees with the legacy per-conversation classifier ─
 #
 # resolve_document_access()/select_processing_pipeline() (this module) and
@@ -120,4 +137,3 @@ def test_full_document_regex_does_not_false_positive_on_bare_all() -> None:
     )
     assert access is ResolvedDocumentAccess.RELEVANCE
     assert reason is AccessResolutionReason.RELEVANCE_DEFAULT
-

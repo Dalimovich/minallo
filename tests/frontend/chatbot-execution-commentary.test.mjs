@@ -29,3 +29,11 @@ test('durable hydration restores semantic commentary events', () => {
   assert.match(shell, /Array\.isArray\(row\.commentary_events\)/);
   assert.match(shell, /row\.commentary_events as ExecutionCommentaryEvent\[\]/);
 });
+
+test('fast lanes suppress short-lived commentary without delaying answer tokens', () => {
+  assert.match(shell, /streamMeta\.executionLane\.startsWith\('fast_'\)/);
+  assert.match(shell, /window\.setTimeout\(flushFastCommentary, 850\)/);
+  assert.match(shell, /pendingFastCommentary = \[\]/);
+  assert.match(shell, /if \(typeof evt\.t === 'string'\)/);
+  assert.match(shell, /if \(thinking && !isFastLane\) await thinking\.waitMinimum\(\)/);
+});

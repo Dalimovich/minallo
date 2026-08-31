@@ -166,6 +166,7 @@ def grounding_cache_payload(
     *, user_id: str, course_id: str, request: GroundingRequest,
     resolution: GroundingResolution, question: str,
     conversation_grounding_state: str = "",
+    execution_lane: str = "",
 ) -> str:
     """Stable semantic cache identity; resolution reason is telemetry-only."""
     import hashlib
@@ -186,8 +187,8 @@ def grounding_cache_payload(
         ),
         "resolvedDocumentAccess": resolution.documentAccess.value,
         "processingPipeline": resolution.processingPipeline,
+        "executionLane": execution_lane,
         "question": " ".join(question.casefold().split()),
         "conversationGroundingState": conversation_grounding_state,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-

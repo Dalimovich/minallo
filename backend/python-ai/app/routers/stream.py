@@ -21,6 +21,7 @@ import unicodedata
 import urllib.parse
 import uuid
 from dataclasses import asdict, dataclass, replace
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -47,6 +48,12 @@ from ..services.answer_intent import (
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.general_answer import generate_general_answer
+from ..services.execution_router import (
+    EscalationReason,
+    ExecutionLane,
+    fast_grounded_evidence_is_sufficient,
+    resolve_execution_plan,
+)
 from ..services.grounding_contract import (
     GroundingRequest,
     GroundingResolution,
@@ -1310,6 +1317,18 @@ async def ask_stream_endpoint(
         viewer_context=grounding_request.viewerContext,
     )
     processing_pipeline = select_processing_pipeline(question, resolved_access)
+    routing_started = time.perf_counter()
+    _task_profile, execution_plan = resolve_execution_plan(
+        question=question,
+        resolved_access=resolved_access,
+        processing_pipeline=processing_pipeline,
+        source_mode=payload.sourceMode,
+        has_previous_answer=any(
+            turn.role == "assistant" and bool(turn.text.strip())
+            for turn in (payload.previousTurns or [])
+        ),
+    )
+    routing_ms = (time.perf_counter() - routing_started) * 1000
     for document_id in payload.documentIds or []:
         _require_uuid(document_id, "documentId")
     if payload.activeDocumentId:
@@ -1436,6 +1455,83 @@ async def ask_stream_endpoint(
         return StreamingResponse(
             mismatched_snapshot_stream(), media_type="text/event-stream"
         )
+    if execution_plan.executionLane in {
+        ExecutionLane.FAST_GENERAL, ExecutionLane.FAST_CONTEXTUAL,
+    }:
+        from ..services.general_answer import stream_general_answer  # noqa: WPS433
+
+        def fast_general_stream():
+            first_token_ms: float | None = None
+            answer_parts: list[str] = []
+            yield _sse_bytes(json.dumps({
+                "meta": True, "requestId": request_id, "streamProtocolVersion": 2,
+                "executionPlan": execution_plan.to_api(),
+                "executionLane": execution_plan.executionLane.value,
+                "groundingMode": execution_plan.groundingMode.value,
+                "processingPipeline": execution_plan.processingPipeline,
+                "resolvedDocumentAccess": resolved_access.value,
+                "resolutionReason": resolution_reason.value,
+            }, ensure_ascii=False))
+            final_event: dict[str, Any] = {}
+            previous_turns = [
+                {"role": turn.role, "text": turn.text}
+                for turn in (payload.previousTurns or [])[-2:]
+            ] if execution_plan.executionLane is ExecutionLane.FAST_CONTEXTUAL else []
+            try:
+                fast_events = (
+                    iter(({"t": chitchat_answer(question)}, {"done": True, "model": "deterministic"}))
+                    if is_non_academic_chitchat(question)
+                    else stream_general_answer(question, previous_turns=previous_turns)
+                )
+                for event in fast_events:
+                    if isinstance(event.get("t"), str):
+                        if first_token_ms is None:
+                            first_token_ms = (time.perf_counter() - started) * 1000
+                        answer_parts.append(event["t"])
+                        yield _sse_bytes(json.dumps({"t": event["t"], "requestId": request_id}, ensure_ascii=False))
+                    elif event.get("done"):
+                        final_event = event
+                answer = "".join(answer_parts)
+                total_ms = (time.perf_counter() - started) * 1000
+                if payload.durableConversation:
+                    from ..services.conversation_store import update_tutor_request  # noqa: WPS433
+                    update_tutor_request(user_id=user_id, request_id=request_id,
+                                         status="completed", stage="completed",
+                                         final_answer=answer, retryable=False)
+                record_usage(feature="ask_stream_fast_general", model=final_event.get("model"),
+                             prompt_tokens=final_event.get("promptTokens"),
+                             completion_tokens=final_event.get("completionTokens"), user_id=user_id)
+                log.info(
+                    "ai_execution_latency request_id=%s execution_lane=%s grounding_mode=%s "
+                    "auth_ms=%.0f routing_ms=%.2f ttft_ms=%.0f total_ms=%.0f retrieval_ms=0 rerank_ms=0",
+                    request_id, execution_plan.executionLane.value,
+                    execution_plan.groundingMode.value, access_ms, routing_ms,
+                    first_token_ms or total_ms, total_ms,
+                )
+                yield _sse_bytes(json.dumps({
+                    "done": True, "requestId": request_id, "answerMode": "general",
+                    "executionPlan": execution_plan.to_api(),
+                    "executionLane": execution_plan.executionLane.value,
+                    "groundingMode": execution_plan.groundingMode.value,
+                    "ttftMs": round(first_token_ms or total_ms), "totalMs": round(total_ms),
+                    "routingMs": round(routing_ms, 2), "authMs": round(access_ms, 2),
+                    "sources": [], "cacheHit": False,
+                }, ensure_ascii=False))
+            except Exception:
+                log.exception("fast_general_failed request_id=%s", request_id)
+                if payload.durableConversation:
+                    from ..services.conversation_store import update_tutor_request  # noqa: WPS433
+                    update_tutor_request(user_id=user_id, request_id=request_id,
+                                         status="failed", stage="fast_generation",
+                                         partial_answer="".join(answer_parts) or None,
+                                         error_code="fast_generation_failed", retryable=True)
+                yield _error_sse(code="fast_generation_failed",
+                                 message="The fast response could not be completed.",
+                                 retryable=True, request_id=request_id,
+                                 stage="fast_generation", recoverable=True,
+                                 partial_answer_available=bool(answer_parts))
+        return StreamingResponse(fast_general_stream(), media_type="text/event-stream",
+                                 headers={"X-Request-ID": request_id, "X-Accel-Buffering": "no"})
     task_traits = classify_task_traits(
         question,
         visible_text=payload.openFileContext or "",
@@ -1532,6 +1628,8 @@ async def ask_stream_endpoint(
                 "resolvedDocumentAccess": resolved_access.value,
                 "resolutionReason": resolution_reason.value,
                 "processingPipeline": processing_pipeline,
+                "executionPlan": execution_plan.to_api(),
+                "executionLane": execution_plan.executionLane.value,
                 "fullDocumentScope": {
                     "candidates": safe_candidates,
                     "maxDocuments": get_settings().full_document_max_documents,
@@ -1948,6 +2046,9 @@ async def ask_stream_endpoint(
         last_shared_generation_check = 0.0
         last_shared_generation_result = True
         last_request_heartbeat = 0.0
+        useful_ttft_ms: float | None = None
+        final_execution_lane = execution_plan.executionLane.value
+        escalation_reason: str | None = None
 
         async def persist_heartbeat(stage: str) -> None:
             nonlocal last_request_heartbeat
@@ -2017,6 +2118,8 @@ async def ask_stream_endpoint(
             "resolvedDocumentAccess": resolved_access.value,
             "resolutionReason": resolution_reason.value,
             "processingPipeline": processing_pipeline,
+            "executionPlan": execution_plan.to_api(),
+            "executionLane": execution_plan.executionLane.value,
             "groundingRequest": grounding_request.model_dump(mode="json"),
             "groundingResolution": grounding_resolution.model_dump(mode="json"),
         }, ensure_ascii=False))
@@ -2130,6 +2233,7 @@ async def ask_stream_endpoint(
                         "document_name_resolution": document_name_resolution,
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
+                        "execution_plan": execution_plan,
                     },
                 )
             )
@@ -2156,6 +2260,9 @@ async def ask_stream_endpoint(
                         )
                         return
                     if isinstance(status_event, dict):
+                        if status_event.get("type") == "execution.escalation":
+                            final_execution_lane = str(status_event.get("finalLane") or final_execution_lane)
+                            escalation_reason = str(status_event.get("escalationReason") or "") or None
                         last_heartbeat = time.monotonic()
                         yield _sse_bytes(json.dumps(status_event, ensure_ascii=False))
                         continue
@@ -2212,6 +2319,7 @@ async def ask_stream_endpoint(
                         "document_name_resolution": document_name_resolution,
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
+                        "execution_plan": execution_plan,
                     },
                 )
             while not status_queue.empty():
@@ -2288,6 +2396,7 @@ async def ask_stream_endpoint(
                             "document_name_resolution": document_name_resolution,
                             "doc_name_map": preflight_doc_names,
                             "documents": preflight_documents,
+                            "execution_plan": execution_plan,
                         },
                     )
                     body_iterator = prepared.body_iterator.__aiter__()
@@ -2321,6 +2430,15 @@ async def ask_stream_endpoint(
                     except json.JSONDecodeError:
                         decoded_event = {}
                 if isinstance(decoded_event.get("t"), str):
+                    if useful_ttft_ms is None:
+                        useful_ttft_ms = (time.perf_counter() - started) * 1000
+                        log.info(
+                            "ai_execution_ttft request_id=%s execution_lane=%s grounding_mode=%s "
+                            "auth_ms=%.0f routing_ms=%.2f ttft_ms=%.0f",
+                            request_id, execution_plan.executionLane.value,
+                            execution_plan.groundingMode.value, access_ms, routing_ms,
+                            useful_ttft_ms,
+                        )
                     persisted_answer += decoded_event["t"]
                 if decoded_event.get("error") is True:
                     await persist_request_state(
@@ -2331,6 +2449,15 @@ async def ask_stream_endpoint(
                         retryable=decoded_event.get("retryable") is True,
                     )
                 elif decoded_event.get("done") is True:
+                    log.info(
+                        "ai_execution_complete request_id=%s initial_lane=%s final_lane=%s "
+                        "escalated=%s escalation_reason=%s ttft_ms=%.0f total_ms=%.0f",
+                        request_id, execution_plan.initialLane.value,
+                        final_execution_lane,
+                        final_execution_lane != execution_plan.initialLane.value,
+                        escalation_reason or "none",
+                        useful_ttft_ms or 0.0, (time.perf_counter() - started) * 1000,
+                    )
                     await persist_request_state(
                         status="completed", stage="completed",
                         final_answer=persisted_answer, retryable=False,
@@ -2569,6 +2696,7 @@ async def _prepare_ask_stream_response(
     previous_turns_payload: list[dict[str, str]] = [
         {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
     ]
+    execution_plan = (preflight or {}).get("execution_plan")
     if automatic_context_section and tutor_state:
         # The standalone chatbot has one chronological visible transcript.
         # For server-created document/course sections, use only that section's
@@ -3291,6 +3419,7 @@ async def _prepare_ask_stream_response(
         resolution=grounding_resolution,
         question=resolved_question,
         conversation_grounding_state=json.dumps(previous_turns_payload, sort_keys=True),
+        execution_lane=execution_plan.executionLane.value,
     )
     ws_fingerprint = hashlib.sha256(
         f"{base_ws_fingerprint}:{reliability_cache_fingerprint}:"
@@ -4585,15 +4714,30 @@ async def _prepare_ask_stream_response(
             documentCount=len(retrieval_document_ids or []),
         )
         try:
-            exercise_task = run_in_threadpool(
+            fast_grounded = bool(
+                execution_plan
+                and execution_plan.executionLane is ExecutionLane.FAST_GROUNDED
+            )
+            if fast_grounded:
+                exercise_hit, formula_hits, section_chunks = None, [], []
+                chunks = await run_in_threadpool(lambda: retrieve_routed_chunks(
+                    user_id=user_id, course_id=payload.courseId,
+                    query=retrieval_query, document_ids=retrieval_document_ids,
+                    preferred_document_ids=retrieval_document_ids,
+                    active_document_id=payload.activeDocumentId,
+                    document_name_query=question, top_k=4,
+                    guarantee_documents=False, request_id=request_id,
+                ))
+            else:
+                exercise_task = run_in_threadpool(
                 lambda: retrieve_exercise_block(
                     user_id=user_id, course_id=payload.courseId, query=retrieval_query,
                     document_ids=retrieval_document_ids,
                     active_document_id=payload.activeDocumentId,
                 )
             )
-            chunks_task = run_in_threadpool(
-                lambda: retrieve_routed_chunks(
+                chunks_task = run_in_threadpool(
+                    lambda: retrieve_routed_chunks(
                     user_id=user_id, course_id=payload.courseId,
                     query=retrieval_query, document_ids=retrieval_document_ids,
                     preferred_document_ids=retrieval_document_ids,
@@ -4607,35 +4751,32 @@ async def _prepare_ask_stream_response(
                     request_id=request_id,
                 )
             )
-            formula_query = (
-                (payload.problemSolver.problem or question).strip()
-                if payload.problemSolver else question
-            )
-            formula_task = run_in_threadpool(
-                lambda: retrieve_formula_block(
+                formula_query = (
+                    (payload.problemSolver.problem or question).strip()
+                    if payload.problemSolver else question
+                )
+                formula_task = run_in_threadpool(
+                    lambda: retrieve_formula_block(
                     user_id=user_id, course_id=payload.courseId, query=formula_query,
                     document_ids=retrieval_document_ids,
                     active_document_id=payload.activeDocumentId,
                 )
             )
-            section_document_ids = (
-                [payload.activeDocumentId]
-                if payload.activeDocumentId else list(retrieval_document_ids or [])
-            )
-            section_task = run_in_threadpool(
-                lambda: retrieve_numbered_section_chunks(
+                section_document_ids = (
+                    [payload.activeDocumentId]
+                    if payload.activeDocumentId else list(retrieval_document_ids or [])
+                )
+                section_task = run_in_threadpool(
+                    lambda: retrieve_numbered_section_chunks(
                     user_id=user_id, course_id=payload.courseId,
                     document_ids=section_document_ids,
                     question=resolved_question,
                     previous_turns=previous_turns_payload,
                 )
             )
-            exercise_hit, chunks, formula_hits, section_chunks = await asyncio.gather(
-                exercise_task,
-                chunks_task,
-                formula_task,
-                section_task,
-            )
+                exercise_hit, chunks, formula_hits, section_chunks = await asyncio.gather(
+                    exercise_task, chunks_task, formula_task, section_task,
+                )
         except EmbeddingServiceUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         log.info(
@@ -4669,15 +4810,45 @@ async def _prepare_ask_stream_response(
             chunkCount=len(chunks),
         )
 
-    multi_item_result = await run_in_threadpool(lambda: retrieve_multi_item_course_evidence(
-        user_id=user_id,
-        course_id=payload.courseId,
-        question=question,
-        document_ids=retrieval_document_ids,
-        active_document_id=payload.activeDocumentId,
-        initial_chunks=chunks,
-    ))
-    chunks = multi_item_result.chunks
+    fast_evidence_sufficient = bool(
+        execution_plan
+        and execution_plan.executionLane is ExecutionLane.FAST_GROUNDED
+        and fast_grounded_evidence_is_sufficient(
+            chunk_count=len(chunks), relevance_score=course_relevance_score(question, chunks),
+        )
+    )
+    if fast_evidence_sufficient:
+        multi_item_result = SimpleNamespace(
+            chunks=chunks, evidence=[], to_dict=lambda: {"items": [], "complete": True},
+        )
+    else:
+        if execution_plan and execution_plan.executionLane is ExecutionLane.FAST_GROUNDED:
+            if status_sink:
+                status_sink({
+                    "type": "execution.escalation",
+                    "initialLane": "fast_grounded", "finalLane": "standard_rag",
+                    "escalated": True,
+                    "escalationReason": EscalationReason.INSUFFICIENT_GROUNDED_EVIDENCE.value,
+                    "requestId": request_id,
+                })
+            # A failed fast probe is only a routing attempt, never the final
+            # evidence set. Re-run the normal broad hybrid retrieval before
+            # continuing so escalation genuinely moves upward in quality.
+            standard_chunks = await run_in_threadpool(lambda: retrieve_routed_chunks(
+                user_id=user_id, course_id=payload.courseId,
+                query=retrieval_query, document_ids=retrieval_document_ids,
+                preferred_document_ids=retrieval_document_ids,
+                active_document_id=payload.activeDocumentId,
+                document_name_query=question, top_k=stream_top_k,
+                guarantee_documents=generative_request, request_id=request_id,
+            ))
+            chunks = _deduplicate_chunks([*standard_chunks, *chunks])
+        multi_item_result = await run_in_threadpool(lambda: retrieve_multi_item_course_evidence(
+            user_id=user_id, course_id=payload.courseId, question=question,
+            document_ids=retrieval_document_ids,
+            active_document_id=payload.activeDocumentId, initial_chunks=chunks,
+        ))
+        chunks = multi_item_result.chunks
 
     retrieved_doc_ids = list(dict.fromkeys(
         c.document_id for c in chunks
@@ -4724,10 +4895,14 @@ async def _prepare_ask_stream_response(
     if multi_item_result.evidence:
         evidence_payload["multiItem"] = multi_item_result.to_dict()
     source_decision = replace(source_decision, evidence_report=evidence_payload)
-    fallback_research = await run_in_threadpool(lambda: research_unresolved_items(
-        multi_item_result,
-        grounding_policy=source_decision.grounding_policy.value,
-    ))
+    fallback_research = (
+        SimpleNamespace(sources=[])
+        if fast_evidence_sufficient
+        else await run_in_threadpool(lambda: research_unresolved_items(
+            multi_item_result,
+            grounding_policy=source_decision.grounding_policy.value,
+        ))
+    )
     if fallback_research.sources:
         source_decision = replace(source_decision, web_search_used=True)
 
