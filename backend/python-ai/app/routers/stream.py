@@ -552,6 +552,10 @@ def _status_sse(status_key: str) -> bytes:
     return _sse_bytes(json.dumps({"status": status_key}, ensure_ascii=False))
 
 
+def _commentary_sse(event: dict[str, Any]) -> bytes:
+    return _sse_bytes(json.dumps(event, ensure_ascii=False))
+
+
 class TutorPipelineError(Exception):
     def __init__(self, *, code: str, stage: str, message: str, retryable: bool,
                  recoverable: bool, metadata: dict[str, Any] | None = None) -> None:
@@ -1580,6 +1584,15 @@ async def ask_stream_endpoint(
                 else "FULL_DOCUMENT_LIMIT_EXCEEDED"
             )
             async def full_document_preflight_failure_stream():
+                if code == "DOCUMENT_INDEXING":
+                    from ..services.execution_commentary import (  # noqa: WPS433
+                        CommentaryEmitter, CommentaryKind,
+                    )
+                    yield _commentary_sse(CommentaryEmitter(request_id).emit(
+                        kind=CommentaryKind.RECOVERY, stage="document_indexing",
+                        facts={"document_count": len(resolved_ids)},
+                        replace_key="source_readiness",
+                    ))
                 yield _error_sse(
                     code=code,
                     message=(
@@ -1618,6 +1631,25 @@ async def ask_stream_endpoint(
         and processing_pipeline != "extraction"
     ):
         async def exhaustive_document_stream():
+            from ..services.execution_commentary import (  # noqa: WPS433
+                CommentaryEmitter, CommentaryKind,
+            )
+            commentary = CommentaryEmitter(request_id)
+            async def emit(event: dict[str, Any]):
+                if payload.durableConversation:
+                    from ..services.conversation_store import append_tutor_commentary  # noqa: WPS433
+                    try:
+                        await run_in_threadpool(lambda: append_tutor_commentary(
+                            user_id=user_id, request_id=request_id, event=event,
+                        ))
+                    except Exception as exc:
+                        log.warning("commentary_persist_failed request_id=%s exception=%s",
+                                    request_id, type(exc).__name__)
+                return _commentary_sse(event)
+            expected_pages = sum(
+                1 for manifest in canonical_manifests.values()
+                for page in manifest if page.required_for_processing
+            )
             yield _sse_bytes(json.dumps({
                 "meta": True,
                 "requestId": request_id,
@@ -1628,6 +1660,26 @@ async def ask_stream_endpoint(
                 "groundingRequest": grounding_request.model_dump(mode="json"),
                 "groundingResolution": grounding_resolution.model_dump(mode="json"),
             }, ensure_ascii=False))
+            yield await emit(commentary.emit(
+                kind=CommentaryKind.ORIENTATION, stage="full_document_selected",
+                facts={"access_mode": "full_document"}, replace_key="access_resolution",
+            ))
+            yield await emit(commentary.emit(
+                kind=CommentaryKind.DOCUMENT_PROCESSING, stage="manifest_verified",
+                facts={"expected_pages": expected_pages, "document_count": len(resolved_ids)},
+                progress={"current": 0, "total": expected_pages, "unit": "pages"},
+                replace_key="full_document_processing",
+            ))
+            pipeline_stage = {
+                "summarization": "summarization_started",
+                "comparison": "comparison_started",
+                "generation": "generation_started",
+            }.get(processing_pipeline)
+            if pipeline_stage:
+                yield await emit(commentary.emit(
+                    kind=CommentaryKind.ANALYSIS, stage=pipeline_stage,
+                    facts={"pipeline": processing_pipeline}, replace_key="task_processing",
+                ))
             yield _status_sse("checking_completeness")
             from ..services.full_document_processing import process_full_documents  # noqa: WPS433
             result = await run_in_threadpool(lambda: process_full_documents(
@@ -1640,6 +1692,16 @@ async def ask_stream_endpoint(
             ))
             coverage = result["coverageResult"]
             if not coverage.get("complete"):
+                processed_pages = sum(
+                    int(item.get("processedPages") or 0)
+                    for item in coverage.get("documents") or []
+                )
+                yield await emit(commentary.emit(
+                    kind=CommentaryKind.VALIDATION, stage="coverage_incomplete",
+                    facts={"expected_pages": expected_pages, "processed_pages": processed_pages},
+                    progress={"current": processed_pages, "total": expected_pages, "unit": "pages"},
+                    replace_key="full_document_processing",
+                ))
                 yield _error_sse(
                     code="FULL_DOCUMENT_COVERAGE_INCOMPLETE",
                     message="Minallo could not process every expected page, so it did not claim a complete answer.",
@@ -1650,6 +1712,12 @@ async def ask_stream_endpoint(
                     metadata={"coverageResult": coverage},
                 )
                 return
+            yield await emit(commentary.emit(
+                kind=CommentaryKind.VALIDATION, stage="coverage_complete",
+                facts={"expected_pages": expected_pages, "processed_pages": expected_pages},
+                progress={"current": expected_pages, "total": expected_pages, "unit": "pages"},
+                replace_key="full_document_processing",
+            ))
             answer = str(result.get("answer") or "")
             for start in range(0, len(answer), 28):
                 yield _sse_bytes(json.dumps({"t": answer[start:start + 28]}, ensure_ascii=False))
@@ -1818,7 +1886,23 @@ async def ask_stream_endpoint(
                     await asyncio.sleep(0.2)
         log.error("tutor_request_persist_failed request_id=%s", request_id)
 
+    async def persist_commentary_event(event: dict[str, Any]) -> None:
+        if not payload.durableConversation:
+            return
+        from ..services.conversation_store import append_tutor_commentary  # noqa: WPS433
+        try:
+            await run_in_threadpool(lambda: append_tutor_commentary(
+                user_id=user_id, request_id=request_id, event=event,
+            ))
+        except Exception as exc:  # commentary must not break the answer path
+            log.warning("commentary_persist_failed request_id=%s exception=%s",
+                        request_id, type(exc).__name__)
+
     async def early_stream():
+        from ..services.execution_commentary import (  # noqa: WPS433
+            CommentaryEmitter, CommentaryKind,
+        )
+        commentary = CommentaryEmitter(request_id)
         terminal_event_sent = False
         persisted_answer = ""
         last_shared_generation_check = 0.0
@@ -1897,6 +1981,26 @@ async def ask_stream_endpoint(
             "groundingResolution": grounding_resolution.model_dump(mode="json"),
         }, ensure_ascii=False))
         yield _status_sse("reading_question")
+        access_commentary = commentary.emit(
+            kind=CommentaryKind.ORIENTATION,
+            stage=(
+                "full_document_selected" if resolved_access.value == "full_document"
+                else "visible_page_selected" if resolved_access.value == "visible_page"
+                else "request_received"
+            ),
+            facts={"visible_page": payload.visiblePage or 0,
+                   "access_mode": resolved_access.value},
+            replace_key="access_resolution",
+        )
+        await persist_commentary_event(access_commentary)
+        yield _commentary_sse(access_commentary)
+        if resolved_ids:
+            authorized_commentary = commentary.emit(
+                kind=CommentaryKind.SOURCE_RESOLUTION, stage="documents_authorized",
+                facts={"document_count": len(resolved_ids)}, replace_key="source_resolution",
+            )
+            await persist_commentary_event(authorized_commentary)
+            yield _commentary_sse(authorized_commentary)
         await persist_request_state(status="running", stage="conversation_state")
         last_status_key = "reading_question"
         last_heartbeat = time.monotonic()
@@ -1921,6 +2025,12 @@ async def ask_stream_endpoint(
                     "scope_job_created_event_emitted request_id=%s job_id=%s",
                     request_id, scoped_id,
                 )
+                extraction_commentary = commentary.emit(
+                    kind=CommentaryKind.ANALYSIS, stage="extraction_started",
+                    facts={"pipeline": "extraction"}, replace_key="task_processing",
+                )
+                await persist_commentary_event(extraction_commentary)
+                yield _commentary_sse(extraction_commentary)
                 from ..services.scoped_job_store import load_job_snapshot  # noqa: WPS433
                 seen_scoped_event_ids: set[str] = set()
                 while True:
@@ -2012,6 +2122,20 @@ async def ask_stream_endpoint(
                     status_key = str(status_event)
                     last_status_key = status_key
                     last_heartbeat = time.monotonic()
+                    commentary_stage = {
+                        "collecting_sources": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
+                        "searching_course_material": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
+                        "extracting_items": (CommentaryKind.ANALYSIS, "extraction_started", "task_processing"),
+                        "recovering_response": (CommentaryKind.RECOVERY, "recovery_started", "recovery"),
+                        "verifying_answer": (CommentaryKind.VALIDATION, "answer_validation_started", "validation"),
+                    }.get(status_key)
+                    if commentary_stage:
+                        kind, commentary_name, replace_key = commentary_stage
+                        stage_commentary = commentary.emit(
+                            kind=kind, stage=commentary_name, replace_key=replace_key,
+                        )
+                        await persist_commentary_event(stage_commentary)
+                        yield _commentary_sse(stage_commentary)
                     yield _status_sse(status_key)
                 except asyncio.TimeoutError:
                     if (not precreated_scoped_job and time.monotonic() - preparation_started

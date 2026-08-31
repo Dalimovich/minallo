@@ -719,6 +719,19 @@ interface GeneratedDoc {
   noteId?: string;
 }
 
+type ExecutionCommentaryKind = 'orientation' | 'source_resolution' | 'retrieval'
+  | 'document_processing' | 'web_search' | 'analysis' | 'validation'
+  | 'tool_action' | 'recovery' | 'completion';
+
+interface ExecutionCommentaryEvent {
+  type: 'commentary'; eventId: string; requestId: string; eventSequence?: number;
+  kind: ExecutionCommentaryKind; stage: string; message: string;
+  facts?: Record<string, string | number | boolean>;
+  progress?: { current?: number; total?: number; unit?: 'pages' | 'documents' | 'batches' | 'sources' | 'items' };
+  source?: { documentId?: string; documentName?: string; page?: number };
+  replaceKey?: string; timestamp: string;
+}
+
 interface ChatMessage {
   id?: string;
   role: 'user' | 'assistant';
@@ -726,6 +739,7 @@ interface ChatMessage {
   interrupted?: boolean;
   completionState?: 'pending' | 'processing' | 'streaming' | 'recovering' | 'complete' | 'stopped' | 'interrupted' | 'failed_recoverable' | 'failed_terminal';
   requestId?: string;
+  commentary?: ExecutionCommentaryEvent[];
   scopedJobId?: string;
   scopedManifestId?: string;
   lastScopedEventId?: string;
@@ -3625,6 +3639,14 @@ async function streamFromAskStream(
         lastEventType = evt.done === true ? 'done' : evt.error ? 'error'
           : typeof evt.t === 'string' ? 'token' : evt.meta === true ? 'meta' : 'status';
         if (typeof evt.requestId === 'string') streamRequestId = evt.requestId;
+        if (evt.type === 'commentary' && typeof evt.eventId === 'string'
+          && typeof evt.message === 'string' && typeof evt.stage === 'string') {
+          const commentaryRow = bubble?.closest<HTMLElement>('.ncb-msg-row');
+          if (commentaryRow) applyCommentaryEvent(
+            commentaryRow, assistantMessage, evt as unknown as ExecutionCommentaryEvent,
+          );
+          lastEventType = 'commentary';
+        }
         if (evt.event === 'scope.job.created' && typeof evt.jobId === 'string' && assistantMessage) {
           assistantMessage.scopedJobId = evt.jobId;
           assistantMessage.completionState = 'recovering';
@@ -3761,6 +3783,10 @@ async function streamFromAskStream(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+  if (assistantMessage?.commentary?.length && bubble) {
+    const row = bubble.closest<HTMLElement>('.ncb-msg-row');
+    if (row) renderCommentary(row, assistantMessage.commentary, true);
   }
 
   return { text: displayAnswer, meta: doneMeta };
@@ -4501,6 +4527,7 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
           <p class="ncb-bubble-subtitle">${escapeHtml(tStr('cb_building_explanation', 'Building the explanation…'))}</p>
         </div>
       </div>
+      <div class="ncb-commentary-host" hidden></div>
       <div class="ncb-bubble-body"></div>
     </div>
   `;
@@ -4508,6 +4535,56 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
   else msgs.appendChild(row);
   scrollMsgsToBottom(msgs);
   return row;
+}
+
+function applyCommentaryEvent(row: HTMLElement, message: ChatMessage | undefined,
+                              event: ExecutionCommentaryEvent): void {
+  const events = message?.commentary || [];
+  if (events.some((item) => item.eventId === event.eventId)) return;
+  const replacement = event.replaceKey
+    ? events.findIndex((item) => item.replaceKey === event.replaceKey) : -1;
+  if (replacement >= 0) events[replacement] = event;
+  else events.push(event);
+  if (message) {
+    message.commentary = events.slice(-24);
+    message.updatedAt = new Date().toISOString();
+    saveChatStore();
+  }
+
+  renderCommentary(row, events, false);
+}
+
+function renderCommentary(row: HTMLElement, events: ExecutionCommentaryEvent[], completed: boolean): void {
+  const host = row.querySelector<HTMLElement>('.ncb-commentary-host');
+  if (!host) return;
+  host.hidden = events.length === 0;
+  if (!events.length) return;
+  const details = document.createElement('details');
+  details.className = 'ncb-commentary';
+  details.open = !completed;
+  const summary = document.createElement('summary');
+  summary.textContent = completed
+    ? `Work completed · ${events.length} update${events.length === 1 ? '' : 's'}`
+    : 'Working on your request';
+  details.appendChild(summary);
+  const list = document.createElement('ol');
+  for (const event of events) {
+    const item = document.createElement('li');
+    item.dataset.eventId = event.eventId;
+    const text = document.createElement('span');
+    text.textContent = event.message;
+    item.appendChild(text);
+    if (event.progress?.total != null) {
+      const progress = document.createElement('progress');
+      progress.max = Math.max(1, event.progress.total);
+      progress.value = Math.min(progress.max, event.progress.current || 0);
+      progress.setAttribute('aria-label', `${event.progress.current || 0} of ${event.progress.total} ${event.progress.unit || 'items'}`);
+      item.appendChild(progress);
+    }
+    list.appendChild(item);
+  }
+  details.appendChild(list);
+  host.replaceChildren(details);
 }
 
 // Update the AI bubble's subtitle to reflect the source actually used, so the
@@ -7225,6 +7302,9 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // promoteAiInputToModal's [data-restored] guard) — forms stay inline.
   row.setAttribute('data-restored', 'true');
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
+  if (m.commentary?.length) {
+    renderCommentary(row, m.commentary, m.completionState === 'complete');
+  }
 
   if (bubble && m.completionState && ACTIVE_COMPLETION_STATES.has(m.completionState)) {
     const stageLabels: Record<string, string> = {
@@ -7439,12 +7519,19 @@ async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Pro
         const scopedJobId = row.scoped_job_id ? String(row.scoped_job_id) : undefined;
         if (requestId && existing.requestId !== requestId) { existing.requestId = requestId; changed = true; }
         if (scopedJobId && existing.scopedJobId !== scopedJobId) { existing.scopedJobId = scopedJobId; changed = true; }
+        if (Array.isArray(row.commentary_events)) {
+          existing.commentary = row.commentary_events as ExecutionCommentaryEvent[];
+          changed = true;
+          if (!changedMessages.includes(existing)) changedMessages.push(existing);
+        }
         continue;
       }
       const restored: ChatMessage = {
         id, role, text: serverText,
         requestId: row.request_id ? String(row.request_id) : undefined,
         scopedJobId: row.scoped_job_id ? String(row.scoped_job_id) : undefined,
+        commentary: Array.isArray(row.commentary_events)
+          ? row.commentary_events as ExecutionCommentaryEvent[] : undefined,
         completionState: row.completion_state ? String(row.completion_state) as ChatMessage['completionState'] : undefined,
         errorCode: row.error_code ? String(row.error_code) : undefined,
         failureStage: row.failure_stage ? String(row.failure_stage) : undefined,

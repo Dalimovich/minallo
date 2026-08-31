@@ -105,7 +105,7 @@ def get_durable_conversation_messages(*, user_id: str, conversation_id: str) -> 
     result = [dict(row) for row in rows]
     requests = (
         get_supabase().table("ai_tutor_requests")
-        .select("request_id,user_client_message_id,assistant_client_message_id,scoped_job_id")
+        .select("request_id,user_client_message_id,assistant_client_message_id,scoped_job_id,request_snapshot")
         .eq("conversation_id", conversation_id)
         .eq("user_id", user_id)
         .execute()
@@ -118,6 +118,7 @@ def get_durable_conversation_messages(*, user_id: str, conversation_id: str) -> 
                 durable_by_message[message_id] = {
                     "request_id": request.get("request_id"),
                     "scoped_job_id": request.get("scoped_job_id"),
+                    "commentary_events": dict(request.get("request_snapshot") or {}).get("commentaryEvents", []),
                 }
     for row in result:
         row.update(durable_by_message.get(str(row.get("client_message_id") or ""), {}))
@@ -190,6 +191,30 @@ def update_tutor_request(
          .eq("client_message_id", assistant_id).execute())
 
 
+def append_tutor_commentary(*, user_id: str, request_id: str,
+                            event: dict[str, Any]) -> None:
+    """Persist bounded semantic commentary inside the immutable request record."""
+    sb = get_supabase()
+    rows = (sb.table("ai_tutor_requests").select("request_snapshot")
+            .eq("request_id", request_id).eq("user_id", user_id).limit(1).execute()).data or []
+    if not rows:
+        raise RuntimeError("tutor_request_not_found")
+    snapshot = dict(rows[0].get("request_snapshot") or {})
+    events = list(snapshot.get("commentaryEvents") or [])
+    event_id = str(event.get("eventId") or "")
+    if event_id and not any(str(item.get("eventId") or "") == event_id for item in events):
+        replace_key = str(event.get("replaceKey") or "")
+        replacement = next((index for index, item in enumerate(events)
+                            if replace_key and item.get("replaceKey") == replace_key), None)
+        if replacement is None:
+            events.append(event)
+        else:
+            events[replacement] = event
+    snapshot["commentaryEvents"] = events[-24:]
+    (sb.table("ai_tutor_requests").update({"request_snapshot": snapshot})
+     .eq("request_id", request_id).eq("user_id", user_id).execute())
+
+
 def get_tutor_request(*, user_id: str, request_id: str) -> dict[str, Any] | None:
     rows = (
         get_supabase().table("ai_tutor_requests")
@@ -223,7 +248,7 @@ def expire_stale_tutor_request(
 
 __all__ = [
     "DurableConversation", "ensure_durable_conversation", "validate_durable_conversation",
-    "create_durable_tutor_turn", "update_tutor_request", "get_tutor_request",
+    "create_durable_tutor_turn", "update_tutor_request", "append_tutor_commentary", "get_tutor_request",
     "get_durable_conversation_messages",
     "expire_stale_tutor_request",
 ]
