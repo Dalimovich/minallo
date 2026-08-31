@@ -99,9 +99,16 @@ def validate_active_document_index(document_id: str) -> dict[str, Any]:
             .order("page_number").execute()
         ).data or []
         common["manifestPageCount"] = len(manifest_rows)
-        if manifest_rows:
+        # Validate against the AUTHORITATIVE expected page count
+        # (documents.page_count, written at the same moment as this exact
+        # revision's activation), never against len(manifest_rows) itself —
+        # a manifest that's missing rows (e.g. 93 of an expected 100 pages)
+        # must not be asked "does this manifest cover its own rows?" (always
+        # yes) instead of "does it cover every expected page?" (the real
+        # question). Only skip when nothing is expected at all.
+        if metadata_pages > 0:
             try:
-                pages = validate_page_manifest(manifest_rows, physical_page_count=len(manifest_rows))
+                pages = validate_page_manifest(manifest_rows, physical_page_count=metadata_pages)
             except ValueError as exc:
                 return _result(document_id, DocumentIndexHealth.MANIFEST_INVALID, str(exc), **common)
             required = [p for p in pages if p.required_for_processing]
@@ -116,5 +123,21 @@ def validate_active_document_index(document_id: str) -> dict[str, Any]:
 
     if actual_pages <= 0:
         return _result(document_id, DocumentIndexHealth.MISSING_PAGES, "chunks exist but no pages under the active revision", **common)
+
+    # Partial loss: some rows exist, but not as many as expected. >0 is not
+    # the invariant — exact-match to the authoritative counts is (a
+    # document with page_count=100/chunk_count=148 but only 91 live pages or
+    # 120 live chunks is a corrupted index, not a healthy one with "some
+    # searchable rows").
+    if metadata_pages and actual_pages != metadata_pages:
+        return _result(
+            document_id, DocumentIndexHealth.STALE_METADATA,
+            f"page_count={metadata_pages} but active revision has {actual_pages} live page(s)", **common,
+        )
+    if metadata_chunks and actual_chunks != metadata_chunks:
+        return _result(
+            document_id, DocumentIndexHealth.STALE_METADATA,
+            f"chunk_count={metadata_chunks} but active revision has {actual_chunks} live chunk(s)", **common,
+        )
 
     return _result(document_id, DocumentIndexHealth.READY, None, **common)

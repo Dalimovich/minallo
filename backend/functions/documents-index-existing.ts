@@ -37,7 +37,15 @@ async function _kickIndex(
   return { started: true };
 }
 
-async function _markIndexFailed(documentId: string, serviceKey: string): Promise<void> {
+async function _markIndexFailed(
+  documentId: string, serviceKey: string, preserveActive: boolean
+): Promise<void> {
+  // A document that was already 'ready' (a healthy active revision) before
+  // this reindex attempt must not be disabled just because kicking off the
+  // REBUILD failed — the active revision's own rows are untouched by an
+  // attempt that never even started. Only a document with no prior valid
+  // state gets marked failed.
+  if (preserveActive) return;
   await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(documentId),
     { processing_status: 'failed' }, serviceKey);
 }
@@ -124,10 +132,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     }
     const indexing = await _kickIndex(doc.id, user.id, courseId, docStoragePath, Boolean(forceReindex));
     if (!indexing.started) {
-      await _markIndexFailed(doc.id, serviceKey);
+      const hadHealthyRevision = doc.processing_status === 'ready';
+      await _markIndexFailed(doc.id, serviceKey, hadHealthyRevision);
       return jsonResponse(502, {
         code: 'uploaded_not_indexed', error: indexing.error,
-        documentId: doc.id, processingStatus: 'failed', indexingStarted: false,
+        documentId: doc.id,
+        processingStatus: hadHealthyRevision ? doc.processing_status : 'failed',
+        indexingStarted: false,
       });
     }
     return jsonResponse(200, {
@@ -159,7 +170,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const document = Array.isArray(insertResult.body) ? insertResult.body[0]! : insertResult.body as DocumentRow;
   const indexing = await _kickIndex(document.id, user.id, courseId, docStoragePath, false);
   if (!indexing.started) {
-    await _markIndexFailed(document.id, serviceKey);
+    await _markIndexFailed(document.id, serviceKey, false);
     return jsonResponse(502, {
       code: 'uploaded_not_indexed', error: indexing.error,
       documentId: document.id, processingStatus: 'failed', indexingStarted: false,

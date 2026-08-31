@@ -188,9 +188,18 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         # Already indexed and we weren't asked to force — return current state.
         return _status_payload(doc)
 
+    # A forced reindex of an already-good document must not disable it just
+    # because the REBUILD attempt fails — the active revision's own rows are
+    # untouched by a failed candidate build (all writes below are scoped to
+    # the new candidate's index_revision, never the active one). Every
+    # _mark_failed() call in this function passes this through so a failed
+    # candidate leaves processing_status/active_index_revision exactly as
+    # they were, recording only the error for diagnostics.
+    was_previously_ready = str(doc.get("processing_status") or "").casefold() == "ready"
+
     storage_path = doc.get("storage_path")
     if not storage_path:
-        _mark_failed(sb, document_id, "storage_path missing on documents row")
+        _mark_failed(sb, document_id, "storage_path missing on documents row", preserve_active=was_previously_ready)
         raise IndexingError("storage_path missing")
 
     user_id = doc["user_id"]
@@ -400,6 +409,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 sb,
                 document_id,
                 "no extractable text — likely a scanned/image PDF; enable MINALLO_VISION_OCR_ENABLED to retry with vision",
+                preserve_active=was_previously_ready,
             )
             raise IndexingError("no extractable text")
 
@@ -418,7 +428,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         # twice per page.
         chunks = chunk_pages(page_md)
         if not chunks:
-            _mark_failed(sb, document_id, "chunking produced 0 chunks")
+            _mark_failed(sb, document_id, "chunking produced 0 chunks", preserve_active=was_previously_ready)
             raise IndexingError("0 chunks produced")
 
         _set_status(sb, document_id, "embedding")
@@ -428,6 +438,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 sb,
                 document_id,
                 f"embedding count mismatch: {len(vectors)} vs {len(chunks)} chunks",
+                preserve_active=was_previously_ready,
             )
             raise IndexingError("embedding count mismatch")
 
@@ -623,6 +634,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                 sb,
                 document_id,
                 "candidate index revision failed coverage validation",
+                preserve_active=was_previously_ready,
             )
             raise IndexingError("index revision activation failed")
         update_payload: dict[str, Any] = {
@@ -718,7 +730,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
         raise
     except Exception as e:  # noqa: BLE001 — convert to IndexingError for the API layer
         log.exception("index_document failed")
-        _mark_failed(sb, document_id, f"{type(e).__name__}: {e}")
+        _mark_failed(sb, document_id, f"{type(e).__name__}: {e}", preserve_active=was_previously_ready)
         raise IndexingError(str(e)) from e
 
 
@@ -1069,12 +1081,28 @@ def _set_status(sb, document_id: str, status: str) -> None:
     }).eq("id", document_id).execute()
 
 
-def _mark_failed(sb, document_id: str, reason: str) -> None:
-    sb.table("documents").update({
-        "processing_status": "failed",
+def _mark_failed(sb, document_id: str, reason: str, *, preserve_active: bool = False) -> None:
+    """Record a failed (candidate) indexing attempt.
+
+    ``preserve_active=True`` means the document already had a healthy active
+    revision before this attempt started — a failed rebuild must not disable
+    it (the candidate's own writes never touched the active revision's rows,
+    see the callers in index_document). In that case leave
+    processing_status/active_index_revision untouched and only reset
+    index_revision_status back to 'ready' (it was flipped to 'building' at
+    the start of this attempt) so the still-healthy active revision doesn't
+    read as REVISION_INCONSISTENT. Only a document with no prior valid
+    revision gets marked processing_status='failed'.
+    """
+    payload: dict[str, Any] = {
         "processing_error": reason[:1000],
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", document_id).execute()
+    }
+    if preserve_active:
+        payload["index_revision_status"] = "ready"
+    else:
+        payload["processing_status"] = "failed"
+    sb.table("documents").update(payload).eq("id", document_id).execute()
 
 
 def _replace_pages(

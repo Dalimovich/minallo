@@ -268,6 +268,12 @@ def _load_authorized_course_candidates(user_id: str, course_id: str) -> list[dic
 
 
 def _load_canonical_manifest(row: dict[str, Any]) -> list[Any]:
+    """Load and validate the canonical page manifest for a document's active
+    revision. Validates against the document's own AUTHORITATIVE expected
+    page count (page_count, written at the same moment this exact revision
+    was activated) — never against len(manifest_rows) itself, which would
+    let a truncated manifest (e.g. 93 rows when 100 were expected) validate
+    against its own row count instead of the real expectation."""
     revision = str(row.get("active_index_revision") or "")
     if not revision:
         raise ValueError("missing active index revision")
@@ -277,7 +283,8 @@ def _load_canonical_manifest(row: dict[str, Any]) -> list[Any]:
         .eq("document_id", row["id"]).eq("index_revision", revision)
         .order("page_number").execute()
     ).data or []
-    return validate_page_manifest(manifest_rows, physical_page_count=len(manifest_rows))
+    expected_pages = int(row.get("page_count") or 0)
+    return validate_page_manifest(manifest_rows, physical_page_count=expected_pages)
 
 
 def _selected_document_readiness_issue(row: dict[str, Any]) -> str | None:

@@ -174,3 +174,59 @@ def test_missing_document_reports_failed(monkeypatch) -> None:
     result = validate_active_document_index("nope")
     assert result["health"] == DocumentIndexHealth.FAILED
     assert result["reason"] == "document_not_found"
+
+
+def test_partial_page_loss_is_not_ready(monkeypatch) -> None:
+    """Reviewer-flagged gap: page_count=100, manifest itself is intact and
+    complete (100 rows), but only 91 rows actually landed in document_pages —
+    must not read as healthy just because 91 > 0. Isolated from the
+    manifest-truncation case (which is caught earlier, by MANIFEST_INVALID)
+    by keeping the manifest itself full-sized here."""
+    _patch(
+        monkeypatch,
+        doc_row={
+            "id": "doc-9", "processing_status": "ready", "page_count": 100, "chunk_count": 148,
+            "active_index_revision": "r1", "index_revision_status": "ready",
+        },
+        chunk_count=148, page_count=91,
+        manifest_rows=[_manifest_row(n) for n in range(1, 101)],
+    )
+    result = validate_active_document_index("doc-9")
+    assert result["health"] == DocumentIndexHealth.STALE_METADATA
+    assert result["actualPageCount"] == 91
+    assert result["metadataPageCount"] == 100
+
+
+def test_partial_chunk_loss_is_not_ready(monkeypatch) -> None:
+    """Reviewer-flagged gap: chunk_count=120 but only 74 live chunks must not
+    read as healthy just because 74 > 0."""
+    _patch(
+        monkeypatch,
+        doc_row={
+            "id": "doc-10", "processing_status": "ready", "page_count": 10, "chunk_count": 120,
+            "active_index_revision": "r1", "index_revision_status": "ready",
+        },
+        chunk_count=74, page_count=10,
+        manifest_rows=[_manifest_row(n) for n in range(1, 11)],
+    )
+    result = validate_active_document_index("doc-10")
+    assert result["health"] == DocumentIndexHealth.STALE_METADATA
+    assert result["actualChunkCount"] == 74
+    assert result["metadataChunkCount"] == 120
+
+
+def test_truncated_manifest_no_longer_validates_against_itself(monkeypatch) -> None:
+    """Reviewer-flagged gap: a manifest with only 93 of an expected 100 rows
+    must be caught (MANIFEST_INVALID), not validated against its own count
+    (physical_page_count=len(manifest_rows) would have silently passed)."""
+    _patch(
+        monkeypatch,
+        doc_row={
+            "id": "doc-11", "processing_status": "ready", "page_count": 100, "chunk_count": 148,
+            "active_index_revision": "r1", "index_revision_status": "ready",
+        },
+        chunk_count=148, page_count=100,
+        manifest_rows=[_manifest_row(n) for n in range(1, 94)],  # only 93 rows
+    )
+    result = validate_active_document_index("doc-11")
+    assert result["health"] == DocumentIndexHealth.MANIFEST_INVALID
