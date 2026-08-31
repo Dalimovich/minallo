@@ -124,21 +124,30 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       'retrieval_cache', 'flashcard_decks', 'exam_sessions', 'notes',
       'course_notes', 'ai_question_cache'
     ];
+    const cleanupWarnings: string[] = [];
     for (const table of courseTables) {
       const deletion = await supaRequest(
         'DELETE', `${table}?user_id=eq.${uid}&course_id=eq.${cid}`, null, key
       );
-      // Optional tables can be absent on older projects. Other failures are
-      // reported with the exact stage instead of escaping as Cloudflare 1101.
-      if (!successful(deletion.status) && deletion.status !== 404) {
-        return fail(502, `COURSE_DELETE_RELATED_DATA_FAILED:${table}`);
+      // These are non-authoritative convenience artifacts and schema support
+      // differs between compatibility generations. Once Storage and documents
+      // are gone, a missing table/column must not strand the course in the UI.
+      if (!successful(deletion.status)) {
+        cleanupWarnings.push(`${table}:${deletion.status}`);
       }
+    }
+
+    if (cleanupWarnings.length) {
+      console.warn('course_delete_cleanup_warnings', {
+        userId: user.id, courseId, cleanupWarnings
+      });
     }
 
     return jsonResponse(200, {
       ok: true,
       deletedDocuments: documents.length,
-      deletedStorageObjects: storagePaths.size
+      deletedStorageObjects: storagePaths.size,
+      cleanupWarnings
     });
   } catch (error) {
     console.error('course_delete_failed', {

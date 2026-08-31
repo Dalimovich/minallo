@@ -34,6 +34,8 @@ test('course deletion recursively removes storage and database artifacts', () =>
   assert.match(courseDelete, /documents\?user_id=eq\.\$\{uid\}&course_id=eq\.\$\{cid\}/);
   assert.match(courseDelete, /COURSE_DELETE_DOCUMENTS_FAILED/);
   assert.match(courseDelete, /COURSE_DELETE_INTERNAL_FAILURE/);
+  assert.match(courseDelete, /cleanupWarnings\.push/);
+  assert.doesNotMatch(courseDelete, /COURSE_DELETE_RELATED_DATA_FAILED/);
 });
 
 test('an uncaught exception anywhere in a Pages Function handler cannot surface as Cloudflare\'s generic Error 1101 crash page', () => {
