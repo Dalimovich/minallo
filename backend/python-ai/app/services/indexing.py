@@ -73,6 +73,26 @@ _INDEXING_SEMAPHORE = threading.BoundedSemaphore(_INDEXING_MAX_CONCURRENCY)
 # Non-terminal statuses an interrupted indexing run leaves behind.
 _IN_FLIGHT_STATUSES = ("extracting_text", "chunking", "embedding")
 
+# page_processing_status values that mean "this page has real, usable text",
+# even if OCR wasn't fully confident about it — used to derive each page's
+# document_page_manifests status (see _manifest_page_status). Deliberately
+# does NOT include "pending_on_demand_ocr": that value means OCR was never
+# actually attempted/completed for the page, which is the case the manifest
+# gate exists to catch (a page can't silently be missing from exhaustive
+# processing). "weak_or_ambiguous" means OCR DID run and returned real text
+# it just wasn't fully confident about (confirmed in the 2026-08-31 incident:
+# weak_or_ambiguous pages carried 200+ characters of genuine, if garbled,
+# text) — treating that identically to a page with nothing at all made the
+# whole document permanently unable to activate a new revision over a single
+# imperfect page, which is a worse outcome for retrieval than including it.
+_MANIFEST_INDEXED_PAGE_STATUSES = frozenset(
+    {"embedded_text_reliable", "ocr_complete", "weak_or_ambiguous"}
+)
+
+
+def _manifest_page_status(page_processing_status: str | None) -> str:
+    return "indexed" if page_processing_status in _MANIFEST_INDEXED_PAGE_STATUSES else "failed"
+
 
 def run_document_indexing(document_id: str, *, force: bool = False) -> dict[str, Any]:
     """Concurrency-bounded entrypoint for indexing — what callers should use.
@@ -925,11 +945,7 @@ def reindex_chunks_from_pages(document_id: str) -> dict[str, Any]:
         "page_number": row["page_number"],
         "source_page_id": f"{new_revision}:{row['page_number']}",
         "required_for_processing": True,
-        "status": (
-            "indexed"
-            if row.get("page_processing_status") in {"embedded_text_reliable", "ocr_complete"}
-            else "failed"
-        ),
+        "status": _manifest_page_status(row.get("page_processing_status")),
         "exclusion_reason": None,
     } for row in cloned_rows]
     for start in range(0, len(manifest_rows), 100):
@@ -1202,11 +1218,7 @@ def _replace_pages(
         "page_number": row["page_number"],
         "source_page_id": f"{index_revision}:{row['page_number']}",
         "required_for_processing": True,
-        "status": (
-            "indexed"
-            if row.get("page_processing_status") in {"embedded_text_reliable", "ocr_complete"}
-            else "failed"
-        ),
+        "status": _manifest_page_status(row.get("page_processing_status")),
         "exclusion_reason": None,
     } for row in rows]
     for start in range(0, len(manifest_rows), 100):
