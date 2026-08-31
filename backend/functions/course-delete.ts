@@ -124,18 +124,21 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       'retrieval_cache', 'flashcard_decks', 'exam_sessions', 'notes',
       'course_notes', 'ai_question_cache'
     ];
-    const cleanupWarnings: string[] = [];
-    for (const table of courseTables) {
+    // Run optional cleanup concurrently. Sequential 12-second REST timeouts
+    // could otherwise hold the response for more than a minute after the
+    // authoritative Storage/document deletion had already succeeded.
+    const cleanupResults = await Promise.all(courseTables.map(async (table) => {
       const deletion = await supaRequest(
         'DELETE', `${table}?user_id=eq.${uid}&course_id=eq.${cid}`, null, key
       );
-      // These are non-authoritative convenience artifacts and schema support
-      // differs between compatibility generations. Once Storage and documents
-      // are gone, a missing table/column must not strand the course in the UI.
-      if (!successful(deletion.status)) {
-        cleanupWarnings.push(`${table}:${deletion.status}`);
-      }
-    }
+      return { table, status: deletion.status };
+    }));
+    // These are non-authoritative convenience artifacts and schema support
+    // differs between compatibility generations. Once Storage and documents
+    // are gone, a missing table/column must not strand the course in the UI.
+    const cleanupWarnings = cleanupResults
+      .filter((result) => !successful(result.status))
+      .map((result) => `${result.table}:${result.status}`);
 
     if (cleanupWarnings.length) {
       console.warn('course_delete_cleanup_warnings', {
