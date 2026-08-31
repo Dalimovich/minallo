@@ -305,6 +305,32 @@ def _selected_document_readiness_issue(row: dict[str, Any]) -> str | None:
     return None
 
 
+def _selected_document_index_corrupt(row: dict[str, Any]) -> bool:
+    """Second-layer LIVE check for a row that already passed the cheap cached
+    check above. ``processing_status='ready'`` plus a non-zero cached
+    ``chunk_count`` are not proof a document is actually retrievable — those
+    counters can drift from the real document_chunks/document_pages rows
+    (see ``services.document_health`` for the incident that surfaced this:
+    25 documents sitting at 'ready' with a stale chunk_count but zero live
+    chunks). Kept separate from ``_selected_document_readiness_issue`` so
+    that function's cheap, pure, well-tested metadata check is untouched;
+    this one does real I/O and is only worth paying for once a row already
+    looks ready."""
+    from ..services.document_health import (  # noqa: WPS433
+        DocumentIndexHealth,
+        validate_active_document_index,
+    )
+
+    health = validate_active_document_index(str(row.get("id") or ""))
+    return health.get("health") in (
+        DocumentIndexHealth.STALE_METADATA,
+        DocumentIndexHealth.MISSING_CHUNKS,
+        DocumentIndexHealth.MISSING_PAGES,
+        DocumentIndexHealth.MANIFEST_INVALID,
+        DocumentIndexHealth.REVISION_INCONSISTENT,
+    )
+
+
 def _verify_user_owns_documents(
     user_id: str,
     course_id: str,
@@ -1752,10 +1778,20 @@ async def ask_stream_endpoint(
         row for row in explicitly_selected
         if _selected_document_readiness_issue(row)
     ]
-    if unready_selected:
-        blocked = unready_selected[0]
+    # Cached metadata can lie (processing_status='ready' + a stale non-zero
+    # chunk_count while document_chunks is actually empty) — only worth the
+    # extra live query once the cheap check above already passed.
+    corrupt_selected = (
+        [row for row in explicitly_selected if _selected_document_index_corrupt(row)]
+        if not unready_selected else []
+    )
+    if unready_selected or corrupt_selected:
+        blocked = unready_selected[0] if unready_selected else corrupt_selected[0]
         file_name = str(blocked.get("file_name") or "the selected document")
-        document_status = _selected_document_readiness_issue(blocked) or "not_ready"
+        document_status = (
+            (_selected_document_readiness_issue(blocked) or "not_ready")
+            if unready_selected else "index_corrupt"
+        )
 
         async def selected_document_not_ready_stream():
             yield _sse_bytes(json.dumps({
@@ -1768,18 +1804,22 @@ async def ask_stream_endpoint(
                     "status": document_status,
                 },
             }, ensure_ascii=False))
+            is_corrupt = document_status.casefold() == "index_corrupt"
+            is_failed = document_status.casefold() == "failed"
             yield _error_sse(
                 code=(
-                    "DOCUMENT_INDEXING"
-                    if document_status.casefold() != "failed"
-                    else "DOCUMENT_INDEXING_FAILED"
+                    "DOCUMENT_INDEX_CORRUPT" if is_corrupt
+                    else "DOCUMENT_INDEXING_FAILED" if is_failed
+                    else "DOCUMENT_INDEXING"
                 ),
                 message=(
-                    f'"{file_name}" is still being prepared for document search. '
-                    if document_status.casefold() != "failed" else
+                    "This document's search index is incomplete and needs to be rebuilt."
+                    if is_corrupt else
                     f'Indexing failed for "{file_name}". Minallo did not use a partial index.'
+                    if is_failed else
+                    f'"{file_name}" is still being prepared for document search. '
                 ),
-                retryable=document_status.casefold() != "failed",
+                retryable=not is_failed,
                 request_id=request_id,
                 stage=(
                     "VERIFYING_INDEX" if document_status == "invalid_index_metadata"

@@ -19,14 +19,15 @@ interface DocumentRow {
 }
 
 async function _kickIndex(
-  documentId: string, userId: string, courseId: string, storagePath: string
+  documentId: string, userId: string, courseId: string, storagePath: string,
+  force: boolean
 ): Promise<{ started: true } | { started: false; error: string }> {
   if (!pythonAiConfigured()) {
     console.warn('[documents-index-existing] AI service not configured — document stays unprocessed');
     return { started: false, error: 'AI indexing service is not configured' };
   }
   const r = await forwardToPython('index-document', {
-    userId, courseId, documentId, storagePath
+    userId, courseId, documentId, storagePath, force
   });
   if (!r.ok) {
     const errBody = r.body as { error?: string };
@@ -111,13 +112,17 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         alreadyIndexed: true, documentId: doc.id, processingStatus: 'ready'
       });
     }
-    await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(doc.id),
-      { processing_status: 'uploaded', storage_path: docStoragePath }, serviceKey);
-    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
-      .catch(() => {});
-    await supaRequest('DELETE', 'document_pages?document_id=eq.' + encodeURIComponent(doc.id), null, serviceKey)
-      .catch(() => {});
-    const indexing = await _kickIndex(doc.id, user.id, courseId, docStoragePath);
+    // Do NOT delete document_chunks/document_pages here. The Python indexer
+    // (index_document, force=true) builds a new candidate index revision and
+    // only activates it once the rebuild is verified — deleting the active
+    // revision's data upfront would destroy a working index before its
+    // replacement is proven to work. Just keep storage_path current and let
+    // the indexer own every status/data transition.
+    if (doc.storage_path !== docStoragePath) {
+      await supaRequest('PATCH', 'documents?id=eq.' + encodeURIComponent(doc.id),
+        { storage_path: docStoragePath }, serviceKey);
+    }
+    const indexing = await _kickIndex(doc.id, user.id, courseId, docStoragePath, Boolean(forceReindex));
     if (!indexing.started) {
       await _markIndexFailed(doc.id, serviceKey);
       return jsonResponse(502, {
@@ -152,7 +157,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(500, 'Failed to record document: ' + JSON.stringify(insertResult.body));
   }
   const document = Array.isArray(insertResult.body) ? insertResult.body[0]! : insertResult.body as DocumentRow;
-  const indexing = await _kickIndex(document.id, user.id, courseId, docStoragePath);
+  const indexing = await _kickIndex(document.id, user.id, courseId, docStoragePath, false);
   if (!indexing.started) {
     await _markIndexFailed(document.id, serviceKey);
     return jsonResponse(502, {

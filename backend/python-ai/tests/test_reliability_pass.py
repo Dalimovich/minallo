@@ -705,6 +705,46 @@ def test_selected_document_readiness_accepts_usable_legacy_index() -> None:
     }) is None
 
 
+def test_selected_document_index_corrupt_when_metadata_lies(monkeypatch) -> None:
+    """The production incident this guards against: processing_status='ready'
+    with a non-zero cached chunk_count, but the live document_chunks count is
+    actually zero. The cheap cached check alone would call this row ready —
+    the live check must catch it and report index_corrupt."""
+    from app.routers.stream import _selected_document_index_corrupt
+    from app.services import document_health
+
+    monkeypatch.setattr(
+        document_health, "validate_active_document_index",
+        lambda document_id: {
+            "documentId": document_id,
+            "health": document_health.DocumentIndexHealth.STALE_METADATA,
+            "reason": "chunk_count>0 but no live chunks under the active revision",
+        },
+    )
+    assert _selected_document_index_corrupt({
+        "id": "doc-stale", "processing_status": "ready",
+        "page_count": 2, "chunk_count": 23, "active_index_revision": "r1",
+    }) is True
+
+
+def test_selected_document_not_corrupt_when_live_counts_match(monkeypatch) -> None:
+    from app.routers.stream import _selected_document_index_corrupt
+    from app.services import document_health
+
+    monkeypatch.setattr(
+        document_health, "validate_active_document_index",
+        lambda document_id: {
+            "documentId": document_id,
+            "health": document_health.DocumentIndexHealth.READY,
+            "reason": None,
+        },
+    )
+    assert _selected_document_index_corrupt({
+        "id": "doc-fine", "processing_status": "ready",
+        "page_count": 2, "chunk_count": 5, "active_index_revision": "r1",
+    }) is False
+
+
 def test_page_classifier_skips_irrelevant_and_routes_specialised_pages() -> None:
     assert classify_extraction_page("", "Kurzfragen") is ExtractionPageKind.IRRELEVANT
     assert classify_extraction_page(
