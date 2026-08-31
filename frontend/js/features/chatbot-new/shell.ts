@@ -3405,10 +3405,20 @@ async function streamFromAskStream(
       groundingRequest: (
         assistantMessage?.requestSnapshot?.groundingResolution && durableConversation
           ? {
-              retrievalScope: {
-                type: 'documents',
-                documentIds: assistantMessage.requestSnapshot.groundingResolution.documentIds
-              },
+              // The prior turn's resolution can legitimately carry an empty
+              // documentIds array (e.g. it resolved to general knowledge, or
+              // course-wide relevance found nothing document-specific) —
+              // the backend's RetrievalScope rejects `type: 'documents'`
+              // with zero ids (422 "documents retrieval scope requires
+              // documentIds"), so replaying that snapshot must fall back to
+              // `type: 'course'` rather than faithfully reproducing an
+              // invalid shape.
+              retrievalScope: assistantMessage.requestSnapshot.groundingResolution.documentIds?.length
+                ? {
+                    type: 'documents',
+                    documentIds: assistantMessage.requestSnapshot.groundingResolution.documentIds
+                  }
+                : { type: 'course' },
               viewerContext: assistantMessage.requestSnapshot.groundingRequest?.viewerContext,
               documentAccess: assistantMessage.requestSnapshot.groundingRequest?.documentAccess
             }
