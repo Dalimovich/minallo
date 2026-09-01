@@ -27,7 +27,7 @@ def test_worker_uses_database_claim_and_expiring_lease():
 def test_worker_starts_from_application_lifespan_and_consumes_pipeline():
     assert "start_scoped_job_worker()" in MAIN
     assert "_prepare_ask_stream_response" in WORKER
-    assert "async for _event in response.body_iterator" in WORKER
+    assert "await _drain_capturing_answer(response.body_iterator)" in WORKER
 
 
 def test_worker_reconstructs_authorized_preflight_for_canonical_job_reuse():
@@ -60,7 +60,7 @@ def test_resume_and_retry_endpoints_preserve_job_identity():
 
 def test_terminal_job_failure_is_synchronised_to_durable_request():
     assert 'in {"failed", "failed_recoverable", "failed_terminal", "cancelled", "superseded"}' in WORKER
-    assert 'error_code=str(snapshot.get("failureCode")' in WORKER
+    assert 'error_code=str(job_snapshot.get("failureCode")' in WORKER
 
 
 def test_resume_is_idempotent_while_worker_lease_is_valid():
