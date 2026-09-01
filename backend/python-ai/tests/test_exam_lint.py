@@ -8,17 +8,21 @@ from __future__ import annotations
 
 from app.services.answer import lint_exam_output
 from app.services.answer_intent import AcademicIntent, intent_style_instruction
+from app.services.exam_solution_validation import (
+    answer_has_question_specific_result,
+    solution_is_only_procedural_instruction,
+)
 
 _CLEAN_EXAM = """# Probeklausur: Fertigungstechnik
-**Time:** 90 Min  **Total:** 100 Punkte  **Allowed tools:** Formelsammlung
+**Time:** 90 Min  **Total:** 12 Punkte  **Allowed tools:** Formelsammlung
 **Instructions:** Bearbeiten Sie alle Aufgaben.
 
 ## Aufgabe 1: Widerstandsschweißen — 6 Punkte
-**Source:** [Source 1] — Kapitel_6.1.pdf
+**Based on / inspired by:** [Source 1] — Kapitel_6.1.pdf
 a) Beschreiben Sie den Prozessablauf.
 
 ## Aufgabe 2: Zerspanung — 6 Punkte
-**Source:** [Source 2] — Kapitel_5.1.pdf
+**Based on / inspired by:** [Source 2] — Kapitel_5.1.pdf
 a) Erklären Sie den Spanwinkel.
 
 ## Kurzlösung
@@ -77,6 +81,61 @@ def test_task_without_answer_flagged():
     assert any("Aufgabe 3 has no model answer" in i for i in issues)
 
 
+def test_incident_procedural_kurzloesung_is_blocking() -> None:
+    bad = """# Probeklausur: TM3
+## Aufgabe 1: Gauß — 20 Punkte
+**Based on / inspired by:** [Source 1] — Probeklausur.pdf
+a) Formulate the theorem. (10 points)
+b) Calculate both sides for v(x)=(x_1,x_2)^T. (10 points)
+
+## Aufgabe 2: Wave equation — 20 Punkte
+**Based on / inspired by:** [Source 2] — Probeklausur_3.pdf
+a) Determine the resulting function. (20 points)
+
+## Kurzlösung
+### Aufgabe 1
+**a)** Describe the significance of the integrals.
+**b)** Calculate both sides using the specified vector field and confirm equality.
+### Aufgabe 2
+**a)** Use separation of variables and apply the boundary conditions.
+"""
+    issues = lint_exam_output(bad)
+    assert any("Aufgabe 1a" in issue and "procedural-only" in issue for issue in issues)
+    assert any("Aufgabe 1b" in issue and "procedural-only" in issue for issue in issues)
+    assert any("Aufgabe 2a" in issue and "procedural-only" in issue for issue in issues)
+
+
+def test_actual_numeric_and_conceptual_answers_pass_result_gate() -> None:
+    assert answer_has_question_specific_result(
+        "Calculate the bending stress.",
+        r"$M_b=756000\,\mathrm{Nmm}$ and $\sigma_b=M_b/W=795.8\,\mathrm{N/mm^2}$.",
+    )
+    assert answer_has_question_specific_result(
+        "Describe the physical meaning of the Gauss theorem.",
+        "The boundary flux equals the integral of the divergence inside the region.",
+    )
+    assert solution_is_only_procedural_instruction("Solve using the method of characteristics.")
+
+
+def test_generated_variant_cannot_claim_literal_source() -> None:
+    bad = _CLEAN_EXAM.replace("**Based on / inspired by:**", "**Source:**", 1)
+    assert any("inspired by" in issue for issue in lint_exam_output(bad))
+
+
+def test_exam_and_subquestion_point_totals_must_match() -> None:
+    bad_header = _CLEAN_EXAM.replace("**Total:** 12 Punkte", "**Total:** 100 Punkte")
+    assert any("exam point total is inconsistent" in issue for issue in lint_exam_output(bad_header))
+    bad_parts = _CLEAN_EXAM.replace(
+        "a) Beschreiben Sie den Prozessablauf.",
+        "a) Beschreiben Sie den Prozessablauf. (4 Punkte)\nb) Nennen Sie ein Merkmal. (1 Punkt)",
+    ).replace(
+        "- Es bildet sich eine Schweißlinse, die nach dem Abkühlen die Verbindung erzeugt.",
+        "- Es bildet sich eine Schweißlinse, die nach dem Abkühlen die Verbindung erzeugt.\n"
+        "**b)** Das Merkmal ist eine stoffschlüssige Verbindung.",
+    )
+    assert any("Aufgabe 1 point total is inconsistent" in issue for issue in lint_exam_output(bad_parts))
+
+
 def test_intro_slide_question_flagged():
     bad = _CLEAN_EXAM.replace(
         "a) Beschreiben Sie den Prozessablauf.",
@@ -123,7 +182,7 @@ _HIGH_POINT_EXAM = """# Probeklausur: Fertigungstechnik
 **Total:** 17 Punkte
 
 ## Aufgabe 1: Kunststofftechnik — 17 Punkte
-**Source:** [Source 1] — Kapitel_3.pdf
+**Based on / inspired by:** [Source 1] — Kapitel_3.pdf
 a) Beschreiben Sie den Spritzgießprozess. (17 P)
 
 ## Kurzlösung

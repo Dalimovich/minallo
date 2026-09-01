@@ -1729,6 +1729,39 @@ _AUFGABE_HEADER_RE = re.compile(r"(?im)^#{1,4}\s*Aufgabe\s+(\d+)\b")
 _AUFGABE_POINTS_RE = re.compile(r"(?im)^#{1,4}\s*Aufgabe\s+(\d+)\b[^\n]*?(\d{1,3})\s*P(?:unkte|kt)?\b")
 # A high-point Aufgabe answered with too little — depth must match the points.
 _HIGH_POINT_THRESHOLD = 12
+_SUBPART_RE = re.compile(r"(?im)^(?:#{1,6}\s*)?(?:\*{1,2})?([a-z])\)(?:\*{1,2})?\s*(.*)$")
+_TOTAL_POINTS_RE = re.compile(
+    r"(?im)\*{0,2}Total\s*:?\*{0,2}\s*(\d{1,3})\s*(?:points|Punkt(?:e)?|P)"
+)
+_SECTION_POINTS_RE = re.compile(
+    r"(?im)^#{1,4}\s*(?:Aufgabe|Kurzfrage)\s+\d+\b[^\n]*?(\d{1,3})\s*(?:points|Punkt(?:e)?|P)\b"
+)
+_PART_POINTS_RE = re.compile(
+    r"\((\d{1,3})\s*(?:points|Punkt(?:e)?|P)\)", re.IGNORECASE,
+)
+
+
+def _numbered_exam_blocks(section: str) -> dict[int, str]:
+    matches = list(_AUFGABE_HEADER_RE.finditer(section or ""))
+    return {
+        int(match.group(1)): section[
+            match.end(): matches[i + 1].start() if i + 1 < len(matches) else len(section)
+        ]
+        for i, match in enumerate(matches)
+    }
+
+
+def _subpart_blocks(block: str) -> dict[str, str]:
+    matches = list(_SUBPART_RE.finditer(block or ""))
+    return {
+        match.group(1).lower(): "\n".join(filter(None, (
+            match.group(2).strip(),
+            block[
+                match.end(): matches[i + 1].start() if i + 1 < len(matches) else len(block)
+            ].strip(),
+        )))
+        for i, match in enumerate(matches)
+    }
 
 
 def lint_exam_output(text: str) -> list[str]:
@@ -1752,8 +1785,10 @@ def lint_exam_output(text: str) -> list[str]:
     else:
         questions, solution = text[: m.start()], text[m.start():]
 
-    q_nums = [int(n) for n in _AUFGABE_HEADER_RE.findall(questions)]
-    a_nums = {int(n) for n in _AUFGABE_HEADER_RE.findall(solution)}
+    question_blocks = _numbered_exam_blocks(questions)
+    answer_blocks = _numbered_exam_blocks(solution)
+    q_nums = list(question_blocks)
+    a_nums = set(answer_blocks)
 
     # 7.1 — every task has a matching answer.
     for n in q_nums:
@@ -1761,6 +1796,44 @@ def lint_exam_output(text: str) -> list[str]:
             issues.append(f"Aufgabe {n} has no model answer in the Kurzlösung")
 
     # 7.2 — no placeholders standing in for an answer.
+    from .exam_solution_validation import answer_has_question_specific_result  # noqa: WPS433
+    for n, question_block in question_blocks.items():
+        if n not in answer_blocks:
+            continue
+        q_parts = _subpart_blocks(question_block)
+        a_parts = _subpart_blocks(answer_blocks[n])
+        for label, prompt in q_parts.items():
+            if label not in a_parts:
+                issues.append(f"Aufgabe {n}{label} has no matching solution entry")
+            elif not answer_has_question_specific_result(prompt, a_parts[label]):
+                issues.append(
+                    f"Aufgabe {n}{label} solution is procedural-only or lacks an actual result"
+                )
+
+    if re.search(r"(?im)^\*{0,2}Source:\*{0,2}", questions):
+        issues.append("generated questions use `Source:` instead of `Based on / inspired by:`")
+
+    total_match = _TOTAL_POINTS_RE.search(questions)
+    section_points = [int(value) for value in _SECTION_POINTS_RE.findall(questions)]
+    if total_match and section_points and sum(section_points) != int(total_match.group(1)):
+        issues.append(
+            f"exam point total is inconsistent: header={total_match.group(1)}, "
+            f"sections={sum(section_points)}"
+        )
+    points_by_num = {int(n): int(p) for n, p in _AUFGABE_POINTS_RE.findall(questions)}
+    for n, block in question_blocks.items():
+        subparts = _subpart_blocks(block)
+        part_points = [
+            int(match.group(1)) for prompt in subparts.values()
+            if (match := _PART_POINTS_RE.search(prompt))
+        ]
+        if subparts and len(part_points) == len(subparts) and n in points_by_num:
+            if sum(part_points) != points_by_num[n]:
+                issues.append(
+                    f"Aufgabe {n} point total is inconsistent: heading={points_by_num[n]}, "
+                    f"subquestions={sum(part_points)}"
+                )
+
     if solution:
         if _EXAM_PLACEHOLDER_RE.search(solution):
             issues.append("Kurzlösung contains placeholder text instead of real answers")
@@ -1826,6 +1899,11 @@ _EXAM_BLOCKING_SUBSTRINGS = (
     "dismissed as non-technical",
     "DIN 8580",
     "empty output",
+    "matching solution entry",
+    "procedural-only",
+    "instead of `Based on / inspired by:`",
+    "too thin",
+    "point total is inconsistent",
 )
 
 
@@ -1859,7 +1937,11 @@ def repair_exam_output(
             "Rules: use ONLY technical content (never an admin/title/QR/event/"
             "literature slide); cover every selected file exactly once; never leave "
             "a placeholder or '…' in the Kurzlösung; give every Aufgabe a complete "
-            "model answer scaled to its points; keep formulas source-faithful.\n\n"
+            "model answer scaled to its points; keep formulas source-faithful. "
+            "Every subquestion answer must state the actual final value, equation, "
+            "conceptual answer, or expected drawing features. Imperatives such as "
+            "'calculate', 'use', 'solve', or 'sketch' are not answers. Label generated "
+            "variants `Based on / inspired by:`, never `Source:`.\n\n"
             "EXAM DRAFT TO REPAIR:\n" + bad_answer
         )
         completion = client.chat.completions.create(
@@ -1884,6 +1966,44 @@ def repair_exam_output(
     except Exception:  # noqa: BLE001 — repair is best-effort, never fatal
         log.exception("repair_exam_output failed")
         return bad_answer
+
+
+def verify_exam_output(
+    *, system_prompt: str, user_message: str, draft: str,
+    client: Any, model: str, max_tokens: int,
+) -> str:
+    """Independent question-to-solution consistency pass for generated exams."""
+    try:
+        instruction = (
+            "Act as the final ExamForge solution verifier. Check EVERY generated "
+            "question against its exact KurzlÃ¶sung before it can be shown. Recompute "
+            "numeric results and equations; verify units, signs, generated parameters, "
+            "PDE initial/boundary compatibility, and drawing/characteristic features. "
+            "Confirm every a)/b)/c) part is answered and point totals match. Repair any "
+            "question that is unsolvable or inconsistent together with its answer. "
+            "Preserve the course style but do not copy source values. Return ONLY the "
+            "complete student exam plus its compact KurzlÃ¶sung. Do not reveal chain of "
+            "thought or validation commentary. If already correct, return it unchanged."
+            "\n\nDRAFT:\n" + draft
+        )
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+                {"role": "user", "content": instruction},
+            ],
+            **chat_completion_params(model, max_tokens),
+        )
+        msg = completion.choices[0].message if completion.choices else None
+        verified = strip_answer_intro((msg.content if msg else "") or "")
+        if verified.strip() and len(exam_lint_blocking(lint_exam_output(verified))) <= len(
+            exam_lint_blocking(lint_exam_output(draft))
+        ):
+            return verified
+    except Exception:  # noqa: BLE001
+        log.exception("verify_exam_output failed")
+    return draft
 
 
 def generate_answer(
@@ -2067,6 +2187,10 @@ def generate_answer(
     # validate BEFORE returning): lint the exam, and on blocking failures run a
     # single repair pass instead of shipping a broken Probeklausur.
     if is_exam_request:
+        answer_text = verify_exam_output(
+            system_prompt=system_prompt, user_message=user_message, draft=answer_text,
+            client=client, model=target_model, max_tokens=effective_max_tokens,
+        )
         blocking = exam_lint_blocking(lint_exam_output(answer_text))
         if blocking:
             log.warning("exam lint blocking (%d) — repairing: %s", len(blocking), "; ".join(blocking))
@@ -2074,6 +2198,11 @@ def generate_answer(
                 system_prompt=system_prompt, user_message=user_message,
                 bad_answer=answer_text, issues=blocking,
                 client=client, model=target_model, max_tokens=effective_max_tokens,
+            )
+        remaining_blocking = exam_lint_blocking(lint_exam_output(answer_text))
+        if remaining_blocking:
+            raise RuntimeError(
+                "exam_validation_failed: " + "; ".join(remaining_blocking)
             )
 
     sources = [] if app_question else _sources_for_answer(answer_text, used_chunks, doc_names)

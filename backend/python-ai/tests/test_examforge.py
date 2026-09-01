@@ -103,6 +103,36 @@ def test_grounded_questions_drops_empty(monkeypatch):
     assert qs == []
 
 
+def test_grounded_questions_rejects_procedural_short_answer(monkeypatch):
+    fake = _FakeChatResult({"questions": [{
+        "question_type": "short_answer",
+        "question": "Calculate the bending stress for the stated values.",
+        "answer": "Calculate the moment and apply the bending-stress equation.",
+        "explanation": "Use the correct method.",
+        "source_chunk_ids": ["c1"],
+    }]})
+    monkeypatch.setattr(ef, "chat_json", lambda **k: fake)
+    qs, _ = ef._grounded_questions(
+        blueprint=[{"question_type": "short_answer", "topic": "Stress", "difficulty": "medium"}],
+        evidence=[{"chunkId": "c1", "documentId": "d1", "pageStart": 1, "text": "sigma=M/W"}],
+        doc_names={"d1": "mechanics.pdf"}, diff="medium",
+    )
+    assert qs == []
+
+
+def test_normalised_short_answer_exposes_verified_solution_object():
+    question = ef._normalise_question({
+        "type": "short_answer",
+        "question": "Calculate the bending stress.",
+        "answer": r"M=756000 Nmm; sigma=M/W=795.8 N/mm^2.",
+        "key_steps": ["Compute M=F*l", "Divide by W"],
+        "explanation": "Award points for moment, substitution, and unit.",
+    })
+    assert question["solution"]["finalAnswer"].endswith("N/mm^2.")
+    assert question["solution"]["validationStatus"] == "validated"
+    assert question["solution"]["keySteps"] == ["Compute M=F*l", "Divide by W"]
+
+
 # ── mastery recording (grade → mastery) ─────────────────────────────────────────
 
 

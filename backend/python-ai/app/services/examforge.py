@@ -10,6 +10,7 @@ from typing import Any
 from . import mastery
 from .learning_agent import get_course_topic_map, retrieve_learning_context
 from .document_context import understanding_block_for_ids
+from .exam_solution_validation import answer_has_question_specific_result
 from .llm_json import chat_json
 from .quiz import _fetch_course_topics, generate_quiz
 from ..supabase_client import get_supabase
@@ -48,30 +49,49 @@ def _normalise_question(row: dict[str, Any], question_id: str | None = None) -> 
         qtype = "mcq"
     options = _option_array(row.get("options"))
     answer = row.get("answer")
+    supplied_answer_valid = False
     if qtype == "mcq":
         if isinstance(answer, int) and 0 <= answer < len(_LETTERS):
             answer = _LETTERS[answer]
         answer = str(answer or "").strip().upper()[:1]
+        supplied_answer_valid = answer in _LETTERS and len(options) == 4
         if answer not in _LETTERS:
             answer = "A"
     elif qtype == "true_false":
         options = ["True", "False"]
         if isinstance(answer, bool):
             answer = "true" if answer else "false"
+            supplied_answer_valid = True
         else:
-            answer = str(answer or "").strip().lower()
-            answer = "true" if answer in ("true", "wahr", "yes", "ja") else "false"
+            supplied = str(answer or "").strip().lower()
+            supplied_answer_valid = supplied in ("true", "false", "wahr", "falsch", "yes", "no", "ja", "nein")
+            answer = "true" if supplied in ("true", "wahr", "yes", "ja") else "false"
     else:
         options = []
         answer = str(answer or "").strip()
     source = row.get("source")
+    question_text = str(row.get("question") or "").strip()
+    explanation = str(row.get("explanation") or "").strip()
+    actual_answer = str(answer or "").strip()
+    answer_valid = (
+        bool(actual_answer)
+        and (
+            answer_has_question_specific_result(question_text, actual_answer)
+            if qtype == "short_answer" else supplied_answer_valid
+        )
+    )
     return {
         "id": question_id,
         "type": qtype,
-        "question": row.get("question") or "",
+        "question": question_text,
         "options": options,
         "answer": answer,
-        "explanation": row.get("explanation") or "",
+        "explanation": explanation,
+        "solution": {
+            "keySteps": [step for step in (row.get("key_steps") or []) if str(step).strip()],
+            "finalAnswer": actual_answer,
+            "validationStatus": "validated" if answer_valid else "invalid_solution",
+        },
         "difficulty": row.get("difficulty") or "medium",
         "topic": row.get("topic"),
         "points": int(row.get("points") or 1),
@@ -81,7 +101,7 @@ def _normalise_question(row: dict[str, Any], question_id: str | None = None) -> 
             "pages": _source_page(source),
         }] if source else [],
         "validation": {
-            "status": row.get("validation_status") or "grounded",
+            "status": "invalid_solution" if not answer_valid else row.get("validation_status") or "grounded",
             "score": row.get("validation_score") or 1,
         },
     }
@@ -168,6 +188,14 @@ _EXAMFORGE_SYSTEM = (
     "- short_answer: no options; \"answer\" is a concise model answer, "
     "\"explanation\" is the grading rubric with expected keywords and common "
     "mistakes.\n"
+    "- A generated question is incomplete until its exact answer has been solved and checked. "
+    "For calculations, `answer` MUST contain the computed final value/expression; for derivations "
+    "the resulting equation; for conceptual questions the expected factual answer; for drawing "
+    "questions the characteristic equation and required sketch features. Procedural instructions "
+    "such as 'calculate', 'use', 'solve', or 'sketch' are NEVER answers.\n"
+    "- Generate new parameters only when they preserve the source problem family, boundary/initial "
+    "conditions, units, and solvability. Recompute the answer from the new parameters and never "
+    "reuse an old source result.\n"
     "- Match the course/professor style when exercise-style context is present.\n"
     "\n"
     "DIFFICULTY GUIDELINES:\n"
@@ -190,7 +218,7 @@ _EXAMFORGE_SYSTEM = (
     "Return ONLY JSON:\n"
     '{"questions":[{"question_type":"mcq|true_false|short_answer","topic":"",'
     '"difficulty":"easy|medium|hard","points":1,"question":"","options":["","","",""],'
-    '"answer":"","explanation":"","source_chunk_ids":[],"source_pages":[]}]}'
+    '"answer":"","key_steps":[""],"explanation":"","source_chunk_ids":[],"source_pages":[]}]}'
 )
 
 
@@ -334,6 +362,7 @@ def _grounded_questions(
             "question": raw.get("question"),
             "options": raw.get("options"),
             "answer": raw.get("answer") if raw.get("answer") is not None else raw.get("correct_answer"),
+            "key_steps": raw.get("key_steps"),
             "explanation": raw.get("explanation"),
             "difficulty": raw.get("difficulty") or diff,
             "topic": raw.get("topic"),
@@ -342,7 +371,11 @@ def _grounded_questions(
             "validation_status": "grounded" if cited else "ungrounded",
             "validation_score": 1 if cited else 0.4,
         })
-        if not str(q.get("question") or "").strip():
+        if (
+            not str(q.get("question") or "").strip()
+            or (q.get("validation") or {}).get("status") == "invalid_solution"
+        ):
+            log.warning("examforge rejected question with missing/procedural answer")
             continue
         q["source_chunk_ids"] = cited
         q["source_pages_list"] = pages
@@ -428,6 +461,14 @@ def generate_examforge(
             "promptTokens": quiz_out.get("promptTokens"),
             "completionTokens": quiz_out.get("completionTokens"),
         }
+
+    # The fallback generator is subject to the same invariant as the grounded
+    # path: never persist or present a question whose answer is absent or merely
+    # tells the student which method to use.
+    questions = [
+        question for question in questions
+        if (question.get("validation") or {}).get("status") != "invalid_solution"
+    ]
 
     topics = _fetch_course_topics(course_id, document_ids)
 

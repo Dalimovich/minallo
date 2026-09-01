@@ -55,6 +55,7 @@ from .answer import (
     build_source_coverage_overlay,
     lint_exam_output,
     repair_exam_output,
+    verify_exam_output,
     _cited_indices,
     strip_answer_intro,
     _context_strength,
@@ -2417,6 +2418,11 @@ def stream_answer(
     # so losing live streaming here is an acceptable trade for a validated exam.
     visual_verification: dict[str, Any] | None = None
     if is_exam_request:
+        yield _sse({"status": "verifying_answer"})
+        full_answer = verify_exam_output(
+            system_prompt=system_prompt, user_message=user_content, draft=full_answer,
+            client=client, model=target_model, max_tokens=effective_max_tokens,
+        )
         blocking = exam_lint_blocking(lint_exam_output(full_answer))
         if blocking:
             log.warning("exam lint blocking (%d) — repairing before stream: %s",
@@ -2427,6 +2433,24 @@ def stream_answer(
                 bad_answer=full_answer, issues=blocking,
                 client=client, model=target_model, max_tokens=effective_max_tokens,
             )
+        remaining_blocking = exam_lint_blocking(lint_exam_output(full_answer))
+        if remaining_blocking:
+            log.error(
+                "exam validation remained blocking after repair; refusing draft: %s",
+                "; ".join(remaining_blocking),
+            )
+            yield _sse({
+                "error": True,
+                "code": "exam_validation_failed",
+                "message": (
+                    "Minallo could not verify a complete answer key for every generated "
+                    "question. No unverified exam was returned. Please try again."
+                ),
+                "recoverable": True,
+                "retryable": True,
+                "requestId": request_id,
+            })
+            return
         # Emit the final (possibly repaired) exam in slices the client appends.
         for i in range(0, len(full_answer), 1500):
             yield _sse({"t": full_answer[i:i + 1500]})
