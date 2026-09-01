@@ -502,3 +502,21 @@ def test_web_search_last_resort_swallows_exceptions(monkeypatch) -> None:
     text, sources = answer_stream._web_search_last_resort("anything", user_id=None)
     assert text == ""
     assert sources == []
+
+
+def test_workspace_question_path_does_not_crash_on_unbound_academic_intent() -> None:
+    """App/workspace questions skip the academic_intent classification (it's
+    only computed on the RAG branch), but it was still read unconditionally
+    later to decide is_exam_request — an UnboundLocalError on every single
+    app/workspace question in production. Reproduced from real server logs
+    (request_id ncb_msg_mtihivmy_aazd611s, 2026-09-01)."""
+    from app.services.answer_stream import stream_answer
+
+    gen = stream_answer(
+        question="what's the open document and what does it contain?",
+        chunks=[],
+        doc_names={},
+        workspace_question=True,
+    )
+    first_chunk = next(gen)
+    assert isinstance(first_chunk, bytes)

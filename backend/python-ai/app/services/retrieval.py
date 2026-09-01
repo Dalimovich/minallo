@@ -115,9 +115,9 @@ _STOPWORDS = frozenset({
     # DE
     "der","die","das","den","dem","des","ein","eine","einen","einer","eines","und",
     "oder","aber","wenn","dann","ist","sind","war","waren","sein","mit","von","zu",
-    "im","in","an","am","auf","für","fur","über","uber","unter","bei","aus","nach",
+    "im","am","auf","für","fur","über","uber","unter","bei","aus","nach",
     "wie","was","wo","wer","wann","warum","bitte","welcher","welche","welches",
-    "nicht","kein","keine","ja","nein","mir","dir","ihm","ihr","wir","ihr","sie",
+    "nicht","kein","keine","ja","nein","mir","dir","ihm","ihr","wir","euch","sie",
 })
 _TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß]+")
 

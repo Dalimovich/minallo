@@ -30,6 +30,10 @@ dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.23",
   "ruff>=0.6",
+  # Catches possibly-unbound-variable / undefined-name bugs ruff's default
+  # rules miss (the class of bug behind two production NameError/
+  # UnboundLocalError incidents on 2026-09-01) — run `pyright` from this dir.
+  "pyright>=1.1.400",
 ]
 
 [tool.ruff]

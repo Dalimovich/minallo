@@ -1714,6 +1714,7 @@ def stream_answer(
         # instructions. The app context map is the only authority.
         system_prompt = _APP_ONLY_SYSTEM_PROMPT + MINALLO_APP_CONTEXT
         answer_mode = "app"
+        academic_intent = AcademicIntent.APP_QUESTION
     else:
         routing_question = question
         open_context_targets_visible_problem = open_ctx and (deictic or problem_mode is not None)
