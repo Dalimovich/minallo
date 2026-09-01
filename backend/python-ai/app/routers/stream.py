@@ -2281,6 +2281,8 @@ async def ask_stream_endpoint(
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
+                        "grounding_request": grounding_request,
+                        "grounding_resolution": grounding_resolution,
                     },
                 )
             )
@@ -2367,6 +2369,8 @@ async def ask_stream_endpoint(
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
+                        "grounding_request": grounding_request,
+                        "grounding_resolution": grounding_resolution,
                     },
                 )
             while not status_queue.empty():
@@ -2444,6 +2448,8 @@ async def ask_stream_endpoint(
                             "doc_name_map": preflight_doc_names,
                             "documents": preflight_documents,
                             "execution_plan": execution_plan,
+                            "grounding_request": grounding_request,
+                            "grounding_resolution": grounding_resolution,
                         },
                     )
                     body_iterator = prepared.body_iterator.__aiter__()
@@ -2744,6 +2750,14 @@ async def _prepare_ask_stream_response(
         {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
     ]
     execution_plan = (preflight or {}).get("execution_plan")
+    # Passed through from ask_stream_endpoint's own preflight resolution
+    # (built once, before this function is even scheduled) — this function
+    # has no independent way to reconstruct GroundingRequest/GroundingResolution
+    # itself (they depend on resolve_document_access/resolve_execution_plan
+    # output computed by the caller), so a missing preflight value here is a
+    # caller bug, not something to silently paper over with a placeholder.
+    grounding_request = (preflight or {}).get("grounding_request")
+    grounding_resolution = (preflight or {}).get("grounding_resolution")
     if automatic_context_section and tutor_state:
         # The standalone chatbot has one chronological visible transcript.
         # For server-created document/course sections, use only that section's

@@ -215,3 +215,114 @@ def test_twenty_turn_route_persists_state_and_rejects_stale_work(monkeypatch):
     stale_events = asyncio.run(stale_turn())
     assert b"STALE_GENERATION" in stale_events
     assert persisted.generation == 20
+
+
+def test_relevance_scoped_document_question_does_not_crash_on_undefined_name(monkeypatch):
+    """Regression for a production incident: a plain relevance-grounded
+    question about the open document ("what's the open document and what
+    does it contain?") crashed every single time with a generic
+    internal_error. The real cause was a NameError — _prepare_ask_stream_response
+    referenced a bare `grounding_request`/`grounding_resolution` that only
+    existed in ask_stream_endpoint's own scope, not the callee's — so this
+    exact STANDARD_RAG, single-document, non-visible-page path is the one
+    the existing 20-turn (visible-page/selectedRegion) test above never
+    exercises. Every retrieval/generation call is mocked; the only thing
+    being tested is that the request completes without an internal_error."""
+    from app.routers import stream
+    from app.services import cache, mastery, retrieval, tutor_state_store
+    from app.services.tutor_state import TutorState
+
+    user_id = "00000000-0000-4000-8000-000000000003"
+    document_id = "00000000-0000-4000-8000-000000000004"
+    conversation_id = "relevance-scoped-single-turn"
+
+    latest_generation = 0
+
+    def claim(_uid, _conversation, _course, generation):
+        nonlocal latest_generation
+        if generation < latest_generation:
+            return False
+        latest_generation = generation
+        return True
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", claim)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: latest_generation,
+    )
+    monkeypatch.setattr(
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id,
+                "user_id": user_id,
+                "course_id": "course-1",
+                "file_name": "formelzettel.pdf",
+                "storage_path": "synthetic/formelzettel.pdf",
+                "document_hash": "rev-1",
+                "processing_status": "ready",
+                "page_count": 2,
+                "chunk_count": 5,
+            }
+        },
+    )
+    monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    chunk = retrieval.RetrievedChunk(
+        chunk_id="c1", document_id=document_id, page_start=1, page_end=1,
+        text="Formula sheet contents.", score=1.0, similarity=1.0,
+        chunk_type="formula", section_title="Formelzettel",
+    )
+    monkeypatch.setattr(retrieval, "retrieve_routed_chunks", lambda **_: [chunk])
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(retrieval, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_numbered_section_chunks", lambda **_: [])
+    monkeypatch.setattr(
+        stream, "retrieve_multi_item_course_evidence",
+        lambda **_: type("R", (), {"chunks": [chunk], "evidence": [], "to_dict": lambda self: {}})(),
+    )
+    monkeypatch.setattr(
+        stream, "research_unresolved_items",
+        lambda *_a, **_k: type("FR", (), {"sources": [], "prompt_overlay": lambda self: ""})(),
+    )
+    monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+
+    def fake_stream_answer(**_kwargs):
+        done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+        yield f'data: {{"meta": true}}\n\n'.encode()
+        yield b'data: {"t":"This is formelzettel.pdf."}\n\n'
+        yield f"data: {json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            activeDocumentId=document_id,
+            question="what's the open document and what does it contain?",
+            visiblePage=1,
+            sourceMode="course_files",
+            openFileContext="[CURRENTLY VISIBLE PDF PAGE]\nFile: formelzettel.pdf\nPage: 1 of 2\n\n",
+            conversationId=conversation_id,
+            conversationGeneration=1,
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    joined = b"".join(events)
+    assert b'"code": "internal_error"' not in joined, joined
+    assert b"NameError" not in joined, joined
+    assert b'"done": true' in joined
