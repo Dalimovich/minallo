@@ -97,11 +97,42 @@ async def _execute(job: dict[str, Any]) -> None:
         _prepare_ask_stream_response,
     )
     from .conversation_store import update_tutor_request
+    from .execution_router import resolve_execution_plan
+    from .grounding_contract import GroundingRequest, GroundingResolution
 
     payload = AskStreamRequest.model_validate(dict(job.get("request_payload") or {}))
     document_ids = list(job.get("document_ids") or [])
     documents = _load_authorized_documents(
         str(job["user_id"]), str(job["course_id"]), document_ids,
+    )
+    # ask_stream_endpoint computes grounding_request/grounding_resolution/
+    # execution_plan itself before ever creating this job, and stashes the
+    # first two into requestSnapshot for persistence. Re-derive all three
+    # here rather than leaving them out of preflight (as a prior version of
+    # this function did) - _prepare_ask_stream_response reads them from
+    # preflight unconditionally, and a missing execution_plan crashed every
+    # scoped job with AttributeError: 'NoneType' object has no attribute
+    # 'executionLane' (confirmed via production logs, job 58007d41-...,
+    # 2026-09-01).
+    snapshot = dict((job.get("request_payload") or {}).get("requestSnapshot") or {})
+    if not snapshot.get("groundingRequest") or not snapshot.get("groundingResolution"):
+        raise RuntimeError("scoped job request_payload missing groundingRequest/groundingResolution snapshot")
+    grounding_request = GroundingRequest.model_validate(snapshot["groundingRequest"])
+    grounding_resolution = GroundingResolution.model_validate(snapshot["groundingResolution"])
+    previous_turns = payload.previousTurns or []
+    previous_user_question = next(
+        (turn.text for turn in reversed(previous_turns) if turn.role == "user" and turn.text.strip()),
+        None,
+    )
+    _task_profile, execution_plan = resolve_execution_plan(
+        question=(payload.question or "").strip(),
+        resolved_access=grounding_resolution.documentAccess,
+        processing_pipeline=grounding_resolution.processingPipeline,
+        source_mode=payload.sourceMode,
+        has_previous_answer=any(
+            turn.role == "assistant" and bool(turn.text.strip()) for turn in previous_turns
+        ),
+        previous_question=previous_user_question,
     )
     preflight = {
         "resolved_document_ids": document_ids,
@@ -111,6 +142,9 @@ async def _execute(job: dict[str, Any]) -> None:
             for document_id, row in documents.items()
         },
         "documents": documents,
+        "execution_plan": execution_plan,
+        "grounding_request": grounding_request,
+        "grounding_resolution": grounding_resolution,
     }
     response = await _prepare_ask_stream_response(
         payload,
