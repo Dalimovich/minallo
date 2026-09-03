@@ -406,9 +406,15 @@ var _sb = {
       var token = _sbStoredToken();
       if (!token) {
         if (_sbStoredRefresh()) {
+          // .catch: a network/DNS blip during this fetch must not reject
+          // _sbSessionReady — callers (e.g. listCourseDocuments) await it
+          // unguarded and would otherwise surface a raw network error as a
+          // confusing "could not load" toast on the very first page load.
           window._sbSessionReady = _sb.auth.refreshSession().then(function (user) {
             if (user && user.id) return _settle(user, 'refreshSession');
             _ssAuth('signed-out', { source: 'restoreSession' });
+            return null;
+          }).catch(function () {
             return null;
           });
           return window._sbSessionReady;
@@ -449,6 +455,10 @@ var _sb = {
             if (refreshedUser && refreshedUser.id) return _settle(refreshedUser, 'refreshSession');
             return _signedOut();
           });
+        }).catch(function () {
+          // Fallback refreshSession() above also failed (network still down).
+          // Resolve rather than reject — see the _sbSessionReady note above.
+          return null;
         });
       }
 
@@ -461,6 +471,8 @@ var _sb = {
           // Refresh failed — last-ditch attempt at getUser in case the access
           // token is somehow still good (unlikely, but free).
           return _attemptGetUser(true);
+        }).catch(function () {
+          return null;
         });
       }
       return window._sbSessionReady;

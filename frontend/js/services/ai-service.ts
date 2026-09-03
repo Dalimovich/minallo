@@ -239,7 +239,9 @@ export async function listCourseDocuments(
   // dashboard prewarm. Otherwise the proxy returns 401 and cards show no files
   // until the user manually reopens the course.
   const promise = (async () => {
-    if (window._sbSessionReady) await window._sbSessionReady;
+    // _sbSessionReady settles rather than rejects (see supabase.js restoreSession),
+    // but guard anyway to match the pattern used at other call sites.
+    if (window._sbSessionReady) { try { await window._sbSessionReady; } catch { /* proceed with existing token */ } }
 
     const response = await fetch(
       _backendUrl() + '/api/documents/list?courseId=' + encodeURIComponent(key),
