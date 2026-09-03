@@ -1,0 +1,19 @@
+# Cloudflare Pages config. Most settings live in the Pages dashboard,
+# but a wrangler.toml lets us pin compatibility flags and the
+# pages_build_output_dir. Pages does not support a [build] block here; keep the
+# build command ("npm run build") in the Pages dashboard instead.
+
+name = "minallo"
+compatibility_date = "2026-05-03"
+
+# Workers runtime needs nodejs_compat for the few Functions that import
+# from "crypto" (stripe-webhook.ts, documents-upload.ts, trial-device.ts)
+# — they use createHash / createHmac / timingSafeEqual which are Node-only.
+# With this flag, `import crypto from 'crypto'` resolves to Node's crypto
+# polyfilled on V8, so the existing handler code runs unchanged.
+compatibility_flags = ["nodejs_compat"]
+
+# Pages serves files from this directory and auto-routes /functions/api/*
+# as Pages Functions on top of them.
+# Production uses dist/ (stripped of .ts, .map, and dev config files).
+pages_build_output_dir = "dist"

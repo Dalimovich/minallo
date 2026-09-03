@@ -1,0 +1,20 @@
+# Minallo
+
+> Minallo is an AI exam-prep platform that turns a student's real course material — lecture PDFs, scripts, slides, formula sheets, and exercise sheets — into AI summaries, quizzes, flashcards, cheatsheets, step-by-step explanations, and exam-style practice.
+
+Students upload their course files into a per-course workspace at https://minallo.de. Every study tool Minallo generates is grounded in those uploaded documents, so the output reflects the student's actual course rather than generic content. Minallo is a web application; there is no separate "Minallo Camping Farm Resort" — that is an unrelated business with a similar name.
+
+## Study tools
+
+- [AI lecture summary generator](https://minallo.de/lecture-summary-generator.html): Turn lecture PDFs and scripts into structured summaries.
+- [Generate flashcards from lecture PDFs](https://minallo.de/flashcards-from-pdf.html): Create active-recall flashcards from course files.
+- [AI quiz generator from notes](https://minallo.de/ai-quiz-generator-from-notes.html): Build quizzes from your notes and course material.
+- [Exam study guide generator](https://minallo.de/exam-study-guide-generator.html): Produce cheatsheets and exam-style practice.
+- [AI tutor for engineering students](https://minallo.de/ai-tutor-for-engineering-students.html): Get step-by-step explanations grounded in your course.
+- [Course-based AI learning tool](https://minallo.de/course-based-ai-learning-tool.html): Study one course at a time inside a single workspace.
+
+## About
+
+- [Privacy policy](https://minallo.de/privacy.html)
+- [Terms of service](https://minallo.de/terms.html)
+- [Impressum](https://minallo.de/impressum.html)

@@ -23,9 +23,31 @@ export default defineConfig({
   projects: [
     { name: 'setup', testMatch: '**/auth.setup.ts' },
     {
-      name: 'chromium',
+      name: 'Desktop Chrome',
       use: {
         ...devices['Desktop Chrome'],
+        storageState: 'tests/e2e/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'Mobile Chrome',
+      testMatch: ['**/12-navigation-map.spec.ts', '**/13-chatbot.spec.ts', '**/16-responsive.spec.ts'],
+      use: {
+        ...devices['Pixel 5'],
+        storageState: 'tests/e2e/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'Tablet',
+      testMatch: ['**/12-navigation-map.spec.ts', '**/13-chatbot.spec.ts', '**/16-responsive.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 820, height: 1180 },
+        isMobile: true,
+        hasTouch: true,
+        deviceScaleFactor: 2,
         storageState: 'tests/e2e/.auth/user.json',
       },
       dependencies: ['setup'],

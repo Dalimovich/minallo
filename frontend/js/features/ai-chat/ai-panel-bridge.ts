@@ -54,10 +54,23 @@ export function initAiPanelBridge(options?: AiPanelBridgeOptions): {
 
   function openAI(): void {
     setAiOpen(true);
-    if (aiPanel) aiPanel.classList.add('visible');
+    // The legacy free-floating panel is retired: #aiPanel is now only presented
+    // docked inside the document-rail drawer, which tags it `dr-host-ai` before
+    // mounting (see document-rail.ts mountAiPanel). Outside the rail we must NOT
+    // reveal the panel, otherwise stray openAI() callers (course file load, PDF
+    // text selection, snip tool) pop the old standalone box back up.
+    if (aiPanel && aiPanel.classList.contains('dr-host-ai')) {
+      aiPanel.classList.add('visible');
+    }
     const cid = window.activeCourseId || window.currentCourseId || '';
-    if (cid && typeof window.restoreCourseHistory === 'function') {
-      window.restoreCourseHistory(cid);
+    const fid = window.activeRagDocumentId || null;
+    if (typeof window.restoreCourseHistory === 'function') {
+      // Always call this, even with no file open — it clears the panel to
+      // empty rather than leaving a previous file's messages on screen.
+      window.restoreCourseHistory(cid, fid);
+    }
+    if (aiMsgs) {
+      requestAnimationFrame(() => { aiMsgs.scrollTop = aiMsgs.scrollHeight; });
     }
   }
 
@@ -96,11 +109,11 @@ export function initAiPanelBridge(options?: AiPanelBridgeOptions): {
 
     explainBtn.addEventListener('click', () => {
       banner.remove();
-      askAI('Explain this in detail for an engineering student: "' + txt + '"');
+      askAI('Explain this in detail: "' + txt + '"');
     });
     formulaBtn.addEventListener('click', () => {
       banner.remove();
-      askAI('Break down this formula step by step, explain every symbol: "' + txt + '"');
+      askAI('Break down this formula step by step, explain every symbol, keep the original form first, then show a simplified or factored final form if that makes it clearer: "' + txt + '"');
     });
     dismissBtn.addEventListener('click', () => {
       banner.remove();

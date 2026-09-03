@@ -1,474 +1,149 @@
-<!-- ONBOARDING MODAL -->
-<div
-  id="onboardModal"
-  style="
-    position: fixed;
-    inset: 0;
-    z-index: 9500;
-    background: rgba(10, 8, 18, 0.92);
-    backdrop-filter: blur(16px);
-    display: none;
-    align-items: center;
-    justify-content: center;
-  "
->
-  <button id="obLogoutBtn" class="ob-logout-btn">Log out</button>
-  <div
-    style="
-      background: linear-gradient(135deg, #0f172a, #0d0f1e);
-      border: 1px solid rgba(59, 130, 246, 0.25);
-      border-radius: 24px;
-      padding: 40px 36px;
-      width: 440px;
-      max-width: calc(100vw - 32px);
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    "
-  >
+<!-- ONBOARDING MODAL — visuals defined in css/onboarding.css -->
+<div id="onboardModal" class="ob-modal">
+  <button id="obLogoutBtn" class="ob-logout-btn" data-i18n="ob_log_out">Log out</button>
+  <div class="ob-card">
     <!-- Progress -->
-    <div style="display: flex; gap: 8px; margin-bottom: 4px">
-      <div
-        id="obProg1"
-        style="
-          flex: 1;
-          height: 4px;
-          border-radius: 4px;
-          background: linear-gradient(90deg, #3b82f6, #0ea5e9);
-          transition: all 0.3s;
-        "
-      ></div>
-      <div
-        id="obProg2"
-        style="
-          flex: 1;
-          height: 4px;
-          border-radius: 4px;
-          background: rgba(255, 255, 255, 0.12);
-          transition: all 0.3s;
-        "
-      ></div>
-      <div
-        id="obProg3"
-        style="
-          flex: 1;
-          height: 4px;
-          border-radius: 4px;
-          background: rgba(255, 255, 255, 0.12);
-          transition: all 0.3s;
-        "
-      ></div>
+    <div class="ob-progress">
+      <div id="obProg1" class="ob-progress-seg is-active"></div>
+      <div id="obProg2" class="ob-progress-seg"></div>
+      <div id="obProg3" class="ob-progress-seg"></div>
     </div>
+
     <!-- Header -->
-    <div style="text-align: center">
-      <div id="obEmoji" style="font-size: 2rem; margin-bottom: 8px">👋</div>
-      <div
-        id="obTitle"
-        style="
-          font-family: 'Fredoka One', cursive;
-          font-size: 1.5rem;
-          background: linear-gradient(135deg, #3b82f6, #0ea5e9);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        "
-      >
-        Welcome to Minallo!
-      </div>
-      <div
-        id="obSub"
-        style="
-          font-size: 0.8rem;
-          color: rgba(255, 255, 255, 0.4);
-          font-weight: 700;
-          margin-top: 4px;
-        "
-      >
-        Let's set up your profile — step 1 of 3
-      </div>
+    <div class="ob-header">
+      <h2 id="obTitle" class="ob-title" data-i18n="ob_welcome_title">Welcome to Minallo</h2>
+      <div id="obSub" class="ob-sub" data-i18n="ob_step1">Let's set up your profile — step 1 of 3</div>
+      <!-- Hidden — kept so legacy JS that writes to it is a harmless no-op. -->
+      <span id="obEmoji" style="display:none"></span>
     </div>
 
     <!-- ── Step 1: Basic info ── -->
-    <div id="obStep1" style="display: flex; flex-direction: column; gap: 12px">
-      <div style="display: flex; gap: 10px">
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 5px">
-          <label class="ob-label">First Name</label>
-          <input id="obFirst" type="text" placeholder="e.g. Mohamed" class="ob-input" />
+    <div id="obStep1" class="ob-step is-active">
+      <div class="ob-row">
+        <div class="ob-field">
+          <label class="ob-label" data-i18n="ob_first_name">First name</label>
+          <input id="obFirst" type="text" data-i18n-ph="ob_first_name_ph" placeholder="" class="ob-input" />
         </div>
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 5px">
-          <label class="ob-label">Last Name</label>
-          <input id="obLast" type="text" placeholder="e.g. Al-Rashid" class="ob-input" />
+        <div class="ob-field">
+          <label class="ob-label" data-i18n="ob_last_name">Last name</label>
+          <input id="obLast" type="text" data-i18n-ph="ob_last_name_ph" placeholder="" class="ob-input" />
         </div>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 5px">
-        <label class="ob-label">Age</label>
-        <input id="obAge" type="number" min="16" max="99" placeholder="e.g. 21" class="ob-input" />
+      <div class="ob-field">
+        <label class="ob-label" data-i18n="ob_age">Age</label>
+        <input id="obAge" type="number" min="16" max="99" data-i18n-ph="ob_age_ph" placeholder="" class="ob-input" />
       </div>
-      <div style="display: flex; flex-direction: column; gap: 5px">
-        <label class="ob-label">Email</label>
-        <input id="obEmail" type="email" placeholder="e.g. your@email.com" class="ob-input" />
+      <div class="ob-field">
+        <label class="ob-label" data-i18n="ob_email">Email</label>
+        <input id="obEmail" type="email" data-i18n-ph="ob_email_ph" placeholder="" class="ob-input" />
       </div>
-      <div
-        id="obErr1"
-        style="
-          display: none;
-          color: #ef4444;
-          font-size: 0.75rem;
-          font-weight: 700;
-          text-align: center;
-        "
-      ></div>
-      <button id="obContinueBtn" class="ob-btn-primary" style="margin-top: 4px">Continue →</button>
+      <div id="obErr1" class="ob-err"></div>
+      <button id="obContinueBtn" class="ob-btn-primary ob-btn-block" type="button" data-i18n="ob_continue_btn">Continue</button>
     </div>
 
     <!-- ── Step 2: Path chooser ── -->
-    <div id="obStep2" style="display: none; flex-direction: column; gap: 16px">
-      <div
-        style="
-          font-size: 0.82rem;
-          color: rgba(255, 255, 255, 0.55);
-          font-weight: 700;
-          text-align: center;
-        "
-      >
-        Which best describes you?
-      </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
-        <button class="ob-path-card" id="obPathEnrolled" data-path="enrolled">
-          <span style="font-size: 2rem">🎓</span>
-          <span style="font-family: 'Fredoka One', cursive; font-size: 1rem; color: #e2d9f3"
-            >University Student</span
-          >
-          <span
-            style="
-              font-size: 0.7rem;
-              color: rgba(255, 255, 255, 0.4);
-              font-weight: 700;
-              line-height: 1.4;
-            "
-            >Already enrolled at a German university</span
-          >
+    <div id="obStep2" class="ob-step">
+      <div class="ob-prompt" data-i18n="ob_prompt_describe">Which best describes you?</div>
+      <div class="ob-path-grid">
+        <button class="ob-path-card" id="obPathEnrolled" data-path="enrolled" type="button">
+          <span class="ob-path-name" data-i18n="ob_path_uni">University student</span>
+          <span class="ob-path-sub" data-i18n="ob_path_uni_sub">Already enrolled at a German university</span>
         </button>
-        <button class="ob-path-card" id="obPathLearner" data-path="learner">
-          <span style="font-size: 2rem">🇩🇪</span>
-          <span style="font-family: 'Fredoka One', cursive; font-size: 1rem; color: #e2d9f3"
-            >German Learner</span
-          >
-          <span
-            style="
-              font-size: 0.7rem;
-              color: rgba(255, 255, 255, 0.4);
-              font-weight: 700;
-              line-height: 1.4;
-            "
-            >Preparing for a language test to enroll</span
-          >
+        <button class="ob-path-card is-disabled" id="obPathLearner" data-path="learner" type="button" disabled aria-disabled="true">
+          <span class="ob-path-name" data-i18n="ob_path_learner">German learner</span>
+          <span class="ob-path-sub" data-i18n="ob_path_learner_soon">Coming soon</span>
         </button>
       </div>
-      <div
-        id="obErr2"
-        style="
-          display: none;
-          color: #ef4444;
-          font-size: 0.75rem;
-          font-weight: 700;
-          text-align: center;
-        "
-      ></div>
-      <button id="obBack1Btn" class="ob-btn-ghost">← Back</button>
+      <div id="obErr2" class="ob-err"></div>
+      <button id="obBack1Btn" class="ob-btn-ghost" type="button" data-i18n="ob_back_btn">← Back</button>
     </div>
 
     <!-- ── Step 3a: Enrolled details ── -->
-    <div id="obStep3a" style="display: none; flex-direction: column; gap: 12px">
-      <div style="display: flex; flex-direction: column; gap: 5px">
-        <label class="ob-label">Study Programme</label>
-        <div style="position: relative">
-          <input
-            id="obProg"
-            type="text"
-            placeholder="e.g. Maschinenbau"
-            autocomplete="off"
-            class="ob-input"
-            style="box-sizing: border-box"
-          />
-          <div
-            id="obProgDrop"
-            style="
-              display: none;
-              position: absolute;
-              top: calc(100% + 4px);
-              left: 0;
-              right: 0;
-              border-radius: 10px;
-              border: 1px solid rgba(59, 130, 246, 0.3);
-              background: rgba(17, 13, 32, 0.97);
-              max-height: 190px;
-              overflow-y: auto;
-              z-index: 9600;
-              box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            "
-          ></div>
+    <div id="obStep3a" class="ob-step">
+      <div class="ob-field">
+        <label class="ob-label" data-i18n="ob_bundesland">Bundesland</label>
+        <select id="obState" class="ob-input">
+          <option value="" data-i18n="ob_bundesland_ph">Select your Bundesland…</option>
+        </select>
+      </div>
+      <div class="ob-field">
+        <label class="ob-label" data-i18n="ob_university">University</label>
+        <div class="ob-field-with-drop">
+          <input id="obUni" type="text" data-i18n-ph="ob_uni_ph_before" placeholder="Pick a Bundesland first" autocomplete="off" class="ob-input" disabled />
+          <div id="obUniDrop" class="ob-drop"></div>
         </div>
       </div>
-      <div id="obVertiefungRow" style="display: flex; flex-direction: column; gap: 5px">
-        <label class="ob-label">Vertiefung (Fachprofil)</label>
-        <div style="position: relative">
-          <input
-            id="obVertiefung"
-            type="text"
-            placeholder="e.g. Mechatronik"
-            autocomplete="off"
-            class="ob-input"
-            style="box-sizing: border-box"
-          />
-          <div
-            id="obVertDrop"
-            style="
-              display: none;
-              position: absolute;
-              top: calc(100% + 4px);
-              left: 0;
-              right: 0;
-              border-radius: 10px;
-              border: 1px solid rgba(59, 130, 246, 0.3);
-              background: rgba(17, 13, 32, 0.97);
-              max-height: 190px;
-              overflow-y: auto;
-              z-index: 9600;
-              box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            "
-          ></div>
+      <div class="ob-field">
+        <label class="ob-label" data-i18n="ob_programme">Study programme</label>
+        <div class="ob-field-with-drop">
+          <input id="obProg" type="text" data-i18n-ph="ob_programme_ph" placeholder="" autocomplete="off" class="ob-input" />
+          <div id="obProgDrop" class="ob-drop"></div>
         </div>
       </div>
-      <div style="display: flex; gap: 10px">
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 5px">
-          <label class="ob-label">Semester</label>
-          <input id="obSem" type="number" min="1" max="20" placeholder="e.g. 3" class="ob-input" />
-        </div>
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 5px">
-          <label class="ob-label">Matrikel Nr.</label>
-          <input id="obMatrikel" type="text" placeholder="e.g. 2456789" class="ob-input" />
+      <div id="obVertiefungRow" class="ob-field">
+        <label class="ob-label" data-i18n="ob_vertiefung">Vertiefung (Fachprofil)</label>
+        <div class="ob-field-with-drop">
+          <input id="obVertiefung" type="text" data-i18n-ph="ob_vertiefung_ph" placeholder="" autocomplete="off" class="ob-input" />
+          <div id="obVertDrop" class="ob-drop"></div>
         </div>
       </div>
-      <div
-        id="obErr3a"
-        style="
-          display: none;
-          color: #ef4444;
-          font-size: 0.75rem;
-          font-weight: 700;
-          text-align: center;
-        "
-      ></div>
-      <div style="display: flex; gap: 10px">
-        <button id="obBack2aBtn" class="ob-btn-ghost" style="flex: 1">← Back</button>
-        <button id="obFinish" class="ob-btn-primary" style="flex: 2">🎓 Let's go!</button>
+      <div class="ob-row">
+        <div class="ob-field">
+          <label class="ob-label" data-i18n="ob_semester">Semester</label>
+          <input id="obSem" type="number" min="1" max="20" data-i18n-ph="ob_semester_ph" placeholder="" class="ob-input" />
+        </div>
+        <div class="ob-field">
+          <label class="ob-label" data-i18n="ob_matrikel">Matrikelnummer</label>
+          <input id="obMatrikel" type="text" data-i18n-ph="ob_matrikel_ph" placeholder="" class="ob-input" />
+        </div>
+      </div>
+      <div id="obErr3a" class="ob-err"></div>
+      <div class="ob-actions">
+        <button id="obBack2aBtn" class="ob-btn-ghost" type="button" data-i18n="ob_back_btn">← Back</button>
+        <button id="obFinish" class="ob-btn-primary" type="button" data-i18n="ob_finish_btn">Finish</button>
       </div>
     </div>
 
     <!-- ── Step 3b: German learner details ── -->
-    <div id="obStep3b" style="display: none; flex-direction: column; gap: 16px">
-      <!-- Test selection -->
-      <div>
-        <div class="ob-label" style="margin-bottom: 10px">Which test are you preparing for?</div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px" id="obTestGrid">
-          <button class="ob-test-card" data-test="TestDaF">
+    <div id="obStep3b" class="ob-step">
+      <div class="ob-field">
+        <label class="ob-label" data-i18n="ob_which_test">Which test are you preparing for?</label>
+        <div class="ob-test-grid" id="obTestGrid">
+          <button class="ob-test-card" data-test="TestDaF" type="button">
             <span class="ob-test-name">TestDaF</span>
             <span class="ob-test-sub">Test Deutsch als Fremdsprache</span>
           </button>
-          <button class="ob-test-card" data-test="DSH">
+          <button class="ob-test-card" data-test="DSH" type="button">
             <span class="ob-test-name">DSH</span>
             <span class="ob-test-sub">Deutsche Sprachprüfung für den Hochschulzugang</span>
           </button>
-          <button class="ob-test-card" data-test="Goethe">
+          <button class="ob-test-card" data-test="Goethe" type="button">
             <span class="ob-test-name">Goethe-Zertifikat</span>
-            <span class="ob-test-sub">Goethe-Institut language certificate</span>
+            <span class="ob-test-sub" data-i18n="ob_test_goethe_sub">Goethe-Institut language certificate</span>
           </button>
-          <button class="ob-test-card" data-test="telc">
+          <button class="ob-test-card" data-test="telc" type="button">
             <span class="ob-test-name">telc Deutsch</span>
-            <span class="ob-test-sub">The European Language Certificates</span>
+            <span class="ob-test-sub" data-i18n="ob_test_telc_sub">The European Language Certificates</span>
           </button>
-          <button class="ob-test-card" data-test="ÖSD">
+          <button class="ob-test-card" data-test="OESD" type="button">
             <span class="ob-test-name">ÖSD</span>
-            <span class="ob-test-sub">Österreichisches Sprachdiplomat Deutsch</span>
+            <span class="ob-test-sub">Österreichisches Sprachdiplom Deutsch</span>
           </button>
-          <button class="ob-test-card" data-test="DSD">
+          <button class="ob-test-card" data-test="DSD" type="button">
             <span class="ob-test-name">DSD</span>
             <span class="ob-test-sub">Deutsches Sprachdiplom der KMK</span>
           </button>
         </div>
       </div>
-      <!-- Level selection (shown after test picked) -->
-      <div id="obLevelWrap" style="display: none; flex-direction: column; gap: 8px">
-        <div class="ob-label">What is your current / target level?</div>
-        <div style="display: flex; flex-wrap: wrap; gap: 8px" id="obLevelGrid"></div>
+      <div id="obLevelWrap" class="ob-field" style="display: none">
+        <label class="ob-label" data-i18n="ob_level_question">What is your current / target level?</label>
+        <div class="ob-level-grid" id="obLevelGrid"></div>
       </div>
-      <div
-        id="obErr3b"
-        style="
-          display: none;
-          color: #ef4444;
-          font-size: 0.75rem;
-          font-weight: 700;
-          text-align: center;
-        "
-      ></div>
-      <div style="display: flex; gap: 10px">
-        <button id="obBack2bBtn" class="ob-btn-ghost" style="flex: 1">← Back</button>
-        <button id="obFinishLearner" class="ob-btn-primary" style="flex: 2">🇩🇪 Let's go!</button>
+      <div id="obErr3b" class="ob-err"></div>
+      <div class="ob-actions">
+        <button id="obBack2bBtn" class="ob-btn-ghost" type="button" data-i18n="ob_back_btn">← Back</button>
+        <button id="obFinishLearner" class="ob-btn-primary" type="button" data-i18n="ob_finish_btn">Finish</button>
       </div>
     </div>
   </div>
 </div>
-
-<style>
-  .ob-label {
-    font-size: 0.7rem;
-    font-weight: 800;
-    color: rgba(255, 255, 255, 0.4);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .ob-input {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    padding: 11px 14px;
-    font-family: 'Nunito', sans-serif;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #fff;
-    outline: none;
-    width: 100%;
-  }
-  .ob-input:focus {
-    border-color: rgba(59, 130, 246, 0.5);
-  }
-  .ob-btn-primary {
-    padding: 13px;
-    background: linear-gradient(135deg, #3b82f6, #0ea5e9);
-    border: none;
-    border-radius: 30px;
-    font-family: 'Nunito', sans-serif;
-    font-weight: 800;
-    font-size: 0.9rem;
-    color: #fff;
-    cursor: pointer;
-    width: 100%;
-  }
-  .ob-btn-ghost {
-    padding: 13px;
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 30px;
-    font-family: 'Nunito', sans-serif;
-    font-weight: 800;
-    font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.7);
-    cursor: pointer;
-  }
-  .ob-path-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 18px 12px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    cursor: pointer;
-    transition:
-      border-color 0.2s,
-      background 0.2s;
-    text-align: center;
-  }
-  .ob-path-card:hover {
-    border-color: rgba(59, 130, 246, 0.5);
-    background: rgba(59, 130, 246, 0.07);
-  }
-  .ob-path-card.selected {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.12);
-  }
-  .ob-test-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    padding: 12px 14px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 2px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    cursor: pointer;
-    transition:
-      border-color 0.2s,
-      background 0.2s;
-    text-align: left;
-  }
-  .ob-test-card:hover {
-    border-color: rgba(59, 130, 246, 0.45);
-    background: rgba(59, 130, 246, 0.06);
-  }
-  .ob-test-card.selected {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.12);
-  }
-  .ob-test-name {
-    font-family: 'Fredoka One', cursive;
-    font-size: 0.95rem;
-    color: #e2d9f3;
-  }
-  .ob-test-sub {
-    font-size: 0.62rem;
-    color: rgba(255, 255, 255, 0.35);
-    font-weight: 700;
-    line-height: 1.4;
-  }
-  .ob-level-btn {
-    padding: 7px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 30px;
-    font-family: 'Nunito', sans-serif;
-    font-weight: 800;
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.65);
-    cursor: pointer;
-    transition:
-      border-color 0.2s,
-      background 0.2s,
-      color 0.2s;
-  }
-  .ob-level-btn:hover {
-    border-color: rgba(59, 130, 246, 0.5);
-    color: #e2d9f3;
-  }
-  .ob-level-btn.selected {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
-  }
-  .ob-logout-btn {
-    position: absolute;
-    bottom: 24px;
-    right: 24px;
-    padding: 9px 20px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 30px;
-    font-family: 'Nunito', sans-serif;
-    font-weight: 800;
-    font-size: 0.78rem;
-    color: rgba(255, 255, 255, 0.4);
-    cursor: pointer;
-    transition:
-      color 0.2s,
-      border-color 0.2s;
-  }
-  .ob-logout-btn:hover {
-    color: rgba(255, 255, 255, 0.75);
-    border-color: rgba(255, 255, 255, 0.25);
-  }
-</style>

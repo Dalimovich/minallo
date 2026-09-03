@@ -12,10 +12,10 @@
       body {
         width: 360px;
         font-family: 'Segoe UI', system-ui, sans-serif;
-        background: linear-gradient(135deg, #0a0812 0%, #110d20 45%, #0d0f1e 100%);
+        background: linear-gradient(135deg, #020617 0%, #0f172a 48%, #082f49 100%);
         color: #e8e4f0;
         overflow: hidden;
-        border-radius: 16px;
+        border-radius: 22px;
         position: relative;
       }
 
@@ -31,7 +31,7 @@
         height: 220px;
         top: -70px;
         right: -60px;
-        background: radial-gradient(circle, rgba(37, 99, 235, 0.55) 0%, transparent 65%);
+        background: radial-gradient(circle, rgba(14, 165, 233, 0.5) 0%, transparent 65%);
         filter: blur(45px);
       }
       .blob-2 {
@@ -39,7 +39,7 @@
         height: 200px;
         bottom: -40px;
         left: -50px;
-        background: radial-gradient(circle, rgba(76, 201, 240, 0.3) 0%, transparent 65%);
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.3) 0%, transparent 65%);
         filter: blur(40px);
       }
       .blob-3 {
@@ -62,20 +62,27 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 14px 16px 13px;
-        background: rgba(255, 255, 255, 0.05);
+        padding: 16px 18px 14px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 100%);
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        border-top: 1px solid rgba(255, 255, 255, 0.12);
         position: relative;
         z-index: 1;
+      }
+      .hdr::after {
+        content: '';
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
       }
       .hdr-logo {
         width: 36px;
         height: 36px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #2563eb, #6b3fbf);
+        border-radius: 14px;
+        background: linear-gradient(135deg, #0ea5e9, #2563eb);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -131,7 +138,7 @@
         width: 28px;
         height: 28px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #2563eb, #6b3fbf);
+        background: linear-gradient(135deg, #0ea5e9, #2563eb);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -192,7 +199,7 @@
         -webkit-backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-top-color: rgba(255, 255, 255, 0.22);
-        border-radius: 13px;
+        border-radius: 16px;
         color: #e8e4f0;
         font-family: inherit;
         font-size: 13px;
@@ -242,7 +249,7 @@
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
+        border-radius: 14px;
         color: #e8e4f0;
         font-family: inherit;
         font-size: 13px;
@@ -264,8 +271,8 @@
         width: 100%;
         padding: 11px;
         border: none;
-        border-radius: 13px;
-        background: linear-gradient(135deg, #2563eb, #7b4fc9);
+        border-radius: 16px;
+        background: linear-gradient(135deg, #0ea5e9, #2563eb);
         color: #fff;
         font-family: inherit;
         font-size: 13px;
@@ -299,12 +306,12 @@
         font-weight: 700;
       }
       .auth-switch a:hover {
-        color: #c99fff;
+        color: #7dd3fc;
       }
       .auth-error {
         background: rgba(255, 80, 80, 0.1);
         border: 1px solid rgba(255, 80, 80, 0.22);
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 8px 11px;
         font-size: 11px;
         color: #ff8585;
@@ -327,7 +334,7 @@
         -webkit-backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-top-color: rgba(255, 255, 255, 0.22);
-        border-radius: 14px;
+        border-radius: 18px;
         padding: 13px 14px;
         margin-bottom: 10px;
       }
@@ -340,7 +347,7 @@
       .detect-icon {
         width: 42px;
         height: 42px;
-        border-radius: 11px;
+        border-radius: 13px;
         background: rgba(255, 255, 255, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.12);
         display: flex;
@@ -440,7 +447,7 @@
         align-items: center;
         gap: 13px;
         padding: 13px 14px;
-        border-radius: 14px;
+        border-radius: 18px;
         border: 1px solid rgba(255, 255, 255, 0.14);
         font-family: inherit;
         text-align: left;
@@ -468,7 +475,7 @@
       .ac-icon {
         width: 40px;
         height: 40px;
-        border-radius: 12px;
+        border-radius: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -496,7 +503,7 @@
 
       /* Capture — purple gradient */
       #btn-capture {
-        background: linear-gradient(135deg, #2563eb 0%, #7b4fc9 100%);
+        background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
         border-color: rgba(37, 99, 235, 0.4);
         border-top-color: rgba(255, 255, 255, 0.3);
         box-shadow: 0 4px 22px rgba(37, 99, 235, 0.45);
@@ -545,7 +552,7 @@
         -webkit-backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-top-color: rgba(255, 255, 255, 0.2);
-        border-radius: 14px;
+        border-radius: 18px;
         padding: 12px 14px;
         margin-bottom: 9px;
         display: none;
@@ -559,7 +566,7 @@
       .ls-icon {
         width: 34px;
         height: 34px;
-        border-radius: 9px;
+        border-radius: 12px;
         background: rgba(37, 99, 235, 0.2);
         border: 1px solid rgba(37, 99, 235, 0.3);
         display: flex;
@@ -581,7 +588,7 @@
         font-weight: 700;
       }
       .ls-link:hover {
-        color: #c99fff;
+        color: #7dd3fc;
       }
       #last-title {
         font-size: 11px;
@@ -602,7 +609,7 @@
         gap: 9px;
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
+        border-radius: 14px;
         padding: 10px 13px;
         margin-bottom: 11px;
         font-size: 11px;
@@ -619,13 +626,22 @@
       .bottom-bar {
         display: flex;
         align-items: center;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.03);
+        gap: 8px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.015) 0%, rgba(255, 255, 255, 0.05) 100%);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        padding: 2px 8px;
+        padding: 10px 14px 14px;
         position: relative;
         z-index: 1;
+      }
+      .bottom-bar::before {
+        content: '';
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        top: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
       }
       .bb-btn {
         flex: 1;
@@ -633,28 +649,27 @@
         align-items: center;
         justify-content: center;
         gap: 7px;
-        background: none;
-        border: none;
-        color: rgba(255, 255, 255, 0.35);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.55);
         font-family: inherit;
         font-size: 11px;
         font-weight: 700;
         cursor: pointer;
-        padding: 9px;
-        border-radius: 8px;
+        padding: 10px;
+        border-radius: 999px;
         transition:
           color 0.15s,
-          background 0.15s;
+          background 0.15s,
+          border-color 0.15s;
       }
       .bb-btn:hover {
-        color: rgba(255, 255, 255, 0.75);
-        background: rgba(255, 255, 255, 0.06);
+        color: #fff;
+        background: rgba(255, 255, 255, 0.09);
+        border-color: rgba(255, 255, 255, 0.14);
       }
       .bb-div {
-        width: 1px;
-        height: 18px;
-        background: rgba(255, 255, 255, 0.08);
-        flex-shrink: 0;
+        display: none;
       }
 
       /* Not lecture */

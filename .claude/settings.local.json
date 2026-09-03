@@ -3,7 +3,12 @@
     "allow": [
       "Bash(python -c \":*)",
       "mcp__claude-flow__system_health",
-      "mcp__claude-flow__memory_search"
+      "mcp__claude-flow__memory_search",
+      "Bash(npx tsc *)",
+      "Bash(Select-Object -First 40)",
+      "Bash(grep -E \"\\\\.\\(js|html|css|json\\)$\")",
+      "Bash(xargs -I {} basename {})"
     ]
-  }
+  },
+  "hooks": {}
 }

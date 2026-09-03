@@ -6,11 +6,13 @@ import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
 from .llm_json import LlmResult, chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -20,12 +22,65 @@ log = logging.getLogger(__name__)
 _PARALLEL_SHARDS = 3
 _TARGET_SHARD_SIZE = 8
 _VALID_DIFFICULTIES = {"easy", "medium", "hard"}
+_MIN_CONTEXT_CHARS = 160
 
 
-def _system_prompt(count: int) -> str:
+@dataclass
+class FlashcardGenerationDiagnostics:
+    retrieved_chunk_count: int = 0
+    context_chars: int = 0
+    unique_document_count: int = 0
+    covered_pages: list[int] | None = None
+    shard_calls_started: int = 0
+    shard_calls_succeeded: int = 0
+    shard_calls_failed: int = 0
+    missing_items_arrays: int = 0
+    raw_items_received: int = 0
+    invalid_item_shape_count: int = 0
+    invalid_front_count: int = 0
+    invalid_back_count: int = 0
+    duplicate_count: int = 0
+    accepted_count: int = 0
+    backfill_attempted: bool = False
+    backfill_succeeded: bool = False
+    failure_code: str | None = None
+
+
+def extract_flashcard_items(data: Any) -> list[Any]:
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items")
+    if not isinstance(items, list):
+        items = data.get("cards")
+    return items if isinstance(items, list) else []
+
+
+def _difficulty_guide(difficulty: str) -> str:
+    return {
+        "easy":   "Mostly definitions and single-fact recall.",
+        "medium": "Mix of definitions, formula use, and 1-step application.",
+        "hard":   "Multi-step reasoning, formula application, subtle conditions, and exam-style traps. Avoid trivial one-word recall.",
+        "mixed":  "Balanced spread across easy, medium, and hard.",
+    }.get(difficulty, "Balanced.")
+
+
+def _language_guide(language: str) -> str:
+    return {
+        "auto": "Match the language of the source material (German if the slides are German).",
+        "de": "Write every card front and back in German.",
+        "en": "Write every card front and back in English.",
+    }.get(language, "Match the language of the source material (German if the slides are German).")
+
+
+def _system_prompt(count: int, difficulty: str = "medium", language: str = "auto", topic: str | None = None) -> str:
     return f"""You are an expert tutor preparing {count} exam-quality flashcards for a university student.
 
 Generate EXACTLY {count} cards from the COURSE CONTEXT below.
+
+Difficulty target: {difficulty} — {_difficulty_guide(difficulty)}
+Language: {_language_guide(language)}
+Focus topic: {topic.strip() if topic and topic.strip() else "All important topics in the selected material"}
+Do not create cards unrelated to the focus topic.
 
 Card types (mix them):
 - definition: term → precise definition + notation
@@ -38,13 +93,27 @@ Card types (mix them):
 - notation: professor's symbol → meaning + usage
 
 Rules:
-1. Every card must be grounded in the context.
-2. Prefer formulas, definitions, theorems, worked examples, common mistakes.
-3. Back must be substantial — not a one-word answer.
-4. Use the source's notation/terminology.
-5. Math in KaTeX: $...$ inline, $$...$$ display.
-6. Cite source as "filename, p.N".
-7. Match the language of the source material.
+1. The FRONT is ALWAYS the prompt the student must answer — a question, a term,
+   or a "How do you…?" / "When do you…?" / "What is…?" cue. It must read as
+   something to be answered, never as the answer itself.
+2. The BACK holds the full answer: the definition, formula, numbered steps,
+   worked solution, or explanation. ALL solution steps and worked-out content
+   go on the back — NEVER put numbered steps, a solution, or an explanation on
+   the front. (For method_steps/mini_exercise, the front states the task/problem;
+   the back gives the steps/solution.)
+3. Every card must be grounded in the context.
+4. Prefer formulas, definitions, theorems, worked examples, common mistakes.
+5. Back must be substantial — not a one-word answer.
+6. Use the source's notation/terminology.
+7. Math in KaTeX. ALWAYS wrap EVERY formula, variable, fraction, exponent and
+   symbol in delimiters — $...$ inline or $$...$$ display. NEVER write bare
+   \\frac, \\text, \\ln, ^ or _ outside $...$. Use real LaTeX commands
+   (\\varphi, \\varepsilon, \\sum, \\Delta, \\ln) — NOT \\text{{φ}}/\\text{{ln}} and
+   NOT raw Unicode glyphs (φ, ∑). Example: write "$\\varphi = \\ln(\\varepsilon^{{pl}} + 1)$",
+   never "φ = \\text{{ln}}(ε^{{pl}} + 1)".
+8. Use real newlines for line breaks, never the literal two characters "\\n".
+9. Cite source as "filename, p.N".
+10. Match the language of the source material.
 
 CRITICAL: produce EXACTLY {count} items in "items".
 
@@ -52,8 +121,8 @@ Return ONLY valid JSON in this exact shape (no markdown fence, no commentary):
 {{
   "items": [
     {{
-      "front": "question / term",
-      "back":  "answer / explanation",
+      "front": "the question / term / task to answer (NOT the answer)",
+      "back":  "the full answer / steps / explanation",
       "tags":  ["definition", "formula"],
       "difficulty": "easy|medium|hard",
       "source": "filename, p.X"
@@ -99,9 +168,63 @@ def _context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]) -> s
     return "\n\n---\n\n".join(parts)
 
 
+def _source_payload(c: RetrievedChunk, doc_names: dict[str, str]) -> dict[str, Any]:
+    return {
+        "fileName": doc_names.get(c.document_id, "Unknown"),
+        "pageStart": c.page_start,
+        "pageEnd": c.page_end,
+        "chunkId": c.chunk_id,
+        "sectionTitle": c.section_title,
+    }
+
+
+def _grounded_backfill(
+    *, chunks: list[RetrievedChunk], doc_names: dict[str, str], needed: int,
+    seen_fronts: set[str], difficulty: str,
+) -> list[dict[str, Any]]:
+    """Create conservative recall cards when every model shard fails.
+
+    Quiz already has the same safety property.  Flashcards previously returned
+    zero after a transient JSON/model failure even though retrieval had supplied
+    strong indexed evidence.  These cards quote a distinct retrieved passage on
+    the back and never manufacture facts beyond that passage.
+    """
+    out: list[dict[str, Any]] = []
+    for chunk in chunks:
+        if len(out) >= needed:
+            break
+        text = re.sub(r"\s+", " ", chunk.text or "").strip()
+        if len(text) < 40:
+            continue
+        if len(text) > 520:
+            text = text[:520].rsplit(" ", 1)[0].rstrip() + "…"
+        source = doc_names.get(chunk.document_id, "Unknown")
+        page = f", p.{chunk.page_start}" if chunk.page_start else ""
+        section = (chunk.section_title or "this course passage").strip()
+        front = f"What is the key course point about {section}?"
+        key = re.sub(r"\W+", " ", front.lower()).strip()
+        if key in seen_fronts:
+            front = f"What should you remember from {source}{page} about {section}?"
+            key = re.sub(r"\W+", " ", front.lower()).strip()
+        if not key or key in seen_fronts:
+            continue
+        seen_fronts.add(key)
+        out.append({
+            "front": front,
+            "back": text,
+            "tags": ["source-grounded", "key-point"],
+            "difficulty": difficulty if difficulty in _VALID_DIFFICULTIES else "medium",
+            "source": f"{source}{page}",
+        })
+    return out
+
+
 def _run_one_flashcard_shard(
     *, shard_count: int, context: str, already_taken: list[str],
     diversity_hint: str | None = None,
+    difficulty: str = "medium", language: str = "auto",
+    understanding: str = "",
+    topic: str | None = None,
 ) -> LlmResult | None:
     avoid = ""
     if already_taken:
@@ -115,8 +238,8 @@ def _run_one_flashcard_shard(
     max_completion = min(4000, 700 + shard_count * 350)
     try:
         return chat_json(
-            system=_system_prompt(shard_count) + avoid + diversity,
-            user="COURSE CONTEXT:\n\n" + context,
+            system=_system_prompt(shard_count, difficulty, language, topic) + avoid + diversity,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_completion,
         )
     except Exception:
@@ -131,35 +254,87 @@ def generate_flashcards(
     document_ids: list[str] | None,
     requested_count: int,
     doc_names: dict[str, str],
+    difficulty: str = "medium",
+    language: str | None = None,
+    seen_items: list[str] | None = None,
+    topic: str | None = None,
 ) -> dict[str, Any]:
     # Capped at 24 thanks to parallel shards. Each shard runs in ~15-20s, all
     # three together wall-clock ~20-25s — comfortably under Netlify's 30s.
     requested = max(1, min(int(requested_count or 1), 24))
+    diff = difficulty if difficulty in ("easy", "medium", "hard", "mixed") else "medium"
+    lang = (language or "auto").strip().lower()
+    if lang not in ("auto", "de", "en"):
+        lang = "auto"
+    # Card fronts the learner already saw — feed the avoid-list and pre-seed
+    # the dedupe set so generation doesn't repeat them.
+    seen_avoid = [s.strip() for s in (seen_items or []) if isinstance(s, str) and s.strip()][:100]
 
-    chunks = retrieve_chunks(
-        user_id=user_id, course_id=course_id,
-        query="definitions formulas theorems examples exercises common mistakes important concepts",
-        document_ids=document_ids,
-        top_k=max(20, requested * 2),
+    facets = [
+        "definitions terminology and important concepts",
+        "formulas notation and equations",
+        "worked examples and solution methods",
+        "comparisons conditions and common mistakes",
+    ]
+    queries = [f"{topic.strip()}: {facet}" for facet in facets] if topic and topic.strip() else facets
+    per_facet = max(6, requested // 2)
+    with ThreadPoolExecutor(max_workers=len(queries)) as retrieval_pool:
+        retrieved = list(retrieval_pool.map(lambda query: retrieve_chunks(
+            user_id=user_id, course_id=course_id, query=query,
+            document_ids=document_ids, top_k=per_facet,
+        ), queries))
+    chunks_by_id: dict[str, RetrievedChunk] = {}
+    for facet_chunks in retrieved:
+        for chunk in facet_chunks:
+            current = chunks_by_id.get(chunk.chunk_id)
+            if current is None or chunk.score > current.score:
+                chunks_by_id[chunk.chunk_id] = chunk
+    chunks = sorted(chunks_by_id.values(), key=lambda chunk: chunk.score, reverse=True)[:max(20, requested * 2)]
+    # Review-2 finding #5: course-wide flashcards (no documentIds) had
+    # empty doc_names → every source labelled "Unknown". Backfill from
+    # the chunk set so source-of-truth filenames make it through.
+    backfill_doc_names(chunks, doc_names)
+    diag = FlashcardGenerationDiagnostics(
+        retrieved_chunk_count=len(chunks),
+        unique_document_count=len({chunk.document_id for chunk in chunks}),
+        covered_pages=sorted({page for chunk in chunks for page in (chunk.page_start, chunk.page_end) if page}),
     )
     if not chunks:
+        diag.failure_code = "flashcard_retrieval_empty"
         return {
             "requestedCount": requested,
             "actualCount": 0,
             "cards": [],
-            "warning": "No relevant material found in the selected documents.",
+            "error": "The selected files are indexed, but no relevant material was found for reliable Flashcards.",
+            "failureCode": diag.failure_code,
+            "diagnostics": asdict(diag),
         }
 
     context = _context_block(chunks, doc_names)
+    diag.context_chars = len(context)
+    if len(context.strip()) < _MIN_CONTEXT_CHARS:
+        diag.failure_code = "flashcard_context_insufficient"
+        return {
+            "requestedCount": requested, "actualCount": 0, "cards": [],
+            "groundedSources": [_source_payload(c, doc_names) for c in chunks[:8]],
+            "error": "The selected document does not contain enough indexed text to create reliable Flashcards.",
+            "failureCode": diag.failure_code, "diagnostics": asdict(diag),
+        }
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
     collected: list[dict[str, Any]] = []
     seen_fronts: set[str] = set()
+    for s in seen_avoid:
+        k = re.sub(r"\W+", " ", s.lower()).strip()
+        if k:
+            seen_fronts.add(k)
     diagnostics: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
 
     # ── Round 1: parallel shards with diversity hints ────────────────────────
     shard_count = min(_PARALLEL_SHARDS, max(1, (requested + _TARGET_SHARD_SIZE - 1) // _TARGET_SHARD_SIZE))
-    base = requested // shard_count
-    remainder = requested % shard_count
-    shard_sizes = [base + (1 if i < remainder else 0) + 1 for i in range(shard_count)]
+    target_candidates = requested + min(3, max(1, requested // 5))
+    base = target_candidates // shard_count
+    remainder = target_candidates % shard_count
+    shard_sizes = [base + (1 if i < remainder else 0) for i in range(shard_count)]
     diversity_hints = [
         "definitions, theorems, and named results",
         "worked examples, mini-exercises, and step-by-step methods",
@@ -172,30 +347,55 @@ def generate_flashcards(
                 _run_one_flashcard_shard,
                 shard_count=shard_sizes[i],
                 context=context,
-                already_taken=[],
+                already_taken=seen_avoid,
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
+                difficulty=diff,
+                language=lang,
+                understanding=understanding,
+                topic=topic,
             )
             for i in range(shard_count)
         ]
         shard_results = [f.result() for f in futures]
 
+    diag.shard_calls_started += len(shard_results)
+    # A transient shard failure gets exactly one bounded retry.
+    for i, res in enumerate(shard_results):
+        if res is None:
+            diag.shard_calls_failed += 1
+            diag.shard_calls_started += 1
+            shard_results[i] = _run_one_flashcard_shard(
+                shard_count=shard_sizes[i], context=context, already_taken=seen_avoid,
+                diversity_hint=diversity_hints[i % len(diversity_hints)], difficulty=diff,
+                language=lang, understanding=understanding, topic=topic,
+            )
+
     for res in shard_results:
         if res is None:
             continue
+        diag.shard_calls_succeeded += 1
         diagnostics["model"] = res.model
         diagnostics["prompt_tokens"] += res.prompt_tokens or 0
         diagnostics["completion_tokens"] += res.completion_tokens or 0
-        raw_items = res.data.get("items") if isinstance(res.data, dict) else None
-        if not isinstance(raw_items, list):
+        raw_items = extract_flashcard_items(res.data)
+        if not raw_items:
+            diag.missing_items_arrays += 1
             continue
+        diag.raw_items_received += len(raw_items)
         for raw in raw_items:
             if len(collected) >= requested:
                 break
             norm = _normalize(raw)
             if not norm:
+                diag.invalid_item_shape_count += 1
+                if not isinstance(raw, dict) or len(str(raw.get("front") or "").strip()) < 3:
+                    diag.invalid_front_count += 1
+                if not isinstance(raw, dict) or len(str(raw.get("back") or "").strip()) < 3:
+                    diag.invalid_back_count += 1
                 continue
             key = re.sub(r"\W+", " ", norm["front"].lower()).strip()
             if not key or key in seen_fronts:
+                diag.duplicate_count += 1
                 continue
             seen_fronts.add(key)
             collected.append(norm)
@@ -205,40 +405,85 @@ def generate_flashcards(
         backfill = _run_one_flashcard_shard(
             shard_count=requested - len(collected) + 2,
             context=context,
-            already_taken=[c.get("front") or "" for c in collected],
+            already_taken=seen_avoid + [c.get("front") or "" for c in collected],
             diversity_hint="anything important not yet covered",
+            difficulty=diff,
+            language=lang,
+            understanding=understanding,
+            topic=topic,
         )
+        diag.backfill_attempted = True
+        diag.shard_calls_started += 1
         if backfill is not None:
+            diag.shard_calls_succeeded += 1
             diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0
             diagnostics["completion_tokens"] += backfill.completion_tokens or 0
-            raw_items = backfill.data.get("items") if isinstance(backfill.data, dict) else None
-            if isinstance(raw_items, list):
+            raw_items = extract_flashcard_items(backfill.data)
+            if raw_items:
+                diag.raw_items_received += len(raw_items)
                 for raw in raw_items:
                     if len(collected) >= requested:
                         break
                     norm = _normalize(raw)
                     if not norm:
+                        diag.invalid_item_shape_count += 1
+                        if not isinstance(raw, dict) or len(str(raw.get("front") or "").strip()) < 3:
+                            diag.invalid_front_count += 1
+                        if not isinstance(raw, dict) or len(str(raw.get("back") or "").strip()) < 3:
+                            diag.invalid_back_count += 1
                         continue
                     key = re.sub(r"\W+", " ", norm["front"].lower()).strip()
                     if not key or key in seen_fronts:
+                        diag.duplicate_count += 1
                         continue
                     seen_fronts.add(key)
                     collected.append(norm)
+                diag.backfill_succeeded = True
+            elif diag.duplicate_count and diag.duplicate_count == diag.raw_items_received:
+                diag.failure_code = "flashcard_all_items_duplicate"
+                message = "Every generated Flashcard duplicated a card you already have. Try a narrower topic or different source."
+            else:
+                diag.missing_items_arrays += 1
+        else:
+            diag.shard_calls_failed += 1
 
+    if len(collected) < requested:
+        collected.extend(_grounded_backfill(
+            chunks=chunks,
+            doc_names=doc_names,
+            needed=requested - len(collected),
+            seen_fronts=seen_fronts,
+            difficulty=diff,
+        ))
     collected = collected[:requested]
+    diag.accepted_count = len(collected)
     result: dict[str, Any] = {
         "requestedCount": requested,
         "actualCount": len(collected),
         "cards": collected,
+        "groundedSources": [_source_payload(c, doc_names) for c in chunks[:8]],
         "model": diagnostics["model"],
         "promptTokens": diagnostics["prompt_tokens"],
         "completionTokens": diagnostics["completion_tokens"],
+        "diagnostics": asdict(diag),
     }
     if len(collected) < requested:
-        result["warning"] = (
-            f"Only {len(collected)} strong flashcards could be created from the selected "
-            f"document context (requested {requested})."
-        )
+        if collected:
+            result["warning"] = f"Minallo created {len(collected)} reliable cards instead of {requested}. You can study this partial deck or retry for more."
+        else:
+            if diag.shard_calls_succeeded == 0:
+                diag.failure_code = "flashcard_model_calls_failed"
+                message = "The Flashcard generator temporarily failed to return valid structured cards. Please retry."
+            elif diag.raw_items_received == 0:
+                diag.failure_code = "flashcard_schema_invalid"
+                message = "The selected PDF is indexed, but Minallo could not read valid Flashcards from the generated response. Please retry."
+            else:
+                diag.failure_code = "flashcard_all_items_rejected"
+                message = "The selected PDF is indexed, but every generated card failed reliability checks. Try fewer cards or another source."
+            result["failureCode"] = diag.failure_code
+            result["error"] = message
+            result["diagnostics"] = asdict(diag)
+    log.info("flashcard generation diagnostics=%s", asdict(diag))
     return result
 
 

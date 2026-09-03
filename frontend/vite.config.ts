@@ -27,5 +27,21 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    // Without this, any POST to `/api/*` falls through Vite's static handler
+    // and Vite returns HTTP 501 "Not Implemented" — which is what was hitting
+    // the Schreibtrainer (and every other AI endpoint) in local dev.
+    //
+    // Forward `/api/*` to `wrangler pages dev` (default port 8788) so the
+    // Pages Functions handle the request. Without this Vite returns HTTP 501
+    // for every POST. Override with VITE_API_PROXY=https://minallo.de to hit
+    // the live backend, but unreleased functions like the Schreibtrainer will
+    // 404 there — local `wrangler pages dev` is the only way to test them.
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_PROXY || 'http://localhost:8788',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 });

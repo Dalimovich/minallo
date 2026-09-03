@@ -1,0 +1,622 @@
+/* Responsive app polish layered after the core portal styles. */
+
+#portalHamburger {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--row-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--on-glass);
+  cursor: pointer;
+  font-size: 1.1rem;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+#portalHamburger:hover {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+@media (max-width: 768px) {
+  #portal .shell {
+    overflow: visible;
+  }
+
+  #portal .sidebar {
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    z-index: 300;
+    width: min(var(--sb-w), calc(100vw - 44px)) !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0 !important;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 12px calc(env(safe-area-inset-bottom, 0px) + 14px);
+    border-radius: 0 22px 22px 0;
+    transform: translateX(-105%) !important;
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 12px 0 42px rgba(0, 0, 0, 0.42);
+  }
+
+  #portal .sidebar.mob-open {
+    transform: translateX(0) !important;
+  }
+
+  #portal .sidebar .sb-user {
+    justify-content: flex-start !important;
+    padding: 10px 12px !important;
+    margin: 0 0 16px !important;
+    gap: 12px !important;
+    height: auto !important;
+    background: rgba(255, 255, 255, 0.055);
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+
+  #portal .sidebar .sb-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+  }
+
+  #portal .sidebar .sb-nav {
+    align-items: stretch;
+    gap: 7px;
+    padding: 0 2px 8px;
+  }
+
+  #portal .sidebar .sb-item {
+    width: 100% !important;
+    min-height: 54px;
+    height: auto !important;
+    justify-content: flex-start !important;
+    padding: 8px 12px !important;
+    gap: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  #portal .sidebar .sb-item-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  #portal .sidebar .sb-item > span:not(.sb-item-badge),
+  #portal .sidebar .sb-user-info {
+    opacity: 1 !important;
+    max-width: none !important;
+    pointer-events: auto !important;
+  }
+
+  #portal .sidebar .sb-item-badge {
+    opacity: 1 !important;
+    max-width: 40px !important;
+    margin-left: auto !important;
+    padding: 2px 7px !important;
+  }
+
+  #portal .sidebar .sb-section-label {
+    height: 26px !important;
+    margin: 8px 0 0 !important;
+    padding: 0 10px !important;
+    opacity: 1 !important;
+  }
+
+  #portal .sidebar .sb-divider {
+    align-self: stretch;
+    width: auto;
+    margin: 6px 8px;
+  }
+
+  #portal .sidebar .sb-bottom {
+    padding-top: 10px;
+  }
+
+  #portal .sidebar .sb-night-btn {
+    width: 100% !important;
+    height: 54px;
+    justify-content: flex-start;
+    padding: 0 12px !important;
+    border-radius: 16px;
+  }
+
+  #portal .sidebar .sb-night-track {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  #portal .sidebar .sb-night-track-label {
+    opacity: 1 !important;
+    max-width: 180px !important;
+  }
+
+  #portal .mob-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 299;
+    background: rgba(2, 6, 23, 0.56);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  #portal .mob-scrim.show {
+    display: block;
+  }
+
+  #portal .main .topbar {
+    display: flex !important;
+    min-height: 58px;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px !important;
+  }
+
+  #portalHamburger {
+    display: flex !important;
+  }
+
+  #portal .main .main-scroll {
+    padding: 16px !important;
+  }
+
+  .tb-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tb-crumb,
+  .tb-action {
+    display: none !important;
+  }
+
+  body.ncb-fullbleed #portal .main .topbar {
+    display: flex !important;
+    position: relative;
+    z-index: 80;
+    background: #071124;
+    border-bottom-color: rgba(148, 163, 184, 0.14);
+  }
+
+  body.ncb-fullbleed #portal .main .main-scroll {
+    padding: 0 !important;
+  }
+
+  body.ncb-fullbleed #psec-aipage {
+    height: calc(100dvh - 58px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #psec-dashboard .dash-greeting {
+    margin-bottom: 18px;
+  }
+
+  #psec-dashboard .dash-greeting h1 {
+    font-size: 1.45rem;
+    line-height: 1.15;
+  }
+
+  #psec-dashboard .dash-canvas {
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: minmax(132px, auto) !important;
+    gap: 12px;
+  }
+
+  #psec-dashboard .widget-panel {
+    width: min(340px, calc(100vw - 24px));
+    right: -100vw;
+    top: 12px;
+    bottom: 12px;
+  }
+
+  #psec-dashboard .widget-panel.open {
+    right: 12px;
+  }
+
+  .co-inner.co-inner-v2,
+  #psec-studip .sd-shell {
+    width: 100%;
+    max-width: none;
+    padding: 0 12px 48px;
+    box-sizing: border-box;
+  }
+
+  .co-inner-v2 .co-topnav,
+  #psec-studip .sd-controls {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .co-inner-v2 .co-study-wrap,
+  .co-inner-v2 .co-study-btn,
+  #psec-studip .sd-layout-btn,
+  #psec-studip .sd-search-wrap {
+    width: 100%;
+  }
+
+  .co-inner-v2 .co-study-btn,
+  #psec-studip .sd-layout-btn {
+    justify-content: center;
+  }
+
+  .co-inner-v2 .co-hero,
+  #psec-studip .sd-hero,
+  #psec-studip .sd-daily-mission-card {
+    border-radius: 16px;
+    padding: 18px;
+  }
+
+  .co-inner-v2 .co-hero-grid,
+  #psec-studip .sd-hero-grid,
+  #psec-studip .sd-daily-mission-card {
+    grid-template-columns: 1fr !important;
+  }
+
+  .co-inner-v2 .co-hero-title,
+  #psec-studip .sd-hero-title {
+    font-size: 1.55rem;
+    line-height: 1.12;
+  }
+
+  .co-inner-v2 .co-course-tabs {
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+    width: 100%;
+    max-width: none;
+    margin: 0 0 16px;
+    padding: 7px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-padding-left: 7px;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 14px;
+    scrollbar-width: none;
+  }
+
+  .co-inner-v2 .co-course-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .co-inner-v2 .co-course-tab {
+    flex: 0 0 auto;
+    min-width: 0;
+    min-height: 38px;
+    width: auto;
+    min-width: max-content;
+    padding: 0 8px;
+    border-radius: 10px;
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+    gap: 6px;
+    font-size: 0.76rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+
+  .co-inner-v2 .co-course-tab svg {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+  }
+
+  .co-inner-v2 .co-course-tab span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+
+  .co-inner-v2 .co-card.co-card-v2,
+  .co-inner-v2 .co-files-inner-card,
+  .co-inner-v2 .qz-deck-pane,
+  .co-inner-v2 .fc-deck-pane,
+  .co-inner-v2 .qz-study-pane,
+  .co-inner-v2 .fc-study-pane {
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .co-inner-v2 .co-panel-header,
+  .co-inner-v2 .co-panel-header-v2,
+  .co-inner-v2 .co-files-toolbar,
+  .co-inner-v2 .co-files-toolbar-primary,
+  .co-inner-v2 .co-files-toolbar-secondary,
+  .co-inner-v2 .qz-toolbar,
+  .co-inner-v2 .fc-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .co-inner-v2 .co-tool-btn,
+  .co-inner-v2 .co-tool-btn-primary,
+  .co-inner-v2 .qz-btn,
+  .co-inner-v2 .fc-btn,
+  .co-inner-v2 .qz-sort,
+  .co-inner-v2 .fc-sort {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .co-inner-v2 .qz-search,
+  .co-inner-v2 .fc-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .co-inner-v2 .co-file.co-file-v2,
+  .co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .co-inner-v2 .co-file.co-file-v2 {
+    flex-wrap: wrap;
+    padding: 14px;
+  }
+
+  .co-inner-v2 .co-file.co-file-v2 .co-file-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+
+  .co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-header {
+    flex-wrap: wrap;
+  }
+
+  .co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-open-btn,
+  .co-inner-v2 .co-folder-section.co-folder-v2 .co-folder-more {
+    margin-left: 0;
+  }
+
+  .co-inner-v2 .qz-study-controls,
+  .co-inner-v2 .fc-study-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-toolbar-v2 .pdf-toolbar-top,
+  .pdf-toolbar-v2 .pdf-toolbar-controls,
+  .pdf-toolbar-v2 .pdf-right,
+  .pdf-toolbar-v2 .pdf-controls-right {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .pdf-toolbar-v2 .pdf-file-info,
+  .pdf-toolbar-v2 .pdf-file-info strong,
+  .pdf-toolbar-v2 .pdf-file-info .pdf-tb-title {
+    max-width: calc(100vw - 120px);
+  }
+
+  #pdfViewerWrap {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  #pdfViewerWrap .pdf-body,
+  #pdfViewerWrap .pdf-body-right {
+    padding: 8px 7px 18px !important;
+    gap: 10px !important;
+    align-items: center !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #pdfViewerWrap .pdf-bodies.is-split {
+    flex-direction: column;
+    --pdf-split-left: auto;
+  }
+
+  #pdfViewerWrap .pdf-bodies.is-split > #pdfBody,
+  #pdfViewerWrap .pdf-bodies.is-split > .pdf-right-pane {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42dvh;
+  }
+
+  #pdfViewerWrap .pdf-bodies.is-split > .pdf-pane-divider {
+    display: none !important;
+  }
+
+  #pdfViewerWrap .pdf-page-wrap {
+    max-width: calc(100vw - 18px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  body.ncb-fullbleed #psec-aipage {
+    height: calc(100dvh - 58px) !important;
+  }
+
+  .ncb-main {
+    padding: 0 !important;
+  }
+
+  .ncb-card {
+    border-radius: 0 !important;
+  }
+
+  .ncb-sidebar {
+    display: none !important;
+  }
+
+  .ncb-header {
+    top: 10px;
+    right: 10px;
+  }
+
+  .ncb-header-right {
+    gap: 6px;
+  }
+
+  .ncb-pill {
+    height: 36px;
+    padding: 0 10px;
+  }
+
+  .ncb-center,
+  .ncb-center-inner {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .ncb-empty-head {
+    margin-top: 54px;
+    margin-bottom: 18px;
+  }
+
+  .ncb-empty-title {
+    font-size: 1.7rem;
+  }
+
+  .ncb-input {
+    border-radius: 20px;
+  }
+
+  .ncb-input-row {
+    padding: 6px 8px;
+  }
+
+  .pdf-toolbar-v2 .pdf-toolbar-inner {
+    padding: 8px 8px 7px !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-toolbar-top {
+    gap: 8px !important;
+    align-items: flex-start;
+  }
+
+  .pdf-toolbar-v2 .pdf-left {
+    gap: 8px !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-file-info strong {
+    font-size: 0.78rem !important;
+    max-width: calc(100vw - 108px) !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-file-info .pdf-tb-title {
+    font-size: 0.66rem !important;
+    max-width: calc(100vw - 108px) !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-toolbar-controls {
+    margin-top: 7px !important;
+    gap: 5px !important;
+    padding: 5px !important;
+    border-radius: 14px !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pdf-toolbar-v2 .pdf-toolbar-controls::-webkit-scrollbar,
+  .pdf-tabs-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pdf-toolbar-v2 .pdf-toolbar-button,
+  .pdf-toolbar-v2 .pdf-primary-button,
+  .pdf-toolbar-v2 .pdf-study-button {
+    height: 32px !important;
+    min-height: 32px !important;
+    border-radius: 10px !important;
+    padding: 0 9px !important;
+    font-size: 0.72rem !important;
+    gap: 5px !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-icon-button,
+  .pdf-toolbar-v2 .pdf-control-group .pdf-icon-button {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    padding: 0 !important;
+    border-radius: 9px !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-control-group {
+    height: 34px !important;
+    border-radius: 11px !important;
+    padding: 1px 3px !important;
+    flex: 0 0 auto;
+  }
+
+  .pdf-toolbar-v2 .pdf-page-info {
+    font-size: 0.72rem !important;
+    gap: 4px !important;
+    padding: 0 3px !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-page-input {
+    width: 20px !important;
+    font-size: 0.72rem !important;
+  }
+
+  .pdf-toolbar-v2 .pdf-zoom-pct,
+  .pdf-toolbar-v2 .pdf-control-group .pdf-zoom-pct {
+    min-width: 42px !important;
+    height: 28px !important;
+    padding: 0 6px !important;
+    font-size: 0.68rem !important;
+  }
+
+  .pdf-tabs-bar {
+    margin-top: 7px !important;
+    gap: 5px !important;
+  }
+
+  .pdf-tab {
+    height: 30px !important;
+    min-width: 112px !important;
+    max-width: 165px !important;
+    border-radius: 9px 9px 5px 5px !important;
+    font-size: 0.7rem !important;
+    padding-left: 9px !important;
+  }
+
+  .pdf-tabs-add {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 9px !important;
+  }
+
+  body.pdf-maximized #pdfToolbar {
+    top: max(6px, env(safe-area-inset-top, 0px)) !important;
+    max-width: calc(100vw - 12px) !important;
+  }
+
+  body.pdf-maximized #pdfToolbar .pdf-toolbar-controls {
+    padding: 5px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  #portal .main .main-scroll {
+    padding: 12px !important;
+  }
+
+  #portal .main .topbar {
+    gap: 8px;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  #portalHamburger {
+    width: 36px;
+    height: 36px;
+  }
+}
