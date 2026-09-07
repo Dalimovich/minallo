@@ -13,6 +13,7 @@ Behaviour the brief mandates:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -419,6 +420,57 @@ def _run_one_quiz_shard(
         return None
 
 
+def _mcq_verdicts(
+    questions_block: str,
+    count: int,
+    context: str,
+    diagnostics: dict[str, Any],
+) -> dict[int, dict[str, Any]]:
+    """Ask a fresh model call to re-derive the correct option for each of
+    `count` numbered MCQs in `questions_block`, blind to any existing answer
+    key. Shared by both the standalone-quiz verifier (drop semantics) and the
+    inline-chat-quiz verifier (correct-in-place semantics) below — the two
+    differ only in what they DO with a confident disagreement, not in how
+    they ask for one.
+
+    Returns {question_number: verdict} (1-based), or {} on any failure —
+    callers must treat that as "could not verify, leave everything as-is",
+    never as an error to raise: verification must never block a quiz.
+    """
+    system = (
+        "You are a meticulous exam answer-key checker. For each numbered "
+        "multiple-choice question, determine the single correct option using "
+        "ONLY the COURSE CONTEXT below. Re-derive the answer yourself; do not "
+        "assume any option is correct. Watch for swapped symbols, names, "
+        "numbers, units, or percentages between the options.\n\n"
+        'Return ONLY JSON: {"verdicts": [{"n": 1, "letter": "A", '
+        '"confident": true}, ...]}. Set "confident" to false when the context '
+        "does not clearly decide the answer."
+    )
+    user = "COURSE CONTEXT:\n\n" + context + "\n\nQUESTIONS:\n\n" + questions_block
+    try:
+        res = chat_json(system=system, user=user, max_tokens=min(2000, 200 + count * 40))
+    except Exception:
+        log.exception("quiz: verification pass failed; keeping items unverified")
+        return {}
+
+    diagnostics["prompt_tokens"] = diagnostics.get("prompt_tokens", 0) + (res.prompt_tokens or 0)
+    diagnostics["completion_tokens"] = diagnostics.get("completion_tokens", 0) + (res.completion_tokens or 0)
+    diagnostics["model"] = res.model
+
+    verdicts = res.data.get("verdicts") if isinstance(res.data, dict) else None
+    if not isinstance(verdicts, list):
+        return {}
+    by_n: dict[int, dict[str, Any]] = {}
+    for v in verdicts:
+        if isinstance(v, dict):
+            try:
+                by_n[int(v.get("n"))] = v
+            except (TypeError, ValueError):
+                continue
+    return by_n
+
+
 def _verify_mcq_keys(
     items: list[dict[str, Any]],
     context: str,
@@ -431,6 +483,11 @@ def _verify_mcq_keys(
     verifier can't erode the count — the goal is to catch the rare confidently
     wrong key (e.g. swapped Si/Cu values) before it reaches the student. On any
     failure the items pass through unchanged: verification must never block a quiz.
+
+    Dropping is safe here because callers over-collect a small buffer of MCQs
+    specifically so a drop doesn't shrink the requested count (see
+    generate_quiz below). The inline chat quiz has no such buffer — see
+    `verify_and_correct_inline_quiz` for that path's correct-in-place approach.
     """
     mcqs = [(i, it) for i, it in enumerate(items) if it.get("type") == "mcq"]
     if not mcqs:
@@ -441,40 +498,10 @@ def _verify_mcq_keys(
         opts = it.get("options") or {}
         opt_text = "  ".join(f"{l}) {opts.get(l, '')}" for l in _LETTERS)
         lines.append(f"{n}. {it.get('question', '')}\n   {opt_text}")
-    questions_block = "\n\n".join(lines)
 
-    system = (
-        "You are a meticulous exam answer-key checker. For each numbered "
-        "multiple-choice question, determine the single correct option using "
-        "ONLY the COURSE CONTEXT below. Re-derive the answer yourself; do not "
-        "assume any option is correct. Watch for swapped symbols, names, "
-        "numbers, units, or percentages between the options.\n\n"
-        'Return ONLY JSON: {"verdicts": [{"n": 1, "letter": "A", '
-        '"confident": true}, ...]}. Set "confident" to false when the context '
-        "does not clearly decide the answer."
-    )
-    user = "COURSE CONTEXT:\n\n" + context + "\n\nQUESTIONS:\n\n" + questions_block
-
-    try:
-        res = chat_json(system=system, user=user, max_tokens=min(2000, 200 + len(mcqs) * 40))
-    except Exception:
-        log.exception("quiz: verification pass failed; keeping items unverified")
+    by_n = _mcq_verdicts("\n\n".join(lines), len(mcqs), context, diagnostics)
+    if not by_n:
         return items
-
-    diagnostics["prompt_tokens"] += res.prompt_tokens or 0
-    diagnostics["completion_tokens"] += res.completion_tokens or 0
-
-    verdicts = res.data.get("verdicts") if isinstance(res.data, dict) else None
-    if not isinstance(verdicts, list):
-        return items
-
-    by_n: dict[int, dict[str, Any]] = {}
-    for v in verdicts:
-        if isinstance(v, dict):
-            try:
-                by_n[int(v.get("n"))] = v
-            except (TypeError, ValueError):
-                continue
 
     drop_indices: set[int] = set()
     for n, (orig_idx, it) in enumerate(mcqs, 1):
@@ -489,6 +516,83 @@ def _verify_mcq_keys(
         return items
     log.info("quiz: verification dropped %d MCQ item(s) with disputed keys", len(drop_indices))
     return [it for i, it in enumerate(items) if i not in drop_indices]
+
+
+_INLINE_QUIZ_FENCE_RE = re.compile(r"```minallo-quiz\n(.*?)\n```", re.DOTALL)
+
+
+def verify_and_correct_inline_quiz(full_answer: str, context: str) -> tuple[str, dict[str, Any]]:
+    """Re-derive each inline chat quiz MCQ's answer independently and CORRECT
+    (not drop) any confidently-wrong key in place.
+
+    The inline quiz (```minallo-quiz block, QUIZ_CONTRACT) never over-collects
+    a buffer of extra questions the way generate_quiz below does — dropping a
+    disputed item here would just shrink an already-tight 3-8 question quiz
+    the student is about to take. Rewriting the answer index (and leaving the
+    now-possibly-stale explanation as-is, rather than regenerating it) is a
+    smaller, safer change than serving either a confidently wrong key or a
+    shorter quiz. On any failure — no fence found, malformed JSON, the
+    verification call itself failing — the text is returned byte-for-byte
+    unchanged: verification must never block or corrupt a quiz.
+
+    Returns (possibly-rewritten full_answer, diagnostics) where diagnostics
+    carries prompt/completion token counts and the model used, for the
+    caller's own usage metering (empty/zero when no verification call ran).
+    """
+    diagnostics: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
+    match = _INLINE_QUIZ_FENCE_RE.search(full_answer)
+    if not match:
+        return full_answer, diagnostics
+
+    try:
+        payload = json.loads(match.group(1))
+        questions = payload.get("questions") if isinstance(payload, dict) else None
+        if not isinstance(questions, list) or not questions:
+            return full_answer, diagnostics
+    except Exception:
+        log.warning("quiz: inline quiz block failed to parse; skipping verification")
+        return full_answer, diagnostics
+
+    valid: list[tuple[int, list[str]]] = []  # (index into questions, ordered letters)
+    lines: list[str] = []
+    for idx, item in enumerate(questions):
+        if not isinstance(item, dict):
+            continue
+        options = item.get("options")
+        answer_idx = item.get("answer")
+        if (not isinstance(options, list) or not (2 <= len(options) <= 4)
+                or not isinstance(answer_idx, int) or not (0 <= answer_idx < len(options))):
+            continue
+        letters = list(_LETTERS[:len(options)])
+        valid.append((idx, letters))
+        opt_text = "  ".join(f"{l}) {opt}" for l, opt in zip(letters, options))
+        lines.append(f"{len(valid)}. {item.get('q', '')}\n   {opt_text}")
+    if not valid:
+        return full_answer, diagnostics
+
+    by_n = _mcq_verdicts("\n\n".join(lines), len(valid), context, diagnostics)
+    if not by_n:
+        return full_answer, diagnostics
+
+    corrected = 0
+    for n, (idx, letters) in enumerate(valid, 1):
+        v = by_n.get(n)
+        if not v or not v.get("confident"):
+            continue
+        letter = str(v.get("letter") or "").strip().upper()[:1]
+        if letter not in letters:
+            continue
+        new_answer = letters.index(letter)
+        if questions[idx].get("answer") != new_answer:
+            questions[idx]["answer"] = new_answer
+            corrected += 1
+
+    if not corrected:
+        return full_answer, diagnostics
+    log.info("quiz: inline verification corrected %d answer key(s)", corrected)
+    payload["questions"] = questions
+    new_block = "```minallo-quiz\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+    return full_answer[:match.start()] + new_block + full_answer[match.end():], diagnostics
 
 
 def generate_quiz(

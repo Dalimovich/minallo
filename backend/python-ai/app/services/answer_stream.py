@@ -1818,6 +1818,11 @@ def stream_answer(
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file (e.g. a chapter the student didn't select).
     is_exam_request = academic_intent == AcademicIntent.EXAM_GENERATION
+    # Inline chat quiz (QUIZ_CONTRACT, ```minallo-quiz block) — buffered below
+    # like an exam so its answer key can be independently re-derived and
+    # corrected before the student ever sees it, instead of being handed
+    # straight through unverified the way it was before.
+    is_quiz_request = academic_intent == AcademicIntent.QUIZ_GENERATION
     from .exam_reference import is_similar_exam_request  # noqa: WPS433
     similar_exam_request = is_exam_request and is_similar_exam_request(question)
     wants_full_coverage = (
@@ -2227,7 +2232,7 @@ def stream_answer(
     # citations the model actually used. The full text isn't known until the
     # stream completes, so the filtering happens just before the 'done' event.
     answer_buf: list[str] = []
-    buffer_for_validation = is_exam_request or visual_assignment_task
+    buffer_for_validation = is_exam_request or visual_assignment_task or is_quiz_request
 
     # Send an opening "meta" event so the client can render the bubble
     # immediately, even before the first content token arrives.
@@ -2485,6 +2490,25 @@ def stream_answer(
             ),
             len(extract_numbered_assignments(full_answer)),
         )
+        for i in range(0, len(full_answer), 1500):
+            yield _sse({"t": full_answer[i:i + 1500]})
+    elif is_quiz_request:
+        # Independent re-derivation of each inline quiz answer, mirroring the
+        # standalone Quiz/ExamForge safety net (quiz.py's _verify_mcq_keys) —
+        # the inline ```minallo-quiz block previously reached the student with
+        # no such check at all. Corrects confidently-wrong keys in place
+        # rather than dropping questions: unlike generate_quiz, this path
+        # never over-collects a buffer to absorb a drop.
+        yield _sse({"status": "verifying_answer"})
+        from .quiz import verify_and_correct_inline_quiz  # noqa: WPS433
+        full_answer, quiz_verify_diag = verify_and_correct_inline_quiz(full_answer, context_block)
+        if quiz_verify_diag.get("model"):
+            record_usage(
+                feature="ask_stream_quiz_verify",
+                model=quiz_verify_diag["model"],
+                prompt_tokens=quiz_verify_diag.get("prompt_tokens"),
+                completion_tokens=quiz_verify_diag.get("completion_tokens"),
+            )
         for i in range(0, len(full_answer), 1500):
             yield _sse({"t": full_answer[i:i + 1500]})
 

@@ -162,6 +162,144 @@ def test_verify_skips_when_no_mcqs(monkeypatch) -> None:
     assert "called" not in captured  # no LLM call when there is nothing to verify
 
 
+def _inline_quiz_answer(intro: str, title: str, questions: list[dict]) -> str:
+    import json
+
+    block = json.dumps({"title": title, "questions": questions})
+    return intro + "\n\n```minallo-quiz\n" + block + "\n```"
+
+
+def test_inline_quiz_corrects_confident_disagreement_in_place() -> None:
+    from app.services.quiz import verify_and_correct_inline_quiz
+
+    answer = _inline_quiz_answer(
+        "Here is a quiz on aluminium alloys.",
+        "Alloys",
+        [{
+            "q": "What does AlSi8Cu3 mean?",
+            "options": ["8% copper, 3% silicon", "8% silicon, 3% copper", "Pure aluminium", "8% iron, 3% zinc"],
+            "answer": 0,  # wrong on purpose — verifier should flip this to index 1 ("B")
+            "explanation": "Reads the alloy code left to right.",
+        }],
+    )
+
+    class _FakeQuiz:
+        def __call__(self, *, system, user, max_tokens):
+            from app.services.llm_json import LlmResult
+            return LlmResult(
+                data={"verdicts": [{"n": 1, "letter": "B", "confident": True}]},
+                model="gpt-4o-mini", prompt_tokens=80, completion_tokens=15,
+            )
+
+    import app.services.quiz as quiz_module
+    original = quiz_module.chat_json
+    quiz_module.chat_json = _FakeQuiz()
+    try:
+        new_answer, diag = verify_and_correct_inline_quiz(
+            answer, "AlSi8Cu3: aluminium with 8% silicon and 3% copper."
+        )
+    finally:
+        quiz_module.chat_json = original
+
+    import json
+    fence = new_answer.split("```minallo-quiz\n", 1)[1].rsplit("\n```", 1)[0]
+    payload = json.loads(fence)
+    assert payload["questions"][0]["answer"] == 1  # corrected from 0 ("A") to 1 ("B")
+    # The rest of the answer (intro text, title, explanation) is untouched.
+    assert new_answer.startswith("Here is a quiz on aluminium alloys.")
+    assert payload["questions"][0]["explanation"] == "Reads the alloy code left to right."
+    assert diag["model"] == "gpt-4o-mini"
+    assert diag["prompt_tokens"] == 80
+
+
+def test_inline_quiz_leaves_agreement_untouched() -> None:
+    from app.services.quiz import verify_and_correct_inline_quiz
+
+    answer = _inline_quiz_answer("Quiz time.", "T", [{
+        "q": "Q1", "options": ["A", "B"], "answer": 0, "explanation": "e",
+    }])
+
+    import app.services.quiz as quiz_module
+    from app.services.llm_json import LlmResult
+    original = quiz_module.chat_json
+    quiz_module.chat_json = lambda **_: LlmResult(
+        data={"verdicts": [{"n": 1, "letter": "A", "confident": True}]},
+        model="gpt-4o-mini", prompt_tokens=10, completion_tokens=5,
+    )
+    try:
+        new_answer, _ = verify_and_correct_inline_quiz(answer, "ctx")
+    finally:
+        quiz_module.chat_json = original
+
+    assert new_answer == answer  # byte-for-byte unchanged — nothing to correct
+
+
+def test_inline_quiz_never_drops_questions_on_unconfident_disagreement() -> None:
+    from app.services.quiz import verify_and_correct_inline_quiz
+
+    answer = _inline_quiz_answer("Quiz.", "T", [{
+        "q": "Ambiguous?", "options": ["A", "B"], "answer": 0, "explanation": "e",
+    }])
+
+    import app.services.quiz as quiz_module
+    from app.services.llm_json import LlmResult
+    original = quiz_module.chat_json
+    quiz_module.chat_json = lambda **_: LlmResult(
+        data={"verdicts": [{"n": 1, "letter": "B", "confident": False}]},
+        model="gpt-4o-mini", prompt_tokens=10, completion_tokens=5,
+    )
+    try:
+        new_answer, _ = verify_and_correct_inline_quiz(answer, "ctx")
+    finally:
+        quiz_module.chat_json = original
+
+    assert new_answer == answer
+    import json
+    fence = new_answer.split("```minallo-quiz\n", 1)[1].rsplit("\n```", 1)[0]
+    assert len(json.loads(fence)["questions"]) == 1  # count preserved — no drop
+
+
+def test_inline_quiz_passes_through_on_llm_failure() -> None:
+    from app.services.quiz import verify_and_correct_inline_quiz
+
+    answer = _inline_quiz_answer("Quiz.", "T", [{
+        "q": "Q?", "options": ["A", "B"], "answer": 0, "explanation": "e",
+    }])
+
+    import app.services.quiz as quiz_module
+
+    def boom(**_):
+        raise RuntimeError("openai down")
+
+    original = quiz_module.chat_json
+    quiz_module.chat_json = boom
+    try:
+        new_answer, diag = verify_and_correct_inline_quiz(answer, "ctx")
+    finally:
+        quiz_module.chat_json = original
+
+    assert new_answer == answer
+    assert diag["model"] is None
+
+
+def test_inline_quiz_passes_through_when_no_fence_present() -> None:
+    from app.services.quiz import verify_and_correct_inline_quiz
+
+    answer = "Just a plain answer with no quiz block."
+    new_answer, diag = verify_and_correct_inline_quiz(answer, "ctx")
+    assert new_answer == answer
+    assert diag == {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
+
+
+def test_inline_quiz_passes_through_on_malformed_json() -> None:
+    from app.services.quiz import verify_and_correct_inline_quiz
+
+    answer = "Quiz:\n\n```minallo-quiz\n{not valid json\n```"
+    new_answer, diag = verify_and_correct_inline_quiz(answer, "ctx")
+    assert new_answer == answer
+    assert diag["model"] is None
+
+
 def test_deterministic_backfill_honours_requested_count() -> None:
     from app.services.quiz import _deterministic_mcq_backfill
     from app.services.retrieval import RetrievedChunk
