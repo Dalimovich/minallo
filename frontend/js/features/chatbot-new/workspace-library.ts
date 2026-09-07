@@ -54,6 +54,7 @@ const kindLabels: Record<SavedKind, string> = {
 // later: an authentic zero-courses answer and "not loaded yet" are
 // indistinguishable to a plain courses().length check alone.
 let courseRegistryReady = false;
+const deletedResponseIds = new Set<string>();
 let pdfOrigin: Comment | null = null;
 let workspaceLibraryCleanup: (() => void) | null = null;
 let pdfHost: HTMLElement | null = null;
@@ -478,8 +479,30 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
     selectTab(tab.dataset.libraryTab || 'courses');
   }));
 
-  const handleSavedRepliesChanged = (): void => {
+  const handleSavedRepliesChanged = (rawEvent: Event): void => {
+    const event = rawEvent as CustomEvent<{ action?: string; replyId?: string; id?: string }>;
+    const changedId = event.detail?.replyId || event.detail?.id;
+    const state = studyLibraryState();
+    if (event.detail?.action === 'deleted' && changedId) {
+      deletedResponseIds.add(changedId);
+      state.savedItems = state.savedItems.filter((item) => !(item.kind === 'responses' && item.id === changedId));
+    } else {
+      const local = localBookmarkedResponses().find((row) => row.id === changedId);
+      if (local) {
+        const cached = cachedBookmarkedResponse(local);
+        state.savedItems = [
+          ...state.savedItems.filter((item) => !(item.kind === 'responses' && item.id === local.id)),
+          cached
+        ];
+      }
+    }
     invalidateSaved();
+    persistStudyLibrary();
+    if (!savedPanel.hidden) {
+      const allCourses = courses();
+      const immediate = savedItemsFromCache(state.savedItems, allCourses);
+      paintSavedState(savedPanel, root, immediate, savedGroupsFor(immediate, allCourses));
+    }
     if (!savedPanel.hidden) void renderSaved(savedPanel, root, true);
   };
   document.addEventListener('minallo:saved-replies-changed', handleSavedRepliesChanged);
@@ -2025,7 +2048,7 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
     id?: string; chat_id?: string; reply_text?: string; created_at?: string;
     course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
   };
-  const localRows = localBookmarkedResponses();
+  const localRowsAtStart = localBookmarkedResponses();
   let serverRows: ReplyRow[] = [];
   const token = authToken();
   if (token) {
@@ -2035,9 +2058,11 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
       });
       if (response.ok) {
         const body = await response.json() as { replies?: ReplyRow[] };
-        serverRows = Array.isArray(body.replies) ? body.replies : [];
+        serverRows = Array.isArray(body.replies)
+          ? body.replies.filter((row) => !row.id || !deletedResponseIds.has(row.id))
+          : [];
         const serverIds = new Set(serverRows.map((row) => row.id));
-        await Promise.allSettled(localRows.filter((row) => !serverIds.has(row.id)).map((row) =>
+        await Promise.allSettled(localRowsAtStart.filter((row) => !serverIds.has(row.id)).map((row) =>
           fetch('/api/chat-saved-replies', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -2051,6 +2076,10 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
       }
     } catch { /* local cache still makes bookmarks available offline */ }
   }
+  // A bookmark can be created while the server request above is in flight.
+  // Re-read the offline-first store immediately before merging so that an
+  // older preload can never commit a false "fresh" result without it.
+  const localRows = localBookmarkedResponses();
   const rows: ReplyRow[] = [];
   [...serverRows, ...localRows].forEach((row) => {
     if (!row.id || !row.reply_text) return;
@@ -2112,6 +2141,22 @@ function authToken(): string {
 
 function normalizeBookmarkedResponse(text: string | undefined): string {
   return String(text || '').replace(/\r\n/g, '\n').trim();
+}
+
+type LocalBookmarkedResponse = ReturnType<typeof localBookmarkedResponses>[number];
+
+function cachedBookmarkedResponse(row: LocalBookmarkedResponse): CachedSavedItem {
+  const courseId = row.course_id || 'responses:general';
+  const course = row.course_id ? courses().find((candidate) => candidate.id === row.course_id) : undefined;
+  const titles = savedChatTitles();
+  return {
+    id: row.id,
+    kind: 'responses',
+    title: row.source_prompt ? responseTitle(row.source_prompt) : responseTitle(row.reply_text),
+    courseId,
+    courseName: course?.name || (row.course_id || 'General'),
+    meta: `${titles.get(row.chat_id) || 'AI conversation'} · ${formatDate(row.created_at)}`
+  };
 }
 
 function localBookmarkedResponses(): Array<{

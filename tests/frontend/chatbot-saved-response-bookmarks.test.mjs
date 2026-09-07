@@ -44,3 +44,21 @@ test('legacy local bookmarks migrate safely to General and sync all provenance f
   assert.match(workspace, /sourceMessageId: row\.source_message_id, sourcePrompt: row\.source_prompt/);
   assert.match(migration, /having count\(distinct course_id\) = 1/);
 });
+
+test('an in-flight Saved preload cannot hide a newly created offline bookmark', () => {
+  const handler = workspace.slice(
+    workspace.indexOf('const handleSavedRepliesChanged'),
+    workspace.indexOf("document.addEventListener('minallo:saved-replies-changed'")
+  );
+  assert.match(handler, /localBookmarkedResponses\(\)\.find/);
+  assert.match(handler, /state\.savedItems =/);
+  assert.match(handler, /paintSavedState\(savedPanel/);
+
+  const loader = workspace.slice(
+    workspace.indexOf('async function loadBookmarkedResponses'),
+    workspace.indexOf('function authToken')
+  );
+  assert.match(loader, /const localRowsAtStart = localBookmarkedResponses\(\)/);
+  assert.match(loader, /const localRows = localBookmarkedResponses\(\)/);
+  assert.ok(loader.indexOf('const localRows = localBookmarkedResponses()') > loader.indexOf("await fetch('/api/chat-saved-replies'"));
+});
