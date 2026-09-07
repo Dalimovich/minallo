@@ -10,7 +10,8 @@ from typing import Any
 from . import mastery
 from .learning_agent import get_course_topic_map, retrieve_learning_context
 from .document_context import understanding_block_for_ids
-from .exam_solution_validation import answer_has_question_specific_result
+from .exam_solution_validation import validate_final_answer
+from .verified_exam import validate_verified_exam
 from .llm_json import chat_json
 from .quiz import _fetch_course_topics, generate_quiz
 from ..supabase_client import get_supabase
@@ -76,7 +77,7 @@ def _normalise_question(row: dict[str, Any], question_id: str | None = None) -> 
     answer_valid = (
         bool(actual_answer)
         and (
-            answer_has_question_specific_result(question_text, actual_answer)
+            validate_final_answer(question_text, actual_answer, qtype)
             if qtype == "short_answer" else supplied_answer_valid
         )
     )
@@ -88,18 +89,23 @@ def _normalise_question(row: dict[str, Any], question_id: str | None = None) -> 
         "answer": answer,
         "explanation": explanation,
         "solution": {
+            "questionId": question_id,
             "keySteps": [step for step in (row.get("key_steps") or []) if str(step).strip()],
             "finalAnswer": actual_answer,
+            "explanation": explanation,
             "validationStatus": "validated" if answer_valid else "invalid_solution",
         },
         "difficulty": row.get("difficulty") or "medium",
         "topic": row.get("topic"),
         "points": int(row.get("points") or 1),
+        "generatedParameters": row.get("generated_parameters") or row.get("generatedParameters") or {},
         "source": source,
         "sources": [{
             "fileName": _source_doc(source),
             "pages": _source_page(source),
+            "relationship": "supporting_citation",
         }] if source else [],
+        "provenance": {"kind": "generated", "inspiredBy": _source_doc(source)} if source else {"kind": "generated"},
         "validation": {
             "status": "invalid_solution" if not answer_valid else row.get("validation_status") or "grounded",
             "score": row.get("validation_score") or 1,
@@ -218,7 +224,7 @@ _EXAMFORGE_SYSTEM = (
     "Return ONLY JSON:\n"
     '{"questions":[{"question_type":"mcq|true_false|short_answer","topic":"",'
     '"difficulty":"easy|medium|hard","points":1,"question":"","options":["","","",""],'
-    '"answer":"","key_steps":[""],"explanation":"","source_chunk_ids":[],"source_pages":[]}]}'
+    '"answer":"","key_steps":[""],"explanation":"","generated_parameters":{},"source_chunk_ids":[],"source_pages":[]}]}'
 )
 
 
@@ -367,6 +373,7 @@ def _grounded_questions(
             "difficulty": raw.get("difficulty") or diff,
             "topic": raw.get("topic"),
             "points": raw.get("points") or 1,
+            "generated_parameters": raw.get("generated_parameters") or {},
             "source": source,
             "validation_status": "grounded" if cited else "ungrounded",
             "validation_score": 1 if cited else 0.4,
@@ -374,6 +381,7 @@ def _grounded_questions(
         if (
             not str(q.get("question") or "").strip()
             or (q.get("validation") or {}).get("status") == "invalid_solution"
+            or validate_verified_exam({"questions": [q]})
         ):
             log.warning("examforge rejected question with missing/procedural answer")
             continue
@@ -468,6 +476,7 @@ def generate_examforge(
     questions = [
         question for question in questions
         if (question.get("validation") or {}).get("status") != "invalid_solution"
+        and not validate_verified_exam({"questions": [question]})
     ]
 
     topics = _fetch_course_topics(course_id, document_ids)
@@ -572,10 +581,22 @@ def generate_examforge(
             raise RuntimeError(
                 f"exam_questions persisted {len(saved_rows)}/{len(questions)} rows with ids"
             )
-        saved_questions = [
-            {**questions[idx], "id": row.get("id")}
-            for idx, row in enumerate(saved_rows)
-        ]
+        saved_questions = []
+        for idx, row in enumerate(saved_rows):
+            persisted_id = str(row.get("id"))
+            question = {**questions[idx], "id": persisted_id}
+            solution = dict(question.get("solution") or {})
+            solution["questionId"] = persisted_id
+            question["solution"] = solution
+            saved_questions.append(question)
+
+        final_issues = validate_verified_exam({
+            "title": topic_query or "ExamForge",
+            "totalPoints": sum(int(q.get("points") or 0) for q in saved_questions),
+            "questions": saved_questions,
+        })
+        if final_issues:
+            raise RuntimeError("persisted exam failed deterministic validation: " + ", ".join(i.code for i in final_issues))
     except Exception:
         log.exception("examforge persistence failed")
         return _error(
@@ -588,6 +609,7 @@ def generate_examforge(
         "title": topic_query or "ExamForge",
         "requestedCount": requested,
         "actualCount": len(saved_questions),
+        "totalPoints": sum(int(q.get("points") or 0) for q in saved_questions),
         "questions": saved_questions,
         "topicMap": [{"name": t} for t in topics[:24]],
         "grounded": grounded_used,

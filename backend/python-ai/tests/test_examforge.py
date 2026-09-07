@@ -133,6 +133,17 @@ def test_normalised_short_answer_exposes_verified_solution_object():
     assert question["solution"]["keySteps"] == ["Compute M=F*l", "Divide by W"]
 
 
+def test_generated_question_keeps_inspiration_distinct_from_citation():
+    question = ef._normalise_question({
+        "type": "short_answer",
+        "question": "Calculate the stress.",
+        "answer": "sigma = 80 MPa.",
+        "source": "Mechanics.pdf, 4",
+    })
+    assert question["provenance"] == {"kind": "generated", "inspiredBy": "Mechanics.pdf"}
+    assert question["sources"][0]["relationship"] == "supporting_citation"
+
+
 # ── mastery recording (grade → mastery) ─────────────────────────────────────────
 
 

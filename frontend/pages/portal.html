@@ -1003,6 +1003,17 @@
                   <section class="adm-card">
                     <div class="adm-card-head">
                       <div>
+                        <h2 class="adm-card-title" data-i18n="admin_provider_usage_title">Provider budget</h2>
+                        <p class="adm-card-desc" data-i18n="admin_provider_usage_desc">Real OpenAI and Mathpix account usage this month, straight from their APIs — no separate login needed.</p>
+                      </div>
+                      <button id="adminProviderUsageRefresh" class="sub-btn" type="button" style="width:auto;padding:8px 18px;font-size:.78rem" data-i18n="admin_refresh">Refresh</button>
+                    </div>
+                    <div class="adm-card-body" id="adminProviderUsage"></div>
+                  </section>
+
+                  <section class="adm-card">
+                    <div class="adm-card-head">
+                      <div>
                         <h2 class="adm-card-title" data-i18n="admin_export_title">Export report</h2>
                         <p class="adm-card-desc" data-i18n="admin_export_desc">Download an Excel sheet of cost, revenue, profit and AI usage per user. Pick an exact date range, or use a quick preset.</p>
                       </div>

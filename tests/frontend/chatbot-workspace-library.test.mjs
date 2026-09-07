@@ -62,6 +62,8 @@ const pdfViewerSource = fs.readFileSync(
 );
 const appSource = fs.readFileSync('frontend/js/app.ts', 'utf8');
 const portalHtml = fs.readFileSync('frontend/pages/portal.html', 'utf8');
+const examforgeSource = fs.readFileSync('frontend/views/examforge/examforge.js', 'utf8');
+const chatbotCss = fs.readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
 
 test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
   assert.match(html, /data-library-tab="courses"/);
@@ -273,7 +275,7 @@ test('Saved is grouped by resource function and course', () => {
 test('bookmarked AI responses load from the durable database endpoint', () => {
   assert.match(moduleSource, /fetch\('\/api\/chat-saved-replies'/);
   assert.match(moduleSource, /kind: 'responses'/);
-  assert.match(moduleSource, /renderMarkdown\(response\.text/);
+  assert.match(moduleSource, /renderMarkdown\(text\)/);
   assert.match(shellSource, /syncSavedReplyCreate\(chat\.id, reply\)/);
   assert.match(moduleSource, /localBookmarkedResponses\(\)/);
   assert.match(moduleSource, /\[\.\.\.serverRows, \.\.\.localRows\]/);
@@ -498,4 +500,114 @@ test('refresh restores the chatbot PDF and Back restores its originating course'
   const backgroundCourse = moduleSource.indexOf('void renderCourseDetail(coursePanel, course)');
   const immediatePdf = moduleSource.indexOf('openWorkspacePdf(root, file, course)', backgroundCourse);
   assert.ok(backgroundCourse >= 0 && immediatePdf > backgroundCourse);
+});
+
+// ── Saved artifacts must reliably open their actual content ────────────────
+// Regression coverage for: clicking a Saved item either shows the exact
+// artifact clicked, or a visible retry-capable error — never a stuck
+// "Opening resource…" state, an empty overlay, or the wrong artifact.
+
+test('opening a Saved item always resolves to either content or a visible retry error', () => {
+  const openSavedBody = moduleSource.slice(
+    moduleSource.indexOf('async function openSaved'),
+    moduleSource.indexOf('async function renderResolvedSaved')
+  );
+  assert.match(openSavedBody, /try \{[\s\S]*resolveCachedSavedItem\(item\)[\s\S]*renderResolvedSaved\(overlay, resolved\)[\s\S]*\} catch \(error\) \{/);
+  assert.match(openSavedBody, /renderSavedOpenError\(overlay, error, \(\) => void openSaved\(root, item\)\)/);
+  assert.match(moduleSource, /function renderSavedOpenError\(overlay: HTMLElement, error: unknown, retry: \(\) => void\)/);
+  assert.match(moduleSource, /class="ncb-saved-retry">Retry<\/button>/);
+  assert.match(moduleSource, /querySelector<HTMLButtonElement>\('\.ncb-saved-retry'\)\?\.addEventListener\('click', retry\)/);
+  assert.match(chatbotCss, /\.ncb-saved-retry\s*\{/);
+});
+
+test('a saved AI response with no resolvable payload never renders a blank article', () => {
+  const responsesBranch = moduleSource.slice(
+    moduleSource.indexOf("if (item.kind === 'responses') {", moduleSource.indexOf('async function renderResolvedSaved')),
+    moduleSource.indexOf('async function renderResolvedSaved') + 900
+  );
+  assert.match(responsesBranch, /if \(!text \|\| !text\.trim\(\)\) throw new SavedOpenError\('invalid'/);
+  assert.doesNotMatch(responsesBranch, /renderMarkdown\(response\.text \|\| ''\)/);
+});
+
+test('a local-only bookmarked AI response reopens without hitting the server', () => {
+  const resolveBody = moduleSource.slice(
+    moduleSource.indexOf('async function resolveCachedSavedItem'),
+    moduleSource.length
+  );
+  assert.match(resolveBody, /const local = localBookmarkedResponses\(\)\.find\(\(row\) => row\.id === item\.id\)/);
+  assert.match(resolveBody, /if \(local\) return \{ \.\.\.item, payload: \{ text: local\.reply_text \|\| '' \} \}/);
+  // Local lookup must come before the network round trip, not after/instead.
+  assert.ok(resolveBody.indexOf('localBookmarkedResponses()') < resolveBody.indexOf("fetch('/api/chat-saved-replies'"));
+});
+
+test('a saved flashcard deck is validated before mounting, never handed undefined', () => {
+  const flashcardBranch = moduleSource.slice(
+    moduleSource.indexOf("if (item.kind === 'flashcards') {", moduleSource.indexOf('async function renderResolvedSaved')),
+    moduleSource.indexOf("if (item.kind === 'exams') {")
+  );
+  assert.match(flashcardBranch, /if \(!deck \|\| !Array\.isArray\(deck\.cards\)\) throw new SavedOpenError\('not_found'/);
+  assert.match(flashcardBranch, /if \(!deck\.cards\.length\) throw new SavedOpenError\('invalid'/);
+  assert.match(flashcardBranch, /mount\(player, deck, \{ embedded: false, mode: 'study' \}\)/);
+  assert.doesNotMatch(flashcardBranch, /mount\(player, item\.payload/);
+});
+
+test('opening a saved practice exam mounts that exact session, not a generic empty workspace', () => {
+  const examBranch = moduleSource.slice(
+    moduleSource.indexOf("if (item.kind === 'exams') {", moduleSource.indexOf('async function renderResolvedSaved')),
+    moduleSource.indexOf("throw new SavedOpenError('invalid', 'This saved resource type is not supported.")
+  );
+  assert.match(examBranch, /mountCourseFeature\(overlay, item\.course, 'examforge', \{ initialSessionId: item\.id \}\)/);
+  assert.match(moduleSource, /function mountCourseFeature\(\s*target: HTMLElement,\s*course: LibraryCourse,\s*kind: 'examforge',\s*extra: Record<string, unknown> = \{\}/);
+  assert.match(moduleSource, /generate: window\._generateStudyTool, \.\.\.extra/);
+
+  // resolveCachedSavedItem must refuse to open a deleted session rather than
+  // silently falling through to whatever session ExamForge picks by default.
+  const resolveBody = moduleSource.slice(moduleSource.indexOf('async function resolveCachedSavedItem'), moduleSource.length);
+  assert.match(resolveBody, /if \(!payload\) throw new SavedOpenError\('not_found'/);
+
+  // ExamForge itself must honor the requested session id: select it, and
+  // reset any in-progress answers left over from a different session.
+  assert.match(examforgeSource, /var initialSessionId = options\.initialSessionId \|\| null;/);
+  assert.match(examforgeSource, /var requested = initialSessionId && st\.sessions\.some\(function \(s\) \{ return s\.id === initialSessionId; \}\);/);
+  assert.match(examforgeSource, /if \(requested && st\.activeId !== initialSessionId\) \{[\s\S]{0,120}st\.activeId = initialSessionId;/);
+});
+
+test('saved cheatsheet opening never deletes the shared workspace body node', () => {
+  const cheatsheetBranch = moduleSource.slice(
+    moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"),
+    moduleSource.indexOf("if (item.note) {", moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"))
+  );
+  // Renderer + openPaper existence must be confirmed BEFORE the overlay is
+  // dismissed, and dismissal must go through closeOverlay (which restores
+  // the persistent .ncb-workspace-body for reuse) rather than .remove()
+  // (which deleted that singleton node outright and broke every later
+  // "open" click in the session until a full page reload).
+  const noteIdx = cheatsheetBranch.indexOf('if (!note)');
+  const rendererIdx = cheatsheetBranch.indexOf('ensureArtifactRenderer');
+  const openPaperCheckIdx = cheatsheetBranch.indexOf("typeof openPaper !== 'function'");
+  const closeIdx = cheatsheetBranch.indexOf('closeOverlay(overlay.closest');
+  const invokeIdx = cheatsheetBranch.indexOf('openPaper({');
+  assert.ok(noteIdx >= 0 && rendererIdx > noteIdx && openPaperCheckIdx > rendererIdx && closeIdx > openPaperCheckIdx && invokeIdx > closeIdx);
+  // Only the explanatory comment may mention the old call; no live statement may.
+  assert.doesNotMatch(cheatsheetBranch, /[^`]overlay\.remove\(\);/);
+});
+
+test('saved notes and summaries distinguish a deleted note from a load failure', () => {
+  const notesBranch = moduleSource.slice(
+    moduleSource.indexOf('if (item.note) {', moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {")),
+    moduleSource.indexOf("if (item.kind === 'flashcards') {")
+  );
+  assert.match(notesBranch, /if \(!note\) throw new SavedOpenError\('not_found', 'This saved resource is no longer available\.'\)/);
+  // A thrown network/session error from getNoteById is not caught locally —
+  // it propagates to openSaved's try/catch, which renders the generic
+  // "could not load, retry" message instead of misreporting it as deleted.
+  assert.doesNotMatch(notesBranch, /catch/);
+});
+
+test('fetchRows surfaces a failed request instead of a fake empty result', () => {
+  const fetchRowsBody = moduleSource.slice(
+    moduleSource.indexOf('async function fetchRows'),
+    moduleSource.indexOf('function formatDate')
+  );
+  assert.match(fetchRowsBody, /if \(!response\.ok\) throw new Error\(`fetchRows\(\$\{table\}\) failed: \$\{response\.status\}`\)/);
 });

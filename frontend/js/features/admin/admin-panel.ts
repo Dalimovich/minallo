@@ -329,7 +329,7 @@ async function loadAdminStats(): Promise<void> {
   if (body) body.style.display = '';
   ['adminFinanceCards', 'adminFinanceChart', 'adminGrowthCards', 'adminDangerUsers',
    'adminActivityCards', 'adminSubCards', 'adminFunnel', 'adminRetention',
-   'adminNewUsers', 'adminAiUsage'].forEach(_sectionLoading);
+   'adminNewUsers', 'adminAiUsage', 'adminProviderUsage'].forEach(_sectionLoading);
 
   // Fire independently; a slow/failed section never blocks the others.
   const guard = (p: Promise<void>): Promise<void> => p.catch(() => { /* section shows its own empty state */ });
@@ -340,6 +340,14 @@ async function loadAdminStats(): Promise<void> {
   document.getElementById('adminAiUsageDays')?.addEventListener('change', () => {
     _sectionLoading('adminAiUsage');
     void guard(loadAiUsage());
+  });
+  // Loaded once here (not on the 4s auto-refresh loop below — see
+  // loadProviderUsage's own comment) with a manual Refresh button for when
+  // a fresher number is actually wanted.
+  void guard(loadProviderUsage());
+  document.getElementById('adminProviderUsageRefresh')?.addEventListener('click', () => {
+    _sectionLoading('adminProviderUsage');
+    void guard(loadProviderUsage());
   });
   void guard(loadFinanceSeries());
   void guard(loadSubscriptionCards());
@@ -829,6 +837,52 @@ async function loadAiUsage(): Promise<void> {
       .map((h) => '<th>' + h + '</th>').join('') +
     '</tr></thead><tbody>' + rows + '</tbody></table>' +
     (top ? '<div class="adm-note" style="margin-top:10px">Top users: ' + top + '</div>' : '');
+}
+
+// ── Live provider usage (real OpenAI + Mathpix account data) ────────────────
+// Deliberately NOT part of the 4s auto-refresh loop (_startStatsAutoRefresh
+// below): this calls OpenAI's and Mathpix's own billing/usage APIs, and
+// polling a paid provider's metering endpoint every 4 seconds while the tab
+// is open would be wasteful and risks rate-limiting for no real benefit —
+// spend doesn't change that fast. Loads once on open; Refresh re-fetches.
+async function loadProviderUsage(): Promise<void> {
+  const host = document.getElementById('adminProviderUsage');
+  if (!host) return;
+  const data = typeof adminSvc.getProviderUsage === 'function' ? await adminSvc.getProviderUsage() : null;
+  if (!data) {
+    host.innerHTML = '<div class="adm-empty">Provider usage unavailable (stale admin service or request failed).</div>';
+    return;
+  }
+  const openai = data.openai;
+  const openaiBody = !openai.configured
+    ? '<div class="adm-empty">Set <code>OPENAI_ADMIN_KEY</code> — an Admin key from ' +
+      'platform.openai.com/settings/organization/admin-keys, not the completions API key — to see this.</div>'
+    : openai.error
+      ? '<div class="adm-empty" style="color:#fca5a5">' + escapeHtml(openai.error) + '</div>'
+      : '<div class="adm-mini-grid">' +
+          _kpiCard('Spent this month', _eur(openai.spentCents || 0)).outerHTML +
+          (openai.budgetCents !== undefined
+            ? _kpiCard(
+                'Remaining', _eur(openai.remainingCents || 0), 'of ' + _eur(openai.budgetCents),
+                (openai.remainingCents || 0) < 0 ? 'loss' : 'ok'
+              ).outerHTML
+            : _kpiCard('Remaining', 'Not set', 'set OPENAI_MONTHLY_BUDGET_CENTS').outerHTML) +
+        '</div>';
+  const mathpix = data.mathpix;
+  const mathpixBody = !mathpix.configured
+    ? '<div class="adm-empty">Mathpix credentials not found in this environment.</div>'
+    : mathpix.error
+      ? '<div class="adm-empty" style="color:#fca5a5">' + escapeHtml(mathpix.error) + '</div>'
+      : '<div class="adm-mini-grid">' + _kpiCard('OCR requests this month', String(mathpix.requests || 0)).outerHTML + '</div>' +
+        '<div class="adm-note">Mathpix’s usage API reports request counts only, not € cost — ' +
+        'check the Mathpix Console’s Usage tab for actual spend.</div>';
+  host.innerHTML =
+    '<div class="adm-provider-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">' +
+      '<div><h3 style="margin:0 0 8px;font-size:.85rem;color:#94a3b8;font-weight:700">OpenAI</h3>' + openaiBody + '</div>' +
+      '<div><h3 style="margin:0 0 8px;font-size:.85rem;color:#94a3b8;font-weight:700">Mathpix</h3>' + mathpixBody + '</div>' +
+    '</div>' +
+    '<div class="adm-note" style="margin-top:10px">Since ' + new Date(data.periodStart).toLocaleDateString() +
+    ' · updated ' + new Date(data.generatedAt).toLocaleTimeString() + '</div>';
 }
 
 function _renderDangerUsers(users: DangerUser[]): void {

@@ -113,7 +113,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(500, 'Delete failed');
   }
 
-  if (typeof action !== 'string' || !['status', 'search', 'setplan', 'setuserstatus', 'affiliates', 'reports', 'resolvereport', 'signups', 'newusers', 'subscriptions', 'retention', 'financials', 'financeseries', 'getcostconfig', 'savecostconfig', 'usage', 'aiusage', 'usageexport'].includes(action)) {
+  if (typeof action !== 'string' || !['status', 'search', 'setplan', 'setuserstatus', 'affiliates', 'reports', 'resolvereport', 'signups', 'newusers', 'subscriptions', 'retention', 'financials', 'financeseries', 'getcostconfig', 'savecostconfig', 'usage', 'aiusage', 'usageexport', 'providerusage'].includes(action)) {
     return fail(400, 'Unknown action');
   }
 
@@ -656,6 +656,27 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     });
   }
 
+  // ── Live provider usage: real OpenAI + Mathpix account data, distinct from
+  // the internal usage_events estimate above — this is what you'd otherwise
+  // have to log into platform.openai.com / the Mathpix console to see.
+  if (action === 'providerusage') {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const [openai, mathpix] = await Promise.all([
+      fetchOpenAiMonthCost(monthStart, now),
+      fetchMathpixMonthUsage(monthStart, now),
+    ]);
+    await logSecurityEvent(serviceKey, callerUser.id, 'admin_provider_usage_view', {
+      auth_method: adminCheck.method,
+    });
+    return jsonResponse(200, {
+      periodStart: monthStart.toISOString(),
+      generatedAt: now.toISOString(),
+      openai,
+      mathpix,
+    });
+  }
+
   // ── Financial: per-user cost/revenue/profit export (downloadable report) ──
   if (action === 'usageexport') {
     // Two modes: an explicit YYYY-MM-DD from/to range (inclusive), or a rolling
@@ -800,6 +821,106 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   return fail(400, 'Unknown action');
 };
+
+// Live provider usage: shaped so the frontend can distinguish "no key on
+// file yet" (configured: false) from "key present but the call failed"
+// (error set) from a genuine reading. Neither provider exposes a true
+// "remaining credit balance" via API, so "remaining" is only ever the
+// difference against a budget YOU set via env var, not a number OpenAI or
+// Mathpix hand back directly.
+export interface ProviderUsageResult {
+  configured: boolean;
+  spentCents?: number;
+  budgetCents?: number;
+  remainingCents?: number;
+  requests?: number;
+  error?: string;
+}
+
+interface OpenAiCostsBucket { results?: Array<{ amount?: { value?: number } }> }
+interface OpenAiCostsPage { data?: OpenAiCostsBucket[]; has_more?: boolean; next_page?: string | null }
+
+// Sums the org's actual USD spend for [start, end) via the Admin-key-gated
+// Costs API (a regular OPENAI_API_KEY used for completions cannot read this —
+// it must be an Admin key from platform.openai.com/settings/organization/admin-keys).
+export async function fetchOpenAiMonthCost(start: Date, end: Date): Promise<ProviderUsageResult> {
+  const key = process.env.OPENAI_ADMIN_KEY;
+  if (!key) return { configured: false };
+  try {
+    let totalUsd = 0;
+    let page: string | undefined;
+    // A calendar month is at most 31 daily buckets — one page covers it; loop
+    // defensively in case the account's data is ever split across pages.
+    for (let i = 0; i < 12; i++) {
+      const params = new URLSearchParams({
+        start_time: String(Math.floor(start.getTime() / 1000)),
+        end_time: String(Math.floor(end.getTime() / 1000)),
+        bucket_width: '1d',
+        limit: '31',
+      });
+      if (page) params.set('page', page);
+      const res = await fetch('https://api.openai.com/v1/organization/costs?' + params.toString(), {
+        headers: { Authorization: 'Bearer ' + key },
+      });
+      if (!res.ok) return { configured: true, error: 'OpenAI costs request failed (' + res.status + ')' };
+      const body = await res.json() as OpenAiCostsPage | OpenAiCostsBucket[];
+      const buckets = Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : []);
+      for (const bucket of buckets) {
+        for (const result of bucket.results || []) totalUsd += result.amount?.value || 0;
+      }
+      const hasMore = !Array.isArray(body) && body.has_more && body.next_page;
+      if (!hasMore) break;
+      page = (body as OpenAiCostsPage).next_page as string;
+    }
+    const spentCents = Math.round(totalUsd * 100);
+    const budgetCents = _envCents('OPENAI_MONTHLY_BUDGET_CENTS');
+    return {
+      configured: true,
+      spentCents,
+      budgetCents,
+      remainingCents: budgetCents === undefined ? undefined : budgetCents - spentCents,
+    };
+  } catch (error) {
+    return { configured: true, error: error instanceof Error ? error.message : 'OpenAI request failed' };
+  }
+}
+
+// Mathpix's usage API reports request counts only — it does not expose cost
+// or pricing (confirmed against docs.mathpix.com/reference/ocr-usage), so
+// there is no way to derive a real € spend figure from it. The Mathpix
+// Console's own Usage tab remains the source of truth for actual spend;
+// this surfaces request volume plus your own budget-vs-count comparison.
+export async function fetchMathpixMonthUsage(start: Date, end: Date): Promise<ProviderUsageResult> {
+  const appId = process.env.MATHPIX_APP_ID;
+  const appKey = process.env.MATHPIX_APP_KEY;
+  if (!appId || !appKey) return { configured: false };
+  try {
+    const params = new URLSearchParams({
+      from_date: start.toISOString(),
+      to_date: end.toISOString(),
+      group_by: 'usage_type',
+      timespan: 'month',
+    });
+    const res = await fetch('https://api.mathpix.com/v3/ocr-usage?' + params.toString(), {
+      headers: { app_id: appId, app_key: appKey },
+    });
+    if (!res.ok) return { configured: true, error: 'Mathpix usage request failed (' + res.status + ')' };
+    const body = await res.json() as { ocr_usage?: Array<{ count?: number }> };
+    const requests = (body.ocr_usage || []).reduce((sum, row) => sum + (row.count || 0), 0);
+    // No budgetCents here: with no cost figure to subtract from, a "remaining"
+    // number would be fabricated. Request count is all this API can verify.
+    return { configured: true, requests };
+  } catch (error) {
+    return { configured: true, error: error instanceof Error ? error.message : 'Mathpix request failed' };
+  }
+}
+
+export function _envCents(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}
 
 // Loads the singleton cost-config row, mapping snake_case → CostConfig and
 // falling back to sensible defaults if the table/row isn't present yet.

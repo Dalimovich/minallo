@@ -23,6 +23,39 @@ test('ExamForge mode reaches generation and answer keys are not queried by legac
   assert.match(legacy, /grade\.correctAnswer/);
 });
 
+test('ExamForge keeps structured answers hidden and supports persistent per-question reveal', () => {
+  assert.match(inline, /interface QuestionSolution/);
+  assert.match(inline, /finalAnswer\?: string/);
+  assert.match(inline, /keySteps\?: string\[\]/);
+  assert.match(inline, /revealedAnswers: Record<string, boolean>/);
+  assert.match(inline, /revealedFullSolutions: Record<string, boolean>/);
+  assert.match(inline, /data-ef-reveal/);
+  assert.match(inline, /Hide answer/);
+  assert.match(inline, /Show full solution/);
+  assert.match(inline, /if \(!state\.revealedAnswers\[id\]\) state\.revealedFullSolutions\[id\] = false/);
+});
+
+test('ExamForge locks exam answers until grading but permits practice reveal', () => {
+  assert.match(inline, /mode === 'practice' \|\| state\.status === 'graded'/);
+  assert.match(inline, /Available after submitting the exam/);
+  assert.match(inline, /canReveal \? '' : ' disabled'/);
+});
+
+test('structured final answer is authoritative and uses safe Markdown/math rendering', () => {
+  assert.match(inline, /validationStatus === 'validated'/);
+  assert.match(inline, /structuredAnswer \|\| String\(grade\?\.correctAnswer/);
+  assert.doesNotMatch(inline, /grade\.correctAnswer \? `<p><b>Correct answer:/);
+  assert.match(inline, /renderMarkdown\(officialAnswer\)/);
+  assert.match(inline, /keySteps\.map\(step => `<li>\$\{renderMarkdown\(step\)\}/);
+  assert.match(inline, /renderMarkdown\(explanation\)/);
+});
+
+test('old persisted ExamForge attempts receive safe reveal-state defaults', () => {
+  assert.match(inline, /const saved = JSON\.parse/);
+  assert.match(inline, /revealedAnswers: saved\.revealedAnswers && typeof saved\.revealedAnswers === 'object' \? saved\.revealedAnswers : \{\}/);
+  assert.match(inline, /revealedFullSolutions: saved\.revealedFullSolutions && typeof saved\.revealedFullSolutions === 'object' \? saved\.revealedFullSolutions : \{\}/);
+});
+
 test('study-tool workspace mounting is transactional and recoverable', () => {
   const workspace = fs.readFileSync('frontend/js/features/chatbot-new/workspace-library.ts', 'utf8');
   const boundary = fs.readFileSync('frontend/js/features/chatbot-new/study-tool-boundary.ts', 'utf8');

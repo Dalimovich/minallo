@@ -1,10 +1,12 @@
 import { escapeHtml } from '../../utils/escape-html.js';
 import { gradeExamForgeAnswer } from '../../services/ai-service.js';
+import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { reportStudyToolError } from './study-tool-boundary.js';
 
-interface Question { id?: string; type?: string; question?: string; prompt?: string; options?: unknown; points?: number; topic?: string; difficulty?: string }
+interface QuestionSolution { keySteps?: string[]; finalAnswer?: string; explanation?: string; validationStatus?: string }
+interface Question { id?: string; type?: string; question?: string; prompt?: string; options?: unknown; points?: number; topic?: string; difficulty?: string; explanation?: string; solution?: QuestionSolution }
 interface Grade { ok?: boolean; isCorrect?: boolean; score?: number; correctAnswer?: string; feedback?: string; error?: string }
-interface Attempt { current: number; display: 'one' | 'all'; answers: Record<string, string>; flags: Record<string, boolean>; status: 'in_progress' | 'submitting' | 'graded' | 'failed'; grades: Record<string, Grade>; confirmSubmit?: boolean }
+interface Attempt { current: number; display: 'one' | 'all'; answers: Record<string, string>; flags: Record<string, boolean>; revealedAnswers: Record<string, boolean>; revealedFullSolutions: Record<string, boolean>; status: 'in_progress' | 'submitting' | 'graded' | 'failed'; grades: Record<string, Grade>; confirmSubmit?: boolean }
 
 const optionList = (q: Question): Array<{ id: string; text: string }> => {
   if (q.type === 'true_false') return [{ id: 'true', text: 'True' }, { id: 'false', text: 'False' }];
@@ -18,8 +20,18 @@ export function mountInlineExamForge(target: HTMLElement | null, payload: Record
   const sessionId = String(payload.sessionId || payload.id || '');
   const questions = (Array.isArray(payload.questions) ? payload.questions : []) as Question[];
   const key = `minallo_examforge_attempt_${sessionId}_${mode}`;
-  let state: Attempt = { current: 0, display: 'one', answers: {}, flags: {}, status: 'in_progress', grades: {} };
-  try { state = { ...state, ...JSON.parse(localStorage.getItem(key) || '{}') as Attempt }; } catch { /* new attempt */ }
+  const initialState: Attempt = { current: 0, display: 'one', answers: {}, flags: {}, revealedAnswers: {}, revealedFullSolutions: {}, status: 'in_progress', grades: {} };
+  let state = initialState;
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || '{}') as Partial<Attempt>;
+    state = { ...initialState, ...saved,
+      answers: saved.answers && typeof saved.answers === 'object' ? saved.answers : {},
+      flags: saved.flags && typeof saved.flags === 'object' ? saved.flags : {},
+      grades: saved.grades && typeof saved.grades === 'object' ? saved.grades : {},
+      revealedAnswers: saved.revealedAnswers && typeof saved.revealedAnswers === 'object' ? saved.revealedAnswers : {},
+      revealedFullSolutions: saved.revealedFullSolutions && typeof saved.revealedFullSolutions === 'object' ? saved.revealedFullSolutions : {}
+    };
+  } catch { /* new attempt */ }
   const persist = () => { try { localStorage.setItem(key, JSON.stringify(state)); } catch { /* optional */ } };
   const qKey = (q: Question, i: number) => String(q.id || i);
   const answered = () => questions.filter((q, i) => String(state.answers[qKey(q, i)] || '').trim()).length;
@@ -30,8 +42,16 @@ export function mountInlineExamForge(target: HTMLElement | null, payload: Record
     const control = q.type === 'short_answer'
       ? `<label class="ncb-ef-written"><span>Your answer</span><textarea data-ef-answer="${escapeHtml(id)}" maxlength="2000"${state.status !== 'in_progress' ? ' disabled' : ''}>${escapeHtml(answer)}</textarea></label>`
       : `<fieldset class="ncb-ef-options"><legend class="sr-only">Answer options</legend>${options.map(o => `<label><input type="radio" name="ef-${escapeHtml(id)}" value="${escapeHtml(o.id)}" data-ef-answer="${escapeHtml(id)}"${answer.toLowerCase() === o.id.toLowerCase() ? ' checked' : ''}${state.status !== 'in_progress' ? ' disabled' : ''}><span><b>${escapeHtml(o.id.toUpperCase())}</b>${escapeHtml(o.text)}</span></label>`).join('')}</fieldset>`;
-    const review = grade ? `<div class="ncb-ef-review ${grade.isCorrect ? 'is-correct' : 'is-wrong'}"><strong>${grade.isCorrect ? 'Correct' : 'Needs review'} · ${Number(grade.score || 0)}/${Number(q.points || 1)} pt</strong>${grade.correctAnswer ? `<p><b>Correct answer:</b> ${escapeHtml(grade.correctAnswer)}</p>` : ''}<p>${escapeHtml(grade.feedback || grade.error || '')}</p></div>` : '';
-    return `<article class="ncb-ef-question" data-question="${i}"><div class="ncb-ef-qmeta"><span>Question ${i + 1}</span><button type="button" data-ef-flag="${i}" aria-pressed="${state.flags[id] ? 'true' : 'false'}">${state.flags[id] ? '⚑ Flagged' : '⚐ Flag'}</button></div><h4>${escapeHtml(q.question || q.prompt || '')}</h4>${control}${review}</article>`;
+    const structuredAnswer = q.solution?.validationStatus === 'validated' ? String(q.solution.finalAnswer || '').trim() : '';
+    const officialAnswer = structuredAnswer || String(grade?.correctAnswer || '').trim();
+    const keySteps = Array.isArray(q.solution?.keySteps) ? q.solution.keySteps.filter(step => typeof step === 'string' && step.trim()) : [];
+    const explanation = String(q.solution?.explanation || q.explanation || '').trim();
+    const canReveal = mode === 'practice' || state.status === 'graded';
+    const revealed = canReveal && !!state.revealedAnswers[id];
+    const revealControl = officialAnswer ? `<div class="ncb-ef-solution-actions"><button type="button" data-ef-reveal="${escapeHtml(id)}"${canReveal ? '' : ' disabled'} aria-expanded="${revealed ? 'true' : 'false'}">${revealed ? 'Hide answer' : 'Show answer'}</button>${!canReveal ? '<span>Available after submitting the exam.</span>' : ''}</div>` : '';
+    const solution = revealed ? `<section class="ncb-ef-solution" aria-label="Answer"><h5>Answer</h5><div class="ncb-ef-solution-answer">${renderMarkdown(officialAnswer)}</div>${keySteps.length ? `<h6>Key steps</h6><ol>${keySteps.map(step => `<li>${renderMarkdown(step)}</li>`).join('')}</ol>` : ''}${explanation ? `<button type="button" data-ef-full-solution="${escapeHtml(id)}" aria-expanded="${state.revealedFullSolutions[id] ? 'true' : 'false'}">${state.revealedFullSolutions[id] ? 'Hide full solution' : 'Show full solution'}</button>${state.revealedFullSolutions[id] ? `<div class="ncb-ef-full-solution">${renderMarkdown(explanation)}</div>` : ''}` : ''}</section>` : '';
+    const review = grade ? `<div class="ncb-ef-review ${grade.isCorrect ? 'is-correct' : 'is-wrong'}"><strong>${grade.isCorrect ? 'Correct' : 'Needs review'} · ${Number(grade.score || 0)}/${Number(q.points || 1)} pt</strong><p>${escapeHtml(grade.feedback || grade.error || '')}</p></div>` : '';
+    return `<article class="ncb-ef-question" data-question="${i}"><div class="ncb-ef-qmeta"><span>Question ${i + 1}</span><button type="button" data-ef-flag="${i}" aria-pressed="${state.flags[id] ? 'true' : 'false'}">${state.flags[id] ? '⚑ Flagged' : '⚐ Flag'}</button></div><h4>${escapeHtml(q.question || q.prompt || '')}</h4>${control}${review}${revealControl}${solution}</article>`;
   };
 
   const render = () => {
@@ -86,6 +106,8 @@ export function mountInlineExamForge(target: HTMLElement | null, payload: Record
     target.querySelectorAll<HTMLButtonElement>('[data-ef-go]').forEach(b => b.addEventListener('click', () => { state.current = Number(b.dataset.efGo); state.display = 'one'; persist(); render(); }));
     target.querySelectorAll<HTMLButtonElement>('[data-ef-display]').forEach(b => b.addEventListener('click', () => { state.display = b.dataset.efDisplay as 'one' | 'all'; persist(); render(); }));
     target.querySelectorAll<HTMLButtonElement>('[data-ef-flag]').forEach(b => b.addEventListener('click', () => { const i = Number(b.dataset.efFlag); const id = qKey(questions[i]!, i); state.flags[id] = !state.flags[id]; persist(); render(); }));
+    target.querySelectorAll<HTMLButtonElement>('[data-ef-reveal]').forEach(b => b.addEventListener('click', () => { const id = b.dataset.efReveal!; state.revealedAnswers[id] = !state.revealedAnswers[id]; if (!state.revealedAnswers[id]) state.revealedFullSolutions[id] = false; persist(); render(); }));
+    target.querySelectorAll<HTMLButtonElement>('[data-ef-full-solution]').forEach(b => b.addEventListener('click', () => { const id = b.dataset.efFullSolution!; state.revealedFullSolutions[id] = !state.revealedFullSolutions[id]; persist(); render(); }));
     target.querySelector<HTMLButtonElement>('[data-ef-prev]')?.addEventListener('click', () => { state.current--; persist(); render(); });
     target.querySelector<HTMLButtonElement>('[data-ef-next]')?.addEventListener('click', () => { state.current++; persist(); render(); });
     target.querySelector<HTMLButtonElement>('[data-ef-submit]')?.addEventListener('click', () => { if (answered() < questions.length) { state.confirmSubmit = true; render(); } else void submit(); });

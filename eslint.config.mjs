@@ -245,5 +245,17 @@ export default [
       'no-unused-vars': 'off',
       'no-func-assign': 'off'
     }
+  },
+  {
+    // Generated JavaScript preserves harmless regex escapes from its
+    // TypeScript sources. Keep correctness linting enabled for every other
+    // rule while avoiding build-dependent false positives here.
+    files: [
+      'frontend/js/features/ai-chat/ai-ask.js',
+      'frontend/js/features/chatbot-new/workspace-library.js'
+    ],
+    rules: {
+      'no-useless-escape': 'off'
+    }
   }
 ];

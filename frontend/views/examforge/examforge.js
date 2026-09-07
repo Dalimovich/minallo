@@ -199,6 +199,11 @@
     };
     var initial = options.initialParameters || {};
     var initialDocIds = Array.isArray(options.initialDocumentIds) ? options.initialDocumentIds : [];
+    // Set when opening one specific saved exam (Saved → Practice exams): the
+    // requested session must win over both "whatever was active before" and
+    // "just pick the first one", and must never silently generate a new exam
+    // or fall back to an empty generic workspace.
+    var initialSessionId = options.initialSessionId || null;
     if (els.count && initial.count != null) els.count.value = String(initial.count);
     if (els.difficulty && initial.difficulty) els.difficulty.value = initial.difficulty;
     if (els.language && initial.language) els.language.value = initial.language;
@@ -822,7 +827,16 @@
       }).then(function (r) { return r.ok ? r.json() : []; })
         .then(function (rows) {
           st.sessions = (rows || []).map(_normaliseSession);
-          if (!st.activeId && st.sessions[0]) st.activeId = st.sessions[0].id;
+          var requested = initialSessionId && st.sessions.some(function (s) { return s.id === initialSessionId; });
+          if (requested && st.activeId !== initialSessionId) {
+            st.activeId = initialSessionId;
+            st.answers = {};
+            st.grades = {};
+            st.submitted = false;
+            st.marked = {};
+          } else if (!requested && !st.activeId && st.sessions[0]) {
+            st.activeId = st.sessions[0].id;
+          }
           st.loaded = true;
           renderAll();
         }).catch(function () {

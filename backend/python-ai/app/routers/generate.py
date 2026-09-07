@@ -143,6 +143,7 @@ class GenerateExamForgeResponse(BaseModel):
     title: str
     requestedCount: int
     actualCount: int
+    totalPoints: int = 0
     questions: list[dict[str, Any]]
     topicMap: list[dict[str, Any]] = []
     groundedSources: list[dict[str, Any]] = []
@@ -329,6 +330,7 @@ def generate_examforge_endpoint(payload: GenerateExamForgeRequest) -> GenerateEx
         title=out.get("title") or "ExamForge",
         requestedCount=out["requestedCount"],
         actualCount=out["actualCount"],
+        totalPoints=out.get("totalPoints", 0),
         questions=[{
             k: v for k, v in q.items()
             if k not in {"answer", "correct_answer", "explanation", "rubric"}

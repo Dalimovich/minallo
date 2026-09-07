@@ -7,6 +7,7 @@ questions, and the DIN 8580-vs-8593 classification mix-up.
 from __future__ import annotations
 
 from app.services.answer import lint_exam_output
+from app.services import answer as answer_service
 from app.services.answer_intent import AcademicIntent, intent_style_instruction
 from app.services.exam_solution_validation import (
     answer_has_question_specific_result,
@@ -117,6 +118,28 @@ def test_actual_numeric_and_conceptual_answers_pass_result_gate() -> None:
     assert solution_is_only_procedural_instruction("Solve using the method of characteristics.")
 
 
+def test_procedural_math_tokens_and_numbers_are_not_results() -> None:
+    rejected = [
+        ("Calculate both sides.", "Calculate both sides and confirm equality."),
+        ("Solve using separation of variables.", "Use separation of variables and apply the boundary conditions."),
+        ("Solve using characteristics.", "Solve the equation using the method of characteristics."),
+        ("Sketch the characteristics.", "Sketch the characteristics in the time-space diagram."),
+        ("Calculate the result.", "Use equation 2 and calculate the result."),
+        ("Determine the constants.", r"Use $\sin(\pi x)$ and solve for the constants."),
+    ]
+    assert all(not answer_has_question_specific_result(question, answer) for question, answer in rejected)
+
+
+def test_result_bearing_pde_and_integral_answers_pass() -> None:
+    accepted = [
+        ("Solve the wave equation.", r"u(t,x)=\frac{4}{\pi c}\sin(\pi ct/2)\sin(\pi x/2)."),
+        ("Evaluate both integrals.", "\u222bΩ div(v)dΩ = 2πR² and \u222e∂Ω v·n ds = 2πR²."),
+        ("Solve using characteristics.", "x(t)=x0+ct."),
+        ("Sketch the characteristics.", "Characteristics are straight lines with slope dx/dt = c."),
+    ]
+    assert all(answer_has_question_specific_result(question, answer) for question, answer in accepted)
+
+
 def test_generated_variant_cannot_claim_literal_source() -> None:
     bad = _CLEAN_EXAM.replace("**Based on / inspired by:**", "**Source:**", 1)
     assert any("inspired by" in issue for issue in lint_exam_output(bad))
@@ -224,3 +247,62 @@ def test_exam_prompt_carries_the_new_rules():
     # New: formula faithfulness + depth-to-points scaling.
     assert "FORMULA FAITHFULNESS" in prompt
     assert "SCALE ANSWER DEPTH" in prompt
+
+
+def test_exam_finalization_checks_before_and_after_semantic_verifier(monkeypatch) -> None:
+    events: list[tuple[str, str]] = []
+
+    def lint(text: str) -> list[str]:
+        events.append(("lint", text))
+        return []
+
+    def verify(**kwargs) -> str:
+        events.append(("verify", kwargs["draft"]))
+        return "verified"
+
+    monkeypatch.setattr(answer_service, "lint_exam_output", lint)
+    monkeypatch.setattr(answer_service, "verify_exam_output", verify)
+
+    result, issues = answer_service.validate_and_finalize_exam_output(
+        system_prompt="system", user_message="user", draft="draft",
+        client=object(), model="model", max_tokens=100,
+    )
+
+    assert result == "verified"
+    assert issues == []
+    assert events == [("lint", "draft"), ("verify", "draft"),
+                      ("lint", "verified")]
+
+
+def test_exam_finalization_repairs_once_and_rejects_invalid_repair(monkeypatch) -> None:
+    repairs = 0
+
+    monkeypatch.setattr(
+        answer_service, "lint_exam_output",
+        lambda text: [] if text == "draft" else ["empty output"],
+    )
+    monkeypatch.setattr(
+        answer_service, "verify_exam_output", lambda **_kwargs: "regressed",
+    )
+
+    def repair(**_kwargs) -> str:
+        nonlocal repairs
+        repairs += 1
+        return "still-invalid"
+
+    monkeypatch.setattr(answer_service, "repair_exam_output", repair)
+    result, issues = answer_service.validate_and_finalize_exam_output(
+        system_prompt="system", user_message="user", draft="draft",
+        client=object(), model="model", max_tokens=100,
+    )
+
+    assert result == "still-invalid"
+    assert issues == ["empty output"]
+    assert repairs == 1
+
+
+def test_result_gate_rejects_procedure_with_incidental_assignment() -> None:
+    assert not answer_has_question_specific_result(
+        "Determine x.",
+        "Use x = 2 in the next equation and solve for the constants.",
+    )

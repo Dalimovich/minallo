@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from ..config import get_settings
 from .openai_client import get_openai_client
@@ -2006,6 +2006,43 @@ def verify_exam_output(
     return draft
 
 
+def validate_and_finalize_exam_output(
+    *,
+    system_prompt: str,
+    user_message: str,
+    draft: str,
+    client: Any,
+    model: str,
+    max_tokens: int,
+    on_repair: Callable[[], None] | None = None,
+) -> tuple[str, list[str]]:
+    """Apply deterministic, semantic, then final deterministic exam checks."""
+    initial_blocking = exam_lint_blocking(lint_exam_output(draft))
+    if initial_blocking:
+        log.warning(
+            "exam deterministic pre-check flagged %d issue(s): %s",
+            len(initial_blocking), "; ".join(initial_blocking),
+        )
+
+    candidate = verify_exam_output(
+        system_prompt=system_prompt, user_message=user_message, draft=draft,
+        client=client, model=model, max_tokens=max_tokens,
+    )
+    blocking = exam_lint_blocking(lint_exam_output(candidate))
+    if not blocking:
+        return candidate, []
+    if on_repair is not None:
+        on_repair()
+    candidate = repair_exam_output(
+        system_prompt=system_prompt, user_message=user_message,
+        bad_answer=candidate, issues=blocking,
+        client=client, model=model, max_tokens=max_tokens,
+    )
+
+    # Always revalidate, including after the single permitted repair call.
+    return candidate, exam_lint_blocking(lint_exam_output(candidate))
+
+
 def generate_answer(
     *,
     question: str,
@@ -2187,19 +2224,10 @@ def generate_answer(
     # validate BEFORE returning): lint the exam, and on blocking failures run a
     # single repair pass instead of shipping a broken Probeklausur.
     if is_exam_request:
-        answer_text = verify_exam_output(
+        answer_text, remaining_blocking = validate_and_finalize_exam_output(
             system_prompt=system_prompt, user_message=user_message, draft=answer_text,
             client=client, model=target_model, max_tokens=effective_max_tokens,
         )
-        blocking = exam_lint_blocking(lint_exam_output(answer_text))
-        if blocking:
-            log.warning("exam lint blocking (%d) — repairing: %s", len(blocking), "; ".join(blocking))
-            answer_text = repair_exam_output(
-                system_prompt=system_prompt, user_message=user_message,
-                bad_answer=answer_text, issues=blocking,
-                client=client, model=target_model, max_tokens=effective_max_tokens,
-            )
-        remaining_blocking = exam_lint_blocking(lint_exam_output(answer_text))
         if remaining_blocking:
             raise RuntimeError(
                 "exam_validation_failed: " + "; ".join(remaining_blocking)

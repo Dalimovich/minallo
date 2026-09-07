@@ -54,8 +54,7 @@ from .answer import (
     exam_style_overlay,
     build_source_coverage_overlay,
     lint_exam_output,
-    repair_exam_output,
-    verify_exam_output,
+    validate_and_finalize_exam_output,
     _cited_indices,
     strip_answer_intro,
     _context_strength,
@@ -2419,21 +2418,19 @@ def stream_answer(
     visual_verification: dict[str, Any] | None = None
     if is_exam_request:
         yield _sse({"status": "verifying_answer"})
-        full_answer = verify_exam_output(
+        repair_started = False
+
+        def _mark_repair_started() -> None:
+            nonlocal repair_started
+            repair_started = True
+
+        full_answer, remaining_blocking = validate_and_finalize_exam_output(
             system_prompt=system_prompt, user_message=user_content, draft=full_answer,
             client=client, model=target_model, max_tokens=effective_max_tokens,
+            on_repair=_mark_repair_started,
         )
-        blocking = exam_lint_blocking(lint_exam_output(full_answer))
-        if blocking:
-            log.warning("exam lint blocking (%d) — repairing before stream: %s",
-                        len(blocking), "; ".join(blocking))
+        if repair_started:
             yield _sse({"status": "generating_answer"})
-            full_answer = repair_exam_output(
-                system_prompt=system_prompt, user_message=user_content,
-                bad_answer=full_answer, issues=blocking,
-                client=client, model=target_model, max_tokens=effective_max_tokens,
-            )
-        remaining_blocking = exam_lint_blocking(lint_exam_output(full_answer))
         if remaining_blocking:
             log.error(
                 "exam validation remained blocking after repair; refusing draft: %s",

@@ -1578,69 +1578,141 @@ function bindSaved(panel: HTMLElement, root: HTMLElement, items: SavedItem[]): v
   });
 }
 
+/** Thrown by artifact resolution/validation so `openSaved` can render a
+ * message that actually matches what went wrong, instead of a generic
+ * failure — "no longer available" (deleted) reads very differently from
+ * "could not load" (transient) to a student staring at the result. */
+class SavedOpenError extends Error {
+  code: 'not_found' | 'load_failed' | 'invalid' | 'renderer_unavailable';
+  constructor(code: SavedOpenError['code'], message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function renderSavedOpenError(overlay: HTMLElement, error: unknown, retry: () => void): void {
+  const message = error instanceof SavedOpenError
+    ? error.message
+    : 'Could not open this saved resource. Check your connection and try again.';
+  overlay.innerHTML = `<div class="ncb-library-error" role="alert"><strong>${escapeHtml(message)}</strong><button type="button" class="ncb-saved-retry">Retry</button></div>`;
+  overlay.querySelector<HTMLButtonElement>('.ncb-saved-retry')?.addEventListener('click', retry);
+}
+
 async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
   const overlay = openOverlay(root, item.title);
   if (!overlay) return;
   overlay.innerHTML = '<div class="ncb-library-status">Opening resource&hellip;</div>';
-  item = await resolveCachedSavedItem(item);
+  try {
+    const resolved = await resolveCachedSavedItem(item);
+    await renderResolvedSaved(overlay, resolved);
+  } catch (error) {
+    console.error('[saved-open-error]', {
+      kind: item.kind, id: item.id, courseId: item.course.id,
+      code: error instanceof SavedOpenError ? error.code : 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    // The overlay is guaranteed to still be in the DOM here: every path below
+    // that could remove/replace it runs only after its own preconditions
+    // (renderer loaded, artifact validated) succeed, so a throw always lands
+    // with something left to render the error into.
+    renderSavedOpenError(overlay, error, () => void openSaved(root, item));
+  }
+}
+
+async function renderResolvedSaved(overlay: HTMLElement, item: SavedItem): Promise<void> {
   if (item.kind === 'responses') {
-    const response = item.payload as { text?: string };
-    overlay.innerHTML = `<article class="ncb-resource-document ncb-bookmarked-response">${renderMarkdown(response.text || '')}</article>`;
+    const text = (item.payload as { text?: string } | undefined)?.text;
+    if (!text || !text.trim()) throw new SavedOpenError('invalid', 'This saved response has no content.');
+    overlay.innerHTML = `<article class="ncb-resource-document ncb-bookmarked-response">${renderMarkdown(text)}</article>`;
     return;
   }
   if (item.kind === 'cheatsheets' && item.note) {
     const note = await getNoteById(item.note.id);
-    if (!note) {
-      overlay.innerHTML = '<div class="ncb-library-error">This saved cheatsheet is no longer available.</div>';
-      return;
-    }
-    overlay.remove();
+    if (!note) throw new SavedOpenError('not_found', 'This saved cheatsheet is no longer available.');
     await ensureArtifactRenderer('cheatsheet');
     const openPaper = (window as unknown as { openCheatsheetPaper?: (options: Record<string, unknown>) => void }).openCheatsheetPaper;
-    if (openPaper) {
-      openPaper({
-        kind: 'cheatsheet', course: item.course.id, noteId: note.id,
-        title: note.title || item.title, scope: note.title || item.title,
-        markdown: note.content_markdown || '', meta: item.meta,
-        settings: readCheatsheetSettings(item.course.id, note.id)
-      });
-    }
+    if (typeof openPaper !== 'function') throw new SavedOpenError('renderer_unavailable', 'The cheatsheet viewer could not be loaded.');
+    // Only dismiss the workspace popup once the paper viewer is confirmed
+    // ready to take over. The previous code called `overlay.remove()` here —
+    // but `overlay` is the shared `.ncb-workspace-body` node from the static
+    // chatbot markup (see openOverlay), not a per-open wrapper, and it is
+    // never recreated. Removing it outright (rather than closing the overlay
+    // properly) permanently broke every later Saved/account/PDF open in the
+    // session, not just this cheatsheet.
+    closeOverlay(overlay.closest<HTMLElement>('[data-workspace-overlay]')!);
+    openPaper({
+      kind: 'cheatsheet', course: item.course.id, noteId: note.id,
+      title: note.title || item.title, scope: note.title || item.title,
+      markdown: note.content_markdown || '', meta: item.meta,
+      settings: readCheatsheetSettings(item.course.id, note.id),
+    });
     return;
   }
   if (item.note) {
     const note = await getNoteById(item.note.id);
-    overlay.innerHTML = note
-      ? `<article class="ncb-resource-document">${renderMarkdown(note.content_markdown || '')}</article>`
-      : '<div class="ncb-library-error">This saved resource is no longer available.</div>';
+    if (!note) throw new SavedOpenError('not_found', 'This saved resource is no longer available.');
+    overlay.innerHTML = `<article class="ncb-resource-document">${renderMarkdown(note.content_markdown || '')}</article>`;
     return;
   }
   if (item.kind === 'flashcards') {
+    const deck = item.payload as { cards?: unknown } | undefined;
+    if (!deck || !Array.isArray(deck.cards)) throw new SavedOpenError('not_found', 'This saved flashcard deck is no longer available.');
+    if (!deck.cards.length) throw new SavedOpenError('invalid', 'This flashcard deck contains no cards.');
     await ensureArtifactRenderer('flashcards');
     overlay.innerHTML = '<div class="ncb-flashcard-workspace"><div data-flashcard-player></div></div>';
     const mount = (window as unknown as { mountFlashcardDeckPlayer?: (target: HTMLElement, deck: unknown, options?: Record<string, unknown>) => void }).mountFlashcardDeckPlayer;
     const player = overlay.querySelector<HTMLElement>('[data-flashcard-player]');
-    if (mount && player) mount(player, item.payload, { embedded: false, mode: 'study' });
-    else overlay.innerHTML = '<div class="ncb-library-error">The Flashcards player could not be loaded.</div>';
+    if (!mount || !player) throw new SavedOpenError('renderer_unavailable', 'The Flashcards player could not be loaded.');
+    mount(player, deck, { embedded: false, mode: 'study' });
     return;
   }
-  mountCourseFeature(overlay, item.course, 'examforge');
+  if (item.kind === 'exams') {
+    // The resolve step above already confirmed this exact session still
+    // exists; ExamForge re-fetches sessions itself (its query joins
+    // exam_questions, which the lightweight resolver above deliberately
+    // doesn't duplicate) and is told which one to select and display.
+    mountCourseFeature(overlay, item.course, 'examforge', { initialSessionId: item.id });
+    return;
+  }
+  throw new SavedOpenError('invalid', 'This saved resource type is not supported.');
 }
 
 async function resolveCachedSavedItem(item: SavedItem): Promise<SavedItem> {
   if (item.note || item.payload) return item;
   if (item.kind === 'flashcards' || item.kind === 'exams') {
     const table = item.kind === 'flashcards' ? 'flashcard_decks' : 'exam_sessions';
-    const rows = await dedupeStudyRequest(`saved:${table}:${item.course.id}`, () => fetchRows(table, item.course.id));
+    let rows: Record<string, unknown>[];
+    try {
+      rows = await dedupeStudyRequest(`saved:${table}:${item.course.id}`, () => fetchRows(table, item.course.id));
+    } catch {
+      throw new SavedOpenError('load_failed', 'Could not load this saved resource. Check your connection and try again.');
+    }
     const payload = rows.find((row) => String(row.id) === item.id);
-    return payload ? { ...item, payload } : item;
+    if (!payload) throw new SavedOpenError('not_found', 'This saved resource is no longer available.');
+    return { ...item, payload };
   }
   if (item.kind === 'responses') {
+    // Canonical order: an in-memory payload already short-circuited above,
+    // so check the local bookmark store next, then the durable server
+    // store — a response saved only locally (never synced, or the sync
+    // fetch below failed at save time) must still reopen from here.
+    const local = localBookmarkedResponses().find((row) => row.id === item.id);
+    if (local) return { ...item, payload: { text: local.reply_text || '' } };
     const token = authToken();
-    if (!token) return item;
-    const response = await fetch('/api/chat-saved-replies', { headers: { Authorization: `Bearer ${token}` } });
-    const body = response.ok ? await response.json() as { replies?: Array<{ id?: string; reply_text?: string }> } : {};
-    const saved = body.replies?.find((row) => String(row.id) === item.id);
-    return saved ? { ...item, payload: { text: saved.reply_text || '' } } : item;
+    if (token) {
+      let response: Response;
+      try {
+        response = await fetch('/api/chat-saved-replies', { headers: { Authorization: `Bearer ${token}` } });
+      } catch {
+        throw new SavedOpenError('load_failed', 'Could not reach the server to load this saved response.');
+      }
+      if (response.ok) {
+        const body = await response.json() as { replies?: Array<{ id?: string; reply_text?: string }> };
+        const saved = body.replies?.find((row) => String(row.id) === item.id);
+        if (saved) return { ...item, payload: { text: saved.reply_text || '' } };
+      }
+    }
+    throw new SavedOpenError('not_found', 'This saved response is no longer available.');
   }
   return item;
 }
@@ -1793,7 +1865,11 @@ async function fetchRows(table: string, courseId: string): Promise<Record<string
   const response = await fetch(`${db.supaUrl()}/rest/v1/${table}?course_id=eq.${encodeURIComponent(courseId)}&order=created_at.desc&limit=50`, {
     headers: db.supaHeaders()
   });
-  if (!response.ok) return [];
+  // Throw rather than swallow: callers that need to tell "genuinely empty"
+  // apart from "the request failed" (Saved-item resolution) rely on this;
+  // the Saved-list scan already has its own try/catch and degrades to the
+  // cached list on failure, so raising here doesn't regress that path.
+  if (!response.ok) throw new Error(`fetchRows(${table}) failed: ${response.status}`);
   const data = await response.json();
   return Array.isArray(data) ? data : [];
 }
@@ -1987,9 +2063,16 @@ function closeOverlay(overlay: HTMLElement): void {
   document.body.classList.remove('ncb-overlay-open');
 }
 
-function mountCourseFeature(target: HTMLElement, course: LibraryCourse, kind: 'examforge'): void {
+function mountCourseFeature(
+  target: HTMLElement,
+  course: LibraryCourse,
+  kind: 'examforge',
+  extra: Record<string, unknown> = {}
+): void {
   if (kind === 'examforge' && typeof window.mountExamForge === 'function') {
-    window.mountExamForge(target, course, { generate: window._generateStudyTool });
+    (window.mountExamForge as unknown as (
+      target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>
+    ) => void)(target, course, { generate: window._generateStudyTool, ...extra });
   } else {
     target.innerHTML = '<div class="ncb-library-error">This resource viewer is not available.</div>';
   }

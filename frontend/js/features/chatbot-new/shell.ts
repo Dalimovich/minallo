@@ -5977,7 +5977,6 @@ function initImportModal(root: HTMLElement): void {
       addToSourceLibraryAndSelect(root, items, activeCourse.id, courseName);
       close();
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.warn('[ncb] import-from-course: extraction failed', e);
       const fallback: ImportedFolder[] = Array.from(picked.values()).map((p) => ({
         id: p.courseId + ':' + p.id,

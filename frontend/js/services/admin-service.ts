@@ -2,7 +2,7 @@ interface AdminFetchBody {
   action:
     | 'status' | 'search' | 'setplan' | 'setuserstatus' | 'affiliates' | 'reports' | 'resolvereport' | 'deleteself'
     | 'signups' | 'newusers' | 'subscriptions' | 'retention'
-    | 'financials' | 'financeseries' | 'getcostconfig' | 'savecostconfig' | 'usage' | 'aiusage' | 'usageexport';
+    | 'financials' | 'financeseries' | 'getcostconfig' | 'savecostconfig' | 'usage' | 'aiusage' | 'usageexport' | 'providerusage';
   [k: string]: unknown;
 }
 
@@ -263,6 +263,33 @@ export interface AiUsageStats {
 
 export async function getAiUsage(days = 30): Promise<AiUsageStats | null> {
   const res = await _adminFetch({ action: 'aiusage', days });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+// ── Live provider usage (real OpenAI + Mathpix account data) ────────────────
+// Distinct from getAiUsage above: that's Minallo's own derived estimate from
+// token counts; this is what each provider's own billing/usage API reports,
+// so you don't have to log into platform.openai.com or the Mathpix console.
+
+export interface ProviderUsageResult {
+  configured: boolean;   // false until the relevant *_ADMIN_KEY / APP_ID+KEY env var is set
+  spentCents?: number;   // real spend this month (OpenAI only — Mathpix's API reports no cost)
+  budgetCents?: number;  // your own cap, from an *_MONTHLY_BUDGET_CENTS env var — neither provider exposes one
+  remainingCents?: number;
+  requests?: number;     // Mathpix OCR request count this month
+  error?: string;        // the key is configured but the provider call itself failed
+}
+
+export interface ProviderUsageStats {
+  periodStart: string;
+  generatedAt: string;
+  openai: ProviderUsageResult;
+  mathpix: ProviderUsageResult;
+}
+
+export async function getProviderUsage(): Promise<ProviderUsageStats | null> {
+  const res = await _adminFetch({ action: 'providerusage' });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }

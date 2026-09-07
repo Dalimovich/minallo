@@ -513,7 +513,6 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
       let cancelled = false;
       modal.onClose = () => { cancelled = true; };
 
-      let completed = 0;
       let failedCount = 0;
       const totalPct = new Array(files.length).fill(0) as number[];
       function updateUploadProgress(idx: number, pct: number): void {
@@ -526,7 +525,6 @@ export function bindFileEvents(co: HTMLElement, course: LegacyCourse): void {
           window
             ._ufUpload?.(uid, course, file, (pct: number) => updateUploadProgress(idx, pct), targetFolder)
             .then(() => {
-              completed++;
               updateUploadProgress(idx, 100);
             })
         )
