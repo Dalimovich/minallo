@@ -237,7 +237,12 @@ Which files and pages were used.
 1. Use ONLY material from the context. Do NOT invent.
 2. Inline citations like (filename, p.N) on every non-trivial claim.
 3. If a section has no material in the context, OMIT it entirely — don't fabricate.
-4. Math in KaTeX.
+4. Math formatting is STRICT: wrap EVERY formula, variable, fraction, exponent, and symbol
+   in delimiters — $...$ inline or $$...$$ display — in EVERY section, not just Formula/Theorem
+   Cards. NEVER write a bare LaTeX command (\\frac, \\sum, \\sqrt, \\lim, \\in) or a bare
+   exponent/subscript (x^2, a_0) outside $...$. Use real LaTeX commands (\\varphi, \\varepsilon,
+   \\Delta, \\times, \\delta) — NOT raw Unicode glyphs (φ, ∑, ×, δ) and NOT \\text{{...}} wrapping
+   a symbol. Example: write "$\\delta_S = 2.4 \\times 10^{{-6}}$", never "δS = 2.4 x 10^-6".
 5. Match the language of the source.
 6. Do NOT write "No formula found" or "keine vorhanden". If a section type does not
    apply to this knowledge type, simply omit it and use the correct sections instead.

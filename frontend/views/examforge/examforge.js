@@ -628,6 +628,16 @@
           '<button class="ef-btn ef-btn-primary" id="efSubmitAnswers" type="button"' + (st.submitted ? ' disabled' : '') + '>Submit exam</button>' +
         '</div>';
 
+      // ── Math rendering ────────────────────────────────────────────────────
+      // Questions/options/explanations are generated wrapped in $...$/$$...$$
+      // (examforge.py's MATH FORMATTING rule), but nothing here ever asked KaTeX
+      // to render it — every formula showed as literal "$...$" text. Same
+      // ensure-then-render pattern flashcards.js already uses.
+      var _katexOpts = { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false, strict: false, errorColor: '#9aa4b2' };
+      var _doExamMath = function () { if (window.renderMathInElement) try { renderMathInElement(els.exam, _katexOpts); } catch (e) {} };
+      if (window.renderMathInElement) { _doExamMath(); }
+      else if (window._ssEnsureKatex) { window._ssEnsureKatex().then(_doExamMath).catch(function () {}); }
+
       // ── Event listeners ───────────────────────────────────────────────────
       els.exam.querySelectorAll('.ef-option').forEach(function (btn) {
         btn.addEventListener('click', function () {

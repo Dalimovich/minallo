@@ -110,7 +110,14 @@
     if (_asList(lesson.keyDetails).length) parts.push('## Key Details from Your Sources\n\n' + _asList(lesson.keyDetails).map(function (s) { return '- ' + s; }).join('\n'));
     if (_asList(lesson.keyFormulas).length) {
       parts.push('## Key Formulas\n\n' + _asList(lesson.keyFormulas).map(function (f) {
-        return '**Formula:** ' + (f.formula || '') +
+        // keyFormulas.formula is raw LaTeX with NO $ delimiters by contract
+        // (the live formula-card renderer below adds them itself, see the
+        // `'$$' + f.formula + '$$'` call a few hundred lines down) — but this
+        // function's output becomes the PERSISTED note content_markdown, so a
+        // note reopened later from Saved has no live JS path to add them.
+        // Wrap here too, or the formula renders as raw text every time after
+        // the first view.
+        return '**Formula:** ' + (f.formula ? '$$' + f.formula + '$$' : '') +
           '\n\n**Meaning:** ' + (f.meaning || '') +
           '\n\n**Variables:** ' + (f.variables || '') +
           '\n\n**Use when / conditions:** ' + (f.conditions || '') +

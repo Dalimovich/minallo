@@ -406,10 +406,16 @@
   // on a preceding token) in $…$ so they render. Conservative: only backslash
   // commands and super/subscripts are touched — prose is never wrapped. If the
   // card already uses delimiters, trust them and do nothing.
-  var _FC_ATOM_RE = /\\(?:frac|dfrac|tfrac|binom)\s*\{[^{}]*\}\s*\{[^{}]*\}|\\(?:text|mathrm|operatorname|sqrt|vec|hat|bar|overline|boldsymbol|mathbf|mathit)\s*\{[^{}]*\}|\\[a-zA-Z]+|[A-Za-zΑ-Ωα-ω0-9)\]}]\s*[\^_]\s*(?:\{[^{}]*\}|[A-Za-z0-9])/g;
+  // The base and exponent/subscript groups both allow more than one
+  // character, and the exponent allows a leading "-" (10^-6, x^12, a_max).
+  // The original pattern matched exactly one character on each side, so a
+  // multi-digit base like "10^-6" only wrapped as "1$0^-6$" (the "1" left
+  // outside the delimiters), and "x^12" only wrapped "x^1", leaving the "2"
+  // as literal text next to the rendered math.
+  var _FC_ATOM_RE = /\\(?:frac|dfrac|tfrac|binom)\s*\{[^{}]*\}\s*\{[^{}]*\}|\\(?:text|mathrm|operatorname|sqrt|vec|hat|bar|overline|boldsymbol|mathbf|mathit)\s*\{[^{}]*\}|\\[a-zA-Z]+|[A-Za-zΑ-Ωα-ω0-9)\]}]+\s*[\^_]\s*(?:\{[^{}]*\}|-?[A-Za-z0-9]+)/g;
   function _fcAutoWrapMath(s) {
     if (!s || /[$]|\\\(|\\\[/.test(s)) return s;
-    if (!/\\[a-zA-Z]|[\^_]\{|[\^_][A-Za-z0-9]/.test(s)) return s; // no LaTeX at all
+    if (!/\\[a-zA-Z]|[\^_]\{|[\^_]-?[A-Za-z0-9]/.test(s)) return s; // no LaTeX at all
     return s.replace(_FC_ATOM_RE, function (m) { return '$' + m + '$'; });
   }
 

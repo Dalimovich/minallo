@@ -37,11 +37,25 @@ def launch_idempotency_key(
     return hashlib.sha256(material.encode()).hexdigest()
 
 
+# Bumping this forward busts every cached lesson older than the timestamp,
+# forcing regeneration under the current prompt on next request — the same
+# purpose assetVersion serves for the frontend and the answer-cache key bump
+# serves for /ask-stream. Without this, a prompt/schema fix (e.g. tightening
+# the math-formatting rule) never reaches a student re-opening a topic they
+# already generated: find_existing_lesson would keep serving the old
+# content_markdown, generated under the old prompt, for up to max_age_days.
+# Bump to "now" (UTC) whenever a change here should invalidate existing
+# lessons; leave it alone for changes that don't affect generated content
+# (e.g. pure refactors).
+_PROMPT_FIX_CUTOFF = datetime(2026, 9, 7, tzinfo=timezone.utc)  # STRICT math-formatting rule + formula-card $$ wrapping
+
+
 def find_existing_lesson(
     *, user_id: str, course_id: str, topic: str, revision_hash: str,
     max_age_days: int = 45,
 ) -> dict[str, Any] | None:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    age_cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    cutoff = max(age_cutoff, _PROMPT_FIX_CUTOFF).isoformat()
     rows = (
         get_supabase().table("notes")
         .select("id,title,content_markdown,lesson_status,updated_at,visual_ids")
