@@ -84,12 +84,11 @@ def test_grounded_questions_flags_grounding(monkeypatch):
         evidence=evidence, doc_names={"d1": "Mechanics.pdf"}, diff="medium",
     )
     assert meta["model"] == "fake-model"
-    assert len(qs) == 2
+    assert len(qs) == 1
     assert qs[0]["validation"]["status"] == "grounded"
     assert qs[0]["source_chunk_ids"] == ["c1"]
     assert qs[0]["source"] == "Mechanics.pdf, 4"
-    assert qs[1]["validation"]["status"] == "ungrounded"
-    assert qs[1]["source_chunk_ids"] == []
+    assert all(q["validation"]["status"] == "grounded" for q in qs)
 
 
 def test_grounded_questions_drops_empty(monkeypatch):
@@ -285,6 +284,7 @@ def _stub_generation(monkeypatch, questions):
         ef, "_grounded_questions",
         lambda **k: (questions, {"model": "m", "promptTokens": 1, "completionTokens": 2}),
     )
+    monkeypatch.setattr(ef, "_independently_verify_questions", lambda qs, **k: qs)
     monkeypatch.setattr(ef, "_fetch_course_topics", lambda *a, **k: ["Friction"])
 
 
@@ -292,11 +292,105 @@ _SAMPLE_QS = [
     {"id": None, "type": "mcq", "question": "Q1?", "options": ["a", "b", "c", "d"],
      "answer": "A", "explanation": "", "difficulty": "medium", "topic": "Friction",
      "points": 1, "sources": [{"fileName": "d.pdf", "pages": "4"}],
-     "validation": {"status": "grounded", "score": 1}},
+     "source_chunk_ids": ["c1"],
+     "validation": {"status": "grounded", "score": 1, "groundingVerified": True,
+                    "answerVerified": True}},
     {"id": None, "type": "true_false", "question": "Q2?", "options": ["True", "False"],
      "answer": "true", "explanation": "", "difficulty": "easy", "topic": "Friction",
-     "points": 1, "sources": [], "validation": {"status": "grounded", "score": 1}},
+     "points": 1, "sources": [], "source_chunk_ids": ["c1"],
+     "validation": {"status": "grounded", "score": 1, "groundingVerified": True,
+                    "answerVerified": True}},
 ]
+
+
+def _verified_question(label, qtype="mcq"):
+    options = ["a", "b", "c", "d"] if qtype == "mcq" else (["True", "False"] if qtype == "true_false" else [])
+    answer = "A" if qtype == "mcq" else ("true" if qtype == "true_false" else "80 MPa")
+    prompt = f"Question {label}?"
+    if qtype == "short_answer":
+        prompt = "Calculate stress when F = 800 N and A = 10 mm^2."
+    return {
+        "id": None, "type": qtype, "question": prompt, "options": options,
+        "answer": answer, "explanation": "Supported by the notes.", "difficulty": "medium",
+        "topic": "Friction", "points": 1,
+        "sources": [{"fileName": "d.pdf", "pages": "4"}],
+        "source_chunk_ids": ["c1"], "source_pages_list": ["4"],
+        "solution": {"finalAnswer": answer, "validationStatus": "validated", "keySteps": []},
+        "validation": {"status": "grounded", "score": 1, "groundingVerified": True,
+                       "answerVerified": True},
+    }
+
+
+def _stub_verified_batches(monkeypatch, batches):
+    monkeypatch.setattr(ef, "get_course_topic_map", lambda *a, **k: [])
+    monkeypatch.setattr(
+        ef, "_pool_evidence",
+        lambda **k: [{"chunkId": "c1", "documentId": "d1", "pageStart": 4, "text": "course fact"}],
+    )
+    monkeypatch.setattr(ef, "understanding_block_for_ids", lambda *a, **k: "")
+    monkeypatch.setattr(ef, "_fetch_course_topics", lambda *a, **k: ["Friction"])
+    pending = list(batches)
+    monkeypatch.setattr(
+        ef, "_grounded_questions",
+        lambda **k: (pending.pop(0) if pending else [], {"model": "m", "promptTokens": 1, "completionTokens": 1}),
+    )
+    monkeypatch.setattr(ef, "_independently_verify_questions", lambda qs, **k: qs)
+
+
+def test_generate_examforge_replenishes_rejected_slots_with_verified_replacements(monkeypatch):
+    # The first batch yields only one acceptable item; the next pass fills both
+    # missing slots. This guards against silently returning a short exam after a
+    # verifier rejection.
+    _stub_verified_batches(monkeypatch, [
+        [_verified_question("one")],
+        [_verified_question("two", "true_false"), _verified_question("three", "short_answer")],
+    ])
+    monkeypatch.setattr(ef, "get_supabase", lambda: _InsertSB({}, {}))
+    out = ef.generate_examforge(
+        user_id="u1", course_id="c1", document_ids=["d1"], requested_count=3,
+        difficulty="medium", topic=None,
+        question_types=["mcq", "true_false", "short_answer"], doc_names={"d1": "d.pdf"},
+    )
+    assert out["actualCount"] == out["requestedCount"] == 3
+    assert out["warning"] is None
+    assert {q["type"] for q in out["questions"]} <= {"mcq", "true_false", "short_answer"}
+    assert all(q["source_chunk_ids"] and q["validation"]["groundingVerified"] for q in out["questions"])
+    assert all(q["validation"]["answerVerified"] for q in out["questions"])
+
+
+def test_generate_examforge_exhausted_replacements_returns_partial_exam_with_warning(monkeypatch):
+    _stub_verified_batches(monkeypatch, [[_verified_question("one")], [], []])
+    monkeypatch.setattr(ef, "get_supabase", lambda: _InsertSB({}, {}))
+    out = ef.generate_examforge(
+        user_id="u1", course_id="c1", document_ids=["d1"], requested_count=3,
+        difficulty="medium", topic=None, question_types=["mcq"], doc_names={"d1": "d.pdf"},
+    )
+    assert out["actualCount"] == 1
+    assert out["requestedCount"] == 3
+    assert "Only 1 of 3" in out["warning"]
+    assert out["error"] is None
+
+
+def test_generate_examforge_rejects_fake_sources_without_persisting(monkeypatch):
+    monkeypatch.setattr(ef, "get_course_topic_map", lambda *a, **k: [])
+    monkeypatch.setattr(
+        ef, "_pool_evidence",
+        lambda **k: [{"chunkId": "real", "documentId": "d1", "pageStart": 4, "text": "course fact"}],
+    )
+    monkeypatch.setattr(ef, "understanding_block_for_ids", lambda *a, **k: "")
+    monkeypatch.setattr(ef, "_fetch_course_topics", lambda *a, **k: [])
+    monkeypatch.setattr(ef, "chat_json", lambda **k: _FakeChatResult({"questions": [{
+        "question_type": "mcq", "question": "Fabricated?", "options": ["a", "b", "c", "d"],
+        "answer": "A", "source_chunk_ids": ["fake"],
+    }]}))
+    monkeypatch.setattr(ef, "get_supabase", lambda: (_ for _ in ()).throw(AssertionError("must not persist")))
+    out = ef.generate_examforge(
+        user_id="u1", course_id="c1", document_ids=["d1"], requested_count=1,
+        difficulty="medium", topic=None, question_types=["mcq", "essay"], doc_names={"d1": "d.pdf"},
+    )
+    assert out["questions"] == []
+    assert out["actualCount"] == 0
+    assert "Only 0 of 1" in out["warning"]
 
 
 def test_generate_examforge_success_persists_ids_and_session(monkeypatch):

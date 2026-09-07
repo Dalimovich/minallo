@@ -11,9 +11,10 @@ from . import mastery
 from .learning_agent import get_course_topic_map, retrieve_learning_context
 from .document_context import understanding_block_for_ids
 from .exam_solution_validation import validate_final_answer
+from .examforge_answer_verifier import verify_examforge_answers
 from .verified_exam import validate_verified_exam
 from .llm_json import chat_json
-from .quiz import _fetch_course_topics, generate_quiz
+from .quiz import _fetch_course_topics
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -221,6 +222,15 @@ _EXAMFORGE_SYSTEM = (
     "the language specified in the plan. If \"auto\", use the same language as the "
     "source material.\n"
     "\n"
+    "MATH FORMATTING (STRICT — the exam viewer ONLY renders math wrapped in $...$ / "
+    "$$...$$): in \"question\", \"options\", \"answer\", \"key_steps\", and "
+    "\"explanation\", wrap EVERY formula, variable, fraction, exponent, and symbol in "
+    "delimiters. NEVER write a bare LaTeX command (\\frac, \\sum, \\sqrt, \\lim, \\in) "
+    "or a bare exponent/subscript (x^2, a_0) outside $...$. Use real LaTeX commands "
+    "(\\varphi, \\varepsilon, \\Delta, \\times, \\delta) — NOT raw Unicode glyphs "
+    "(φ, ∑, ×, δ) and NOT \\text{...} wrapping a symbol. Example: "
+    "write \"$\\delta_S = 2.4 \\times 10^{-6}$\", never \"δS = 2.4 x 10^-6\".\n"
+    "\n"
     "Return ONLY JSON:\n"
     '{"questions":[{"question_type":"mcq|true_false|short_answer","topic":"",'
     '"difficulty":"easy|medium|hard","points":1,"question":"","options":["","","",""],'
@@ -319,16 +329,24 @@ def _grounded_questions(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """One grounded generation call. Returns (normalised questions, meta).
 
-    Questions are validated LOCALLY: a question is ``grounded`` when it cites at
-    least one chunk id we actually supplied; otherwise ``ungrounded`` (kept but
-    flagged). Full LLM validation (verify_answer) is the async Phase 3b step.
+    Questions fail closed unless they cite evidence that was actually supplied
+    and whose document identity can be resolved to a real course document.
     """
-    valid_ids = {c.get("chunkId") for c in evidence if c.get("chunkId")}
+    valid_ids = {
+        str(c.get("chunkId"))
+        for c in evidence
+        if c.get("chunkId") and c.get("documentId") in doc_names
+        and str(doc_names.get(c.get("documentId")) or "").strip()
+        and str(c.get("text") or "").strip()
+    }
     cid_meta: dict[str, tuple[str | None, Any]] = {}
     for c in evidence:
         cid = c.get("chunkId")
-        if cid:
-            cid_meta[cid] = (doc_names.get(c.get("documentId") or "") or None, c.get("pageStart"))
+        if cid and str(cid) in valid_ids:
+            cid_meta[str(cid)] = (
+                doc_names.get(c.get("documentId") or "") or None,
+                c.get("pageStart"),
+            )
 
     plan = "\n".join(
         f"{i + 1}. type={b['question_type']} topic={b.get('topic') or 'any'} difficulty={b['difficulty']} language={b.get('language') or 'auto'}"
@@ -355,7 +373,10 @@ def _grounded_questions(
     for raw in raw_qs:
         if not isinstance(raw, dict):
             continue
-        cited = [str(x) for x in (raw.get("source_chunk_ids") or []) if str(x) in valid_ids]
+        raw_citations = raw.get("source_chunk_ids") or []
+        if not isinstance(raw_citations, list):
+            raw_citations = []
+        cited = list(dict.fromkeys(str(x) for x in raw_citations if str(x) in valid_ids))
         source: str | None = None
         pages: list[str] = []
         if cited:
@@ -363,6 +384,11 @@ def _grounded_questions(
             if dn:
                 source = str(dn) + (f", {pg}" if pg else "")
             pages = [str(cid_meta[c][1]) for c in cited if cid_meta.get(c) and cid_meta[c][1] is not None]
+        # A fabricated id, an absent citation, blank evidence, or unresolved
+        # document metadata is a rejection—not a lower-confidence question.
+        if not cited or not source:
+            log.warning("examforge rejected ungrounded question")
+            continue
         q = _normalise_question({
             "type": raw.get("question_type") or raw.get("type"),
             "question": raw.get("question"),
@@ -375,8 +401,8 @@ def _grounded_questions(
             "points": raw.get("points") or 1,
             "generated_parameters": raw.get("generated_parameters") or {},
             "source": source,
-            "validation_status": "grounded" if cited else "ungrounded",
-            "validation_score": 1 if cited else 0.4,
+            "validation_status": "grounded",
+            "validation_score": 1,
         })
         if (
             not str(q.get("question") or "").strip()
@@ -387,8 +413,58 @@ def _grounded_questions(
             continue
         q["source_chunk_ids"] = cited
         q["source_pages_list"] = pages
+        q["validation"]["groundingVerified"] = True
         out.append(q)
     return out, meta
+
+
+def _independently_verify_questions(
+    questions: list[dict[str, Any]], *, evidence: list[dict[str, Any]], doc_names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Return only independently verified questions, applying safe corrections."""
+    if not questions:
+        return []
+    verifier_evidence = [
+        {
+            "chunk_id": str(item.get("chunkId") or ""),
+            "document": doc_names.get(str(item.get("documentId") or ""), ""),
+            "page": item.get("pageStart"),
+            "text": str(item.get("text") or ""),
+        }
+        for item in evidence
+        if item.get("chunkId") and item.get("documentId") in doc_names
+        and str(item.get("text") or "").strip()
+    ]
+    results = verify_examforge_answers(questions, verifier_evidence)
+    accepted: list[dict[str, Any]] = []
+    for question, result in zip(questions, results, strict=False):
+        if not result.accepted or not result.verified_answer:
+            continue
+        corrected = dict(question)
+        corrected["answer"] = result.verified_answer
+        solution = dict(corrected.get("solution") or {})
+        solution["finalAnswer"] = result.verified_answer
+        if result.key_steps:
+            solution["keySteps"] = list(result.key_steps)
+        if result.status == "corrected":
+            # The generator's explanation may defend the wrong key. Keep only
+            # independently verified concise steps after a correction.
+            corrected["explanation"] = "\n".join(result.key_steps)
+            solution["explanation"] = corrected["explanation"]
+        solution["validationStatus"] = "validated"
+        corrected["solution"] = solution
+        validation = dict(corrected.get("validation") or {})
+        validation.update({
+            "status": "grounded",
+            "answerVerified": True,
+            "groundingVerified": True,
+            "verificationMethod": "independent_model",
+            "verificationConfidence": result.confidence,
+        })
+        corrected["validation"] = validation
+        if not validate_verified_exam({"questions": [corrected]}):
+            accepted.append(corrected)
+    return accepted
 
 
 def generate_examforge(
@@ -437,10 +513,38 @@ def generate_examforge(
     questions: list[dict[str, Any]] = []
     if evidence:
         understanding = understanding_block_for_ids(document_ids, user_id=user_id)
-        questions, meta = _grounded_questions(
-            blueprint=blueprint, evidence=evidence, doc_names=doc_names, diff=diff,
-            understanding=understanding,
-        )
+        for attempt in range(3):
+            remaining = requested - len(questions)
+            if remaining <= 0:
+                break
+            plan = [blueprint[(len(questions) + i) % len(blueprint)] for i in range(remaining)]
+            candidates, batch_meta = _grounded_questions(
+                blueprint=plan, evidence=evidence, doc_names=doc_names, diff=diff,
+                understanding=understanding,
+            )
+            if attempt == 0:
+                meta = batch_meta
+            else:
+                meta["model"] = meta.get("model") or batch_meta.get("model")
+                for key in ("promptTokens", "completionTokens"):
+                    meta[key] = int(meta.get(key) or 0) + int(batch_meta.get(key) or 0)
+            candidates = _independently_verify_questions(
+                candidates, evidence=evidence, doc_names=doc_names
+            )
+            existing = {
+                (q.get("type"), str(q.get("question") or "").strip().casefold())
+                for q in questions
+            }
+            for candidate in candidates:
+                identity = (
+                    candidate.get("type"),
+                    str(candidate.get("question") or "").strip().casefold(),
+                )
+                if identity not in existing:
+                    existing.add(identity)
+                    questions.append(candidate)
+                    if len(questions) >= requested:
+                        break
         grounded_used = bool(questions)
         if grounded_used:
             seen_docs: set[str] = set()
@@ -450,34 +554,22 @@ def generate_examforge(
                     seen_docs.add(dn)
                     grounded_sources.append({"fileName": dn})
 
-    if not questions:
-        quiz_out = generate_quiz(
-            user_id=user_id,
-            course_id=course_id,
-            document_ids=document_ids,
-            requested_count=requested,
-            difficulty=diff,
-            question_types=types,
-            doc_names=doc_names,
-            language=lang,
-        )
-        questions = [_normalise_question(q) for q in quiz_out.get("questions", [])]
-        warning = quiz_out.get("warning")
-        grounded_sources = quiz_out.get("groundedSources", [])
-        meta = {
-            "model": quiz_out.get("model"),
-            "promptTokens": quiz_out.get("promptTokens"),
-            "completionTokens": quiz_out.get("completionTokens"),
-        }
-
     # The fallback generator is subject to the same invariant as the grounded
     # path: never persist or present a question whose answer is absent or merely
     # tells the student which method to use.
     questions = [
         question for question in questions
-        if (question.get("validation") or {}).get("status") != "invalid_solution"
+        if (question.get("validation") or {}).get("status") == "grounded"
+        and (question.get("validation") or {}).get("groundingVerified") is True
+        and (question.get("validation") or {}).get("answerVerified") is True
+        and bool(question.get("source_chunk_ids"))
         and not validate_verified_exam({"questions": [question]})
     ]
+    if len(questions) < requested:
+        warning = (
+            f"Only {len(questions)} of {requested} questions could be safely generated "
+            "from the available course material."
+        )
 
     topics = _fetch_course_topics(course_id, document_ids)
 
