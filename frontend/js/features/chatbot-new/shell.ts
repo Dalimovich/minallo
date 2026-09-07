@@ -5555,7 +5555,13 @@ function appendBubbleActions(aiRow: HTMLElement, raw: string, message?: ChatMess
     if (action === 'copy') copyToClipboard(raw, target);
     else if (action === 'download-pdf') void downloadAssistantResponsePdf(messageId, raw, message, target as HTMLButtonElement);
     else if (action === 'regen') regenerateLast(aiRow);
-    else if (action === 'save') saveReplyToNotes(aiRow, raw, target);
+    else if (action === 'save') bookmarkAssistantResponse(
+      aiRow,
+      messageId,
+      message || chatStore.getActive().messages.find((candidate) => candidate.id === messageId) || { id: messageId, role: 'assistant', text: raw },
+      raw,
+      target
+    );
     else if (action === 'thumb-up' || action === 'thumb-down') {
       target.classList.add('ncb-bubble-action--picked');
     }
@@ -6333,13 +6339,39 @@ function initContextTabs(root: HTMLElement): void {
 
 const SAVED_REPLIES_API = '/api/chat-saved-replies';
 
+function normalizedSavedReplyText(text: string): string {
+  return String(text || '').replace(/\r\n/g, '\n').trim();
+}
+
+function sameSavedReplyScope(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a || null) === (b || null);
+}
+
 function syncSavedReplyCreate(chatId: string, r: SavedReply): void {
   const token = getSbToken();
   if (!token) return;
+  const requestedId = r.id;
   void fetch(SAVED_REPLIES_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ id: r.id, chatId, text: r.text, createdAt: r.createdAt }),
+    body: JSON.stringify({
+      id: r.id, chatId, text: r.text, createdAt: r.createdAt,
+      courseId: r.courseId, sourceMessageId: r.sourceMessageId, sourcePrompt: r.sourcePrompt
+    }),
+  }).then(async (response) => {
+    if (!response.ok) return;
+    const result = await response.json() as { duplicate?: boolean; existingId?: string };
+    if (!result.duplicate || !result.existingId || result.existingId === requestedId) return;
+    const chat = chatStore.chats.find((candidate) => candidate.id === chatId);
+    const local = chat?.savedReplies.find((candidate) => candidate.id === requestedId);
+    if (!chat || !local) return;
+    const canonical = chat.savedReplies.find((candidate) => candidate.id === result.existingId);
+    if (canonical) chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
+    else local.id = result.existingId;
+    saveChatStore();
+    document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', {
+      detail: { id: result.existingId, replacedId: requestedId, action: 'reconciled' }
+    }));
   }).catch(() => {
     /* offline — the local copy is intact; the next Notes-tab merge re-pushes it */
   });
@@ -6372,21 +6404,44 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
       return;
     }
     const data = (await resp.json()) as {
-      replies?: Array<{ id?: string; reply_text?: string; created_at?: string }>;
+      replies?: Array<{
+        id?: string; chat_id?: string; reply_text?: string; created_at?: string;
+        course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
+      }>;
     };
     const serverRows = Array.isArray(data.replies) ? data.replies : [];
     const chat = chatStore.chats.find((c) => c.id === chatId);
     if (!chat) return;
 
     // Server → local: adopt rows this browser doesn't have.
-    const localIds = new Set(chat.savedReplies.map((r) => r.id));
     let changed = false;
     for (const row of serverRows) {
-      if (!row.id || typeof row.reply_text !== 'string' || localIds.has(row.id)) continue;
+      if (!row.id || typeof row.reply_text !== 'string') continue;
+      const rowText = row.reply_text;
+      const existing = chat.savedReplies.find((reply) =>
+        reply.id === row.id
+        || (!!row.source_message_id && reply.sourceMessageId === row.source_message_id)
+        || (sameSavedReplyScope(reply.courseId, row.course_id)
+          && normalizedSavedReplyText(reply.text) === normalizedSavedReplyText(rowText))
+      );
+      if (existing) {
+        const before = JSON.stringify(existing);
+        existing.id = row.id;
+        existing.chatId = row.chat_id || chatId;
+        existing.courseId = row.course_id || null;
+        existing.sourceMessageId = row.source_message_id || existing.sourceMessageId;
+        existing.sourcePrompt = row.source_prompt || existing.sourcePrompt;
+        if (JSON.stringify(existing) !== before) changed = true;
+        continue;
+      }
       chat.savedReplies.push({
         id: row.id,
-        text: row.reply_text,
+        text: rowText,
         createdAt: Date.parse(row.created_at || '') || Date.now(),
+        chatId: row.chat_id || chatId,
+        courseId: row.course_id || null,
+        sourceMessageId: row.source_message_id || undefined,
+        sourcePrompt: row.source_prompt || undefined,
       });
       changed = true;
     }
@@ -6410,11 +6465,35 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
   }
 }
 
-function saveReplyToNotes(aiRow: HTMLElement, raw: string, btn: HTMLElement): void {
+function resolveBookmarkCourseId(message: ChatMessage, _chat: SavedChat): string | null {
+  // Never guess from the chat's mutable current course for legacy messages.
+  return message.requestSnapshot?.courseId || message.generatedDoc?.courseId || null;
+}
+
+function findExistingSavedReply(candidate: Pick<SavedReply, 'text' | 'courseId' | 'sourceMessageId'>): SavedReply | undefined {
+  return chatStore.chats.flatMap((chat) => chat.savedReplies).find((reply) =>
+    (!!candidate.sourceMessageId && reply.sourceMessageId === candidate.sourceMessageId)
+    || (sameSavedReplyScope(reply.courseId, candidate.courseId)
+      && normalizedSavedReplyText(reply.text) === normalizedSavedReplyText(candidate.text))
+  );
+}
+
+function bookmarkAssistantResponse(
+  aiRow: HTMLElement,
+  messageId: string,
+  message: ChatMessage,
+  raw: string,
+  btn: HTMLElement
+): void {
   const chat = chatStore.getActive();
 
   // De-dupe by exact text — Save twice should refuse, not double-add.
-  const already = chat.savedReplies.find((r) => r.text === raw);
+  const sourceMessageId = message.id || messageId;
+  const parent = message.parentUserMessageId
+    ? chat.messages.find((candidate) => candidate.id === message.parentUserMessageId && candidate.role === 'user')
+    : [...chat.messages].reverse().find((candidate) => candidate.role === 'user');
+  const courseId = resolveBookmarkCourseId(message, chat);
+  const already = findExistingSavedReply({ text: raw, courseId, sourceMessageId });
   if (already) {
     flashAck(btn, tStr('cb_act_already_saved', 'Already saved'));
     return;
@@ -6424,12 +6503,21 @@ function saveReplyToNotes(aiRow: HTMLElement, raw: string, btn: HTMLElement): vo
     id: 'rep_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
     text: raw,
     createdAt: Date.now(),
+    chatId: chat.id,
+    courseId,
+    sourceMessageId,
+    sourcePrompt: (message.requestSnapshot?.userText || parent?.text || '').trim().slice(0, 1000) || undefined,
   };
   chat.savedReplies.unshift(reply);
   touchActiveChat();
   saveChatStore();
   syncSavedReplyCreate(chat.id, reply);
-  document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed'));
+  document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', {
+    detail: {
+      action: 'created', replyId: reply.id, courseId: reply.courseId,
+      sourceMessageId: reply.sourceMessageId
+    }
+  }));
   flashAck(btn, tStr('cb_act_saved', 'Saved'));
 
   // If the Notes tab is currently visible, refresh it inline.
@@ -6494,7 +6582,7 @@ function renderNotesTab(root: HTMLElement): void {
       touchActiveChat();
       saveChatStore();
       syncSavedReplyDelete(id);
-      document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed'));
+      document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', { detail: { id, action: 'deleted' } }));
       renderNotesTab(root);
     });
     card.querySelector<HTMLButtonElement>('.ncb-saved-copy')?.addEventListener('click', (ev) => {
@@ -6572,6 +6660,10 @@ interface SavedReply {
   id: string;
   text: string;
   createdAt: number;
+  courseId: string | null;
+  sourceMessageId?: string;
+  sourcePrompt?: string;
+  chatId?: string;
 }
 
 interface SavedChat {
@@ -6824,6 +6916,10 @@ function compactChatForStorage(c: SavedChat): SavedChat {
       id: r.id,
       text: truncateForStorage(r.text || '', NCB_MAX_STORED_MESSAGE_CHARS),
       createdAt: r.createdAt,
+      courseId: r.courseId || null,
+      sourceMessageId: r.sourceMessageId,
+      sourcePrompt: r.sourcePrompt ? truncateForStorage(r.sourcePrompt, 1000) : undefined,
+      chatId: r.chatId || c.id,
     })),
     pinned: !!c.pinned,
     createdAt: c.createdAt,
@@ -7021,6 +7117,13 @@ function loadChatStore(): void {
     if (!Array.isArray(c.selectedSourceIds)) c.selectedSourceIds = [];
     if (typeof c.courseId !== 'string' || !c.courseId) c.courseId = null;
     if (!Array.isArray(c.savedReplies)) c.savedReplies = [];
+    c.savedReplies = c.savedReplies.map((reply) => ({
+      ...reply,
+      courseId: typeof reply.courseId === 'string' && reply.courseId ? reply.courseId : null,
+      sourceMessageId: typeof reply.sourceMessageId === 'string' ? reply.sourceMessageId : undefined,
+      sourcePrompt: typeof reply.sourcePrompt === 'string' ? reply.sourcePrompt.slice(0, 1000) : undefined,
+      chatId: typeof reply.chatId === 'string' ? reply.chatId : c.id
+    }));
     c.sourceMode = normaliseSourceMode(c.sourceMode);
     c.courseFileScope = normaliseCourseFileScope(c.courseFileScope);
     if (typeof c.pinned !== 'boolean') c.pinned = false;

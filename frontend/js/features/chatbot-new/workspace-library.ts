@@ -2067,6 +2067,11 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
   );
   const titles = savedChatTitles();
   const registeredCourses = new Map(courses().map((course) => [course.id, course]));
+  const cachedCourseNames = new Map(
+    studyLibraryState().savedItems
+      .filter((item) => item.kind === 'responses')
+      .map((item) => [item.courseId, item.courseName])
+  );
   const groupMap = new Map<string, LibraryCourse>();
   rows.forEach((row) => {
     const courseId = row.course_id || null;
@@ -2076,7 +2081,7 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
         ? registeredCourses.get(courseId)!
         : {
         id: groupId,
-        name: courseId || 'General',
+        name: courseId ? (cachedCourseNames.get(courseId) || courseId) : 'General',
         short: 'AI'
       } as LibraryCourse);
     }
@@ -2090,7 +2095,7 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
       return {
         id: String(row.id),
         kind: 'responses' as const,
-        title: responseTitle(String(row.source_prompt || '')) || responseTitle(text),
+        title: row.source_prompt ? responseTitle(String(row.source_prompt)) : responseTitle(text),
         course: groupMap.get(groupId)!,
         meta: `${titles.get(chatId) || 'AI conversation'} · ${formatDate(row.created_at)}`,
         payload: { text }
