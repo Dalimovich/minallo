@@ -31,14 +31,37 @@ async function storageRequest(path: string, init: RequestInit, key: string): Pro
   });
 }
 
+// Cloudflare Workers cap both how long a single invocation may run and how
+// many outgoing fetches ("subrequests") it may make. This walk used to be
+// fully sequential — one request per page, then one more recursive call per
+// subfolder, each fully awaited before the next started — so a course with
+// many folders (or a folder with many thousands of files) could exceed
+// either limit and get the isolate hard-killed by the platform. That
+// surfaces to the browser as a raw Cloudflare 502 HTML page with no JSON
+// body at all: this function's own try/catch never runs, because the whole
+// isolate is terminated before it gets the chance. Siblings now list
+// concurrently (depth, not folder count, drives wall-clock time), and a
+// hard request/time budget makes the walk degrade to "delete what we found
+// within budget" instead of running unbounded — any objects beyond the
+// budget are logged as an incomplete sweep rather than blocking deletion of
+// the course itself, which is what the user is actually waiting on.
+const STORAGE_ENUM_MAX_REQUESTS = 120;
+const STORAGE_ENUM_DEADLINE_MS = 20_000;
+
+interface StorageEnumBudget { requestsLeft: number; deadline: number }
+type StorageEnumResult = 'ok' | 'partial' | 'failed';
+
 async function listStorageTree(
   bucket: string,
   prefix: string,
   key: string,
-  output: Set<string>
-): Promise<boolean> {
+  output: Set<string>,
+  budget: StorageEnumBudget
+): Promise<StorageEnumResult> {
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
+    if (budget.requestsLeft <= 0 || Date.now() > budget.deadline) return 'partial';
+    budget.requestsLeft -= 1;
     const response = await storageRequest(
       `/storage/v1/object/list/${encodeURIComponent(bucket)}`,
       {
@@ -50,21 +73,26 @@ async function listStorageTree(
       },
       key
     );
-    if (!response.ok) return false;
+    if (!response.ok) return 'failed';
     const parsed = await response.json().catch(() => []) as StorageObject[];
     const entries = Array.isArray(parsed) ? parsed : [];
+    const folderPaths: string[] = [];
     for (const entry of entries) {
       if (!entry || typeof entry.name !== 'string' || !entry.name) continue;
       const objectPath = prefix + entry.name;
-      if (entry.id == null) {
-        if (!await listStorageTree(bucket, objectPath + '/', key, output)) return false;
-      } else {
-        output.add(objectPath);
-      }
+      if (entry.id == null) folderPaths.push(objectPath + '/');
+      else output.add(objectPath);
+    }
+    if (folderPaths.length) {
+      const results = await Promise.all(
+        folderPaths.map((folderPath) => listStorageTree(bucket, folderPath, key, output, budget))
+      );
+      if (results.includes('failed')) return 'failed';
+      if (results.includes('partial')) return 'partial';
     }
     if (entries.length < pageSize) break;
   }
-  return true;
+  return 'ok';
 }
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
@@ -97,8 +125,16 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
     const storagePaths = new Set<string>();
     const storagePrefix = `${user.id}/${courseStorageKey(courseId)}/`;
-    if (!await listStorageTree(bucket, storagePrefix, key, storagePaths)) {
-      return fail(502, 'COURSE_DELETE_STORAGE_ENUMERATION_FAILED');
+    const storageEnum = await listStorageTree(bucket, storagePrefix, key, storagePaths, {
+      requestsLeft: STORAGE_ENUM_MAX_REQUESTS,
+      deadline: Date.now() + STORAGE_ENUM_DEADLINE_MS
+    });
+    if (storageEnum === 'failed') return fail(502, 'COURSE_DELETE_STORAGE_ENUMERATION_FAILED');
+    const storageEnumerationIncomplete = storageEnum === 'partial';
+    if (storageEnumerationIncomplete) {
+      console.warn('course_delete_storage_enumeration_incomplete', {
+        userId: user.id, courseId, foundSoFar: storagePaths.size
+      });
     }
     for (const document of documents) {
       if (document.storage_path?.startsWith(`${bucket}:`)) {
@@ -150,7 +186,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       ok: true,
       deletedDocuments: documents.length,
       deletedStorageObjects: storagePaths.size,
-      cleanupWarnings
+      cleanupWarnings,
+      // true only when the storage walk hit its request/time budget before
+      // finishing — the course and its tracked documents are still fully
+      // deleted either way; this just flags that some untracked storage
+      // objects may remain for a later sweep.
+      storageEnumerationIncomplete
     });
   } catch (error) {
     console.error('course_delete_failed', {
