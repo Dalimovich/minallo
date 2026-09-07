@@ -20,8 +20,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .document_context import understanding_block_for_ids
+from .full_document_processing import process_full_documents
+from .grounding_contract import ResolvedDocumentAccess, resolve_document_access
 from .llm_json import chat_json
 from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
+from ..config import get_settings
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -281,6 +284,104 @@ def _page_count_estimate(sb, document_ids: list[str] | None, chunks: list[Retrie
     return 0
 
 
+def _generate_full_document_notes(
+    *,
+    user_id: str,
+    course_id: str,
+    document_ids: list[str] | None,
+    question: str,
+    doc_names: dict[str, str],
+) -> dict[str, Any]:
+    """"Summarize the WHOLE document/every page/complete script" is a
+    different claim than a topic summary: it promises full coverage, which
+    top-k relevance retrieval cannot guarantee for a long document. This
+    routes that intent through the same coverage-verified, page-by-page
+    pipeline /ask-stream uses for full-document requests (grounding_contract
+    + full_document_processing) instead of silently answering from "the 40
+    most relevant chunks" and calling it complete. Always returns a
+    definitive result — never falls through to broad RAG — so a request that
+    explicitly demanded full coverage is either honored or clearly refused,
+    never quietly downgraded.
+    """
+    # Imported lazily (not at module load) to avoid coupling notes.py's
+    # import graph to the ask-stream router at startup; these two helpers
+    # are the same authorization/manifest primitives that route already uses,
+    # reused rather than re-implemented per the architecture's own contract.
+    from ..routers.stream import _load_authorized_documents, _load_canonical_manifest  # noqa: WPS433
+
+    if not document_ids:
+        return {
+            "text": "",
+            "warning": "To summarize a complete document, open or select the specific file(s) first, then ask again.",
+        }
+
+    settings = get_settings()
+    unique_ids = list(dict.fromkeys(document_ids))
+    if len(unique_ids) > settings.full_document_max_documents:
+        return {
+            "text": "",
+            "warning": f"Select at most {settings.full_document_max_documents} document(s) for a complete summary at once.",
+        }
+
+    try:
+        documents = _load_authorized_documents(user_id, course_id, unique_ids)
+    except Exception:  # noqa: BLE001
+        log.exception("full-document notes: document authorization failed")
+        return {"text": "", "error": "One or more selected documents could not be verified."}
+
+    manifests: dict[str, list[Any]] = {}
+    try:
+        for document_id in unique_ids:
+            manifests[document_id] = _load_canonical_manifest(documents[document_id])
+    except Exception:  # noqa: BLE001
+        log.exception("full-document notes: canonical manifest load failed")
+        return {
+            "text": "",
+            "warning": "One or more selected documents are not fully indexed yet, so a complete summary isn't possible right now.",
+        }
+
+    expected_pages = sum(
+        1 for manifest in manifests.values() for page in manifest if page.required_for_processing
+    )
+    if expected_pages > settings.full_document_max_total_expected_pages:
+        return {
+            "text": "",
+            "warning": (
+                f"The selected document(s) have {expected_pages} pages to cover, above the "
+                f"{settings.full_document_max_total_expected_pages}-page limit for a single complete summary."
+            ),
+        }
+
+    try:
+        result = process_full_documents(
+            user_id=user_id, course_id=course_id, question=question,
+            pipeline="summarization", documents=documents, manifests=manifests,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception("full-document notes: exhaustive processing failed")
+        return {"text": "", "error": str(e)}
+
+    if not result["coverageResult"]["complete"]:
+        return {
+            "text": "",
+            "warning": "Minallo could not verify complete coverage of every page, so it did not generate an incomplete summary. Please try again.",
+        }
+
+    return {
+        "text": result["answer"],
+        "fullDocumentCoverage": True,
+        "groundedSources": [
+            {
+                "documentId": document_id,
+                "fileName": doc_names.get(document_id, source.get("fileName", "Unknown")),
+                "pageStart": source.get("pageStart"),
+                "pageEnd": source.get("pageEnd"),
+            }
+            for document_id, source in zip(unique_ids, result["sources"])
+        ],
+    }
+
+
 def generate_notes(
     *,
     user_id: str,
@@ -289,6 +390,18 @@ def generate_notes(
     topic: str | None,
     doc_names: dict[str, str],
 ) -> dict[str, Any]:
+    # "Summarize the whole document / every page / complete script" must
+    # route through exhaustive, coverage-verified processing — never through
+    # the broad top-k retrieval below, which cannot back a completeness claim
+    # for a long document. An ordinary topic summary ("summarize the main
+    # concepts") does not match this and keeps using broad RAG as before.
+    resolved_access, _ = resolve_document_access(question=topic or "", requested=None, viewer_context=None)
+    if resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT:
+        return _generate_full_document_notes(
+            user_id=user_id, course_id=course_id, document_ids=document_ids,
+            question=topic or "", doc_names=doc_names,
+        )
+
     query = (topic or "overview main concepts definitions formulas theorems examples exercise patterns common mistakes exam relevant").strip()
     sb = get_supabase()
 

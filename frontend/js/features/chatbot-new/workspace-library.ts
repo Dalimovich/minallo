@@ -1417,10 +1417,137 @@ function fileCount(course: LibraryCourse): number {
   return (course.files || []).length + ((course.userFolders || []) as CourseFolder[]).reduce((sum, folder) => sum + (folder.files || []).length, 0);
 }
 
+type SavedFetchCategory = 'notes' | 'flashcards' | 'exams' | 'responses';
+
+// "notes" covers three UI kinds because they all come from one listCourseNotes()
+// call — a single fetch failure means all three are unavailable together, not
+// independently, so cached-fallback lookups must restore all three as a unit.
+function savedFetchCategoryKinds(category: SavedFetchCategory): SavedKind[] {
+  if (category === 'notes') return ['notes', 'summaries', 'cheatsheets'];
+  if (category === 'flashcards') return ['flashcards'];
+  if (category === 'exams') return ['exams'];
+  return ['responses'];
+}
+
+interface SavedCourseLoad {
+  course: LibraryCourse;
+  items: SavedItem[];
+  failedCategories: SavedFetchCategory[];
+}
+
+// One flaky request must never take down every other course/category's
+// already-successful data. Promise.allSettled absorbs each category's own
+// failure here so loadAllSaved's Promise.all below can never reject because
+// of THIS course — a single bad flashcard_decks response no longer blanks
+// the whole Saved panel.
+async function loadSavedForCourse(course: LibraryCourse): Promise<SavedCourseLoad> {
+  const [notesResult, decksResult, examsResult] = await Promise.allSettled([
+    listCourseNotes(course.id),
+    fetchRows('flashcard_decks', course.id),
+    fetchRows('exam_sessions', course.id)
+  ]);
+  const items: SavedItem[] = [];
+  const failedCategories: SavedFetchCategory[] = [];
+
+  if (notesResult.status === 'fulfilled') {
+    notesResult.value.forEach((note) => items.push({
+      id: note.id, kind: noteKind(note.type), title: note.title || 'Untitled note',
+      course, meta: formatDate(note.updated_at || note.created_at), note
+    }));
+  } else {
+    failedCategories.push('notes');
+  }
+
+  if (decksResult.status === 'fulfilled') {
+    decksResult.value.rows.forEach((deck) => items.push({
+      id: String(deck.id), kind: 'flashcards', title: String(deck.name || 'Flashcard deck'),
+      course, meta: `${Array.isArray(deck.cards) ? deck.cards.length : 0} cards`, payload: deck
+    }));
+    setSavedPageCursor(course.id, 'flashcards', decksResult.value.rows.length, decksResult.value.hasMore);
+  } else {
+    failedCategories.push('flashcards');
+  }
+
+  if (examsResult.status === 'fulfilled') {
+    examsResult.value.rows.forEach((exam) => items.push({
+      id: String(exam.id), kind: 'exams', title: String(exam.title || exam.topic || 'Practice exam'),
+      course, meta: formatDate(String(exam.updated_at || exam.created_at || '')), payload: exam
+    }));
+    setSavedPageCursor(course.id, 'exams', examsResult.value.rows.length, examsResult.value.hasMore);
+  } else {
+    failedCategories.push('exams');
+  }
+
+  return { course, items, failedCategories };
+}
+
+interface SavedLoadResult {
+  items: SavedItem[];
+  groups: LibraryCourse[];
+  failedCourseCategories: Array<{ courseId: string; category: SavedFetchCategory }>;
+  responsesFailed: boolean;
+}
+
+async function loadAllSaved(allCourses: LibraryCourse[]): Promise<SavedLoadResult> {
+  // Every element of this array can only ever be 'fulfilled' — loadSavedForCourse
+  // never rejects — so one course's requests failing can't reject this
+  // Promise.all and take every other course's already-loaded data down with it.
+  const courseLoads = await Promise.all(allCourses.map(loadSavedForCourse));
+  const [responsesSettled] = await Promise.allSettled([loadBookmarkedResponses()]);
+
+  const items: SavedItem[] = [];
+  const failedCourseCategories: Array<{ courseId: string; category: SavedFetchCategory }> = [];
+  for (const load of courseLoads) {
+    items.push(...load.items);
+    for (const category of load.failedCategories) failedCourseCategories.push({ courseId: load.course.id, category });
+  }
+
+  const responsesFailed = responsesSettled.status === 'rejected';
+  if (responsesSettled.status === 'fulfilled') {
+    items.push(...responsesSettled.value.items);
+  }
+  const responseGroups = responsesSettled.status === 'fulfilled' ? responsesSettled.value.groups : [];
+
+  return { items, groups: [...allCourses, ...responseGroups], failedCourseCategories, responsesFailed };
+}
+
+// Backfills any (course, category) that failed this round with its last-known
+// cached rows, so a flaky request degrades to "this category shows the
+// previous snapshot" rather than "this category's items vanish" or "the whole
+// Saved panel errors out". Fresh and fallback data never overlap: fallback is
+// only pulled for the exact pairs that failed this round.
+function withCachedFallback(
+  freshItems: SavedItem[],
+  result: SavedLoadResult,
+  previousCachedItems: CachedSavedItem[],
+  allCourses: LibraryCourse[]
+): SavedItem[] {
+  if (!result.failedCourseCategories.length && !result.responsesFailed) return freshItems;
+  const merged = freshItems.slice();
+  for (const { courseId, category } of result.failedCourseCategories) {
+    const kinds = savedFetchCategoryKinds(category);
+    const fallback = previousCachedItems.filter((item) => item.courseId === courseId && kinds.includes(item.kind as SavedKind));
+    merged.push(...savedItemsFromCache(fallback, allCourses));
+  }
+  if (result.responsesFailed) {
+    const fallback = previousCachedItems.filter((item) => item.kind === 'responses');
+    merged.push(...savedItemsFromCache(fallback, allCourses));
+  }
+  return merged;
+}
+
+function renderSavedTotalError(panel: HTMLElement, root: HTMLElement): void {
+  panel.innerHTML =
+    '<div class="ncb-library-error" role="alert">Saved resources could not be loaded. Check your connection and try again.' +
+    '<div><button type="button" class="ncb-saved-retry">Retry</button></div></div>';
+  panel.querySelector<HTMLButtonElement>('.ncb-saved-retry')?.addEventListener('click', () => { void renderSaved(panel, root, true); });
+}
+
 async function renderSaved(panel: HTMLElement, root: HTMLElement, force = false): Promise<void> {
   const allCourses = courses();
   const state = studyLibraryState();
-  const cachedItems = savedItemsFromCache(state.savedItems, allCourses);
+  const previousCachedItems = state.savedItems.slice();
+  const cachedItems = savedItemsFromCache(previousCachedItems, allCourses);
   if (cachedItems.length || state.savedStatus === 'ready') {
     paintSavedState(panel, root, cachedItems, savedGroupsFor(cachedItems, allCourses));
     if (!force && isSavedFresh()) return;
@@ -1431,43 +1558,35 @@ async function renderSaved(panel: HTMLElement, root: HTMLElement, force = false)
   }
   persistStudyLibrary();
   try {
-    const result = await dedupeStudyRequest('saved:all', async () => {
-      const groups = await Promise.all(allCourses.map(async (course) => {
-      const [notes, decks, exams] = await Promise.all([
-        listCourseNotes(course.id),
-        fetchRows('flashcard_decks', course.id),
-        fetchRows('exam_sessions', course.id)
-      ]);
-      const items: SavedItem[] = notes.map((note) => ({
-        id: note.id,
-        kind: noteKind(note.type),
-        title: note.title || 'Untitled note',
-        course,
-        meta: formatDate(note.updated_at || note.created_at),
-        note
-      }));
-      decks.forEach((deck) => items.push({
-        id: String(deck.id), kind: 'flashcards', title: String(deck.name || 'Flashcard deck'),
-        course, meta: `${Array.isArray(deck.cards) ? deck.cards.length : 0} cards`, payload: deck
-      }));
-      exams.forEach((exam) => items.push({
-        id: String(exam.id), kind: 'exams', title: String(exam.title || exam.topic || 'Practice exam'),
-        course, meta: formatDate(String(exam.updated_at || exam.created_at || '')), payload: exam
-      }));
-        return items;
-      }));
-      const responseItems = await loadBookmarkedResponses();
-      return { items: [...groups.flat(), ...responseItems.items], groups: [...allCourses, ...responseItems.groups] };
-    });
-    state.savedItems = result.items.map(savedItemCache);
+    const result = await dedupeStudyRequest('saved:all', () => loadAllSaved(allCourses));
+    const hasFailures = result.failedCourseCategories.length > 0 || result.responsesFailed;
+    const mergedItems = withCachedFallback(result.items, result, previousCachedItems, allCourses);
+
+    if (!mergedItems.length && hasFailures) {
+      // Nothing usable at all — fresh or cached — for anything: this alone
+      // is the genuine total-failure case, not just "one category hiccuped".
+      state.savedStatus = 'error';
+      persistStudyLibrary();
+      renderSavedTotalError(panel, root);
+      return;
+    }
+
+    state.savedItems = mergedItems.map(savedItemCache);
     state.savedStatus = 'ready';
-    state.savedFetchedAt = Date.now();
+    // Only a fully clean load counts as "fresh". A partial load leaves the
+    // freshness clock alone so the next visit naturally retries whichever
+    // categories failed, instead of treating stale fallback data as good
+    // for the next SAVED_TTL window.
+    if (!hasFailures) state.savedFetchedAt = Date.now();
     persistStudyLibrary();
-    paintSavedState(panel, root, result.items, result.groups);
+    paintSavedState(panel, root, mergedItems, savedGroupsFor(mergedItems, allCourses));
+    if (hasFailures) {
+      window.showToast?.('Some saved resources could not be refreshed', 'Showing everything that loaded successfully.');
+    }
   } catch {
     state.savedStatus = 'error';
     persistStudyLibrary();
-    if (!cachedItems.length) panel.innerHTML = '<div class="ncb-library-error">Saved resources could not be loaded. Check your connection and try again.</div>';
+    if (!cachedItems.length) renderSavedTotalError(panel, root);
     else window.showToast?.('Could not refresh Saved', 'Showing the most recently loaded version.');
   }
 }
@@ -1547,7 +1666,7 @@ function renderSavedKind(
     </div>
     <div class="ncb-saved-kind-results">${
       ofKind.length
-        ? savedKindHtml(ofKind, allCourses)
+        ? savedKindHtml(ofKind, allCourses, kind)
         : `<div class="ncb-library-empty"><strong>No ${kindLabels[kind].toLowerCase()} yet</strong><span>Saved ${kindLabels[kind].toLowerCase()} will appear here.</span></div>`
     }</div>`;
   panel.querySelector<HTMLButtonElement>('.ncb-library-back')?.addEventListener('click', () => {
@@ -1556,16 +1675,37 @@ function renderSavedKind(
     renderSavedKinds(panel, root, items, allCourses);
   });
   bindSaved(panel, root, ofKind);
+  bindSavedLoadMore(panel, root, allCourses, kind);
 }
 
-function savedKindHtml(items: SavedItem[], allCourses: LibraryCourse[]): string {
+// Session-only "Load more" cursor per (courseId, paginated category) — not
+// persisted, since an offset is only meaningful within one listing pass and
+// a fresh Saved load always starts each category back at its first page.
+// Only flashcards/exams paginate: they're fetched directly from Supabase
+// with a capped page size (SAVED_PAGE_SIZE); notes/summaries/cheatsheets go
+// through a separate backend endpoint with no evidence of the same cap.
+type PaginatedSavedCategory = 'flashcards' | 'exams';
+const savedPageCursors = new Map<string, { offset: number; hasMore: boolean }>();
+function savedPageKey(courseId: string, category: PaginatedSavedCategory): string {
+  return `${courseId}:${category}`;
+}
+function setSavedPageCursor(courseId: string, category: PaginatedSavedCategory, loaded: number, hasMore: boolean): void {
+  savedPageCursors.set(savedPageKey(courseId, category), { offset: loaded, hasMore });
+}
+
+function savedKindHtml(items: SavedItem[], allCourses: LibraryCourse[], kind: SavedKind): string {
+  const paginated = kind === 'flashcards' || kind === 'exams' ? (kind as PaginatedSavedCategory) : null;
   return allCourses.map((course) => {
     const grouped = items.filter((item) => item.course.id === course.id);
-    if (!grouped.length) return '';
+    const cursor = paginated ? savedPageCursors.get(savedPageKey(course.id, paginated)) : null;
+    if (!grouped.length && !cursor?.hasMore) return '';
+    const loadMore = cursor?.hasMore
+      ? `<button type="button" class="ncb-saved-load-more" data-load-more-course="${escapeHtml(course.id)}">Load more</button>`
+      : '';
     return `<div class="ncb-saved-course"><h4>${escapeHtml(course.name || 'Course')}</h4>${grouped.map((item) => `
       <button type="button" class="ncb-saved-row" data-saved-kind="${item.kind}" data-saved-id="${escapeHtml(item.id)}">
         ${icon(item.kind)}<span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.meta)}</small></span><b>Open</b>
-      </button>`).join('')}</div>`;
+      </button>`).join('')}${loadMore}</div>`;
   }).join('');
 }
 
@@ -1576,6 +1716,52 @@ function bindSaved(panel: HTMLElement, root: HTMLElement, items: SavedItem[]): v
       if (item) void openSaved(root, item);
     });
   });
+}
+
+function bindSavedLoadMore(panel: HTMLElement, root: HTMLElement, allCourses: LibraryCourse[], kind: SavedKind): void {
+  if (kind !== 'flashcards' && kind !== 'exams') return;
+  const category = kind as PaginatedSavedCategory;
+  panel.querySelectorAll<HTMLButtonElement>('.ncb-saved-load-more').forEach((button) => {
+    button.addEventListener('click', () => {
+      const course = allCourses.find((candidate) => candidate.id === button.dataset.loadMoreCourse);
+      if (!course) return;
+      button.disabled = true;
+      button.textContent = 'Loading…';
+      void loadMoreSavedCategory(panel, root, course, category);
+    });
+  });
+}
+
+async function loadMoreSavedCategory(
+  panel: HTMLElement,
+  root: HTMLElement,
+  course: LibraryCourse,
+  category: PaginatedSavedCategory
+): Promise<void> {
+  const key = savedPageKey(course.id, category);
+  const offset = savedPageCursors.get(key)?.offset ?? SAVED_PAGE_SIZE;
+  const table = category === 'flashcards' ? 'flashcard_decks' : 'exam_sessions';
+  try {
+    const { rows, hasMore } = await fetchRows(table, course.id, offset);
+    savedPageCursors.set(key, { offset: offset + rows.length, hasMore });
+    const newItems: SavedItem[] = rows.map((row) => category === 'flashcards'
+      ? {
+          id: String(row.id), kind: 'flashcards', title: String(row.name || 'Flashcard deck'),
+          course, meta: `${Array.isArray(row.cards) ? row.cards.length : 0} cards`, payload: row
+        }
+      : {
+          id: String(row.id), kind: 'exams', title: String(row.title || row.topic || 'Practice exam'),
+          course, meta: formatDate(String(row.updated_at || row.created_at || '')), payload: row
+        });
+    const state = studyLibraryState();
+    state.savedItems = [...state.savedItems, ...newItems.map(savedItemCache)];
+    persistStudyLibrary();
+    const allCourses = courses();
+    const merged = savedItemsFromCache(state.savedItems, allCourses);
+    paintSavedState(panel, root, merged, savedGroupsFor(merged, allCourses));
+  } catch {
+    window.showToast?.('Could not load more', 'Please try again.');
+  }
 }
 
 /** Thrown by artifact resolution/validation so `openSaved` can render a
@@ -1681,13 +1867,16 @@ async function resolveCachedSavedItem(item: SavedItem): Promise<SavedItem> {
   if (item.note || item.payload) return item;
   if (item.kind === 'flashcards' || item.kind === 'exams') {
     const table = item.kind === 'flashcards' ? 'flashcard_decks' : 'exam_sessions';
-    let rows: Record<string, unknown>[];
+    // Fetch this exact row by id — NOT the paginated listing — so a deck or
+    // exam older than the first page (see SAVED_PAGE_SIZE) still resolves
+    // correctly instead of looking "not found" just because it wasn't among
+    // the most recent SAVED_PAGE_SIZE rows.
+    let payload: Record<string, unknown> | null;
     try {
-      rows = await dedupeStudyRequest(`saved:${table}:${item.course.id}`, () => fetchRows(table, item.course.id));
+      payload = await dedupeStudyRequest(`saved:${table}:${item.id}`, () => fetchRowById(table, item.id));
     } catch {
       throw new SavedOpenError('load_failed', 'Could not load this saved resource. Check your connection and try again.');
     }
-    const payload = rows.find((row) => String(row.id) === item.id);
     if (!payload) throw new SavedOpenError('not_found', 'This saved resource is no longer available.');
     return { ...item, payload };
   }
@@ -1859,19 +2048,50 @@ function noteKind(type: string): SavedKind {
   return 'notes';
 }
 
-async function fetchRows(table: string, courseId: string): Promise<Record<string, unknown>[]> {
+// A course with more decks/exams than one page previously had its older
+// rows permanently invisible — this listing is a hard cap, not a "first N,
+// more available" cursor. hasMore (a full page came back) tells the Saved UI
+// whether to offer "Load more" rather than silently truncating forever.
+const SAVED_PAGE_SIZE = 50;
+
+interface PagedRows {
+  rows: Record<string, unknown>[];
+  hasMore: boolean;
+}
+
+async function fetchRows(table: string, courseId: string, offset = 0): Promise<PagedRows> {
   const db = window._ssDb;
-  if (!db) return [];
-  const response = await fetch(`${db.supaUrl()}/rest/v1/${table}?course_id=eq.${encodeURIComponent(courseId)}&order=created_at.desc&limit=50`, {
-    headers: db.supaHeaders()
-  });
+  if (!db) return { rows: [], hasMore: false };
+  const response = await fetch(
+    `${db.supaUrl()}/rest/v1/${table}?course_id=eq.${encodeURIComponent(courseId)}&order=created_at.desc&limit=${SAVED_PAGE_SIZE}&offset=${offset}`,
+    { headers: db.supaHeaders() }
+  );
   // Throw rather than swallow: callers that need to tell "genuinely empty"
   // apart from "the request failed" (Saved-item resolution) rely on this;
   // the Saved-list scan already has its own try/catch and degrades to the
   // cached list on failure, so raising here doesn't regress that path.
   if (!response.ok) throw new Error(`fetchRows(${table}) failed: ${response.status}`);
   const data = await response.json();
-  return Array.isArray(data) ? data : [];
+  const rows = Array.isArray(data) ? data : [];
+  return { rows, hasMore: rows.length === SAVED_PAGE_SIZE };
+}
+
+// Fetches exactly one row by id, independent of the paginated listing above.
+// resolveCachedSavedItem used to search for the clicked item inside the
+// top-SAVED_PAGE_SIZE listing — a deck/exam older than that page was
+// findable in the UI (it's in Saved) but "not found" the moment you opened
+// it, since it never appeared in the capped fetch used to resolve it.
+async function fetchRowById(table: string, id: string): Promise<Record<string, unknown> | null> {
+  const db = window._ssDb;
+  if (!db) return null;
+  const response = await fetch(
+    `${db.supaUrl()}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}&limit=1`,
+    { headers: db.supaHeaders() }
+  );
+  if (!response.ok) throw new Error(`fetchRowById(${table}) failed: ${response.status}`);
+  const data = await response.json();
+  const rows = Array.isArray(data) ? data : [];
+  return rows[0] || null;
 }
 
 function formatDate(value?: string): string {

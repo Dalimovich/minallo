@@ -5688,6 +5688,21 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   color: #9fb0c5;
   font-size: 0.72rem;
 }
+.ncb-saved-load-more {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ncb-saved-load-more:hover { background: rgba(147, 197, 253, 0.08); }
+.ncb-saved-load-more:disabled { opacity: 0.6; cursor: default; }
 
 .ncb-workspace-overlay {
   position: fixed;

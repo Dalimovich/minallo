@@ -611,3 +611,132 @@ test('fetchRows surfaces a failed request instead of a fake empty result', () =>
   );
   assert.match(fetchRowsBody, /if \(!response\.ok\) throw new Error\(`fetchRows\(\$\{table\}\) failed: \$\{response\.status\}`\)/);
 });
+
+// ── Saved refresh must degrade per-resource, per-course ─────────────────────
+// Regression coverage for: fetchRows() now correctly throws on a failed
+// request (see the test above), which fixed "an empty result silently looks
+// like success" — but the OLD Saved refresh wrapped every course's three
+// requests, and every course's own Promise, in nested Promise.all(). One
+// flaky flashcard_decks/exam_sessions/notes request for ANY course rejected
+// the whole thing, replacing content that had already loaded successfully
+// for every other course with a blanket error screen.
+
+test('one failed resource category never rejects that course\'s other categories', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function loadSavedForCourse'),
+    moduleSource.indexOf('interface SavedLoadResult')
+  );
+  assert.match(fn, /await Promise\.allSettled\(\[\s*listCourseNotes\(course\.id\),\s*fetchRows\('flashcard_decks', course\.id\),\s*fetchRows\('exam_sessions', course\.id\)\s*\]\)/);
+  assert.match(fn, /if \(notesResult\.status === 'fulfilled'\)/);
+  assert.match(fn, /failedCategories\.push\('notes'\)/);
+  assert.match(fn, /if \(decksResult\.status === 'fulfilled'\)/);
+  assert.match(fn, /failedCategories\.push\('flashcards'\)/);
+  assert.match(fn, /if \(examsResult\.status === 'fulfilled'\)/);
+  assert.match(fn, /failedCategories\.push\('exams'\)/);
+});
+
+test('one course failing entirely never rejects loadAllSaved and never touches other courses', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function loadAllSaved'),
+    moduleSource.indexOf('function withCachedFallback')
+  );
+  // loadSavedForCourse (tested above) can only ever resolve, so mapping it
+  // across every course and awaiting with Promise.all cannot reject because
+  // of any single course — this is the fix for "Course A's failure blanked
+  // Course B and Course C too".
+  assert.match(fn, /const courseLoads = await Promise\.all\(allCourses\.map\(loadSavedForCourse\)\)/);
+  assert.match(fn, /const \[responsesSettled\] = await Promise\.allSettled\(\[loadBookmarkedResponses\(\)\]\)/);
+});
+
+test('cached rows are restored for exactly the (course, category) pairs that failed, never for ones that succeeded', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('function withCachedFallback'),
+    moduleSource.indexOf('function renderSavedTotalError')
+  );
+  assert.match(fn, /if \(!result\.failedCourseCategories\.length && !result\.responsesFailed\) return freshItems/);
+  assert.match(fn, /const fallback = previousCachedItems\.filter\(\(item\) => item\.courseId === courseId && kinds\.includes\(item\.kind as SavedKind\)\)/);
+  assert.match(fn, /merged\.push\(\.\.\.savedItemsFromCache\(fallback, allCourses\)\)/);
+  // "notes" covers notes/summaries/cheatsheets as one unit, since they share
+  // a single underlying request and fail/succeed together.
+  assert.match(moduleSource, /if \(category === 'notes'\) return \['notes', 'summaries', 'cheatsheets'\]/);
+});
+
+test('a partial failure renders everything that loaded and shows a non-blocking warning, never an error screen', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function renderSaved'),
+    moduleSource.length
+  );
+  assert.match(fn, /const hasFailures = result\.failedCourseCategories\.length > 0 \|\| result\.responsesFailed/);
+  assert.match(fn, /const mergedItems = withCachedFallback\(result\.items, result, previousCachedItems, allCourses\)/);
+  assert.match(fn, /paintSavedState\(panel, root, mergedItems, savedGroupsFor\(mergedItems, allCourses\)\)/);
+  assert.match(fn, /if \(hasFailures\) \{\s*window\.showToast\?\.\('Some saved resources could not be refreshed', 'Showing everything that loaded successfully\.'\)/);
+});
+
+test('total failure (nothing usable, fresh or cached) shows a visible error with Retry — a partial success never does', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function renderSaved'),
+    moduleSource.length
+  );
+  assert.match(fn, /if \(!mergedItems\.length && hasFailures\) \{/);
+  assert.match(fn, /renderSavedTotalError\(panel, root\);\s*return;/);
+  assert.match(moduleSource, /function renderSavedTotalError\(panel: HTMLElement, root: HTMLElement\): void \{/);
+  assert.match(moduleSource, /class="ncb-saved-retry">Retry<\/button>/);
+  assert.match(moduleSource, /void renderSaved\(panel, root, true\)/);
+});
+
+test('a fully clean refresh marks Saved fresh; a partial refresh leaves the freshness clock alone so failed categories retry on next visit', () => {
+  // The freshness write must be gated behind !hasFailures — not unconditional
+  // — so a partial load doesn't get treated as good-for-SAVED_TTL and skip
+  // retrying the categories that actually failed on the next visit.
+  assert.match(moduleSource, /if \(!hasFailures\) state\.savedFetchedAt = Date\.now\(\);/);
+});
+
+// ── Saved pagination: a course with >50 decks/exams must stay fully reachable ──
+
+test('fetchRows pages with offset and reports whether a full page came back', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function fetchRows'),
+    moduleSource.indexOf('async function fetchRowById')
+  );
+  assert.match(fn, /async function fetchRows\(table: string, courseId: string, offset = 0\)/);
+  assert.match(fn, /limit=\$\{SAVED_PAGE_SIZE\}&offset=\$\{offset\}/);
+  assert.match(fn, /return \{ rows, hasMore: rows\.length === SAVED_PAGE_SIZE \}/);
+});
+
+test('opening an old saved deck/exam beyond the first page resolves by id directly, not by searching a capped listing', () => {
+  // This is the actual bug the P2 audit predicted: resolveCachedSavedItem
+  // used to reuse fetchRows' top-SAVED_PAGE_SIZE listing and search it for
+  // the clicked id — a deck/exam older than that page was visible in Saved
+  // but "not found" the instant you opened it.
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function resolveCachedSavedItem'),
+    moduleSource.length
+  );
+  assert.match(fn, /payload = await dedupeStudyRequest\(`saved:\$\{table\}:\$\{item\.id\}`, \(\) => fetchRowById\(table, item\.id\)\)/);
+  assert.doesNotMatch(fn, /rows\.find\(\(row\) => String\(row\.id\) === item\.id\)/);
+  const fetchRowByIdFn = moduleSource.slice(
+    moduleSource.indexOf('async function fetchRowById'),
+    moduleSource.indexOf('function formatDate')
+  );
+  assert.match(fetchRowByIdFn, /\?id=eq\.\$\{encodeURIComponent\(id\)\}&limit=1/);
+});
+
+test('a course with a full first page of flashcards/exams offers Load more, and loading more appends rather than replaces', () => {
+  const htmlFn = moduleSource.slice(
+    moduleSource.indexOf('function savedKindHtml'),
+    moduleSource.indexOf('function bindSaved(')
+  );
+  assert.match(htmlFn, /const paginated = kind === 'flashcards' \|\| kind === 'exams'/);
+  assert.match(htmlFn, /cursor\?\.hasMore/);
+  assert.match(htmlFn, /class="ncb-saved-load-more"/);
+
+  const loadMoreFn = moduleSource.slice(
+    moduleSource.indexOf('async function loadMoreSavedCategory'),
+    moduleSource.length
+  );
+  assert.match(loadMoreFn, /const offset = savedPageCursors\.get\(key\)\?\.offset \?\? SAVED_PAGE_SIZE/);
+  assert.match(loadMoreFn, /state\.savedItems = \[\.\.\.state\.savedItems, \.\.\.newItems\.map\(savedItemCache\)\]/);
+  // Notes/summaries/cheatsheets never paginate — no evidence they share the
+  // same capped-listing shape as the two direct Supabase-table fetches.
+  assert.match(moduleSource, /if \(kind !== 'flashcards' && kind !== 'exams'\) return;/);
+});
