@@ -740,3 +740,91 @@ test('a course with a full first page of flashcards/exams offers Load more, and 
   // same capped-listing shape as the two direct Supabase-table fetches.
   assert.match(moduleSource, /if \(kind !== 'flashcards' && kind !== 'exams'\) return;/);
 });
+
+// ── First-load hydration: unknown must never collapse into a false zero ────
+
+test('a course file count only shows 0 when something positively confirms it, otherwise it shows unknown', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('function resolveCourseFileCount'),
+    moduleSource.indexOf('function fileCountLabel')
+  );
+  assert.match(fn, /const live = fileCount\(course\);\s*if \(live > 0\) return live;/);
+  assert.match(fn, /if \(entryCount > 0\) return entryCount;/);
+  // hydrated + ready is the ONLY path that returns a confirmed zero — the
+  // mere absence of a cache entry must fall through to unknown, not 0.
+  assert.match(fn, /if \(entry\.hydrated && entry\.status === 'ready'\) return 0;/);
+  assert.match(fn, /return null;/);
+  assert.match(moduleSource, /function fileCountLabel\(course: LibraryCourse\): string \{\s*const count = resolveCourseFileCount\(course\);\s*return count === null \? '— files' : `\$\{count\} files`;/);
+  // The two first-paint course-count displays must use the unknown-aware
+  // label, not the raw fileCount() that silently treats "not loaded" as 0.
+  assert.match(moduleSource, /<small>\$\{fileCountLabel\(course\)\}<\/small>/);
+  assert.match(moduleSource, /<span>\$\{fileCountLabel\(course\)\}<\/span>/);
+});
+
+test('a stale ss_fc_ hint is used as a last resort, and an explicit stored 0 is trusted (not treated as absent)', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('function resolveCourseFileCount'),
+    moduleSource.indexOf('function fileCountLabel')
+  );
+  assert.match(fn, /localStorage\.getItem\(`ss_fc_\$\{course\.id\}`\)/);
+  // Reads the raw string first so a present-but-zero value ("0") is
+  // distinguishable from a missing key (null) — expectedCourseFileCount()
+  // alone can't tell those apart, since it defaults a missing key to 0 too.
+  assert.match(fn, /if \(rawExpected !== null\) \{/);
+});
+
+// ── Course-registry-ready: closes the boot race that cached a false-empty Saved ──
+
+test('Saved never commits a fresh empty result while the course registry is still unconfirmed', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('async function renderSaved'),
+    moduleSource.indexOf('function paintSavedState')
+  );
+  assert.match(fn, /if \(!allCourses\.length && !courseRegistryReady\) \{/);
+  // Must return before reaching the network scan / savedStatus='ready' commit.
+  const guardBlock = fn.slice(fn.indexOf('if (!allCourses.length && !courseRegistryReady) {'));
+  const guardEnd = guardBlock.indexOf('\n  }\n');
+  assert.match(guardBlock.slice(0, guardEnd), /return;/);
+});
+
+test('the workspace library listens for minallo:course-registry-ready and reconciles Courses + Saved on it', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('export function initWorkspaceLibrary'),
+    moduleSource.indexOf('export type StudyWorkspaceKind')
+  );
+  assert.match(fn, /window\.addEventListener\('minallo:course-registry-ready', handleCourseRegistryReady\)/);
+  assert.match(fn, /window\.removeEventListener\('minallo:course-registry-ready', handleCourseRegistryReady\)/);
+  // A Saved result that was committed "ready" with zero items must be
+  // invalidated once the registry is confirmed — that's the exact false-
+  // empty snapshot this event exists to correct.
+  assert.match(fn, /if \(state\.savedStatus === 'ready' && state\.savedItems\.length === 0\) \{\s*invalidateSaved\(\);/);
+  assert.match(fn, /if \(courses\(\)\.length > 0\) courseRegistryReady = true;/);
+});
+
+test('Saved metadata starts warming when the workspace mounts, not only after the Saved tab is clicked', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('export function initWorkspaceLibrary'),
+    moduleSource.indexOf('export type StudyWorkspaceKind')
+  );
+  assert.match(fn, /if \(libraryState\.activeTab !== 'saved'\) void renderSaved\(savedPanel, root\);/);
+});
+
+test('app-data.js dispatches course-registry-ready only once the registry actually reflects reality, including the confirmed-empty case', () => {
+  const appData = fs.readFileSync('frontend/js/app-data.js', 'utf8');
+  assert.match(appData, /function _dispatchCourseRegistryReady\(courseIds\) \{/);
+  assert.match(appData, /window\.dispatchEvent\(new CustomEvent\('minallo:course-registry-ready', \{/);
+  // Both the "no courses at all" early-return AND the normal populate path
+  // must dispatch — a user with zero courses is a real, confirmed answer.
+  const fn = appData.slice(appData.indexOf('function _loadUserCourses'), appData.length);
+  const earlyReturn = fn.slice(0, fn.indexOf('return;\n  }'));
+  assert.match(earlyReturn, /_dispatchCourseRegistryReady\(\[\]\)/);
+  assert.match(fn, /_dispatchCourseRegistryReady\(Object\.keys\(SEMS\)\.reduce/);
+});
+
+test('cached course data applies on the next microtask, not an arbitrary 1500ms/300ms wait', () => {
+  const userData = fs.readFileSync('frontend/js/features/auth/user-data.ts', 'utf8');
+  assert.match(userData, /function scheduleUserCoursesLoad\(courses: unknown\): void \{/);
+  assert.match(userData, /queueMicrotask\(\(\) => \{/);
+  assert.doesNotMatch(userData, /scheduleUserCoursesLoad\([^)]*,\s*1500\)/);
+  assert.doesNotMatch(userData, /scheduleUserCoursesLoad\([^)]*,\s*300\)/);
+});

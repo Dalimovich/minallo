@@ -31,7 +31,6 @@ interface SubscriptionRow {
 
 let _presenceTimer: ReturnType<typeof setInterval> | null = null;
 let _presenceUid: string | null = null;
-let _courseLoadTimer: ReturnType<typeof setTimeout> | null = null;
 
 // loadUserData de-dup: _enterApp can fire many times in a short window (initial
 // sign-in + session restore + token refresh + repeated SIGNED_IN events), and
@@ -53,13 +52,20 @@ function stopHeartbeatOnUnauthorized(response: Response): void {
   if (response.status === 401) stopPresenceHeartbeat();
 }
 
-function scheduleUserCoursesLoad(courses: unknown, delay = 1200): void {
+// Used to default to 1500ms (cached profile) / 300ms (fresh profile) —
+// showing a stale-empty course list for up to 1.5s even though the data was
+// already sitting in localStorage. _loadUserCourses is cheap (in-memory SEMS
+// replacement + a render; the storage-prewarm fan-out this delay originally
+// guarded against was already removed — see app-data.js's own "Background
+// prewarm intentionally disabled" note), so applying it on the next
+// microtask instead is safe. Calling it twice in quick succession (once for
+// cache, once for the fresh profile fetch moments later) is harmless: the
+// fresh call just reconciles over whatever the cached call already showed.
+function scheduleUserCoursesLoad(courses: unknown): void {
   if (!courses || !window._loadUserCourses) return;
-  if (_courseLoadTimer) clearTimeout(_courseLoadTimer);
-  _courseLoadTimer = setTimeout(() => {
-    _courseLoadTimer = null;
+  queueMicrotask(() => {
     if (window._loadUserCourses) window._loadUserCourses(courses);
-  }, delay);
+  });
 }
 
 export function startPresenceHeartbeat(uid: string): void {
@@ -97,7 +103,7 @@ export async function loadUserData(uid: string): Promise<void> {
       if (cached) {
         const cp = JSON.parse(cached) as ProfileRow;
         if (cp && cp.full_name && window.applyProfile) window.applyProfile(cp);
-        if (cp && cp.courses) scheduleUserCoursesLoad(cp.courses, 1500);
+        if (cp && cp.courses) scheduleUserCoursesLoad(cp.courses);
       }
     } catch {
       /* malformed cache — ignore */
@@ -153,7 +159,7 @@ export async function loadUserData(uid: string): Promise<void> {
       if (window.applyProfile) window.applyProfile(profile);
     }
     if (profile && profile.courses) {
-      scheduleUserCoursesLoad(profile.courses, 300);
+      scheduleUserCoursesLoad(profile.courses);
     } else if (window.restoreState) {
       window.restoreState();
     }

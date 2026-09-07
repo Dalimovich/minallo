@@ -46,6 +46,14 @@ const kindLabels: Record<SavedKind, string> = {
   responses: 'AI responses'
 };
 
+// Whether the user's real course registry (SEMS) is known to be populated —
+// either courses() already has entries, or app-data.js's
+// minallo:course-registry-ready event has fired. Guards against a race where
+// Saved is scanned (courses() still []) before the registry loads, its empty
+// result gets committed as "fresh", and the real registry arrives moments
+// later: an authentic zero-courses answer and "not loaded yet" are
+// indistinguishable to a plain courses().length check alone.
+let courseRegistryReady = false;
 let pdfOrigin: Comment | null = null;
 let workspaceLibraryCleanup: (() => void) | null = null;
 let pdfHost: HTMLElement | null = null;
@@ -485,10 +493,30 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   };
   document.addEventListener('minallo:auth:signed-in', refreshForAuthenticatedUser);
   document.addEventListener('minallo:auth:entered', refreshForAuthenticatedUser);
+
+  const handleCourseRegistryReady = (): void => {
+    const wasReady = courseRegistryReady;
+    courseRegistryReady = true;
+    if (wasReady) return; // already reconciled once this session
+    renderCourses(coursePanel);
+    const state = studyLibraryState();
+    // A Saved result committed as "ready" with zero items BEFORE the registry
+    // was known ready is exactly the false-empty snapshot this event exists
+    // to catch — invalidate it so the next Saved view/prefetch does a real,
+    // honest refresh instead of trusting a snapshot taken blind to the
+    // user's actual courses.
+    if (state.savedStatus === 'ready' && state.savedItems.length === 0) {
+      invalidateSaved();
+    }
+    void renderSaved(savedPanel, root);
+  };
+  window.addEventListener('minallo:course-registry-ready', handleCourseRegistryReady);
+
   workspaceLibraryCleanup = () => {
     document.removeEventListener('minallo:saved-replies-changed', handleSavedRepliesChanged);
     document.removeEventListener('minallo:auth:signed-in', refreshForAuthenticatedUser);
     document.removeEventListener('minallo:auth:entered', refreshForAuthenticatedUser);
+    window.removeEventListener('minallo:course-registry-ready', handleCourseRegistryReady);
     workspaceLibraryCleanup = null;
   };
 
@@ -499,6 +527,14 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   if (activeCourse && !readWorkspacePdfSession()) void renderCourseDetail(coursePanel, activeCourse);
   selectTab(libraryState.activeTab);
   restoreWorkspacePdf(root, coursePanel);
+  if (courses().length > 0) courseRegistryReady = true;
+  // Saved metadata should start warming as soon as the panel mounts, not
+  // only once the user clicks the Saved tab — otherwise counts that are
+  // already cached from last session sit unused until a click, and a
+  // first-time load doesn't even start fetching until then either.
+  // selectTab() above already triggers this when Saved is the active tab;
+  // this covers the (more common) case where Courses is active on load.
+  if (libraryState.activeTab !== 'saved') void renderSaved(savedPanel, root);
 }
 
 export type StudyWorkspaceKind = 'examforge' | 'flashcards' | 'deep_learn';
@@ -716,7 +752,7 @@ function renderCourses(panel: HTMLElement): void {
     ordered.map((course) => `
       <div class="ncb-course-row${course.id === recent?.id ? ' ncb-course-row--recent' : ''}"><button type="button" class="ncb-course-row-main" data-course-id="${escapeHtml(course.id)}">
         ${icon('course')}
-        <span>${course.id === recent?.id ? '<em>Last opened</em>' : ''}<strong>${escapeHtml(course.name || 'Untitled course')}</strong><small>${fileCount(course)} files</small></span>
+        <span>${course.id === recent?.id ? '<em>Last opened</em>' : ''}<strong>${escapeHtml(course.name || 'Untitled course')}</strong><small>${fileCountLabel(course)}</small></span>
         <b aria-hidden="true">›</b>
       </button><button type="button" class="ncb-library-delete" data-delete-course="${escapeHtml(course.id)}" aria-label="Delete course" title="Delete course">${trashIcon()}</button></div>`).join('') +
     '</div>';
@@ -841,7 +877,7 @@ function paintCourseDetail(panel: HTMLElement, course: LibraryCourse, scrollTop 
   const folders = (course.userFolders || []) as CourseFolder[];
   const files = (course.files || []) as CourseFile[];
   const expanded = new Set(courseEntry(course.id)?.folders.filter((folder) => folder.expanded).map((folder) => folder.name) || []);
-  panel.innerHTML = `<div class="ncb-library-drill-head"><button type="button" class="ncb-library-back" aria-label="Back to all courses">&lsaquo;</button><div><strong>${escapeHtml(course.name || 'Course')}</strong><span>${fileCount(course)} files</span></div></div><div class="ncb-course-detail">
+  panel.innerHTML = `<div class="ncb-library-drill-head"><button type="button" class="ncb-library-back" aria-label="Back to all courses">&lsaquo;</button><div><strong>${escapeHtml(course.name || 'Course')}</strong><span>${fileCountLabel(course)}</span></div></div><div class="ncb-course-detail">
     <div class="ncb-course-detail-actions">
       <input class="ncb-course-upload-input" type="file" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" multiple hidden>
       <button type="button" class="ncb-course-action ncb-course-new-folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v6m-3-3h6"/></svg><span>New folder</span></button>
@@ -1417,6 +1453,39 @@ function fileCount(course: LibraryCourse): number {
   return (course.files || []).length + ((course.userFolders || []) as CourseFolder[]).reduce((sum, folder) => sum + (folder.files || []).length, 0);
 }
 
+// UNKNOWN must never collapse into 0. A course with real files whose count
+// simply hasn't loaded on this device/session yet used to show "0 files" —
+// indistinguishable from a course that genuinely has none — because the live
+// in-memory count defaults to 0 before anything hydrates it. Falls through
+// live data → the Study Library cache → a last-known numeric hint, and only
+// returns a real 0 when something POSITIVELY confirms it (a completed,
+// hydrated load) rather than merely the absence of any cache.
+function resolveCourseFileCount(course: LibraryCourse): number | null {
+  const live = fileCount(course);
+  if (live > 0) return live;
+
+  const entry = courseEntry(course.id);
+  if (entry) {
+    const entryCount = cachedCourseFileCount(entry);
+    if (entryCount > 0) return entryCount;
+    if (entry.hydrated && entry.status === 'ready') return 0;
+  }
+
+  let rawExpected: string | null = null;
+  try { rawExpected = localStorage.getItem(`ss_fc_${course.id}`); } catch { /* ignore */ }
+  if (rawExpected !== null) {
+    const parsed = Number.parseInt(rawExpected, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+
+  return null;
+}
+
+function fileCountLabel(course: LibraryCourse): string {
+  const count = resolveCourseFileCount(course);
+  return count === null ? '— files' : `${count} files`;
+}
+
 type SavedFetchCategory = 'notes' | 'flashcards' | 'exams' | 'responses';
 
 // "notes" covers three UI kinds because they all come from one listCourseNotes()
@@ -1548,6 +1617,18 @@ async function renderSaved(panel: HTMLElement, root: HTMLElement, force = false)
   const state = studyLibraryState();
   const previousCachedItems = state.savedItems.slice();
   const cachedItems = savedItemsFromCache(previousCachedItems, allCourses);
+  // courses() returning [] before the registry is confirmed ready is
+  // indistinguishable from "not loaded yet" — scanning zero courses would
+  // trivially return zero items, and committing that as an authoritative
+  // "ready" result would cache a false-empty Saved panel that the real
+  // registry (arriving moments later, see minallo:course-registry-ready)
+  // never gets a chance to correct. Show whatever's already cached and wait,
+  // rather than scan now.
+  if (!allCourses.length && !courseRegistryReady) {
+    if (cachedItems.length) paintSavedState(panel, root, cachedItems, savedGroupsFor(cachedItems, allCourses));
+    else panel.innerHTML = '<div class="ncb-library-status">Loading saved resources&hellip;</div>';
+    return;
+  }
   if (cachedItems.length || state.savedStatus === 'ready') {
     paintSavedState(panel, root, cachedItems, savedGroupsFor(cachedItems, allCourses));
     if (!force && isSavedFresh()) return;
@@ -1940,7 +2021,10 @@ function readCheatsheetSettings(courseId: string, noteId: string): Record<string
 }
 
 async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: LibraryCourse[] }> {
-  type ReplyRow = { id?: string; chat_id?: string; reply_text?: string; created_at?: string };
+  type ReplyRow = {
+    id?: string; chat_id?: string; reply_text?: string; created_at?: string;
+    course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
+  };
   const localRows = localBookmarkedResponses();
   let serverRows: ReplyRow[] = [];
   const token = authToken();
@@ -1957,27 +2041,42 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
           fetch('/api/chat-saved-replies', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ id: row.id, chatId: row.chat_id, text: row.reply_text, createdAt: Date.parse(row.created_at) })
+            body: JSON.stringify({
+              id: row.id, chatId: row.chat_id, text: row.reply_text,
+              createdAt: Date.parse(row.created_at || ''), courseId: row.course_id,
+              sourceMessageId: row.source_message_id, sourcePrompt: row.source_prompt
+            })
           })
         ));
       }
     } catch { /* local cache still makes bookmarks available offline */ }
   }
-  const rowMap = new Map<string, ReplyRow>();
+  const rows: ReplyRow[] = [];
   [...serverRows, ...localRows].forEach((row) => {
-    if (row.id) rowMap.set(row.id, row);
+    if (!row.id || !row.reply_text) return;
+    const duplicate = rows.find((candidate) =>
+      candidate.id === row.id
+      || (!!row.source_message_id && candidate.source_message_id === row.source_message_id)
+      || ((candidate.course_id || null) === (row.course_id || null)
+        && normalizeBookmarkedResponse(candidate.reply_text) === normalizeBookmarkedResponse(row.reply_text))
+    );
+    if (!duplicate) rows.push(row);
   });
-  const rows = Array.from(rowMap.values()).sort((a, b) =>
+  rows.sort((a, b) =>
     Date.parse(b.created_at || '') - Date.parse(a.created_at || '')
   );
   const titles = savedChatTitles();
+  const registeredCourses = new Map(courses().map((course) => [course.id, course]));
   const groupMap = new Map<string, LibraryCourse>();
   rows.forEach((row) => {
-    const chatId = String(row.chat_id || 'saved-responses');
-    if (!groupMap.has(chatId)) {
-      groupMap.set(chatId, {
-        id: `responses:${chatId}`,
-        name: titles.get(chatId) || 'AI conversation',
+    const courseId = row.course_id || null;
+    const groupId = courseId || 'responses:general';
+    if (!groupMap.has(groupId)) {
+      groupMap.set(groupId, courseId && registeredCourses.has(courseId)
+        ? registeredCourses.get(courseId)!
+        : {
+        id: groupId,
+        name: courseId || 'General',
         short: 'AI'
       } as LibraryCourse);
     }
@@ -1986,13 +2085,14 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
     groups: Array.from(groupMap.values()),
     items: rows.filter((row) => row.id && row.reply_text).map((row) => {
       const chatId = String(row.chat_id || 'saved-responses');
+      const groupId = row.course_id || 'responses:general';
       const text = String(row.reply_text || '');
       return {
         id: String(row.id),
         kind: 'responses' as const,
-        title: responseTitle(text),
-        course: groupMap.get(chatId)!,
-        meta: formatDate(row.created_at),
+        title: responseTitle(String(row.source_prompt || '')) || responseTitle(text),
+        course: groupMap.get(groupId)!,
+        meta: `${titles.get(chatId) || 'AI conversation'} · ${formatDate(row.created_at)}`,
         payload: { text }
       };
     })
@@ -2005,20 +2105,33 @@ function authToken(): string {
   } catch { return window._sbToken || ''; }
 }
 
-function localBookmarkedResponses(): Array<{ id: string; chat_id: string; reply_text: string; created_at: string }> {
+function normalizeBookmarkedResponse(text: string | undefined): string {
+  return String(text || '').replace(/\r\n/g, '\n').trim();
+}
+
+function localBookmarkedResponses(): Array<{
+  id: string; chat_id: string; reply_text: string; created_at: string;
+  course_id: string | null; source_message_id?: string; source_prompt?: string;
+}> {
   try {
     const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
     const raw = localStorage.getItem(`ss_ncb_chats_v1:${uid}`) || localStorage.getItem('ss_ncb_chats_v1');
     const parsed = raw ? JSON.parse(raw) as {
-      chats?: Array<{ id?: string; savedReplies?: Array<{ id?: string; text?: string; createdAt?: number }> }>;
+      chats?: Array<{ id?: string; savedReplies?: Array<{
+        id?: string; text?: string; createdAt?: number; courseId?: string | null;
+        sourceMessageId?: string; sourcePrompt?: string; chatId?: string;
+      }> }>;
     } : null;
     return (parsed?.chats || []).flatMap((chat) => (chat.savedReplies || [])
       .filter((reply) => reply.id && reply.text)
       .map((reply) => ({
         id: reply.id!,
-        chat_id: chat.id || 'saved-responses',
+        chat_id: reply.chatId || chat.id || 'saved-responses',
         reply_text: reply.text!,
-        created_at: new Date(reply.createdAt || Date.now()).toISOString()
+        created_at: new Date(reply.createdAt || Date.now()).toISOString(),
+        course_id: reply.courseId || null,
+        source_message_id: reply.sourceMessageId,
+        source_prompt: reply.sourcePrompt
       })));
   } catch { return []; }
 }

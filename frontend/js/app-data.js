@@ -287,6 +287,22 @@ window._prewarmCourses = _prewarmCourses;
 // and folders; fanning out storage-list calls here makes the whole app sluggish
 // across devices. Course files are loaded when a course is opened.
 
+// Fires once SEMS actually reflects the user's real course registry (server
+// data applied, or authoritatively confirmed empty) — never before. Consumers
+// like the Study Panel used to race this: they could scan courses() before
+// this ran, see zero courses, and cache THAT as a fresh "Saved: empty"
+// result, with the real registry arriving moments later. Listeners should
+// re-render courses, reconcile file caches, and (re)warm Saved metadata now
+// that courseIds is authoritative — an empty array here is a genuine "this
+// user has no courses" answer, not "not loaded yet".
+function _dispatchCourseRegistryReady(courseIds) {
+  try {
+    window.dispatchEvent(new CustomEvent('minallo:course-registry-ready', {
+      detail: { courseIds: courseIds || [] }
+    }));
+  } catch (e) { /* CustomEvent unsupported in some embedded contexts — ignore */ }
+}
+
 function _loadUserCourses(data) {
   // The server is the source of truth. If it returns null / empty / not an
   // object, the user has no courses — clear any stale SEMS state from a
@@ -298,6 +314,7 @@ function _loadUserCourses(data) {
     var uidEmpty = _currentUser && (_currentUser.id || _currentUser.sub);
     if (uidEmpty) _writeUserCoursesLs(uidEmpty, {});
     sdRenderCourses();
+    _dispatchCourseRegistryReady([]);
     return;
   }
   // Snapshot the in-memory courses BEFORE wiping so we can preserve already-
@@ -354,6 +371,9 @@ function _loadUserCourses(data) {
     try { _saveUserCourses(); } catch (e) { /* ignore */ }
   }
   sdRenderCourses();
+  _dispatchCourseRegistryReady(Object.keys(SEMS).reduce(function (ids, sid) {
+    return ids.concat(SEMS[sid].courses.map(function (c) { return c.id; }).filter(Boolean));
+  }, []));
   // Fire-and-forget: pre-fetch every course's files now so cards show real
   // counts and opening a course is instant. Fire on next microtask so the
   // initial render commits first, but with no extra setTimeout delay.
