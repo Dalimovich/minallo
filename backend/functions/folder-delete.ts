@@ -160,10 +160,16 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   // Every document-owned table uses ON DELETE CASCADE. Deleting the owned
   // document rows is therefore the authoritative database deletion for pages,
   // chunks, manifests, revisions, exercises, formulas, and related artifacts.
-  for (const document of documents) {
+  // One bulk delete by id, not one request per document — the same fix
+  // course-delete.ts already applies for the same reason: deleting a folder
+  // with many documents one at a time adds a sequential Supabase round trip
+  // per document, for no benefit, since user/course scoping (and now the id
+  // list itself) is enforced by the WHERE clause exactly as it was before.
+  if (documents.length) {
+    const ids = documents.map((document) => encodeURIComponent(document.id)).join(',');
     const deletion = await supaRequest(
       'DELETE',
-      `documents?id=eq.${encodeURIComponent(document.id)}&user_id=eq.${uid}&course_id=eq.${cid}`,
+      `documents?id=in.(${ids})&user_id=eq.${uid}&course_id=eq.${cid}`,
       null,
       serviceKey
     );

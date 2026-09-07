@@ -12,7 +12,16 @@ test('folder deletion is authenticated and owner/course scoped', () => {
   assert.match(source, /verifySupabaseToken/);
   assert.match(source, /documents\?user_id=eq\.\$\{uid\}&course_id=eq\.\$\{cid\}/);
   assert.match(source, /document\.storage_path\.startsWith\(durablePrefix\)/);
-  assert.match(source, /documents\?id=eq\.\$\{encodeURIComponent\(document\.id\)\}&user_id=eq\.\$\{uid\}&course_id=eq\.\$\{cid\}/);
+  assert.match(source, /documents\?id=in\.\(\$\{ids\}\)&user_id=eq\.\$\{uid\}&course_id=eq\.\$\{cid\}/);
+});
+
+test('folder document deletion is a single bulk request, not one per document', () => {
+  // Regression guard for the same fix already applied to course-delete.ts:
+  // deleting documents one at a time adds a sequential Supabase round trip
+  // per document for no benefit, since scoping is enforced by the WHERE
+  // clause either way.
+  assert.doesNotMatch(source, /for \(const document of documents\) \{\s*const deletion = await supaRequest\(\s*'DELETE',\s*`documents\?id=eq\./);
+  assert.match(source, /const ids = documents\.map\(\(document\) => encodeURIComponent\(document\.id\)\)\.join\(','\)/);
 });
 
 test('folder deletion removes storage, documents, and retrieval cache', () => {

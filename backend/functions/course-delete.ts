@@ -45,7 +45,19 @@ async function storageRequest(path: string, init: RequestInit, key: string): Pro
 // within budget" instead of running unbounded — any objects beyond the
 // budget are logged as an incomplete sweep rather than blocking deletion of
 // the course itself, which is what the user is actually waiting on.
-const STORAGE_ENUM_MAX_REQUESTS = 120;
+//
+// The request count matters more than it looks: Cloudflare's default
+// (Bundled/free-tier) Workers limit is 50 EXTERNAL subrequests per
+// invocation — and this handler's OWN other calls (token verification, the
+// documents enumeration GET, the storage bulk-delete, the documents
+// bulk-delete, and up to 6 parallel cleanup-table deletes) already use
+// roughly 10 of that budget before the walk makes a single request. A
+// previous version of this cap (120) was still comfortably above the
+// platform ceiling on that tier, so it never actually prevented the kill it
+// was meant to prevent. Paid plans default to a much higher 10,000/invocation
+// limit, but this stays conservative since the account tier isn't something
+// this code can detect at runtime.
+const STORAGE_ENUM_MAX_REQUESTS = 30;
 const STORAGE_ENUM_DEADLINE_MS = 20_000;
 
 interface StorageEnumBudget { requestsLeft: number; deadline: number }

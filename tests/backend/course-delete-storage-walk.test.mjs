@@ -25,6 +25,27 @@ test('storage tree walk enforces a request-count and wall-clock budget', () => {
   assert.match(source, /budget\.requestsLeft -= 1/);
 });
 
+test('the request budget leaves real margin under Cloudflare\'s free-tier 50 external-subrequest cap', () => {
+  // This handler makes ~10 subrequests OUTSIDE the walk on the authoritative
+  // path (token verify, documents enumeration, the storage bulk-delete, the
+  // documents bulk-delete, and up to 6 parallel cleanup-table deletes). An
+  // earlier version of this cap (120) was still comfortably above the
+  // platform's 50/invocation ceiling on that tier and never actually
+  // prevented the Worker kill it was meant to prevent. If this number ever
+  // gets raised again, it must be re-derived against that same ceiling, not
+  // picked to "feel generous."
+  const match = source.match(/const STORAGE_ENUM_MAX_REQUESTS = (\d+)/);
+  assert.ok(match, 'STORAGE_ENUM_MAX_REQUESTS constant not found');
+  const NON_WALK_SUBREQUESTS = 10;
+  const FREE_TIER_EXTERNAL_SUBREQUEST_LIMIT = 50;
+  const budget = Number(match[1]);
+  assert.ok(
+    budget + NON_WALK_SUBREQUESTS < FREE_TIER_EXTERNAL_SUBREQUEST_LIMIT,
+    `STORAGE_ENUM_MAX_REQUESTS (${budget}) + ~${NON_WALK_SUBREQUESTS} other handler subrequests must stay ` +
+    `under Cloudflare's ${FREE_TIER_EXTERNAL_SUBREQUEST_LIMIT}/invocation free-tier limit`
+  );
+});
+
 test('a genuine Supabase Storage API failure still hard-fails the request', () => {
   assert.match(source, /if \(!response\.ok\) return 'failed'/);
   assert.match(source, /if \(results\.includes\('failed'\)\) return 'failed'/);
