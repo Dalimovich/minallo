@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 
 @dataclass
 class _Chunk:
@@ -67,6 +69,73 @@ def test_auto_with_selected_file_prefers_course_files() -> None:
         question="What is Newton's second law?",
         source_mode="auto",
         document_ids=["doc_a"],
+    )
+
+    assert decision.source_scope == SourceScope.COURSE_FILES
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "haha",
+        "hhh",
+        "thanks",
+        "never mind",
+        "nothing that concerns you",
+        "I was joking",
+    ],
+)
+def test_auto_active_pdf_does_not_hijack_conversational_turns(question: str) -> None:
+    from app.services.source_router import GroundingPolicy, SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question=question,
+        source_mode="auto",
+        selected_course_id="course",
+        active_document_id="document",
+        open_file_context="Visible academic material from page 4.",
+        inside_pdf_side_rail=True,
+    )
+
+    assert decision.source_scope == SourceScope.GENERAL_KNOWLEDGE
+    assert decision.grounding_policy == GroundingPolicy.GENERAL
+    assert decision.used_document_ids == []
+    assert decision.source_label == "Using: General knowledge"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "solve this",
+        "explain this",
+        "what is that symbol?",
+        "why is this 0.9?",
+        "what does this formula mean?",
+        "is that equation correct?",
+    ],
+)
+def test_auto_active_pdf_preserves_academic_deictic_requests(question: str) -> None:
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question=question,
+        source_mode="auto",
+        selected_course_id="course",
+        active_document_id="document",
+        open_file_context="Visible academic material from page 4.",
+        inside_pdf_side_rail=True,
+    )
+
+    assert decision.source_scope == SourceScope.COURSE_FILES
+
+
+def test_explicit_course_mode_still_honours_user_source_choice_for_short_turn() -> None:
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="thanks",
+        source_mode="course_files",
+        active_document_id="document",
     )
 
     assert decision.source_scope == SourceScope.COURSE_FILES

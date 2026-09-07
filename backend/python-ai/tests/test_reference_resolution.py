@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.services.reference_resolution import (
     decide_evidence,
     exact_question_label_match,
@@ -69,6 +71,60 @@ def test_visual_reference_without_page_evidence_is_stopped_before_generation() -
     decision = decide_evidence(ref, question="Solve this.", has_history=False)
     assert not decision.can_answer
     assert decision.action == "clarify"
+    assert decision.recovery_code == "exact_question_not_resolved"
+
+
+@pytest.mark.parametrize("question", [
+    "nothing that concerns you",
+    "that was funny",
+    "that's okay",
+    "I don't care about that",
+    "this is fine",
+    "what was that?",
+    "I said that already",
+    "I'm just saying that",
+    "nothing here",
+    "I'm here",
+])
+def test_ordinary_deictic_words_are_not_visual_pdf_references(question: str) -> None:
+    ref = resolve_question_reference(
+        question=question,
+        course_id="course-a",
+        active_document_id=None,
+        active_document_name=None,
+        visible_page=None,
+        selected_text=None,
+        selected_region_id=None,
+        visible_text=None,
+        has_visible_image=False,
+    )
+    decision = decide_evidence(ref, question=question, has_history=True)
+    assert decision.can_answer
+    assert decision.recovery_code != "exact_question_not_resolved"
+
+
+@pytest.mark.parametrize("question", [
+    "solve that question",
+    "explain this formula",
+    "what is that symbol?",
+    "answer the marked question",
+    "explain the diagram above",
+    "what does this graph show?",
+])
+def test_semantic_visual_requests_still_require_page_evidence(question: str) -> None:
+    ref = resolve_question_reference(
+        question=question,
+        course_id="course-a",
+        active_document_id=None,
+        active_document_name=None,
+        visible_page=None,
+        selected_text=None,
+        selected_region_id=None,
+        visible_text=None,
+        has_visible_image=False,
+    )
+    decision = decide_evidence(ref, question=question, has_history=False)
+    assert not decision.can_answer
     assert decision.recovery_code == "exact_question_not_resolved"
 
 

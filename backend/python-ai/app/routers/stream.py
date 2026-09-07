@@ -2643,6 +2643,23 @@ async def _prepare_ask_stream_response(
     if len(question) > _MAX_STREAM_QUESTION_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
 
+    # High-confidence social turns must leave before document ownership,
+    # visible-page reference resolution, or retrieval. An open PDF is merely
+    # available context; it cannot turn ordinary conversation into coursework.
+    if is_non_academic_chitchat(question):
+        social_decision = classify_source_scope(
+            question=question,
+            source_mode="general",
+            course_file_scope=payload.courseFileScope,
+            selected_course_id=payload.courseId,
+        )
+        return _stream_static_answer(
+            text=chitchat_answer(question),
+            decision=social_decision,
+            answer_mode="general",
+            status_key="writing_answer",
+        )
+
     conversation_id = (payload.conversationId or "").strip()
     generation = payload.conversationGeneration
     tutor_state = None
@@ -2838,6 +2855,22 @@ async def _prepare_ask_stream_response(
             requested_response_language=dialogue.response_language,
         )
     resolved_question = dialogue.resolved_request
+    if dialogue.dialogue_act.value == "general_conversation":
+        conversational_decision = classify_source_scope(
+            question=question,
+            source_mode="general",
+            course_file_scope=effective_scope,
+            selected_course_id=payload.courseId,
+        )
+        return _stream_static_answer(
+            text=(
+                "Sorry — I misunderstood the conversation. "
+                "Your message was not a question about the course."
+            ),
+            decision=conversational_decision,
+            answer_mode="general",
+            status_key="writing_answer",
+        )
     numbered_section = find_numbered_section_reference(
         question, previous_turns_payload,
     )

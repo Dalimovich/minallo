@@ -203,3 +203,30 @@ def test_explain_this_step_resolves_against_previous_answer():
     assert result.referent_text == "Step 2: Θ_A = Θ_S + md²."
     assert "unspecified" not in result.resolved_request
     assert "active source evidence" not in result.resolved_request
+def test_bare_reaction_to_misrouted_pdf_reply_returns_to_general_conversation() -> None:
+    result = resolve_dialogue(
+        "what?",
+        previous_turns=[
+            {"role": "user", "text": "nothing that concerns you"},
+            {
+                "role": "assistant",
+                "text": "I cannot reliably identify the marked question from the current page.",
+            },
+        ],
+    )
+
+    assert result.dialogue_act == DialogueAct.GENERAL_CONVERSATION
+    assert not result.requires_new_retrieval
+
+
+def test_bare_reaction_to_formula_answer_remains_academic_followup() -> None:
+    result = resolve_dialogue(
+        "what?",
+        previous_turns=[
+            {"role": "user", "text": "Explain torsional stress."},
+            {"role": "assistant", "text": "In this formula τ = Mt / Wt."},
+        ],
+    )
+
+    assert result.dialogue_act == DialogueAct.ASK_ABOUT_PREVIOUS_STEP
+    assert result.requires_new_retrieval

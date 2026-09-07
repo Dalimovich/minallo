@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .answer_intent import is_non_academic_chitchat
+
 
 class SourceMode(str, Enum):
     AUTO = "auto"
@@ -282,6 +284,19 @@ def classify_source_scope(
     q = question or ""
     has_context = bool((selected_text or "").strip() or (open_file_context or "").strip())
     has_specific_file = bool(document_ids or active_document_id)
+    # An open course/PDF is available context, not evidence that every new
+    # utterance is about it. High-confidence conversational turns must leave
+    # Auto routing before active-document, side-rail, or broad deictic signals
+    # can pull them into retrieval/reference resolution. Explicit source modes
+    # remain user-controlled and are handled above.
+    if mode == SourceMode.AUTO and is_non_academic_chitchat(q):
+        return SourceDecision(
+            mode,
+            SourceScope.GENERAL_KNOWLEDGE,
+            file_scope,
+            source_label(SourceScope.GENERAL_KNOWLEDGE),
+            grounding_policy=GroundingPolicy.GENERAL,
+        )
     # A URL in the question wins over EVERYTHING in auto mode — including an
     # active/selected file and the side rail. The user pasted a link; no course
     # chunk or open PDF can answer what's behind it.

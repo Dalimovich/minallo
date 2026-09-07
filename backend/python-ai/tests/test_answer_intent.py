@@ -268,6 +268,58 @@ def test_non_academic_chitchat_is_not_course_work() -> None:
         assert not is_non_academic_chitchat(q), q
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "hhh", "haha", "hahaha", "lol", "lmao", "😂", "🤣",
+        "I was just laughing", "that was funny", "nothing",
+        "nothing that concerns you", "never mind", "forget it",
+        "doesn't matter", "none of your business", "just joking",
+        "I'm kidding", "yeah", "yep", "nope", "sure", "alright",
+        "fair enough", "exactly", "right", "got it", "I see",
+    ],
+)
+def test_natural_social_turns_exit_before_course_work(question: str) -> None:
+    from app.services.answer_intent import chitchat_answer, is_non_academic_chitchat
+
+    assert is_non_academic_chitchat(question)
+    assert chitchat_answer(question)
+    assert "Source" not in chitchat_answer(question)
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "nothing changes in the equation when lambda = 0?",
+        "explain why nothing changes in this equation",
+        "right ventricular pressure is 25 mmHg",
+        "what is that symbol?",
+        "really explain the second theorem",
+        "I see a force of 20 N in the diagram",
+        "forget the previous formula and solve this equation",
+    ],
+)
+def test_social_detector_does_not_steal_academic_turns(question: str) -> None:
+    from app.services.answer_intent import is_non_academic_chitchat
+
+    assert not is_non_academic_chitchat(question)
+
+
+def test_casual_replies_are_brief_and_natural() -> None:
+    from app.services.answer_intent import chitchat_answer
+
+    assert chitchat_answer("hhh") == "Haha 😄"
+    assert chitchat_answer("I was just laughing") == "Got you 😄"
+    assert chitchat_answer("nothing that concerns you") == "Fair enough."
+
+
+@pytest.mark.parametrize("question", ["what?", "huh?", "why?", "really?"])
+def test_ambiguous_short_followups_are_left_for_history_aware_routing(question: str) -> None:
+    from app.services.answer_intent import is_non_academic_chitchat
+
+    assert not is_non_academic_chitchat(question)
+
+
 def test_exam_overlay_lists_files_and_demands_coverage() -> None:
     from app.services.answer import build_source_coverage_overlay
     from app.services.retrieval import RetrievedChunk

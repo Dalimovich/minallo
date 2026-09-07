@@ -13,8 +13,11 @@ _QUESTION_START_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPLICIT_VISUAL_RE = re.compile(
-    r"\b(?:this|that)\s+(?:image|page|diagram|figure|table|marked question|highlighted area|selection)|"
-    r"\b(?:explain|show|read)\s+this\b|"
+    r"\b(?:this|that)\s+(?:image|page|question|problem|exercise|formula|equation|"
+    r"symbol|diagram|drawing|figure|graph|table|line|part|marked question|highlighted area|selection)|"
+    r"\b(?:solve|explain|answer|calculate|derive|show|read)\s+(?:this|that)\b|"
+    r"\b(?:marked|highlighted|selected)\s+(?:question|problem|exercise|area|part|text|value|line|symbol)\b|"
+    r"\b(?:diagram|drawing|figure|graph|table|equation|formula)\s+(?:shown\s+)?(?:above|below|here)\b|"
     r"\b(?:dieses|diese|dieser)\s+(?:bild|seite|abbildung|diagramm|tabelle)|"
     r"\b(?:die\s+)?markierte(?:n|r|s)?\s+(?:aufgabe|frage|bereich)|"
     r"\b(?:der\s+)?markierte(?:n|r|s)?\s+bereich|"

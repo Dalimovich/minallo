@@ -37,10 +37,19 @@ _MARK_RE = re.compile(
     re.IGNORECASE,
 )
 _VISUAL_REFERENCE_RE = re.compile(
-    r"\b(this|that|these|those|here|shown|above|below|visible|current|"
-    r"marked|selected|checked|symbol|diagram|drawing|table|"
-    r"dies(?:e[rsnm]?)?|hier|gezeigt|oben|unten|markiert|angekreuzt|"
-    r"symbol|diagramm|zeichnung|tabelle)\b",
+    r"\b(?:this|that|these|those)\s+(?:question|problem|exercise|task|page|"
+    r"formula|equation|symbol|diagram|drawing|figure|graph|table|line|part|image)\b|"
+    r"\b(?:solve|explain|answer|calculate|derive|read|show)\s+(?:this|that)\b|"
+    r"\b(?:marked|highlighted|selected|checked)\s+(?:question|problem|exercise|"
+    r"area|part|text|value|line|symbol)\b|"
+    r"\b(?:diagram|drawing|figure|graph|table|equation|formula)\s+(?:shown\s+)?(?:above|below|here)\b|"
+    r"\b(?:what|which)\s+(?:is|does|are)\s+(?:this|that)\s+(?:symbol|formula|"
+    r"equation|graph|diagram|figure|table|value|line|part)\b|"
+    r"\b(?:dies(?:e[rsnm]?)?)\s+(?:aufgabe|frage|formel|gleichung|symbol|"
+    r"diagramm|zeichnung|abbildung|tabelle|seite|bereich)\b|"
+    r"\b(?:l(?:oe|Ã¶)se|erkl(?:ae|Ã¤)re|berechne|beantworte)\s+(?:das|dies)\b|"
+    r"\b(?:markiert(?:e[rsnm]?)?|angekreuzt(?:e[rsnm]?)?|ausgew(?:ae|Ã¤)hlt(?:e[rsnm]?)?)\s+"
+    r"(?:aufgabe|frage|bereich|teil|text|wert|zeile|symbol)\b",
     re.IGNORECASE,
 )
 _CORRECTION_RE = re.compile(

@@ -328,6 +328,30 @@ _SOCIAL_QUESTION_RE = re.compile(
     r")\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
+# These patterns deliberately match the whole turn.  Conversational routing is
+# an early exit before retrieval, so a substring/keyword classifier here would
+# be dangerous (for example, "nothing changes in this equation" is academic).
+_LAUGHTER_RE = re.compile(
+    r"^\s*(?:h{2,}|(?:ha){2,}h?|(?:he){2,}|(?:hi){2,}|lol+|lmao+|rofl|"
+    r"[😂🤣😄😆]+)(?:\s*[.!?])?\s*$",
+    re.IGNORECASE,
+)
+_CASUAL_STATEMENT_RE = re.compile(
+    r"^\s*(?:"
+    r"i\s+was\s+(?:just\s+)?laughing|that\s+was\s+funny|"
+    r"(?:i(?:'m|\s+am)\s+)?just\s+(?:joking|kidding)|i(?:'m|\s+am|\s+was)\s+(?:joking|kidding)|"
+    r"nothing(?:\s+that\s+concerns\s+you)?|none\s+of\s+your\s+business|"
+    r"never\s*mind|forget\s+it|it\s+doesn(?:'|’)t\s+matter|doesn(?:'|’)t\s+matter|"
+    r"nur\s+spa(?:ss|ß)|war\s+nur\s+spa(?:ss|ß)|egal|vergiss\s+es"
+    r")\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_CASUAL_ACK_RE = re.compile(
+    r"^\s*(?:yeah|yep|yup|nope|nah|sure|alright|all\s+right|fair\s+enough|"
+    r"exactly|right|got\s+it|i\s+see|understood|okay\s+then|"
+    r"ja|jep|nein|alles\s+klar|verstanden|genau|stimmt)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
 
 
 def _chunk_text(chunks: list[Any] | None, limit: int = 4) -> str:
@@ -512,23 +536,42 @@ def wants_professor_style(question: str) -> bool:
 
 
 def is_non_academic_chitchat(question: str) -> bool:
-    """True for pure social/acknowledgement turns that should not query RAG."""
+    """True for high-confidence social turns that should not query RAG.
+
+    Every detector is whole-turn anchored.  This keeps casual messages out of
+    course retrieval without stealing academic questions which merely contain
+    words such as ``nothing``, ``right``, or ``that``.
+    """
     text = (question or "").strip()
     if not text:
         return False
-    return bool(_PURE_CHITCHAT_RE.match(text) or _SOCIAL_QUESTION_RE.match(text))
+    return any(pattern.fullmatch(text) for pattern in (
+        _PURE_CHITCHAT_RE,
+        _SOCIAL_QUESTION_RE,
+        _LAUGHTER_RE,
+        _CASUAL_STATEMENT_RE,
+        _CASUAL_ACK_RE,
+    ))
 
 
 def chitchat_answer(question: str) -> str:
     """Small static replies for social turns; avoids wasting an LLM/RAG call."""
     text = (question or "").strip().lower()
+    if _LAUGHTER_RE.fullmatch(text):
+        return "Haha 😄"
+    if re.fullmatch(r"i\s+was\s+(?:just\s+)?laughing[.!?]*", text):
+        return "Got you 😄"
+    if re.fullmatch(r"(?:nothing(?:\s+that\s+concerns\s+you)?|none\s+of\s+your\s+business)[.!?]*", text):
+        return "Fair enough."
+    if _CASUAL_STATEMENT_RE.fullmatch(text):
+        return "No worries."
     if re.match(r"^(thanks?|thank\s+you|thx|danke|dankeschoen|dankeschon)\b", text):
         return "You're welcome. What would you like to work on next?"
     if re.match(r"^(bye|goodbye|see\s+you|tsch(?:ue|u)ss|ciao)\b", text):
         return "See you. Good luck with your studying."
     if _SOCIAL_QUESTION_RE.match(text):
         return "I'm doing well and ready to help. What would you like to study?"
-    if re.match(r"^(ok(?:ay)?|kk|cool|nice|great|perfect)\b", text):
+    if re.match(r"^(ok(?:ay)?|kk|cool|nice|great|perfect)\b", text) or _CASUAL_ACK_RE.fullmatch(text):
         return "Got it. What would you like to work on next?"
     return "Hi! What would you like to study or work on?"
 

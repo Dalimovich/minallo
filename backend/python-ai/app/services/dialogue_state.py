@@ -139,6 +139,19 @@ _REUSE_RE = re.compile(
     r"(?:result|answer|value|ergebnis|wert)\b",
     re.IGNORECASE,
 )
+_BARE_REACTION_RE = re.compile(
+    r"^\s*(?:what|huh|really|seriously|wtf)\s*[?!]*\s*$",
+    re.IGNORECASE,
+)
+_ACADEMIC_ASSISTANT_RE = re.compile(
+    r"(?:[=≈≤≥]|\b(?:formula|equation|exercise|problem|theorem|calculation|"
+    r"aufgabe|formel|gleichung|berechnung)\b)",
+    re.IGNORECASE,
+)
+_MISROUTED_REFERENCE_REPLY_RE = re.compile(
+    r"cannot reliably identify the marked question|please open that page|select the question area",
+    re.IGNORECASE,
+)
 _SUBSTITUTION_CONFUSION_RE = re.compile(
     r"\b(?:understand|verstehe|comprends?).{0,50}\b(?:not|nicht|pas)\b.{0,30}"
     r"\b(?:substitution|einsetzen|einsetzung)\b"
@@ -431,6 +444,23 @@ def resolve_dialogue(
             f"{active or 'the active question'} using verified givens; do not "
             "repeat the formula-selection explanation or complete solution."
         )
+    elif _BARE_REACTION_RE.match(text) and last_assistant:
+        if (
+            _ACADEMIC_ASSISTANT_RE.search(last_assistant)
+            and not _MISROUTED_REFERENCE_REPLY_RE.search(last_assistant)
+        ):
+            act = DialogueAct.ASK_ABOUT_PREVIOUS_STEP
+            depth = "brief"
+            conversation_intent = ConversationIntent.FOLLOW_UP_EXPLANATION
+            referent_type = "previous_answer"
+            referent_text = last_assistant
+            resolved = "Clarify the immediately preceding academic answer briefly."
+        else:
+            act = DialogueAct.GENERAL_CONVERSATION
+            retrieve = False
+            referent_type = "previous_answer"
+            referent_text = last_assistant
+            resolved = "Acknowledge that the immediately preceding reply was confusing or unrelated."
 
     return DialogueResolution(
         original_message=text,
