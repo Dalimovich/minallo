@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import anyio
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import require_internal_token
@@ -179,6 +179,9 @@ def db_smoke() -> dict[str, Any]:
         # head=True asks Postgres for the count without shipping rows.
         result = sb.table("documents").select("id", count="exact", head=True).execute()
         return {"ok": True, "documents_count": result.count}
-    except Exception as e:  # noqa: BLE001 — surface to caller for diagnostics
+    except Exception as exc:  # noqa: BLE001
         log.exception("db smoke failed")
-        return {"ok": False, "error": str(e)}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connectivity check failed.",
+        ) from exc

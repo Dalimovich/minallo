@@ -17,7 +17,6 @@ from .scoped_extraction import (
     ScopeItemStatus,
     ScopedJobState,
     ScopedRequestSpec,
-    finalise_scoped_job,
     manifest_quality,
     promote_manifest,
 )
@@ -205,7 +204,6 @@ def create_or_resume_job(
         "include_answers": spec.include_answers,
         "include_explanations": spec.include_explanations,
         "source_fingerprint": source_fingerprint,
-        "status": "discovering",
         "discovery_status": DiscoveryStatus.PENDING.value,
         "request_payload": request_payload or {},
         "status": "queued" if request_payload else "discovering",

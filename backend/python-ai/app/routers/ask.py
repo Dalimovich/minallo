@@ -36,7 +36,6 @@ from ..services.retrieval import (
     ExerciseHit,
     FormulaHit,
     RetrievedChunk,
-    find_exercise_reference,
     retrieve_chunks,
     retrieve_exercise_block,
     retrieve_formula_block,
@@ -59,6 +58,10 @@ from ..services.web_answer import generate_web_answer
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
+
+_ANSWER_GENERATION_UNAVAILABLE = (
+    "Answer generation is temporarily unavailable. Please try again."
+)
 
 router = APIRouter(
     prefix="",
@@ -442,9 +445,12 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                 ),
                 app_decision,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             log.exception("app-support answer generation failed")
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"answer generation failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=_ANSWER_GENERATION_UNAVAILABLE,
+            ) from exc
         _meter("ask_app", answer, payload.userId)
         return AskResponse(
             answer=answer["answer"],
@@ -857,9 +863,12 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                 "items": [item.__dict__ for item in coverage.item_coverage],
             }
         answer = _with_source_meta(answer, source_decision)
-    except Exception as e:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         log.exception("answer generation failed")
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"answer generation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_ANSWER_GENERATION_UNAVAILABLE,
+        ) from exc
     _meter("ask", answer, payload.userId)
 
     # ── 4. Save to cache for next time ───────────────────────────────────────

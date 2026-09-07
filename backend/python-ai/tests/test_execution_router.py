@@ -1,7 +1,6 @@
 import pytest
 import asyncio
 
-from app.services import execution_router
 from app.services.execution_router import (
     ExecutionLane,
     fast_grounded_evidence_is_sufficient,

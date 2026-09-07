@@ -57,9 +57,7 @@ from ..services.execution_router import (
 from ..services.grounding_contract import (
     GroundingRequest,
     GroundingResolution,
-    RequestedDocumentAccess,
     ResolvedDocumentAccess,
-    ViewerContext,
     resolve_document_access,
     select_processing_pipeline,
     grounding_cache_payload,
@@ -84,7 +82,6 @@ from ..services.course_grounding import (
 )
 from ..services.retrieval import (
     find_numbered_section_reference,
-    retrieve_chunks,
     retrieve_routed_chunks,
     retrieve_exercise_block,
     retrieve_formula_block,
@@ -2023,7 +2020,7 @@ async def ask_stream_endpoint(
                     request_id=request_id,
                     request_payload=worker_payload,
                 ))
-            except Exception as exc:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 log.exception(
                     "scoped_job_precreation_failed request_id=%s conversation_id=%s assistant_message_id=%s",
                     request_id, payload.conversationId, payload.assistantMessageId,
@@ -2569,7 +2566,7 @@ async def ask_stream_endpoint(
             )
             log.info("stream_cancelled request_id=%s", request_id)
             raise
-        except Exception as exc:
+        except Exception:
             log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
             if not terminal_event_sent:
                 terminal_event_sent = True
@@ -3667,7 +3664,6 @@ async def _prepare_ask_stream_response(
         RetrievalMode,
         ScopeItem,
         ScopeItemStatus,
-        classify_scoped_request,
         finalise_scoped_job,
         resolve_scoped_request,
         stable_scope_key,

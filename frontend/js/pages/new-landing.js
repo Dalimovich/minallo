@@ -2077,6 +2077,10 @@
     };
   }
 
+  // Legacy fallback retained for older landing markup. The primary initializer
+  // always installs _pvApi first, so this compatibility path is not invoked by
+  // current pages and owns helpers that only existed in the former markup.
+  /* eslint-disable no-unused-vars, no-undef */
   function initProductTourModal() {
     if (!_pvApi) initPreviewModal();
     if (_pvApi) return;
@@ -2354,6 +2358,7 @@
       relang: function () { if (!modal.hidden) paint(); }
     };
   }
+  /* eslint-enable no-unused-vars, no-undef */
 
   // ---- bootstrap --------------------------------------------------------
 

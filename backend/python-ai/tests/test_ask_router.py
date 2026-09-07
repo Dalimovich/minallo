@@ -113,6 +113,32 @@ def test_ask_rejects_bad_uuid(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+def test_ask_generation_failure_does_not_disclose_provider_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_generation(**_kwargs):
+        raise RuntimeError("provider api_key=top-secret request details")
+
+    monkeypatch.setattr("app.routers.ask.generate_answer", fail_generation)
+
+    r = client.post(
+        "/ask",
+        headers={"X-Internal-Token": "test-token"},
+        json={
+            "userId": OWNER,
+            "courseId": COURSE,
+            "question": "How do I use Minallo?",
+        },
+    )
+
+    assert r.status_code == 502
+    assert r.json() == {
+        "detail": "Answer generation is temporarily unavailable. Please try again."
+    }
+    assert "top-secret" not in r.text
+
+
 def test_retrieve_context_returns_chunks(client: TestClient) -> None:
     r = client.post(
         "/retrieve-context",

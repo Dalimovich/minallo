@@ -7,11 +7,8 @@
 
 from __future__ import annotations
 
-import sys
-import types
 from unittest.mock import patch
 
-import pytest
 
 # Stand-in Settings shape used by the patch(...) blocks below. Previously
 # this also got pushed into ``sys.modules['app.config']`` so it became the

@@ -301,7 +301,7 @@ def test_relevance_scoped_document_question_does_not_crash_on_undefined_name(mon
 
     def fake_stream_answer(**_kwargs):
         done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
-        yield f'data: {{"meta": true}}\n\n'.encode()
+        yield 'data: {"meta": true}\n\n'.encode()
         yield b'data: {"t":"This is formelzettel.pdf."}\n\n'
         yield f"data: {json.dumps(done)}\n\n".encode()
 

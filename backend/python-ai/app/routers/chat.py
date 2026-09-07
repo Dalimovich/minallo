@@ -30,6 +30,6 @@ def chat_endpoint(payload: ChatRequest) -> dict[str, Any]:
         return run_chat(payload.model_dump(exclude_none=True))
     except ChatValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("chat failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Internal error")

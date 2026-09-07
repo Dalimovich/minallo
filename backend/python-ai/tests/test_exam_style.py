@@ -11,7 +11,6 @@ import sys
 import types
 from types import SimpleNamespace
 
-import pytest
 
 # answer.py imports the supabase client + embeddings lazily; stub them so the
 # module imports cleanly under test (detect_exam_style with doc_ids=None never

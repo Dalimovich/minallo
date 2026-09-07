@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ..auth import require_internal_token
 from ..services.writing_coach import (

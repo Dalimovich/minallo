@@ -170,7 +170,6 @@ def _content_class(sample_text: str) -> str:
     exam_hits = len(_EXAM_RE.findall(text))
     exam_strong_hits = len(_EXAM_STRONG_RE.findall(text))
     numbered_tasks = len(_NUMBERED_TASK_RE.findall(text))
-    theory_hits = len(_THEORY_RE.findall(text))
     summary_hits = len(_SUMMARY_RE.findall(text))
     lecture_hits = len(_LECTURE_HEADING_RE.findall(text))
 

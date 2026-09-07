@@ -61,7 +61,7 @@ def feedback_endpoint(payload: FeedbackRequest) -> dict[str, Any]:
     sb = get_supabase()
     try:
         sb.table("ai_feedback").insert(row).execute()
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("feedback insert failed")
         raise HTTPException(status_code=500, detail="Internal error")
     return {"ok": True}
@@ -132,7 +132,7 @@ def evaluate_endpoint(payload: EvaluateRequest) -> dict[str, Any]:
                 query=question, document_ids=None, top_k=12,
             )
             answer = generate_answer(question=question, chunks=chunks, doc_names=doc_names)
-        except Exception as e:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             log.exception("eval question failed")
             answer = {"answer": "", "retrievalMode": "none", "groundedSources": []}
         verdict = _judge(ev, answer)

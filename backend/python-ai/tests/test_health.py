@@ -47,6 +47,26 @@ def test_db_smoke_rejects_wrong_internal_token(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_db_smoke_failure_is_non_2xx_and_does_not_disclose_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenSupabase:
+        def table(self, _name: str):
+            raise RuntimeError("postgres password=top-secret host=private-db")
+
+    monkeypatch.setattr("app.main.get_supabase", lambda: BrokenSupabase())
+
+    from app.config import get_settings  # noqa: WPS433
+
+    token = get_settings().ai_service_internal_token
+    r = client.get("/internal/db-smoke", headers={"X-Internal-Token": token})
+
+    assert r.status_code == 503
+    assert r.json() == {"detail": "Database connectivity check failed."}
+    assert "top-secret" not in r.text
+
+
 def test_metrics_requires_internal_token(client: TestClient) -> None:
     assert client.get("/internal/metrics").status_code == 401
 

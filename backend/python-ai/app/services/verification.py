@@ -498,7 +498,6 @@ def verify_answer(
     # aren't treated as content numbers.
     cleaned = re.sub(r"\[Source\s+\d+\]", " ", text)
     cleaned = re.sub(r"pp?\.\s*\d+(?:\s*-\s*\d+)?", " ", cleaned, flags=re.IGNORECASE)
-    calc_spans = _calc_section_spans(cleaned)
     number_haystacks = list(chunk_texts) + ([question] if question else [])
     required_callout_ids = detect_required_callout_range(question or "")
     number_misses: list[str] = []

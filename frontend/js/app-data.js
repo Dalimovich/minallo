@@ -271,7 +271,7 @@ function _prewarmCourses(opts) {
   }
 
   var lanes = [];
-  for (var i = 0; i < Math.min(CONCURRENCY, todo.length); i++) lanes.push(_next());
+  for (var laneIndex = 0; laneIndex < Math.min(CONCURRENCY, todo.length); laneIndex++) lanes.push(_next());
   Promise.all(lanes).then(function () {
     // Repaint cards so badges update without a manual refresh.
     if (typeof window.sdRenderCourses === 'function') window.sdRenderCourses();

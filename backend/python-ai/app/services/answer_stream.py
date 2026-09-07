@@ -1136,7 +1136,7 @@ def _force_render_diagram(
         if not isinstance(parsed, dict) or not parsed.get("nodes"):
             return None
         return "\n\n```minallo-diagram\n" + raw + "\n```\n"
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("force_render_diagram fallback failed")
         return None
 
@@ -1270,7 +1270,7 @@ def _force_render_plot(
         if valid_series == 0:
             return None
         return "\n\n```minallo-plot\n" + raw + "\n```\n"
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("force_render_plot fallback failed")
         return None
 
@@ -2379,7 +2379,7 @@ def stream_answer(
                 answer_buf.append(token)
                 if not buffer_for_validation:
                     yield _sse({"t": token})
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("stream_answer failed")
         if not answer_buf and not intro_buf:
             # Failed before any token arrived (connect/4xx on create): nothing

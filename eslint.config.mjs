@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import globals from 'globals';
 
 const nodeGlobals = {
   process: 'readonly',
@@ -38,6 +39,7 @@ const nodeGlobals = {
 };
 
 const browserGlobals = {
+  ...globals.browser,
   // Web platform
   window: 'readonly',
   document: 'readonly',
@@ -179,6 +181,23 @@ const browserGlobals = {
   _ufUpload: 'readonly'
 };
 
+const legacyProjectGlobals = {
+  currentCourseShort: 'writable', generationStopped: 'writable', currentGenId: 'writable',
+  _prevChatKey: 'writable', pinAI: 'writable', getTime: 'readonly', aiMsgs: 'writable',
+  addUserMsg: 'readonly', BACKEND_URL: 'readonly', renderMarkdown: 'readonly',
+  saveChatForFile: 'readonly', _renderMath: 'readonly', _aiResponseActions: 'readonly',
+  activeTypeTimer: 'writable', deferredSave: 'readonly', spawnConfetti: 'readonly',
+  addBotMsg: 'readonly', closeAllOpts: 'readonly', msmCurrentText: 'writable',
+  msmCurrentTitle: 'writable', PDF_DATA: 'readonly', _fetchPdfBytes: 'readonly', _lang: 'readonly',
+  _jwtAliveEnough: 'readonly', _sb: 'writable', _stRunning: 'writable', COLORS: 'readonly',
+  _userMajor: 'writable', _userVertiefung: 'writable', SUBJECT_LIST: 'readonly',
+  _saveUserCourses: 'readonly', lnGenId: 'writable', lnSummaries: 'writable', lnRender: 'readonly',
+  lnSaveNoteToSupabase: 'readonly', updatePageInfo: 'readonly', applyProfile: 'readonly',
+  _loadUserCourses: 'readonly', _verifyAndEnter: 'readonly', _enterApp: 'readonly',
+  _resetActivityTimer: 'readonly', selectTopLevelView: 'readonly', _ssForceSplashOff: 'readonly',
+  YT: 'readonly'
+};
+
 export default [
   {
     ignores: ['node_modules/', 'backend/node_modules/', 'frontend/assets/', 'docs/', '.netlify/']
@@ -205,17 +224,26 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: browserGlobals
+      globals: { ...browserGlobals, ...legacyProjectGlobals }
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
-      'no-empty': 'warn',
-      'no-undef': 'warn',
-      'no-control-regex': 'warn',
-      'no-useless-escape': 'warn',
-      'no-irregular-whitespace': 'warn',
-      'no-redeclare': 'warn',
-      'no-func-assign': 'warn'
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-undef': 'error',
+      'no-control-regex': 'off',
+      'no-useless-escape': 'error',
+      'no-irregular-whitespace': 'error',
+      'no-redeclare': 'error',
+      'no-func-assign': 'error'
+    }
+  },
+  {
+    // These files are classic-script modules loaded into one shared page scope;
+    // declarations that look unused locally are consumed by sibling scripts.
+    files: ['frontend/js/*.js'],
+    rules: {
+      'no-unused-vars': 'off',
+      'no-func-assign': 'off'
     }
   }
 ];

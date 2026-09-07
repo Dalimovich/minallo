@@ -8,7 +8,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['html', { outputFolder: 'tests/e2e/report', open: 'never' }], ['list']],
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:8888',
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:8788',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     trace: 'retain-on-failure',
@@ -16,7 +16,7 @@ export default defineConfig({
   // Only spin up local dev server when not pointing at a remote URL (i.e. local runs only)
   webServer: process.env.E2E_BASE_URL ? undefined : {
     command: 'npm run dev',
-    url: 'http://localhost:8888',
+    url: 'http://localhost:8788',
     reuseExistingServer: true,
     timeout: 60000,
   },

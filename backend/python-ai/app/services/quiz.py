@@ -13,10 +13,9 @@ Behaviour the brief mandates:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 

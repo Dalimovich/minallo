@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 os.environ.setdefault("SUPABASE_URL", "https://stub.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "stub")
