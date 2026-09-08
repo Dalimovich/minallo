@@ -62,3 +62,48 @@ test('an in-flight Saved preload cannot hide a newly created offline bookmark', 
   assert.match(loader, /const localRows = localBookmarkedResponses\(\)/);
   assert.ok(loader.indexOf('const localRows = localBookmarkedResponses()') > loader.indexOf("await fetch('/api/chat-saved-replies'"));
 });
+
+test('Saved reads localStorage through the shared canonical parser, not a re-guessed shape', () => {
+  assert.match(workspace, /import \{ parsePersistedChats,.*\} from '\.\/chat-store-format\.js'/);
+  assert.match(workspace, /function readPersistedChats\(\): PersistedChat\[\] \{/);
+  assert.doesNotMatch(workspace, /parsed\?\.chats/);
+  const localReader = workspace.slice(
+    workspace.indexOf('function localBookmarkedResponses'),
+    workspace.indexOf('function savedChatTitles')
+  );
+  assert.match(localReader, /readPersistedChats\(\)\.flatMap/);
+});
+
+test('the saved-replies-changed event carries the bookmark payload; the Saved panel must not need a localStorage re-read to show a fresh bookmark', () => {
+  const bookmarkFn = shell.slice(shell.indexOf('function bookmarkAssistantResponse'), shell.indexOf('function renderNotesTab'));
+  assert.match(bookmarkFn, /dispatchSavedReplyChanged\(\{ action: 'created', bookmark: bookmarkEventPayload\(reply, chat\.id\) \}\)/);
+
+  const handler = workspace.slice(
+    workspace.indexOf('const handleSavedRepliesChanged'),
+    workspace.indexOf("document.addEventListener('minallo:saved-replies-changed'")
+  );
+  assert.match(handler, /detail\?\.bookmark/);
+  assert.match(handler, /cachedBookmarkedResponse\(\{\s*id: b\.id/);
+  // The bookmark-carrying branch must come before the localStorage fallback
+  // so a fresh bookmark is never gated on the debounced write.
+  assert.ok(handler.indexOf('detail?.bookmark') < handler.indexOf('localBookmarkedResponses().find'));
+});
+
+test('re-clicking Bookmark on an already-saved response repairs it instead of dead-ending', () => {
+  const bookmarkFn = shell.slice(shell.indexOf('function bookmarkAssistantResponse'), shell.indexOf('function renderNotesTab'));
+  const alreadyBranch = bookmarkFn.slice(bookmarkFn.indexOf('if (already)'), bookmarkFn.indexOf("flashAck(btn, tStr('cb_act_already_saved'"));
+  assert.match(alreadyBranch, /syncSavedReplyCreate\(already\.chatId \|\| chat\.id, already\)/);
+  assert.match(alreadyBranch, /dispatchSavedReplyChanged\(\{ action: 'created', bookmark: bookmarkEventPayload\(already, chat\.id\) \}\)/);
+});
+
+test('server GET distinguishes a query/schema failure from a genuine empty result', () => {
+  const getHandler = api.slice(api.indexOf("if (event.httpMethod === 'GET')"), api.indexOf("if (event.httpMethod === 'POST')"));
+  assert.match(getHandler, /if \(result\.status < 200 \|\| result\.status >= 300\)/);
+  assert.match(getHandler, /return fail\(502, 'Could not load saved AI responses'\)/);
+});
+
+test('a 409 on save resolves the canonical id regardless of which uniqueness constraint fired', () => {
+  const postHandler = api.slice(api.indexOf("if (result.status === 409)"), api.indexOf("if (result.status < 200 || result.status >= 300) {\n      return fail(502, 'Could not save reply')"));
+  assert.match(postHandler, /sourceQuery \? supaRequest.*sourceQuery/s);
+  assert.match(postHandler, /supaRequest<Array<\{ id\?: string \}>>\('GET', fingerprintQuery/);
+});

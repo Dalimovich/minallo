@@ -7,6 +7,7 @@
 // PR-06: real markdown (KaTeX), file upload (img/.txt/.pdf), real Regenerate.
 
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
+import { parsePersistedChats, type SavedBookmarkEventPayload, type SavedRepliesChangedDetail } from './chat-store-format.js';
 import { attachMessageNavigator } from '../message-navigator/message-navigator.js';
 import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
@@ -6369,9 +6370,7 @@ function syncSavedReplyCreate(chatId: string, r: SavedReply): void {
     if (canonical) chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
     else local.id = result.existingId;
     saveChatStore();
-    document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', {
-      detail: { id: result.existingId, replacedId: requestedId, action: 'reconciled' }
-    }));
+    dispatchSavedReplyChanged({ id: result.existingId, replacedId: requestedId, action: 'reconciled' });
   }).catch(() => {
     /* offline — the local copy is intact; the next Notes-tab merge re-pushes it */
   });
@@ -6478,6 +6477,25 @@ function findExistingSavedReply(candidate: Pick<SavedReply, 'text' | 'courseId' 
   );
 }
 
+function dispatchSavedReplyChanged(detail: SavedRepliesChangedDetail): void {
+  document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', { detail }));
+}
+
+// The event is the source of truth for the mutation that just happened — the
+// Saved panel must not have to re-read localStorage (which saveChatStore()
+// only writes on a debounced timer) to learn what was just bookmarked.
+function bookmarkEventPayload(reply: SavedReply, fallbackChatId: string): SavedBookmarkEventPayload {
+  return {
+    id: reply.id,
+    text: reply.text,
+    createdAt: reply.createdAt,
+    courseId: reply.courseId,
+    sourceMessageId: reply.sourceMessageId,
+    sourcePrompt: reply.sourcePrompt,
+    chatId: reply.chatId || fallbackChatId,
+  };
+}
+
 function bookmarkAssistantResponse(
   aiRow: HTMLElement,
   messageId: string,
@@ -6495,6 +6513,12 @@ function bookmarkAssistantResponse(
   const courseId = resolveBookmarkCourseId(message, chat);
   const already = findExistingSavedReply({ text: raw, courseId, sourceMessageId });
   if (already) {
+    // BOOKMARK means "this artifact exists in Saved", not "the button was
+    // once clicked". An earlier click may have added it to chatStore while
+    // the server sync failed and/or the Saved panel never picked it up —
+    // clicking again must repair that instead of dead-ending here.
+    syncSavedReplyCreate(already.chatId || chat.id, already);
+    dispatchSavedReplyChanged({ action: 'created', bookmark: bookmarkEventPayload(already, chat.id) });
     flashAck(btn, tStr('cb_act_already_saved', 'Already saved'));
     return;
   }
@@ -6512,12 +6536,7 @@ function bookmarkAssistantResponse(
   touchActiveChat();
   saveChatStore();
   syncSavedReplyCreate(chat.id, reply);
-  document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', {
-    detail: {
-      action: 'created', replyId: reply.id, courseId: reply.courseId,
-      sourceMessageId: reply.sourceMessageId
-    }
-  }));
+  dispatchSavedReplyChanged({ action: 'created', bookmark: bookmarkEventPayload(reply, chat.id) });
   flashAck(btn, tStr('cb_act_saved', 'Saved'));
 
   // If the Notes tab is currently visible, refresh it inline.
@@ -6582,7 +6601,7 @@ function renderNotesTab(root: HTMLElement): void {
       touchActiveChat();
       saveChatStore();
       syncSavedReplyDelete(id);
-      document.dispatchEvent(new CustomEvent('minallo:saved-replies-changed', { detail: { id, action: 'deleted' } }));
+      dispatchSavedReplyChanged({ id, action: 'deleted' });
       renderNotesTab(root);
     });
     card.querySelector<HTMLButtonElement>('.ncb-saved-copy')?.addEventListener('click', (ev) => {
@@ -7084,8 +7103,10 @@ function loadChatStore(): void {
   try {
     const raw = localStorage.getItem(ncbScopedKey(NCB_STORE_KEY_BASE));
     if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) chatStore.chats = parsed as SavedChat[];
+      // Shared with workspace-library.ts so both agree on the real payload
+      // shape (a bare array) instead of re-guessing it independently.
+      const parsedChats = parsePersistedChats(raw);
+      if (parsedChats.length || raw.trim() === '[]') chatStore.chats = parsedChats as SavedChat[];
     }
     const activeRaw = localStorage.getItem(ncbScopedKey(NCB_ACTIVE_KEY_BASE));
     if (typeof activeRaw === 'string' && activeRaw) chatStore.activeId = activeRaw;

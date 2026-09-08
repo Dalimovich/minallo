@@ -43,6 +43,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (params.chatId) path += '&chat_id=eq.' + encodeURIComponent(params.chatId);
     const result = await supaRequest<unknown[]>('GET', path, null, serviceKey)
       .catch(() => ({ status: 0, body: [] as unknown[] }));
+    // A query/schema failure must not read as "zero saved responses" — the
+    // client falls back to its local cache on a non-2xx response, but on a
+    // fake 200 it trusts the empty list and hides bookmarks that do exist.
+    if (result.status < 200 || result.status >= 300) {
+      return fail(502, 'Could not load saved AI responses');
+    }
     const rows = Array.isArray(result.body) ? result.body : [];
     return jsonResponse(200, { replies: rows });
   }
@@ -101,8 +107,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       { Prefer: 'resolution=merge-duplicates,return=minimal' }
     );
     if (result.status === 409) {
-      const existing = await supaRequest<Array<{ id?: string }>>('GET', sourceMessageId ? sourceQuery! : fingerprintQuery, null, serviceKey);
-      return jsonResponse(200, { ok: true, duplicate: true, existingId: Array.isArray(existing.body) ? existing.body[0]?.id : undefined });
+      // Either unique constraint could have fired the conflict (a concurrent
+      // request from another tab can collide on the fingerprint even when
+      // sourceMessageId differs), so check both instead of assuming the one
+      // this request happened to prefer.
+      const [sourceExisting, fingerprintExisting] = await Promise.all([
+        sourceQuery ? supaRequest<Array<{ id?: string }>>('GET', sourceQuery, null, serviceKey) : Promise.resolve(null),
+        supaRequest<Array<{ id?: string }>>('GET', fingerprintQuery, null, serviceKey),
+      ]);
+      const existingId =
+        (Array.isArray(sourceExisting?.body) ? sourceExisting.body[0]?.id : undefined)
+        || (Array.isArray(fingerprintExisting.body) ? fingerprintExisting.body[0]?.id : undefined);
+      return jsonResponse(200, { ok: true, duplicate: true, existingId });
     }
     if (result.status < 200 || result.status >= 300) {
       return fail(502, 'Could not save reply');

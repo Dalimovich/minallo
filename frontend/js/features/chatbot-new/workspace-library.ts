@@ -13,6 +13,7 @@ import {
 import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js';
 import { correctionSelectHtml, wireCorrectionSelectors } from '../courses/document-type-badge.js';
 import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
+import { parsePersistedChats, type PersistedChat, type SavedRepliesChangedDetail } from './chat-store-format.js';
 
 type CourseFile = {
   name: string;
@@ -480,13 +481,35 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   }));
 
   const handleSavedRepliesChanged = (rawEvent: Event): void => {
-    const event = rawEvent as CustomEvent<{ action?: string; replyId?: string; id?: string }>;
-    const changedId = event.detail?.replyId || event.detail?.id;
+    const event = rawEvent as CustomEvent<SavedRepliesChangedDetail>;
+    const detail = event.detail;
+    const changedId = detail?.bookmark?.id || detail?.id;
     const state = studyLibraryState();
-    if (event.detail?.action === 'deleted' && changedId) {
+    if (detail?.action === 'deleted' && changedId) {
       deletedResponseIds.add(changedId);
       state.savedItems = state.savedItems.filter((item) => !(item.kind === 'responses' && item.id === changedId));
+    } else if (detail?.bookmark) {
+      // The event carries the bookmark that was just created/repaired — this
+      // must not depend on re-reading localStorage, which saveChatStore()
+      // only writes on a debounced timer and may not have flushed yet.
+      const b = detail.bookmark;
+      const cached = cachedBookmarkedResponse({
+        id: b.id,
+        chat_id: b.chatId,
+        reply_text: b.text,
+        created_at: new Date(b.createdAt || Date.now()).toISOString(),
+        course_id: b.courseId,
+        source_message_id: b.sourceMessageId,
+        source_prompt: b.sourcePrompt,
+      });
+      state.savedItems = [
+        ...state.savedItems.filter((item) => !(item.kind === 'responses' && item.id === b.id)),
+        cached
+      ];
     } else {
+      // Fallback for events without a full payload (e.g. server-id
+      // reconciliation, which happens well after any localStorage write has
+      // had time to flush).
       const local = localBookmarkedResponses().find((row) => row.id === changedId);
       if (local) {
         const cached = cachedBookmarkedResponse(local);
@@ -2159,20 +2182,18 @@ function cachedBookmarkedResponse(row: LocalBookmarkedResponse): CachedSavedItem
   };
 }
 
+function readPersistedChats(): PersistedChat[] {
+  const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
+  const raw = localStorage.getItem(`ss_ncb_chats_v1:${uid}`) || localStorage.getItem('ss_ncb_chats_v1');
+  return parsePersistedChats(raw);
+}
+
 function localBookmarkedResponses(): Array<{
   id: string; chat_id: string; reply_text: string; created_at: string;
   course_id: string | null; source_message_id?: string; source_prompt?: string;
 }> {
   try {
-    const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
-    const raw = localStorage.getItem(`ss_ncb_chats_v1:${uid}`) || localStorage.getItem('ss_ncb_chats_v1');
-    const parsed = raw ? JSON.parse(raw) as {
-      chats?: Array<{ id?: string; savedReplies?: Array<{
-        id?: string; text?: string; createdAt?: number; courseId?: string | null;
-        sourceMessageId?: string; sourcePrompt?: string; chatId?: string;
-      }> }>;
-    } : null;
-    return (parsed?.chats || []).flatMap((chat) => (chat.savedReplies || [])
+    return readPersistedChats().flatMap((chat) => (chat.savedReplies || [])
       .filter((reply) => reply.id && reply.text)
       .map((reply) => ({
         id: reply.id!,
@@ -2189,10 +2210,7 @@ function localBookmarkedResponses(): Array<{
 function savedChatTitles(): Map<string, string> {
   const titles = new Map<string, string>();
   try {
-    const uid = window._currentUser?.id || window._currentUser?.sub || localStorage.getItem('ss_last_uid') || '';
-    const raw = localStorage.getItem(`ss_ncb_chats_v1:${uid}`) || localStorage.getItem('ss_ncb_chats_v1');
-    const parsed = raw ? JSON.parse(raw) as { chats?: Array<{ id?: string; title?: string }> } : null;
-    parsed?.chats?.forEach((chat) => {
+    readPersistedChats().forEach((chat) => {
       if (chat.id) titles.set(chat.id, chat.title || 'AI conversation');
     });
   } catch { /* corrupted local cache should not hide server bookmarks */ }
