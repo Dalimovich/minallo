@@ -16,6 +16,10 @@ export interface PersistedSavedReply {
   sourceMessageId?: string;
   sourcePrompt?: string;
   chatId?: string;
+  // Durable-sync bookkeeping: absent/'synced' means the durable server copy
+  // is confirmed (or this is legacy data predating this field); 'pending'/
+  // 'failed' mark a reply that still needs a retry attempt.
+  syncState?: 'pending' | 'synced' | 'failed';
 }
 
 export interface PersistedChat {

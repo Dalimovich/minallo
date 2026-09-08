@@ -139,6 +139,17 @@ export function initNewChatbotShell(): void {
       if (root) applyChatbotI18n(root);
     });
   }
+
+  // Durable bookmark sync retry triggers — see syncSavedReplyCreate. Bound
+  // once per page load; each just calls the same bounded, debounced flush.
+  if (!(window as unknown as { _ncbSavedSyncBound?: boolean })._ncbSavedSyncBound) {
+    (window as unknown as { _ncbSavedSyncBound?: boolean })._ncbSavedSyncBound = true;
+    window.addEventListener('online', () => flushPendingSavedReplySync());
+    document.addEventListener('minallo:auth:signed-in', () => flushPendingSavedReplySync());
+    document.addEventListener('minallo:auth:entered', () => flushPendingSavedReplySync());
+    document.addEventListener('minallo:saved-panel-opened', () => flushPendingSavedReplySync());
+  }
+  flushPendingSavedReplySync(); // startup reconciliation / chat-restored trigger
 }
 
 function applyChatbotI18n(root: HTMLElement): void {
@@ -6383,9 +6394,18 @@ function sameSavedReplyScope(a: string | null | undefined, b: string | null | un
   return (a || null) === (b || null);
 }
 
+// Bookmark has two guarantees: (1) immediate local visibility — already true
+// by the time this is called — and (2) eventual durable persistence. This
+// function attempts (2) but must never be the only attempt: a missing token
+// or a failed POST leaves the reply's syncState so flushPendingSavedReplySync
+// retries it later instead of the durable copy silently never existing.
 function syncSavedReplyCreate(chatId: string, r: SavedReply): void {
+  r.syncState = 'pending';
   const token = getSbToken();
-  if (!token) return;
+  if (!token) {
+    saveChatStore();
+    return; // retried by flushPendingSavedReplySync once auth is ready
+  }
   const requestedId = r.id;
   void fetch(SAVED_REPLIES_API, {
     method: 'POST',
@@ -6395,20 +6415,59 @@ function syncSavedReplyCreate(chatId: string, r: SavedReply): void {
       courseId: r.courseId, sourceMessageId: r.sourceMessageId, sourcePrompt: r.sourcePrompt
     }),
   }).then(async (response) => {
-    if (!response.ok) return;
+    if (!response.ok) {
+      r.syncState = 'failed';
+      saveChatStore();
+      return;
+    }
     const result = await response.json() as { duplicate?: boolean; existingId?: string };
-    if (!result.duplicate || !result.existingId || result.existingId === requestedId) return;
+    if (!result.duplicate || !result.existingId || result.existingId === requestedId) {
+      r.syncState = 'synced';
+      saveChatStore();
+      return;
+    }
     const chat = chatStore.chats.find((candidate) => candidate.id === chatId);
     const local = chat?.savedReplies.find((candidate) => candidate.id === requestedId);
     if (!chat || !local) return;
     const canonical = chat.savedReplies.find((candidate) => candidate.id === result.existingId);
-    if (canonical) chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
-    else local.id = result.existingId;
+    if (canonical) {
+      canonical.syncState = 'synced';
+      chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
+    } else {
+      local.id = result.existingId;
+      local.syncState = 'synced';
+    }
     saveChatStore();
     dispatchSavedReplyChanged({ id: result.existingId, replacedId: requestedId, action: 'reconciled' });
   }).catch(() => {
-    /* offline — the local copy is intact; the next Notes-tab merge re-pushes it */
+    // offline / network failure — the local copy is intact; syncState stays
+    // 'pending' so flushPendingSavedReplySync retries on the next trigger.
+    r.syncState = 'failed';
+    saveChatStore();
   });
+}
+
+// Retry triggers (auth ready, back online, Saved panel opened, chat-store
+// load) call this instead of reaching into chatStore themselves. Bounded and
+// event-driven, never a poll: it only re-attempts replies already marked
+// 'pending'/'failed', and the debounce collapses bursts of near-simultaneous
+// triggers (e.g. 'online' and an auth-ready event firing together) into one
+// pass. The backend's source-message/content-fingerprint dedupe (see
+// syncSavedReplyCreate's duplicate-reconcile branch) makes a redundant retry
+// of an already-synced reply safe, so this never needs to be perfectly precise.
+let _lastSavedReplyFlushAt = 0;
+function flushPendingSavedReplySync(): void {
+  if (!getSbToken()) return;
+  const now = Date.now();
+  if (now - _lastSavedReplyFlushAt < 2000) return;
+  _lastSavedReplyFlushAt = now;
+  for (const chat of chatStore.chats) {
+    for (const reply of chat.savedReplies) {
+      if (reply.syncState === 'pending' || reply.syncState === 'failed') {
+        syncSavedReplyCreate(reply.chatId || chat.id, reply);
+      }
+    }
+  }
 }
 
 function syncSavedReplyDelete(id: string): void {
@@ -6718,6 +6777,11 @@ interface SavedReply {
   sourceMessageId?: string;
   sourcePrompt?: string;
   chatId?: string;
+  // Durable-sync bookkeeping — see queueSavedReplySync/flushPendingSavedReplySync.
+  // Absent or 'synced' = the durable server copy is confirmed (or this is
+  // legacy data from before this field existed). 'pending'/'failed' mark a
+  // reply still eligible for an automatic retry.
+  syncState?: 'pending' | 'synced' | 'failed';
 }
 
 interface SavedChat {
@@ -7178,7 +7242,13 @@ function loadChatStore(): void {
       courseId: typeof reply.courseId === 'string' && reply.courseId ? reply.courseId : null,
       sourceMessageId: typeof reply.sourceMessageId === 'string' ? reply.sourceMessageId : undefined,
       sourcePrompt: typeof reply.sourcePrompt === 'string' ? reply.sourcePrompt.slice(0, 1000) : undefined,
-      chatId: typeof reply.chatId === 'string' ? reply.chatId : c.id
+      chatId: typeof reply.chatId === 'string' ? reply.chatId : c.id,
+      // Preserve a genuinely unresolved sync from a previous session so
+      // flushPendingSavedReplySync retries it; legacy data with no field at
+      // all predates durable sync entirely and is left to the existing
+      // per-chat mergeSavedRepliesFromServer reconciliation, not this queue.
+      syncState: reply.syncState === 'pending' || reply.syncState === 'failed'
+        ? reply.syncState : 'synced'
     }));
     c.sourceMode = normaliseSourceMode(c.sourceMode);
     c.courseFileScope = normaliseCourseFileScope(c.courseFileScope);

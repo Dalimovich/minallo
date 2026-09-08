@@ -474,7 +474,12 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
     savedPanel.hidden = selected !== 'saved';
     currentState.activeTab = selected === 'saved' ? 'saved' : 'courses';
     persistStudyLibrary();
-    if (selected === 'saved') void renderSaved(savedPanel, root);
+    if (selected === 'saved') {
+      void renderSaved(savedPanel, root);
+      // Retry trigger for shell.ts's durable bookmark sync queue — opening
+      // Saved is a meaningful moment to reattempt anything still pending.
+      document.dispatchEvent(new CustomEvent('minallo:saved-panel-opened'));
+    }
   };
   tabs.forEach((tab) => tab.addEventListener('click', () => {
     selectTab(tab.dataset.libraryTab || 'courses');
