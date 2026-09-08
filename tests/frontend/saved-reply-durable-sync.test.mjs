@@ -259,3 +259,35 @@ test('all first-party Saved network calls go through authenticatedFetch, not raw
   assert.match(syncEngineSource, /deps\.fetchImpl \|\| authenticatedFetch/);
   assert.doesNotMatch(syncEngineSource, /Authorization: 'Bearer ' \+ token/);
 });
+
+test('legacy pre-durable-sync bookmarks get a one-time real reconciliation pass, not permanent silent trust', () => {
+  const reconcileFn = slice(
+    shell, 'async function reconcileLegacySavedRepliesOnce', 'function resolveBookmarkCourseId',
+  );
+  // Gated by a persisted, account-scoped flag — runs once ever, not once per
+  // page load like flushPendingSavedReplySync's pending/failed sweep (which
+  // never revisits a reply the loader already normalized to 'synced').
+  assert.match(reconcileFn, /localStorage\.getItem\(flagKey\) === '1'/);
+  assert.match(reconcileFn, /localStorage\.setItem\(flagKey, '1'\)/);
+  // Must not mark itself done before a session exists — otherwise a user who
+  // opens the app signed out would permanently skip their own reconciliation.
+  assert.match(reconcileFn, /if \(!getSbToken\(\)\) return;/);
+  // Reuses mergeSavedRepliesFromServer's real match-by-id/sourceMessageId/
+  // course+content logic and its synced-or-repush outcome — no second,
+  // independently-guessed reconciliation algorithm.
+  assert.match(reconcileFn, /mergeSavedRepliesFromServer\(root, c\.id\)/);
+  assert.match(reconcileFn, /chatStore\.chats\.filter\(\(c\) => c\.savedReplies\.length > 0\)/);
+});
+
+test('the legacy reconciliation pass runs at startup and retries once auth becomes available', () => {
+  const initFn = slice(shell, 'export function initNewChatbotShell', 'function applyChatbotI18n');
+  assert.match(initFn, /void reconcileLegacySavedRepliesOnce\(newRoot\); \/\/ one-time historical repair/);
+  assert.match(
+    initFn,
+    /document\.addEventListener\('minallo:auth:signed-in', \(\) => void reconcileLegacySavedRepliesOnce\(newRoot\)\)/,
+  );
+  assert.match(
+    initFn,
+    /document\.addEventListener\('minallo:auth:entered', \(\) => void reconcileLegacySavedRepliesOnce\(newRoot\)\)/,
+  );
+});

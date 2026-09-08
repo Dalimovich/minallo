@@ -152,8 +152,14 @@ export function initNewChatbotShell(): void {
     document.addEventListener('minallo:auth:signed-in', () => flushPendingSavedReplySync());
     document.addEventListener('minallo:auth:entered', () => flushPendingSavedReplySync());
     document.addEventListener('minallo:saved-panel-opened', () => flushPendingSavedReplySync());
+    // The one-time legacy reconciliation needs a session; if there isn't one
+    // yet at startup, retry once auth actually becomes available instead of
+    // only ever getting the startup call below.
+    document.addEventListener('minallo:auth:signed-in', () => void reconcileLegacySavedRepliesOnce(newRoot));
+    document.addEventListener('minallo:auth:entered', () => void reconcileLegacySavedRepliesOnce(newRoot));
   }
   flushPendingSavedReplySync(); // startup reconciliation / chat-restored trigger
+  void reconcileLegacySavedRepliesOnce(newRoot); // one-time historical repair, see its own doc comment
 }
 
 function applyChatbotI18n(root: HTMLElement): void {
@@ -6535,6 +6541,39 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
     }
   } catch {
     _savedRepliesSyncedChats.delete(chatId); // network error — retry on next open
+  }
+}
+
+const LEGACY_SAVED_RECONCILE_KEY_BASE = 'ss_ncb_legacy_saved_reconciled_v1';
+
+// One-time historical repair for bookmarks created before durable sync
+// existed. Those replies carry no syncState, so loadChatStore's migration —
+// correctly, to avoid a mass re-POST storm on every ordinary reload —
+// normalizes the missing field to 'synced' rather than 'pending'. But some of
+// them were never actually confirmed server-side (the old code's POST could
+// fail silently), and without this pass they'd stay wrongly "synced" forever
+// unless the user happened to reopen that exact chat's Notes tab or manually
+// re-click Bookmark. mergeSavedRepliesFromServer already does the real
+// reconciliation work per chat (match by id/sourceMessageId/course+content,
+// adopt or re-push, mark synced) — this just makes sure every chat that has
+// saved replies gets that pass at least once per account, instead of only
+// the ones the user happens to open. Gated by a persisted, account-scoped
+// flag so it runs exactly once ever, not on every page load.
+async function reconcileLegacySavedRepliesOnce(root: HTMLElement): Promise<void> {
+  let flagKey: string;
+  try {
+    flagKey = ncbScopedKey(LEGACY_SAVED_RECONCILE_KEY_BASE);
+    if (localStorage.getItem(flagKey) === '1') return;
+  } catch {
+    return; // private mode / storage unavailable — nothing safe to persist, skip rather than repeat every load
+  }
+  if (!getSbToken()) return; // no session yet — retried on the next auth-ready/startup call, flag not set
+  const chatsWithReplies = chatStore.chats.filter((c) => c.savedReplies.length > 0);
+  await Promise.allSettled(chatsWithReplies.map((c) => mergeSavedRepliesFromServer(root, c.id)));
+  try {
+    localStorage.setItem(flagKey, '1');
+  } catch {
+    /* quota/private mode — best effort; harmless to reattempt next load */
   }
 }
 
