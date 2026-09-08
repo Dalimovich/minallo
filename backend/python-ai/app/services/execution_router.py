@@ -201,6 +201,7 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
     calculation = bool(_CALC_RE.search(q)) or family in {"calculate", "solve"}
     derivation = bool(_DERIVE_RE.search(q)) or family == "derive"
     extraction = bool(_EXTRACT_RE.search(q))
+    generation = bool(_GEN_RE.search(q)) or family in {"flashcards", "quiz", "examforge", "study_plan"}
     definition = (
         bool(_DEFINITION_RE.search(q))
         and 2 <= len(q.split()) <= 18
@@ -222,7 +223,7 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
         needsCurrentWeb=web, isDefinition=definition, isSimpleExplanation=bool(_SIMPLE_RE.search(q)),
         isShortFactualQuestion=definition, isFollowup=followup, isCalculation=calculation,
         isDerivation=derivation, isComparison=bool(_COMPARE_RE.search(q)),
-        isGeneration=bool(_GEN_RE.search(q)), isExtraction=extraction,
+        isGeneration=generation, isExtraction=extraction,
         isSummarization=bool(_SUMMARY_RE.search(q)), requestsProfessorSpecificContent=course,
         requestsExactCitationOrLocation=location,
         estimatedComplexity="high" if high else "low" if low else "medium",

@@ -205,6 +205,71 @@ def test_stream_acknowledgement_without_pending_task_stays_social(monkeypatch) -
     assert b"All right." in asyncio.run(consume())
 
 
+def test_stream_rejection_keeps_goal_but_drops_offered_choice(monkeypatch) -> None:
+    """Rejecting a suggested topic must not fall back to raw chitchat, and
+    must not discard the underlying goal — only the specific offered choice."""
+    from app.routers import stream as stream_router
+    from app.services import dialogue_state, general_answer
+    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request=(
+                "The student rejected welding as the study topic; recommend a "
+                "different weak topic from the same course instead."
+            ),
+            relation=TurnRelation.REJECTION,
+            speech_act=SpeechAct.REJECTION,
+            task_family=TaskFamily.STUDY_RECOMMENDATION,
+            continues_previous_goal=True,
+            confidence=0.93,
+        ),
+    )
+    monkeypatch.setattr(
+        stream_router,
+        "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("rejection intercepted as raw chitchat")),
+    )
+    monkeypatch.setattr(
+        stream_router, "fetch_account_snapshot",
+        lambda *_: {"courses": [{"id": "c1", "name": "Mechanics"}]},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_general(question, **kwargs):
+        captured["question"] = question
+        yield {"t": "Let's look at bearings instead."}
+        yield {"done": True, "model": "semantic-route-test"}
+
+    monkeypatch.setattr(general_answer, "stream_general_answer", fake_general)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="I'd rather not, pick something different",
+                previousTurns=[{
+                    "role": "assistant",
+                    "text": "Let's start with welding — sound good?",
+                }],
+            ),
+            {"id": "user"},
+            "semantic-rejection-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert "welding" in str(captured["question"]).lower()
+    assert b"bearings" in body
+
+
 def test_large_bilingual_routing_matrix() -> None:
     topics = ["torsion", "Eigenwert", "Wälzlager", "kinetic energy", "Passung",
               "Querkraft", "moment", "Schweißbarkeit", "preload", "lambda"]
