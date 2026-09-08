@@ -230,3 +230,56 @@ def test_bare_reaction_to_formula_answer_remains_academic_followup() -> None:
 
     assert result.dialogue_act == DialogueAct.ASK_ABOUT_PREVIOUS_STEP
     assert result.requires_new_retrieval
+@pytest.mark.parametrize("message", [
+    "I have no clue", "can't decide", "you choose", "whatever you think",
+    "your choice", "go ahead", "do it", "something else", "the second one",
+])
+def test_ambiguous_reply_families_request_semantic_resolution(message: str) -> None:
+    from app.services.dialogue_state import needs_semantic_resolution, resolve_dialogue
+
+    turns = [
+        {"role": "assistant", "text": "Would you like statics or dynamics?"},
+    ]
+    resolution = resolve_dialogue(message, previous_turns=turns)
+    assert needs_semantic_resolution(message, resolution, turns)
+
+
+def test_explicit_new_topic_does_not_pay_semantic_fallback_or_inherit() -> None:
+    from app.services.dialogue_state import TurnRelation, needs_semantic_resolution, resolve_dialogue
+
+    turns = [
+        {"role": "user", "text": "Explain welding from my course."},
+        {"role": "assistant", "text": "Welding joins materials."},
+    ]
+    resolution = resolve_dialogue("What is the capital of Italy?", previous_turns=turns)
+    assert resolution.relation is TurnRelation.NEW_TOPIC
+    assert not needs_semantic_resolution("What is the capital of Italy?", resolution, turns)
+
+
+def test_task_family_is_inherited_independently_from_relation() -> None:
+    from app.services.dialogue_state import TaskFamily, resolve_dialogue
+
+    turns = [
+        {"role": "user", "text": "Calculate the torsional stress from my lecture."},
+        {"role": "assistant", "text": "Using the course formula, the result is 20 MPa."},
+    ]
+    resolution = resolve_dialogue("why?", previous_turns=turns)
+    assert resolution.task_family is TaskFamily.CALCULATE
+
+
+def test_semantic_resolver_failure_preserves_safe_continuity(monkeypatch) -> None:
+    from app.services import openai_client
+    from app.services.dialogue_state import (
+        TaskFamily, TurnRelation, resolve_dialogue, resolve_dialogue_semantically,
+    )
+
+    turns = [
+        {"role": "user", "text": "Create flashcards about bearings."},
+        {"role": "assistant", "text": "Should I make the same set for screws?"},
+    ]
+    base = resolve_dialogue("go ahead", previous_turns=turns)
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
+    resolved = resolve_dialogue_semantically("go ahead", previous_turns=turns, base=base)
+    assert resolved.relation is TurnRelation.ANSWER_TO_ASSISTANT
+    assert resolved.task_family is TaskFamily.FLASHCARDS
+    assert resolved.continues_previous_goal

@@ -9,6 +9,7 @@ def test_auto_general_routing_does_not_leak_into_answer_text() -> None:
 
 def test_general_prompt_requires_action_and_conversation_continuity() -> None:
     prompt = _SYSTEM_PROMPT.casefold()
-    assert "perform the task" in prompt
+    assert "perform that task" in prompt
     assert "follow the conversation naturally" in prompt
     assert "never\nnarrate source routing" in prompt
+    assert "learning plan" not in prompt

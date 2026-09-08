@@ -1322,6 +1322,26 @@ async def ask_stream_endpoint(
     )
     processing_pipeline = select_processing_pipeline(question, resolved_access)
     routing_started = time.perf_counter()
+    from ..services.dialogue_state import (  # noqa: WPS433
+        needs_semantic_resolution,
+        resolve_dialogue,
+        resolve_dialogue_semantically,
+    )
+    preflight_turns = [
+        {"role": turn.role, "text": turn.text}
+        for turn in (payload.previousTurns or [])
+        if turn.role in {"user", "assistant"} and turn.text.strip()
+    ]
+    turn_resolution = resolve_dialogue(
+        question, previous_turns=preflight_turns,
+        response_language=payload.responseLanguage or "en",
+    )
+    if needs_semantic_resolution(question, turn_resolution, preflight_turns):
+        turn_resolution = await run_in_threadpool(
+            lambda: resolve_dialogue_semantically(
+                question, previous_turns=preflight_turns, base=turn_resolution,
+            )
+        )
     # The most recent USER turn (not this current question) — used only to
     # keep a follow-up-shaped message ("what about c < 0?") from being
     # treated as a continuation when it actually names a new topic ("what
@@ -1332,7 +1352,7 @@ async def ask_stream_endpoint(
         None,
     )
     _task_profile, execution_plan = resolve_execution_plan(
-        question=question,
+        question=turn_resolution.resolved_request,
         resolved_access=resolved_access,
         processing_pipeline=processing_pipeline,
         source_mode=payload.sourceMode,
@@ -1341,6 +1361,8 @@ async def ask_stream_endpoint(
             for turn in (payload.previousTurns or [])
         ),
         previous_question=previous_user_question,
+        resolved_turn=turn_resolution,
+        has_course_context=bool(payload.courseId),
     )
     routing_ms = (time.perf_counter() - routing_started) * 1000
     for document_id in payload.documentIds or []:
@@ -1489,7 +1511,7 @@ async def ask_stream_endpoint(
             final_event: dict[str, Any] = {}
             previous_turns = [
                 {"role": turn.role, "text": turn.text}
-                for turn in (payload.previousTurns or [])[-4:]
+                for turn in (payload.previousTurns or [])
             ] if execution_plan.executionLane is ExecutionLane.FAST_CONTEXTUAL else []
             try:
                 fast_events = (
@@ -1771,6 +1793,7 @@ async def ask_stream_endpoint(
         **(payload.requestSnapshot or {}),
         "groundingRequest": grounding_request.model_dump(mode="json"),
         "groundingResolution": grounding_resolution.model_dump(mode="json"),
+        "turnResolution": turn_resolution.to_api(),
     }
     if (
         resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT
@@ -2278,6 +2301,7 @@ async def ask_stream_endpoint(
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
+                        "turn_resolution": turn_resolution,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
                     },
@@ -2366,6 +2390,7 @@ async def ask_stream_endpoint(
                         "doc_name_map": preflight_doc_names,
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
+                        "turn_resolution": turn_resolution,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
                     },
@@ -2445,6 +2470,7 @@ async def ask_stream_endpoint(
                             "doc_name_map": preflight_doc_names,
                             "documents": preflight_documents,
                             "execution_plan": execution_plan,
+                            "turn_resolution": turn_resolution,
                             "grounding_request": grounding_request,
                             "grounding_resolution": grounding_resolution,
                         },
@@ -2844,11 +2870,12 @@ async def _prepare_ask_stream_response(
         ),
         previous_turns=previous_turns_payload,
     )
-    dialogue = resolve_dialogue(
+    dialogue = (preflight or {}).get("turn_resolution") or resolve_dialogue(
         question,
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
+    observer.event("turn_resolved", **dialogue.to_api())
     if dialogue.response_language != language_context.requested_response_language:
         language_context = replace(
             language_context,

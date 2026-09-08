@@ -9,6 +9,7 @@ academic intent classification to ``answer_intent``.
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
@@ -44,6 +45,48 @@ class ConversationIntent(str, Enum):
     FOLLOW_UP_EXAMPLE = "follow_up_example"
     FOLLOW_UP_CORRECTION = "follow_up_correction"
     FOLLOW_UP_REFERENCE = "follow_up_reference"
+
+
+class TurnRelation(str, Enum):
+    NEW_TOPIC = "new_topic"
+    CONTINUATION = "continuation"
+    ANSWER_TO_ASSISTANT = "answer_to_assistant"
+    CLARIFICATION = "clarification"
+    CORRECTION = "correction"
+    REJECTION = "rejection"
+    CONFIRMATION = "confirmation"
+    DELEGATION = "delegation"
+    AMBIGUOUS = "ambiguous"
+
+
+class SpeechAct(str, Enum):
+    QUESTION = "question"
+    TASK_REQUEST = "task_request"
+    SOCIAL = "social"
+    ANSWER = "answer"
+    CONFIRMATION = "confirmation"
+    REJECTION = "rejection"
+    CLARIFICATION_REQUEST = "clarification_request"
+    DELEGATION = "delegation"
+
+
+class TaskFamily(str, Enum):
+    EXPLAIN = "explain"
+    SOLVE = "solve"
+    CALCULATE = "calculate"
+    DERIVE = "derive"
+    COMPARE = "compare"
+    SUMMARIZE = "summarize"
+    EXTRACT = "extract"
+    STUDY_RECOMMENDATION = "study_recommendation"
+    STUDY_PLAN = "study_plan"
+    QUIZ = "quiz"
+    FLASHCARDS = "flashcards"
+    EXAMFORGE = "examforge"
+    DEEP_LEARN = "deep_learn"
+    GENERAL_ASSISTANCE = "general_assistance"
+    CONVERSATION = "conversation"
+    UNKNOWN = "unknown"
 
 
 _EXERCISE_RE = re.compile(
@@ -188,11 +231,19 @@ class DialogueResolution:
     conversation_intent: ConversationIntent = ConversationIntent.NEW_QUESTION
     referent_type: str = "unknown"
     referent_text: str | None = None
+    relation: TurnRelation = TurnRelation.NEW_TOPIC
+    speech_act: SpeechAct = SpeechAct.QUESTION
+    task_family: TaskFamily = TaskFamily.UNKNOWN
+    continues_previous_goal: bool = False
+    confidence: float = 1.0
 
     def to_api(self) -> dict[str, Any]:
         data = asdict(self)
         data["dialogue_act"] = self.dialogue_act.value
         data["conversation_intent"] = self.conversation_intent.value
+        data["relation"] = self.relation.value
+        data["speech_act"] = self.speech_act.value
+        data["task_family"] = self.task_family.value
         return data
 
     def prompt_overlay(self) -> str:
@@ -389,7 +440,7 @@ def resolve_dialogue(
             f"{('exercise group ' + active) if active else 'the active exercise group'} "
             "sequentially and completely. Do not replace the solutions with a topic overview."
         )
-    elif _HINT_RE.search(text):
+    elif _HINT_RE.search(text) and not re.search(r"\b(?:no|without)\s+(?:a\s+)?clue\b", text, re.I):
         act = DialogueAct.REQUEST_HINT
         depth = "one_step"
         resolved = (
@@ -462,6 +513,17 @@ def resolve_dialogue(
             referent_text = last_assistant
             resolved = "Acknowledge that the immediately preceding reply was confusing or unrelated."
 
+    relation = TurnRelation.NEW_TOPIC
+    speech_act = SpeechAct.QUESTION if "?" in text else SpeechAct.TASK_REQUEST
+    if act in {DialogueAct.CORRECT_ASSISTANT}:
+        relation, speech_act = TurnRelation.CORRECTION, SpeechAct.ANSWER
+    elif act in {DialogueAct.REJECT_ANSWER}:
+        relation, speech_act = TurnRelation.REJECTION, SpeechAct.REJECTION
+    elif act is not DialogueAct.NEW_QUESTION:
+        relation = TurnRelation.CONTINUATION
+    task_family = _infer_task_family(text)
+    if task_family is TaskFamily.UNKNOWN and relation is not TurnRelation.NEW_TOPIC:
+        task_family = _infer_active_task(turns)
     return DialogueResolution(
         original_message=text,
         dialogue_act=act,
@@ -476,7 +538,126 @@ def resolve_dialogue(
         conversation_intent=conversation_intent,
         referent_type=referent_type,
         referent_text=referent_text,
+        relation=relation,
+        speech_act=speech_act,
+        task_family=task_family,
+        continues_previous_goal=relation is not TurnRelation.NEW_TOPIC,
     )
 
 
-__all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "resolve_dialogue"]
+_TASK_SIGNALS: tuple[tuple[TaskFamily, re.Pattern[str]], ...] = (
+    (TaskFamily.FLASHCARDS, re.compile(r"\bflashcards?|karteikarten\b", re.I)),
+    (TaskFamily.QUIZ, re.compile(r"\bquiz(?:zes)?\b", re.I)),
+    (TaskFamily.EXAMFORGE, re.compile(r"\bexamforge\b", re.I)),
+    (TaskFamily.DEEP_LEARN, re.compile(r"\bdeep\s*learn\b", re.I)),
+    (TaskFamily.STUDY_PLAN, re.compile(r"\b(?:plan|schedule|organize)\b.*\b(?:study|revision|exam|learn)|\b(?:study|revision|exam)\b.*\b(?:plan|schedule|organize)\b", re.I)),
+    (TaskFamily.STUDY_RECOMMENDATION, re.compile(r"\bwhat\s+should\s+i\s+(?:study|learn|revise)|\bwhere\s+to\s+start\b", re.I)),
+    (TaskFamily.CALCULATE, re.compile(r"\b(?:calculate|compute|bestimme|berechne)\b", re.I)),
+    (TaskFamily.DERIVE, re.compile(r"\b(?:derive|prove|herleiten|beweisen)\b", re.I)),
+    (TaskFamily.SOLVE, re.compile(r"\b(?:solve|l[öo]se)\b", re.I)),
+    (TaskFamily.COMPARE, re.compile(r"\b(?:compare|contrast|difference|vergleiche)\b", re.I)),
+    (TaskFamily.SUMMARIZE, re.compile(r"\b(?:summari[sz]e|summary|zusammenfass)\w*\b", re.I)),
+    (TaskFamily.EXTRACT, re.compile(r"\b(?:extract|collect|extrahiere)\b", re.I)),
+    (TaskFamily.EXPLAIN, re.compile(r"\b(?:explain|teach|erkl[äa]r)\w*\b", re.I)),
+)
+
+
+def _infer_task_family(text: str) -> TaskFamily:
+    for family, pattern in _TASK_SIGNALS:
+        if pattern.search(text or ""):
+            return family
+    return TaskFamily.UNKNOWN
+
+
+def _infer_active_task(turns: list[dict[str, str]]) -> TaskFamily:
+    for turn in reversed(turns):
+        if (turn.get("role") or "").lower() != "user":
+            continue
+        family = _infer_task_family(turn.get("text") or "")
+        if family is not TaskFamily.UNKNOWN:
+            return family
+    return TaskFamily.UNKNOWN
+
+
+def needs_semantic_resolution(message: str, resolution: DialogueResolution,
+                              previous_turns: list[dict[str, str]] | None) -> bool:
+    """Only ambiguous context-dependent turns pay for semantic classification."""
+    standalone = bool(re.match(
+        r"^\s*(?:what\s+(?:is|are|was|were)|who\s+(?:is|was)|when\s+(?:is|was|did)|"
+        r"where\s+(?:is|are|was)|how\s+(?:many|much)|does\s+|do\s+you\s+know)\b",
+        message or "", re.I,
+    ))
+    return bool(
+        previous_turns
+        and not standalone
+        and resolution.dialogue_act is DialogueAct.NEW_QUESTION
+        and resolution.task_family is TaskFamily.UNKNOWN
+        and (len((message or "").split()) <= 12 or re.search(r"\b(?:it|that|this|one|same|instead)\b", message, re.I))
+    )
+
+
+def resolve_dialogue_semantically(message: str, *, previous_turns: list[dict[str, str]],
+                                  base: DialogueResolution) -> DialogueResolution:
+    """Resolve only ambiguous turns with a small structured model call; fail closed."""
+    from .answer import chat_completion_params  # local imports avoid startup cycles
+    from .openai_client import INTERACTIVE_SUPPORT_TIMEOUT, get_openai_client
+    from ..config import get_settings
+
+    frame = {
+        "activeTask": _infer_active_task(previous_turns).value,
+        "recentTurns": previous_turns[-10:],
+        "currentMessage": message,
+    }
+    system = f"""Classify the current conversational turn. Return JSON only with keys:
+relation, speechAct, taskFamily, continuesPreviousGoal, resolvedRequest, confidence.
+relation must be one of {[v.value for v in TurnRelation]}; speechAct one of
+{[v.value for v in SpeechAct]}; taskFamily one of {[v.value for v in TaskFamily]}.
+Explicit current requests override history. A short
+reply must be interpreted against the assistant turn it answers. Preserve prior task
+and source intent for continuations; mark unrelated self-contained requests new_topic.
+Do not include reasoning."""
+    try:
+        model = get_settings().openai_generate_model
+        completion = get_openai_client().chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(frame)}],
+            response_format={"type": "json_object"}, timeout=INTERACTIVE_SUPPORT_TIMEOUT,
+            **chat_completion_params(model, 220),
+        )
+        raw = completion.choices[0].message.content if completion.choices else "{}"
+        data = json.loads(raw or "{}")
+        relation = TurnRelation(str(data.get("relation")))
+        speech_act = SpeechAct(str(data.get("speechAct")))
+        task_family = TaskFamily(str(data.get("taskFamily")))
+        confidence = max(0.0, min(1.0, float(data.get("confidence", 0))))
+        if confidence < 0.65:
+            return base
+        resolved = str(data.get("resolvedRequest") or message).strip()[:4000]
+        return DialogueResolution(
+            **{**base.__dict__, "resolved_request": resolved, "relation": relation,
+               "speech_act": speech_act, "task_family": task_family,
+               "continues_previous_goal": bool(data.get("continuesPreviousGoal")),
+               "requires_new_retrieval": task_family is not TaskFamily.CONVERSATION,
+               "confidence": confidence}
+        )
+    except Exception:
+        # Classification availability must not erase obvious conversational
+        # continuity. This branch is reached only for turns already deemed
+        # short/context-dependent (standalone questions never call it).
+        last_assistant = _latest_turn(previous_turns, "assistant")
+        relation = (
+            TurnRelation.ANSWER_TO_ASSISTANT
+            if (last_assistant or "").rstrip().endswith("?")
+            else TurnRelation.CONTINUATION
+        )
+        inherited = _infer_active_task(previous_turns)
+        return DialogueResolution(
+            **{**base.__dict__, "relation": relation, "speech_act": SpeechAct.ANSWER,
+               "task_family": inherited, "continues_previous_goal": True,
+               "confidence": 0.55}
+        )
+
+
+__all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "SpeechAct",
+           "TaskFamily", "TurnRelation", "needs_semantic_resolution",
+           "resolve_dialogue", "resolve_dialogue_semantically"]

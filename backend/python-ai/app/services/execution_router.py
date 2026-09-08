@@ -186,18 +186,27 @@ def _shares_topic_with_previous(question: str, previous_question: str | None) ->
 
 def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAccess,
                           source_mode: str | None, has_previous_answer: bool,
-                          previous_question: str | None = None) -> TaskProfile:
+                          previous_question: str | None = None,
+                          resolved_turn: Any | None = None,
+                          has_course_context: bool = False) -> TaskProfile:
     q = " ".join((question or "").split())
-    course = bool(_COURSE_RE.search(q) or (source_mode or "").casefold() == "course_files")
+    continues = bool(getattr(resolved_turn, "continues_previous_goal", False))
+    family = str(getattr(getattr(resolved_turn, "task_family", None), "value", ""))
+    course = bool(
+        _COURSE_RE.search(q)
+        or (source_mode or "").casefold() == "course_files"
+        or (continues and has_course_context and (source_mode or "").casefold() != "general")
+    )
     web = bool(_WEB_RE.search(q) and (_WEB_ACTION_RE.search(q) or "http" in q.casefold()))
-    calculation, derivation = bool(_CALC_RE.search(q)), bool(_DERIVE_RE.search(q))
+    calculation = bool(_CALC_RE.search(q)) or family in {"calculate", "solve"}
+    derivation = bool(_DERIVE_RE.search(q)) or family == "derive"
     extraction = bool(_EXTRACT_RE.search(q))
     definition = (
         bool(_DEFINITION_RE.search(q))
         and 2 <= len(q.split()) <= 18
         and not re.search(r"\b(?:this|that|it|these|those|hier|dies(?:e[rmns]?)?)\b", q, re.I)
     )
-    followup = (
+    followup = continues or (
         has_previous_answer
         and len(q.split()) <= _FOLLOWUP_MAX_WORDS
         and bool(_FOLLOWUP_MARKER_RE.search(q))
@@ -223,10 +232,13 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
 def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAccess,
                            processing_pipeline: str, source_mode: str | None = "auto",
                            has_previous_answer: bool = False,
-                           previous_question: str | None = None) -> tuple[TaskProfile, ExecutionPlan]:
+                           previous_question: str | None = None,
+                           resolved_turn: Any | None = None,
+                           has_course_context: bool = False) -> tuple[TaskProfile, ExecutionPlan]:
     profile = classify_task_profile(
         question=question, resolved_access=resolved_access, source_mode=source_mode,
         has_previous_answer=has_previous_answer, previous_question=previous_question,
+        resolved_turn=resolved_turn, has_course_context=has_course_context,
     )
     signals = tuple(key for key, value in asdict(profile).items()
                     if value is True and key != "estimatedComplexity")
@@ -238,6 +250,8 @@ def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAc
         lane, mode, complexity, reason, confidence = (ExecutionLane.WEB, GroundingMode.WEB, ExecutionComplexity.STANDARD, "current_external_information_required", 0.96)
     elif profile.isCalculation or profile.isDerivation:
         lane, mode, complexity, reason, confidence = (ExecutionLane.DEEP_REASONING, GroundingMode.RELEVANCE if profile.needsCourseEvidence else GroundingMode.GENERAL, ExecutionComplexity.DEEP, "calculation_or_derivation", 0.97)
+    elif profile.isFollowup and profile.needsCourseEvidence and not profile.requestsExactCitationOrLocation:
+        lane, mode, complexity, reason, confidence = (ExecutionLane.FAST_GROUNDED, GroundingMode.RELEVANCE, ExecutionComplexity.FAST, "conversation_continues_grounded_task", 0.92)
     elif profile.isFollowup and not profile.requestsExactCitationOrLocation:
         lane, mode, complexity, reason, confidence = (ExecutionLane.FAST_CONTEXTUAL, GroundingMode.GENERAL, ExecutionComplexity.FAST, "sufficient_recent_conversation", 0.92)
     elif profile.estimatedComplexity == "low" and not profile.needsCourseEvidence:

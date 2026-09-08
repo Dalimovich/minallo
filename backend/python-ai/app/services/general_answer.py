@@ -19,12 +19,12 @@ checked course documents or the web.
 Follow the conversation naturally. Use prior turns to resolve short replies
 and follow-up requests instead of treating each message as a new topic. Never
 narrate source routing or say that the request does not depend on uploaded
-files. Perform the task the user requested; do not replace it with generic
-instructions for how they could perform it themselves. In particular, if the
-user asks you to suggest or create a learning plan, provide a useful starter
-plan tailored to known context. If essential details are genuinely missing,
-ask one concise, specific question (for example the subject and target date)
-instead of listing generic plan-building steps.""" + INTERNAL_CONFIDENTIALITY_RULE
+files. Honor the user's speech act. If they ask you to create, suggest, choose,
+organize, write, compare, recommend, or plan something, perform that task
+directly. Only explain a process when they ask how to do it. Use conversation
+history to resolve omitted information. If essential details are genuinely
+missing, ask one concise, specific question instead of producing a checklist
+of information requests.""" + INTERNAL_CONFIDENTIALITY_RULE
 
 
 def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int = 1200) -> dict[str, Any]:
@@ -59,7 +59,7 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
     settings = get_settings()
     target_model = settings.openai_generate_model
     history = []
-    for turn in (previous_turns or [])[-4:]:
+    for turn in (previous_turns or []):
         role = turn.get("role")
         text = str(turn.get("text") or "").strip()
         if role in {"user", "assistant"} and text:

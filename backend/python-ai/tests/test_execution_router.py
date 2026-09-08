@@ -6,6 +6,7 @@ from app.services.execution_router import (
     fast_grounded_evidence_is_sufficient,
     resolve_execution_plan,
 )
+from app.services.execution_router import GroundingMode
 from app.services.grounding_contract import ResolvedDocumentAccess
 
 
@@ -244,6 +245,24 @@ def test_short_uncertainty_replies_keep_conversation_context(question) -> None:
         previous_question="What would you like to study?",
     )
     assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL, question
+
+
+def test_followup_relation_does_not_force_general_grounding() -> None:
+    from app.services.dialogue_state import resolve_dialogue
+
+    turns = [
+        {"role": "user", "text": "Explain torsional stress from my lecture."},
+        {"role": "assistant", "text": "The course formula is tau = Tr/J."},
+    ]
+    resolved = resolve_dialogue("why?", previous_turns=turns)
+    _, plan = resolve_execution_plan(
+        question=resolved.resolved_request,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+        resolved_turn=resolved, has_course_context=True,
+    )
+    assert plan.executionLane is ExecutionLane.FAST_GROUNDED
+    assert plan.groundingMode is GroundingMode.RELEVANCE
 
 
 def test_followup_without_previous_answer_is_not_contextual() -> None:
