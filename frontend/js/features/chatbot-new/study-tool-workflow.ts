@@ -1,4 +1,5 @@
 import { escapeHtml } from '../../utils/escape-html.js';
+import { authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 import { listCourseDocuments, type CourseDocument } from '../../services/ai-service.js';
 import { getActivePdfContext, type ActivePdfContext } from '../pdf-viewer/active-pdf-context.js';
 import { openStudyToolWorkspace, type StudyWorkspaceKind } from './workspace-library.js';
@@ -176,7 +177,7 @@ async function saveFlashcardDeck(courseId: string, name: string, cards: unknown[
   const db = window._ssDb;
   const url = db?.supaUrl?.();
   if (!url || !db) throw new Error('Flashcard persistence is unavailable.');
-  const response = await db.supaFetch(`${url}/rest/v1/flashcard_decks`, {
+  const response = await authenticatedSupabaseFetch(`${url}/rest/v1/flashcard_decks`, {
     method: 'POST',
     headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
     body: JSON.stringify({ course_id: courseId, name, cards }),
@@ -191,7 +192,7 @@ async function loadSeenFlashcardFronts(courseId: string): Promise<string[]> {
   const url = db?.supaUrl?.();
   if (!url || !db) return [];
   try {
-    const response = await db.supaFetch(
+    const response = await authenticatedSupabaseFetch(
       `${url}/rest/v1/flashcard_decks?course_id=eq.${encodeURIComponent(courseId)}&select=cards,study_progress,last_studied_at&limit=50`,
       { method: 'GET' }, { safeToRetry: true }
     );

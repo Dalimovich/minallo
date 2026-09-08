@@ -14,7 +14,7 @@ import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js'
 import { correctionSelectHtml, wireCorrectionSelectors } from '../courses/document-type-badge.js';
 import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 import { parsePersistedChats, type PersistedChat, type SavedRepliesChangedDetail } from './chat-store-format.js';
-import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 
 type CourseFile = {
   name: string;
@@ -2289,7 +2289,7 @@ interface PagedRows {
 async function fetchRows(table: string, courseId: string, offset = 0): Promise<PagedRows> {
   const db = window._ssDb;
   if (!db) return { rows: [], hasMore: false };
-  const response = await db.supaFetch(
+  const response = await authenticatedSupabaseFetch(
     `${db.supaUrl()}/rest/v1/${table}?course_id=eq.${encodeURIComponent(courseId)}&order=created_at.desc&limit=${SAVED_PAGE_SIZE}&offset=${offset}`,
     { method: 'GET' }, { safeToRetry: true }
   );
@@ -2311,7 +2311,7 @@ async function fetchRows(table: string, courseId: string, offset = 0): Promise<P
 async function fetchRowById(table: string, id: string): Promise<Record<string, unknown> | null> {
   const db = window._ssDb;
   if (!db) return null;
-  const response = await db.supaFetch(
+  const response = await authenticatedSupabaseFetch(
     `${db.supaUrl()}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}&limit=1`,
     { method: 'GET' }, { safeToRetry: true }
   );
