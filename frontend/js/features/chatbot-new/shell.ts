@@ -6454,8 +6454,12 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
       if (cursor) {
         url += '&cursorCreatedAt=' + encodeURIComponent(cursor.createdAt) + '&cursorId=' + encodeURIComponent(cursor.id);
       }
-      const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-      if (!resp.ok) {
+      // authenticatedFetch refreshes an expired-but-present token before
+      // sending — a raw fetch() with the token captured at the top of this
+      // function is exactly how a long-lived tab turns into a silent 401
+      // once that token ages out mid-session.
+      const resp = await authenticatedFetch(url, { method: 'GET' }, { safeToRetry: true }).catch(() => null);
+      if (!resp?.ok) {
         _savedRepliesSyncedChats.delete(chatId);
         return;
       }

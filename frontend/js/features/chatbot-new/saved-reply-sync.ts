@@ -10,6 +10,7 @@
 // operates on whatever SyncableSavedChat[] and callbacks it's handed via
 // createSavedReplySyncEngine(deps).
 
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import type { SavedReplySyncState, SavedRepliesChangedDetail } from './chat-store-format.js';
 
 export interface SyncableSavedReply {
@@ -35,7 +36,13 @@ export interface SavedReplySyncDeps {
   getToken: () => string | null | undefined;
   dispatchChanged: (detail: SavedRepliesChangedDetail) => void;
   apiUrl: string;
-  /** Defaults to the global fetch — overridden by tests. */
+  /**
+   * Defaults to authenticatedFetch — checks token expiry, refreshes (once,
+   * cross-tab-coordinated) before a stale token ever reaches the network,
+   * and retries a safe request once after a 401. A raw fetch() here is
+   * exactly how a long-lived tab with an expired-but-present token turns
+   * into a 401 instead of a transparent refresh. Overridden by tests.
+   */
   fetchImpl?: typeof fetch;
   /** Defaults to 2000ms — overridden by tests that don't want to wait. */
   flushCooldownMs?: number;
@@ -49,7 +56,7 @@ export interface SavedReplySyncEngine {
 
 export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReplySyncEngine {
   const { getChats, saveChatStore, getToken, dispatchChanged, apiUrl } = deps;
-  const fetchImpl = deps.fetchImpl || fetch;
+  const fetchImpl = deps.fetchImpl || authenticatedFetch;
   const flushCooldownMs = deps.flushCooldownMs ?? 2000;
 
   // One in-flight POST per reply object — otherwise two retry triggers
@@ -94,9 +101,12 @@ export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReply
     let resolveSettled!: (outcome: { canonicalId: string | undefined }) => void;
     const settled = new Promise<{ canonicalId: string | undefined }>((resolve) => { resolveSettled = resolve; });
     createSettling.set(requestedId, settled);
+    // Authorization is attached by fetchImpl (authenticatedFetch) itself,
+    // using a fresh token — not the possibly-stale one just used for the
+    // gate check above.
     void fetchImpl(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: r.id, chatId, text: r.text, createdAt: r.createdAt,
         courseId: r.courseId, sourceMessageId: r.sourceMessageId, sourcePrompt: r.sourcePrompt
@@ -166,11 +176,10 @@ export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReply
     try {
       const settling = createSettling.get(id);
       const targetId = settling ? (await settling).canonicalId || id : id;
-      const token = getToken();
-      if (!token) return; // caller already persisted a pendingSavedReplyDeletes tombstone; retried once auth is ready
+      if (!getToken()) return; // caller already persisted a pendingSavedReplyDeletes tombstone; retried once auth is ready
+      // Authorization is attached by fetchImpl (authenticatedFetch) itself.
       const response = await fetchImpl(apiUrl + '?id=' + encodeURIComponent(targetId), {
         method: 'DELETE',
-        headers: { Authorization: 'Bearer ' + token },
       }).catch(() => null);
       if (!response || !response.ok) return; // tombstone stays; retried by flushPendingSavedReplySync
       const chat = getChats().find((c) => c.id === chatId);

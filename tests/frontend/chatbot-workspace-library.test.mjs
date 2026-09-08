@@ -273,7 +273,7 @@ test('Saved is grouped by resource function and course', () => {
 });
 
 test('bookmarked AI responses load from the durable database endpoint', () => {
-  assert.match(moduleSource, /fetch\('\/api\/chat-saved-replies'/);
+  assert.match(moduleSource, /authenticatedFetch\('\/api\/chat-saved-replies'/);
   assert.match(moduleSource, /kind: 'responses'/);
   assert.match(moduleSource, /renderMarkdown\(text\)/);
   assert.match(shellSource, /syncSavedReplyCreate\(chat\.id, reply\)/);
@@ -537,7 +537,7 @@ test('a local-only bookmarked AI response reopens without hitting the server', (
   assert.match(resolveBody, /const local = localBookmarkedResponses\(\)\.find\(\(row\) => row\.id === item\.id\)/);
   assert.match(resolveBody, /if \(local\) return \{ \.\.\.item, payload: \{ text: local\.reply_text \|\| '' \} \}/);
   // Local lookup must come before the network round trip, not after/instead.
-  assert.ok(resolveBody.indexOf('localBookmarkedResponses()') < resolveBody.indexOf("fetch('/api/chat-saved-replies'"));
+  assert.ok(resolveBody.indexOf('localBookmarkedResponses()') < resolveBody.indexOf('authenticatedFetch(`/api/chat-saved-replies'));
 });
 
 test('a saved flashcard deck is validated before mounting, never handed undefined', () => {

@@ -241,5 +241,21 @@ test('loadBookmarkedResponses excludes rows with an unresolved durable delete to
 
 test('opening an older saved response resolves it by exact id, not by scanning the first page of the listing', () => {
   const resolveFn = slice(workspace, 'async function resolveCachedSavedItem', 'const rendererLoads');
-  assert.match(resolveFn, /fetch\(`\/api\/chat-saved-replies\?id=\$\{encodeURIComponent\(item\.id\)\}`/);
+  assert.match(resolveFn, /authenticatedFetch\(`\/api\/chat-saved-replies\?id=\$\{encodeURIComponent\(item\.id\)\}`/);
+});
+
+test('all first-party Saved network calls go through authenticatedFetch, not raw fetch with a captured token', () => {
+  const mergeFn = slice(shell, 'async function mergeSavedRepliesFromServer', 'function resolveBookmarkCourseId');
+  assert.match(mergeFn, /authenticatedFetch\(url, \{ method: 'GET' \}, \{ safeToRetry: true \}\)/);
+  assert.doesNotMatch(mergeFn, /Authorization: 'Bearer ' \+ token/);
+
+  const loadFn = slice(workspace, 'async function loadBookmarkedResponses', 'function authToken');
+  assert.match(loadFn, /authenticatedFetch\(url, \{ method: 'GET' \}, \{ safeToRetry: true \}\)/);
+  assert.match(loadFn, /authenticatedFetch\('\/api\/chat-saved-replies', \{/);
+  assert.doesNotMatch(loadFn, /Authorization: `Bearer \$\{token\}`/);
+
+  const syncEngineSource = syncEngine;
+  assert.match(syncEngineSource, /import \{ authenticatedFetch \} from '\.\.\/\.\.\/services\/authenticated-fetch\.js';/);
+  assert.match(syncEngineSource, /deps\.fetchImpl \|\| authenticatedFetch/);
+  assert.doesNotMatch(syncEngineSource, /Authorization: 'Bearer ' \+ token/);
 });

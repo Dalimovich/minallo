@@ -14,6 +14,7 @@ import { openWorkspaceModal } from './workspace-modals/workspace-modal-shell.js'
 import { correctionSelectHtml, wireCorrectionSelectors } from '../courses/document-type-badge.js';
 import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 import { parsePersistedChats, type PersistedChat, type SavedRepliesChangedDetail } from './chat-store-format.js';
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 
 type CourseFile = {
   name: string;
@@ -2027,7 +2028,7 @@ async function resolveCachedSavedItem(item: SavedItem): Promise<SavedItem> {
         // response older than the first page is still reachable; the
         // listing above is paginated and this open path must not depend on
         // having already loaded every earlier page.
-        response = await fetch(`/api/chat-saved-replies?id=${encodeURIComponent(item.id)}`, { headers: { Authorization: `Bearer ${token}` } });
+        response = await authenticatedFetch(`/api/chat-saved-replies?id=${encodeURIComponent(item.id)}`, { method: 'GET' }, { safeToRetry: true });
       } catch {
         throw new SavedOpenError('load_failed', 'Could not reach the server to load this saved response.');
       }
@@ -2118,10 +2119,11 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
         if (cursor) {
           url += `?cursorCreatedAt=${encodeURIComponent(cursor.createdAt)}&cursorId=${encodeURIComponent(cursor.id)}`;
         }
-        const response = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!response.ok) break;
+        // authenticatedFetch refreshes an expired-but-present token before
+        // sending, instead of firing this with the token captured above,
+        // which is exactly how a long-lived tab turns into a silent 401.
+        const response = await authenticatedFetch(url, { method: 'GET' }, { safeToRetry: true }).catch(() => null);
+        if (!response?.ok) break;
         const body = await response.json() as { replies?: ReplyRow[]; nextCursor?: SavedReplyPageCursor | null };
         serverRows.push(...(Array.isArray(body.replies) ? body.replies : []));
         if (!body.nextCursor) break;
@@ -2134,9 +2136,9 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
       await Promise.allSettled(localRowsAtStart
         .filter((row) => !serverIds.has(row.id) && !pendingDeleteIds.has(row.id))
         .map((row) =>
-          fetch('/api/chat-saved-replies', {
+          authenticatedFetch('/api/chat-saved-replies', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: row.id, chatId: row.chat_id, text: row.reply_text,
               createdAt: Date.parse(row.created_at || ''), courseId: row.course_id,
