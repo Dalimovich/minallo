@@ -22,7 +22,7 @@ import urllib.parse
 import uuid
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NamedTuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -592,6 +592,16 @@ def _status_sse(status_key: str) -> bytes:
 
 def _commentary_sse(event: dict[str, Any]) -> bytes:
     return _sse_bytes(json.dumps(event, ensure_ascii=False))
+
+
+class _CommentaryStatus(NamedTuple):
+    """Carries real, already-resolved context alongside a status_sink key so
+    the commentary consumer loop can build a request-specific sentence
+    instead of a generic template. Never invent a value here — only pass
+    facts that are already known true at the point of emission."""
+    key: str
+    facts: dict[str, Any]
+    progress: dict[str, Any] | None = None
 
 
 class TutorPipelineError(Exception):
@@ -2114,6 +2124,33 @@ async def ask_stream_endpoint(
             CommentaryEmitter, CommentaryKind,
         )
         commentary = CommentaryEmitter(request_id)
+
+        def _extract_status(status_event: Any) -> tuple[str, dict[str, Any], dict[str, Any] | None]:
+            if isinstance(status_event, _CommentaryStatus):
+                return status_event.key, status_event.facts, status_event.progress
+            return str(status_event), {}, None
+
+        async def _emit_stage_commentary(
+            status_key: str, status_facts: dict[str, Any], status_progress: dict[str, Any] | None,
+        ) -> dict[str, Any] | None:
+            # Shared by both status_queue consumers (the live wait loop below
+            # and the post-completion drain loop) so a _CommentaryStatus that
+            # lands in either one is handled identically — never serialized
+            # as a raw string.
+            commentary_stage = {
+                "collecting_sources": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
+                "searching_course_material": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
+                "extracting_items": (CommentaryKind.ANALYSIS, "extraction_started", "task_processing"),
+            }.get(status_key)
+            if not commentary_stage:
+                return None
+            kind, commentary_name, replace_key = commentary_stage
+            stage_commentary = commentary.emit(
+                kind=kind, stage=commentary_name, facts=status_facts,
+                progress=status_progress, replace_key=replace_key,
+            )
+            await persist_commentary_event(stage_commentary)
+            return stage_commentary
         terminal_event_sent = False
         persisted_answer = ""
         last_shared_generation_check = 0.0
@@ -2197,6 +2234,9 @@ async def ask_stream_endpoint(
             "groundingResolution": grounding_resolution.model_dump(mode="json"),
         }, ensure_ascii=False))
         yield _status_sse("reading_question")
+        active_document_name = (
+            preflight_doc_names.get(payload.activeDocumentId or "") or None
+        )
         access_commentary = commentary.emit(
             kind=CommentaryKind.ORIENTATION,
             stage=(
@@ -2204,16 +2244,26 @@ async def ask_stream_endpoint(
                 else "visible_page_selected" if resolved_access.value == "visible_page"
                 else "request_received"
             ),
-            facts={"visible_page": payload.visiblePage or 0,
-                   "access_mode": resolved_access.value},
+            facts={
+                "visible_page": payload.visiblePage or 0,
+                "access_mode": resolved_access.value,
+                **({"document_name": active_document_name} if active_document_name else {}),
+            },
             replace_key="access_resolution",
         )
         await persist_commentary_event(access_commentary)
         yield _commentary_sse(access_commentary)
         if resolved_ids:
+            authorized_names = [
+                name for name in (preflight_doc_names.get(doc_id) for doc_id in resolved_ids) if name
+            ]
             authorized_commentary = commentary.emit(
                 kind=CommentaryKind.SOURCE_RESOLUTION, stage="documents_authorized",
-                facts={"document_count": len(resolved_ids)}, replace_key="source_resolution",
+                facts={
+                    "document_count": len(resolved_ids),
+                    **({"document_names": authorized_names} if authorized_names else {}),
+                },
+                replace_key="source_resolution",
             )
             await persist_commentary_event(authorized_commentary)
             yield _commentary_sse(authorized_commentary)
@@ -2342,22 +2392,13 @@ async def ask_stream_endpoint(
                         last_heartbeat = time.monotonic()
                         yield _sse_bytes(json.dumps(status_event, ensure_ascii=False))
                         continue
-                    status_key = str(status_event)
+                    status_key, status_facts, status_progress = _extract_status(status_event)
                     last_status_key = status_key
                     last_heartbeat = time.monotonic()
-                    commentary_stage = {
-                        "collecting_sources": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
-                        "searching_course_material": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
-                        "extracting_items": (CommentaryKind.ANALYSIS, "extraction_started", "task_processing"),
-                        "recovering_response": (CommentaryKind.RECOVERY, "recovery_started", "recovery"),
-                        "verifying_answer": (CommentaryKind.VALIDATION, "answer_validation_started", "validation"),
-                    }.get(status_key)
-                    if commentary_stage:
-                        kind, commentary_name, replace_key = commentary_stage
-                        stage_commentary = commentary.emit(
-                            kind=kind, stage=commentary_name, replace_key=replace_key,
-                        )
-                        await persist_commentary_event(stage_commentary)
+                    stage_commentary = await _emit_stage_commentary(
+                        status_key, status_facts, status_progress,
+                    )
+                    if stage_commentary:
                         yield _commentary_sse(stage_commentary)
                     yield _status_sse(status_key)
                 except asyncio.TimeoutError:
@@ -2383,6 +2424,12 @@ async def ask_stream_endpoint(
                     "tutor_pipeline_retry request_id=%s stage=conversation_state attempt=1 exception=%s",
                     request_id, type(exc).__name__,
                 )
+                recovery_commentary = commentary.emit(
+                    kind=CommentaryKind.RECOVERY, stage="recovery_started", replace_key="recovery",
+                    facts={"document_name": active_document_name} if active_document_name else {},
+                )
+                await persist_commentary_event(recovery_commentary)
+                yield _commentary_sse(recovery_commentary)
                 yield _status_sse("recovering_response")
                 await asyncio.sleep(0.45)
                 # The request identity, document snapshot and conversation
@@ -2418,8 +2465,14 @@ async def ask_stream_endpoint(
                 queued_event = status_queue.get_nowait()
                 if isinstance(queued_event, dict):
                     yield _sse_bytes(json.dumps(queued_event, ensure_ascii=False))
-                else:
-                    yield _status_sse(str(queued_event))
+                    continue
+                queued_status_key, queued_facts, queued_progress = _extract_status(queued_event)
+                queued_commentary = await _emit_stage_commentary(
+                    queued_status_key, queued_facts, queued_progress,
+                )
+                if queued_commentary:
+                    yield _commentary_sse(queued_commentary)
+                yield _status_sse(queued_status_key)
             body_iterator = prepared.body_iterator.__aiter__()
             next_event_task: asyncio.Task | None = None
             generation_recovery_attempts = 0
@@ -2466,6 +2519,11 @@ async def ask_stream_endpoint(
                         status="recovering", stage="model_generation",
                         automatic_retry_count=generation_recovery_attempts,
                     )
+                    recovery_commentary = commentary.emit(
+                        kind=CommentaryKind.RECOVERY, stage="recovery_started", replace_key="recovery",
+                    )
+                    await persist_commentary_event(recovery_commentary)
+                    yield _commentary_sse(recovery_commentary)
                     yield _status_sse("recovering_response")
                     await asyncio.sleep(0.45)
                     prepared = await _prepare_ask_stream_response(
@@ -3827,7 +3885,13 @@ async def _prepare_ask_stream_response(
             )
         if status_sink:
             status_sink("scanning_document")
-            status_sink("extracting_items")
+            _initial_extraction_facts: dict[str, Any] = {}
+            _initial_extraction_doc = doc_name_map.get(payload.activeDocumentId or "")
+            if _initial_extraction_doc:
+                _initial_extraction_facts["document_name"] = _initial_extraction_doc
+            if extraction_target:
+                _initial_extraction_facts["topic_label"] = extraction_target
+            status_sink(_CommentaryStatus("extracting_items", _initial_extraction_facts))
         visible_page_image = next((
             image for image in open_file_images
             if image.get("page") == payload.visiblePage
@@ -4063,7 +4127,22 @@ async def _prepare_ask_stream_response(
         def extraction_checkpoint(progress: dict[str, Any]) -> None:
             batch_pages = list(progress.get("batch_pages") or [])
             if status_sink:
-                event_loop.call_soon_threadsafe(status_sink, "extracting_items")
+                checkpoint_facts: dict[str, Any] = {}
+                checkpoint_doc = (
+                    active_document.get("file_name") or doc_name_map.get(payload.activeDocumentId or "")
+                )
+                if checkpoint_doc:
+                    checkpoint_facts["document_name"] = checkpoint_doc
+                expected_total = int(active_document.get("page_count") or 0)
+                checkpoint_progress = (
+                    {"current": len(set(progress.get("scanned_pages") or [])),
+                     "total": expected_total, "unit": "pages"}
+                    if expected_total else None
+                )
+                event_loop.call_soon_threadsafe(
+                    status_sink,
+                    _CommentaryStatus("extracting_items", checkpoint_facts, checkpoint_progress),
+                )
             partial_questions = list(progress.get("extracted_questions") or [])
             partial_solutions = list(progress.get("solution_evidence") or [])
             partial_pairs = list(progress.get("paired_items") or [])
@@ -4836,7 +4915,19 @@ async def _prepare_ask_stream_response(
                 },
             )
         if status_sink:
-            status_sink("searching_course_material")
+            retrieval_facts: dict[str, Any] = {}
+            if grounded_identity.exercise_reference:
+                retrieval_facts["exercise_label"] = grounded_identity.exercise_reference
+            retrieval_doc_name = grounded_identity.filename
+            if not retrieval_doc_name and len(retrieval_document_ids or []) == 1:
+                retrieval_doc_name = doc_name_map.get(retrieval_document_ids[0])
+            if retrieval_doc_name:
+                retrieval_facts["document_name"] = retrieval_doc_name
+            elif len(retrieval_document_ids or []) > 1:
+                retrieval_facts["document_count"] = len(retrieval_document_ids)
+            if page_context and page_context.get("courseName"):
+                retrieval_facts["course_name"] = page_context["courseName"]
+            status_sink(_CommentaryStatus("searching_course_material", retrieval_facts))
         # Scale retrieval breadth with the number of explicitly-selected
         # documents so multi-file requests ("a question for every lecture",
         # exams) surface material from each one; per-document coverage in

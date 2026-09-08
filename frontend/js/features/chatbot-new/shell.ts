@@ -727,7 +727,7 @@ type ExecutionCommentaryKind = 'orientation' | 'source_resolution' | 'retrieval'
 interface ExecutionCommentaryEvent {
   type: 'commentary'; eventId: string; requestId: string; eventSequence?: number;
   kind: ExecutionCommentaryKind; stage: string; message: string;
-  facts?: Record<string, string | number | boolean>;
+  facts?: Record<string, string | number | boolean | string[]>;
   progress?: { current?: number; total?: number; unit?: 'pages' | 'documents' | 'batches' | 'sources' | 'items' };
   source?: { documentId?: string; documentName?: string; page?: number };
   replaceKey?: string; timestamp: string;
@@ -3519,11 +3519,24 @@ async function streamFromAskStream(
   let hasLiveReveal = false;
   let pendingFastCommentary: ExecutionCommentaryEvent[] = [];
   let fastCommentaryTimer: number | null = null;
+  // Once the real answer starts, live commentary must get out of the way
+  // immediately and never come back for this answer.
+  let answerStarted = false;
+  // Tracks whether live commentary has taken over from the generic
+  // AIThinkingStatus orb, so the two status systems never show at once.
+  let commentaryActive = false;
+
+  const takeOverFromThinkingStatus = (): void => {
+    if (commentaryActive) return;
+    commentaryActive = true;
+    thinking?.remove(true);
+  };
 
   const flushFastCommentary = (): void => {
-    if (!assistantMessage || !bubble) return;
+    if (!assistantMessage || !bubble || answerStarted || !pendingFastCommentary.length) return;
     const row = bubble.closest<HTMLElement>('.ncb-msg-row');
     if (!row) return;
+    takeOverFromThinkingStatus();
     for (const event of pendingFastCommentary) applyCommentaryEvent(row, assistantMessage, event);
     pendingFastCommentary = [];
     fastCommentaryTimer = null;
@@ -3665,6 +3678,12 @@ async function streamFromAskStream(
         if (typeof evt.requestId === 'string') streamRequestId = evt.requestId;
         if (evt.type === 'commentary' && typeof evt.eventId === 'string'
           && typeof evt.message === 'string' && typeof evt.stage === 'string') {
+          // The answer has already started — this is a late event racing the
+          // first token. It must never render above/alongside the answer.
+          if (answerStarted) {
+            lastEventType = 'commentary';
+            continue;
+          }
           const commentaryRow = bubble?.closest<HTMLElement>('.ncb-msg-row');
           const commentaryEvent = evt as unknown as ExecutionCommentaryEvent;
           const fastLane = typeof streamMeta.executionLane === 'string'
@@ -3675,6 +3694,7 @@ async function streamFromAskStream(
               fastCommentaryTimer = window.setTimeout(flushFastCommentary, 850);
             }
           } else if (commentaryRow) {
+            takeOverFromThinkingStatus();
             applyCommentaryEvent(commentaryRow, assistantMessage, commentaryEvent);
           }
           lastEventType = 'commentary';
@@ -3691,9 +3711,10 @@ async function streamFromAskStream(
         }
         // Live status: backend pipeline events ("collecting_sources",
         // "writing_answer", …) update the pending bubble's status line before
-        // any answer token arrives. Once a token creates the real bubble
-        // (ensureLiveReveal) the line is gone, so this is a no-op after that.
-        if (typeof evt.status === 'string') {
+        // any answer token arrives. Once live commentary has taken over (or
+        // a token creates the real bubble via ensureLiveReveal) this is a
+        // no-op — the two status systems must never compete.
+        if (typeof evt.status === 'string' && !commentaryActive) {
           const statusMessages: Record<string, string> = {
             reading_question: 'Reading your question…',
             collecting_sources: 'Checking the relevant document sections…',
@@ -3710,6 +3731,11 @@ async function streamFromAskStream(
           if (fastCommentaryTimer != null) window.clearTimeout(fastCommentaryTimer);
           fastCommentaryTimer = null;
           pendingFastCommentary = [];
+          if (!answerStarted && /\S/.test(evt.t)) {
+            answerStarted = true;
+            const row = bubble?.closest<HTMLElement>('.ncb-msg-row');
+            if (row) hideLiveCommentary(row);
+          }
           answerBuf += evt.t;
           if (assistantMessage) assistantMessage.text = sanitizeChatbotDiagrams(
             stripSourceMarkers(answerBuf), allowDiagrams
@@ -3821,11 +3847,6 @@ async function streamFromAskStream(
       });
     }
   }
-  if (assistantMessage?.commentary?.length && bubble) {
-    const row = bubble.closest<HTMLElement>('.ncb-msg-row');
-    if (row) renderCommentary(row, assistantMessage.commentary, true);
-  }
-
   return { text: displayAnswer, meta: doneMeta };
 }
 
@@ -4574,6 +4595,12 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
   return row;
 }
 
+// Live execution commentary is transient: it exists only to show what
+// Minallo is doing right now, between the request and the first answer
+// token. It is never allowed to persist as a "Work completed" summary — see
+// hideLiveCommentary, called the instant the answer starts streaming.
+const MAX_VISIBLE_COMMENTARY_ROWS = 4;
+
 function applyCommentaryEvent(row: HTMLElement, message: ChatMessage | undefined,
                               event: ExecutionCommentaryEvent): void {
   const events = message?.commentary || [];
@@ -4588,24 +4615,22 @@ function applyCommentaryEvent(row: HTMLElement, message: ChatMessage | undefined
     saveChatStore();
   }
 
-  renderCommentary(row, events, false);
+  renderCommentary(row, events);
 }
 
-function renderCommentary(row: HTMLElement, events: ExecutionCommentaryEvent[], completed: boolean): void {
+function renderCommentary(row: HTMLElement, events: ExecutionCommentaryEvent[]): void {
   const host = row.querySelector<HTMLElement>('.ncb-commentary-host');
   if (!host) return;
-  host.hidden = events.length === 0;
-  if (!events.length) return;
-  const details = document.createElement('details');
-  details.className = 'ncb-commentary';
-  details.open = !completed;
-  const summary = document.createElement('summary');
-  summary.textContent = completed
-    ? `Work completed · ${events.length} update${events.length === 1 ? '' : 's'}`
-    : 'Working on your request';
-  details.appendChild(summary);
+  if (!events.length) {
+    host.hidden = true;
+    host.replaceChildren();
+    return;
+  }
+  host.hidden = false;
+  const container = document.createElement('div');
+  container.className = 'ncb-commentary';
   const list = document.createElement('ol');
-  for (const event of events) {
+  for (const event of events.slice(-MAX_VISIBLE_COMMENTARY_ROWS)) {
     const item = document.createElement('li');
     item.dataset.eventId = event.eventId;
     const text = document.createElement('span');
@@ -4620,8 +4645,18 @@ function renderCommentary(row: HTMLElement, events: ExecutionCommentaryEvent[], 
     }
     list.appendChild(item);
   }
-  details.appendChild(list);
-  host.replaceChildren(details);
+  container.appendChild(list);
+  host.replaceChildren(container);
+}
+
+// Called the moment the first substantive answer token arrives (or when a
+// stream ends up with no commentary to show). Live commentary must never
+// linger as a post-hoc "Work completed" summary — it disappears completely.
+function hideLiveCommentary(row: HTMLElement): void {
+  const host = row.querySelector<HTMLElement>('.ncb-commentary-host');
+  if (!host) return;
+  host.hidden = true;
+  host.replaceChildren();
 }
 
 // Update the AI bubble's subtitle to reflect the source actually used, so the
@@ -7461,8 +7496,10 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
   // promoteAiInputToModal's [data-restored] guard) — forms stay inline.
   row.setAttribute('data-restored', 'true');
   const bubble = row.querySelector<HTMLElement>('.ncb-bubble-body');
-  if (m.commentary?.length) {
-    renderCommentary(row, m.commentary, m.completionState === 'complete');
+  // Commentary is a live, in-progress signal only — a completed answer never
+  // shows it again after reload, only a genuinely still-active one does.
+  if (m.commentary?.length && m.completionState && ACTIVE_COMPLETION_STATES.has(m.completionState)) {
+    renderCommentary(row, m.commentary);
   }
 
   if (bubble && m.completionState && ACTIVE_COMPLETION_STATES.has(m.completionState)) {

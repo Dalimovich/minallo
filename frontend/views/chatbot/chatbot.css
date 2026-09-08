@@ -1685,13 +1685,6 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   font-size: 0.79rem;
 }
 
-.ncb-commentary > summary {
-  width: fit-content;
-  cursor: pointer;
-  font-weight: 650;
-  color: color-mix(in srgb, currentColor 88%, #60a5fa 12%);
-}
-
 .ncb-commentary > ol {
   display: grid;
   gap: 8px;
