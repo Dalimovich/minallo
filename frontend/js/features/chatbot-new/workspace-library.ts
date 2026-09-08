@@ -2023,7 +2023,11 @@ async function resolveCachedSavedItem(item: SavedItem): Promise<SavedItem> {
     if (token) {
       let response: Response;
       try {
-        response = await fetch('/api/chat-saved-replies', { headers: { Authorization: `Bearer ${token}` } });
+        // Fetch this exact row by id — not the account-wide listing — so a
+        // response older than the first page is still reachable; the
+        // listing above is paginated and this open path must not depend on
+        // having already loaded every earlier page.
+        response = await fetch(`/api/chat-saved-replies?id=${encodeURIComponent(item.id)}`, { headers: { Authorization: `Bearer ${token}` } });
       } catch {
         throw new SavedOpenError('load_failed', 'Could not reach the server to load this saved response.');
       }
@@ -2071,26 +2075,56 @@ function readCheatsheetSettings(courseId: string, noteId: string): Record<string
   return { columns: 3, font: 'sm', pad: '10mm', style: 'academic', rendererVersion: 1 };
 }
 
+// Bound on the pagination loop in loadBookmarkedResponses — 25 pages of the
+// backend's MAX_PAGE_SIZE(200) covers 5000 saved responses account-wide,
+// well beyond real usage; it only guarantees the loop terminates.
+const SAVED_REPLY_MAX_PAGES = 25;
+
+function localPendingSavedReplyDeleteIds(): Set<string> {
+  const ids = new Set<string>();
+  try {
+    readPersistedChats().forEach((chat) => {
+      Object.keys(chat.pendingSavedReplyDeletes || {}).forEach((id) => ids.add(id));
+    });
+  } catch { /* corrupted local cache should not block the rest of the merge */ }
+  return ids;
+}
+
 async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: LibraryCourse[] }> {
   type ReplyRow = {
     id?: string; chat_id?: string; reply_text?: string; created_at?: string;
     course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
   };
   const localRowsAtStart = localBookmarkedResponses();
+  // Durable tombstones (survive reload) plus this session's in-memory set
+  // (covers a delete whose localStorage write hasn't flushed yet) — a stale
+  // server row matching either must not be treated as live.
+  const pendingDeleteIds = localPendingSavedReplyDeleteIds();
   let serverRows: ReplyRow[] = [];
   const token = authToken();
   if (token) {
     try {
-      const response = await fetch('/api/chat-saved-replies', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const body = await response.json() as { replies?: ReplyRow[] };
-        serverRows = Array.isArray(body.replies)
-          ? body.replies.filter((row) => !row.id || !deletedResponseIds.has(row.id))
-          : [];
-        const serverIds = new Set(serverRows.map((row) => row.id));
-        await Promise.allSettled(localRowsAtStart.filter((row) => !serverIds.has(row.id)).map((row) =>
+      // Page through every saved response account-wide — a single capped
+      // request used to make anything past the 200th-newest bookmark
+      // unreachable from a new device/browser.
+      let offset = 0;
+      for (let page = 0; page < SAVED_REPLY_MAX_PAGES; page++) {
+        const response = await fetch(`/api/chat-saved-replies?offset=${offset}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) break;
+        const body = await response.json() as { replies?: ReplyRow[]; nextOffset?: number | null };
+        serverRows.push(...(Array.isArray(body.replies) ? body.replies : []));
+        if (!body.nextOffset) break;
+        offset = body.nextOffset;
+      }
+      serverRows = serverRows.filter((row) =>
+        !row.id || (!deletedResponseIds.has(row.id) && !pendingDeleteIds.has(row.id))
+      );
+      const serverIds = new Set(serverRows.map((row) => row.id));
+      await Promise.allSettled(localRowsAtStart
+        .filter((row) => !serverIds.has(row.id) && !pendingDeleteIds.has(row.id))
+        .map((row) =>
           fetch('/api/chat-saved-replies', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -2101,7 +2135,6 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
             })
           })
         ));
-      }
     } catch { /* local cache still makes bookmarks available offline */ }
   }
   // A bookmark can be created while the server request above is in flight.

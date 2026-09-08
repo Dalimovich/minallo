@@ -16,6 +16,7 @@ const MAX_REPLY_CHARS = 80000; // matches NCB_MAX_STORED_MESSAGE_CHARS + DB chec
 const MAX_ID_CHARS = 64;
 const MAX_COURSE_ID_CHARS = 200;
 const MAX_PROMPT_CHARS = 1000;
+const MAX_PAGE_SIZE = 200;
 
 export function normalizeSavedReplyText(text: string): string {
   return text.replace(/\r\n/g, '\n').trim();
@@ -37,9 +38,39 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const params = event.queryStringParameters || {};
 
   if (event.httpMethod === 'GET') {
-    let path = 'chat_saved_replies?select=id,chat_id,reply_text,created_at,course_id,source_message_id,source_prompt,content_fingerprint' +
+    const SELECT = 'select=id,chat_id,reply_text,created_at,course_id,source_message_id,source_prompt,content_fingerprint';
+
+    // Exact single-row lookup, independent of the paginated listing below —
+    // a response older than the caller's loaded pages must still resolve by
+    // id (e.g. re-opening a bookmark from a stale in-memory reference).
+    if (params.id) {
+      const path = 'chat_saved_replies?' + SELECT +
+        '&user_id=eq.' + encodeURIComponent(user.id) +
+        '&id=eq.' + encodeURIComponent(params.id) + '&limit=1';
+      const result = await supaRequest<unknown[]>('GET', path, null, serviceKey)
+        .catch(() => ({ status: 0, body: [] as unknown[] }));
+      if (result.status < 200 || result.status >= 300) {
+        return fail(502, 'Could not load saved AI response');
+      }
+      const rows = Array.isArray(result.body) ? result.body : [];
+      return jsonResponse(200, { replies: rows });
+    }
+
+    // Keyset-stable offset pagination: (created_at desc, id desc) is a total
+    // order (id breaks ties within the same millisecond), so a fixed `limit`
+    // with an increasing `offset` never skips or repeats a row across pages.
+    // A single unpaginated request used to hard-cap the whole account's
+    // saved responses at 200 — anything older was permanently unreachable.
+    const requestedLimit = Number.parseInt(params.limit || '', 10);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, MAX_PAGE_SIZE)
+      : MAX_PAGE_SIZE;
+    const requestedOffset = Number.parseInt(params.offset || '', 10);
+    const offset = Number.isFinite(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
+
+    let path = 'chat_saved_replies?' + SELECT +
       '&user_id=eq.' + encodeURIComponent(user.id) +
-      '&order=created_at.desc&limit=200';
+      '&order=created_at.desc,id.desc&limit=' + limit + '&offset=' + offset;
     if (params.chatId) path += '&chat_id=eq.' + encodeURIComponent(params.chatId);
     const result = await supaRequest<unknown[]>('GET', path, null, serviceKey)
       .catch(() => ({ status: 0, body: [] as unknown[] }));
@@ -50,7 +81,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       return fail(502, 'Could not load saved AI responses');
     }
     const rows = Array.isArray(result.body) ? result.body : [];
-    return jsonResponse(200, { replies: rows });
+    const nextOffset = rows.length === limit ? offset + rows.length : null;
+    return jsonResponse(200, { replies: rows, nextOffset });
   }
 
   if (event.httpMethod === 'POST') {
@@ -118,6 +150,14 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       const existingId =
         (Array.isArray(sourceExisting?.body) ? sourceExisting.body[0]?.id : undefined)
         || (Array.isArray(fingerprintExisting.body) ? fingerprintExisting.body[0]?.id : undefined);
+      if (!existingId) {
+        // The DB reports a conflict but neither re-query can identify the
+        // conflicting row (e.g. it was deleted between the insert attempt
+        // and this lookup). Returning ok:true here would mark the local
+        // copy durably synced when we don't actually know which — if any —
+        // server row backs it. Fail so the client keeps retrying instead.
+        return fail(409, 'Could not resolve saved reply conflict');
+      }
       return jsonResponse(200, { ok: true, duplicate: true, existingId });
     }
     if (result.status < 200 || result.status >= 300) {
@@ -129,10 +169,17 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'DELETE') {
     const id = params.id;
     if (!id) return fail(400, 'id is required');
-    await supaRequest('DELETE',
+    const result = await supaRequest('DELETE',
       'chat_saved_replies?id=eq.' + encodeURIComponent(id) +
       '&user_id=eq.' + encodeURIComponent(user.id),
       null, serviceKey, { Prefer: 'return=minimal' });
+    // A failed database deletion must not look successful — the client
+    // clears its local pending-delete tombstone only on a genuine {ok:true},
+    // so a fake success here would let a row the user deleted survive
+    // server-side forever with nothing left to retry it.
+    if (result.status < 200 || result.status >= 300) {
+      return fail(502, 'Could not delete saved reply');
+    }
     return jsonResponse(200, { ok: true });
   }
 

@@ -23,6 +23,19 @@ export function normalizeSavedReplySyncState(state: unknown): SavedReplySyncStat
   return state === 'pending' || state === 'failed' ? state : 'synced';
 }
 
+// Same rationale as normalizeSavedReplySyncState: a pending-delete tombstone
+// (id -> deletedAt ms) must survive the localStorage round trip, or a DELETE
+// that failed offline reverts to "never happened" on reload and the row
+// resurfaces from the next server merge instead of retrying.
+export function normalizePendingSavedReplyDeletes(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!value || typeof value !== 'object') return out;
+  for (const [id, deletedAt] of Object.entries(value as Record<string, unknown>)) {
+    if (id && typeof deletedAt === 'number' && Number.isFinite(deletedAt)) out[id] = deletedAt;
+  }
+  return out;
+}
+
 export interface PersistedSavedReply {
   id?: string;
   text?: string;
@@ -41,6 +54,9 @@ export interface PersistedChat {
   id?: string;
   title?: string;
   savedReplies?: PersistedSavedReply[];
+  // Durable delete tombstones: an id present here was removed locally but
+  // isn't confirmed gone server-side yet — see normalizePendingSavedReplyDeletes.
+  pendingSavedReplyDeletes?: Record<string, number>;
 }
 
 // The `minallo:saved-replies-changed` event contract. A 'created' (or

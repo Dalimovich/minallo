@@ -8,9 +8,10 @@
 
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import {
-  parsePersistedChats, normalizeSavedReplySyncState,
+  parsePersistedChats, normalizeSavedReplySyncState, normalizePendingSavedReplyDeletes,
   type SavedBookmarkEventPayload, type SavedRepliesChangedDetail, type SavedReplySyncState,
 } from './chat-store-format.js';
+import { createSavedReplySyncEngine } from './saved-reply-sync.js';
 import { attachMessageNavigator } from '../message-navigator/message-navigator.js';
 import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
@@ -1587,6 +1588,14 @@ async function streamAiReply(
     return true;
   } catch (err) {
     thinking?.remove(true);
+    // Single safety net for every way this can end abnormally (backend
+    // error, superseded-request rejection, network failure, user Stop via
+    // AbortError) — commentary must never survive a terminal outcome, and
+    // scattering the hide call at each individual throw site is exactly how
+    // a path can be missed. The per-token/per-error-frame hides upstream
+    // still fire first in the common cases; this just guarantees it.
+    const errorRow = bubble?.closest<HTMLElement>('.ncb-msg-row');
+    if (errorRow) hideLiveCommentary(errorRow);
     const stoppedByUser = userStoppedControllers.has(controller);
     let partialText = err instanceof AskStreamError && typeof err.metadata?.partialAnswer === 'string'
       ? sanitizeChatbotDiagrams(err.metadata.partialAnswer, allowDiagrams).trim() : '';
@@ -4422,6 +4431,9 @@ function abortSend(
       : null;
     const bubble = row?.querySelector<HTMLElement>('.ncb-bubble-body');
     row?.querySelector<HTMLElement>('.ncb-thinking')?.remove();
+    // A user Stop is a terminal outcome too — live commentary must not keep
+    // showing "I'm searching…" above a response the user just cut off.
+    if (row) hideLiveCommentary(row);
     if (bubble) {
       if (message.text.trim()) renderRichBubble(bubble, message.text, !!message.allowDiagrams);
       else bubble.innerHTML = '';
@@ -6397,94 +6409,28 @@ function sameSavedReplyScope(a: string | null | undefined, b: string | null | un
   return (a || null) === (b || null);
 }
 
-// Bookmark has two guarantees: (1) immediate local visibility — already true
-// by the time this is called — and (2) eventual durable persistence. This
-// function attempts (2) but must never be the only attempt: a missing token
-// or a failed POST leaves the reply's syncState so flushPendingSavedReplySync
-// retries it later instead of the durable copy silently never existing.
-function syncSavedReplyCreate(chatId: string, r: SavedReply): void {
-  r.syncState = 'pending';
-  const token = getSbToken();
-  if (!token) {
-    saveChatStore();
-    return; // retried by flushPendingSavedReplySync once auth is ready
-  }
-  const requestedId = r.id;
-  void fetch(SAVED_REPLIES_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({
-      id: r.id, chatId, text: r.text, createdAt: r.createdAt,
-      courseId: r.courseId, sourceMessageId: r.sourceMessageId, sourcePrompt: r.sourcePrompt
-    }),
-  }).then(async (response) => {
-    if (!response.ok) {
-      r.syncState = 'failed';
-      saveChatStore();
-      return;
-    }
-    const result = await response.json() as { duplicate?: boolean; existingId?: string };
-    if (!result.duplicate || !result.existingId || result.existingId === requestedId) {
-      r.syncState = 'synced';
-      saveChatStore();
-      return;
-    }
-    const chat = chatStore.chats.find((candidate) => candidate.id === chatId);
-    const local = chat?.savedReplies.find((candidate) => candidate.id === requestedId);
-    if (!chat || !local) return;
-    const canonical = chat.savedReplies.find((candidate) => candidate.id === result.existingId);
-    if (canonical) {
-      canonical.syncState = 'synced';
-      chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
-    } else {
-      local.id = result.existingId;
-      local.syncState = 'synced';
-    }
-    saveChatStore();
-    dispatchSavedReplyChanged({ id: result.existingId, replacedId: requestedId, action: 'reconciled' });
-  }).catch(() => {
-    // offline / network failure — the local copy is intact; syncState stays
-    // 'pending' so flushPendingSavedReplySync retries on the next trigger.
-    r.syncState = 'failed';
-    saveChatStore();
-  });
-}
-
-// Retry triggers (auth ready, back online, Saved panel opened, chat-store
-// load) call this instead of reaching into chatStore themselves. Bounded and
-// event-driven, never a poll: it only re-attempts replies already marked
-// 'pending'/'failed', and the debounce collapses bursts of near-simultaneous
-// triggers (e.g. 'online' and an auth-ready event firing together) into one
-// pass. The backend's source-message/content-fingerprint dedupe (see
-// syncSavedReplyCreate's duplicate-reconcile branch) makes a redundant retry
-// of an already-synced reply safe, so this never needs to be perfectly precise.
-let _lastSavedReplyFlushAt = 0;
-function flushPendingSavedReplySync(): void {
-  if (!getSbToken()) return;
-  const now = Date.now();
-  if (now - _lastSavedReplyFlushAt < 2000) return;
-  _lastSavedReplyFlushAt = now;
-  for (const chat of chatStore.chats) {
-    for (const reply of chat.savedReplies) {
-      if (reply.syncState === 'pending' || reply.syncState === 'failed') {
-        syncSavedReplyCreate(reply.chatId || chat.id, reply);
-      }
-    }
-  }
-}
-
-function syncSavedReplyDelete(id: string): void {
-  const token = getSbToken();
-  if (!token) return;
-  void fetch(SAVED_REPLIES_API + '?id=' + encodeURIComponent(id), {
-    method: 'DELETE',
-    headers: { Authorization: 'Bearer ' + token },
-  }).catch(() => {
-    /* offline — worst case the reply resurfaces on a later merge */
-  });
-}
+// The actual create/delete/flush mutation queue lives in saved-reply-sync.ts
+// (no DOM dependency, so it's directly unit-testable) — this wires it to the
+// real chatStore/localStorage/DOM. See that module's header comment.
+const { syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync } = createSavedReplySyncEngine({
+  getChats: () => chatStore.chats,
+  saveChatStore,
+  getToken: getSbToken,
+  dispatchChanged: dispatchSavedReplyChanged,
+  apiUrl: SAVED_REPLIES_API,
+});
 
 const _savedRepliesSyncedChats = new Set<string>();
+
+type SavedReplyServerRow = {
+  id?: string; chat_id?: string; reply_text?: string; created_at?: string;
+  course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
+};
+
+// Safety bound on the pagination loop below — 25 pages * MAX_PAGE_SIZE(200)
+// covers 5000 saved replies for a single chat, far beyond any real usage; it
+// exists only to guarantee termination if the server ever misbehaves.
+const SAVED_REPLY_MAX_PAGES = 25;
 
 async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): Promise<void> {
   if (_savedRepliesSyncedChats.has(chatId)) return;
@@ -6492,20 +6438,26 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
   if (!token) return;
   _savedRepliesSyncedChats.add(chatId);
   try {
-    const resp = await fetch(SAVED_REPLIES_API + '?chatId=' + encodeURIComponent(chatId), {
-      headers: { Authorization: 'Bearer ' + token },
-    });
-    if (!resp.ok) {
-      _savedRepliesSyncedChats.delete(chatId);
-      return;
+    // Page through the full server set for this chat rather than trusting a
+    // single capped request — reconciliation (both the tombstone check and
+    // the local→server repush below) needs to know about every server row,
+    // not just the first MAX_PAGE_SIZE.
+    const serverRows: SavedReplyServerRow[] = [];
+    let offset = 0;
+    for (let page = 0; page < SAVED_REPLY_MAX_PAGES; page++) {
+      const resp = await fetch(
+        SAVED_REPLIES_API + '?chatId=' + encodeURIComponent(chatId) + '&offset=' + offset,
+        { headers: { Authorization: 'Bearer ' + token } }
+      );
+      if (!resp.ok) {
+        _savedRepliesSyncedChats.delete(chatId);
+        return;
+      }
+      const data = (await resp.json()) as { replies?: SavedReplyServerRow[]; nextOffset?: number | null };
+      serverRows.push(...(Array.isArray(data.replies) ? data.replies : []));
+      if (!data.nextOffset) break;
+      offset = data.nextOffset;
     }
-    const data = (await resp.json()) as {
-      replies?: Array<{
-        id?: string; chat_id?: string; reply_text?: string; created_at?: string;
-        course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
-      }>;
-    };
-    const serverRows = Array.isArray(data.replies) ? data.replies : [];
     const chat = chatStore.chats.find((c) => c.id === chatId);
     if (!chat) return;
 
@@ -6513,6 +6465,13 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
     let changed = false;
     for (const row of serverRows) {
       if (!row.id || typeof row.reply_text !== 'string') continue;
+      if (Object.prototype.hasOwnProperty.call(chat.pendingSavedReplyDeletes, row.id)) {
+        // The user deleted this locally and the DELETE hasn't been confirmed
+        // yet — a stale server row must not resurrect it in the UI. Retry
+        // the delete instead of adopting the row.
+        syncSavedReplyDelete(chatId, row.id);
+        continue;
+      }
       const rowText = row.reply_text;
       const existing = chat.savedReplies.find((reply) =>
         reply.id === row.id
@@ -6547,7 +6506,10 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
       changed = true;
     }
 
-    // Local → server: re-push rows a failed/pre-feature save never uploaded.
+    // Local → server: re-push rows a failed/pre-feature save never uploaded
+    // (this also heals legacy local-only bookmarks predating durable sync —
+    // they carry no syncState, but if their id isn't among the now-complete
+    // server set they still need a first push).
     const serverIds = new Set(serverRows.map((r) => r.id));
     chat.savedReplies.forEach((r) => {
       if (!serverIds.has(r.id)) syncSavedReplyCreate(chatId, r);
@@ -6700,9 +6662,13 @@ function renderNotesTab(root: HTMLElement): void {
     if (!id) return;
     card.querySelector<HTMLButtonElement>('.ncb-saved-remove')?.addEventListener('click', () => {
       chat.savedReplies = chat.savedReplies.filter((r) => r.id !== id);
+      // Tombstone persisted before the network attempt — same contract as
+      // create's syncState='pending': local intent survives a reload even if
+      // the DELETE never reaches the server this session.
+      chat.pendingSavedReplyDeletes[id] = Date.now();
       touchActiveChat();
       saveChatStore();
-      syncSavedReplyDelete(id);
+      syncSavedReplyDelete(chat.id, id);
       dispatchSavedReplyChanged({ id, action: 'deleted' });
       renderNotesTab(root);
     });
@@ -6806,6 +6772,9 @@ interface SavedChat {
   sourceMode: SourceMode;
   courseFileScope: CourseFileScope;
   savedReplies: SavedReply[];
+  // Durable delete tombstones (id -> deletedAt ms) for saved replies removed
+  // locally but not yet confirmed deleted server-side. See syncSavedReplyDelete.
+  pendingSavedReplyDeletes: Record<string, number>;
   pinned: boolean;
   createdAt: number;
   updatedAt: number;
@@ -6893,6 +6862,7 @@ const chatStore: ChatStore = {
       sourceMode: 'auto',
       courseFileScope: 'all_course_files',
       savedReplies: [],
+      pendingSavedReplyDeletes: {},
       pinned: false,
       createdAt: now,
       updatedAt: now,
@@ -7051,10 +7021,17 @@ function compactChatForStorage(c: SavedChat): SavedChat {
       // that actually writes localStorage doesn't carry it through.
       syncState: normalizeSavedReplySyncState(r.syncState),
     })),
+    // Same durability contract as syncState above, for deletes.
+    pendingSavedReplyDeletes: { ...(c.pendingSavedReplyDeletes || {}) },
     pinned: !!c.pinned,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   };
+}
+
+function chatHasUnresolvedSavedReplyMutation(c: SavedChat): boolean {
+  if (Object.keys(c.pendingSavedReplyDeletes || {}).length > 0) return true;
+  return (c.savedReplies || []).some((r) => r.syncState === 'pending' || r.syncState === 'failed');
 }
 
 function compactChatsForStorage(chats: SavedChat[], activeId: string): SavedChat[] {
@@ -7065,6 +7042,10 @@ function compactChatsForStorage(chats: SavedChat[], activeId: string): SavedChat
   };
   add(chats.find((c) => c.id === activeId));
   byRecent.filter((c) => c.pinned).forEach(add);
+  // A chat holding an unresolved Saved mutation (a pending/failed create, or
+  // a pending-delete tombstone) must not fall out of local storage before
+  // it's synced — the recency cap below has no way to retry what it drops.
+  byRecent.filter(chatHasUnresolvedSavedReplyMutation).forEach(add);
   byRecent.forEach((c) => {
     if (picked.size < NCB_MAX_STORED_CHATS) add(c);
   });
@@ -7249,6 +7230,7 @@ function loadChatStore(): void {
     if (!Array.isArray(c.selectedSourceIds)) c.selectedSourceIds = [];
     if (typeof c.courseId !== 'string' || !c.courseId) c.courseId = null;
     if (!Array.isArray(c.savedReplies)) c.savedReplies = [];
+    c.pendingSavedReplyDeletes = normalizePendingSavedReplyDeletes(c.pendingSavedReplyDeletes);
     c.savedReplies = c.savedReplies.map((reply) => ({
       ...reply,
       courseId: typeof reply.courseId === 'string' && reply.courseId ? reply.courseId : null,

@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parsePersistedChats, normalizeSavedReplySyncState } from '../../frontend/js/features/chatbot-new/chat-store-format.ts';
+import {
+  parsePersistedChats, normalizeSavedReplySyncState, normalizePendingSavedReplyDeletes,
+} from '../../frontend/js/features/chatbot-new/chat-store-format.ts';
 
 const shell = fs.readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
 const workspace = fs.readFileSync('frontend/js/features/chatbot-new/workspace-library.ts', 'utf8');
 const chatStoreFormat = fs.readFileSync('frontend/js/features/chatbot-new/chat-store-format.ts', 'utf8');
+const syncEngine = fs.readFileSync('frontend/js/features/chatbot-new/saved-reply-sync.ts', 'utf8');
 
 function slice(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -67,51 +70,70 @@ test('an unrecognized/corrupt syncState value normalizes to synced rather than b
   assert.equal(normalizeSavedReplySyncState(undefined), 'synced');
 });
 
-// ── Wiring tests: prove shell.ts's real serializer/loader call the one ───
-// ── shared, tested function above, instead of a re-guessed local copy. ───
+// Same durability contract as syncState, for the delete tombstone map — see
+// tests/frontend/saved-reply-sync-engine.test.mjs for the engine behavior
+// (create/delete/flush) that consumes this once loaded.
 
-test('compactChatForStorage persists syncState via the shared normalizer, not a re-guessed shape', () => {
-  const compactFn = slice(shell, 'function compactChatForStorage', 'function compactChatsForStorage');
+function tombstoneRoundTrip(pendingSavedReplyDeletes) {
+  const raw = JSON.stringify([{ id: 'chat_1', title: 'Test', savedReplies: [], pendingSavedReplyDeletes }]);
+  const [loadedChat] = parsePersistedChats(raw);
+  return normalizePendingSavedReplyDeletes(loadedChat.pendingSavedReplyDeletes);
+}
+
+test('a pending-delete tombstone survives a real JSON localStorage round-trip', () => {
+  assert.deepEqual(tombstoneRoundTrip({ rep_1: 1700000000000 }), { rep_1: 1700000000000 });
+});
+
+test('a missing pendingSavedReplyDeletes field normalizes to an empty map, not a crash', () => {
+  assert.deepEqual(tombstoneRoundTrip(undefined), {});
+});
+
+test('a corrupt pendingSavedReplyDeletes value (wrong type, non-numeric timestamp) is dropped, not trusted', () => {
+  assert.deepEqual(normalizePendingSavedReplyDeletes('not an object'), {});
+  assert.deepEqual(normalizePendingSavedReplyDeletes(null), {});
+  assert.deepEqual(normalizePendingSavedReplyDeletes({ rep_1: 'not-a-number', rep_2: 42 }), { rep_2: 42 });
+});
+
+// ── Wiring tests: prove shell.ts's real serializer/loader/UI call the one ─
+// ── shared, tested functions above instead of a re-guessed local copy. ───
+
+test('compactChatForStorage persists syncState and pendingSavedReplyDeletes via the shared normalizers', () => {
+  const compactFn = slice(shell, 'function compactChatForStorage', 'function chatHasUnresolvedSavedReplyMutation');
   const savedRepliesMap = slice(compactFn, 'savedReplies: (c.savedReplies || []).map', '})),');
   assert.match(savedRepliesMap, /syncState: normalizeSavedReplySyncState\(r\.syncState\)/);
+  assert.match(compactFn, /pendingSavedReplyDeletes: \{ \.\.\.\(c\.pendingSavedReplyDeletes \|\| \{\}\) \}/);
 });
 
-test('loadChatStore migration normalizes syncState via the shared function, not an inline duplicate', () => {
+test('loadChatStore migration normalizes syncState and pendingSavedReplyDeletes via the shared functions', () => {
   const migrationBlock = slice(shell, 'c.savedReplies = c.savedReplies.map', 'c.sourceMode = normaliseSourceMode');
   assert.match(migrationBlock, /syncState: normalizeSavedReplySyncState\(reply\.syncState\)/);
+  assert.match(shell, /c\.pendingSavedReplyDeletes = normalizePendingSavedReplyDeletes\(c\.pendingSavedReplyDeletes\);/);
 });
 
-test('shell.ts imports the normalizer from chat-store-format instead of defining its own', () => {
-  assert.match(shell, /import \{[\s\S]{0,120}normalizeSavedReplySyncState[\s\S]{0,120}\} from '\.\/chat-store-format\.js';/);
+test('shell.ts imports the sync-state normalizers from chat-store-format instead of defining its own', () => {
+  const importBlock = slice(shell, "import {", "} from './chat-store-format.js';");
+  assert.match(importBlock, /normalizeSavedReplySyncState/);
+  assert.match(importBlock, /normalizePendingSavedReplyDeletes/);
   // A second, independently-typed local implementation is exactly how the
   // write and read boundaries silently drifted apart before.
   assert.doesNotMatch(shell, /function normalizeSavedReplySyncState/);
+  assert.doesNotMatch(shell, /function normalizePendingSavedReplyDeletes/);
 });
 
-test('a bookmark whose token is missing at click time is retried, not abandoned', () => {
-  const syncFn = slice(shell, 'function syncSavedReplyCreate', 'function flushPendingSavedReplySync');
-  // Marking pending happens unconditionally, before the token check — the
-  // local artifact and its retry-eligibility both exist even when
-  // getSbToken() returns null, so the click-Bookmark-while-signed-out case
-  // never silently skips durable persistence forever.
-  assert.match(syncFn, /r\.syncState = 'pending';\s*\n\s*const token = getSbToken\(\);/);
-  assert.match(syncFn, /if \(!token\) \{\s*\n\s*saveChatStore\(\);\s*\n\s*return;/);
-});
-
-test('a failed POST or network error marks the reply failed instead of dropping it', () => {
-  const syncFn = slice(shell, 'function syncSavedReplyCreate', 'function flushPendingSavedReplySync');
-  assert.match(syncFn, /if \(!response\.ok\) \{\s*\n\s*r\.syncState = 'failed';/);
-  assert.match(syncFn, /\}\)\.catch\(\(\) => \{[\s\S]*?r\.syncState = 'failed';/);
-  // The reply itself is never removed from chat.savedReplies on failure —
-  // only success/duplicate-reconcile paths ever splice it out.
-  assert.doesNotMatch(syncFn, /catch\(\(\) => \{[\s\S]{0,200}chat\.savedReplies = chat\.savedReplies\.filter/);
-});
-
-test('success and duplicate-reconcile paths mark the reply synced', () => {
-  const syncFn = slice(shell, 'function syncSavedReplyCreate', 'function flushPendingSavedReplySync');
-  assert.match(syncFn, /r\.syncState = 'synced';\s*\n\s*saveChatStore\(\);\s*\n\s*return;/);
-  assert.match(syncFn, /canonical\.syncState = 'synced';/);
-  assert.match(syncFn, /local\.syncState = 'synced';/);
+test('the create/delete/flush mutation queue lives in saved-reply-sync.ts, not duplicated inline in shell.ts', () => {
+  // shell.ts must wire the real engine instead of redefining the logic —
+  // the engine's own behavior (in-flight dedupe, tombstones, coalesced
+  // retry, success-over-stale-failure) is covered by real execution tests
+  // in tests/frontend/saved-reply-sync-engine.test.mjs.
+  assert.match(shell, /import \{ createSavedReplySyncEngine \} from '\.\/saved-reply-sync\.js';/);
+  const wiring = slice(shell, 'const { syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync }', 'apiUrl: SAVED_REPLIES_API,');
+  assert.match(wiring, /getChats: \(\) => chatStore\.chats,/);
+  assert.match(wiring, /saveChatStore,/);
+  assert.match(wiring, /getToken: getSbToken,/);
+  assert.match(wiring, /dispatchChanged: dispatchSavedReplyChanged,/);
+  assert.doesNotMatch(shell, /function syncSavedReplyCreate\(/);
+  assert.doesNotMatch(shell, /function syncSavedReplyDelete\(/);
+  assert.doesNotMatch(shell, /function flushPendingSavedReplySync\(/);
 });
 
 test('a reply confirmed by a successful server GET is marked synced, never left stale', () => {
@@ -123,25 +145,30 @@ test('a reply confirmed by a successful server GET is marked synced, never left 
   assert.match(mergeFn, /syncState: 'synced',/);
 });
 
-test('flushPendingSavedReplySync only retries pending/failed replies, is bounded, and needs a token', () => {
-  const source = slice(shell, 'function flushPendingSavedReplySync', 'function syncSavedReplyDelete');
-  assert.match(source, /if \(!getSbToken\(\)\) return;/);
-  assert.match(source, /if \(now - _lastSavedReplyFlushAt < 2000\) return;/);
-  assert.match(source, /reply\.syncState === 'pending' \|\| reply\.syncState === 'failed'/);
-  assert.match(source, /syncSavedReplyCreate\(reply\.chatId \|\| chat\.id, reply\)/);
+test('mergeSavedRepliesFromServer pages through the full server set instead of trusting a single capped request', () => {
+  const mergeFn = slice(shell, 'async function mergeSavedRepliesFromServer', 'function resolveBookmarkCourseId');
+  assert.match(mergeFn, /for \(let page = 0; page < SAVED_REPLY_MAX_PAGES; page\+\+\)/);
+  assert.match(mergeFn, /'&offset=' \+ offset/);
+  assert.match(mergeFn, /if \(!data\.nextOffset\) break;/);
 });
 
-test('retry triggers are wired: auth ready, back online, Saved panel opened, and startup', () => {
-  assert.match(shell, /window\.addEventListener\('online', \(\) => flushPendingSavedReplySync\(\)\)/);
-  assert.match(shell, /document\.addEventListener\('minallo:auth:signed-in', \(\) => flushPendingSavedReplySync\(\)\)/);
-  assert.match(shell, /document\.addEventListener\('minallo:auth:entered', \(\) => flushPendingSavedReplySync\(\)\)/);
-  assert.match(shell, /document\.addEventListener\('minallo:saved-panel-opened', \(\) => flushPendingSavedReplySync\(\)\)/);
-  assert.match(shell, /flushPendingSavedReplySync\(\); \/\/ startup reconciliation \/ chat-restored trigger/);
-  // No polling: setInterval must never be used for this mechanism.
-  assert.doesNotMatch(
-    slice(shell, 'function flushPendingSavedReplySync', 'function syncSavedReplyDelete'),
-    /setInterval/,
-  );
+test('a stale server row cannot resurrect a reply the user is still trying to delete', () => {
+  const mergeFn = slice(shell, 'async function mergeSavedRepliesFromServer', 'function resolveBookmarkCourseId');
+  const tombstoneCheck = slice(mergeFn, 'if (Object.prototype.hasOwnProperty.call(chat.pendingSavedReplyDeletes, row.id)) {', '}');
+  assert.match(tombstoneCheck, /syncSavedReplyDelete\(chatId, row\.id\);/);
+  assert.match(tombstoneCheck, /continue;/);
+});
+
+test('retry triggers are wired: auth ready, back online, Saved panel opened, and startup, with no polling', () => {
+  const triggerBlock = slice(shell, '// Durable bookmark sync retry triggers', 'flushPendingSavedReplySync(); // startup');
+  assert.match(triggerBlock, /window\.addEventListener\('online', \(\) => flushPendingSavedReplySync\(\)\)/);
+  assert.match(triggerBlock, /document\.addEventListener\('minallo:auth:signed-in', \(\) => flushPendingSavedReplySync\(\)\)/);
+  assert.match(triggerBlock, /document\.addEventListener\('minallo:auth:entered', \(\) => flushPendingSavedReplySync\(\)\)/);
+  assert.match(triggerBlock, /document\.addEventListener\('minallo:saved-panel-opened', \(\) => flushPendingSavedReplySync\(\)\)/);
+  // No polling: setInterval must never be used for this mechanism, in
+  // either shell.ts's wiring or the engine module itself.
+  assert.doesNotMatch(triggerBlock, /setInterval/);
+  assert.doesNotMatch(syncEngine, /setInterval/);
 });
 
 test('opening the Saved panel dispatches the retry trigger', () => {
@@ -161,12 +188,55 @@ test('re-clicking Bookmark on an already-saved reply re-enters the same retry pa
   assert.match(alreadyBranch, /syncSavedReplyCreate\(already\.chatId \|\| chat\.id, already\)/);
 });
 
+test('deleting a saved reply persists a tombstone before the network attempt, keyed off the reply id', () => {
+  const notesFn = slice(shell, 'function renderNotesTab', 'function generateChatTitle');
+  const deleteHandler = slice(notesFn, "'.ncb-saved-remove'", "'.ncb-saved-copy'");
+  assert.match(deleteHandler, /chat\.savedReplies = chat\.savedReplies\.filter\(\(r\) => r\.id !== id\);/);
+  assert.match(deleteHandler, /chat\.pendingSavedReplyDeletes\[id\] = Date\.now\(\);/);
+  assert.match(deleteHandler, /syncSavedReplyDelete\(chat\.id, id\);/);
+  // The tombstone must be written and persisted before the network call is
+  // made, not after — a page unload immediately after the click must not
+  // lose the delete intent.
+  const tombstoneIdx = deleteHandler.indexOf('pendingSavedReplyDeletes[id]');
+  const saveIdx = deleteHandler.indexOf('saveChatStore();');
+  const syncIdx = deleteHandler.indexOf('syncSavedReplyDelete(chat.id, id);');
+  assert.ok(tombstoneIdx > -1 && saveIdx > tombstoneIdx && syncIdx > saveIdx);
+});
+
+test('a chat holding an unresolved Saved mutation is kept in storage ahead of the recency cap', () => {
+  const compactChatsFn = slice(shell, 'function compactChatsForStorage', 'return Array.from(picked.values())');
+  assert.match(compactChatsFn, /byRecent\.filter\(chatHasUnresolvedSavedReplyMutation\)\.forEach\(add\);/);
+  const guardFn = slice(shell, 'function chatHasUnresolvedSavedReplyMutation', 'function compactChatsForStorage');
+  assert.match(guardFn, /Object\.keys\(c\.pendingSavedReplyDeletes \|\| \{\}\)\.length > 0/);
+  assert.match(guardFn, /r\.syncState === 'pending' \|\| r\.syncState === 'failed'/);
+});
+
 test('legacy persisted replies default to synced, not pending, to avoid a startup request storm', () => {
   const migrationBlock = slice(shell, 'c.savedReplies = c.savedReplies.map', 'c.sourceMode = normaliseSourceMode');
   assert.match(migrationBlock, /syncState: normalizeSavedReplySyncState\(reply\.syncState\)/);
 });
 
-test('the shared persisted-chat contract documents the sync-state field via the shared type', () => {
+test('the shared persisted-chat contract documents both the sync-state and tombstone fields via shared types', () => {
   assert.match(chatStoreFormat, /export type SavedReplySyncState = 'pending' \| 'synced' \| 'failed';/);
   assert.match(chatStoreFormat, /syncState\?: SavedReplySyncState;/);
+  assert.match(chatStoreFormat, /pendingSavedReplyDeletes\?: Record<string, number>;/);
+});
+
+// ── Workspace-library (account-wide Saved panel) pagination + tombstones ──
+
+test('loadBookmarkedResponses pages through every saved response instead of trusting a single 200-row request', () => {
+  const loadFn = slice(workspace, 'async function loadBookmarkedResponses', 'function authToken');
+  assert.match(loadFn, /for \(let page = 0; page < SAVED_REPLY_MAX_PAGES; page\+\+\)/);
+  assert.match(loadFn, /if \(!body\.nextOffset\) break;/);
+});
+
+test('loadBookmarkedResponses excludes rows with an unresolved durable delete tombstone, and never re-pushes them', () => {
+  const loadFn = slice(workspace, 'async function loadBookmarkedResponses', 'function authToken');
+  assert.match(loadFn, /!deletedResponseIds\.has\(row\.id\) && !pendingDeleteIds\.has\(row\.id\)/);
+  assert.match(loadFn, /!serverIds\.has\(row\.id\) && !pendingDeleteIds\.has\(row\.id\)/);
+});
+
+test('opening an older saved response resolves it by exact id, not by scanning the first page of the listing', () => {
+  const resolveFn = slice(workspace, 'async function resolveCachedSavedItem', 'const rendererLoads');
+  assert.match(resolveFn, /fetch\(`\/api\/chat-saved-replies\?id=\$\{encodeURIComponent\(item\.id\)\}`/);
 });
