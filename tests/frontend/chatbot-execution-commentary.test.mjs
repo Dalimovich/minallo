@@ -5,9 +5,17 @@ import test from 'node:test';
 const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
 const css = readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
 
+function slice(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `marker not found: ${startMarker}`);
+  const end = source.indexOf(endMarker, start);
+  assert.notEqual(end, -1, `end marker not found: ${endMarker}`);
+  return source.slice(start, end);
+}
+
 test('commentary is a distinct persisted assistant-turn region', () => {
   assert.match(shell, /commentary\?: ExecutionCommentaryEvent\[\]/);
-  assert.match(shell, /class="ncb-commentary-host" hidden/);
+  assert.match(shell, /class="ncb-commentary-host" role="status" aria-live="polite" hidden/);
   assert.match(shell, /evt\.type === 'commentary'/);
   assert.match(shell, /message\.commentary = events\.slice\(-24\)/);
 });
@@ -65,4 +73,27 @@ test('live commentary and the generic thinking status never show at once', () =>
   assert.match(shell, /let commentaryActive = false/);
   assert.match(shell, /const takeOverFromThinkingStatus/);
   assert.match(shell, /typeof evt\.status === 'string' && !commentaryActive/);
+});
+
+test('commentary is hidden on every terminal path, not only the first answer token', () => {
+  // P0: a request that fails, is superseded, or hits a network error before
+  // any token arrives must not leave old commentary ("I'm searching...")
+  // sitting on screen above the error UI. A single safety net in
+  // streamAiReply's outer catch is more robust than scattering hide calls at
+  // every individual throw site — that scattering is exactly how the
+  // original bug happened (hideLiveCommentary was only ever called on the
+  // first-token path).
+  const catchBlock = slice(shell, '// Single safety net for every way this can end abnormally', 'const stoppedByUser');
+  assert.match(catchBlock, /const errorRow = bubble\?\.closest<HTMLElement>\('\.ncb-msg-row'\);/);
+  assert.match(catchBlock, /if \(errorRow\) hideLiveCommentary\(errorRow\);/);
+
+  // User Stop is a separate synchronous path (abortSend) that updates the UI
+  // immediately rather than waiting for the aborted fetch to unwind through
+  // the catch block above — it needs its own explicit hide call too.
+  const abortFn = slice(shell, 'function abortSend(', 'if (state.activeChatId');
+  assert.match(abortFn, /if \(row\) hideLiveCommentary\(row\);/);
+});
+
+test('the commentary host is a polite live region for screen readers', () => {
+  assert.match(shell, /role="status" aria-live="polite"/);
 });

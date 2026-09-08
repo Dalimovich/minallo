@@ -133,6 +133,22 @@ def _manifest_verified(facts: dict[str, Any]) -> str:
     return f"{base} rather than using relevance-only retrieval."
 
 
+def _full_document_progress(facts: dict[str, Any]) -> str:
+    current = _count(facts, "processed_pages")
+    total = _count(facts, "expected_pages")
+    document = _label(facts, "document_name")
+    start = _count(facts, "batch_start_page")
+    end = _count(facts, "batch_end_page")
+    location = f"pages {start}-{end}" if start and end and start != end else f"page {start}" if start else None
+    if location and total:
+        if document:
+            return f"Processing {location} of {total} in {document}."
+        return f"Processing {location} of {total}."
+    if total:
+        return f"Processing pages: {current} of {total} completed."
+    return "Processing the document pages."
+
+
 def _retrieval_started(facts: dict[str, Any]) -> str:
     target = _label(facts, "exercise_label") or _label(facts, "section_label")
     document = _label(facts, "document_name")
@@ -225,6 +241,7 @@ _STAGE_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "relevance_selected": _relevance_selected,
     "documents_authorized": _documents_authorized,
     "manifest_verified": _manifest_verified,
+    "full_document_progress": _full_document_progress,
     "retrieval_started": _retrieval_started,
     "extraction_started": _extraction_started,
     "summarization_started": _summarization_started,
@@ -265,7 +282,10 @@ _LABEL_KEYS = {
     "task", "intent", "course_name", "document_name",
     "section_label", "exercise_label", "topic_label", "pipeline", "access_mode",
 }
-_INT_KEYS = {"visible_page", "expected_pages", "processed_pages", "document_count"}
+_INT_KEYS = {
+    "visible_page", "expected_pages", "processed_pages", "document_count",
+    "batch_start_page", "batch_end_page",
+}
 
 
 def _clean_label(value: Any) -> str | None:

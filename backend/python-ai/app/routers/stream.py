@@ -1903,16 +1903,60 @@ async def ask_stream_endpoint(
             # internal_error) since meta/commentary frames had already been
             # sent. Distinct code from FULL_DOCUMENT_COVERAGE_INCOMPLETE,
             # which is reserved for "coverage was computed but incomplete".
+            #
+            # process_full_documents runs on a worker thread (run_in_threadpool)
+            # and can take minutes for a large document, so its per-batch
+            # progress callback bridges back to this generator via a queue
+            # (call_soon_threadsafe) instead of the caller only learning the
+            # final page count after everything has already finished — the
+            # commentary row would otherwise sit at 0/N for the whole duration
+            # and then jump straight to N/N.
+            full_document_progress_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+            processing_event_loop = asyncio.get_running_loop()
+
+            def _on_full_document_batch_progress(progress: dict[str, Any]) -> None:
+                processing_event_loop.call_soon_threadsafe(
+                    full_document_progress_queue.put_nowait, progress,
+                )
+
+            processing_task = asyncio.create_task(run_in_threadpool(lambda: process_full_documents(
+                user_id=user_id,
+                course_id=payload.courseId,
+                question=question,
+                pipeline=processing_pipeline,
+                documents={key: preflight_documents[key] for key in resolved_ids},
+                manifests=canonical_manifests,
+                on_batch_progress=_on_full_document_batch_progress,
+            )))
             try:
-                result = await run_in_threadpool(lambda: process_full_documents(
-                    user_id=user_id,
-                    course_id=payload.courseId,
-                    question=question,
-                    pipeline=processing_pipeline,
-                    documents={key: preflight_documents[key] for key in resolved_ids},
-                    manifests=canonical_manifests,
-                ))
+                while not processing_task.done():
+                    try:
+                        progress = await asyncio.wait_for(
+                            full_document_progress_queue.get(), timeout=0.5,
+                        )
+                    except asyncio.TimeoutError:
+                        continue
+                    progress_commentary = commentary.emit(
+                        kind=CommentaryKind.DOCUMENT_PROCESSING, stage="full_document_progress",
+                        facts={
+                            "expected_pages": progress.get("total") or 0,
+                            "processed_pages": progress.get("current") or 0,
+                            "document_name": progress.get("document_name"),
+                            "batch_start_page": progress.get("batch_start_page"),
+                            "batch_end_page": progress.get("batch_end_page"),
+                        },
+                        progress={
+                            "current": progress.get("current") or 0,
+                            "total": progress.get("total") or 0, "unit": "pages",
+                        },
+                        replace_key="full_document_processing",
+                    )
+                    yield await emit(progress_commentary)
+                while not full_document_progress_queue.empty():
+                    full_document_progress_queue.get_nowait()
+                result = await processing_task
             except Exception:
+                processing_task.cancel()
                 log.exception("full_document_processing_failed request_id=%s", request_id)
                 yield _error_sse(
                     code="FULL_DOCUMENT_PROCESSING_FAILED",
@@ -2167,6 +2211,7 @@ async def ask_stream_endpoint(
                 "collecting_sources": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
                 "searching_course_material": (CommentaryKind.RETRIEVAL, "retrieval_started", "retrieval"),
                 "extracting_items": (CommentaryKind.ANALYSIS, "extraction_started", "task_processing"),
+                "checking_web_sources": (CommentaryKind.WEB_SEARCH, "web_search_started", "web_search"),
             }.get(status_key)
             if not commentary_stage:
                 return None
@@ -3310,6 +3355,11 @@ async def _prepare_ask_stream_response(
         )
 
     if source_decision.source_scope == SourceScope.INTERNET and not app_or_workspace:
+        if status_sink:
+            web_facts: dict[str, Any] = {}
+            if source_decision.sanitized_web_query:
+                web_facts["topic_label"] = source_decision.sanitized_web_query
+            status_sink(_CommentaryStatus("checking_web_sources", web_facts))
         web_answer = await run_in_threadpool(
             lambda: generate_web_answer(question, query=source_decision.sanitized_web_query or question)
         )

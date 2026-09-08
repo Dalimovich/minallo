@@ -203,3 +203,82 @@ def test_live_stream_orientation_commentary_names_the_resolved_document(monkeypa
     # while the formatted message still used the generic sentence because
     # the stage's formatter never read that fact.
     assert "Formelzettel Statik.pdf" in orientation["message"]
+
+
+def test_live_stream_web_search_emits_real_commentary(monkeypatch) -> None:
+    """Route-level regression: CommentaryKind.WEB_SEARCH and the
+    web_search_started template existed but nothing ever constructed a
+    CommentaryEmitter on the internet-search branch, so it silently emitted
+    no commentary at all. A unit test of format_commentary() can't catch a
+    missing emit call — only a real run of the endpoint proves the wiring."""
+    from app.routers import stream
+    from app.services import tutor_state_store
+    from app.services.tutor_state import TutorState
+    from app.services.web_answer import generate_web_answer  # noqa: F401
+
+    user_id = "00000000-0000-4000-8000-000000000011"
+    conversation_id = "commentary-web-search-single-turn"
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(stream, "record_retrieval_debug", lambda *_a, **_k: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(tutor_state_store, "current_persisted_generation", lambda *_a, **_k: 1)
+    monkeypatch.setattr(
+        stream, "generate_web_answer",
+        lambda *_a, **_k: {
+            "answer": "The current chancellor is ...",
+            "webSources": [{"title": "Example source", "url": "https://example.com"}],
+            "model": "test-model", "promptTokens": 10, "completionTokens": 20,
+        },
+    )
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            question="who is the current chancellor of Germany?",
+            sourceMode="internet",
+            conversationId=conversation_id, conversationGeneration=1,
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    commentary_events = []
+    for raw in events:
+        text = raw.decode("utf-8")
+        if not text.startswith("data: "):
+            continue
+        try:
+            parsed = json.loads(text[len("data: "):])
+        except ValueError:
+            continue
+        if parsed.get("type") == "commentary":
+            commentary_events.append(parsed)
+
+    web_search_events = [e for e in commentary_events if e["kind"] == "web_search"]
+    assert web_search_events, "expected a real WEB_SEARCH commentary event, none were emitted"
+    assert web_search_events[0]["stage"] == "web_search_started"
+    assert "web sources" in web_search_events[0]["message"].casefold()
+
+
+def test_full_document_progress_reports_the_real_page_range_being_processed() -> None:
+    message = format_commentary("full_document_progress", {
+        "expected_pages": 84, "processed_pages": 24,
+        "document_name": "Lecture 4.pdf", "batch_start_page": 13, "batch_end_page": 24,
+    })
+    assert "13-24" in message
+    assert "84" in message
+    assert "Lecture 4.pdf" in message
+
+
+def test_full_document_progress_never_invents_a_page_range_it_does_not_have() -> None:
+    message = format_commentary("full_document_progress", {"expected_pages": 84, "processed_pages": 24})
+    assert "13-24" not in message
+    assert "84" in message

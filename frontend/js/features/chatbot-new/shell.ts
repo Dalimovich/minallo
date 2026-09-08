@@ -4611,7 +4611,7 @@ function appendAiBubble(msgs: HTMLElement, messageId?: string, insertAfter?: HTM
           <p class="ncb-bubble-subtitle">${escapeHtml(tStr('cb_building_explanation', 'Building the explanation…'))}</p>
         </div>
       </div>
-      <div class="ncb-commentary-host" hidden></div>
+      <div class="ncb-commentary-host" role="status" aria-live="polite" hidden></div>
       <div class="ncb-bubble-body"></div>
     </div>
   `;
