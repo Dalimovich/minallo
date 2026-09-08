@@ -392,6 +392,14 @@ var _sb = {
             _sbToken = null;
             window._sbToken = null;
             _sbClearStoredSession();
+            // restoreSession()'s equivalent branch already does this; this one
+            // (an explicit refresh rejection reached later, mid-session, e.g.
+            // via authenticatedFetch's coordinatedRefresh) didn't, so the app
+            // could stay visibly "signed in" with window._sbToken === null and
+            // no signal for anything to react to. Still needs a real listener
+            // (a session-expired banner/redirect) to be useful beyond keeping
+            // Minallo's own auth state accurate — none exists yet.
+            _ssAuth('signed-out', { source: 'refreshSession' });
             return null;
           }
           throw new Error('SESSION_REFRESH_NETWORK_ERROR');

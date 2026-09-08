@@ -12,6 +12,8 @@ export interface AuthRequestDependencies {
 export interface AuthenticatedFetchOptions {
   safeToRetry?: boolean;
   retryAuthFailure?: boolean;
+  /** Extra headers merged in after Authorization is set — e.g. Supabase's `apikey`. */
+  extraHeaders?: HeadersInit;
 }
 
 const EXPIRY_SKEW_MS = 90_000;
@@ -65,6 +67,7 @@ export async function authenticatedFetchWith(
   const send = (bearer: string): Promise<Response> => {
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${bearer}`);
+    if (options.extraHeaders) new Headers(options.extraHeaders).forEach((v, k) => headers.set(k, v));
     return fetch(input, { ...init, headers });
   };
 
@@ -127,6 +130,23 @@ export function authenticatedFetch(
     init,
     options,
   );
+}
+
+// Direct Supabase REST/Storage calls (SUPA_URL + '/rest/v1/...') need an
+// `apikey` header alongside a fresh Authorization bearer — plain
+// authenticatedFetch only sets the latter. This is the same refresh/retry
+// contract, just with the anon key merged in, so call sites that talk to
+// PostgREST directly (course_progress, study_lounge_stats, flashcard_decks,
+// exam_sessions, etc.) don't need their own copy of the auth logic.
+export function authenticatedSupabaseFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  options: AuthenticatedFetchOptions = {},
+): Promise<Response> {
+  return authenticatedFetch(input, init, {
+    ...options,
+    extraHeaders: { apikey: window._SAKEY || '', ...(options.extraHeaders || {}) },
+  });
 }
 
 export function resetAuthRefreshForTests(): void {

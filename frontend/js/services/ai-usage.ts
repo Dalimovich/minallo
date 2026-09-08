@@ -11,6 +11,8 @@
 // Both pieces are styled with the site's existing glass tokens so they sit
 // naturally in the portal. No new design language introduced.
 
+import { authenticatedFetch } from './authenticated-fetch.js';
+
 declare global {
   interface Window {
     _sbToken?: string;
@@ -78,10 +80,7 @@ function _monthKey(d: Date = new Date()): string {
 export async function fetchAiUsage(): Promise<AiUsage | null> {
   if (!_token()) return null;
   try {
-    const res = await fetch(_backendUrl() + '/api/ai/usage', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer ' + _token() }
-    });
+    const res = await authenticatedFetch(_backendUrl() + '/api/ai/usage', { method: 'GET' }, { safeToRetry: true });
     if (!res.ok) return null;
     const data = (await res.json()) as AiUsage;
     window._aiUsage = data;

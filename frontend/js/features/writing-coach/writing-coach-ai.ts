@@ -7,6 +7,8 @@
 // userId is taken server-side from the verified Supabase JWT — never
 // passed from the client.
 
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+
 export type FeedbackType = 'grammar' | 'vocabulary' | 'style' | 'pattern';
 export type Severity = 'high' | 'medium' | 'low' | 'optional';
 export type Confidence = 'high' | 'medium' | 'low';
@@ -103,18 +105,10 @@ function _backendUrl(): string {
   return w.BACKEND_URL || '';
 }
 
-function _token(): string {
-  const w = window as unknown as { _sbToken?: string };
-  return w._sbToken || '';
-}
-
 export async function analyzeParagraph(opts: AnalyzeOptions): Promise<WritingAnalysis> {
-  const res = await fetch(_backendUrl() + '/api/ai/writing-coach', {
+  const res = await authenticatedFetch(_backendUrl() + '/api/ai/writing-coach', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + _token(),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text: opts.text,
       profileLevel: opts.profileLevel,
@@ -122,7 +116,7 @@ export async function analyzeParagraph(opts: AnalyzeOptions): Promise<WritingAna
       explanationLanguage: opts.explanationLanguage || 'English',
     }),
     signal: opts.signal,
-  });
+  }, { safeToRetry: true });
   // Surface the cap modal if the user has exhausted this month's allowance.
   // Import inline to avoid a circular dep with services/ai-usage during boot.
   try {

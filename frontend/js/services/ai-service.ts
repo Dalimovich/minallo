@@ -126,7 +126,7 @@ export function uploadCourseDocument(
       }
       const base64 = result.split(',')[1] || '';
       try {
-        const response = await fetch(_backendUrl() + '/api/documents/upload', {
+        const response = await authenticatedFetch(_backendUrl() + '/api/documents/upload', {
           method: 'POST',
           headers: _authJsonHeaders(),
           body: JSON.stringify({
@@ -136,7 +136,7 @@ export function uploadCourseDocument(
             courseId,
             sourceType: sourceType || 'lecture',
           }),
-        });
+        }, { safeToRetry: true });
         const text = await response.text();
         let data: UploadResponse;
         try {
@@ -243,9 +243,9 @@ export async function listCourseDocuments(
     // but guard anyway to match the pattern used at other call sites.
     if (window._sbSessionReady) { try { await window._sbSessionReady; } catch { /* proceed with existing token */ } }
 
-    const response = await fetch(
+    const response = await authenticatedFetch(
       _backendUrl() + '/api/documents/list?courseId=' + encodeURIComponent(key),
-      { headers: { Authorization: 'Bearer ' + _token() } }
+      { method: 'GET' }, { safeToRetry: true }
     );
     if (response.status === 401) _throwSessionExpired();
     if (!response.ok) return [];
@@ -329,12 +329,12 @@ export async function indexExistingDocument(
     if (meta.forceReindex) payload.forceReindex = true;
   }
   try {
-    const response = await fetch(_backendUrl() + '/api/documents/index-existing', {
+    const response = await authenticatedFetch(_backendUrl() + '/api/documents/index-existing', {
       method: 'POST',
       headers: _authJsonHeaders(),
       body: JSON.stringify(payload),
       signal: controller.signal,
-    });
+    }, { safeToRetry: true });
     clearTimeout(timeoutId);
     if (response.status === 401) _throwSessionExpired();
     const text = await response.text();
@@ -359,11 +359,11 @@ export async function indexExistingDocument(
 
 export async function deleteRagDocument(documentId: string): Promise<unknown> {
   clearCourseDocumentCache();
-  const response = await fetch(_backendUrl() + '/api/documents/delete', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/documents/delete', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ documentId }),
-  });
+  }, { safeToRetry: true });
   const data = await response.json();
   clearCourseDocumentCache();
   return data;
@@ -383,11 +383,11 @@ export interface OcrReviewPage {
 export async function getDocumentReviewPages(
   documentId: string
 ): Promise<OcrReviewPage[]> {
-  const response = await fetch(_backendUrl() + '/api/documents/review-pages', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/documents/review-pages', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ documentId }),
-  });
+  }, { safeToRetry: true });
   if (response.status === 401) _throwSessionExpired();
   if (!response.ok) throw new Error('Failed to load review pages (' + response.status + ')');
   const data = (await response.json()) as { pages?: OcrReviewPage[] };
@@ -402,11 +402,11 @@ export async function correctDocumentPage(
   pageNumber: number,
   correctedText: string
 ): Promise<{ documentId: string; pageNumber: number; status: string }> {
-  const response = await fetch(_backendUrl() + '/api/documents/correct-page', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/documents/correct-page', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ courseId, documentId, pageNumber, correctedText }),
-  });
+  }, { safeToRetry: true });
   if (response.status === 401) _throwSessionExpired();
   if (!response.ok) {
     const text = await response.text();
@@ -438,11 +438,11 @@ export async function getCourseTopicMap(courseId: string): Promise<CourseTopic[]
   const cached = _topicMapCache.get(courseId);
   if (cached && Date.now() - cached.at < TOPIC_MAP_CACHE_MS) return cached.promise;
   const promise = (async () => {
-    const response = await fetch(_backendUrl() + '/api/learning/topic-map', {
+    const response = await authenticatedFetch(_backendUrl() + '/api/learning/topic-map', {
       method: 'POST',
       headers: _authJsonHeaders(),
       body: JSON.stringify({ courseId }),
-    });
+    }, { safeToRetry: true });
     if (response.status === 401) _throwSessionExpired();
     if (!response.ok) return [];
     const data = (await response.json()) as { topics?: CourseTopic[] };
@@ -456,11 +456,11 @@ export async function getCourseTopicMap(courseId: string): Promise<CourseTopic[]
 /** Trigger a (background) rebuild of the course Topic Map; returns the current
  *  map immediately (callers should re-read shortly after to get the refresh). */
 export async function generateCourseTopicMap(courseId: string): Promise<CourseTopic[]> {
-  const response = await fetch(_backendUrl() + '/api/learning/topic-map-generate', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/learning/topic-map-generate', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ courseId }),
-  });
+  }, { safeToRetry: true });
   if (response.status === 401) _throwSessionExpired();
   if (!response.ok) return [];
   const data = (await response.json()) as { topics?: CourseTopic[] };
@@ -481,12 +481,12 @@ export async function generateStudyTool(
   opts?: GenerateOpts,
   signal?: AbortSignal
 ): Promise<unknown> {
-  const response = await fetch(_backendUrl() + '/api/ai/generate', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/generate', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ courseId, tool, ...(opts || {}) }),
     signal,
-  });
+  }, { safeToRetry: true });
   return response.json();
 }
 
@@ -498,7 +498,7 @@ export async function generateExamForge(
   courseId: string,
   opts?: ExamForgeOpts
 ): Promise<unknown> {
-  const response = await fetch(_backendUrl() + '/api/ai/examforge', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/examforge', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({
@@ -506,7 +506,7 @@ export async function generateExamForge(
       courseId,
       ...(opts || {}),
     }),
-  });
+  }, { safeToRetry: true });
   await _detectAiCapError(response);
   return response.json();
 }
@@ -564,12 +564,12 @@ export async function generateCheatsheet(
   opts?: { topic?: string; documentIds?: string[]; settings?: CheatsheetSettings },
   signal?: AbortSignal
 ): Promise<CheatsheetResult> {
-  const response = await fetch(_backendUrl() + '/api/ai/cheatsheet', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/cheatsheet', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ courseId, ...(opts || {}) }),
     signal,
-  });
+  }, { safeToRetry: true });
   await _detectAiCapError(response);
   return response.json();
 }
@@ -596,7 +596,7 @@ export async function generateNotes(
   opts: { fileName: string; pdfText: string; documentId?: string | null; language?: string },
   signal?: AbortSignal
 ): Promise<NotesResult> {
-  const response = await fetch(_backendUrl() + '/api/notes/generate', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/notes/generate', {
     method: 'POST',
     headers: _authJsonHeaders(),
     signal,
@@ -610,7 +610,7 @@ export async function generateNotes(
       pdfText: opts.pdfText,
       language: opts.language || 'same_as_source'
     }),
-  });
+  }, { safeToRetry: true });
   await _detectAiCapError(response);
   return response.json();
 }
@@ -683,11 +683,11 @@ export async function generateDeepLearn(
   topic: string,
   opts?: { documentIds?: string[]; lessonMode?: string; lessonLanguage?: string }
 ): Promise<DeepLearnResult> {
-  const response = await fetch(_backendUrl() + '/api/ai/deep-learn', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/deep-learn', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({ courseId, topic, ...(opts || {}) }),
-  });
+  }, { safeToRetry: true });
   await _detectAiCapError(response);
   return response.json();
 }
@@ -716,9 +716,9 @@ export async function listCourseNotes(courseId: string): Promise<SavedNote[]> {
   const cached = _courseNotesCache.get(courseId);
   if (cached && Date.now() - cached.at < COURSE_NOTES_CACHE_MS) return cached.promise;
   const promise = (async () => {
-    const response = await fetch(
+    const response = await authenticatedFetch(
       _backendUrl() + '/api/notes?courseId=' + encodeURIComponent(courseId),
-      { headers: _authJsonHeaders() }
+      { method: 'GET' }, { safeToRetry: true }
     );
     if (response.status === 401) _throwSessionExpired();
     if (!response.ok) return [];
@@ -739,9 +739,9 @@ export function invalidateCourseNotesCache(courseId: string): void {
 export async function getNoteById(
   id: string
 ): Promise<{ id: string; title: string; content_markdown: string; note_sources?: unknown[] } | null> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     _backendUrl() + '/api/notes?id=' + encodeURIComponent(id),
-    { headers: _authJsonHeaders() }
+    { method: 'GET' }, { safeToRetry: true }
   );
   if (response.status === 401) _throwSessionExpired();
   if (!response.ok) return null;
@@ -756,11 +756,11 @@ export async function updateNote(
   id: string,
   patch: { title?: string; content_markdown?: string }
 ): Promise<boolean> {
-  const response = await fetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
+  const response = await authenticatedFetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
     method: 'PATCH',
     headers: _authJsonHeaders(),
     body: JSON.stringify(patch),
-  });
+  }, { safeToRetry: true });
   if (response.status === 401) _throwSessionExpired();
   if (response.ok) _courseNotesCache.clear();
   return response.ok;
@@ -768,10 +768,10 @@ export async function updateNote(
 
 /** Delete a saved note by id. */
 export async function deleteNote(id: string): Promise<boolean> {
-  const response = await fetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
+  const response = await authenticatedFetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
     method: 'DELETE',
     headers: _authJsonHeaders(),
-  });
+  }, { safeToRetry: true });
   if (response.ok) _courseNotesCache.clear();
   return response.ok;
 }
@@ -781,7 +781,7 @@ export async function gradeExamForgeAnswer(
   examQuestionId: string,
   userAnswer: string
 ): Promise<unknown> {
-  const response = await fetch(_backendUrl() + '/api/ai/examforge', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/examforge', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({
@@ -790,7 +790,7 @@ export async function gradeExamForgeAnswer(
       examQuestionId,
       userAnswer,
     }),
-  });
+  }, { safeToRetry: true });
   return response.json();
 }
 
@@ -800,7 +800,7 @@ export async function submitRagFeedback(
   rating: string,
   answerCacheId?: string | null
 ): Promise<unknown> {
-  const response = await fetch(_backendUrl() + '/api/ai/feedback', {
+  const response = await authenticatedFetch(_backendUrl() + '/api/ai/feedback', {
     method: 'POST',
     headers: _authJsonHeaders(),
     body: JSON.stringify({
@@ -809,7 +809,7 @@ export async function submitRagFeedback(
       rating,
       answerCacheId: answerCacheId || null,
     }),
-  });
+  }, { safeToRetry: true });
   return response.json();
 }
 

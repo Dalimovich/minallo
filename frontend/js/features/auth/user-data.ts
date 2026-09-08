@@ -1,4 +1,5 @@
 import { checkAdminStatus } from '../../services/admin-service.js';
+import { authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 
 interface ProfileRow {
   full_name?: string;
@@ -79,11 +80,11 @@ export function startPresenceHeartbeat(uid: string): void {
     const token = window._sbToken;
     if (!uid || !token) return;
     const SUPA_URL = window.SUPA_URL || '';
-    fetch(SUPA_URL + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), {
+    authenticatedSupabaseFetch(SUPA_URL + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), {
       method: 'PATCH',
-      headers: { ...(window._sbHeaders ? window._sbHeaders() : {}), Prefer: 'return=minimal' },
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({ last_seen: new Date().toISOString() }),
-    }).then(stopHeartbeatOnUnauthorized).catch(() => {});
+    }, { safeToRetry: true }).then(stopHeartbeatOnUnauthorized).catch(() => {});
   }
   _beat();
   _presenceTimer = setInterval(_beat, 60000);
@@ -166,11 +167,11 @@ export async function loadUserData(uid: string): Promise<void> {
 
     const currentUser = window._currentUser;
     if (currentUser && currentUser.email) {
-      fetch((window.SUPA_URL || '') + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), {
+      authenticatedSupabaseFetch((window.SUPA_URL || '') + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), {
         method: 'PATCH',
-        headers: { ...(window._sbHeaders ? window._sbHeaders() : {}), Prefer: 'return=minimal' },
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify({ auth_email: currentUser.email }),
-      }).then(stopHeartbeatOnUnauthorized).catch(() => {});
+      }, { safeToRetry: true }).then(stopHeartbeatOnUnauthorized).catch(() => {});
     }
 
     startPresenceHeartbeat(uid);

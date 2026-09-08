@@ -22,7 +22,7 @@ import {
 } from './ai-thinking-status.js';
 import { getAiChatKey } from './chat-key.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
-import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 import { beginSafeStreamRecovery } from './stream-recovery.js';
 import { userFacingStreamError } from './stream-error-message.js';
 import {
@@ -708,20 +708,14 @@ function _appendCourseHistory(
   // per-file isolation.
   try {
     const supaUrl = window._SUPA || '';
-    const tok = window._sbToken || '';
     const uid =
       (window._currentUser && (window._currentUser.id || window._currentUser.sub)) || '';
-    if (supaUrl && tok && uid && courseId) {
-      void fetch(supaUrl + '/rest/v1/chat_history', {
+    if (supaUrl && uid && courseId) {
+      void authenticatedSupabaseFetch(supaUrl + '/rest/v1/chat_history', {
         method: 'POST',
-        headers: {
-          apikey: window._SAKEY || '',
-          Authorization: 'Bearer ' + tok,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify({ user_id: uid, course_id: courseId, question, answer }),
-      }).catch(() => {});
+      }, { safeToRetry: true }).catch(() => {});
     }
   } catch {
     /* best-effort persistence — localStorage above is the fallback */
@@ -898,18 +892,11 @@ export function clearCourseHistory(courseId: string, fileId?: string | null): vo
   // per-file, so this clears the cross-device backup for the whole course.
   try {
     const supaUrl = window._SUPA || '';
-    const tok = window._sbToken || '';
-    if (supaUrl && tok && courseId) {
-      void fetch(
+    if (supaUrl && courseId) {
+      void authenticatedSupabaseFetch(
         supaUrl + '/rest/v1/chat_history?course_id=eq.' + encodeURIComponent(courseId),
-        {
-          method: 'DELETE',
-          headers: {
-            apikey: window._SAKEY || '',
-            Authorization: 'Bearer ' + tok,
-            Prefer: 'return=minimal',
-          },
-        }
+        { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+        { safeToRetry: true }
       ).catch(() => {});
     }
   } catch { /* best-effort — localStorage is already cleared above */ }

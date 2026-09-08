@@ -1,13 +1,10 @@
+import { authenticatedFetch } from './authenticated-fetch.js';
+
 interface BillingErrorBody {
   error?: { message?: string } | string;
 }
 
-function _authHeaders(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + (window._sbToken || ''),
-  };
-}
+const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 function _billingError(payload: BillingErrorBody, fallback: string): string {
   if (typeof payload.error === 'object' && payload.error?.message) return payload.error.message;
@@ -25,9 +22,9 @@ export async function createCheckoutSession(
   consent?: CheckoutConsent,
   trialDeviceId?: string
 ): Promise<{ url?: string }> {
-  const res = await fetch('/api/create-checkout', {
+  const res = await authenticatedFetch('/api/create-checkout', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({
       noTrial: !!noTrial,
       consentWiderrufVerzicht: !!(consent && consent.consentWiderrufVerzicht),
@@ -39,9 +36,9 @@ export async function createCheckoutSession(
 }
 
 export async function createPortalSession(): Promise<{ url?: string }> {
-  const res = await fetch('/api/create-portal', {
+  const res = await authenticatedFetch('/api/create-portal', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({}),
   });
   return res.json().catch(() => ({}));
@@ -51,9 +48,9 @@ export async function pauseSubscription(
   resumeAt: string,
   reason?: string
 ): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/pause-subscription', {
+  const res = await authenticatedFetch('/api/pause-subscription', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ resumeAt, reason: reason || 'Vacation pause' }),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
@@ -62,9 +59,9 @@ export async function pauseSubscription(
 }
 
 export async function resumeSubscription(): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/resume-subscription', {
+  const res = await authenticatedFetch('/api/resume-subscription', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
@@ -73,9 +70,9 @@ export async function resumeSubscription(): Promise<Record<string, unknown>> {
 }
 
 export async function cancelSubscription(): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/cancel-subscription', {
+  const res = await authenticatedFetch('/api/cancel-subscription', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
@@ -84,9 +81,9 @@ export async function cancelSubscription(): Promise<Record<string, unknown>> {
 }
 
 export async function reactivateSubscription(): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/reactivate-subscription', {
+  const res = await authenticatedFetch('/api/reactivate-subscription', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
@@ -95,9 +92,9 @@ export async function reactivateSubscription(): Promise<Record<string, unknown>>
 }
 
 export async function applyRetentionDiscount(): Promise<Record<string, unknown>> {
-  const res = await fetch('/api/apply-retention-discount', {
+  const res = await authenticatedFetch('/api/apply-retention-discount', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({}),
   });
   const payload = (await res.json().catch(() => ({}))) as BillingErrorBody & Record<string, unknown>;
@@ -106,9 +103,9 @@ export async function applyRetentionDiscount(): Promise<Record<string, unknown>>
 }
 
 export async function verifyPayment(sessionId: string): Promise<unknown> {
-  const res = await fetch('/api/verify-payment', {
+  const res = await authenticatedFetch('/api/verify-payment', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ sessionId }),
   });
   return res.json().catch(() => ({}));
@@ -119,9 +116,9 @@ export async function activatePayPalSubscription(
   trialDeviceId?: string,
   consent?: { consentWiderrufVerzicht: boolean; consentTimestamp: string }
 ): Promise<unknown> {
-  const res = await fetch('/api/activate-paypal-subscription', {
+  const res = await authenticatedFetch('/api/activate-paypal-subscription', {
     method: 'POST',
-    headers: _authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({
       subscriptionID,
       trialDeviceId: trialDeviceId || '',

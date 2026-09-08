@@ -1010,11 +1010,11 @@ async function uploadIntoCourse(
     const uploaded = findCourseFile(course, file.name, folder);
     try {
       if (!uploaded?._storageName || !authToken()) throw new Error('Uploaded file could not be indexed');
-      const response = await fetch('/api/documents/index-existing', {
+      const response = await authenticatedFetch('/api/documents/index-existing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ courseId: course.id, storageName: uploaded._storageName, fileName: uploaded.name, folder, sourceType: 'unknown' })
-      });
+      }, { safeToRetry: true });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({})) as { processingStatus?: string; error?: string };
         if (failure.processingStatus === 'failed') {
@@ -1303,7 +1303,7 @@ async function deleteFileCompletely(panel: HTMLElement, detail: HTMLElement, cou
     const file = findCourseFile(course, name, folder);
     const matches = file?._document ? [file._document] : [];
     for (const doc of matches) {
-      const response = await fetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ documentId: doc.id }) });
+      const response = await authenticatedFetch('/api/documents/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentId: doc.id }) }, { safeToRetry: true });
       if (!response.ok) throw new Error('Database deletion failed');
     }
     if (file?._uploaded) await window._ufDeleteRemote?.(currentUid(), course, name, folder);
@@ -1334,14 +1334,11 @@ async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse,
     deleteButton.setAttribute('aria-busy', 'true');
   }
   try {
-    const response = await fetch('/api/folder-delete', {
+    const response = await authenticatedFetch('/api/folder-delete', {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken()}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ courseId: course.id, folderName: name })
-    });
+    }, { safeToRetry: true });
     if (!response.ok) throw new Error('Database folder deletion failed');
 
     // Mutate browser state only after the server confirms both database and
@@ -1369,7 +1366,7 @@ async function deleteFolderCompletely(panel: HTMLElement, course: LibraryCourse,
 
 async function deleteCourseCompletely(panel: HTMLElement, course: LibraryCourse): Promise<void> {
   if (!confirm(`Permanently delete "${course.name || 'this course'}", all files, saved resources, and indexed data?`)) return;
-  const response = await fetch('/api/course-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken()}` }, body: JSON.stringify({ courseId: course.id }) });
+  const response = await authenticatedFetch('/api/course-delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ courseId: course.id }) }, { safeToRetry: true });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
     const stage = payload?.error?.message || `HTTP ${response.status}`;
@@ -2292,9 +2289,9 @@ interface PagedRows {
 async function fetchRows(table: string, courseId: string, offset = 0): Promise<PagedRows> {
   const db = window._ssDb;
   if (!db) return { rows: [], hasMore: false };
-  const response = await fetch(
+  const response = await db.supaFetch(
     `${db.supaUrl()}/rest/v1/${table}?course_id=eq.${encodeURIComponent(courseId)}&order=created_at.desc&limit=${SAVED_PAGE_SIZE}&offset=${offset}`,
-    { headers: db.supaHeaders() }
+    { method: 'GET' }, { safeToRetry: true }
   );
   // Throw rather than swallow: callers that need to tell "genuinely empty"
   // apart from "the request failed" (Saved-item resolution) rely on this;
@@ -2314,9 +2311,9 @@ async function fetchRows(table: string, courseId: string, offset = 0): Promise<P
 async function fetchRowById(table: string, id: string): Promise<Record<string, unknown> | null> {
   const db = window._ssDb;
   if (!db) return null;
-  const response = await fetch(
+  const response = await db.supaFetch(
     `${db.supaUrl()}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}&limit=1`,
-    { headers: db.supaHeaders() }
+    { method: 'GET' }, { safeToRetry: true }
   );
   if (!response.ok) throw new Error(`fetchRowById(${table}) failed: ${response.status}`);
   const data = await response.json();

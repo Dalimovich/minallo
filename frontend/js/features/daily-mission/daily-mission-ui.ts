@@ -13,6 +13,7 @@
 // renderTaskCardHtml etc.) is kept so shell.ts keeps working unchanged.
 
 import { escapeHtml } from '../../utils/escape-html.js';
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { handleSourceClick } from '../pdf-viewer/source-link.js';
 import {
   confirmPossibleMatch,
@@ -385,9 +386,7 @@ async function loadExamDates(): Promise<void> {
     return;
   }
   try {
-    const res = await fetch('/api/study/exam-dates', {
-      headers: { Authorization: 'Bearer ' + token }
-    });
+    const res = await authenticatedFetch('/api/study/exam-dates', { method: 'GET' }, { safeToRetry: true });
     if (res.ok) {
       const data = await res.json() as { examDates: Record<string, string> };
       _state.examDates = data.examDates || {};
@@ -398,16 +397,12 @@ async function loadExamDates(): Promise<void> {
 }
 
 async function saveExamDate(courseId: string, examDate: string): Promise<boolean> {
-  const token = (window as unknown as { _sbToken?: string })._sbToken || '';
   try {
-    const res = await fetch('/api/study/exam-dates', {
+    const res = await authenticatedFetch('/api/study/exam-dates', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ courseId, examDate })
-    });
+    }, { safeToRetry: true });
     if (res.ok) {
       _state.examDates[courseId] = examDate;
       return true;

@@ -173,21 +173,28 @@ function validate(marker: StudyToolConfigurationMarker): string {
 }
 
 async function saveFlashcardDeck(courseId: string, name: string, cards: unknown[]): Promise<string> {
-  const db = (window as unknown as { _ssDb?: { supaUrl?: () => string; supaHeaders?: () => Record<string, string> } })._ssDb;
+  const db = window._ssDb;
   const url = db?.supaUrl?.();
-  if (!url) throw new Error('Flashcard persistence is unavailable.');
-  const response = await fetch(`${url}/rest/v1/flashcard_decks`, { method: 'POST', headers: { ...(db?.supaHeaders?.() || {}), Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify({ course_id: courseId, name, cards }) });
+  if (!url || !db) throw new Error('Flashcard persistence is unavailable.');
+  const response = await db.supaFetch(`${url}/rest/v1/flashcard_decks`, {
+    method: 'POST',
+    headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course_id: courseId, name, cards }),
+  }, { safeToRetry: true });
   const rows = await response.json() as Array<{ id?: string }>;
   if (!response.ok || !rows[0]?.id) throw new Error('The deck could not be saved.');
   return rows[0].id;
 }
 
 async function loadSeenFlashcardFronts(courseId: string): Promise<string[]> {
-  const db = (window as unknown as { _ssDb?: { supaUrl?: () => string; supaHeaders?: () => Record<string, string> } })._ssDb;
+  const db = window._ssDb;
   const url = db?.supaUrl?.();
-  if (!url) return [];
+  if (!url || !db) return [];
   try {
-    const response = await fetch(`${url}/rest/v1/flashcard_decks?course_id=eq.${encodeURIComponent(courseId)}&select=cards,study_progress,last_studied_at&limit=50`, { headers: db?.supaHeaders?.() || {} });
+    const response = await db.supaFetch(
+      `${url}/rest/v1/flashcard_decks?course_id=eq.${encodeURIComponent(courseId)}&select=cards,study_progress,last_studied_at&limit=50`,
+      { method: 'GET' }, { safeToRetry: true }
+    );
     if (!response.ok) return [];
     const decks = await response.json() as Array<{ cards?: Array<{ front?: string }>; study_progress?: number; last_studied_at?: string | null }>;
     const fronts: string[] = [];

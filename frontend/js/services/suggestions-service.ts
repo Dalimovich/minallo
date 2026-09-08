@@ -1,12 +1,9 @@
 // Client for /api/suggestions — crowd-sourced major, Vertiefung, and course-name
 // dropdown enrichment. See backend/functions/suggestions.ts.
 
-function _authHeaders(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + (window._sbToken || ''),
-  };
-}
+import { authenticatedFetch } from './authenticated-fetch.js';
+
+const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 export type SuggestionKind = 'vertiefung' | 'course' | 'major';
 
@@ -39,9 +36,7 @@ export async function listSuggestions(
   const q = new URLSearchParams({ kind });
   if (parent) q.set('parent', parent);
   try {
-    const res = await fetch('/api/suggestions?' + q.toString(), {
-      headers: _authHeaders(),
-    });
+    const res = await authenticatedFetch('/api/suggestions?' + q.toString(), { method: 'GET' }, { safeToRetry: true });
     if (!res.ok) return [];
     const data = (await res.json()) as { items?: SuggestionItem[] };
     return Array.isArray(data.items) ? data.items : [];
@@ -61,11 +56,11 @@ export async function submitSuggestion(
   const trimmed = (value || '').trim();
   if (!trimmed) return null;
   try {
-    const res = await fetch('/api/suggestions', {
+    const res = await authenticatedFetch('/api/suggestions', {
       method: 'POST',
-      headers: _authHeaders(),
+      headers: JSON_HEADERS,
       body: JSON.stringify({ kind, parent: parent || '*', value: trimmed, context: context || {} }),
-    });
+    }, { safeToRetry: true });
     const data = (await res.json().catch(() => null)) as Partial<SuggestionSubmitResult> | null;
     if (!res.ok) {
       return {

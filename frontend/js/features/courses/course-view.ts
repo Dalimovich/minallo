@@ -1,4 +1,5 @@
 import { panelHide, selectTopLevelView } from '../../core/panels.js';
+import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { bindFileEvents } from './course-files.js';
 import { bindFolderEvents } from './course-folders.js';
 import { escapeHtml } from '../../utils/escape-html.js';
@@ -600,9 +601,11 @@ function _decorateDocTypeBadges(filesList: HTMLElement | null, course: LegacyCou
       // Silent direct fetch on purpose: do NOT go through listCourseDocuments,
       // which dispatches a `session-expired` event on 401. Badges are cosmetic
       // and must never log the user out or add auth noise — swallow any error.
-      const res = await fetch(
+      // (authenticatedFetch still refreshes a stale token first; it doesn't
+      // dispatch any session-expired event itself.)
+      const res = await authenticatedFetch(
         (window.BACKEND_URL || '') + '/api/documents/list?courseId=' + encodeURIComponent(course.id),
-        { headers: { Authorization: 'Bearer ' + (window._sbToken || '') } }
+        { method: 'GET' }, { safeToRetry: true }
       );
       if (!res.ok) return;
       const data = (await res.json()) as { documents?: unknown[] };

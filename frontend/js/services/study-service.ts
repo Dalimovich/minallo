@@ -1,3 +1,5 @@
+import { authenticatedFetch } from './authenticated-fetch.js';
+
 export interface DailyMissionTask {
   id: string;
   title: string;
@@ -63,13 +65,7 @@ const DAILY_SUMMARY_TTL_MS = 45_000;
 const dailySummaryInFlight = new Map<string, Promise<DailyMissionSummary>>();
 const dailySummaryCache = new Map<string, { value: DailyMissionSummary; expiresAt: number }>();
 
-function authHeaders(): HeadersInit {
-  const token = (window as unknown as { _sbToken?: string })._sbToken || '';
-  return {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + token
-  };
-}
+const JSON_HEADERS: HeadersInit = { 'Content-Type': 'application/json' };
 
 function timezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -85,15 +81,15 @@ export function todayLocalDate(): string {
 
 export async function getDailyMission(courseId: string): Promise<DailyMissionResponse> {
   const qs = new URLSearchParams({ courseId, date: todayLocalDate(), timezone: timezone() });
-  const res = await fetch('/api/study/daily-plan?' + qs.toString(), { headers: authHeaders() });
+  const res = await authenticatedFetch('/api/study/daily-plan?' + qs.toString(), { method: 'GET' }, { safeToRetry: true });
   if (!res.ok) throw new Error('Daily Mission could not be loaded');
   return res.json() as Promise<DailyMissionResponse>;
 }
 
 export async function generateDailyMission(courseId: string, availableMinutes?: number, regenerate?: boolean): Promise<DailyMissionResponse> {
-  const res = await fetch('/api/study/daily-plan/generate', {
+  const res = await authenticatedFetch('/api/study/daily-plan/generate', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({
       courseId,
       date: todayLocalDate(),
@@ -101,7 +97,7 @@ export async function generateDailyMission(courseId: string, availableMinutes?: 
       availableMinutes,
       regenerate: !!regenerate
     })
-  });
+  }, { safeToRetry: true });
   if (!res.ok) {
     try {
       const errBody = await res.json() as { message?: string };
@@ -146,7 +142,7 @@ export async function getDailyMissionSummary(courseId: string): Promise<DailyMis
   if (existing) return existing;
   const request = (async () => {
     const qs = new URLSearchParams({ courseId, date, timezone: zone });
-    const res = await fetch('/api/study/daily-plan/summary?' + qs.toString(), { headers: authHeaders() });
+    const res = await authenticatedFetch('/api/study/daily-plan/summary?' + qs.toString(), { method: 'GET' }, { safeToRetry: true });
     if (!res.ok) throw new Error('Daily Mission summary could not be loaded');
     const value = await res.json() as DailyMissionSummary;
     dailySummaryCache.set(key, { value, expiresAt: Date.now() + DAILY_SUMMARY_TTL_MS });
@@ -163,11 +159,11 @@ export function invalidateDailyMissionSummary(courseId?: string): void {
 }
 
 export async function updateDailyMissionTask(taskId: string, status: DailyMissionTask['status']): Promise<void> {
-  const res = await fetch('/api/study/tasks/' + encodeURIComponent(taskId), {
+  const res = await authenticatedFetch('/api/study/tasks/' + encodeURIComponent(taskId), {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ status })
-  });
+  }, { safeToRetry: true });
   if (!res.ok) {
     try {
       const errBody = await res.json() as { message?: string };
@@ -182,7 +178,7 @@ export async function updateDailyMissionTask(taskId: string, status: DailyMissio
 /** Document ids the user has marked as already studied for a course. */
 export async function getDoneFiles(courseId: string): Promise<string[]> {
   const qs = new URLSearchParams({ courseId });
-  const res = await fetch('/api/study/done-files?' + qs.toString(), { headers: authHeaders() });
+  const res = await authenticatedFetch('/api/study/done-files?' + qs.toString(), { method: 'GET' }, { safeToRetry: true });
   if (!res.ok) throw new Error('Could not load completed files');
   const data = await res.json() as { documentIds?: string[] };
   return Array.isArray(data.documentIds) ? data.documentIds : [];
@@ -201,11 +197,11 @@ export interface SaveDoneFilesResult {
  *  have their covered topics flipped to 'studied' so the planner treats them as
  *  known material (spaced repetition) rather than new lectures. */
 export async function saveDoneFiles(courseId: string, documentIds: string[]): Promise<SaveDoneFilesResult> {
-  const res = await fetch('/api/study/done-files', {
+  const res = await authenticatedFetch('/api/study/done-files', {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ courseId, documentIds })
-  });
+  }, { safeToRetry: true });
   if (!res.ok) throw new Error('Could not save completed files (HTTP ' + res.status + ')');
   const data = await res.json() as Partial<SaveDoneFilesResult>;
   return {
@@ -239,11 +235,11 @@ export async function confirmPossibleMatch(
   action: 'confirm' | 'dismiss',
   planDate?: string
 ): Promise<{ ok: boolean; remaining: number }> {
-  const res = await fetch('/api/study/possible-match', {
+  const res = await authenticatedFetch('/api/study/possible-match', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ planId, exerciseFileId, possibleLectureFileId, action, planDate }),
-  });
+  }, { safeToRetry: true });
   if (!res.ok) {
     try {
       const errBody = await res.json() as { message?: string };

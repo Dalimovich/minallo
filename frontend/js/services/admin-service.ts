@@ -1,3 +1,5 @@
+import { authenticatedFetch } from './authenticated-fetch.js';
+
 interface AdminFetchBody {
   action:
     | 'status' | 'search' | 'setplan' | 'setuserstatus' | 'affiliates' | 'reports' | 'resolvereport' | 'deleteself'
@@ -7,14 +9,15 @@ interface AdminFetchBody {
 }
 
 function _adminFetch(body: AdminFetchBody): Promise<Response> {
-  return fetch('/api/admin-users', {
+  // safeToRetry: authenticatedFetch only retries on an actual 401, which
+  // means auth rejected the request before it reached any handler — the
+  // original attempt never touched business logic, so retrying (even for
+  // a mutation action) can't double-apply it.
+  return authenticatedFetch('/api/admin-users', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + (window._sbToken || ''),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, { safeToRetry: true });
 }
 
 export async function checkAdminStatus(): Promise<unknown> {
@@ -349,14 +352,11 @@ export interface ReindexCourseResult {
 export async function reindexUserCourse(
   userId: string, courseId: string, dryRun: boolean
 ): Promise<ReindexCourseResult> {
-  const res = await fetch('/api/documents/reindex-course', {
+  const res = await authenticatedFetch('/api/documents/reindex-course', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + (window._sbToken || ''),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, courseId, dryRun }),
-  });
+  }, { safeToRetry: true });
   return res.json().catch(() => ({ error: 'Bad response' })) as Promise<ReindexCourseResult>;
 }
 
@@ -401,14 +401,11 @@ export interface RetrievalLogFull extends RetrievalLogLite {
 }
 
 function _adminGet<T>(body: Record<string, unknown>): Promise<T> {
-  return fetch('/api/admin/retrieval-logs', {
+  return authenticatedFetch('/api/admin/retrieval-logs', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + (window._sbToken || ''),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then((r) => r.json() as Promise<T>);
+  }, { safeToRetry: true }).then((r) => r.json() as Promise<T>);
 }
 
 export function listRetrievalLogs(

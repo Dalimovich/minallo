@@ -4374,20 +4374,17 @@ async function callGenericAi(
   allowDiagrams = true
 ): Promise<string> {
   const apiMessages = buildApiMessages(messages, followUpDoc);
-  const resp = await fetch('/api/ai', {
+  const resp = await authenticatedFetch('/api/ai', {
     method: 'POST',
     signal: controller.signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + (getSbToken() || ''),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'gpt-4o',
       max_tokens: 6000,
       system: buildSystemPrompt(),
       messages: apiMessages,
     }),
-  });
+  }, { safeToRetry: true });
   if (!resp.ok) {
     const errText = await resp.text();
     throw new Error('Server ' + resp.status + ': ' + errText.slice(0, 200));
@@ -6747,12 +6744,9 @@ async function generateChatTitle(state: ConversationState): Promise<string | nul
     aiSample.slice(0, 400);
 
   try {
-    const resp = await fetch('/api/ai', {
+    const resp = await authenticatedFetch('/api/ai', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + (getSbToken() || ''),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'gpt-4o',
         max_tokens: 30,
@@ -6761,7 +6755,7 @@ async function generateChatTitle(state: ConversationState): Promise<string | nul
           'No quotes, no punctuation at the end, no preamble. Match the language of the user.',
         messages: [{ role: 'user', content: seed }],
       }),
-    });
+    }, { safeToRetry: true });
     if (!resp.ok) return null;
     const data = (await resp.json()) as { content?: Array<{ text?: string }> };
     const title = (data.content || [])

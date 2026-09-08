@@ -86,6 +86,11 @@ declare global {
       supaHeaders: () => Record<string, string>;
       supaUrl: () => string;
       userId: () => string | null;
+      // Prefer this over raw fetch(supaUrl() + ..., { headers: supaHeaders() })
+      // — supaHeaders() is a snapshot of the token at call time, so a
+      // long-lived tab with an expired-but-present token gets a silent 401
+      // instead of a refresh. supaFetch refreshes first when needed.
+      supaFetch: (path: string, init?: RequestInit, options?: { safeToRetry?: boolean }) => Promise<Response>;
     };
 
     // ── pdf.js + page state ────────────────────────────────────────────

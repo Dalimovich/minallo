@@ -3,6 +3,8 @@
 // On login / ss-ready, loadAndHydrate() pulls from DB → writes to localStorage
 // so existing rendering code sees up-to-date data without any changes.
 
+import { authenticatedSupabaseFetch } from './authenticated-fetch.js';
+
 declare const window: Window & {
   _SUPA?: string;
   _SAKEY?: string;
@@ -34,8 +36,6 @@ function _base(): string {
 
 function _headers(extra?: Record<string, string>): Record<string, string> {
   return {
-    apikey: window._SAKEY || '',
-    Authorization: 'Bearer ' + (window._sbToken || ''),
     'Content-Type': 'application/json',
     ...extra,
   };
@@ -45,7 +45,7 @@ function _headers(extra?: Record<string, string>): Record<string, string> {
 export function syncLoungeStats(stats: LoungeStatsRow): void {
   const uid = _uid();
   if (!uid || !window._SUPA) return;
-  void fetch(_base() + 'study_lounge_stats', {
+  void authenticatedSupabaseFetch(_base() + 'study_lounge_stats', {
     method: 'POST',
     headers: _headers({ Prefer: 'return=minimal,resolution=merge-duplicates' }),
     body: JSON.stringify({
@@ -60,7 +60,7 @@ export function syncLoungeStats(stats: LoungeStatsRow): void {
       recent_files: stats.recentFiles,
       updated_at: new Date().toISOString(),
     }),
-  }).catch(() => {});
+  }, { safeToRetry: true }).catch(() => {});
 }
 
 /** Upsert the opened-files list and last-opened timestamp for a course. Fire-and-forget. */
@@ -74,7 +74,7 @@ export function syncCourseProgress(
   // on_conflict targets the (user_id, course_id) unique key — without it
   // PostgREST resolves the merge on the PK (id), so a repeat open of any file in
   // an already-synced course 409s instead of updating.
-  void fetch(_base() + 'course_progress?on_conflict=user_id,course_id', {
+  void authenticatedSupabaseFetch(_base() + 'course_progress?on_conflict=user_id,course_id', {
     method: 'POST',
     headers: _headers({ Prefer: 'return=minimal,resolution=merge-duplicates' }),
     body: JSON.stringify({
@@ -84,14 +84,14 @@ export function syncCourseProgress(
       last_opened_at: new Date(lastOpenedAtMs).toISOString(),
       updated_at: new Date().toISOString(),
     }),
-  }).catch(() => {});
+  }, { safeToRetry: true }).catch(() => {});
 }
 
 /** Upsert the AI session count for a course. Fire-and-forget. */
 export function syncCourseAiSessions(courseId: string, sessionCount: number): void {
   const uid = _uid();
   if (!uid || !window._SUPA || !courseId) return;
-  void fetch(_base() + 'course_progress?on_conflict=user_id,course_id', {
+  void authenticatedSupabaseFetch(_base() + 'course_progress?on_conflict=user_id,course_id', {
     method: 'POST',
     headers: _headers({ Prefer: 'return=minimal,resolution=merge-duplicates' }),
     body: JSON.stringify({
@@ -100,7 +100,7 @@ export function syncCourseAiSessions(courseId: string, sessionCount: number): vo
       ai_sessions: sessionCount,
       updated_at: new Date().toISOString(),
     }),
-  }).catch(() => {});
+  }, { safeToRetry: true }).catch(() => {});
 }
 
 /** Load all persisted data from DB and hydrate localStorage. Awaitable but
@@ -109,18 +109,13 @@ export async function loadAndHydrate(): Promise<void> {
   const uid = _uid();
   if (!uid || !window._SUPA) return;
 
-  const readHeaders: Record<string, string> = {
-    apikey: window._SAKEY || '',
-    Authorization: 'Bearer ' + (window._sbToken || ''),
-  };
-
   const [loungeRes, progressRes] = await Promise.all([
-    fetch(_base() + 'study_lounge_stats?user_id=eq.' + encodeURIComponent(uid) + '&limit=1', {
-      headers: readHeaders,
-    }).catch(() => null),
-    fetch(_base() + 'course_progress?user_id=eq.' + encodeURIComponent(uid) + '&limit=200', {
-      headers: readHeaders,
-    }).catch(() => null),
+    authenticatedSupabaseFetch(_base() + 'study_lounge_stats?user_id=eq.' + encodeURIComponent(uid) + '&limit=1', {
+      method: 'GET',
+    }, { safeToRetry: true }).catch(() => null),
+    authenticatedSupabaseFetch(_base() + 'course_progress?user_id=eq.' + encodeURIComponent(uid) + '&limit=200', {
+      method: 'GET',
+    }, { safeToRetry: true }).catch(() => null),
   ]);
 
   if (loungeRes?.ok) {
