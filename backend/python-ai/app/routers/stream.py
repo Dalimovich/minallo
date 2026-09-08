@@ -42,7 +42,6 @@ from ..services.answer_intent import (
     AcademicIntent,
     academic_intent_from_turn,
     chitchat_answer,
-    is_non_academic_chitchat,
     wants_per_source_coverage,
 )
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
@@ -1334,6 +1333,7 @@ async def ask_stream_endpoint(
     processing_pipeline = select_processing_pipeline(question, resolved_access)
     routing_started = time.perf_counter()
     from ..services.dialogue_state import (  # noqa: WPS433
+        is_pure_social_turn,
         needs_semantic_resolution,
         resolve_dialogue,
         resolve_dialogue_semantically,
@@ -1352,6 +1352,19 @@ async def ask_stream_endpoint(
             lambda: resolve_dialogue_semantically(
                 question, previous_turns=preflight_turns, base=turn_resolution,
             )
+        )
+    if is_pure_social_turn(question, turn_resolution):
+        social_decision = classify_source_scope(
+            question=question,
+            source_mode="general",
+            course_file_scope=payload.courseFileScope,
+            selected_course_id=payload.courseId,
+        )
+        return _stream_static_answer(
+            text=chitchat_answer(question),
+            decision=social_decision,
+            answer_mode="general",
+            status_key="writing_answer",
         )
     # From this point execution planning consumes the canonical meaning, while
     # `question` remains the immutable literal user input for audit/display.
@@ -1512,6 +1525,15 @@ async def ask_stream_endpoint(
     }:
         from ..services.general_answer import stream_general_answer  # noqa: WPS433
 
+        fast_context_block = ""
+        if task_requires_workspace(turn_resolution.task_family) and not payload.courseId:
+            account_snapshot = await run_in_threadpool(
+                lambda: fetch_account_snapshot(user_id)
+            )
+            fast_context_block = format_account_block(
+                account_snapshot, in_course_chat=False,
+            ) if account_snapshot else ""
+
         def fast_general_stream():
             first_token_ms: float | None = None
             answer_parts: list[str] = []
@@ -1532,8 +1554,12 @@ async def ask_stream_endpoint(
             try:
                 fast_events = (
                     iter(({"t": chitchat_answer(question)}, {"done": True, "model": "deterministic"}))
-                    if is_non_academic_chitchat(question)
-                    else stream_general_answer(question, previous_turns=previous_turns)
+                    if is_pure_social_turn(question, turn_resolution)
+                    else stream_general_answer(
+                        turn_resolution.resolved_request,
+                        previous_turns=previous_turns,
+                        context_block=fast_context_block,
+                    )
                 )
                 for event in fast_events:
                     if isinstance(event.get("t"), str):
@@ -2733,23 +2759,6 @@ async def _prepare_ask_stream_response(
     if len(question) > _MAX_STREAM_QUESTION_CHARS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is too long")
 
-    # High-confidence social turns must leave before document ownership,
-    # visible-page reference resolution, or retrieval. An open PDF is merely
-    # available context; it cannot turn ordinary conversation into coursework.
-    if is_non_academic_chitchat(question):
-        social_decision = classify_source_scope(
-            question=question,
-            source_mode="general",
-            course_file_scope=payload.courseFileScope,
-            selected_course_id=payload.courseId,
-        )
-        return _stream_static_answer(
-            text=chitchat_answer(question),
-            decision=social_decision,
-            answer_mode="general",
-            status_key="writing_answer",
-        )
-
     conversation_id = (payload.conversationId or "").strip()
     generation = payload.conversationGeneration
     tutor_state = None
@@ -2925,7 +2934,10 @@ async def _prepare_ask_stream_response(
         resolve_language_context,
         resolve_question_reference,
     )
-    from ..services.dialogue_state import resolve_dialogue  # noqa: WPS433
+    from ..services.dialogue_state import (  # noqa: WPS433
+        is_pure_social_turn,
+        resolve_dialogue,
+    )
     language_context = resolve_language_context(
         question,
         explicit_response_language=(
@@ -2940,6 +2952,19 @@ async def _prepare_ask_stream_response(
         response_language=language_context.requested_response_language,
     )
     observer.event("turn_resolved", **dialogue.to_api())
+    if is_pure_social_turn(question, dialogue):
+        social_decision = classify_source_scope(
+            question=question,
+            source_mode="general",
+            course_file_scope=effective_scope,
+            selected_course_id=payload.courseId,
+        )
+        return _stream_static_answer(
+            text=chitchat_answer(question),
+            decision=social_decision,
+            answer_mode="general",
+            status_key="writing_answer",
+        )
     if dialogue.response_language != language_context.requested_response_language:
         language_context = replace(
             language_context,
@@ -3251,31 +3276,14 @@ async def _prepare_ask_stream_response(
             },
         )
 
-    if is_non_academic_chitchat(question):
-        chitchat_decision = replace(
-            source_decision,
-            source_scope=SourceScope.GENERAL_KNOWLEDGE,
-            source_label="",
-            used_document_ids=[],
-            relevance_score=None,
-            web_search_used=False,
-        )
-        return _stream_static_answer(
-            text=chitchat_answer(question),
-            decision=chitchat_decision,
-            answer_mode="general",
-            status_key="writing_answer",
-        )
-
     effective_question = resolved_question
-    workspace_task = bool(payload.courseId) and task_requires_workspace(dialogue.task_family)
+    workspace_task = task_requires_workspace(dialogue.task_family)
     app_question = not workspace_task and is_app_question(effective_question)
     # Workspace questions ("where are my flashcards", "which quizzes did I
     # complete", "what can I do in this course") are answered from the live
     # workspace snapshot, not lecture chunks — same routing as app questions.
     workspace_question = (
         not app_question
-        and bool(payload.courseId)
         and (
             workspace_task
             or is_workspace_question(effective_question)

@@ -54,7 +54,7 @@ def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int 
 
 
 def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]] | None = None,
-                          max_tokens: int = 700) -> Iterator[dict[str, Any]]:
+                          context_block: str = "", max_tokens: int = 700) -> Iterator[dict[str, Any]]:
     """Yield real model deltas immediately; never buffer a fast-lane answer."""
     settings = get_settings()
     target_model = settings.openai_generate_model
@@ -72,7 +72,7 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
     history.reverse()
     stream = get_openai_client().chat.completions.create(
         model=target_model,
-        messages=[{"role": "system", "content": _SYSTEM_PROMPT}, *history,
+        messages=[{"role": "system", "content": _SYSTEM_PROMPT + context_block}, *history,
                   {"role": "user", "content": question.strip()}],
         stream=True,
         **chat_completion_params(target_model, max_tokens),

@@ -579,6 +579,18 @@ def _infer_active_task(turns: list[dict[str, str]]) -> TaskFamily:
     return TaskFamily.UNKNOWN
 
 
+def _infer_pending_assistant_task(turns: list[dict[str, str]]) -> TaskFamily:
+    """Infer an explicitly offered task without treating any mention as pending."""
+    assistant = _latest_turn(turns, "assistant") or ""
+    if not re.search(
+        r"\b(?:want me to|would you like me to|shall i|should i|i can|let me)\b",
+        assistant,
+        re.IGNORECASE,
+    ):
+        return TaskFamily.UNKNOWN
+    return _infer_task_family(assistant)
+
+
 def needs_semantic_resolution(message: str, resolution: DialogueResolution,
                               previous_turns: list[dict[str, str]] | None) -> bool:
     """Only ambiguous context-dependent turns pay for semantic classification."""
@@ -594,6 +606,31 @@ def needs_semantic_resolution(message: str, resolution: DialogueResolution,
         and resolution.task_family is TaskFamily.UNKNOWN
         and (len((message or "").split()) <= 12 or re.search(r"\b(?:it|that|this|one|same|instead)\b", message, re.I))
     )
+
+
+def is_pure_social_turn(message: str, resolution: DialogueResolution) -> bool:
+    """Return true only when dialogue semantics leave no pending user task.
+
+    Short acknowledgements such as ``sure`` are lexical chitchat in isolation,
+    but can confirm an offered study plan, quiz, or other task.  This predicate
+    is the single boundary at which the raw social heuristic may run after the
+    conversation has been resolved.
+    """
+    if resolution.task_family not in {TaskFamily.UNKNOWN, TaskFamily.CONVERSATION}:
+        return False
+    if resolution.continues_previous_goal:
+        return False
+    if resolution.relation in {
+        TurnRelation.CONTINUATION,
+        TurnRelation.ANSWER_TO_ASSISTANT,
+        TurnRelation.CORRECTION,
+        TurnRelation.REJECTION,
+        TurnRelation.CONFIRMATION,
+        TurnRelation.DELEGATION,
+    }:
+        return False
+    from .answer_intent import is_non_academic_chitchat  # avoid startup cycle
+    return is_non_academic_chitchat(message)
 
 
 def resolve_dialogue_semantically(message: str, *, previous_turns: list[dict[str, str]],
@@ -633,6 +670,18 @@ Do not include reasoning."""
         if confidence < 0.65:
             return base
         resolved = str(data.get("resolvedRequest") or message).strip()[:4000]
+        inferred_task = _infer_active_task(previous_turns)
+        if inferred_task is TaskFamily.UNKNOWN:
+            inferred_task = _infer_pending_assistant_task(previous_turns)
+        from .answer_intent import is_non_academic_chitchat
+        if (
+            task_family in {TaskFamily.UNKNOWN, TaskFamily.CONVERSATION}
+            and inferred_task is TaskFamily.UNKNOWN
+            and is_non_academic_chitchat(message)
+        ):
+            # A semantic model cannot turn a standalone social acknowledgement
+            # into a phantom pending dependency when history contains no task.
+            return base
         return DialogueResolution(
             **{**base.__dict__, "resolved_request": resolved, "relation": relation,
                "speech_act": speech_act, "task_family": task_family,
@@ -651,6 +700,12 @@ Do not include reasoning."""
             else TurnRelation.CONTINUATION
         )
         inherited = _infer_active_task(previous_turns)
+        if inherited is TaskFamily.UNKNOWN:
+            inherited = _infer_pending_assistant_task(previous_turns)
+        # A failed classifier must not invent a pending goal merely because a
+        # social acknowledgement followed an ordinary closing statement.
+        if inherited is TaskFamily.UNKNOWN:
+            return base
         return DialogueResolution(
             **{**base.__dict__, "relation": relation, "speech_act": SpeechAct.ANSWER,
                "task_family": inherited, "continues_previous_goal": True,
@@ -659,5 +714,5 @@ Do not include reasoning."""
 
 
 __all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "SpeechAct",
-           "TaskFamily", "TurnRelation", "needs_semantic_resolution",
+           "TaskFamily", "TurnRelation", "is_pure_social_turn", "needs_semantic_resolution",
            "resolve_dialogue", "resolve_dialogue_semantically"]

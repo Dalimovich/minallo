@@ -283,3 +283,21 @@ def test_semantic_resolver_failure_preserves_safe_continuity(monkeypatch) -> Non
     assert resolved.relation is TurnRelation.ANSWER_TO_ASSISTANT
     assert resolved.task_family is TaskFamily.FLASHCARDS
     assert resolved.continues_previous_goal
+
+
+def test_pure_social_turn_depends_on_resolved_conversation_state() -> None:
+    from dataclasses import replace
+    from app.services.dialogue_state import (
+        SpeechAct, TaskFamily, TurnRelation, is_pure_social_turn, resolve_dialogue,
+    )
+
+    base = resolve_dialogue("sure", previous_turns=[])
+    pending_plan = replace(
+        base,
+        relation=TurnRelation.CONFIRMATION,
+        speech_act=SpeechAct.CONFIRMATION,
+        task_family=TaskFamily.STUDY_PLAN,
+        continues_previous_goal=True,
+    )
+    assert not is_pure_social_turn("sure", pending_plan)
+    assert is_pure_social_turn("sure", base)

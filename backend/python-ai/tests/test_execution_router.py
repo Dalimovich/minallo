@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+from dataclasses import replace
 
 from app.services.execution_router import (
     ExecutionLane,
@@ -105,6 +106,103 @@ def test_fast_general_bypasses_document_and_retrieval_work(monkeypatch) -> None:
     assert b'"executionLane": "fast_general"' in body
     assert b"Torsion is twisting." in body
     assert b'"done": true' in body
+
+
+def test_stream_confirmation_executes_resolved_study_plan_not_raw_chitchat(monkeypatch) -> None:
+    """Exercise the real /ask-stream preflight and fast-contextual boundary."""
+    from app.routers import stream as stream_router
+    from app.services import dialogue_state, general_answer
+    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request="Create a study plan for the student.",
+            relation=TurnRelation.CONFIRMATION,
+            speech_act=SpeechAct.CONFIRMATION,
+            task_family=TaskFamily.STUDY_PLAN,
+            continues_previous_goal=True,
+            confidence=0.98,
+        ),
+    )
+    monkeypatch.setattr(
+        stream_router,
+        "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("raw chitchat intercepted task")),
+    )
+    monkeypatch.setattr(
+        stream_router,
+        "fetch_account_snapshot",
+        lambda *_: {"courses": [{"id": "c1", "name": "Mechanics"}]},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_general(question, **kwargs):
+        captured["question"] = question
+        captured["context"] = kwargs.get("context_block")
+        yield {"t": "Here is your Mechanics study plan."}
+        yield {"done": True, "model": "semantic-route-test"}
+
+    monkeypatch.setattr(general_answer, "stream_general_answer", fake_general)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="sure",
+                previousTurns=[{
+                    "role": "assistant",
+                    "text": "I can create a study plan for you. Want me to?",
+                }],
+            ),
+            {"id": "user"},
+            "semantic-study-plan-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert captured["question"] == "Create a study plan for the student."
+    assert "Mechanics" in str(captured["context"])
+    assert b"Here is your Mechanics study plan." in body
+
+
+def test_stream_acknowledgement_without_pending_task_stays_social(monkeypatch) -> None:
+    from app.routers import stream as stream_router
+    from app.services import dialogue_state, general_answer
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        dialogue_state, "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: base,
+    )
+    monkeypatch.setattr(
+        general_answer, "stream_general_answer",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("social turn generated")),
+    )
+    monkeypatch.setattr(stream_router, "chitchat_answer", lambda _q: "All right.")
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="sure",
+                previousTurns=[{"role": "assistant", "text": "That's all."}],
+            ),
+            {"id": "user"},
+            "semantic-social-ack-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    assert b"All right." in asyncio.run(consume())
 
 
 def test_large_bilingual_routing_matrix() -> None:
