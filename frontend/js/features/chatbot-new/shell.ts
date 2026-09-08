@@ -7,7 +7,10 @@
 // PR-06: real markdown (KaTeX), file upload (img/.txt/.pdf), real Regenerate.
 
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
-import { parsePersistedChats, type SavedBookmarkEventPayload, type SavedRepliesChangedDetail } from './chat-store-format.js';
+import {
+  parsePersistedChats, normalizeSavedReplySyncState,
+  type SavedBookmarkEventPayload, type SavedRepliesChangedDetail, type SavedReplySyncState,
+} from './chat-store-format.js';
 import { attachMessageNavigator } from '../message-navigator/message-navigator.js';
 import { handleSourceClick, firstPage } from '../pdf-viewer/source-link.js';
 import {
@@ -6524,6 +6527,10 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
         existing.courseId = row.course_id || null;
         existing.sourceMessageId = row.source_message_id || existing.sourceMessageId;
         existing.sourcePrompt = row.source_prompt || existing.sourcePrompt;
+        // A successful server GET is definitional proof the durable copy
+        // exists — never leave a stale local 'pending'/'failed' in place
+        // once the server itself has confirmed the row.
+        existing.syncState = 'synced';
         if (JSON.stringify(existing) !== before) changed = true;
         continue;
       }
@@ -6534,6 +6541,7 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
         chatId: row.chat_id || chatId,
         courseId: row.course_id || null,
         sourceMessageId: row.source_message_id || undefined,
+        syncState: 'synced',
         sourcePrompt: row.source_prompt || undefined,
       });
       changed = true;
@@ -6781,7 +6789,7 @@ interface SavedReply {
   // Absent or 'synced' = the durable server copy is confirmed (or this is
   // legacy data from before this field existed). 'pending'/'failed' mark a
   // reply still eligible for an automatic retry.
-  syncState?: 'pending' | 'synced' | 'failed';
+  syncState?: SavedReplySyncState;
 }
 
 interface SavedChat {
@@ -7038,6 +7046,10 @@ function compactChatForStorage(c: SavedChat): SavedChat {
       sourceMessageId: r.sourceMessageId,
       sourcePrompt: r.sourcePrompt ? truncateForStorage(r.sourcePrompt, 1000) : undefined,
       chatId: r.chatId || c.id,
+      // Persisted so a 'pending'/'failed' retry survives a reload — a type
+      // declaration alone does not make a field durable if the serializer
+      // that actually writes localStorage doesn't carry it through.
+      syncState: normalizeSavedReplySyncState(r.syncState),
     })),
     pinned: !!c.pinned,
     createdAt: c.createdAt,
@@ -7247,8 +7259,7 @@ function loadChatStore(): void {
       // flushPendingSavedReplySync retries it; legacy data with no field at
       // all predates durable sync entirely and is left to the existing
       // per-chat mergeSavedRepliesFromServer reconciliation, not this queue.
-      syncState: reply.syncState === 'pending' || reply.syncState === 'failed'
-        ? reply.syncState : 'synced'
+      syncState: normalizeSavedReplySyncState(reply.syncState)
     }));
     c.sourceMode = normaliseSourceMode(c.sourceMode);
     c.courseFileScope = normaliseCourseFileScope(c.courseFileScope);

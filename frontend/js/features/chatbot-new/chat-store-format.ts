@@ -8,6 +8,21 @@
 // so it can be imported by both the chat shell and any reader, and unit
 // tested directly.
 
+export type SavedReplySyncState = 'pending' | 'synced' | 'failed';
+
+// The single normalizer for syncState wherever an untrusted or legacy value
+// enters — loaded from localStorage, read off a server row, or serialized
+// for storage. A field declared on a type but re-guessed independently at
+// each read/write boundary is exactly how syncState was once silently
+// dropped by the serializer that actually writes localStorage: the type
+// said it persisted, but the code that built the stored object forgot the
+// field. Both the write side (compactChatForStorage) and the read side
+// (loadChatStore's migration) must call this one function, not reimplement
+// the same three-way check independently.
+export function normalizeSavedReplySyncState(state: unknown): SavedReplySyncState {
+  return state === 'pending' || state === 'failed' ? state : 'synced';
+}
+
 export interface PersistedSavedReply {
   id?: string;
   text?: string;
@@ -19,7 +34,7 @@ export interface PersistedSavedReply {
   // Durable-sync bookkeeping: absent/'synced' means the durable server copy
   // is confirmed (or this is legacy data predating this field); 'pending'/
   // 'failed' mark a reply that still needs a retry attempt.
-  syncState?: 'pending' | 'synced' | 'failed';
+  syncState?: SavedReplySyncState;
 }
 
 export interface PersistedChat {
