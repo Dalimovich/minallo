@@ -59,11 +59,17 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
     settings = get_settings()
     target_model = settings.openai_generate_model
     history = []
-    for turn in (previous_turns or []):
+    history_chars = 0
+    for turn in reversed(previous_turns or []):
         role = turn.get("role")
         text = str(turn.get("text") or "").strip()
         if role in {"user", "assistant"} and text:
-            history.append({"role": role, "content": text[:4000]})
+            bounded = text[:4000]
+            if history and history_chars + len(bounded) > 24000:
+                break
+            history.append({"role": role, "content": bounded})
+            history_chars += len(bounded)
+    history.reverse()
     stream = get_openai_client().chat.completions.create(
         model=target_model,
         messages=[{"role": "system", "content": _SYSTEM_PROMPT}, *history,
