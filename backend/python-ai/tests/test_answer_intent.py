@@ -355,3 +355,12 @@ def test_overlay_uses_selection_as_contract_and_reports_not_ready() -> None:
     assert "STILL PROCESSING" in overlay and "K3.pdf" in overlay
     # Covered files keep their [Source N] numbering; not-ready file isn't numbered.
     assert "[Source 1] K1.pdf" in overlay
+def test_resolved_task_family_beats_raw_followup_text() -> None:
+    from types import SimpleNamespace
+    from app.services.answer_intent import AcademicIntent, academic_intent_from_turn
+    from app.services.dialogue_state import TaskFamily
+
+    flashcards = SimpleNamespace(task_family=TaskFamily.FLASHCARDS, resolved_request="same for screws")
+    exam = SimpleNamespace(task_family=TaskFamily.EXAMFORGE, resolved_request="sure")
+    assert academic_intent_from_turn(flashcards, "same for screws") is AcademicIntent.FLASHCARD_GENERATION
+    assert academic_intent_from_turn(exam, "sure") is AcademicIntent.EXAM_GENERATION

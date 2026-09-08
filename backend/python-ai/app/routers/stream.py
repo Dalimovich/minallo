@@ -40,8 +40,8 @@ from ..services.answer import DEFAULT_TUTOR_MODE, is_app_question, normalise_tut
 from ..services.answer_stream import _answer_matches_question_language, stream_answer
 from ..services.answer_intent import (
     AcademicIntent,
+    academic_intent_from_turn,
     chitchat_answer,
-    classify_academic_intent,
     is_non_academic_chitchat,
     wants_per_source_coverage,
 )
@@ -112,7 +112,7 @@ from ..services.source_router import (
 from ..services.web_answer import generate_web_answer
 from ..services.usage_meter import record_usage
 from ..services.workspace_context import (
-    detect_assistant_mode,
+    assistant_mode_from_turn,
     fetch_account_snapshot,
     fetch_workspace_snapshot,
     format_account_block,
@@ -120,6 +120,7 @@ from ..services.workspace_context import (
     is_workspace_question,
     match_course_in_text,
     sanitize_page_context,
+    task_requires_workspace,
     workspace_fingerprint,
 )
 from ..supabase_client import get_supabase
@@ -1342,6 +1343,11 @@ async def ask_stream_endpoint(
                 question, previous_turns=preflight_turns, base=turn_resolution,
             )
         )
+    # From this point execution planning consumes the canonical meaning, while
+    # `question` remains the immutable literal user input for audit/display.
+    processing_pipeline = select_processing_pipeline(
+        turn_resolution.resolved_request, resolved_access,
+    )
     # The most recent USER turn (not this current question) — used only to
     # keep a follow-up-shaped message ("what about c < 0?") from being
     # treated as a continuation when it actually names a new topic ("what
@@ -3119,7 +3125,7 @@ async def _prepare_ask_stream_response(
         tutor_state.response_mode = tutor_mode
         tutor_state.explanation_level = dialogue.requested_depth
         tutor_state.dialogue_act = dialogue.dialogue_act.value
-        tutor_state.academic_task = classify_academic_intent(resolved_question).value
+        tutor_state.academic_task = academic_intent_from_turn(dialogue, resolved_question).value
         tutor_state.risk_class = (
             "high" if _requires_verified_buffering(
                 question=resolved_question,
@@ -3203,12 +3209,19 @@ async def _prepare_ask_stream_response(
             status_key="writing_answer",
         )
 
-    app_question = is_app_question(question)
+    effective_question = resolved_question
+    workspace_task = bool(payload.courseId) and task_requires_workspace(dialogue.task_family)
+    app_question = not workspace_task and is_app_question(effective_question)
     # Workspace questions ("where are my flashcards", "which quizzes did I
     # complete", "what can I do in this course") are answered from the live
     # workspace snapshot, not lecture chunks — same routing as app questions.
     workspace_question = (
-        not app_question and bool(payload.courseId) and is_workspace_question(question)
+        not app_question
+        and bool(payload.courseId)
+        and (
+            workspace_task
+            or is_workspace_question(effective_question)
+        )
     )
     if app_question or workspace_question:
         source_decision = replace(
@@ -3326,7 +3339,13 @@ async def _prepare_ask_stream_response(
         {"s": workspace_snapshot, "w": weak_topics, "p": page_context,
          "a": account_snapshot, "n": named_course_name}
     ) if workspace_block else ""
-    assistant_mode = detect_assistant_mode(question)
+    assistant_mode = assistant_mode_from_turn(dialogue, question)
+    observer.event(
+        "downstream_route_resolved",
+        resolvedAssistantMode=assistant_mode,
+        workspaceRequired=workspace_question,
+        taskFamily=dialogue.task_family.value,
+    )
     from ..services.reliability import identify_grounded_task  # noqa: WPS433
     preliminary_traits = classify_task_traits(
         resolved_question,
@@ -3475,7 +3494,7 @@ async def _prepare_ask_stream_response(
     # one). Always regenerate these; never look up or save a cached answer.
     generative_request = (
         wants_per_source_coverage(question)
-        or classify_academic_intent(question) == AcademicIntent.EXAM_GENERATION
+        or academic_intent_from_turn(dialogue, effective_question) == AcademicIntent.EXAM_GENERATION
     )
     cacheable = (
         tutor_mode == "explain"

@@ -72,7 +72,7 @@ def test_a_lesson_saved_before_the_prompt_fix_cutoff_is_not_reused(monkeypatch):
     fake = _FakeQuery([stale_row])
     monkeypatch.setattr(reuse, "get_supabase", lambda: fake)
 
-    result = reuse.find_existing_lesson(
+    reuse.find_existing_lesson(
         user_id="u1", course_id="c1", topic="screws", revision_hash="rev1",
     )
 

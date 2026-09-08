@@ -160,6 +160,28 @@ def test_workspace_question_detection():
     assert not is_workspace_question("")
 
 
+def test_resolved_study_task_is_authoritative_downstream() -> None:
+    from types import SimpleNamespace
+    from app.services.dialogue_state import TaskFamily
+    from app.services.workspace_context import assistant_mode_from_turn, task_requires_workspace
+
+    turn = SimpleNamespace(
+        task_family=TaskFamily.STUDY_RECOMMENDATION,
+        resolved_request="Choose the most useful next topic from the student's course state.",
+    )
+    assert task_requires_workspace(turn.task_family)
+    assert assistant_mode_from_turn(turn, "you decide") == "exam_coach"
+
+
+def test_non_workspace_followup_does_not_activate_workspace() -> None:
+    from app.services.dialogue_state import TaskFamily
+    from app.services.workspace_context import task_requires_workspace
+
+    assert not task_requires_workspace(TaskFamily.EXPLAIN)
+    assert not task_requires_workspace(TaskFamily.CALCULATE)
+    assert not task_requires_workspace(TaskFamily.FLASHCARDS)
+
+
 def test_course_list_questions_are_workspace_questions():
     # The exact phrasings from the 2026-06-12 bug report: these used to fall
     # into the auto-mode default (course-files RAG) and the model invented

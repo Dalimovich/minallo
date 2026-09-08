@@ -476,6 +476,25 @@ def is_workspace_question(question: str) -> bool:
     return bool(_WORKSPACE_QUESTION_RE.search(q))
 
 
+def task_requires_workspace(task_family: object) -> bool:
+    """Map canonical conversation tasks to existing live-workspace handlers.
+
+    This is deliberately narrow: conversational continuity by itself never
+    activates workspace access.
+    """
+    value = getattr(task_family, "value", task_family)
+    return value in {"study_plan", "study_recommendation"}
+
+
+def assistant_mode_from_turn(turn: object, raw_question: str) -> str | None:
+    """Prefer an already-resolved semantic task; use regexes only as fallback."""
+    family = getattr(getattr(turn, "task_family", None), "value", None)
+    if family in {"study_plan", "study_recommendation"}:
+        return "exam_coach"
+    effective = str(getattr(turn, "resolved_request", "") or raw_question)
+    return detect_assistant_mode(effective)
+
+
 # ── Answer-structure overlays ────────────────────────────────────────────────
 
 TUTOR_STRUCTURE_OVERLAY = """

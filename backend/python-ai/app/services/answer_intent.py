@@ -508,6 +508,22 @@ def classify_academic_intent(
     return AcademicIntent.GENERAL_COURSE_QA
 
 
+def academic_intent_from_turn(turn: object, fallback_text: str) -> AcademicIntent:
+    """Use canonical task semantics before domain-specific lexical fallback."""
+    family = getattr(getattr(turn, "task_family", None), "value", None)
+    mapped = {
+        "flashcards": AcademicIntent.FLASHCARD_GENERATION,
+        "quiz": AcademicIntent.QUIZ_GENERATION,
+        "examforge": AcademicIntent.EXAM_GENERATION,
+        "calculate": AcademicIntent.MATH_PROBLEM,
+        "solve": AcademicIntent.MATH_PROBLEM,
+    }.get(family)
+    if mapped is not None:
+        return mapped
+    effective = str(getattr(turn, "resolved_request", "") or fallback_text)
+    return classify_academic_intent(effective)
+
+
 def wants_per_source_coverage(question: str) -> bool:
     """True when the student asks for output covering each/every selected file
     ("a question for every lecture", "one per chapter", "all sources")."""
@@ -743,6 +759,7 @@ __all__ = (
     "AcademicIntent",
     "PROFESSOR_STYLE_INSTRUCTION",
     "chitchat_answer",
+    "academic_intent_from_turn",
     "classify_academic_intent",
     "intent_allows_missing_input",
     "intent_is_math_like",
