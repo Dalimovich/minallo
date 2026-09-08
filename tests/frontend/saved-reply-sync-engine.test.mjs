@@ -244,3 +244,98 @@ test('flushPendingSavedReplySync retries both pending creates and pending-delete
   assert.deepEqual(chat.pendingSavedReplyDeletes, {});
   assert.deepEqual(calls.sort(), ['DELETE', 'POST']);
 });
+
+// ── CREATE / DELETE cross-operation races ─────────────────────────────
+// createInFlight/deleteInFlight only stop two of the SAME operation from
+// overlapping. Without the createSettling handshake below, a delete for a
+// reply whose create is still in flight can reach the server first (against
+// a row that doesn't exist yet), return a harmless-looking 2xx, clear the
+// tombstone, and then let the stale create go on to insert the row anyway —
+// resurrecting a bookmark the user just deleted.
+
+test('CREATE then DELETE race: delete waits for the in-flight create to settle before issuing its own request', async () => {
+  const reply = { id: 'r1', text: 'hi', createdAt: 1, courseId: null };
+  const chat = makeChat({ savedReplies: [reply] });
+  const calls = [];
+  let resolveCreateFetch;
+  let resolveDeleteFetch;
+  const engine = createSavedReplySyncEngine({
+    getChats: () => [chat], saveChatStore: () => {}, getToken: () => 'tok',
+    dispatchChanged: () => {}, apiUrl: '/api/x', flushCooldownMs: 0,
+    fetchImpl: (url, init) => {
+      if (init.method === 'DELETE') {
+        calls.push('DELETE start');
+        return new Promise((resolve) => { resolveDeleteFetch = resolve; });
+      }
+      calls.push('CREATE start');
+      return new Promise((resolve) => { resolveCreateFetch = resolve; });
+    },
+  });
+
+  // Bookmark: CREATE POST starts and is held unresolved (simulates a slow
+  // network), same as a real in-flight save.
+  engine.syncSavedReplyCreate(chat.id, reply);
+  await flushMicrotasks(5);
+  assert.deepEqual(calls, ['CREATE start']);
+
+  // User immediately unbookmarks — same local mutation shell.ts's click
+  // handler performs: remove from savedReplies, persist a tombstone, call delete.
+  chat.savedReplies = chat.savedReplies.filter((r) => r !== reply);
+  chat.pendingSavedReplyDeletes.r1 = Date.now();
+  engine.syncSavedReplyDelete(chat.id, 'r1');
+  await flushMicrotasks(20);
+  // The DELETE must not have issued its network request yet — racing the
+  // still-unresolved CREATE is exactly the bug being fixed.
+  assert.deepEqual(calls, ['CREATE start']);
+  assert.ok(Object.prototype.hasOwnProperty.call(chat.pendingSavedReplyDeletes, 'r1'));
+
+  // The CREATE now resolves as a genuine (non-duplicate) success — the row exists.
+  resolveCreateFetch(new Response(JSON.stringify({ duplicate: false, id: 'r1' }), { status: 200 }));
+  await flushMicrotasks(20);
+  assert.deepEqual(calls, ['CREATE start', 'DELETE start']);
+  assert.equal(reply.syncState, 'synced');
+  assert.ok(Object.prototype.hasOwnProperty.call(chat.pendingSavedReplyDeletes, 'r1'), 'tombstone must survive until the delete it unblocked actually confirms');
+
+  resolveDeleteFetch(new Response('', { status: 200 }));
+  await flushMicrotasks(20);
+  assert.deepEqual(chat.pendingSavedReplyDeletes, {}); // cleared only now that the row is confirmed genuinely gone
+});
+
+test('CREATE duplicate-reconciliation then DELETE race: deletion intent follows the create to its canonical id', async () => {
+  const reply = { id: 'local-A', text: 'hi', createdAt: 1, courseId: null };
+  const chat = makeChat({ savedReplies: [reply] });
+  const deleteUrls = [];
+  let resolveCreateFetch;
+  const engine = createSavedReplySyncEngine({
+    getChats: () => [chat], saveChatStore: () => {}, getToken: () => 'tok',
+    dispatchChanged: () => {}, apiUrl: '/api/x', flushCooldownMs: 0,
+    fetchImpl: (url, init) => {
+      if (init.method === 'DELETE') {
+        deleteUrls.push(url);
+        return Promise.resolve(new Response('', { status: 200 }));
+      }
+      return new Promise((resolve) => { resolveCreateFetch = resolve; });
+    },
+  });
+
+  engine.syncSavedReplyCreate(chat.id, reply); // POST for local-A starts, held unresolved
+
+  // User deletes local-A while the create is still in flight.
+  chat.savedReplies = chat.savedReplies.filter((r) => r !== reply);
+  chat.pendingSavedReplyDeletes['local-A'] = Date.now();
+  engine.syncSavedReplyDelete(chat.id, 'local-A');
+  await flushMicrotasks(10);
+  assert.deepEqual(deleteUrls, [], 'still waiting on the create to settle');
+
+  // The create discovers the row already exists server-side under a
+  // different canonical id (the backend's source-message/fingerprint dedupe).
+  resolveCreateFetch(new Response(JSON.stringify({ duplicate: true, existingId: 'server-B' }), { status: 200 }));
+  await flushMicrotasks(20);
+
+  // The DELETE must target the canonical id — that's the row that actually
+  // exists server-side. Deleting local-A (never inserted) would be a no-op
+  // that leaves server-B alive, resurrecting the bookmark on the next merge.
+  assert.equal(deleteUrls.length, 1);
+  assert.match(deleteUrls[0], /id=server-B/);
+  assert.deepEqual(chat.pendingSavedReplyDeletes, {}); // tombstone (keyed by local-A) cleared once server-B is confirmed gone
+});

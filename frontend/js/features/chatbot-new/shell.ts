@@ -6427,10 +6427,14 @@ type SavedReplyServerRow = {
   course_id?: string | null; source_message_id?: string | null; source_prompt?: string | null;
 };
 
-// Safety bound on the pagination loop below — 25 pages * MAX_PAGE_SIZE(200)
-// covers 5000 saved replies for a single chat, far beyond any real usage; it
-// exists only to guarantee termination if the server ever misbehaves.
+// Practical traversal ceiling, not a product limit — 25 pages *
+// MAX_PAGE_SIZE(200 server-side) reaches up to 5000 saved replies for a
+// single chat. Real usage is far below this; it exists only to guarantee
+// the loop terminates if the server ever misbehaves, not to promise every
+// row beyond 5000 is reachable.
 const SAVED_REPLY_MAX_PAGES = 25;
+
+interface SavedReplyPageCursor { createdAt: string; id: string }
 
 async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): Promise<void> {
   if (_savedRepliesSyncedChats.has(chatId)) return;
@@ -6438,25 +6442,27 @@ async function mergeSavedRepliesFromServer(root: HTMLElement, chatId: string): P
   if (!token) return;
   _savedRepliesSyncedChats.add(chatId);
   try {
-    // Page through the full server set for this chat rather than trusting a
-    // single capped request — reconciliation (both the tombstone check and
-    // the local→server repush below) needs to know about every server row,
-    // not just the first MAX_PAGE_SIZE.
+    // Page through the server set for this chat (up to SAVED_REPLY_MAX_PAGES,
+    // not literally unbounded) rather than trusting a single capped
+    // request — reconciliation (both the tombstone check and the
+    // local→server repush below) needs to know about every server row it
+    // can reach, not just the first MAX_PAGE_SIZE.
     const serverRows: SavedReplyServerRow[] = [];
-    let offset = 0;
+    let cursor: SavedReplyPageCursor | null = null;
     for (let page = 0; page < SAVED_REPLY_MAX_PAGES; page++) {
-      const resp = await fetch(
-        SAVED_REPLIES_API + '?chatId=' + encodeURIComponent(chatId) + '&offset=' + offset,
-        { headers: { Authorization: 'Bearer ' + token } }
-      );
+      let url = SAVED_REPLIES_API + '?chatId=' + encodeURIComponent(chatId);
+      if (cursor) {
+        url += '&cursorCreatedAt=' + encodeURIComponent(cursor.createdAt) + '&cursorId=' + encodeURIComponent(cursor.id);
+      }
+      const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
       if (!resp.ok) {
         _savedRepliesSyncedChats.delete(chatId);
         return;
       }
-      const data = (await resp.json()) as { replies?: SavedReplyServerRow[]; nextOffset?: number | null };
+      const data = (await resp.json()) as { replies?: SavedReplyServerRow[]; nextCursor?: SavedReplyPageCursor | null };
       serverRows.push(...(Array.isArray(data.replies) ? data.replies : []));
-      if (!data.nextOffset) break;
-      offset = data.nextOffset;
+      if (!data.nextCursor) break;
+      cursor = data.nextCursor;
     }
     const chat = chatStore.chats.find((c) => c.id === chatId);
     if (!chat) return;

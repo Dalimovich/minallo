@@ -36,11 +36,18 @@ test('database uniqueness is owner-scoped by message and by course-or-General co
 test('the account-wide GET is stably paginated instead of a single 200-row cap, and single-id lookup bypasses it', () => {
   const source = fs.readFileSync('backend/functions/chat-saved-replies.ts', 'utf8');
   // A total order (created_at desc, then id desc as a tiebreaker) is what
-  // makes offset pagination safe to page through without skipping/repeating
-  // rows — order=created_at.desc alone was the old 200-row cliff.
+  // makes real keyset pagination possible — order=created_at.desc alone was
+  // the old 200-row cliff. Deliberately NOT offset-based: a row
+  // inserted/deleted between two page requests shifts every later OFFSET
+  // page, causing a skip or a repeat, so the query must instead compare
+  // against the previous page's last (created_at, id) tuple.
   assert.match(source, /order=created_at\.desc,id\.desc/);
-  assert.match(source, /&limit=' \+ limit \+ '&offset=' \+ offset/);
-  assert.match(source, /nextOffset/);
+  assert.match(source, /params\.cursorCreatedAt && params\.cursorId/);
+  assert.match(source, /'&or=\(created_at\.lt\.' \+ cCreatedAt \+ ',and\(created_at\.eq\.' \+ cCreatedAt \+ ',id\.lt\.' \+ cId \+ '\)\)'/);
+  assert.match(source, /nextCursor/);
+  // No offset= param anywhere in the query construction — only mentioned in
+  // the comment explaining why it was rejected.
+  assert.doesNotMatch(source, /&offset=/);
   // Exact single-row lookup must be a distinct path, not a slice of the
   // paginated listing — a response older than the caller's loaded pages
   // still has to resolve by id.

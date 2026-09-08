@@ -61,6 +61,17 @@ export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReply
   // One in-flight DELETE per reply id, same rationale.
   const deleteInFlight = new Set<string>();
 
+  // Keyed on the reply's id AT THE MOMENT a create was started (requestedId
+  // below) rather than the reply object, because by the time a DELETE for
+  // that same id runs, the caller has already spliced the reply out of
+  // chat.savedReplies (see shell.ts's remove handler) — there is no object
+  // reference left to look up. Resolves once that create attempt has fully
+  // settled: to the id the row actually landed under server-side (which can
+  // differ from requestedId via duplicate reconciliation), or to undefined
+  // if it never durably landed. A DELETE for the same id awaits this before
+  // issuing its own request — see syncSavedReplyDelete.
+  const createSettling = new Map<string, Promise<{ canonicalId: string | undefined }>>();
+
   let lastFlushAt = 0;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -80,6 +91,9 @@ export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReply
     }
     const requestedId = r.id;
     createInFlight.add(r);
+    let resolveSettled!: (outcome: { canonicalId: string | undefined }) => void;
+    const settled = new Promise<{ canonicalId: string | undefined }>((resolve) => { resolveSettled = resolve; });
+    createSettling.set(requestedId, settled);
     void fetchImpl(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -92,58 +106,81 @@ export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReply
         // A newer concurrent attempt (e.g. a server GET that already
         // confirmed this exact reply) must not be downgraded by this now-stale failure.
         if (r.syncState !== 'synced') { r.syncState = 'failed'; saveChatStore(); }
+        resolveSettled({ canonicalId: undefined });
         return;
       }
       const result = await response.json() as { duplicate?: boolean; existingId?: string };
       if (!result.duplicate || !result.existingId || result.existingId === requestedId) {
         r.syncState = 'synced';
         saveChatStore();
+        resolveSettled({ canonicalId: requestedId });
         return;
       }
+      // Duplicate: the row already exists server-side under a different id.
+      // Reconcile the local array if the reply is still there — it may
+      // already have been spliced out by a concurrent delete, in which case
+      // there's nothing local left to fix up, but the settling promise
+      // below still has to carry the canonical id so that delete can chase it.
       const chat = getChats().find((candidate) => candidate.id === chatId);
       const local = chat?.savedReplies.find((candidate) => candidate.id === requestedId);
-      if (!chat || !local) return;
-      const canonical = chat.savedReplies.find((candidate) => candidate.id === result.existingId);
-      if (canonical) {
-        canonical.syncState = 'synced';
-        chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
-      } else {
-        local.id = result.existingId;
-        local.syncState = 'synced';
+      if (chat && local) {
+        const canonical = chat.savedReplies.find((candidate) => candidate.id === result.existingId);
+        if (canonical) {
+          canonical.syncState = 'synced';
+          chat.savedReplies = chat.savedReplies.filter((candidate) => candidate !== local);
+        } else {
+          local.id = result.existingId;
+          local.syncState = 'synced';
+        }
+        saveChatStore();
+        dispatchChanged({ id: result.existingId, replacedId: requestedId, action: 'reconciled' });
       }
-      saveChatStore();
-      dispatchChanged({ id: result.existingId, replacedId: requestedId, action: 'reconciled' });
+      resolveSettled({ canonicalId: result.existingId });
     }).catch(() => {
       // offline / network failure — the local copy is intact; syncState
       // stays 'pending' so flushPendingSavedReplySync retries on the next trigger.
       if (r.syncState !== 'synced') { r.syncState = 'failed'; saveChatStore(); }
+      resolveSettled({ canonicalId: undefined });
     }).finally(() => {
       createInFlight.delete(r);
+      // A later retry of the same requestedId (e.g. after this attempt
+      // failed) may already have installed its own settling promise —
+      // only remove the entry if it's still the one this call created.
+      if (createSettling.get(requestedId) === settled) createSettling.delete(requestedId);
     });
   }
 
-  function syncSavedReplyDelete(chatId: string, id: string): void {
+  // Delete is always the newer intent relative to any create for the same
+  // id — the user can't delete a bookmark that hasn't been locally created
+  // yet. So if a create for this exact id is still settling (in flight),
+  // this must wait for it rather than racing it: DELETE reaching the server
+  // first (against a row the create hasn't inserted yet) would otherwise
+  // return a harmless-looking 2xx, clear the tombstone, and then let the
+  // create go on to insert the row anyway — resurrecting a bookmark the
+  // user just deleted. If the create resolved to a different canonical id
+  // (duplicate reconciliation), the delete follows it there instead of the
+  // original id, so the row that actually exists gets removed.
+  async function syncSavedReplyDelete(chatId: string, id: string): Promise<void> {
     if (deleteInFlight.has(id)) return;
-    const token = getToken();
-    if (!token) return; // caller already persisted a pendingSavedReplyDeletes tombstone; retried once auth is ready
     deleteInFlight.add(id);
-    void fetchImpl(apiUrl + '?id=' + encodeURIComponent(id), {
-      method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + token },
-    }).then((response) => {
-      if (!response.ok) return; // tombstone stays; retried by flushPendingSavedReplySync
+    try {
+      const settling = createSettling.get(id);
+      const targetId = settling ? (await settling).canonicalId || id : id;
+      const token = getToken();
+      if (!token) return; // caller already persisted a pendingSavedReplyDeletes tombstone; retried once auth is ready
+      const response = await fetchImpl(apiUrl + '?id=' + encodeURIComponent(targetId), {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      }).catch(() => null);
+      if (!response || !response.ok) return; // tombstone stays; retried by flushPendingSavedReplySync
       const chat = getChats().find((c) => c.id === chatId);
       if (chat && Object.prototype.hasOwnProperty.call(chat.pendingSavedReplyDeletes, id)) {
         delete chat.pendingSavedReplyDeletes[id];
         saveChatStore();
       }
-    }).catch(() => {
-      // offline / network failure — tombstone stays; retried by
-      // flushPendingSavedReplySync. Until it clears, the caller's server
-      // merge must refuse to let a stale server row resurrect this id.
-    }).finally(() => {
+    } finally {
       deleteInFlight.delete(id);
-    });
+    }
   }
 
   // Retry triggers (auth ready, back online, Saved panel opened, chat-store

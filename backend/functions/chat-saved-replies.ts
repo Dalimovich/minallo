@@ -56,22 +56,29 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       return jsonResponse(200, { replies: rows });
     }
 
-    // Keyset-stable offset pagination: (created_at desc, id desc) is a total
-    // order (id breaks ties within the same millisecond), so a fixed `limit`
-    // with an increasing `offset` never skips or repeats a row across pages.
-    // A single unpaginated request used to hard-cap the whole account's
-    // saved responses at 200 — anything older was permanently unreachable.
+    // Real keyset pagination: (created_at desc, id desc) is a total order
+    // (id breaks ties within the same millisecond), and each page asks for
+    // rows strictly after the previous page's last row in that order. This
+    // stays correct while the table is being written to concurrently —
+    // unlike OFFSET, where a row inserted or deleted between two page
+    // requests shifts every later row's position and causes a skip or a
+    // repeat. A single unpaginated request used to hard-cap the whole
+    // account's saved responses at 200 — anything older was permanently
+    // unreachable.
     const requestedLimit = Number.parseInt(params.limit || '', 10);
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(requestedLimit, MAX_PAGE_SIZE)
       : MAX_PAGE_SIZE;
-    const requestedOffset = Number.parseInt(params.offset || '', 10);
-    const offset = Number.isFinite(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
 
     let path = 'chat_saved_replies?' + SELECT +
       '&user_id=eq.' + encodeURIComponent(user.id) +
-      '&order=created_at.desc,id.desc&limit=' + limit + '&offset=' + offset;
+      '&order=created_at.desc,id.desc&limit=' + limit;
     if (params.chatId) path += '&chat_id=eq.' + encodeURIComponent(params.chatId);
+    if (params.cursorCreatedAt && params.cursorId) {
+      const cCreatedAt = encodeURIComponent(params.cursorCreatedAt);
+      const cId = encodeURIComponent(params.cursorId);
+      path += '&or=(created_at.lt.' + cCreatedAt + ',and(created_at.eq.' + cCreatedAt + ',id.lt.' + cId + '))';
+    }
     const result = await supaRequest<unknown[]>('GET', path, null, serviceKey)
       .catch(() => ({ status: 0, body: [] as unknown[] }));
     // A query/schema failure must not read as "zero saved responses" — the
@@ -80,9 +87,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (result.status < 200 || result.status >= 300) {
       return fail(502, 'Could not load saved AI responses');
     }
-    const rows = Array.isArray(result.body) ? result.body : [];
-    const nextOffset = rows.length === limit ? offset + rows.length : null;
-    return jsonResponse(200, { replies: rows, nextOffset });
+    const rows = Array.isArray(result.body) ? result.body as Array<{ created_at?: string; id?: string }> : [];
+    const last = rows[rows.length - 1];
+    const nextCursor = rows.length === limit && last?.created_at && last?.id
+      ? { createdAt: last.created_at, id: last.id }
+      : null;
+    return jsonResponse(200, { replies: rows, nextCursor });
   }
 
   if (event.httpMethod === 'POST') {

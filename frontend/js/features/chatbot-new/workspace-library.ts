@@ -2075,10 +2075,13 @@ function readCheatsheetSettings(courseId: string, noteId: string): Record<string
   return { columns: 3, font: 'sm', pad: '10mm', style: 'academic', rendererVersion: 1 };
 }
 
-// Bound on the pagination loop in loadBookmarkedResponses — 25 pages of the
-// backend's MAX_PAGE_SIZE(200) covers 5000 saved responses account-wide,
-// well beyond real usage; it only guarantees the loop terminates.
+// Practical traversal ceiling, not a product limit — 25 pages of the
+// backend's MAX_PAGE_SIZE(200) reaches up to 5000 saved responses
+// account-wide, well beyond real usage; it only guarantees the loop
+// terminates, it does not promise every row beyond 5000 is reachable.
 const SAVED_REPLY_MAX_PAGES = 25;
+
+interface SavedReplyPageCursor { createdAt: string; id: string }
 
 function localPendingSavedReplyDeleteIds(): Set<string> {
   const ids = new Set<string>();
@@ -2104,19 +2107,25 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
   const token = authToken();
   if (token) {
     try {
-      // Page through every saved response account-wide — a single capped
-      // request used to make anything past the 200th-newest bookmark
-      // unreachable from a new device/browser.
-      let offset = 0;
+      // Page through saved responses account-wide (up to SAVED_REPLY_MAX_PAGES)
+      // via a real keyset cursor — a single capped request used to make
+      // anything past the 200th-newest bookmark unreachable from a new
+      // device/browser, and OFFSET-based paging would itself skip/repeat
+      // rows while the table is being written to from another tab.
+      let cursor: SavedReplyPageCursor | null = null;
       for (let page = 0; page < SAVED_REPLY_MAX_PAGES; page++) {
-        const response = await fetch(`/api/chat-saved-replies?offset=${offset}`, {
+        let url = '/api/chat-saved-replies';
+        if (cursor) {
+          url += `?cursorCreatedAt=${encodeURIComponent(cursor.createdAt)}&cursorId=${encodeURIComponent(cursor.id)}`;
+        }
+        const response = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!response.ok) break;
-        const body = await response.json() as { replies?: ReplyRow[]; nextOffset?: number | null };
+        const body = await response.json() as { replies?: ReplyRow[]; nextCursor?: SavedReplyPageCursor | null };
         serverRows.push(...(Array.isArray(body.replies) ? body.replies : []));
-        if (!body.nextOffset) break;
-        offset = body.nextOffset;
+        if (!body.nextCursor) break;
+        cursor = body.nextCursor;
       }
       serverRows = serverRows.filter((row) =>
         !row.id || (!deletedResponseIds.has(row.id) && !pendingDeleteIds.has(row.id))

@@ -145,11 +145,12 @@ test('a reply confirmed by a successful server GET is marked synced, never left 
   assert.match(mergeFn, /syncState: 'synced',/);
 });
 
-test('mergeSavedRepliesFromServer pages through the full server set instead of trusting a single capped request', () => {
+test('mergeSavedRepliesFromServer pages through the server set via a real cursor, not OFFSET', () => {
   const mergeFn = slice(shell, 'async function mergeSavedRepliesFromServer', 'function resolveBookmarkCourseId');
   assert.match(mergeFn, /for \(let page = 0; page < SAVED_REPLY_MAX_PAGES; page\+\+\)/);
-  assert.match(mergeFn, /'&offset=' \+ offset/);
-  assert.match(mergeFn, /if \(!data\.nextOffset\) break;/);
+  assert.match(mergeFn, /cursorCreatedAt=' \+ encodeURIComponent\(cursor\.createdAt\)/);
+  assert.match(mergeFn, /if \(!data\.nextCursor\) break;/);
+  assert.doesNotMatch(mergeFn, /&offset=/);
 });
 
 test('a stale server row cannot resurrect a reply the user is still trying to delete', () => {
@@ -224,10 +225,12 @@ test('the shared persisted-chat contract documents both the sync-state and tombs
 
 // ── Workspace-library (account-wide Saved panel) pagination + tombstones ──
 
-test('loadBookmarkedResponses pages through every saved response instead of trusting a single 200-row request', () => {
+test('loadBookmarkedResponses pages through saved responses via a real cursor instead of a single 200-row request or OFFSET', () => {
   const loadFn = slice(workspace, 'async function loadBookmarkedResponses', 'function authToken');
   assert.match(loadFn, /for \(let page = 0; page < SAVED_REPLY_MAX_PAGES; page\+\+\)/);
-  assert.match(loadFn, /if \(!body\.nextOffset\) break;/);
+  assert.match(loadFn, /cursorCreatedAt=\$\{encodeURIComponent\(cursor\.createdAt\)\}/);
+  assert.match(loadFn, /if \(!body\.nextCursor\) break;/);
+  assert.doesNotMatch(loadFn, /[?&]offset=/);
 });
 
 test('loadBookmarkedResponses excludes rows with an unresolved durable delete tombstone, and never re-pushes them', () => {
