@@ -391,7 +391,7 @@ _EXAM_COACH_RE = re.compile(
     r"\b("
     r"prepare\s+(me\s+)?for\s+(the\s+|this\s+|my\s+)?(exam|test|klausur|prüfung|pruefung)|"
     r"exam\s+(prep|preparation|plan|strategy)|"
-    r"study\s+plan|revision\s+plan|lernplan|"
+    r"(?:study|learning|revision)\s+plan|lernplan|"
     r"what\s+should\s+i\s+(study|learn|revise|review)(\s+next)?|"
     r"was\s+soll(te)?\s+ich\s+(als\s+nächstes\s+)?(lernen|wiederholen)|"
     r"prüfungsvorbereitung|pruefungsvorbereitung|klausurvorbereitung|"
@@ -433,6 +433,11 @@ def detect_assistant_mode(question: str) -> str | None:
 # lecture chunks, exactly like app questions.
 _WORKSPACE_QUESTION_RE = re.compile(
     r"\b("
+    # A plan requested from inside a course must use that course's real files,
+    # weak topics, and progress instead of returning a generic planning recipe.
+    r"(?:(?:can|could|would)\s+you\s+)?(?:suggest|recommend|make|create|build|give)\s+"
+    r"(?:me\s+)?(?:a\s+)?(?:study|learning|revision)\s+plan|"
+    r"(?:my|a)\s+(?:study|learning|revision)\s+plan|"
     r"my\s+(files?|documents?|pdfs?|flashcards?|decks?|quiz(zes)?|exams?|"
     r"cheat\s*-?\s*sheets?|progress|weak\s+topics?|study\s+(time|progress)|sessions?)|"
     r"meine?n?\s+(dateien|dokumente|karteikarten|quizz?e|prüfungen|pruefungen|"

@@ -135,6 +135,7 @@ _COURSE_FACT_RE = re.compile(
 # classified normally by the other rules below, just not as isFollowup.
 _FOLLOWUP_MARKER_RE = re.compile(
     r"\bwhy\b|\bhow\b|\bwhat do you mean\b|"
+    r"^\s*(?:i\s+don'?t\s+know|i\s+do\s+not\s+know|idk|no\s+idea|i'?m\s+stuck|stuck)\s*[.!?]*\s*$|"
     r"\bwhat about\b|\bwhat if\b|\bwhat changes if\b|"
     r"\band (?:if|the|for)\b|\bsame (?:for|thing)\b|\bthe other (?:one|case)\b|"
     r"\bwhere did\b.{0,40}\bcome from\b|\bwhy (?:did|do|does) (?:you|we|they|it)\s+use\b|"
@@ -159,6 +160,7 @@ _FOLLOWUP_FUNCTION_WORDS = {
     "why", "how", "come", "about", "what", "changes", "same", "thing",
     "other", "one", "case", "where", "did", "you", "use", "not", "does",
     "second", "first", "third", "tho", "minus", "plus",
+    "know", "don", "idk", "idea", "stuck",
     "warum", "wieso", "weshalb", "kam", "kommt", "mit", "wenn", "bei",
     "gleich", "andere", "anderen", "anderer", "fall", "woher", "und",
 }

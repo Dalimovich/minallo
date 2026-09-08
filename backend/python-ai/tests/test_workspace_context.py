@@ -133,6 +133,7 @@ def test_page_context_rejects_bad_values():
 def test_exam_coach_detection():
     assert detect_assistant_mode("Prepare me for the exam") == "exam_coach"
     assert detect_assistant_mode("can you make me a study plan?") == "exam_coach"
+    assert detect_assistant_mode("you suggest a learning plan") == "exam_coach"
     assert detect_assistant_mode("What should I study next?") == "exam_coach"
     assert detect_assistant_mode("Wie bereite ich mich auf die Klausur vor? Prüfungsvorbereitung bitte") == "exam_coach"
 
@@ -153,6 +154,8 @@ def test_workspace_question_detection():
     assert is_workspace_question("Which quizzes did I complete?")
     assert is_workspace_question("What can I do in this course?")
     assert is_workspace_question("which topics am I weak in?")
+    assert is_workspace_question("you suggest a learning plan")
+    assert is_workspace_question("Could you create me a revision plan?")
     assert not is_workspace_question("What is the moment of inertia of a beam?")
     assert not is_workspace_question("")
 

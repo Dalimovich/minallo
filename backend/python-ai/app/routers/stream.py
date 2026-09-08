@@ -1489,7 +1489,7 @@ async def ask_stream_endpoint(
             final_event: dict[str, Any] = {}
             previous_turns = [
                 {"role": turn.role, "text": turn.text}
-                for turn in (payload.previousTurns or [])[-2:]
+                for turn in (payload.previousTurns or [])[-4:]
             ] if execution_plan.executionLane is ExecutionLane.FAST_CONTEXTUAL else []
             try:
                 fast_events = (

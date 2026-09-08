@@ -426,7 +426,14 @@ def side_rail_unrelated_answer() -> str:
 
 
 def auto_general_prefix() -> str:
-    return "This does not seem to depend on your uploaded files, so I'll answer it generally.\n\n"
+    """Legacy hook kept for callers; routing is communicated through metadata.
+
+    Exposing this implementation detail in every auto-routed response made
+    ordinary conversation feel repetitive and suggested that the assistant
+    had misunderstood the request.  The UI already receives ``sourceScope``
+    and ``sourceLabel``, so answer text must contain only the answer.
+    """
+    return ""
 
 
 __all__ = (

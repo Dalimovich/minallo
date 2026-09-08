@@ -236,6 +236,16 @@ def test_bare_short_followups_still_work(question) -> None:
     assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL, question
 
 
+@pytest.mark.parametrize("question", ["I don't know", "I do not know.", "idk", "no idea", "I'm stuck"])
+def test_short_uncertainty_replies_keep_conversation_context(question) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+        previous_question="What would you like to study?",
+    )
+    assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL, question
+
+
 def test_followup_without_previous_answer_is_not_contextual() -> None:
     _, plan = resolve_execution_plan(
         question="why?", resolved_access=ResolvedDocumentAccess.RELEVANCE,
