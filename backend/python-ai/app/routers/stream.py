@@ -1623,16 +1623,26 @@ async def ask_stream_endpoint(
                         yield _sse_bytes(json.dumps({"t": event["t"], "requestId": request_id}, ensure_ascii=False))
                     elif event.get("done"):
                         final_event = event
+                        break
                 answer = "".join(answer_parts)
+                if not final_event.get("done") or not answer.strip():
+                    raise TutorPipelineError(
+                        code="empty_completed_response" if final_event.get("done") else "stream_ended_without_terminal_event",
+                        stage="fast_generation", message="The tutor did not return a complete answer.",
+                        retryable=True, recoverable=True,
+                    )
                 total_ms = (time.perf_counter() - started) * 1000
                 if payload.durableConversation:
                     from ..services.conversation_store import update_tutor_request  # noqa: WPS433
                     update_tutor_request(user_id=user_id, request_id=request_id,
                                          status="completed", stage="completed",
                                          final_answer=answer, retryable=False)
-                record_usage(feature="ask_stream_fast_general", model=final_event.get("model"),
-                             prompt_tokens=final_event.get("promptTokens"),
-                             completion_tokens=final_event.get("completionTokens"), user_id=user_id)
+                try:
+                    record_usage(feature="ask_stream_fast_general", model=final_event.get("model"),
+                                 prompt_tokens=final_event.get("promptTokens"),
+                                 completion_tokens=final_event.get("completionTokens"), user_id=user_id)
+                except Exception:
+                    log.warning("fast_usage_record_failed request_id=%s", request_id)
                 log.info(
                     "ai_execution_latency request_id=%s execution_lane=%s grounding_mode=%s "
                     "auth_ms=%.0f routing_ms=%.2f ttft_ms=%.0f total_ms=%.0f retrieval_ms=0 rerank_ms=0",
@@ -1649,15 +1659,19 @@ async def ask_stream_endpoint(
                     "routingMs": round(routing_ms, 2), "authMs": round(access_ms, 2),
                     "sources": [], "cacheHit": False,
                 }, ensure_ascii=False))
-            except Exception:
+            except Exception as exc:
                 log.exception("fast_general_failed request_id=%s", request_id)
+                failure_code = exc.code if isinstance(exc, TutorPipelineError) else "fast_generation_failed"
                 if payload.durableConversation:
                     from ..services.conversation_store import update_tutor_request  # noqa: WPS433
-                    update_tutor_request(user_id=user_id, request_id=request_id,
-                                         status="failed", stage="fast_generation",
-                                         partial_answer="".join(answer_parts) or None,
-                                         error_code="fast_generation_failed", retryable=True)
-                yield _error_sse(code="fast_generation_failed",
+                    try:
+                        update_tutor_request(user_id=user_id, request_id=request_id,
+                                             status="failed", stage="fast_generation",
+                                             partial_answer="".join(answer_parts) or None,
+                                             error_code=failure_code, retryable=True)
+                    except Exception:
+                        log.warning("fast_failure_persistence_failed request_id=%s", request_id)
+                yield _error_sse(code=failure_code,
                                  message="The fast response could not be completed.",
                                  retryable=True, request_id=request_id,
                                  stage="fast_generation", recoverable=True,

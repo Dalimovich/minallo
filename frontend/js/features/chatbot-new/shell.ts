@@ -3725,6 +3725,7 @@ async function streamFromAskStream(
       });
     });
 
+  try {
   while (true) {
     const result = await readWithInactivityWatchdog();
     if (result.done) {
@@ -3831,7 +3832,10 @@ async function streamFromAskStream(
         if (evt.event === 'learning_recommendation.ready' && Array.isArray(evt.learningRecommendations)) {
           streamMeta = { ...streamMeta, learningRecommendations: evt.learningRecommendations };
         }
-        if (evt.done === true) doneMeta = { ...streamMeta, ...evt };
+        if (evt.done === true && !evt.error) {
+          doneMeta = { ...streamMeta, ...evt };
+          break;
+        }
         if (evt.error) {
           if (fastCommentaryTimer != null) window.clearTimeout(fastCommentaryTimer);
           flushFastCommentary();
@@ -3851,8 +3855,28 @@ async function streamFromAskStream(
           });
         }
       }
-    if (result.done) break;
+    if (result.done || doneMeta?.done) break;
     }
+  } catch (error) {
+    if (error instanceof AskStreamError) throw error;
+    throw new AskStreamError({
+      code: 'stream_transport_interrupted',
+      message: 'The response connection was interrupted before completion.',
+      retryable: true,
+      metadata: {
+        ...streamMeta, requestId: streamRequestId, partialAnswer: answerBuf,
+        failureStage: 'sse_read', answerCharacterCount: answerBuf.length,
+        eventCount, lastEventType,
+      },
+    });
+  } finally {
+    if (fastCommentaryTimer != null) window.clearTimeout(fastCommentaryTimer);
+    fastCommentaryTimer = null;
+    pendingFastCommentary = [];
+    const row = bubble?.closest<HTMLElement>('.ncb-msg-row');
+    if (row) hideLiveCommentary(row);
+    void reader.cancel().catch(() => undefined);
+  }
 
   if (!answerBuf.trim()) {
     throw new AskStreamError({
