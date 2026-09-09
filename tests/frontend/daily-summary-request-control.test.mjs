@@ -18,7 +18,7 @@ test('daily mission preview rejects stale async responses', () => {
 });
 
 test('ten identical daily-summary callers share one request and the TTL cache', async () => {
-  globalThis.window = { _sbToken: 'test-token' };
+  globalThis.window = { _sbToken: `x.${Buffer.from(JSON.stringify({ exp: 9999999999 })).toString('base64url')}.x` };
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;

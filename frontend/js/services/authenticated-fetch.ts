@@ -5,7 +5,7 @@ export interface AuthRefreshResult {
 
 export interface AuthRequestDependencies {
   getAccessToken: () => string | null;
-  refreshSession: () => Promise<AuthRefreshResult>;
+  refreshSession: (rejectedAccessToken?: string) => Promise<AuthRefreshResult>;
   now?: () => number;
 }
 
@@ -57,10 +57,10 @@ export async function authenticatedFetchWith(
   let token = deps.getAccessToken();
   if (tokenNeedsRefresh(token, now)) {
     const refreshed = await coordinatedRefresh(deps.refreshSession);
-    token = refreshed.accessToken || deps.getAccessToken();
-    if (!token && !refreshed.recoverable) {
+    if (!refreshed.accessToken && !refreshed.recoverable) {
       throw new Error('SESSION_INVALID');
     }
+    token = refreshed.accessToken || deps.getAccessToken();
     if (!token) throw new Error('SESSION_REFRESH_NETWORK_ERROR');
   }
 
@@ -77,14 +77,20 @@ export async function authenticatedFetchWith(
     return response;
   }
 
-  const refreshed = await coordinatedRefresh(deps.refreshSession);
+  // A late 401 may refer to a token that another request already replaced.
+  const currentToken = deps.getAccessToken();
+  if (currentToken && currentToken !== token && !tokenNeedsRefresh(currentToken, now)) {
+    return send(currentToken);
+  }
+  const refreshed = await coordinatedRefresh(() => deps.refreshSession(token || undefined));
+  if (!refreshed.accessToken && !refreshed.recoverable) throw new Error('SESSION_INVALID');
   const newToken = refreshed.accessToken || deps.getAccessToken();
   if (!newToken) return response;
   response = await send(newToken);
   return response;
 }
 
-async function browserRefresh(): Promise<AuthRefreshResult> {
+async function browserRefresh(rejectedAccessToken?: string): Promise<AuthRefreshResult> {
   const auth = (window as unknown as {
     _sb?: { auth?: { refreshSession?: () => Promise<unknown> } };
   })._sb?.auth;
@@ -96,7 +102,8 @@ async function browserRefresh(): Promise<AuthRefreshResult> {
     const refresh = async (): Promise<void> => {
       // Another tab may have refreshed while this tab was waiting for the
       // origin-wide lock. Re-read the shared token before rotating again.
-      if (!tokenNeedsRefresh(window._sbToken || null)) return;
+      const currentToken = window._sbToken || null;
+      if (!tokenNeedsRefresh(currentToken) && currentToken !== rejectedAccessToken) return;
       await auth.refreshSession!();
     };
     const locks = (navigator as Navigator & {
