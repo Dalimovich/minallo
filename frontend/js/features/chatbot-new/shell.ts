@@ -793,6 +793,12 @@ interface ChatMessage {
   attachmentRefs?: AttachmentRef[];
   selectedSourceMode?: SourceMode;
   sourceScope?: string;
+  // How THIS answer was actually produced — echoed back as previousTurns
+  // provenance on the next request so a follow-up ("I don't understand it")
+  // can inherit its evidence requirement instead of the chat's course
+  // binding, which is merely available context. See PreviousTurn (backend).
+  answerMode?: string;
+  groundingMode?: string;
   sourceLabel?: string;
   courseFileScope?: CourseFileScope;
   sources?: SrcItem[];
@@ -1519,7 +1525,16 @@ async function streamAiReply(
         .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text)
         .map((m) => ({
           role: m.role as 'user' | 'assistant',
-          text: m.role === 'assistant' ? sanitizeChatbotDiagrams(m.text, !!m.allowDiagrams) : m.text
+          text: m.role === 'assistant' ? sanitizeChatbotDiagrams(m.text, !!m.allowDiagrams) : m.text,
+          // Routing provenance for an assistant turn — how THAT answer was
+          // actually produced, so a follow-up like "I don't understand it"
+          // can inherit its evidence requirement (general vs grounded)
+          // instead of guessing from the chat's course binding.
+          ...(m.role === 'assistant' ? {
+            answerMode: m.answerMode,
+            groundingMode: m.groundingMode,
+            sourceScope: m.sourceScope,
+          } : {})
         }));
       // A cheatsheet/summary generated earlier (this chat, an older chat, or
       // before a refresh) rides along as openFileContext — the backend
@@ -1540,6 +1555,8 @@ async function streamAiReply(
         allowDiagrams,
         selectedSourceMode: streamed.meta?.selectedSourceMode as SourceMode | undefined,
         sourceScope: streamed.meta?.sourceScope as string | undefined,
+        answerMode: streamed.meta?.answerMode as string | undefined,
+        groundingMode: streamed.meta?.groundingMode as string | undefined,
         sourceLabel: streamed.meta?.sourceLabel as string | undefined,
         courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
         requestSnapshot: assistantMessage.requestSnapshot ? {
@@ -1626,7 +1643,12 @@ async function streamAiReply(
     });
     touchOrigin();
     saveChatStore();
-    if (isOriginActive()) setBubbleSubtitle(aiRow, undefined, stoppedByUser ? 'stopped' : 'failed');
+    if (isOriginActive()) {
+      setBubbleSubtitle(
+        aiRow, undefined, stoppedByUser ? 'stopped' : 'failed',
+        stoppedByUser ? undefined : classifiedFailure.title
+      );
+    }
     if (isOriginActive() && bubble) {
       if (stoppedByUser) {
         if (partialText) renderRichBubble(bubble, partialText, allowDiagrams);
@@ -3340,7 +3362,10 @@ async function streamFromAskStream(
   courseId: string,
   bubble: HTMLElement | null,
   controller: AbortController,
-  previousTurns: Array<{ role: 'user' | 'assistant'; text: string }> = [],
+  previousTurns: Array<{
+    role: 'user' | 'assistant'; text: string;
+    answerMode?: string; groundingMode?: string; sourceScope?: string;
+  }> = [],
   thinking?: AIThinkingStatus | null,
   documentIds: string[] = [],
   documentNames: string[] = [],
@@ -4694,25 +4719,40 @@ function hideLiveCommentary(row: HTMLElement): void {
 function setBubbleSubtitle(
   aiRow: HTMLElement,
   sourceScope: string | undefined,
-  state: 'pending' | 'completed' | 'stopped' | 'failed' = 'completed'
+  state: 'pending' | 'completed' | 'stopped' | 'failed' = 'completed',
+  // The typed failure's own title (see classifyAiError) — a routing mistake
+  // or a general-generation hiccup is not a document failure, so this must
+  // describe what actually failed rather than always blaming "Document...".
+  failureTitle?: string
 ): void {
   const el = aiRow.querySelector<HTMLElement>('.ncb-bubble-subtitle');
   if (!el) return;
   aiRow.dataset.responseState = state;
   if (state === 'pending') {
+    el.hidden = false;
     el.textContent = tStr('cb_subtitle_pending_document', 'Checking your document');
     return;
   }
   if (state === 'failed') {
-    el.textContent = tStr('cb_subtitle_document_failed', 'Document request failed');
+    el.hidden = false;
+    el.textContent = failureTitle || tStr('cb_subtitle_failed', 'Response failed');
     return;
   }
   if (state === 'stopped') {
+    el.hidden = false;
     el.textContent = tStr('cb_response_stopped', 'Response stopped.');
     return;
   }
+  // A plain general-knowledge answer has no source worth surfacing — that's
+  // internal routing detail, not something a student needs told to them.
+  if (!sourceScope || sourceScope === 'general' || sourceScope === 'general_knowledge') {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  el.hidden = false;
   let label: string;
-  if (sourceScope && sourceScope.startsWith('file:')) {
+  if (sourceScope.startsWith('file:')) {
     const name = sourceScope.slice(5).trim();
     label = name
       ? tStr('cb_subtitle_file_named', 'Answered from {file}').replace('{file}', name)
@@ -4732,10 +4772,6 @@ function setBubbleSubtitle(
       break;
     case 'internet':
       label = tStr('cb_subtitle_internet', 'Answered from the web');
-      break;
-    case 'general':
-    case 'general_knowledge':
-      label = tStr('cb_subtitle_general', 'Answered with general knowledge');
       break;
     default:
       label = tStr('cb_subtitle_source_unavailable', 'Answer source unavailable');

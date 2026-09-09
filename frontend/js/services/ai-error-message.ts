@@ -16,6 +16,14 @@ const typedErrors: Record<string, ErrorDetails> = {
   empty_completed_response: { title: 'Empty answer', message: 'The tutor finished without returning an answer.', retryable: true, preservePartialAnswer: false, action: 'retry' },
   internal_error: { title: 'Minallo could not finish this response', message: 'Your question and document context are preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
   internal_stream_error: { title: 'Minallo could not finish this response', message: 'Your question and document context are preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  // Typed by execution lane so a routing mistake or a general-generation
+  // hiccup is never described as a document failure it wasn't.
+  general_generation_failed: { title: 'Response interrupted', message: 'Your question is still here — please try again.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  contextual_generation_failed: { title: 'Response interrupted', message: 'Your conversation is preserved — please try again.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  fast_generation_failed: { title: 'Response interrupted', message: 'Your question is still here — please try again.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  retrieval_failed: { title: 'Document search failed', message: 'Your file and question are still here.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  grounded_generation_failed: { title: 'Course-grounded answer failed', message: 'Your question and course context are preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  web_generation_failed: { title: 'Web search failed', message: 'Your question is still here — please try again.', retryable: true, preservePartialAnswer: true, action: 'retry' },
   retrieval_timeout: { title: 'Document search took too long', message: 'Your file and question are still here.', retryable: true, preservePartialAnswer: true, action: 'retry' },
   visual_page_render_failed: { title: 'Visual page reading paused', message: 'Minallo could not inspect the visual markings on this page.', retryable: true, preservePartialAnswer: true, action: 'read_current_page' },
   generation_timeout: { title: 'The response took too long', message: 'Your grounded context is preserved and the answer can be retried.', retryable: true, preservePartialAnswer: true, action: 'retry' },

@@ -192,10 +192,28 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
     q = " ".join((question or "").split())
     continues = bool(getattr(resolved_turn, "continues_previous_goal", False))
     family = str(getattr(getattr(resolved_turn, "task_family", None), "value", ""))
+    evidence_requirement = str(getattr(getattr(resolved_turn, "evidence_requirement", None), "value", ""))
+    # A course/PDF bound to the chat is AVAILABLE context, never itself a
+    # requirement — that would let "what's the capital of Italy?" pull in
+    # course retrieval merely because a course happens to be open, or let a
+    # follow-up to a GENERAL answer ("I don't understand it") get dragged
+    # into course-grounded execution just because the chat has a courseId.
+    # Whether evidence is actually needed is decided upstream, per-turn, by
+    # dialogue_state.resolve_evidence_requirement (course-specific wording in
+    # THIS message, or the previous answer's own grounding provenance for a
+    # follow-up) — has_course_context is accepted for API compatibility but
+    # deliberately unused here.
+    del has_course_context
     course = bool(
         _COURSE_RE.search(q)
         or (source_mode or "").casefold() == "course_files"
-        or (continues and has_course_context and (source_mode or "").casefold() != "general")
+        # Only a follow-up's OWN resolved evidence requirement counts here —
+        # resolve_evidence_requirement defaults a brand-new, self-contained
+        # question to course_retrieval too (so retrieval still runs and the
+        # post-retrieval relevance gate can decide), but that default must
+        # not, by itself, pull a first-time factual question like "what is
+        # torsion?" out of the cheap FAST_GENERAL lane.
+        or (continues and evidence_requirement in {"course_retrieval", "reuse_prior_grounded"})
     )
     web = bool(_WEB_RE.search(q) and (_WEB_ACTION_RE.search(q) or "http" in q.casefold()))
     calculation = bool(_CALC_RE.search(q)) or family in {"calculate", "solve"}

@@ -679,6 +679,11 @@ Rules:
 - At most 3 actions. Labels ≤ 40 chars, in the student's language.
 - The block must be the LAST thing in the answer, after the prose.
 - Never emit the block for pure content questions that need no follow-up.
+- A course/account snapshot being available in this prompt does not make
+  every answer a workspace interaction — a general-knowledge question the
+  student happened to ask inside a course chat (e.g. general study-skills
+  advice, not this course's material) does not warrant a Deep Learn/study
+  tool suggestion just because the tools exist.
 - NEVER offer a quiz action button (there is none). When the student wants a
   quiz, build it inline per the QUIZ block contract below instead.
 """

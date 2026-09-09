@@ -441,6 +441,33 @@ class PreviousTurn(BaseModel):
     # whole list to 30 entries — this is just a schema-level ceiling so an
     # oversized payload is rejected before any of that trimming work runs.
     text: str = Field(max_length=20000)
+    # Routing provenance for an assistant turn — how THAT answer was actually
+    # produced, echoed back by the client from the SSE meta/done events it
+    # already received when the answer streamed in. This is a routing hint
+    # only (never trusted for document authorization): it lets a follow-up
+    # like "I don't understand it" inherit the previous answer's own
+    # evidence requirement (general vs grounded) instead of re-guessing from
+    # scratch, or falling back on the chat's course binding, which is merely
+    # available context, not what THAT answer was actually grounded in.
+    answerMode: str | None = Field(default=None, max_length=40)
+    groundingMode: str | None = Field(default=None, max_length=40)
+    sourceScope: str | None = Field(default=None, max_length=40)
+    taskFamily: str | None = Field(default=None, max_length=40)
+
+
+def _previous_turn_to_dict(turn: "PreviousTurn") -> dict[str, str]:
+    """dialogue_state reads the camelCase provenance keys directly off these
+    dicts (see _previous_answer_provenance) — omit unset ones rather than
+    sending explicit Nones/empty strings, so "no provenance recorded" stays
+    distinguishable from "provenance says general"."""
+    out = {"role": turn.role, "text": turn.text}
+    for key, value in (
+        ("answerMode", turn.answerMode), ("groundingMode", turn.groundingMode),
+        ("sourceScope", turn.sourceScope), ("taskFamily", turn.taskFamily),
+    ):
+        if value:
+            out[key] = value
+    return out
 
 
 class ProblemSolverPayload(BaseModel):
@@ -630,6 +657,21 @@ def _error_sse(*, code: str, message: str, retryable: bool, request_id: str,
         "metadata": metadata or {},
         "requestId": request_id,
     }, ensure_ascii=False))
+
+
+def _deferred_pipeline_failure_classification(execution_lane: ExecutionLane) -> tuple[str, str]:
+    """What actually failed, for the outer catch-all around the deferred
+    pipeline — not every unhandled exception there happened while grounding
+    an answer in documents, so the code/message must not always claim that."""
+    if execution_lane is ExecutionLane.WEB:
+        return "web_generation_failed", "Minallo could not complete this web-search answer."
+    if execution_lane in {ExecutionLane.VISIBLE_PAGE, ExecutionLane.FULL_DOCUMENT}:
+        return "retrieval_failed", "Minallo could not complete this document-grounded answer."
+    if execution_lane in {ExecutionLane.STANDARD_RAG, ExecutionLane.FAST_GROUNDED}:
+        return "grounded_generation_failed", "Minallo could not complete this course-grounded answer."
+    if execution_lane is ExecutionLane.DEEP_REASONING:
+        return "contextual_generation_failed", "Minallo could not complete this calculation."
+    return "general_generation_failed", "Minallo could not finish this response."
 
 
 def _is_terminal_sse(event: bytes | str) -> bool:
@@ -1338,11 +1380,8 @@ async def ask_stream_endpoint(
         resolve_dialogue,
         resolve_dialogue_semantically,
     )
-    preflight_turns = [
-        {"role": turn.role, "text": turn.text}
-        for turn in (payload.previousTurns or [])
-        if turn.role in {"user", "assistant"} and turn.text.strip()
-    ]
+    preflight_turns = [_previous_turn_to_dict(turn) for turn in (payload.previousTurns or [])
+                       if turn.role in {"user", "assistant"} and turn.text.strip()]
     turn_resolution = resolve_dialogue(
         question, previous_turns=preflight_turns,
         response_language=payload.responseLanguage or "en",
@@ -2730,15 +2769,80 @@ async def ask_stream_endpoint(
         except Exception:
             log.exception("ask_stream deferred pipeline failed request_id=%s", request_id)
             if not terminal_event_sent:
+                # Nothing streamed yet, this request was only heuristically
+                # routed into grounded retrieval (not an explicit "my PDF" /
+                # "selected files" / visible-page / full-document request),
+                # and the lane itself was ordinary relevance-based grounding
+                # — the conversation is safe evidence to fall back on rather
+                # than surfacing a raw failure for what may just be a routing
+                # mistake on a plain follow-up. An explicit grounded request
+                # must never receive a silent ungrounded answer, so this
+                # never fires for WEB/VISIBLE_PAGE/FULL_DOCUMENT/an active
+                # document or selected files.
+                retry_as_fast_contextual = (
+                    not persisted_answer
+                    and execution_plan.executionLane in {
+                        ExecutionLane.STANDARD_RAG, ExecutionLane.FAST_GROUNDED,
+                    }
+                    and resolved_access is ResolvedDocumentAccess.RELEVANCE
+                    and not payload.activeDocumentId
+                    and not payload.documentIds
+                    and not payload.documentNames
+                )
+                if retry_as_fast_contextual:
+                    try:
+                        from ..services.general_answer import stream_general_answer  # noqa: WPS433
+                        retry_previous_turns = [
+                            {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
+                        ]
+                        retry_answer_parts: list[str] = []
+                        retry_done = False
+                        for retry_event in stream_general_answer(
+                            turn_resolution.resolved_request, previous_turns=retry_previous_turns,
+                        ):
+                            if isinstance(retry_event.get("t"), str):
+                                retry_answer_parts.append(retry_event["t"])
+                                yield _sse_bytes(json.dumps(
+                                    {"t": retry_event["t"], "requestId": request_id},
+                                    ensure_ascii=False,
+                                ))
+                            elif retry_event.get("done"):
+                                retry_done = True
+                        retry_answer = "".join(retry_answer_parts)
+                        if retry_done and retry_answer.strip():
+                            terminal_event_sent = True
+                            await persist_request_state(
+                                status="completed", stage="completed",
+                                final_answer=retry_answer, retryable=False,
+                            )
+                            log.info(
+                                "ask_stream_fast_contextual_recovery_succeeded request_id=%s "
+                                "original_lane=%s",
+                                request_id, execution_plan.executionLane.value,
+                            )
+                            yield _sse_bytes(json.dumps({
+                                "done": True, "requestId": request_id, "answerMode": "general",
+                                "executionLane": "fast_contextual", "groundingMode": "general",
+                                "recoveredFromRoutingFailure": True,
+                                "sources": [], "cacheHit": False,
+                            }, ensure_ascii=False))
+                            return
+                    except Exception:
+                        log.exception(
+                            "ask_stream_fast_contextual_recovery_failed request_id=%s", request_id,
+                        )
                 terminal_event_sent = True
+                error_code, error_message = _deferred_pipeline_failure_classification(
+                    execution_plan.executionLane,
+                )
                 await persist_request_state(
                     status="interrupted" if persisted_answer else "failed",
                     stage="unknown", partial_answer=persisted_answer or None,
-                    error_code="internal_error", retryable=True,
+                    error_code=error_code, retryable=True,
                 )
                 yield _error_sse(
-                    code="internal_error",
-                    message="Minallo could not complete this grounded answer.",
+                    code=error_code,
+                    message=error_message,
                     retryable=True,
                     request_id=request_id,
                     stage="unknown",
@@ -2905,7 +3009,7 @@ async def _prepare_ask_stream_response(
         len((payload.openFileContext or "").strip()),
     )
     previous_turns_payload: list[dict[str, str]] = [
-        {"role": t.role, "text": t.text} for t in (payload.previousTurns or [])
+        _previous_turn_to_dict(t) for t in (payload.previousTurns or [])
     ]
     execution_plan = (preflight or {}).get("execution_plan")
     # Passed through from ask_stream_endpoint's own preflight resolution

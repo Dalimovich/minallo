@@ -112,7 +112,7 @@ def test_stream_confirmation_executes_resolved_study_plan_not_raw_chitchat(monke
     """Exercise the real /ask-stream preflight and fast-contextual boundary."""
     from app.routers import stream as stream_router
     from app.services import dialogue_state, general_answer
-    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+    from app.services.dialogue_state import EvidenceRequirement, SpeechAct, TaskFamily, TurnRelation
 
     monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
     monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
@@ -127,6 +127,10 @@ def test_stream_confirmation_executes_resolved_study_plan_not_raw_chitchat(monke
             speech_act=SpeechAct.CONFIRMATION,
             task_family=TaskFamily.STUDY_PLAN,
             continues_previous_goal=True,
+            # No courseId and no grounded prior answer to reuse — confirming
+            # an offered study plan needs only the conversation itself, same
+            # as a real semantic resolution would compute here.
+            evidence_requirement=EvidenceRequirement.CONVERSATION_ONLY,
             confidence=0.98,
         ),
     )
@@ -319,7 +323,7 @@ def test_stream_rejection_keeps_goal_but_drops_offered_choice(monkeypatch) -> No
     must not discard the underlying goal — only the specific offered choice."""
     from app.routers import stream as stream_router
     from app.services import dialogue_state, general_answer
-    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+    from app.services.dialogue_state import EvidenceRequirement, SpeechAct, TaskFamily, TurnRelation
 
     monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
     monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
@@ -337,6 +341,9 @@ def test_stream_rejection_keeps_goal_but_drops_offered_choice(monkeypatch) -> No
             speech_act=SpeechAct.REJECTION,
             task_family=TaskFamily.STUDY_RECOMMENDATION,
             continues_previous_goal=True,
+            # No courseId and the offer being rejected wasn't grounded either
+            # — same as a real semantic resolution would compute here.
+            evidence_requirement=EvidenceRequirement.CONVERSATION_ONLY,
             confidence=0.93,
         ),
     )

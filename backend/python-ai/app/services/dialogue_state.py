@@ -89,6 +89,22 @@ class TaskFamily(str, Enum):
     UNKNOWN = "unknown"
 
 
+class EvidenceRequirement(str, Enum):
+    """What information answering this turn actually needs — independent of
+    what the user wants done with it (TaskFamily). ``EXPLAIN`` alone never
+    tells you whether that means re-explaining the last answer from the
+    conversation, restating a general-knowledge fact, or citing a lecture
+    PDF; this is the second, orthogonal question the execution layer needs
+    answered before it decides whether retrieval is worth running."""
+    CONVERSATION_ONLY = "conversation_only"
+    GENERAL_KNOWLEDGE = "general_knowledge"
+    REUSE_PRIOR_GROUNDED = "reuse_prior_grounded"
+    COURSE_RETRIEVAL = "course_retrieval"
+    VISIBLE_PAGE = "visible_page"
+    FULL_DOCUMENT = "full_document"
+    WEB = "web"
+
+
 _EXERCISE_RE = re.compile(
     r"\b(?:aufgabe|uebung|übung|task|exercise|problem|question|ex)\s*"
     r"(\d+(?:[.,]\d+){0,3}(?:\s*(?:[.(]\s*)?[a-z]\s*\)?)?)(?!\w)",
@@ -202,6 +218,118 @@ _SUBSTITUTION_CONFUSION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Evidence-requirement signals: what a message needs answered from, as
+# opposed to what it wants done (TaskFamily). These are deliberately
+# narrower/high-confidence — anything not matched falls through to
+# provenance-based reasoning in resolve_evidence_requirement rather than
+# being force-fit into one of these buckets.
+_EXPLICIT_WEB_EVIDENCE_RE = re.compile(
+    r"\b(?:search (?:the )?(?:web|internet|online)|look (?:it |that )?up online|"
+    r"current(?:ly)?|today|latest|recent(?:ly)?|"
+    r"suche (?:im internet|online)|aktuell|heute|neueste)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_COURSE_EVIDENCE_RE = re.compile(
+    r"\b(?:according to (?:my|the) (?:professor|lecture|course|script|slides?|pdf)|"
+    r"my (?:professor|lecture|course|script|slides?)|"
+    r"which page|exact (?:page|citation|formula|quote)|"
+    r"where (?:does|did) (?:the|my) (?:professor|lecture|script) say|"
+    r"verify (?:that|this|it) against|are you sure|is that correct|"
+    r"show me the (?:exact|precise) (?:page|formula|source)|"
+    r"i think (?:that'?s|your answer is|this is) wrong|that'?s wrong|"
+    r"wo genau (?:steht|sagt)|welche seite|bist du sicher|stimmt das)\b",
+    re.IGNORECASE,
+)
+_REFERENCES_PREVIOUS_ANSWER_RELATIONS = {
+    TurnRelation.CONTINUATION,
+    TurnRelation.ANSWER_TO_ASSISTANT,
+    TurnRelation.CLARIFICATION,
+    TurnRelation.CORRECTION,
+    TurnRelation.REJECTION,
+    TurnRelation.CONFIRMATION,
+}
+_EVIDENCE_SKIPS_RETRIEVAL = {
+    EvidenceRequirement.CONVERSATION_ONLY,
+    EvidenceRequirement.GENERAL_KNOWLEDGE,
+    EvidenceRequirement.REUSE_PRIOR_GROUNDED,
+}
+# Acts that are inherently about verifying, correcting, or continuing exact
+# prior evidence — a paraphrase of the previous answer can never satisfy
+# them, so they always keep requiring fresh retrieval regardless of what the
+# previous answer's own provenance was.
+_VERIFICATION_SENSITIVE_ACTS = {
+    DialogueAct.VERIFY_PREVIOUS_ANSWER, DialogueAct.CHECK_ANSWER,
+    DialogueAct.CORRECT_ASSISTANT, DialogueAct.REJECT_ANSWER,
+    DialogueAct.RETRY_PREVIOUS_REQUEST, DialogueAct.ANSWER_ALL_REQUESTED,
+    DialogueAct.REQUEST_RESULT_ONLY, DialogueAct.REQUEST_FIRST_STEP,
+    DialogueAct.CONTINUE_FROM_STEP, DialogueAct.REUSE_VERIFIED_RESULT,
+}
+
+
+def _previous_answer_provenance(turns: list[dict[str, Any]]) -> dict[str, str] | None:
+    """The routing metadata the previous assistant turn was actually
+    generated with, when the caller attached it (see PreviousTurn on the
+    router). Returns None for legacy/plain {role, text} turns so callers can
+    fall back to a safe default instead of assuming a shape that isn't there."""
+    for turn in reversed(turns or []):
+        if (turn.get("role") or "").lower() != "assistant":
+            continue
+        grounding_mode = turn.get("groundingMode") or turn.get("grounding_mode")
+        answer_mode = turn.get("answerMode") or turn.get("answer_mode")
+        source_scope = turn.get("sourceScope") or turn.get("source_scope")
+        if not (grounding_mode or answer_mode or source_scope):
+            return None
+        return {
+            "grounding_mode": str(grounding_mode or ""),
+            "answer_mode": str(answer_mode or ""),
+            "source_scope": str(source_scope or ""),
+        }
+    return None
+
+
+def resolve_evidence_requirement(
+    message: str, *, relation: TurnRelation, continues_previous_goal: bool,
+    previous_turns: list[dict[str, Any]] | None = None,
+) -> EvidenceRequirement:
+    """What information answering this turn actually needs — independent of
+    what the user wants done with it (TaskFamily says WHAT, this says
+    WHERE FROM). A location/verification/source signal in the CURRENT
+    message always wins: it can never be satisfied by paraphrasing a
+    previous answer, however that answer was grounded. Otherwise, a turn
+    that plainly references the previous answer inherits THAT answer's own
+    evidence provenance — an available course/PDF binding on the chat is
+    not itself a requirement."""
+    text = message or ""
+    if _EXPLICIT_WEB_EVIDENCE_RE.search(text):
+        return EvidenceRequirement.WEB
+    if _EXPLICIT_COURSE_EVIDENCE_RE.search(text):
+        return EvidenceRequirement.COURSE_RETRIEVAL
+    references_previous_answer = (
+        continues_previous_goal or relation in _REFERENCES_PREVIOUS_ANSWER_RELATIONS
+    )
+    if references_previous_answer:
+        provenance = _previous_answer_provenance(previous_turns or [])
+        if provenance is None:
+            # No recorded provenance (legacy turn, or an older persisted
+            # section). Fall back to the same academic-content heuristic
+            # resolve_dialogue already uses for bare reactions: a formula/
+            # exercise-laden previous answer is worth re-grounding, an
+            # ordinary conversational one is safest reused as-is.
+            last_assistant = _latest_turn(previous_turns or [], "assistant")
+            if last_assistant and _ACADEMIC_ASSISTANT_RE.search(last_assistant):
+                return EvidenceRequirement.COURSE_RETRIEVAL
+            return EvidenceRequirement.CONVERSATION_ONLY
+        if provenance["grounding_mode"] in {"", "general"} or provenance["source_scope"] in {
+            "", "general_knowledge",
+        }:
+            return EvidenceRequirement.CONVERSATION_ONLY
+        return EvidenceRequirement.REUSE_PRIOR_GROUNDED
+    # A genuinely new topic: preserve the existing auto-mode default of
+    # letting retrieval run so the post-retrieval relevance gate can decide,
+    # rather than pre-judging "general knowledge" before evidence is checked.
+    return EvidenceRequirement.COURSE_RETRIEVAL
+
+
 _LANGUAGE_CODES = {
     "english": "en",
     "german": "de",
@@ -236,6 +364,7 @@ class DialogueResolution:
     task_family: TaskFamily = TaskFamily.UNKNOWN
     continues_previous_goal: bool = False
     confidence: float = 1.0
+    evidence_requirement: EvidenceRequirement = EvidenceRequirement.COURSE_RETRIEVAL
 
     def to_api(self) -> dict[str, Any]:
         data = asdict(self)
@@ -244,6 +373,7 @@ class DialogueResolution:
         data["relation"] = self.relation.value
         data["speech_act"] = self.speech_act.value
         data["task_family"] = self.task_family.value
+        data["evidence_requirement"] = self.evidence_requirement.value
         return data
 
     def prompt_overlay(self) -> str:
@@ -524,6 +654,23 @@ def resolve_dialogue(
     task_family = _infer_task_family(text)
     if task_family is TaskFamily.UNKNOWN and relation is not TurnRelation.NEW_TOPIC:
         task_family = _infer_active_task(turns)
+    evidence_requirement = resolve_evidence_requirement(
+        text, relation=relation,
+        continues_previous_goal=relation is not TurnRelation.NEW_TOPIC,
+        previous_turns=turns,
+    )
+    if act in _VERIFICATION_SENSITIVE_ACTS:
+        # Verifying, correcting, or continuing exact prior work can never be
+        # satisfied by paraphrasing a previous answer.
+        evidence_requirement = EvidenceRequirement.COURSE_RETRIEVAL
+        final_retrieve = True
+    elif not retrieve:
+        # An act-specific rule already decided no retrieval is needed
+        # (translation, or a bare reaction to non-academic content) —
+        # honour that explicit call rather than re-deriving it.
+        final_retrieve = False
+    else:
+        final_retrieve = evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL
     return DialogueResolution(
         original_message=text,
         dialogue_act=act,
@@ -531,7 +678,7 @@ def resolve_dialogue(
         active_question=active,
         previous_question=previous,
         response_language=language,
-        requires_new_retrieval=retrieve,
+        requires_new_retrieval=final_retrieve,
         invalidate_previous_answer=invalidate,
         requested_depth=depth,
         explanation_attempt=_explanation_attempt(turns),
@@ -539,6 +686,7 @@ def resolve_dialogue(
         referent_type=referent_type,
         referent_text=referent_text,
         relation=relation,
+        evidence_requirement=evidence_requirement,
         speech_act=speech_act,
         task_family=task_family,
         continues_previous_goal=relation is not TurnRelation.NEW_TOPIC,
@@ -668,7 +816,13 @@ Do not include reasoning."""
         task_family = TaskFamily(str(data.get("taskFamily")))
         confidence = max(0.0, min(1.0, float(data.get("confidence", 0))))
         if confidence < 0.65:
-            return base
+            # Too unsure to trust taskFamily/continuesPreviousGoal — but the
+            # turn was already judged short/context-dependent to get here,
+            # so returning the raw lexical `base` (typically NEW_TOPIC) is
+            # exactly what routes an ordinary follow-up into RAG. The prior
+            # conversation is the safest available evidence for this class
+            # of turn regardless of classifier confidence.
+            return _safe_conversational_fallback(message, previous_turns, base)
         resolved = str(data.get("resolvedRequest") or message).strip()[:4000]
         inferred_task = _infer_active_task(previous_turns)
         if inferred_task is TaskFamily.UNKNOWN:
@@ -682,37 +836,60 @@ Do not include reasoning."""
             # A semantic model cannot turn a standalone social acknowledgement
             # into a phantom pending dependency when history contains no task.
             return base
+        continues_previous_goal = bool(data.get("continuesPreviousGoal"))
+        evidence_requirement = resolve_evidence_requirement(
+            message, relation=relation, continues_previous_goal=continues_previous_goal,
+            previous_turns=previous_turns,
+        )
         return DialogueResolution(
             **{**base.__dict__, "resolved_request": resolved, "relation": relation,
                "speech_act": speech_act, "task_family": task_family,
-               "continues_previous_goal": bool(data.get("continuesPreviousGoal")),
-               "requires_new_retrieval": task_family is not TaskFamily.CONVERSATION,
+               "continues_previous_goal": continues_previous_goal,
+               "evidence_requirement": evidence_requirement,
+               "requires_new_retrieval": evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL,
                "confidence": confidence}
         )
     except Exception:
-        # Classification availability must not erase obvious conversational
+        # Classification unavailability must not erase obvious conversational
         # continuity. This branch is reached only for turns already deemed
         # short/context-dependent (standalone questions never call it).
-        last_assistant = _latest_turn(previous_turns, "assistant")
-        relation = (
-            TurnRelation.ANSWER_TO_ASSISTANT
-            if (last_assistant or "").rstrip().endswith("?")
-            else TurnRelation.CONTINUATION
-        )
-        inherited = _infer_active_task(previous_turns)
-        if inherited is TaskFamily.UNKNOWN:
-            inherited = _infer_pending_assistant_task(previous_turns)
-        # A failed classifier must not invent a pending goal merely because a
-        # social acknowledgement followed an ordinary closing statement.
-        if inherited is TaskFamily.UNKNOWN:
-            return base
-        return DialogueResolution(
-            **{**base.__dict__, "relation": relation, "speech_act": SpeechAct.ANSWER,
-               "task_family": inherited, "continues_previous_goal": True,
-               "confidence": 0.55}
-        )
+        return _safe_conversational_fallback(message, previous_turns, base)
 
 
-__all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "SpeechAct",
-           "TaskFamily", "TurnRelation", "is_pure_social_turn", "needs_semantic_resolution",
-           "resolve_dialogue", "resolve_dialogue_semantically"]
+def _safe_conversational_fallback(
+    message: str, previous_turns: list[dict[str, str]], base: DialogueResolution,
+) -> DialogueResolution:
+    """Shared fallback for when semantic classification is unavailable or
+    too low-confidence to trust. Only called for turns needs_semantic_
+    resolution already judged short/context-dependent, so the prior
+    assistant turn (when one exists) is always the safest available
+    evidence — never a guessed retrieval just because the classifier
+    couldn't decide."""
+    last_assistant = _latest_turn(previous_turns, "assistant")
+    if not last_assistant:
+        return base
+    relation = (
+        TurnRelation.ANSWER_TO_ASSISTANT
+        if last_assistant.rstrip().endswith("?")
+        else TurnRelation.CONTINUATION
+    )
+    inherited = _infer_active_task(previous_turns)
+    if inherited is TaskFamily.UNKNOWN:
+        inherited = _infer_pending_assistant_task(previous_turns)
+    evidence_requirement = resolve_evidence_requirement(
+        message, relation=relation, continues_previous_goal=True,
+        previous_turns=previous_turns,
+    )
+    return DialogueResolution(
+        **{**base.__dict__, "relation": relation, "speech_act": SpeechAct.ANSWER,
+           "task_family": inherited, "continues_previous_goal": True,
+           "evidence_requirement": evidence_requirement,
+           "requires_new_retrieval": evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL,
+           "confidence": 0.55}
+    )
+
+
+__all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "EvidenceRequirement",
+           "SpeechAct", "TaskFamily", "TurnRelation", "is_pure_social_turn",
+           "needs_semantic_resolution", "resolve_dialogue", "resolve_dialogue_semantically",
+           "resolve_evidence_requirement"]
