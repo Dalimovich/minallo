@@ -3419,20 +3419,23 @@ async function streamFromAskStream(
   const snapshotResult = activePdfContext
     ? await captureStablePdfSnapshot(question, 'active_document')
     : null;
-  if (activePdfContext && snapshotResult?.status !== 'captured') {
-    const unstable = snapshotResult?.status === 'unstable';
+  if (activePdfContext && snapshotResult?.status === 'unstable') {
     throw new AskStreamError({
-      code: unstable ? 'visible_page_snapshot_unstable' : 'visible_page_capture_failed',
-      message: unstable
-        ? 'The visible PDF page changed while Minallo was capturing it. Please retry.'
-        : 'Minallo could not capture the visible PDF page. Please retry.',
+      code: 'visible_page_snapshot_unstable',
+      message: 'The visible PDF page changed while Minallo was capturing it. Please retry.',
       retryable: true,
-      metadata: snapshotResult && snapshotResult.status !== 'no_active_pdf'
-        ? { ...snapshotResult }
-        : undefined,
+      metadata: { ...snapshotResult },
     });
   }
-  const snapshot = snapshotResult?.status === 'captured' ? snapshotResult.snapshot : null;
+  // Viewer availability is not an evidence requirement. On a render failure,
+  // send the captured identity/text without images so the backend can choose
+  // general generation or typed page recovery from the actual request.
+  const snapshot = snapshotResult?.status === 'captured' ? snapshotResult.snapshot
+    : activePdfContext ? {
+      activeDocument: activePdfContext, images: [] as OpenFileImage[],
+      capturedAt: Date.now(), visualEvidenceExpected: true,
+      selectedRegion: undefined,
+    } : null;
   const activePdf = snapshot?.activeDocument || null;
   if (activePdfContext && activePdf && (
     activePdf.documentId !== activePdfContext.documentId
