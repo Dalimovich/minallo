@@ -1419,11 +1419,26 @@ async def ask_stream_endpoint(
          if turn.role == "user" and turn.text.strip()),
         None,
     )
+    # Explicit source constraints must participate before any fast return.
+    # Viewer availability is deliberately excluded: it is not a selection.
+    from ..services.dialogue_state import EvidenceRequirement  # noqa: WPS433
+    planning_source_mode = payload.sourceMode
+    if payload.sourceMode == "internet":
+        turn_resolution = replace(
+            turn_resolution, evidence_requirement=EvidenceRequirement.WEB,
+            requires_new_retrieval=True,
+        )
+    elif grounding_request.retrievalScope.type == "documents":
+        planning_source_mode = "course_files"
+        turn_resolution = replace(
+            turn_resolution, evidence_requirement=EvidenceRequirement.COURSE_RETRIEVAL,
+            requires_new_retrieval=True,
+        )
     _task_profile, execution_plan = resolve_execution_plan(
         question=turn_resolution.resolved_request,
         resolved_access=resolved_access,
         processing_pipeline=processing_pipeline,
-        source_mode=payload.sourceMode,
+        source_mode=planning_source_mode,
         has_previous_answer=any(
             turn.role == "assistant" and bool(turn.text.strip())
             for turn in (payload.previousTurns or [])

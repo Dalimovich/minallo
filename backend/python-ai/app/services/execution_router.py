@@ -219,7 +219,11 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
         # would search the course again for evidence that's already in hand.
         or (continues and evidence_requirement == "course_retrieval")
     )
-    web = bool(_WEB_RE.search(q) and (_WEB_ACTION_RE.search(q) or "http" in q.casefold()))
+    web = bool(
+        (source_mode or "").casefold() == "internet"
+        or evidence_requirement == "web"
+        or (_WEB_RE.search(q) and (_WEB_ACTION_RE.search(q) or "http" in q.casefold()))
+    )
     calculation = bool(_CALC_RE.search(q)) or family in {"calculate", "solve"}
     derivation = bool(_DERIVE_RE.search(q)) or family == "derive"
     extraction = bool(_EXTRACT_RE.search(q))
