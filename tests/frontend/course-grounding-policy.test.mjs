@@ -29,7 +29,7 @@ test('all-course mode omits hard document filters', () => {
 
 test('bound active course reaches whole-course retrieval without selected files', () => {
   assert.match(shell, /courseId: string \| null/);
-  assert.match(shell, /const fallbackCourseId = resolveRequestCourseId\(active\)/);
+  assert.match(shell, /const fallbackCourseId = requestCourseId \?\? resolveRequestCourseId\(active\)/);
   assert.match(shell, /effectiveCourseFileScope === 'specific_files' && documentIds\.length/);
   assert.doesNotMatch(shell, /no course files are attached to this chat/i);
   assert.match(shell, /No active course is bound to this chat/);
@@ -62,5 +62,5 @@ test('deselectChatbotSource exists and is exposed for the PDF-close path to call
 test('request snapshots preserve course identity and file scope', () => {
   assert.match(shell, /requestSnapshot\?: \{[\s\S]*courseFileScope: CourseFileScope;[\s\S]*courseId\?: string;/);
   assert.match(shell, /courseId: resolveRequestCourseId\(originChat\) \|\| undefined/);
-  assert.match(shell, /activeChat\.courseId = original\.requestSnapshot\.courseId \|\| null/);
+  assert.match(shell, /alternative\.requestSnapshot = structuredClone\(original\.requestSnapshot\)/);
 });

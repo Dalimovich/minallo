@@ -1424,6 +1424,13 @@ async function streamAiReply(
   if (!originMessages.some((message) => message.id === assistantMessage.id)) originMessages.push(assistantMessage);
   const requestMessages = options.requestMessages || originMessages.filter((message) => message.id !== assistantMessage.id);
   const requestState: ConversationState = { ...state, messages: requestMessages };
+  const requestChat: SavedChat = {
+    ...originChat,
+    sourceMode: assistantMessage.requestSnapshot.sourceMode,
+    courseFileScope: assistantMessage.requestSnapshot.courseFileScope,
+    courseId: assistantMessage.requestSnapshot.courseId || null,
+    selectedSourceIds: assistantMessage.requestSnapshot.selectedSourceIds.slice(),
+  };
   touchOrigin();
   saveChatStore();
 
@@ -1466,9 +1473,22 @@ async function streamAiReply(
     const allowDiagrams = latestUserAllowsDiagrams(requestMessages);
   try {
     const latestFileLabel = latestUserFileLabel(requestMessages);
-    const initialRag = ragEligibility(requestMessages);
+    const initialRag = ragEligibility(requestMessages, requestChat, requestChat.courseId || '');
+    const intentContext = {
+      courseId: requestChat.courseId || null,
+      selectedSourceIds: requestChat.selectedSourceIds.slice(),
+      pdf: initialRag?.activePdfContext || null,
+    };
     if (initialRag && assistantMessage.requestSnapshot) {
-      assistantMessage.requestSnapshot.groundingRequest = initialRag.groundingRequest;
+      const submittedGrounding = assistantMessage.requestSnapshot.groundingRequest;
+      if (submittedGrounding) {
+        initialRag.groundingRequest = structuredClone(submittedGrounding);
+        if (submittedGrounding.retrievalScope.type === 'documents') {
+          initialRag.documentIds = submittedGrounding.retrievalScope.documentIds.slice();
+        }
+      } else {
+        assistantMessage.requestSnapshot.groundingRequest = structuredClone(initialRag.groundingRequest);
+      }
       saveChatStore();
     }
     if (options.resumeExistingRequest && assistantMessage.requestSnapshot?.activeDocumentId) {
@@ -1494,7 +1514,7 @@ async function streamAiReply(
     // Grounded course files, active-PDF captures, and pasted screenshots use
     // /ask-stream. Arbitrary non-indexed file attachments retain their
     // explicit generic attachment policy; images are never silently omitted.
-    const routed = await handleIntentRoute(requestState, bubble, thinking, controller);
+    const routed = await handleIntentRoute(requestState, bubble, thinking, controller, intentContext);
     if (routed) {
       const routedText = continuationBase ? `${continuationBase}\n\n${routed.text}` : routed.text;
       Object.assign(assistantMessage, {
@@ -1574,10 +1594,10 @@ async function streamAiReply(
         examPractice: GENERATED_EXAM_REQUEST_RE.test(sourceUser?.text || ''),
       });
       if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
-    } else if (normaliseSourceMode(originChat.sourceMode) === 'course_files') {
+    } else if (normaliseSourceMode(requestChat.sourceMode) === 'course_files') {
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
-      raw = normaliseCourseFileScope(originChat.courseFileScope) === 'specific_files'
+      raw = normaliseCourseFileScope(requestChat.courseFileScope) === 'specific_files'
         ? 'No files are selected for this request. Select one or more files, or switch to **All course files**.'
         : 'No active course is bound to this chat. Open a course in the Study Panel, or switch the source selector to **Auto** or **Internet**.';
       if (isOriginActive() && bubble) renderRichBubble(bubble, raw, false);
@@ -2014,7 +2034,7 @@ function listAllCourses(): Array<{ id: string; name: string }> {
  *  several courses that silently generated from an arbitrary one the student
  *  never asked for. Returns null when the choice is genuinely ambiguous so the
  *  router's clarification question fires instead. */
-function resolveIntentCourse(messageText: string): {
+function resolveIntentCourse(messageText: string, submittedCourseId?: string | null): {
   courseId: string | null;
   courseName: string | null;
   allNames: string[];
@@ -2031,7 +2051,8 @@ function resolveIntentCourse(messageText: string): {
     activeCourseId?: string | null;
     activeCourseRef?: { id?: string; name?: string } | null;
   };
-  const activeId = w.activeCourseRef?.id || w.activeCourseId || null;
+  const activeId = submittedCourseId !== undefined
+    ? submittedCourseId : w.activeCourseRef?.id || w.activeCourseId || null;
   if (activeId) {
     const match = all.find((c) => c.id === activeId);
     return { courseId: activeId, courseName: match?.name || w.activeCourseRef?.name || null, allNames };
@@ -2085,13 +2106,16 @@ async function handleIntentRoute(
   state: ConversationState,
   bubble: HTMLElement | null,
   thinking: AIThinkingStatus | null,
-  controller: AbortController
+  controller: AbortController,
+  submittedContext?: { courseId: string | null; selectedSourceIds: string[]; pdf: ActivePdfContext | null },
 ): Promise<IntentRouteResult | null> {
   const last = state.messages[state.messages.length - 1];
   if (!last || last.role !== 'user' || !last.text) return null;
   if ((last.images && last.images.length) || (last.files && last.files.length)) return null;
 
-  const resolvedCourse = resolveIntentCourse(last.text);
+  const resolvedCourse = resolveIntentCourse(last.text, submittedContext?.courseId);
+  const selectedSourceIds = submittedContext?.selectedSourceIds || chatStore.getActive().selectedSourceIds.slice();
+  const activePdf = submittedContext ? submittedContext.pdf : getActivePdfContext();
   const courseId = resolvedCourse.courseId;
   const route = routeStudyIntent(last.text, courseId);
   if (!route) return null;
@@ -2119,7 +2143,7 @@ async function handleIntentRoute(
   if (route.intent === 'examforge' || route.intent === 'flashcards' || route.intent === 'deep_learn') {
     if (thinking) await thinking.waitMinimum();
     thinking?.remove(true);
-    const source = resolveStudyToolSource(route.target.courseId, chatStore.getActive().selectedSourceIds, sourceLibrary.items, getActivePdfContext());
+    const source = resolveStudyToolSource(route.target.courseId, selectedSourceIds, sourceLibrary.items, activePdf);
     if (route.explicitSourceReference && route.sourcePhrase && !/^this (?:pdf|document)$/i.test(route.sourcePhrase)) {
       source.documentIds = [];
       source.documentName = route.sourcePhrase;
@@ -3042,7 +3066,9 @@ async function resolveFollowUpDoc(
  * or the generic chat endpoint. Returns the resolved RAG payload when
  * eligible, else null. */
 function ragEligibility(
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  active: SavedChat = chatStore.getActive(),
+  requestCourseId?: string,
 ): {
   question: string;
   courseId: string;
@@ -3064,7 +3090,6 @@ function ragEligibility(
   // instruction such as "answer all of these".
   const currentQuestion = [...attachedClipboardText, last.text.trim()].filter(Boolean).join('\n\n');
   if (!currentQuestion) return null;
-  const active = chatStore.getActive();
   const explicitAttachment = last.attachmentRefs?.[0];
   if (explicitAttachment?.fileId && explicitAttachment.courseId) {
     const openPdf = getActivePdfContext();
@@ -3189,7 +3214,7 @@ function ragEligibility(
   // course it belongs to once the user moves to a different conversation.
   // If they ever mix courses we still pick the first — worst case is RAG
   // searches a smaller-than-expected universe.
-  const fallbackCourseId = resolveRequestCourseId(active);
+  const fallbackCourseId = requestCourseId ?? resolveRequestCourseId(active);
   const courseId = namedCourseFiles[0]?.courseId || requestSources[0]?.courseId
     || fallbackCourseId || rawActivePdfContext?.courseId;
 
@@ -3379,6 +3404,10 @@ async function streamFromAskStream(
   logicalRequestId?: string,
   assistantMessage?: ChatMessage,
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
+  const submitted = assistantMessage?.requestSnapshot;
+  const effectiveSourceMode = submitted?.sourceMode || sourceModeForActiveChat();
+  const effectiveCourseFileScope = submitted?.courseFileScope || courseFileScopeForActiveChat();
+  const submittedGrounding = structuredClone(submitted?.groundingRequest || groundingRequest);
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {
     throw new AskStreamError({
@@ -3405,6 +3434,18 @@ async function streamFromAskStream(
   }
   const snapshot = snapshotResult?.status === 'captured' ? snapshotResult.snapshot : null;
   const activePdf = snapshot?.activeDocument || null;
+  if (activePdfContext && activePdf && (
+    activePdf.documentId !== activePdfContext.documentId
+    || activePdf.courseId !== activePdfContext.courseId
+    || activePdf.visiblePage !== activePdfContext.visiblePage
+    || activePdf.documentRevision !== activePdfContext.documentRevision
+  )) {
+    throw new AskStreamError({
+      code: 'visible_page_snapshot_unstable',
+      message: 'The PDF changed after this question was submitted. Reopen the original page and retry.',
+      retryable: true,
+    });
+  }
   const pastedImages: OpenFileImage[] = userImages.flatMap((image) => {
     const comma = image.dataUrl.indexOf(',');
     const data = comma >= 0 ? image.dataUrl.slice(comma + 1) : '';
@@ -3417,8 +3458,7 @@ async function streamFromAskStream(
     } satisfies OpenFileImage];
   });
   const openFileImages = [...(snapshot?.images || []), ...pastedImages].slice(0, 3);
-  const effectiveCourseFileScope = courseFileScopeForActiveChat();
-  const effectiveGroundingRequest: GroundingRequest = groundingRequest || {
+  const effectiveGroundingRequest: GroundingRequest = submittedGrounding || {
     retrievalScope: effectiveCourseFileScope === 'specific_files' && documentIds.length
       ? { type: 'documents', documentIds: Array.from(new Set(documentIds)) }
       : { type: 'course' },
@@ -3457,31 +3497,10 @@ async function streamFromAskStream(
       assistantMessageId: assistantMessage?.id,
       requestId,
       requestSnapshot: assistantMessage?.requestSnapshot,
-      groundingRequest: (
-        assistantMessage?.requestSnapshot?.groundingResolution && durableConversation
-          ? {
-              // The prior turn's resolution can legitimately carry an empty
-              // documentIds array (e.g. it resolved to general knowledge, or
-              // course-wide relevance found nothing document-specific) —
-              // the backend's RetrievalScope rejects `type: 'documents'`
-              // with zero ids (422 "documents retrieval scope requires
-              // documentIds"), so replaying that snapshot must fall back to
-              // `type: 'course'` rather than faithfully reproducing an
-              // invalid shape.
-              retrievalScope: assistantMessage.requestSnapshot.groundingResolution.documentIds?.length
-                ? {
-                    type: 'documents',
-                    documentIds: assistantMessage.requestSnapshot.groundingResolution.documentIds
-                  }
-                : { type: 'course' },
-              viewerContext: assistantMessage.requestSnapshot.groundingRequest?.viewerContext,
-              documentAccess: assistantMessage.requestSnapshot.groundingRequest?.documentAccess
-            }
-          : effectiveGroundingRequest
-      ),
+      groundingRequest: effectiveGroundingRequest,
       question,
       tutorMode: getCurrentTutorMode(),
-      sourceMode: sourceModeForActiveChat(),
+      sourceMode: effectiveSourceMode,
       // When we send a document selection, tell the backend to hard-scope to
       // it (specific_files); otherwise it would treat the default
       // all_course_files scope as "search everything" and ignore the ids.
@@ -8738,27 +8757,14 @@ function regenerateLastReal(aiRow: HTMLElement, root: HTMLElement): void {
   const clicked = aiRow.querySelector<HTMLButtonElement>('[data-action="regen"]');
   if (clicked) { clicked.disabled = true; clicked.setAttribute('aria-busy', 'true'); }
   const requestMessages = state.messages.slice(0, parentIndex + 1).filter((message) => message.id !== alternative.id);
-  const activeChat = chatStore.getActive();
-  const previousMode = activeChat.sourceMode;
-  const previousScope = activeChat.courseFileScope;
-  const previousCourseId = activeChat.courseId;
-  const previousSources = activeChat.selectedSourceIds.slice();
   if (original.requestSnapshot) {
-    activeChat.sourceMode = original.requestSnapshot.sourceMode;
-    activeChat.courseFileScope = normaliseCourseFileScope(original.requestSnapshot.courseFileScope);
-    activeChat.courseId = original.requestSnapshot.courseId || null;
-    activeChat.selectedSourceIds = original.requestSnapshot.selectedSourceIds.slice();
-    alternative.requestSnapshot = { ...original.requestSnapshot };
+    alternative.requestSnapshot = structuredClone(original.requestSnapshot);
   }
   void streamAiReply(state, sendBtn, msgs, {
     targetMessage: alternative,
     targetRow: alternativeRow,
     requestMessages
   }).finally(() => {
-    activeChat.sourceMode = previousMode;
-    activeChat.courseFileScope = previousScope;
-    activeChat.courseId = previousCourseId;
-    activeChat.selectedSourceIds = previousSources;
     saveChatStore();
     if (clicked) { clicked.disabled = false; clicked.removeAttribute('aria-busy'); }
   });
@@ -9181,16 +9187,6 @@ function attachStructuredRecoveryAction(
     const requestMessages = continuationPrompt
       ? chat.messages.slice(0, Math.max(messageIndex, parentIndex) + 1).concat(continuationPrompt)
       : chat.messages.slice(0, parentIndex + 1);
-    const previousMode = chat.sourceMode;
-    const previousScope = chat.courseFileScope;
-    const previousCourseId = chat.courseId;
-    const previousSources = chat.selectedSourceIds.slice();
-    if (message.requestSnapshot) {
-      chat.sourceMode = message.requestSnapshot.sourceMode;
-      chat.courseFileScope = normaliseCourseFileScope(message.requestSnapshot.courseFileScope);
-      chat.courseId = message.requestSnapshot.courseId || null;
-      chat.selectedSourceIds = message.requestSnapshot.selectedSourceIds.slice();
-    }
     message.completionState = 'recovering';
     message.retryable = true;
     message.updatedAt = new Date().toISOString();
@@ -9200,10 +9196,6 @@ function attachStructuredRecoveryAction(
       targetMessage: message, targetRow: aiRow, requestMessages,
       continuationText, resumeExistingRequest: true,
     }).finally(() => {
-      chat.sourceMode = previousMode;
-      chat.courseFileScope = previousScope;
-      chat.courseId = previousCourseId;
-      chat.selectedSourceIds = previousSources;
       saveChatStore();
     });
   });
