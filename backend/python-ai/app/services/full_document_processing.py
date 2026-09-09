@@ -72,16 +72,17 @@ def process_full_documents(
         ).data or []
         by_number = {int(page["page_number"]): page for page in page_rows}
         ordered = [by_number[page.page_number] for page in expected if page.page_number in by_number]
-        processed_ids = [
+        indexed_ids = [
             page.source_page_id for page in expected if page.page_number in by_number
         ]
+        processed_ids: list[str] = []
         doc_coverage = coverage_result(
             document_id=document_id, revision=revision, manifest=manifest,
             processed_page_ids=processed_ids,
-            indexed_page_ids=processed_ids,
+            indexed_page_ids=indexed_ids,
         )
         coverage_documents.append(doc_coverage)
-        if not doc_coverage["complete"]:
+        if len(indexed_ids) != len(expected):
             continue
         file_name = str(row.get("file_name") or document_id)
         sources.append({
@@ -97,7 +98,12 @@ def process_full_documents(
                 max_tokens=3000,
                 user_id=user_id,
             )
+            if not isinstance(result, str) or not result.strip():
+                # Availability of an input page does not prove its model pass succeeded.
+                # Leave these pages unprocessed so the caller exposes coverage recovery.
+                continue
             mapped.append(f"## {file_name} — batch {batch_no}\n{result}")
+            processed_ids.extend(page.source_page_id for page in expected if page.page_number in batch_pages)
             pages_done += len(batch_pages)
             if on_batch_progress:
                 on_batch_progress({
@@ -107,6 +113,10 @@ def process_full_documents(
                     "batch_start_page": batch_pages[0] if batch_pages else None,
                     "batch_end_page": batch_pages[-1] if batch_pages else None,
                 })
+        doc_coverage.update(coverage_result(
+            document_id=document_id, revision=revision, manifest=manifest,
+            processed_page_ids=processed_ids, indexed_page_ids=indexed_ids,
+        ))
 
     aggregate_complete = bool(coverage_documents) and all(
         item["complete"] for item in coverage_documents
@@ -120,8 +130,7 @@ def process_full_documents(
     )
     answer, _ = _call_openai(system, final_prompt, max_tokens=5000, user_id=user_id)
     return {
-        "answer": answer,
-        "coverageResult": {"documents": coverage_documents, "complete": True},
+        "answer": answer if isinstance(answer, str) else "",
+        "coverageResult": {"documents": coverage_documents, "complete": isinstance(answer, str) and bool(answer.strip())},
         "sources": sources,
     }
-
