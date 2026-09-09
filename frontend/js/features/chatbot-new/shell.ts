@@ -9196,7 +9196,8 @@ function attachStructuredRecoveryAction(
   btn.textContent = labels[failure.action];
   btn.addEventListener('click', async () => {
     if (failure.action === 'sign_in') {
-      (document.querySelector('[data-auth-open], #authBtn, #loginBtn') as HTMLElement | null)?.click();
+      if (typeof window.landShowAuth === 'function') window.landShowAuth('signin');
+      else (document.querySelector('[data-auth-open], #nlNavSignIn, #landingLoginBtn') as HTMLElement | null)?.click();
       return;
     }
     const root = aiRow.closest<HTMLElement>('.ncb-root');

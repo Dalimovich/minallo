@@ -30,3 +30,19 @@ test('typed classification retains retry and partial-answer policy', () => {
   assert.equal(internal.action, 'none');
   assert.doesNotMatch(internal.message, /internal error/i);
 });
+
+test('nonretryable auth and access failures retain independent recovery actions', () => {
+  assert.equal(classifyAiError({ code: 'session_expired' }).action, 'sign_in');
+  assert.equal(classifyAiError({ code: 'document_access_revoked' }).action, 'read_current_page');
+  assert.equal(classifyAiError({ code: 'general_generation_failed', retryable: false }).action, 'none');
+  assert.equal(classifyAiError({ code: 'unmapped_terminal', retryable: false }).action, 'none');
+});
+
+test('auth transport exceptions and backend full-document codes use the actual subsystem', () => {
+  assert.equal(classifyAiError(new Error('SESSION_INVALID')).action, 'sign_in');
+  const offline = classifyAiError(new Error('SESSION_REFRESH_NETWORK_ERROR'));
+  assert.equal(offline.action, 'retry');
+  assert.match(offline.message, /connection/i);
+  assert.match(classifyAiError({ code: 'FULL_DOCUMENT_COVERAGE_INCOMPLETE' }).title, /document/i);
+  assert.match(classifyAiError({ code: 'DOCUMENT_INDEXING' }).message, /index|processing/i);
+});

@@ -39,25 +39,47 @@ const typedErrors: Record<string, ErrorDetails> = {
   session_expired: { title: 'Session expired', message: 'Please sign in again, then retry.', retryable: false, preservePartialAnswer: false, action: 'sign_in' },
   session_refresh_failed: { title: 'Session refresh failed', message: 'Please check your connection and sign in again if needed.', retryable: true, preservePartialAnswer: false, action: 'sign_in' },
   rag_service_unavailable: { title: 'Course search unavailable', message: 'Course-file search is temporarily unavailable.', retryable: true, preservePartialAnswer: false, action: 'retry' },
+  full_document_processing_failed: { title: 'Document processing interrupted', message: 'The full-document response could not be completed. Your original document selection is preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  full_document_coverage_incomplete: { title: 'Document processing incomplete', message: 'Some requested pages or the final synthesis could not be completed. Retry with the same documents.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+  full_document_scope_required: { title: 'Select documents', message: 'Choose the documents to process completely, then send your question again.', retryable: false, preservePartialAnswer: false, action: 'none' },
+  document_indexing: { title: 'Document is still processing', message: 'The document index is not ready yet. Wait for processing to finish, then retry.', retryable: true, preservePartialAnswer: false, action: 'retry' },
+  document_identity_unavailable: { title: 'Select the original document', message: 'Reopen the selected document so its identity can be verified.', retryable: false, preservePartialAnswer: false, action: 'read_current_page' },
+  grounding_revision_unavailable: { title: 'Document changed', message: 'Reopen the latest document revision before starting this request again.', retryable: false, preservePartialAnswer: false, action: 'read_current_page' },
+  session_network_error: { title: 'Connection interrupted', message: 'Check your connection and retry. Your saved session has been preserved.', retryable: true, preservePartialAnswer: true, action: 'retry' },
+};
+
+const errorAliases: Record<string, string> = {
+  SESSION_INVALID: 'session_expired', ACCESS_TOKEN_EXPIRED: 'session_expired',
+  SESSION_REFRESH_NETWORK_ERROR: 'session_network_error',
+  FULL_DOCUMENT_PROCESSING_FAILED: 'full_document_processing_failed',
+  FULL_DOCUMENT_COVERAGE_INCOMPLETE: 'full_document_coverage_incomplete',
+  FULL_DOCUMENT_SCOPE_REQUIRED: 'full_document_scope_required', DOCUMENT_INDEXING: 'document_indexing',
+  GROUNDING_REVISION_UNAVAILABLE: 'grounding_revision_unavailable',
+  STALE_GENERATION: 'request_superseded',
+  visible_page_snapshot_mismatch: 'visible_page_snapshot_unstable', active_pdf_state_incomplete: 'visible_page_capture_failed',
+  tutor_state_creation_failed: 'conversation_creation_failed', request_state_initialization_failed: 'request_state_unavailable',
+  transcript_hydration_unavailable: 'request_state_unavailable', scoped_job_state_unavailable: 'request_state_unavailable',
+  request_progress_stalled: 'stream_inactivity_timeout', response_stage_stalled: 'stream_inactivity_timeout',
+  response_worker_stalled: 'stream_inactivity_timeout', scoped_worker_interrupted: 'stream_transport_interrupted',
 };
 
 /** Classify typed failures first; message matching is only a legacy fallback. */
 export function classifyAiError(error: unknown): ClassifiedAiError {
   const typed = error && typeof error === 'object' ? error as { code?: unknown; retryable?: unknown; metadata?: { stage?: unknown }; stage?: unknown } : null;
-  const code = typeof typed?.code === 'string' ? typed.code : '';
-  if (typedErrors[code]) {
-    const known = typedErrors[code];
+  const raw = error instanceof Error ? error.message : String(error || '');
+  const code = typeof typed?.code === 'string' ? typed.code : errorAliases[raw] ? raw : '';
+  const known = typedErrors[errorAliases[code] || code];
+  if (known) {
     const retryable = typeof typed?.retryable === 'boolean' ? typed.retryable : known.retryable;
     const result: ClassifiedAiError = {
       code, ...known, retryable,
-      action: retryable ? known.action : 'none',
+      action: !retryable && (known.action === 'retry' || known.action === 'continue') ? 'none' : known.action,
     };
     const stage = typed?.stage || typed?.metadata?.stage;
     if (typeof stage === 'string' && stage) result.stage = stage;
     return result;
   }
 
-  const raw = error instanceof Error ? error.message : String(error || '');
   const msg = raw.toLowerCase();
   let message = 'Something interrupted the response. Please try again—your chat is still here.';
   if (/question is too long|message.{0,20}too long|payload too large|\b413\b/.test(msg))
@@ -79,7 +101,7 @@ export function classifyAiError(error: unknown): ClassifiedAiError {
   else if (/\b5\d\d\b|internal error|service unavailable|temporarily unavailable|generation failed|upstream/.test(msg))
     message = "I couldn't finish that response just now. Please try again in a moment.";
 
-  return { code: code || 'unknown_error', title: 'Could not finish', message, retryable: typed?.retryable !== false, preservePartialAnswer: false, action: 'retry' };
+  return { code: code || 'unknown_error', title: 'Could not finish', message, retryable: typed?.retryable !== false, preservePartialAnswer: false, action: typed?.retryable === false ? 'none' : 'retry' };
 }
 
 export function friendlyAiErrorMessage(error: unknown): string {
