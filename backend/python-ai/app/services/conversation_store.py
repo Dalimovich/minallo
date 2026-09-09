@@ -119,6 +119,9 @@ def get_durable_conversation_messages(*, user_id: str, conversation_id: str) -> 
                     "request_id": request.get("request_id"),
                     "scoped_job_id": request.get("scoped_job_id"),
                     "commentary_events": dict(request.get("request_snapshot") or {}).get("commentaryEvents", []),
+                    "request_snapshot": dict(request.get("request_snapshot") or {}),
+                    "answer_provenance": dict(request.get("request_snapshot") or {}).get("answerProvenance", {}),
+                    "parent_user_message_id": request.get("user_client_message_id"),
                 }
     for row in result:
         row.update(durable_by_message.get(str(row.get("client_message_id") or ""), {}))
@@ -147,6 +150,7 @@ def update_tutor_request(
     partial_answer: str | None = None, final_answer: str | None = None,
     error_code: str | None = None, retryable: bool = True,
     automatic_retry_count: int | None = None,
+    answer_provenance: dict[str, Any] | None = None,
 ) -> None:
     patch: dict[str, Any] = {
         "status": status, "stage": stage, "error_code": error_code,
@@ -161,11 +165,18 @@ def update_tutor_request(
     sb = get_supabase()
     rows = (
         sb.table("ai_tutor_requests")
-        .select("conversation_id,assistant_client_message_id,partial_answer,final_answer")
+        .select("conversation_id,assistant_client_message_id,partial_answer,final_answer,request_snapshot")
         .eq("request_id", request_id).eq("user_id", user_id).limit(1).execute()
     ).data or []
     if not rows:
         raise RuntimeError("tutor_request_not_found")
+    if answer_provenance is not None:
+        patch["request_snapshot"] = {
+            **dict(rows[0].get("request_snapshot") or {}),
+            "answerProvenance": {key: answer_provenance[key] for key in
+                ("answerMode", "groundingMode", "sourceScope")
+                if isinstance(answer_provenance.get(key), str)},
+        }
     if final_answer is not None and rows[0].get("partial_answer"):
         saved_partial = str(rows[0]["partial_answer"]).strip()
         if saved_partial and not final_answer.startswith(saved_partial):

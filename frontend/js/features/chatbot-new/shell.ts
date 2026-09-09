@@ -7880,7 +7880,20 @@ async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Pro
       if (!id || !role) continue;
       const serverText = String(row.content || '');
       const existing = localById.get(id);
+      const provenance = row.answer_provenance as Record<string, unknown> | undefined;
+      const restoredProvenance = Object.fromEntries(
+        ['answerMode', 'groundingMode', 'sourceScope']
+          .filter((key) => typeof provenance?.[key] === 'string')
+          .map((key) => [key, provenance![key]])
+      );
       if (existing) {
+        // Preserve local live metadata; hydrate missing provenance after cache loss.
+        for (const key of ['answerMode', 'groundingMode', 'sourceScope'] as const) {
+          if (!existing[key] && typeof restoredProvenance[key] === 'string') {
+            existing[key] = restoredProvenance[key] as string;
+            changed = true;
+          }
+        }
         // Prefer a complete/richer durable answer, but never replace a longer
         // live answer with an older partial checkpoint.
         if (serverText.length > (existing.text || '').length) {
@@ -7909,6 +7922,10 @@ async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Pro
       }
       const restored: ChatMessage = {
         id, role, text: serverText,
+        ...restoredProvenance,
+        requestSnapshot: row.request_snapshot as ChatMessage['requestSnapshot'],
+        parentUserMessageId: role === 'assistant' && row.parent_user_message_id
+          ? String(row.parent_user_message_id) : undefined,
         requestId: row.request_id ? String(row.request_id) : undefined,
         scopedJobId: row.scoped_job_id ? String(row.scoped_job_id) : undefined,
         commentary: Array.isArray(row.commentary_events)

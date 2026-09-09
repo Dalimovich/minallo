@@ -1579,6 +1579,23 @@ async def ask_stream_endpoint(
     }:
         from ..services.general_answer import stream_general_answer  # noqa: WPS433
 
+        from ..services.dialogue_state import _previous_answer_provenance  # noqa: WPS433
+        inherited = _previous_answer_provenance(preflight_turns) or {}
+        reuse_grounded = turn_resolution.evidence_requirement is EvidenceRequirement.REUSE_PRIOR_GROUNDED
+        reuse_web = (
+            turn_resolution.continues_previous_goal
+            and turn_resolution.evidence_requirement is EvidenceRequirement.CONVERSATION_ONLY
+            and (inherited.get("grounding_mode") == "web" or inherited.get("source_scope") == "internet")
+        )
+        answer_provenance = {
+            "answerMode": inherited.get("answer_mode") or ("course" if reuse_grounded else "web")
+                if reuse_grounded or reuse_web else "general",
+            "groundingMode": inherited.get("grounding_mode") or ("relevance" if reuse_grounded else "web")
+                if reuse_grounded or reuse_web else "general",
+            "sourceScope": inherited.get("source_scope") or ("course_files" if reuse_grounded else "internet")
+                if reuse_grounded or reuse_web else "general_knowledge",
+        }
+
         fast_context_block = ""
         if task_requires_workspace(turn_resolution.task_family) and not payload.courseId:
             account_snapshot = await run_in_threadpool(
@@ -1599,6 +1616,7 @@ async def ask_stream_endpoint(
                 "processingPipeline": execution_plan.processingPipeline,
                 "resolvedDocumentAccess": resolved_access.value,
                 "resolutionReason": resolution_reason.value,
+                **answer_provenance,
             }, ensure_ascii=False))
             final_event: dict[str, Any] = {}
             previous_turns = [
@@ -1636,7 +1654,8 @@ async def ask_stream_endpoint(
                     from ..services.conversation_store import update_tutor_request  # noqa: WPS433
                     update_tutor_request(user_id=user_id, request_id=request_id,
                                          status="completed", stage="completed",
-                                         final_answer=answer, retryable=False)
+                                         final_answer=answer, retryable=False,
+                                         answer_provenance=answer_provenance)
                 try:
                     record_usage(feature="ask_stream_fast_general", model=final_event.get("model"),
                                  prompt_tokens=final_event.get("promptTokens"),
@@ -1658,6 +1677,7 @@ async def ask_stream_endpoint(
                     "ttftMs": round(first_token_ms or total_ms), "totalMs": round(total_ms),
                     "routingMs": round(routing_ms, 2), "authMs": round(access_ms, 2),
                     "sources": [], "cacheHit": False,
+                    **answer_provenance,
                 }, ensure_ascii=False))
             except Exception as exc:
                 log.exception("fast_general_failed request_id=%s", request_id)
@@ -2740,6 +2760,11 @@ async def ask_stream_endpoint(
                     await persist_request_state(
                         status="completed", stage="completed",
                         final_answer=persisted_answer, retryable=False,
+                        answer_provenance={
+                            "answerMode": decoded_event.get("answerMode", "course"),
+                            "groundingMode": decoded_event.get("groundingMode", execution_plan.groundingMode.value),
+                            "sourceScope": decoded_event.get("sourceScope", "internet" if execution_plan.executionLane is ExecutionLane.WEB else "course_files"),
+                        },
                     )
                 yield event
             if not terminal_event_sent:

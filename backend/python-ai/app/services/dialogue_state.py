@@ -369,9 +369,13 @@ def resolve_evidence_requirement(
             )
         if provenance["grounding_mode"] == "web" or provenance["source_scope"] == "internet":
             return EvidenceRequirement.WEB if wants_fresh_check else EvidenceRequirement.CONVERSATION_ONLY
-        was_general = provenance["grounding_mode"] in {"", "general"} or provenance["source_scope"] in {
-            "", "general_knowledge",
-        }
+        # Missing optional metadata is not positive evidence of general knowledge.
+        was_grounded = (
+            provenance["grounding_mode"] in {"relevance", "visible_page", "full_document", "grounded"}
+            or provenance["source_scope"] in {"course_files", "active_document", "selected_documents", "visible_page"}
+            or provenance["answer_mode"] in {"course", "grounded"}
+        )
+        was_general = not was_grounded
         if was_general:
             return (
                 EvidenceRequirement.GENERAL_KNOWLEDGE if wants_fresh_check
