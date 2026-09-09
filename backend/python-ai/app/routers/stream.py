@@ -3322,7 +3322,15 @@ async def _prepare_ask_stream_response(
         )
 
     effective_question = resolved_question
-    workspace_task = task_requires_workspace(dialogue.task_family)
+    # study_plan/study_recommendation task-family inference comes from
+    # conversational continuity, not an explicit request — it can land on a
+    # vague reaction ("but I don't understand it") that only shares a topic
+    # with an earlier course-less general-knowledge answer. Without a course
+    # there is nothing to build a real workspace-grounded plan from, so
+    # forcing this into the live workspace/tutor pipeline instead of a plain
+    # general-knowledge answer both is nonsensical and (since that pipeline
+    # assumes real course/document context) can crash outright.
+    workspace_task = bool(payload.courseId) and task_requires_workspace(dialogue.task_family)
     app_question = not workspace_task and is_app_question(effective_question)
     # Workspace questions ("where are my flashcards", "which quizzes did I
     # complete", "what can I do in this course") are answered from the live

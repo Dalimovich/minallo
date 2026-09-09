@@ -205,6 +205,115 @@ def test_stream_acknowledgement_without_pending_task_stays_social(monkeypatch) -
     assert b"All right." in asyncio.run(consume())
 
 
+def test_stream_courseless_study_plan_reaction_skips_workspace_pipeline(monkeypatch) -> None:
+    """taskFamily and continuesPreviousGoal are independent fields in the
+    semantic classifier's own JSON output (see resolve_dialogue_semantically):
+    a vague reaction like "But I don't understand it" can be tagged
+    taskFamily=study_plan (topic recognition) while continuesPreviousGoal is
+    false (the model doesn't see it as literally continuing the task).
+    task_requires_workspace(study_plan) is True regardless, so without the
+    `bool(payload.courseId) and` guard in _prepare_ask_stream_response,
+    workspace_task/workspace_question used to go True even with no course
+    selected — pulling a plain conversational reaction into the live
+    workspace/account-snapshot pipeline that only makes sense for a real,
+    course-grounded study-plan request. Assert that pipeline (fetch_account_
+    snapshot) is never touched when there is no course to ground it in.
+    """
+    import json as _json
+
+    from app.routers import stream as stream_router
+    from app.services import cache, dialogue_state, retrieval, tutor_state_store
+    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+    from app.services.tutor_state import TutorState
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request="But I don't understand it",
+            relation=TurnRelation.CLARIFICATION,
+            speech_act=SpeechAct.CLARIFICATION_REQUEST,
+            task_family=TaskFamily.STUDY_PLAN,
+            continues_previous_goal=False,
+            confidence=0.9,
+        ),
+    )
+    monkeypatch.setattr(tutor_state_store, "claim_generation", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: 0,
+    )
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda user_id, conversation_id: TutorState(
+            conversation_id=conversation_id, user_id=user_id,
+        ),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        stream_router,
+        "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("raw chitchat intercepted task")),
+    )
+    # No courseId, so classify_source_scope initially resolves COURSE_FILES
+    # (auto mode's default) and retrieval runs against an empty course before
+    # the post-retrieval relevance gate downgrades to general knowledge — mock
+    # retrieval/cache so that downgrade happens without a real DB/embeddings
+    # call, exactly like the live reproduction (an empty course finds nothing).
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(retrieval, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_chunks", lambda **_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    def fake_stream_answer(**_kwargs):
+        meta = {"meta": True, "retrievalMode": "general_knowledge", "answerMode": "general"}
+        done = {
+            "done": True, "retrievalMode": "general_knowledge", "answerMode": "general",
+            "verification": {"status": "verified", "details": {}}, "sources": [],
+        }
+        yield f"data: {_json.dumps(meta)}\n\n".encode()
+        yield b'data: {"t":"Let\'s break the plan down step by step."}\n\n'
+        yield f"data: {_json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream_router, "stream_answer", fake_stream_answer)
+    monkeypatch.setattr(
+        stream_router, "generate_general_answer",
+        lambda *_a, **_k: {"answer": "Let's break the plan down step by step.", "model": "test"},
+    )
+    monkeypatch.setattr(
+        stream_router, "fetch_account_snapshot",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("courseless study-plan reaction pulled in the workspace/account pipeline")
+        ),
+    )
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="But I don't understand it",
+                previousTurns=[
+                    {"role": "user", "text": "How do I create a good learning plan?"},
+                    {"role": "assistant", "text": "Define your goals, then build a schedule..."},
+                ],
+            ),
+            {"id": "00000000-0000-4000-8000-000000000099"},
+            "study-plan-courseless-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert b"internal_error" not in body
+    assert b"Let's break the plan down step by step." in body
+
+
 def test_stream_rejection_keeps_goal_but_drops_offered_choice(monkeypatch) -> None:
     """Rejecting a suggested topic must not fall back to raw chitchat, and
     must not discard the underlying goal — only the specific offered choice."""
