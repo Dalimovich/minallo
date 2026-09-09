@@ -223,21 +223,40 @@ _SUBSTITUTION_CONFUSION_RE = re.compile(
 # narrower/high-confidence — anything not matched falls through to
 # provenance-based reasoning in resolve_evidence_requirement rather than
 # being force-fit into one of these buckets.
+#
+# SOURCE (where the evidence comes from) and FRESHNESS (whether existing
+# evidence may be reused or must be re-checked) are separate questions.
+# "Are you sure?" never names a source — it demands freshness and inherits
+# whatever source the previous answer already used (general knowledge stays
+# general, a course-grounded answer gets re-verified against the course).
+# Only wording that actually NAMES a source ("according to my professor",
+# "verify that against my PDF") overrides that inherited source.
 _EXPLICIT_WEB_EVIDENCE_RE = re.compile(
     r"\b(?:search (?:the )?(?:web|internet|online)|look (?:it |that )?up online|"
     r"current(?:ly)?|today|latest|recent(?:ly)?|"
     r"suche (?:im internet|online)|aktuell|heute|neueste)\b",
     re.IGNORECASE,
 )
-_EXPLICIT_COURSE_EVIDENCE_RE = re.compile(
+_EXPLICIT_COURSE_SOURCE_RE = re.compile(
     r"\b(?:according to (?:my|the) (?:professor|lecture|course|script|slides?|pdf)|"
     r"my (?:professor|lecture|course|script|slides?)|"
     r"which page|exact (?:page|citation|formula|quote)|"
     r"where (?:does|did) (?:the|my) (?:professor|lecture|script) say|"
-    r"verify (?:that|this|it) against|are you sure|is that correct|"
+    r"verify (?:that|this|it) against (?:my|the|our) "
+    r"(?:pdf|lecture|course|script|slides?|professor|notes?)|"
     r"show me the (?:exact|precise) (?:page|formula|source)|"
+    r"wo genau (?:steht|sagt)|welche seite)\b",
+    re.IGNORECASE,
+)
+# Freshness only — none of these name a source, so they must inherit
+# whatever the previous answer was actually grounded in rather than forcing
+# course retrieval onto a plain general-knowledge exchange.
+_FRESH_VERIFICATION_RE = re.compile(
+    r"\b(?:are you sure|is that correct|is that right|"
     r"i think (?:that'?s|your answer is|this is) wrong|that'?s wrong|"
-    r"wo genau (?:steht|sagt)|welche seite|bist du sicher|stimmt das)\b",
+    r"i don'?t think that'?s (?:right|correct)|"
+    r"verify (?:it|that|this)\b|double[- ]check|"
+    r"bist du sicher|stimmt das)\b",
     re.IGNORECASE,
 )
 _REFERENCES_PREVIOUS_ANSWER_RELATIONS = {
@@ -248,15 +267,22 @@ _REFERENCES_PREVIOUS_ANSWER_RELATIONS = {
     TurnRelation.REJECTION,
     TurnRelation.CONFIRMATION,
 }
+# A correction/rejection ("no, I don't think that's right") demands fresh
+# evidence the same way explicit verification wording does, even when it
+# doesn't match _FRESH_VERIFICATION_RE's literal phrasing — the semantic
+# resolver assigns these relations for exactly this kind of pushback.
+_FRESH_EVIDENCE_RELATIONS = {TurnRelation.CORRECTION, TurnRelation.REJECTION}
 _EVIDENCE_SKIPS_RETRIEVAL = {
     EvidenceRequirement.CONVERSATION_ONLY,
     EvidenceRequirement.GENERAL_KNOWLEDGE,
     EvidenceRequirement.REUSE_PRIOR_GROUNDED,
 }
 # Acts that are inherently about verifying, correcting, or continuing exact
-# prior evidence — a paraphrase of the previous answer can never satisfy
-# them, so they always keep requiring fresh retrieval regardless of what the
-# previous answer's own provenance was.
+# prior work — a paraphrase of the previous answer can never satisfy them,
+# so they always demand FRESH evidence. Which SOURCE that evidence comes
+# from is still inherited from the previous answer's own provenance (see
+# resolve_evidence_requirement's requires_fresh_evidence parameter) rather
+# than assumed to be the course.
 _VERIFICATION_SENSITIVE_ACTS = {
     DialogueAct.VERIFY_PREVIOUS_ANSWER, DialogueAct.CHECK_ANSWER,
     DialogueAct.CORRECT_ASSISTANT, DialogueAct.REJECT_ANSWER,
@@ -290,43 +316,95 @@ def _previous_answer_provenance(turns: list[dict[str, Any]]) -> dict[str, str] |
 def resolve_evidence_requirement(
     message: str, *, relation: TurnRelation, continues_previous_goal: bool,
     previous_turns: list[dict[str, Any]] | None = None,
+    requires_fresh_evidence: bool = False,
 ) -> EvidenceRequirement:
-    """What information answering this turn actually needs — independent of
-    what the user wants done with it (TaskFamily says WHAT, this says
-    WHERE FROM). A location/verification/source signal in the CURRENT
-    message always wins: it can never be satisfied by paraphrasing a
-    previous answer, however that answer was grounded. Otherwise, a turn
-    that plainly references the previous answer inherits THAT answer's own
-    evidence provenance — an available course/PDF binding on the chat is
-    not itself a requirement."""
+    """What information answering this turn actually needs, and from where —
+    independent of what the user wants done with it (TaskFamily says WHAT,
+    this says WHERE FROM). Source and freshness are separate questions:
+    "are you sure?" never names a source, it demands a fresh check using
+    whatever source the previous answer already used (general knowledge
+    stays general, a course-grounded answer gets re-verified against the
+    course) — it must not be read as an implicit request to search course
+    material that was never involved. Only wording that actually NAMES a
+    source in the CURRENT message (explicit web/course phrasing) overrides
+    that inherited source; requires_fresh_evidence lets a caller that has
+    already classified the act (e.g. resolve_dialogue's verification/
+    correction acts, or a CORRECTION/REJECTION relation) force a fresh
+    check without pretending it named a source either."""
     text = message or ""
     if _EXPLICIT_WEB_EVIDENCE_RE.search(text):
         return EvidenceRequirement.WEB
-    if _EXPLICIT_COURSE_EVIDENCE_RE.search(text):
+    if _EXPLICIT_COURSE_SOURCE_RE.search(text):
         return EvidenceRequirement.COURSE_RETRIEVAL
+    wants_fresh_check = (
+        requires_fresh_evidence
+        or relation in _FRESH_EVIDENCE_RELATIONS
+        or bool(_FRESH_VERIFICATION_RE.search(text))
+    )
     references_previous_answer = (
         continues_previous_goal or relation in _REFERENCES_PREVIOUS_ANSWER_RELATIONS
     )
-    if references_previous_answer:
+    if references_previous_answer or wants_fresh_check:
         provenance = _previous_answer_provenance(previous_turns or [])
         if provenance is None:
             # No recorded provenance (legacy turn, or an older persisted
             # section). Fall back to the same academic-content heuristic
             # resolve_dialogue already uses for bare reactions: a formula/
-            # exercise-laden previous answer is worth re-grounding, an
-            # ordinary conversational one is safest reused as-is.
+            # exercise-laden exchange is worth re-grounding, an ordinary
+            # conversational one is safest reused/re-affirmed as general
+            # knowledge. Check the USER's turn too, not just the reply — an
+            # exercise request ("Solve Aufgabe 12.2") establishes academic
+            # context even when the assistant's own reply was generic
+            # ("I am missing context").
             last_assistant = _latest_turn(previous_turns or [], "assistant")
-            if last_assistant and _ACADEMIC_ASSISTANT_RE.search(last_assistant):
+            last_user = _latest_turn(previous_turns or [], "user")
+            if (
+                (last_assistant and _ACADEMIC_ASSISTANT_RE.search(last_assistant))
+                or (last_user and _ACADEMIC_ASSISTANT_RE.search(last_user))
+            ):
                 return EvidenceRequirement.COURSE_RETRIEVAL
-            return EvidenceRequirement.CONVERSATION_ONLY
-        if provenance["grounding_mode"] in {"", "general"} or provenance["source_scope"] in {
+            return (
+                EvidenceRequirement.GENERAL_KNOWLEDGE if wants_fresh_check
+                else EvidenceRequirement.CONVERSATION_ONLY
+            )
+        if provenance["grounding_mode"] == "web" or provenance["source_scope"] == "internet":
+            return EvidenceRequirement.WEB if wants_fresh_check else EvidenceRequirement.CONVERSATION_ONLY
+        was_general = provenance["grounding_mode"] in {"", "general"} or provenance["source_scope"] in {
             "", "general_knowledge",
-        }:
-            return EvidenceRequirement.CONVERSATION_ONLY
-        return EvidenceRequirement.REUSE_PRIOR_GROUNDED
+        }
+        if was_general:
+            return (
+                EvidenceRequirement.GENERAL_KNOWLEDGE if wants_fresh_check
+                else EvidenceRequirement.CONVERSATION_ONLY
+            )
+        return EvidenceRequirement.COURSE_RETRIEVAL if wants_fresh_check else EvidenceRequirement.REUSE_PRIOR_GROUNDED
     # A genuinely new topic: preserve the existing auto-mode default of
     # letting retrieval run so the post-retrieval relevance gate can decide,
     # rather than pre-judging "general knowledge" before evidence is checked.
+    #
+    # KNOWN GAP: this makes evidence resolution non-authoritative for new
+    # topics specifically — it hands STANDARD_RAG the same "try it, then
+    # judge" default source_router.classify_source_scope uses for AUTO mode,
+    # but execution_router picks its LANE upfront, before any retrieval
+    # result exists to judge. A self-contained medium-complexity general
+    # question ("help me decide whether studying in the morning or evening
+    # suits me better") with no course wording therefore still gets a
+    # preliminary STANDARD_RAG lane rather than FAST_GENERAL, even though
+    # classify_task_profile's own `course` signal correctly stays False.
+    # This is deliberately NOT patched with a general-question phrase list
+    # (source_router's own comment explains why that under-covers real
+    # questions) — the two acceptable fixes are making source resolution run
+    # BEFORE lane selection, or recomputing the execution plan once source
+    # scope is known, and both are real pipeline-ordering changes, not a
+    # one-line rule. In the meantime this is a latency/architecture-purity
+    # issue rather than a correctness one: source_router's post-retrieval
+    # gate still downgrades an empty course search to general knowledge, and
+    # stream.py's deferred-pipeline exception handler retries once as
+    # FAST_CONTEXTUAL (never surfacing a misleading "grounded" failure) for
+    # exactly this shape of request — see
+    # test_medium_complexity_general_question_in_course_chat_stays_correct
+    # and test_medium_complexity_general_question_failure_recovers_gracefully
+    # in test_conversational_evidence_resolution.py.
     return EvidenceRequirement.COURSE_RETRIEVAL
 
 
@@ -654,22 +732,23 @@ def resolve_dialogue(
     task_family = _infer_task_family(text)
     if task_family is TaskFamily.UNKNOWN and relation is not TurnRelation.NEW_TOPIC:
         task_family = _infer_active_task(turns)
+    requires_fresh_evidence = act in _VERIFICATION_SENSITIVE_ACTS
     evidence_requirement = resolve_evidence_requirement(
         text, relation=relation,
         continues_previous_goal=relation is not TurnRelation.NEW_TOPIC,
-        previous_turns=turns,
+        previous_turns=turns, requires_fresh_evidence=requires_fresh_evidence,
     )
-    if act in _VERIFICATION_SENSITIVE_ACTS:
-        # Verifying, correcting, or continuing exact prior work can never be
-        # satisfied by paraphrasing a previous answer.
-        evidence_requirement = EvidenceRequirement.COURSE_RETRIEVAL
-        final_retrieve = True
-    elif not retrieve:
+    if not retrieve and not requires_fresh_evidence:
         # An act-specific rule already decided no retrieval is needed
         # (translation, or a bare reaction to non-academic content) —
         # honour that explicit call rather than re-deriving it.
         final_retrieve = False
     else:
+        # Verifying, correcting, or continuing exact prior work can never be
+        # satisfied by paraphrasing a previous answer — but which SOURCE
+        # that fresh check runs against still comes from the previous
+        # answer's own provenance (resolve_evidence_requirement, above),
+        # not an assumption that it must be the course.
         final_retrieve = evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL
     return DialogueResolution(
         original_message=text,

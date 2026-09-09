@@ -212,8 +212,12 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
         # question to course_retrieval too (so retrieval still runs and the
         # post-retrieval relevance gate can decide), but that default must
         # not, by itself, pull a first-time factual question like "what is
-        # torsion?" out of the cheap FAST_GENERAL lane.
-        or (continues and evidence_requirement in {"course_retrieval", "reuse_prior_grounded"})
+        # torsion?" out of the cheap FAST_GENERAL lane. reuse_prior_grounded
+        # is deliberately excluded too: it means "paraphrase/re-explain the
+        # already-grounded previous answer," which FAST_CONTEXTUAL does
+        # directly from conversation history — routing it to FAST_GROUNDED
+        # would search the course again for evidence that's already in hand.
+        or (continues and evidence_requirement == "course_retrieval")
     )
     web = bool(_WEB_RE.search(q) and (_WEB_ACTION_RE.search(q) or "http" in q.casefold()))
     calculation = bool(_CALC_RE.search(q)) or family in {"calculate", "solve"}
@@ -278,6 +282,13 @@ def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAc
     elif profile.estimatedComplexity == "low" and profile.needsCourseEvidence:
         lane, mode, complexity, reason, confidence = (ExecutionLane.FAST_GROUNDED, GroundingMode.RELEVANCE, ExecutionComplexity.FAST, "simple_course_specific_question", 0.91)
     else:
+        # A self-contained, medium-complexity question with no course/web/
+        # calc signal (profile.needsCourseEvidence is already False here)
+        # still lands here rather than FAST_GENERAL — evidence resolution
+        # is not yet authoritative for brand-new topics; see the KNOWN GAP
+        # note on dialogue_state.resolve_evidence_requirement's new-topic
+        # branch for why, and the mitigations that keep this a latency/
+        # architecture-purity issue rather than a correctness one.
         lane, mode, complexity, reason, confidence = (ExecutionLane.STANDARD_RAG, GroundingMode.RELEVANCE, ExecutionComplexity.STANDARD, "conservative_standard_fallback", 0.70)
     routed_pipeline = {
         ExecutionLane.FAST_GENERAL: "general",
