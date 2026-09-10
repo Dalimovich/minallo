@@ -40,6 +40,7 @@ from ..services.retrieval import (
     retrieve_exercise_block,
     retrieve_formula_block,
 )
+from ..services.document_health import DocumentIndexHealth, validate_active_document_index
 from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.usage_meter import record_usage
@@ -193,6 +194,63 @@ def _verify_user_owns_documents(user_id: str, course_id: str, document_ids: list
     return {row["id"]: row["file_name"] for row in rows}
 
 
+# ── Document index-health gate ───────────────────────────────────────────────
+#
+# ``documents.processing_status='ready'`` plus a cached non-zero
+# ``chunk_count`` are not proof a document's chunks are actually retrievable
+# right now (see services.document_health's docstring for the 2026-08-31
+# incident: 25 documents stuck at 'ready' with a stale chunk_count but zero
+# live document_chunks rows). /ask-stream (stream.py) already gates its own
+# request paths against this with a live check before generation; /ask and
+# /retrieve-context had no such gate at all, so a broken document silently
+# fell back to degraded/empty retrieval with no signal to the caller. This
+# mirrors stream.py's ``_selected_document_index_corrupt`` "broken" set
+# exactly, so both surfaces agree on what counts as corrupt.
+_BROKEN_INDEX_HEALTHS = {
+    DocumentIndexHealth.STALE_METADATA,
+    DocumentIndexHealth.MISSING_CHUNKS,
+    DocumentIndexHealth.MISSING_PAGES,
+    DocumentIndexHealth.MANIFEST_INVALID,
+    DocumentIndexHealth.REVISION_INCONSISTENT,
+}
+
+
+def _document_index_corrupt_error(document_id: str, file_name: str, health: dict[str, Any]) -> HTTPException:
+    """Typed error body matching the shape /ask-stream already uses for its
+    DOCUMENT_INDEX_CORRUPT SSE event (see stream.py's ``_error_sse`` and the
+    ``selected_document_not_ready_stream`` preflight branch) — same field
+    names/codes, folded into a single JSON body since /ask and
+    /retrieve-context aren't SSE endpoints."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "type": "error",
+            "error": True,
+            "code": "DOCUMENT_INDEX_CORRUPT",
+            "message": "This document's search index is incomplete and needs to be rebuilt.",
+            "retryable": True,
+            "recoverable": True,
+            "stage": "VERIFYING_INDEX",
+            "partialAnswerAvailable": False,
+            "metadata": {"documentId": document_id, "stage": str(health.get("health"))},
+            "selectedDocument": {"id": document_id, "fileName": file_name, "status": "index_corrupt"},
+        },
+    )
+
+
+def _assert_documents_index_healthy(document_ids: list[str], doc_name_map: dict[str, str]) -> None:
+    """Live-check every document actually in play for this request (the
+    union of any explicit documentIds and activeDocumentId already verified
+    as owned by the caller) and raise the typed error above on the first
+    broken one found."""
+    for document_id in document_ids:
+        health = validate_active_document_index(document_id)
+        if health.get("health") in _BROKEN_INDEX_HEALTHS:
+            raise _document_index_corrupt_error(
+                document_id, doc_name_map.get(document_id, "the selected document"), health,
+            )
+
+
 # ── /retrieve-context ────────────────────────────────────────────────────────
 
 
@@ -235,6 +293,12 @@ def retrieve_context_endpoint(payload: RetrieveContextRequest) -> RetrieveContex
         doc_name_map.update(_verify_user_owns_documents(
             payload.userId, payload.courseId, [payload.activeDocumentId]
         ))
+    _assert_documents_index_healthy(
+        list(dict.fromkeys(
+            (payload.documentIds or []) + ([payload.activeDocumentId] if payload.activeDocumentId else [])
+        )),
+        doc_name_map,
+    )
 
     chunks = retrieve_chunks(
         user_id=payload.userId,
@@ -379,6 +443,12 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         doc_name_map.update(_verify_user_owns_documents(
             payload.userId, payload.courseId, [payload.activeDocumentId]
         ))
+    _assert_documents_index_healthy(
+        list(dict.fromkeys(
+            (payload.documentIds or []) + ([payload.activeDocumentId] if payload.activeDocumentId else [])
+        )),
+        doc_name_map,
+    )
 
     question = (payload.question or "").strip()
     if not question:
