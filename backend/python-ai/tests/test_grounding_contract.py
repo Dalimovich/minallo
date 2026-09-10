@@ -112,6 +112,18 @@ def test_extraction_shaped_requests_resolve_to_full_document_extraction() -> Non
         assert document_extraction is True, question
 
 
+def test_formula_full_document_request_resolves_to_full_document() -> None:
+    """"formula"/"formel" belong to the same class of document-item noun as
+    exercise/question/chapter/page/exam/script/lecture/pdf/document/file/
+    Kurzfrage — "list every formula in this course" was missing from
+    _DOCUMENT_ITEM_NOUNS_EN/DE and silently fell back to partial RELEVANCE
+    retrieval instead of FULL_DOCUMENT, the same bug class as the exercise
+    case in _EXTRACTION_SHAPED_REQUESTS above."""
+    for question in ["List every formula in this course", "Liste alle Formeln in diesem Kurs"]:
+        access, _reason = resolve_document_access(question=question, requested=None, viewer_context=None)
+        assert access is ResolvedDocumentAccess.FULL_DOCUMENT, question
+
+
 def test_summarize_whole_document_resolves_to_full_document_summarization() -> None:
     """A real map-reduce summarization pipeline exists (full_document_
     processing.py) — this is not a placeholder, so unlike the extraction
