@@ -206,6 +206,34 @@ def test_url_without_course_signal_reports_no_course_signal() -> None:
     assert decision.course_signal_detected is False
 
 
+def test_freshness_language_without_search_verb_is_flagged_not_silently_dropped() -> None:
+    """'current DIN standard' carries the freshness signal ('current') but
+    no explicit search verb, so it must not be force-routed to INTERNET (too
+    aggressive per this module's own design), but it also must not vanish —
+    downstream needs the flag to offer a "want me to search the web?" nudge."""
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="what's the current DIN standard for M8 bolts",
+        source_mode="auto",
+    )
+
+    assert decision.source_scope != SourceScope.INTERNET
+    assert decision.freshness_signal_detected is True
+    assert decision.metadata()["freshnessSignalDetected"] is True
+
+
+def test_explicit_web_request_still_routes_to_internet_without_stray_flag() -> None:
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="search the internet for the current DIN standard for M8 bolts",
+        source_mode="auto",
+    )
+
+    assert decision.source_scope == SourceScope.INTERNET
+
+
 def test_sanitize_web_query_never_appends_private_selected_text() -> None:
     from app.services.source_router import sanitize_web_query
 

@@ -63,6 +63,12 @@ class SourceDecision:
     # ordinary (non-debug) metadata so prompt construction and the UI can
     # still act on the dropped signal instead of it vanishing silently.
     course_signal_detected: bool = False
+    # Freshness signal ("current", "latest", ...) detected without an
+    # explicit search verb nearby ("search", "look up", ...). Set only when
+    # the freshness language did NOT already win INTERNET routing on its
+    # own, so downstream can offer a "this may need current information —
+    # want me to search the web?" nudge instead of a flat non-answer.
+    freshness_signal_detected: bool = False
 
     def metadata(self, *, include_debug: bool = False, cache_hit: bool | None = None) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -72,6 +78,7 @@ class SourceDecision:
             "sourceLabel": self.source_label,
             "groundingPolicy": self.grounding_policy.value,
             "courseSignalDetected": self.course_signal_detected,
+            "freshnessSignalDetected": self.freshness_signal_detected,
         }
         if include_debug:
             out["sourceDebug"] = {
@@ -324,12 +331,25 @@ def classify_source_scope(
             grounding_policy=GroundingPolicy.INTERNET,
             course_signal_detected=bool(_COURSE_SIGNAL_RE.search(q)),
         )
+    # Freshness language ("current", "latest", ...) without an explicit
+    # search verb nearby must not force full INTERNET routing on its own —
+    # that would be too aggressive (false-positive web routing is the thing
+    # this module is designed to avoid). But it must not be invisible either:
+    # flag it so prompt construction / the UI can offer a "this may need
+    # current information — want me to search the web?" nudge instead of a
+    # flat non-answer with zero indication anything was noticed.
+    freshness_without_explicit_request = bool(
+        _INTERNET_SIGNAL_RE.search(q) and not _EXPLICIT_WEB_REQUEST_RE.search(q)
+    )
     # An explicitly selected/active file is a deliberate "use this" signal, so
     # it outranks internet keywords that may just be part of a question *about*
     # that file (e.g. "explain the current method in this PDF" — "current"
     # shouldn't yank the answer to web search).
     if has_specific_file:
-        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
+        return SourceDecision(
+            mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [],
+            grounding_policy=policy, freshness_signal_detected=freshness_without_explicit_request,
+        )
     if _INTERNET_SIGNAL_RE.search(q) and _EXPLICIT_WEB_REQUEST_RE.search(q):
         return SourceDecision(
             mode,
@@ -351,8 +371,12 @@ def classify_source_scope(
                     "Which file should I use? Please select a PDF or switch to All course files."
                 ),
                 grounding_policy=policy,
+                freshness_signal_detected=freshness_without_explicit_request,
             )
-        return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
+        return SourceDecision(
+            mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [],
+            grounding_policy=policy, freshness_signal_detected=freshness_without_explicit_request,
+        )
 
     if retrieved_chunks:
         rel = course_relevance_score(q, retrieved_chunks)
@@ -365,6 +389,7 @@ def classify_source_scope(
                 used_ids or [],
                 relevance_score=rel,
                 grounding_policy=policy,
+                freshness_signal_detected=freshness_without_explicit_request,
             )
 
     # Auto mode, no explicit internet / file / context / keyword signal. Default
@@ -375,7 +400,10 @@ def classify_source_scope(
     # obvious course keyword (e.g. "what is urformen?") never consulted the
     # user's files at all. (No-course chats don't reach here — the frontend
     # routes those to the generic chat path instead of /ask-stream.)
-    return SourceDecision(mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [], grounding_policy=policy)
+    return SourceDecision(
+        mode, SourceScope.COURSE_FILES, file_scope, source_label(SourceScope.COURSE_FILES), used_ids or [],
+        grounding_policy=policy, freshness_signal_detected=freshness_without_explicit_request,
+    )
 
 
 def sanitize_web_query(question: str, selected_text: str | None = None) -> str:
