@@ -17,8 +17,13 @@ test('selected PDF region is attached only when the current message refers to it
 });
 
 test('long-paste Markdown is merged with the composer instruction before RAG routing', () => {
-  assert.match(shell, /const attachedClipboardText = \(last\.files \|\| \[\]\)/);
-  assert.match(shell, /file\.source === 'clipboard'/);
+  // The extraction moved into a shared clipboardAttachmentText() helper (also
+  // reused when serializing past turns into previousTurns — see
+  // chatbot-history-pasted-attachment.test.mjs) but the current-turn RAG
+  // question must still merge it in exactly as before.
+  assert.match(shell, /function clipboardAttachmentText\(message: ChatMessage\): string\[\] \{/);
+  assert.match(shell, /file\.kind === 'text' && file\.source === 'clipboard' && !!file\.textContent\?\.trim\(\)/);
+  assert.match(shell, /const attachedClipboardText = clipboardAttachmentText\(last\)/);
   assert.match(shell, /const currentQuestion = \[\.\.\.attachedClipboardText, last\.text\.trim\(\)\]/);
   assert.match(shell, /question: currentQuestion/);
 });

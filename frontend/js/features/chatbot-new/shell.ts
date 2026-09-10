@@ -1522,10 +1522,22 @@ async function streamAiReply(
       // instead of recognising the message as a reply to its own question.
       const priorTurns = requestMessages
         .slice(0, -1)
-        .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text)
-        .map((m) => ({
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => {
+          // A past user turn that pasted a long block has that content on
+          // m.files (see clipboardAttachmentText), not m.text — merge it
+          // back in so it actually travels into history instead of quietly
+          // disappearing. The backend still caps each turn to ~1.2k chars
+          // (documented, intentional), but "truncated" beats "gone".
+          const text = m.role === 'user'
+            ? [...clipboardAttachmentText(m), m.text.trim()].filter(Boolean).join('\n\n')
+            : m.text;
+          return { m, text };
+        })
+        .filter(({ text }) => !!text)
+        .map(({ m, text }) => ({
           role: m.role as 'user' | 'assistant',
-          text: m.role === 'assistant' ? sanitizeChatbotDiagrams(m.text, !!m.allowDiagrams) : m.text,
+          text: m.role === 'assistant' ? sanitizeChatbotDiagrams(text, !!m.allowDiagrams) : text,
           // Routing provenance for an assistant turn — how THAT answer was
           // actually produced, so a follow-up like "I don't understand it"
           // can inherit its evidence requirement (general vs grounded)
@@ -3038,6 +3050,20 @@ async function resolveFollowUpDoc(
   return null;
 }
 
+/** Long pastes (see addPastedMarkdownAttachment) are represented as Markdown
+ * attachment cards on the message rather than inline text, so any code that
+ * reconstructs "what the user actually said" for a turn — current-turn intent
+ * analysis, or that turn's serialized text once it becomes chat history —
+ * must merge this back in. Without it, a pasted cheatsheet/notes block is
+ * fully readable for the turn it was sent on but silently vanishes (not just
+ * truncated — entirely absent) the moment that turn scrolls into history,
+ * because the history builder only ever looked at message.text. */
+function clipboardAttachmentText(message: ChatMessage): string[] {
+  return (message.files || [])
+    .filter((file) => file.kind === 'text' && file.source === 'clipboard' && !!file.textContent?.trim())
+    .map((file) => file.textContent!.trim());
+}
+
 /** Decide whether the latest user turn should go through RAG (`/ask-stream`)
  * or the generic chat endpoint. Returns the resolved RAG payload when
  * eligible, else null. */
@@ -3055,9 +3081,7 @@ function ragEligibility(
   if (!messages.length) return null;
   const last = messages[messages.length - 1]!;
   if (last.role !== 'user') return null;
-  const attachedClipboardText = (last.files || [])
-    .filter((file) => file.kind === 'text' && file.source === 'clipboard' && !!file.textContent?.trim())
-    .map((file) => file.textContent!.trim());
+  const attachedClipboardText = clipboardAttachmentText(last);
   // Long pastes are represented as Markdown attachment cards for the UI, but
   // their contents are still part of this user turn. Merge them before intent
   // analysis so the backend sees the actual questions, not just a short
