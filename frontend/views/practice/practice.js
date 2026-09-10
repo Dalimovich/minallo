@@ -355,14 +355,40 @@
     function _supaUrl()     { return window._ssDb.supaUrl(); }
     function _userId()      { return window._ssDb.userId(); }
 
+    // practice.js is a classic script (no type="module" on its <script> tag
+    // in loader.ts), so it can't use a static `import`. authenticatedSupabaseFetch
+    // (proactive expiry-skew refresh + coordinated single-flight retry-on-401,
+    // same contract already used by workspace-library.ts/study-tool-workflow.ts
+    // for exam_sessions/flashcard_decks) is reached via dynamic import() instead,
+    // which is valid from any script context. _supaHeaders()/_supaUrl() above
+    // stay as-is — they still back window._ssDb for other legacy consumers —
+    // but this file's own requests route through the auth-aware transport.
+    var _authFetchModulePromise = null;
+    function _getAuthFetchModule() {
+      if (!_authFetchModulePromise) {
+        _authFetchModulePromise = import('/js/services/authenticated-fetch.js');
+      }
+      return _authFetchModulePromise;
+    }
+    function _authFetch(url, init) {
+      return _getAuthFetchModule().then(function (mod) {
+        return mod.authenticatedFetch(url, init, { safeToRetry: true });
+      });
+    }
+    function _authSupaFetch(url, init) {
+      return _getAuthFetchModule().then(function (mod) {
+        return mod.authenticatedSupabaseFetch(url, init, { safeToRetry: true });
+      });
+    }
+
     function _dbSaveQuiz(courseId, items) {
       var uid = _userId();
       if (!uid) return Promise.resolve(null);
       var sk = _glActiveSkill || 'general';
       var name = (_glSkillNames[sk] || sk) + ' Quiz';
-      return fetch(_supaUrl() + '/rest/v1/quiz_runs', {
+      return _authSupaFetch(_supaUrl() + '/rest/v1/quiz_runs', {
         method: 'POST',
-        headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=representation' }),
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
         body: JSON.stringify({ user_id: uid, course_id: courseId, name: name, items: items })
       }).then(function (r) { return r.ok ? r.json() : null; })
         .then(function (rows) { return rows && rows[0] ? rows[0].id : null; })
@@ -371,7 +397,7 @@
 
     function _dbLoadQuiz(courseId) {
       var url = _supaUrl() + '/rest/v1/quiz_runs?course_id=eq.' + encodeURIComponent(courseId) + '&order=created_at.desc&limit=1';
-      return fetch(url, { headers: _supaHeaders() })
+      return _authSupaFetch(url, {})
         .then(function (r) { return r.ok ? r.json() : []; })
         .catch(function () { return []; });
     }
@@ -381,9 +407,9 @@
       if (!uid) return Promise.resolve(null);
       var sk = _glActiveSkill || 'general';
       var name = (_glSkillNames[sk] || sk) + ' Flashcards';
-      return fetch(_supaUrl() + '/rest/v1/flashcard_decks', {
+      return _authSupaFetch(_supaUrl() + '/rest/v1/flashcard_decks', {
         method: 'POST',
-        headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=representation' }),
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
         body: JSON.stringify({ user_id: uid, course_id: courseId, name: name, cards: items })
       }).then(function (r) { return r.ok ? r.json() : null; })
         .then(function (rows) { return rows && rows[0] ? rows[0].id : null; })
@@ -392,7 +418,7 @@
 
     function _dbLoadCards(courseId) {
       var url = _supaUrl() + '/rest/v1/flashcard_decks?course_id=eq.' + encodeURIComponent(courseId) + '&order=created_at.desc&limit=1';
-      return fetch(url, { headers: _supaHeaders() })
+      return _authSupaFetch(url, {})
         .then(function (r) { return r.ok ? r.json() : []; })
         .catch(function () { return []; });
     }
@@ -855,11 +881,8 @@
           showToast('No course selected', 'Open a real course first, then generate quizzes or flashcards from its uploaded files.');
         return;
       }
-      var token = window._sbToken || '';
       try {
-        var r = await fetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {
-          headers: { Authorization: 'Bearer ' + token }
-        });
+        var r = await _authFetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {});
         var data = r.ok ? await r.json() : {};
         var docs = (data.documents || []).filter(function (d) { return d.processing_status === 'ready'; });
         if (!docs.length) {
@@ -897,9 +920,9 @@
         };
         if (documentIds && documentIds.length) payload.documentIds = documentIds;
 
-        var resp = await fetch(BACKEND_URL + '/api/ai/generate', {
+        var resp = await _authFetch(BACKEND_URL + '/api/ai/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
         var data = await resp.json();
@@ -1117,11 +1140,10 @@
       loadMsg.textContent = '⏳ Asking AI…';
 
       try {
-        var resp = await fetch(BACKEND_URL + '/api/ai', {
+        var resp = await _authFetch(BACKEND_URL + '/api/ai', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + (window._sbToken || '')
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
