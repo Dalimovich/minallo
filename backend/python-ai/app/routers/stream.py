@@ -2718,8 +2718,6 @@ async def ask_stream_endpoint(
                         request_id=request_id,
                     )
                     break
-                if _is_terminal_sse(event):
-                    terminal_event_sent = True
                 raw_event = event.decode("utf-8", errors="ignore") if isinstance(event, bytes) else event
                 match = re.search(r"data:\s*(\{.*\})", raw_event, re.DOTALL)
                 decoded_event: dict[str, Any] = {}
@@ -2748,6 +2746,12 @@ async def ask_stream_endpoint(
                         retryable=decoded_event.get("retryable") is True,
                     )
                 elif decoded_event.get("done") is True:
+                    if not persisted_answer.strip():
+                        raise TutorPipelineError(
+                            code="empty_completed_response", stage="model_generation",
+                            message="The AI completed without returning an answer.",
+                            retryable=True, recoverable=True,
+                        )
                     log.info(
                         "ai_execution_complete request_id=%s initial_lane=%s final_lane=%s "
                         "escalated=%s escalation_reason=%s ttft_ms=%.0f total_ms=%.0f",
@@ -2766,7 +2770,11 @@ async def ask_stream_endpoint(
                             "sourceScope": decoded_event.get("sourceScope", "internet" if execution_plan.executionLane is ExecutionLane.WEB else "course_files"),
                         },
                     )
+                if _is_terminal_sse(event):
+                    terminal_event_sent = True
                 yield event
+                if terminal_event_sent:
+                    break
             if not terminal_event_sent:
                 terminal_event_sent = True
                 await persist_request_state(
@@ -2813,11 +2821,12 @@ async def ask_stream_endpoint(
                 stage=str(typed_detail.get("stage") or "request_validation"),
             )
         except asyncio.CancelledError:
-            await persist_request_state(
-                status="interrupted" if persisted_answer else "failed",
-                stage="stream_transport", partial_answer=persisted_answer or None,
-                error_code="client_stream_disconnected", retryable=True,
-            )
+            if not terminal_event_sent:
+                await persist_request_state(
+                    status="interrupted" if persisted_answer else "failed",
+                    stage="stream_transport", partial_answer=persisted_answer or None,
+                    error_code="client_stream_disconnected", retryable=True,
+                )
             log.info("stream_cancelled request_id=%s", request_id)
             raise
         except Exception:

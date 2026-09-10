@@ -209,6 +209,7 @@ def test_inner_stream_silence_emits_keepalive(monkeypatch) -> None:
 
     async def slow_body():
         await asyncio.sleep(0.035)
+        yield b'data: {"t": "Answer after keepalive"}\n\n'
         yield b'data: {"done": true}\n\n'
 
     async def prepare(*_args, **_kwargs):
