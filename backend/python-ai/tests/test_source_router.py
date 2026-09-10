@@ -173,6 +173,67 @@ def test_course_relevance_scores_semantic_overlap() -> None:
     assert strong > weak
 
 
+def test_url_with_course_signal_keeps_course_signal_in_metadata() -> None:
+    """A pasted link still wins the primary scope in Auto mode (see the
+    _URL_RE comment), but a compound message that ALSO carries a strong
+    course signal ("page 4", "this PDF") must not silently vanish from the
+    decision — downstream code needs to know the course half was dropped so
+    it can still surface it (e.g. answer both parts, or disclose the gap)."""
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question=(
+            "check this https://youtu.be/xyz video and also explain the "
+            "formula on page 4 of the PDF"
+        ),
+        source_mode="auto",
+    )
+
+    assert decision.source_scope == SourceScope.INTERNET
+    assert decision.course_signal_detected is True
+    assert decision.metadata()["courseSignalDetected"] is True
+
+
+def test_url_without_course_signal_reports_no_course_signal() -> None:
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="https://youtu.be/xyz what's it about",
+        source_mode="auto",
+    )
+
+    assert decision.source_scope == SourceScope.INTERNET
+    assert decision.course_signal_detected is False
+
+
+def test_freshness_language_without_search_verb_is_flagged_not_silently_dropped() -> None:
+    """'current DIN standard' carries the freshness signal ('current') but
+    no explicit search verb, so it must not be force-routed to INTERNET (too
+    aggressive per this module's own design), but it also must not vanish —
+    downstream needs the flag to offer a "want me to search the web?" nudge."""
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="what's the current DIN standard for M8 bolts",
+        source_mode="auto",
+    )
+
+    assert decision.source_scope != SourceScope.INTERNET
+    assert decision.freshness_signal_detected is True
+    assert decision.metadata()["freshnessSignalDetected"] is True
+
+
+def test_explicit_web_request_still_routes_to_internet_without_stray_flag() -> None:
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="search the internet for the current DIN standard for M8 bolts",
+        source_mode="auto",
+    )
+
+    assert decision.source_scope == SourceScope.INTERNET
+
+
 def test_sanitize_web_query_never_appends_private_selected_text() -> None:
     from app.services.source_router import sanitize_web_query
 

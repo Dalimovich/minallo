@@ -90,8 +90,8 @@ class GroundingResolution(BaseModel):
 # (?:\s+\w+){0,2} gap tolerates an intervening article/adjective ("alle
 # RESTLICHEN Aufgaben", "keine AUFGABE auslassen") without losing the
 # adjacency requirement entirely.
-_DOCUMENT_ITEM_NOUNS_EN = r"pdf|document|file|lecture|exam|script|page|chapter|section|question|exercise|kurzfrage"
-_DOCUMENT_ITEM_NOUNS_DE = r"pdf|dokument|datei|skript|vorlesung|pr[üu]fung|seite|kapitel|frage|aufgabe|kurzfrage"
+_DOCUMENT_ITEM_NOUNS_EN = r"pdf|document|file|lecture|exam|script|page|chapter|section|question|exercise|kurzfrage|formula"
+_DOCUMENT_ITEM_NOUNS_DE = r"pdf|dokument|datei|skript|vorlesung|pr[üu]fung|seite|kapitel|frage|aufgabe|kurzfrage|formel"
 _FULL_DOCUMENT_RE = re.compile(
     rf"\b(?:{_EXHAUSTIVE_QUANTIFIER_WORDS})\b(?:\s+\w+){{0,2}}\s+"
     rf"(?:{_DOCUMENT_ITEM_NOUNS_EN})s?\b|"
