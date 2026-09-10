@@ -2844,6 +2844,10 @@ async def ask_stream_endpoint(
                 # document or selected files.
                 retry_as_fast_contextual = (
                     not persisted_answer
+                    and payload.sourceMode == "auto"
+                    and turn_resolution.evidence_requirement in {
+                        EvidenceRequirement.CONVERSATION_ONLY, EvidenceRequirement.GENERAL_KNOWLEDGE,
+                    }
                     and execution_plan.executionLane in {
                         ExecutionLane.STANDARD_RAG, ExecutionLane.FAST_GROUNDED,
                     }
@@ -2871,6 +2875,7 @@ async def ask_stream_endpoint(
                                 ))
                             elif retry_event.get("done"):
                                 retry_done = True
+                                break
                         retry_answer = "".join(retry_answer_parts)
                         if retry_done and retry_answer.strip():
                             terminal_event_sent = True
