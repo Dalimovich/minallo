@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .document_context import understanding_block_for_ids
+from .exam_solution_validation import validate_final_answer
+from .examforge_answer_verifier import answers_match
 from .llm_json import LlmResult, chat_json
 from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
@@ -225,6 +227,11 @@ def _normalize(item: Any, known_topics: set[str] | None = None) -> dict[str, Any
         if not isinstance(answer, str) or not answer.strip():
             return None
         primary = answer.strip()
+        # Reject procedural non-answers ("Use the formula above") the same
+        # way ExamForge's _normalise_question does — a keyed "answer" must
+        # actually state the result, not just point at how to derive it.
+        if not validate_final_answer(question, primary, "short_answer"):
+            return None
         # Collect the canonical answer plus any model-supplied acceptable
         # phrasings into a de-duplicated (case-insensitive) list the frontend
         # scores against. The canonical answer always leads the list.
@@ -426,12 +433,16 @@ def _mcq_verdicts(
     context: str,
     diagnostics: dict[str, Any],
 ) -> dict[int, dict[str, Any]]:
-    """Ask a fresh model call to re-derive the correct option for each of
-    `count` numbered MCQs in `questions_block`, blind to any existing answer
+    """Ask a fresh model call to re-derive the correct answer for each of
+    `count` numbered items in `questions_block`, blind to any existing answer
     key. Shared by both the standalone-quiz verifier (drop semantics) and the
     inline-chat-quiz verifier (correct-in-place semantics) below — the two
     differ only in what they DO with a confident disagreement, not in how
     they ask for one.
+
+    `questions_block` may mix MCQ, true/false, and short-answer items (each
+    line notes its own type) — the prompt below asks for whichever answer
+    shape fits each item, and callers pick the field that applies.
 
     Returns {question_number: verdict} (1-based), or {} on any failure —
     callers must treat that as "could not verify, leave everything as-is",
@@ -439,13 +450,19 @@ def _mcq_verdicts(
     """
     system = (
         "You are a meticulous exam answer-key checker. For each numbered "
-        "multiple-choice question, determine the single correct option using "
-        "ONLY the COURSE CONTEXT below. Re-derive the answer yourself; do not "
-        "assume any option is correct. Watch for swapped symbols, names, "
-        "numbers, units, or percentages between the options.\n\n"
+        "question below, determine the single correct answer using ONLY the "
+        "COURSE CONTEXT. Re-derive the answer yourself; do not assume any "
+        "given option or key is correct. Watch for swapped symbols, names, "
+        "numbers, units, or percentages between options.\n\n"
+        "Each question is labelled with its type:\n"
+        "- mcq: return the correct option letter in \"letter\" (A-D).\n"
+        "- true_false: return true or false in \"answer\".\n"
+        "- short_answer: return the concise correct final answer (with units "
+        "if relevant) in \"answer\".\n\n"
         'Return ONLY JSON: {"verdicts": [{"n": 1, "letter": "A", '
-        '"confident": true}, ...]}. Set "confident" to false when the context '
-        "does not clearly decide the answer."
+        '"confident": true}, {"n": 2, "answer": true, "confident": true}, '
+        '...]}. Set "confident" to false when the context does not clearly '
+        "decide the answer."
     )
     user = "COURSE CONTEXT:\n\n" + context + "\n\nQUESTIONS:\n\n" + questions_block
     try:
@@ -476,45 +493,69 @@ def _verify_mcq_keys(
     context: str,
     diagnostics: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Drop MCQs whose keyed answer fails an independent re-derivation.
+    """Drop items whose keyed answer fails an independent re-derivation.
 
-    A second model call answers each MCQ from the same context *without seeing
-    the answer key*. Only a confident disagreement drops the item, so a shaky
-    verifier can't erode the count — the goal is to catch the rare confidently
-    wrong key (e.g. swapped Si/Cu values) before it reaches the student. On any
-    failure the items pass through unchanged: verification must never block a quiz.
+    Covers all three quiz types (mcq, true_false, short_answer) — a wrong
+    true/false key or an unsupported short-answer key is exactly as capable
+    of reaching a student as a wrong MCQ key, so all three get the same
+    independent check.
 
-    Dropping is safe here because callers over-collect a small buffer of MCQs
-    specifically so a drop doesn't shrink the requested count (see
-    generate_quiz below). The inline chat quiz has no such buffer — see
-    `verify_and_correct_inline_quiz` for that path's correct-in-place approach.
+    A second model call answers each item from the same context *without
+    seeing the answer key*. Only a confident disagreement drops the item, so
+    a shaky verifier can't erode the count — the goal is to catch the rare
+    confidently wrong key (e.g. swapped Si/Cu values, or a flipped
+    true/false) before it reaches the student. On any failure the items pass
+    through unchanged: verification must never block a quiz.
+
+    Dropping is safe here because backfill rounds in generate_quiz replace
+    any deficit (MCQ or otherwise) with freshly generated, re-verified
+    questions up to the requested count. The inline chat quiz has no such
+    buffer — see `verify_and_correct_inline_quiz` for that path's
+    correct-in-place, MCQ-only approach.
     """
-    mcqs = [(i, it) for i, it in enumerate(items) if it.get("type") == "mcq"]
-    if not mcqs:
+    verifiable = [(i, it) for i, it in enumerate(items) if it.get("type") in _VALID_TYPES]
+    if not verifiable:
         return items
 
     lines: list[str] = []
-    for n, (_, it) in enumerate(mcqs, 1):
-        opts = it.get("options") or {}
-        opt_text = "  ".join(f"{l}) {opts.get(l, '')}" for l in _LETTERS)
-        lines.append(f"{n}. {it.get('question', '')}\n   {opt_text}")
+    for n, (_, it) in enumerate(verifiable, 1):
+        qtype = it.get("type")
+        if qtype == "mcq":
+            opts = it.get("options") or {}
+            opt_text = "  ".join(f"{l}) {opts.get(l, '')}" for l in _LETTERS)
+            lines.append(f"{n}. [mcq] {it.get('question', '')}\n   {opt_text}")
+        elif qtype == "true_false":
+            lines.append(f"{n}. [true_false] {it.get('question', '')}")
+        else:
+            lines.append(f"{n}. [short_answer] {it.get('question', '')}")
 
-    by_n = _mcq_verdicts("\n\n".join(lines), len(mcqs), context, diagnostics)
+    by_n = _mcq_verdicts("\n\n".join(lines), len(verifiable), context, diagnostics)
     if not by_n:
         return items
 
     drop_indices: set[int] = set()
-    for n, (orig_idx, it) in enumerate(mcqs, 1):
+    for n, (orig_idx, it) in enumerate(verifiable, 1):
         v = by_n.get(n)
         if not v or not v.get("confident"):
             continue
-        letter = str(v.get("letter") or "").strip().upper()[:1]
-        if letter in _LETTERS and letter != it.get("answer"):
-            drop_indices.add(orig_idx)
+        qtype = it.get("type")
+        if qtype == "mcq":
+            letter = str(v.get("letter") or "").strip().upper()[:1]
+            if letter in _LETTERS and letter != it.get("answer"):
+                drop_indices.add(orig_idx)
+        elif qtype == "true_false":
+            # A verdict with no parseable true/false answer is not a
+            # disagreement — treat it the same as "could not verify".
+            if v.get("answer") is not None and not answers_match("true_false", it.get("answer"), v.get("answer")):
+                drop_indices.add(orig_idx)
+        else:  # short_answer
+            verified_answer = v.get("answer")
+            if verified_answer and not answers_match("short_answer", it.get("answer"), verified_answer):
+                drop_indices.add(orig_idx)
 
     if not drop_indices:
         return items
-    log.info("quiz: verification dropped %d MCQ item(s) with disputed keys", len(drop_indices))
+    log.info("quiz: verification dropped %d item(s) with disputed keys", len(drop_indices))
     return [it for i, it in enumerate(items) if i not in drop_indices]
 
 
@@ -566,7 +607,7 @@ def verify_and_correct_inline_quiz(full_answer: str, context: str) -> tuple[str,
         letters = list(_LETTERS[:len(options)])
         valid.append((idx, letters))
         opt_text = "  ".join(f"{l}) {opt}" for l, opt in zip(letters, options))
-        lines.append(f"{len(valid)}. {item.get('q', '')}\n   {opt_text}")
+        lines.append(f"{len(valid)}. [mcq] {item.get('q', '')}\n   {opt_text}")
     if not valid:
         return full_answer, diagnostics
 
