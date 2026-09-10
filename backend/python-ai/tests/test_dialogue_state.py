@@ -266,6 +266,26 @@ def test_ambiguous_reply_families_request_semantic_resolution(message: str) -> N
     assert needs_semantic_resolution(message, resolution, turns)
 
 
+def test_long_unpronouned_confirmation_of_pending_task_requests_semantic_resolution() -> None:
+    # 13 words, no demonstrative pronoun — fails both of
+    # needs_semantic_resolution's existing gates (<=12 words OR a pronoun
+    # regex) — but the assistant just offered a concrete task (a study plan),
+    # so the confirmation must still be routed to the semantic resolver
+    # instead of being silently dropped.
+    from app.services.dialogue_state import needs_semantic_resolution, resolve_dialogue
+
+    message = (
+        "Absolutely, please proceed exactly as you described and get "
+        "everything started right now"
+    )
+    assert len(message.split()) > 12
+    turns = [
+        {"role": "assistant", "text": "Would you like me to build a study plan for you?"},
+    ]
+    resolution = resolve_dialogue(message, previous_turns=turns)
+    assert needs_semantic_resolution(message, resolution, turns)
+
+
 def test_explicit_new_topic_does_not_pay_semantic_fallback_or_inherit() -> None:
     from app.services.dialogue_state import TurnRelation, needs_semantic_resolution, resolve_dialogue
 

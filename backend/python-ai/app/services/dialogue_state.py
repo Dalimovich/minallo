@@ -872,12 +872,24 @@ def needs_semantic_resolution(message: str, resolution: DialogueResolution,
         r"where\s+(?:is|are|was)|how\s+(?:many|much)|does\s+|do\s+you\s+know)\b",
         message or "", re.I,
     ))
+    # A message replying to an assistant turn that explicitly offered a
+    # concrete task ("would you like me to build a study plan?") must not be
+    # dropped just because it's a longer, pronoun-free confirmation
+    # ("Absolutely, please proceed exactly as you described...") — the
+    # length/pronoun gate below exists to bound cost on ambiguous short
+    # replies, not to skip semantic resolution when there is a known pending
+    # task to confirm into.
+    has_pending_task = _infer_pending_assistant_task(previous_turns or []) is not TaskFamily.UNKNOWN
     return bool(
         previous_turns
         and not standalone
         and resolution.dialogue_act is DialogueAct.NEW_QUESTION
         and resolution.task_family is TaskFamily.UNKNOWN
-        and (len((message or "").split()) <= 12 or re.search(r"\b(?:it|that|this|one|same|instead)\b", message, re.I))
+        and (
+            has_pending_task
+            or len((message or "").split()) <= 12
+            or re.search(r"\b(?:it|that|this|one|same|instead)\b", message, re.I)
+        )
     )
 
 
