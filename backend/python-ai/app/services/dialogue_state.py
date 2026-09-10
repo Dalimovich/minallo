@@ -825,6 +825,7 @@ def _infer_pending_assistant_task(turns: list[dict[str, str]]) -> TaskFamily:
 def needs_semantic_resolution(message: str, resolution: DialogueResolution,
                               previous_turns: list[dict[str, str]] | None) -> bool:
     """Only ambiguous context-dependent turns pay for semantic classification."""
+    referential = bool(re.search(r"\b(?:it|that|this|these|those|one|same|instead)\b", message or "", re.I))
     standalone = bool(re.match(
         r"^\s*(?:what\s+(?:is|are|was|were)|who\s+(?:is|was)|when\s+(?:is|was|did)|"
         r"where\s+(?:is|are|was)|how\s+(?:many|much)|does\s+|do\s+you\s+know)\b",
@@ -832,10 +833,11 @@ def needs_semantic_resolution(message: str, resolution: DialogueResolution,
     ))
     return bool(
         previous_turns
-        and not standalone
+        and (not standalone or referential)
         and resolution.dialogue_act is DialogueAct.NEW_QUESTION
-        and resolution.task_family is TaskFamily.UNKNOWN
-        and (len((message or "").split()) <= 12 or re.search(r"\b(?:it|that|this|one|same|instead)\b", message, re.I))
+        # Knowing WHAT task was requested does not resolve WHAT it refers to.
+        and (resolution.task_family is TaskFamily.UNKNOWN or referential)
+        and (len((message or "").split()) <= 12 or referential)
     )
 
 
@@ -894,10 +896,21 @@ Do not include reasoning."""
         )
         raw = completion.choices[0].message.content if completion.choices else "{}"
         data = json.loads(raw or "{}")
+        if not isinstance(data, dict):
+            raise ValueError("semantic response must be an object")
+        if not isinstance(data.get("continuesPreviousGoal"), bool):
+            raise ValueError("semantic continuation must be boolean")
+        if data.get("resolvedRequest") is not None and not isinstance(data["resolvedRequest"], str):
+            raise ValueError("semantic request must be text")
         relation = TurnRelation(str(data.get("relation")))
         speech_act = SpeechAct(str(data.get("speechAct")))
         task_family = TaskFamily(str(data.get("taskFamily")))
-        confidence = max(0.0, min(1.0, float(data.get("confidence", 0))))
+        confidence_value = data.get("confidence")
+        if (isinstance(confidence_value, bool)
+                or not isinstance(confidence_value, (int, float))
+                or not 0.0 <= confidence_value <= 1.0):
+            raise ValueError("semantic confidence must be a finite probability")
+        confidence = float(confidence_value)
         if confidence < 0.65:
             # Too unsure to trust taskFamily/continuesPreviousGoal — but the
             # turn was already judged short/context-dependent to get here,
@@ -956,7 +969,7 @@ def _safe_conversational_fallback(
         if last_assistant.rstrip().endswith("?")
         else TurnRelation.CONTINUATION
     )
-    inherited = _infer_active_task(previous_turns)
+    inherited = base.task_family if base.task_family is not TaskFamily.UNKNOWN else _infer_active_task(previous_turns)
     if inherited is TaskFamily.UNKNOWN:
         inherited = _infer_pending_assistant_task(previous_turns)
     evidence_requirement = resolve_evidence_requirement(
