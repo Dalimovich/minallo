@@ -79,6 +79,28 @@ def test_assistants_wrong_label_never_overrides_users_active_question():
     assert "exercise 13.6" in result.resolved_request
 
 
+def test_correction_after_unrelated_turn_does_not_retarget_stale_exercise():
+    # Student solves Aufgabe 3.2, then asks an unrelated conceptual question,
+    # gets an answer, then rejects THAT answer ("No, that's not right.").
+    # The correction must attach to the entropy answer being objected to,
+    # never silently reach back to the stale "3.2" label from two turns ago
+    # (neither the immediately preceding user nor assistant turn mentions it).
+    result = resolve_dialogue(
+        "No, that's not right.",
+        previous_turns=turns(
+            ("user", "Solve Aufgabe 3.2 step by step."),
+            ("assistant", "Aufgabe 3.2 gives x = 4."),
+            ("user", "What is entropy?"),
+            ("assistant", "Entropy is a measure of disorder in a system."),
+        ),
+        response_language="en",
+    )
+    assert result.dialogue_act == DialogueAct.CORRECT_ASSISTANT
+    assert result.active_question is None
+    assert "immediately previous answer" in result.resolved_request
+    assert "3.2" not in result.resolved_request
+
+
 def test_bare_number_continues_same_workflow():
     result = resolve_dialogue(
         "now 12.2",
