@@ -18,7 +18,6 @@ import {
   captureStablePdfSnapshot,
   currentMessageUsesSelectedRegion,
   getActivePdfContext,
-  isPdfViewerVisible,
   type ActivePdfContext,
   type OpenFileImage
 } from '../pdf-viewer/active-pdf-context.js';
@@ -1473,7 +1472,10 @@ async function streamAiReply(
     const allowDiagrams = latestUserAllowsDiagrams(requestMessages);
   try {
     const latestFileLabel = latestUserFileLabel(requestMessages);
-    const initialRag = ragEligibility(requestMessages, requestChat, requestChat.courseId || '');
+    const initialRag = ragEligibility(
+      requestMessages, requestChat, requestChat.courseId || '',
+      assistantMessage.requestSnapshot?.groundingRequest,
+    );
     const intentContext = {
       courseId: requestChat.courseId || null,
       selectedSourceIds: requestChat.selectedSourceIds.slice(),
@@ -3069,6 +3071,7 @@ function ragEligibility(
   messages: ChatMessage[],
   active: SavedChat = chatStore.getActive(),
   requestCourseId?: string,
+  submittedGrounding?: GroundingRequest,
 ): {
   question: string;
   courseId: string;
@@ -3090,6 +3093,22 @@ function ragEligibility(
   // instruction such as "answer all of these".
   const currentQuestion = [...attachedClipboardText, last.text.trim()].filter(Boolean).join('\n\n');
   if (!currentQuestion) return null;
+  if (submittedGrounding) {
+    // Retries already have authoritative IDs. Rebuilding them from today's
+    // library can erase the original scope after deletion or a library outage.
+    const openPdf = getActivePdfContext();
+    const viewer = submittedGrounding.viewerContext;
+    const activePdfContext = openPdf && viewer && openPdf.documentId === viewer.documentId
+      && openPdf.courseId === requestCourseId ? openPdf : null;
+    return {
+      question: currentQuestion, courseId: requestCourseId || '',
+      documentIds: submittedGrounding.retrievalScope.type === 'documents'
+        ? submittedGrounding.retrievalScope.documentIds.slice() : [],
+      documentNames: [], activePdfContext,
+      explicitSourceOverride: submittedGrounding.retrievalScope.type === 'documents',
+      groundingRequest: structuredClone(submittedGrounding),
+    };
+  }
   const explicitAttachment = last.attachmentRefs?.[0];
   if (explicitAttachment?.fileId && explicitAttachment.courseId) {
     const openPdf = getActivePdfContext();
@@ -3126,14 +3145,8 @@ function ragEligibility(
   }
   const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
   const openPdf = getActivePdfContext();
-  if (isPdfViewerVisible() && !openPdf) {
-    throw new AskStreamError({
-      code: 'active_pdf_state_incomplete',
-      message: 'The PDF is visible, but its document identity is incomplete. Reopen the PDF and retry.',
-      retryable: true,
-      metadata: { activePdfFound: false, activePdfVisible: true }
-    });
-  }
+  // Missing incidental viewer state is resolved by backend evidence planning;
+  // it must not block questions that do not require the visible page.
   // Screenshots always stay on the explicit visual stream. With an open PDF
   // they bind to that page; without one they are the sole visual source and
   // must never be silently omitted by the generic attachment path.
@@ -3167,7 +3180,8 @@ function ragEligibility(
   let documentIds: string[] = [];
   let documentNames: string[] = [];
   const scopeToSelection =
-    requestSources.length > 0 || normaliseCourseFileScope(active.courseFileScope) === 'specific_files';
+    active.selectedSourceIds.length > 0 || requestSources.length > 0
+    || normaliseCourseFileScope(active.courseFileScope) === 'specific_files';
   if (scopeToSelection) {
     const ids = new Set<string>();
     const names = new Set<string>();
@@ -3231,11 +3245,15 @@ function ragEligibility(
   // all-course request stays course-wide.
 
   if (
-    normaliseCourseFileScope(active.courseFileScope) === 'specific_files'
+    scopeToSelection
     && documentIds.length === 0
     && documentNames.length === 0
   ) {
-    return null;
+    throw new AskStreamError({
+      code: 'document_identity_unavailable',
+      message: 'Reopen the selected file so Minallo can resolve its stable document identity.',
+      retryable: true,
+    });
   }
 
   if (!courseId) {

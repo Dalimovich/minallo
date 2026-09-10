@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const context = readFileSync('frontend/js/features/pdf-viewer/active-pdf-context.ts', 'utf8');
-const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
 const sourceLink = readFileSync('frontend/js/features/pdf-viewer/source-link.ts', 'utf8');
 const viewer = readFileSync('frontend/js/features/pdf-viewer/pdf-viewer.ts', 'utf8');
 const panes = readFileSync('frontend/js/features/pdf-viewer/pdf-panes.ts', 'utf8');
@@ -19,10 +18,9 @@ test('all PDF routes converge on the authoritative viewer state', () => {
   assert.match(context, /active_pdf_state_incomplete/);
 });
 
-test('document requests cannot silently lose a visibly open PDF', () => {
-  assert.match(shell, /isPdfViewerVisible\(\) && !openPdf/);
-  assert.match(shell, /code: 'active_pdf_state_incomplete'/);
-  assert.match(shell, /activePdfVisible: isPdfViewerVisible\(\)/);
+test('viewer capture retains its explicit visual evidence requirement (source wiring)', () => {
+  // Actual optional/required evidence behavior is executed in
+  // chat-eligibility-runtime and backend test_optional_viewer_evidence.
   assert.match(context, /sectionExtraction[\s\S]*requiresVisualPdfEvidence/);
 });
 
