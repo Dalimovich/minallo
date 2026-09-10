@@ -20,15 +20,30 @@
   function _supaHeaders() { return window._ssDb && window._ssDb.supaHeaders ? window._ssDb.supaHeaders() : {}; }
   function _supaUrl() { return window._ssDb && window._ssDb.supaUrl ? window._ssDb.supaUrl() : ''; }
 
+  // examforge.js is a classic script (no type="module" in loader.ts), so it
+  // reaches authenticated-fetch.ts's proactive expiry-skew refresh +
+  // coordinated single-flight retry-on-401 via dynamic import(), same as
+  // _service() above does for ai-service.ts. _supaHeaders()/_supaUrl() stay
+  // as-is for window._ssDb's other consumers; this file's own requests route
+  // through the auth-aware transport instead of a point-in-time token header.
+  function _authFetchService() {
+    return import('/js/services/authenticated-fetch.js');
+  }
+  function _authSupaFetch(url, init) {
+    return _authFetchService().then(function (mod) {
+      return mod.authenticatedSupabaseFetch(url, init, { safeToRetry: true });
+    });
+  }
+
   function _deleteExamSession(sessionId, courseId) {
     if (!sessionId || String(sessionId).indexOf('local-') === 0 || !_supaUrl()) {
       return Promise.reject(new Error('This exam is not saved in the database.'));
     }
     var url = _supaUrl() + '/rest/v1/exam_sessions?id=eq.' + encodeURIComponent(sessionId) +
       '&course_id=eq.' + encodeURIComponent(courseId) + '&select=id';
-    return fetch(url, {
+    return _authSupaFetch(url, {
       method: 'DELETE',
-      headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=representation' })
+      headers: { 'Prefer': 'return=representation' }
     }).then(function (r) {
       if (!r.ok) throw new Error('The exam could not be deleted.');
       return r.json();
@@ -832,9 +847,8 @@
       });
 
       if (!_supaUrl()) return;
-      fetch(_supaUrl() + '/rest/v1/exam_sessions?course_id=eq.' + encodeURIComponent(courseId) + '&select=*,exam_questions(id,position,question_type,topic,difficulty,points,question_text,options,source_document_names,source_pages,validation_status,validation_score)&order=created_at.desc&limit=20', {
-        headers: _supaHeaders()
-      }).then(function (r) { return r.ok ? r.json() : []; })
+      _authSupaFetch(_supaUrl() + '/rest/v1/exam_sessions?course_id=eq.' + encodeURIComponent(courseId) + '&select=*,exam_questions(id,position,question_type,topic,difficulty,points,question_text,options,source_document_names,source_pages,validation_status,validation_score)&order=created_at.desc&limit=20', {})
+        .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (rows) {
           st.sessions = (rows || []).map(_normaliseSession);
           var requested = initialSessionId && st.sessions.some(function (s) { return s.id === initialSessionId; });

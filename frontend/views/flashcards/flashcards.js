@@ -28,6 +28,26 @@
     } catch (e) { return null; }
   }
 
+  // flashcards.js is a classic script (no type="module" in loader.ts), so it
+  // reaches authenticated-fetch.ts's proactive expiry-skew refresh +
+  // coordinated single-flight retry-on-401 via dynamic import() instead of a
+  // static import. _supaHeaders()/_supaUrl() above stay as-is for
+  // window._ssDb's other consumers; this file's own requests route through
+  // the auth-aware transport instead of a point-in-time token snapshot.
+  function _authFetchService() {
+    return import('/js/services/authenticated-fetch.js');
+  }
+  function _authSupaFetch(url, init) {
+    return _authFetchService().then(function (mod) {
+      return mod.authenticatedSupabaseFetch(url, init, { safeToRetry: true });
+    });
+  }
+  function _authFetch(url, init) {
+    return _authFetchService().then(function (mod) {
+      return mod.authenticatedFetch(url, init, { safeToRetry: true });
+    });
+  }
+
   // Resolves to an array on success (possibly empty), or null on failure
   // (network blip, non-2xx). Callers MUST treat null as "unknown, retry later"
   // and NOT cache it as "this course has no decks" — otherwise a transient
@@ -35,7 +55,7 @@
   function _dbLoadDecks(courseId) {
     if (!_supaUrl()) return Promise.resolve([]);
     var url = _supaUrl() + '/rest/v1/flashcard_decks?course_id=eq.' + encodeURIComponent(courseId) + '&order=created_at.desc&limit=50';
-    return fetch(url, { headers: _supaHeaders() })
+    return _authSupaFetch(url, {})
       .then(function(r) { return r.ok ? r.json() : null; })
       .catch(function() { return null; });
   }
@@ -44,9 +64,9 @@
     var uid = _userId();
     if (!uid || !_supaUrl()) return Promise.resolve(null);
     var payload = { user_id: uid, course_id: courseId, name: deck.name, cards: deck.cards };
-    return fetch(_supaUrl() + '/rest/v1/flashcard_decks', {
+    return _authSupaFetch(_supaUrl() + '/rest/v1/flashcard_decks', {
       method: 'POST',
-      headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=representation' }),
+      headers: { 'Prefer': 'return=representation' },
       body: JSON.stringify(payload)
     }).then(function(r) { return r.ok ? r.json() : null; })
       .then(function(rows) { return rows && rows[0] ? rows[0].id : null; })
@@ -55,18 +75,18 @@
 
   function _dbUpdateDeck(dbId, patch) {
     if (!dbId) return;
-    fetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
+    _authSupaFetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
       method: 'PATCH',
-      headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=minimal' }),
+      headers: { 'Prefer': 'return=minimal' },
       body: JSON.stringify(patch)
     }).catch(function() {});
   }
 
   function _dbDeleteDeck(dbId) {
     if (!dbId) return;
-    fetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
+    _authSupaFetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
       method: 'DELETE',
-      headers: Object.assign({}, _supaHeaders(), { 'Prefer': 'return=minimal' })
+      headers: { 'Prefer': 'return=minimal' }
     }).catch(function() {});
   }
 
@@ -77,14 +97,11 @@
   // than all becoming simultaneously overdue. Persistence goes through the
   // server-side SM-2 endpoint so interval/ease growth is computed in one place.
   function _backendUrl() { return (window.BACKEND_URL || ''); }
-  function _authHeaders() { return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') }; }
 
   // Fetch the rated cards for a deck. Returns a map: cardIndex -> reviewRow.
   function _dbLoadReviews(dbDeckId) {
     if (!dbDeckId) return Promise.resolve({});
-    return fetch(_backendUrl() + '/api/study/flashcard-review?deckId=' + encodeURIComponent(dbDeckId), {
-      headers: _authHeaders()
-    })
+    return _authFetch(_backendUrl() + '/api/study/flashcard-review?deckId=' + encodeURIComponent(dbDeckId), {})
       .then(function(r) { return r.ok ? r.json() : { reviews: [] }; })
       .then(function(data) {
         var map = {};
@@ -99,9 +116,9 @@
   // Persist a single rating. Returns the updated review row (or null).
   function _dbSaveReview(dbDeckId, cardIndex, rating) {
     if (!dbDeckId) return Promise.resolve(null);
-    return fetch(_backendUrl() + '/api/study/flashcard-review', {
+    return _authFetch(_backendUrl() + '/api/study/flashcard-review', {
       method: 'POST',
-      headers: _authHeaders(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deckId: dbDeckId, cardIndex: cardIndex, rating: rating })
     })
       .then(function(r) { return r.ok ? r.json() : null; })
@@ -789,10 +806,7 @@
     function _pickSourcesThenGenerate(settings) {
       if (!options.generate) { _toast('Generation unavailable', 'Generator function not injected.'); return; }
       var BACKEND_URL = window.BACKEND_URL || '';
-      var token = window._sbToken || '';
-      fetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {
-        headers: { Authorization: 'Bearer ' + token }
-      })
+      _authFetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {})
         .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
         .then(function (data) {
           var summary = _docStatusSummary(data.documents || []);
