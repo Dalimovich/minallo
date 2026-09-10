@@ -907,6 +907,8 @@ def _call_openai(
         model=target_model,
         **usage_from_response(resp),
     )
+    if resp.choices and getattr(resp.choices[0], "finish_reason", None) in {"length", "content_filter"}:
+        raise ValueError("The model response was incomplete; retry the document processing.")
     text = (resp.choices[0].message.content if resp.choices and resp.choices[0].message else "") or ""
     return text.strip(), heavy_capped
 
