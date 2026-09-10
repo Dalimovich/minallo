@@ -20,6 +20,37 @@ var AI_MODEL = AI_CFG.model || 'gpt-4o'; // the /chat endpoint ignores this and 
 var AI_MAX_TOK = AI_CFG.maxTokens || 4096; // allows long, thorough answers
 var AI_PDF_CAP = AI_CFG.pdfCharacterCap || 100000; // covers long PDFs
 
+// ── Auth transport ────────────────────────────────────────────────────────
+// js/ai.js is a classic script (no `type="module"` on its <script> tag — see
+// loader.ts), so it cannot use a static `import` statement the way the
+// already-migrated TS services do. Dynamic import() is valid from any script
+// context though, so it's used here to reach authenticated-fetch.ts's
+// proactive-refresh + coordinated single-flight-retry-on-401 transport
+// instead of the old hand-built `Authorization: 'Bearer ' + window._sbToken`
+// header, which never refreshed and let a 401 silently fall through to the
+// json-parsing .then() and render as "No response".
+var _authFetchModulePromise = null;
+function _getAuthFetchModule() {
+  if (!_authFetchModulePromise) {
+    _authFetchModulePromise = import('./services/authenticated-fetch.js');
+  }
+  return _authFetchModulePromise;
+}
+// safeToRetry: true — a rejected-but-not-yet-expired token (the common real
+// case: the tab sat open past the server's clock, not past the JWT's own
+// expiry) should transparently refresh-and-retry once rather than surface as
+// a dead end, matching the retry policy already used for the RAG-first
+// /api/ai/ask, /api/ai/generate, etc. call sites in ai-service.ts.
+function _aiAuthFetch(url, init) {
+  return _getAuthFetchModule().then(function (mod) {
+    return mod.authenticatedFetch(url, init, { safeToRetry: true });
+  });
+}
+function _isSessionExpiredError(e) {
+  var msg = (e && e.message) || '';
+  return !!(e && e.sessionExpired) || msg === 'SESSION_INVALID' || msg === 'SESSION_REFRESH_NETWORK_ERROR';
+}
+
 // ── SYSTEM PROMPT ─────────────────────────────────────────────────────────
 function _buildSystemPrompt() {
   var docText = pdfFullText
@@ -162,11 +193,10 @@ let askAI = function (question, skipUserBubble) {
     _visionChars += _turnText.length;
   }
 
-  fetch(BACKEND_URL + '/api/ai', {
+  _aiAuthFetch(BACKEND_URL + '/api/ai', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + (window._sbToken || '')
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model: AI_MODEL,
@@ -176,6 +206,14 @@ let askAI = function (question, skipUserBubble) {
     })
   })
     .then(function (r) {
+      if (r.status === 401) {
+        var sessionErr = new Error('SESSION_EXPIRED');
+        sessionErr.sessionExpired = true;
+        throw sessionErr;
+      }
+      if (!r.ok) {
+        throw new Error('AI request failed (' + r.status + ')');
+      }
       return r.json();
     })
     .then(function (data) {
@@ -311,7 +349,11 @@ let askAI = function (question, skipUserBubble) {
     })
     .catch(function (e) {
       thinkWrap.remove();
-      addBotMsg('\u274C Error: ' + e.message);
+      if (_isSessionExpiredError(e)) {
+        addBotMsg('\u26A0\uFE0F Your session has expired. Please sign in again to continue.');
+      } else {
+        addBotMsg('\u274C Error: ' + (e && e.message ? e.message : e));
+      }
       document.getElementById('aiSend').classList.remove('is-stop');
     });
 };
@@ -494,11 +536,10 @@ async function runMultiSummary(fnames, course) {
       '<div class="msm-loading"><div class="msm-dots"><span></span><span></span><span></span></div>' +
       '<p>Asking AI to synthesise all files\u2026</p></div>';
 
-    fetch(BACKEND_URL + '/api/ai', {
+    _aiAuthFetch(BACKEND_URL + '/api/ai', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + (window._sbToken || '')
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: AI_MODEL,
@@ -537,6 +578,14 @@ async function runMultiSummary(fnames, course) {
       })
     })
       .then(function (r) {
+        if (r.status === 401) {
+          var sessionErr = new Error('SESSION_EXPIRED');
+          sessionErr.sessionExpired = true;
+          throw sessionErr;
+        }
+        if (!r.ok) {
+          throw new Error('AI request failed (' + r.status + ')');
+        }
         return r.json();
       })
       .then(function (data) {
@@ -559,7 +608,11 @@ async function runMultiSummary(fnames, course) {
         document.getElementById('msmSaveBtn').style.display = '';
       })
       .catch(function (e) {
-        body.innerHTML = tagsHtml + '<p style="color:#ff6b35">I couldn\'t create that summary just now. Please try again in a moment.</p>';
+        body.innerHTML = tagsHtml + '<p style="color:#ff6b35">' +
+          (_isSessionExpiredError(e)
+            ? 'Your session has expired. Please sign in again to continue.'
+            : 'I couldn\'t create that summary just now. Please try again in a moment.') +
+          '</p>';
       });
   });
 }
@@ -806,11 +859,10 @@ function _captureSnipRegion(x1, y1, x2, y2) {
       controller.abort();
     }, 12000);
     try {
-      var res = await fetch((window.BACKEND_URL || '') + '/api/documents/index-existing', {
+      var res = await _aiAuthFetch((window.BACKEND_URL || '') + '/api/documents/index-existing', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + (window._sbToken || '')
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           courseId: course.id,
