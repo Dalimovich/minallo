@@ -18,6 +18,7 @@ import {
   captureStablePdfSnapshot,
   currentMessageUsesSelectedRegion,
   getActivePdfContext,
+  isPdfViewerVisible,
   type ActivePdfContext,
   type OpenFileImage
 } from '../pdf-viewer/active-pdf-context.js';
