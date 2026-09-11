@@ -327,10 +327,6 @@ function buildFilesContent(course: LegacyCourse): string {
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>' +
         '<span>Cheatsheet</span>' +
       '</button>' +
-      '<button class="co-course-tab" type="button" data-course-tab="deeplearn" role="tab" aria-selected="false">' +
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.42A12 12 0 0 1 12 21a12 12 0 0 1-6.16-10.42L12 14z"/></svg>' +
-        '<span>Deep Learn</span>' +
-      '</button>' +
     '</div>' +
     '<div class="co-course-panel active" id="coFilesPanel" data-course-panel="files">' +
       '<div class="co-files-inner-card">' +
@@ -385,8 +381,7 @@ function buildFilesContent(course: LegacyCourse): string {
     '</div>' +
     '<div class="co-course-panel" id="coFlashPanel" data-course-panel="flashcards"></div>' +
     '<div class="co-course-panel" id="coExamForgePanel" data-course-panel="examforge"></div>' +
-    '<div class="co-course-panel" id="coCheatsheetPanel" data-course-panel="cheatsheet"></div>' +
-    '<div class="co-course-panel" id="coDeepLearnPanel" data-course-panel="deeplearn"></div>'
+    '<div class="co-course-panel" id="coCheatsheetPanel" data-course-panel="cheatsheet"></div>'
   );
 }
 
@@ -574,12 +569,12 @@ export function openCourse(course: LegacyCourse): void {
     void preload('flashcards');
     void preload('examforge');
     void preload('cheatsheet');
-    void preload('deeplearn');
   }
 
   // Warm the topic-map / saved-notes cache in the background so the first
-  // visit to Deep Learn or Cheatsheet doesn't show a "Loading…" flash —
-  // the data is usually already resolved by the time the tab mounts.
+  // visit to Deep Learn (chatbot overlay) or Cheatsheet doesn't show a
+  // "Loading…" flash — the data is usually already resolved by the time the
+  // tool mounts.
   void import('../../services/ai-service.js')
     .then((svc) => {
       void svc.prefetchCourseDocuments?.(course.id).catch(() => undefined);
@@ -666,32 +661,9 @@ function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse):
   const panelSelector =
     sec === 'flashcards' ? '#coFlashPanel' :
     sec === 'examforge' ? '#coExamForgePanel' :
-    sec === 'cheatsheet' ? '#coCheatsheetPanel' :
-    '#coDeepLearnPanel';
+    '#coCheatsheetPanel';
   const panel = co.querySelector<HTMLElement>(panelSelector);
-  const launchWindow = window as unknown as {
-    __minalloDeepLearnLaunch?: {
-      courseId?: string;
-      topic?: string;
-      documentIds?: string[];
-      sourceChunkIds?: string[];
-      visualIds?: string[];
-      lessonMode?: string;
-      lessonLanguage?: string;
-            learningGoals?: string[];
-            origin?: string;
-            originConversationId?: string;
-            originMessageId?: string;
-            recommendationId?: string;
-            existingLessonId?: string;
-      autoStart?: boolean;
-    };
-  };
-  const queuedLaunch = sec === 'deeplearn' &&
-    launchWindow.__minalloDeepLearnLaunch?.courseId === String(course.id)
-    ? launchWindow.__minalloDeepLearnLaunch
-    : undefined;
-  if (panel && panel.getAttribute('data-mounted-course') === course.id && !queuedLaunch) return;
+  if (panel && panel.getAttribute('data-mounted-course') === course.id) return;
   const loadFeature = (window as unknown as {
     _ssLoadPortalFeature?: (name: string) => Promise<void>;
   })._ssLoadPortalFeature;
@@ -700,35 +672,15 @@ function _mountFeaturePanel(co: HTMLElement, sec: string, course: LegacyCourse):
     const mountFn =
       sec === 'flashcards' ? window.mountFlashcards :
       sec === 'examforge' ? window.mountExamForge :
-      sec === 'cheatsheet' ? window.mountCheatsheet :
-      window.mountDeepLearn;
+      window.mountCheatsheet;
     if (typeof mountFn === 'function') {
       if (panel && panel.isConnected) {
-        const launch = queuedLaunch;
         const mountFeature = mountFn as unknown as (
           target: HTMLElement,
           selectedCourse: LegacyCourse,
           options: Record<string, unknown>
         ) => void;
-        mountFeature(panel, course, launch ? {
-          generate: window._generateStudyTool,
-          initialParameters: {
-            topic: launch.topic,
-            lessonMode: launch.lessonMode,
-            lessonLanguage: launch.lessonLanguage,
-            learningGoals: launch.learningGoals,
-          },
-          initialDocumentIds: launch.documentIds,
-          initialSourceChunkIds: launch.sourceChunkIds,
-          initialVisualIds: launch.visualIds,
-          initialExistingLessonId: launch.existingLessonId,
-          recommendationId: launch.recommendationId,
-          origin: launch.origin,
-          originConversationId: launch.originConversationId,
-          originMessageId: launch.originMessageId,
-          autoStart: launch.autoStart === true,
-        } : { generate: window._generateStudyTool });
-        if (launch) delete launchWindow.__minalloDeepLearnLaunch;
+        mountFeature(panel, course, { generate: window._generateStudyTool });
         panel.setAttribute('data-mounted-course', course.id);
       }
     } else if (tries > 0) {
@@ -751,18 +703,17 @@ function _switchTabOnly(co: HTMLElement, sec: string, course: LegacyCourse): voi
   if (inner) {
     inner.classList.toggle(
       'co-inner-wide',
-      sec === 'flashcards' || sec === 'examforge' ||
-      sec === 'cheatsheet' || sec === 'deeplearn'
+      sec === 'flashcards' || sec === 'examforge' || sec === 'cheatsheet'
     );
   }
-  if (sec === 'flashcards' || sec === 'examforge' || sec === 'cheatsheet' || sec === 'deeplearn') {
+  if (sec === 'flashcards' || sec === 'examforge' || sec === 'cheatsheet') {
     _mountFeaturePanel(co, sec, course);
   }
   _resetCourseTabsScroll(co, sec);
 }
 
 export function showCourseSection(course: LegacyCourse, section: string): void {
-  const sec = ['files', 'flashcards', 'examforge', 'cheatsheet', 'deeplearn'].includes(section) ? section : 'files';
+  const sec = ['files', 'flashcards', 'examforge', 'cheatsheet'].includes(section) ? section : 'files';
 
   const co = document.getElementById('courseOverview');
   // "Already rendered" must compare against the course whose DOM is actually
@@ -1055,7 +1006,7 @@ export function showCourseSection(course: LegacyCourse, section: string): void {
     co.querySelectorAll<HTMLElement>('[data-course-panel]').forEach((panel) => {
       panel.classList.toggle('active', panel.getAttribute('data-course-panel') === targetTab);
     });
-    if (targetTab === 'flashcards' || targetTab === 'examforge' || targetTab === 'cheatsheet' || targetTab === 'deeplearn') {
+    if (targetTab === 'flashcards' || targetTab === 'examforge' || targetTab === 'cheatsheet') {
       _mountFeaturePanel(co, targetTab, course);
     }
   }

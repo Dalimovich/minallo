@@ -16,7 +16,7 @@ import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 import { parsePersistedChats, type PersistedChat, type SavedRepliesChangedDetail } from './chat-store-format.js';
 import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 
-type CourseFile = {
+export type CourseFile = {
   name: string;
   _storageName?: string;
   _folder?: string | null;
@@ -26,8 +26,8 @@ type CourseFile = {
   size?: string;
   _document?: CourseDocument;
 };
-type CourseFolder = { name: string; files?: CourseFile[] };
-type LibraryCourse = LegacyCourse & { files?: CourseFile[]; userFolders?: CourseFolder[] };
+export type CourseFolder = { name: string; files?: CourseFile[] };
+export type LibraryCourse = LegacyCourse & { files?: CourseFile[]; userFolders?: CourseFolder[] };
 type SavedKind = 'notes' | 'summaries' | 'flashcards' | 'cheatsheets' | 'exams' | 'responses';
 type SavedItem = {
   id: string;
@@ -608,9 +608,10 @@ export async function openStudyToolWorkspace(
   const body = openOverlay(root, title);
   if (!body) return false;
   body.innerHTML = '<div class="ncb-library-status">Opening study tool&hellip;</div>';
-  const loaderKind = kind === 'deep_learn' ? 'deeplearn' : kind;
   try {
-    await window._ssLoadPortalFeature?.(loaderKind);
+    // deep_learn is a native chatbot-new module (deep-learn-workspace.ts) and
+    // no longer needs the legacy portal-feature bundle/CSS lazy-loader.
+    if (kind !== 'deep_learn') await window._ssLoadPortalFeature?.(kind);
     await hydrate(course);
     let resolvedDocumentIds = documentIds.slice();
     if (!resolvedDocumentIds.length && documentName) {
@@ -628,7 +629,10 @@ export async function openStudyToolWorkspace(
     const staging = document.createElement('div');
     if (kind === 'examforge' && typeof window.mountExamForge === 'function') (window.mountExamForge as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
     else if (kind === 'flashcards' && typeof window.mountFlashcards === 'function') window.mountFlashcards(staging, course, { ...options, generate: window._generateStudyTool });
-    else if (kind === 'deep_learn' && typeof window.mountDeepLearn === 'function') (window.mountDeepLearn as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
+    else if (kind === 'deep_learn') {
+      const deepLearnModule = await import('./deep-learn-workspace.js');
+      deepLearnModule.mountDeepLearnWorkspace(staging, course, options);
+    }
     else if (kind === 'cheatsheet' && typeof window.mountCheatsheet === 'function') (window.mountCheatsheet as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
     else throw new Error('This study tool viewer is unavailable.');
     if (!staging.firstElementChild) throw new Error('study_tool_mount_returned_empty');

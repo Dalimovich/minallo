@@ -626,7 +626,6 @@ interface LandingTranslation {
             flashcards: ['js/utils/db-helpers.js', 'views/flashcards/flashcards.js'],
             examforge: ['js/utils/db-helpers.js', 'views/examforge/examforge.js'],
             cheatsheet: ['js/utils/db-helpers.js', 'views/cheatsheet/cheatsheet.js'],
-            deeplearn: ['js/utils/db-helpers.js', 'views/deep-learn/deep-learn.js'],
             notesPanel: ['views/notes/notes-math.js', 'views/notes/notes-panel.js'],
             // writer/merger register listeners for ss-editor-ready, so load
             // them before editor.js fetches markup and dispatches the event.
@@ -648,7 +647,6 @@ interface LandingTranslation {
             flashcards: ['views/flashcards/flashcards.css'],
             examforge: ['views/examforge/examforge.css?v=2'],
             cheatsheet: ['views/cheatsheet/cheatsheet.css'],
-            deeplearn: ['views/deep-learn/deep-learn.css'],
             notesPanel: ['views/notes/notes-panel.css'],
             editor: ['views/editor/editor.css'],
           };

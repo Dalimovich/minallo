@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const shell = fs.readFileSync(path.join(root, 'frontend/js/features/chatbot-new/shell.ts'), 'utf8');
-const courseView = fs.readFileSync(path.join(root, 'frontend/js/features/courses/course-view.ts'), 'utf8');
-const deepLearn = fs.readFileSync(path.join(root, 'frontend/views/deep-learn/deep-learn.js'), 'utf8');
+const deepLearn = fs.readFileSync(path.join(root, 'frontend/js/features/chatbot-new/deep-learn-workspace.ts'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'frontend/views/chatbot/chatbot.css'), 'utf8');
 
 test('chat renders structured recommendations without parsing answer markdown', () => {
@@ -20,9 +19,11 @@ test('recommendation transfers the complete launch context', () => {
   for (const field of ['topic', 'documentIds', 'sourceChunkIds', 'visualIds', 'lessonMode', 'lessonLanguage', 'learningGoals']) {
     assert.match(shell, new RegExp(field));
   }
-  assert.match(courseView, /__minalloDeepLearnLaunch/);
+  // Deep Learn is a chatbot-overlay-native workspace (mountDeepLearnWorkspace,
+  // via openStudyToolWorkspace) — there is no more Course Overview tab launch
+  // queue (__minalloDeepLearnLaunch) to hand parameters through.
   assert.match(deepLearn, /initialVisualIds/);
-  assert.match(deepLearn, /options\.autoStart === true/);
+  assert.match(deepLearn, /opts\.autoStart === true/);
 });
 
 test('recommendations require a click and support dismissal fatigue', () => {

@@ -37,7 +37,7 @@ test('only persisted typed artifacts open canonical production mounts', () => {
   assert.match(workspace, /openStudyToolWorkspace/);
   assert.match(workspace, /window\.mountExamForge/);
   assert.match(workspace, /window\.mountFlashcards/);
-  assert.match(workspace, /window\.mountDeepLearn/);
+  assert.match(workspace, /mountDeepLearnWorkspace/);
 });
 
 test('study cards reuse active PDF context and hydrate the canonical document API', () => {

@@ -2891,7 +2891,9 @@ function buildDailyMissionHandlers(courseId: string): DailyMissionPanelHandlers 
 
   return {
     onOpenSource: () => goToSection('files'),
-    onOpenDeepLearn: () => goToSection('deeplearn'),
+    // Deep Learn is a chatbot-overlay-native workspace, not a My Courses tab
+    // — open it directly instead of routing through showCourseSection.
+    onOpenDeepLearn: () => { void openStudyToolWorkspace('deep_learn', courseId, {}); },
     onOpenExamForge: () => goToSection('examforge'),
     onGenerateQuiz: () => goToSection('quiz'),
     onCreateFlashcards: () => goToSection('flashcards')

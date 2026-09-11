@@ -56,7 +56,6 @@ declare global {
     mountFlashcards?: (el: HTMLElement, course: LegacyCourse, opts: { generate: unknown }) => void;
     mountExamForge?: (el: HTMLElement, course: LegacyCourse, opts: { generate?: unknown }) => void;
     mountCheatsheet?: (el: HTMLElement, course: LegacyCourse, opts?: { generate?: unknown }) => void;
-    mountDeepLearn?: (el: HTMLElement, course: LegacyCourse, opts?: { generate?: unknown }) => void;
 
     // ── i18n + toasts ──────────────────────────────────────────────────
     _t?: (key: string) => string;
@@ -65,7 +64,10 @@ declare global {
     // Open a cited AI source (set by features/pdf-viewer/source-link). Lets
     // non-module views (ExamForge) open the PDF popup at the cited page.
     openCitedSource?: (
-      src: { fileName?: string | null; documentId?: string | null; page?: number | null },
+      src: {
+        fileName?: string | null; documentId?: string | null; page?: number | null;
+        boundingBox?: { x: number; y: number; width: number; height: number } | null;
+      },
       surface: 'sidebar' | 'popup'
     ) => void;
 
@@ -98,6 +100,14 @@ declare global {
     _pdfVisiblePage?: () => number | null;
     _fetchPdfBytes?: (path: string, onOk: (bytes: Uint8Array) => void, onErr?: () => void) => void;
     _ssEnsurePdfJs?: () => Promise<unknown>;
+
+    // ── html2pdf.js (lazy-loaded from CDN for in-browser PDF export) ────
+    html2pdf?: () => {
+      set: (opts: Record<string, unknown>) => {
+        from: (el: Element) => { save: () => Promise<void> };
+      };
+    };
+    _ssHtml2PdfP?: Promise<unknown> | null;
 
     // ── AI typing config (set by ai-typing-config) ─────────────────────
     AI_TYPING?: {
