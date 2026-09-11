@@ -30,6 +30,7 @@ interface PyDeepLearnResponse {
   evidenceSummary?: Record<string, number>;
   warning?: string;
   error?: string;
+  lessonStatus?: string | null;
 }
 
 function _docIds(raw: unknown): string[] | null {
@@ -119,6 +120,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       check: null,
       groundedSources: [],
       error: 'Deep Learn is temporarily unavailable: ' + (err || 'upstream ' + upstream.status),
+      lessonStatus: 'generation_failed',
     });
   }
   return jsonResponse(200, upstream.body);
