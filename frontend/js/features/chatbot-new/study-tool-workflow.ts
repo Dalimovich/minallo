@@ -229,7 +229,12 @@ async function generate(marker: StudyToolConfigurationMarker): Promise<StudyArti
     return { artifactType: 'flashcards', artifactId: id, persistedResourceId: id, rendererVersion: 1, title: 'Flashcards created', summary: `${cards.length} cards · ${String(p.difficulty)}`, payload: { id, name, cards, sourceScope: marker.source?.scope, sourceDocumentIds: documentIds, sourceDisplayNames: (marker.availableDocuments || []).filter(doc => documentIds.includes(doc.documentId)).map(doc => doc.fileName) } };
   }
   const raw = await svc.generateDeepLearn(marker.courseId, String(p.topic), { documentIds, lessonMode: String(p.lessonMode), lessonLanguage: String(p.lessonLanguage) });
-  if (!raw.noteId) throw new Error(raw.error || 'The lesson was not persisted.');
+  if (!raw.noteId) {
+    if (raw.lessonStatus === 'processing') throw new Error('This Deep Learn lesson is already being created. Try again in a moment.');
+    if (raw.lessonStatus === 'topic_not_covered') throw new Error(raw.error || "I couldn't find enough relevant course material for this topic.");
+    if (raw.lessonStatus === 'persistence_failed') throw new Error(raw.error || "The lesson was generated but couldn't be saved. Try again.");
+    throw new Error(raw.error || 'Deep Learn could not generate this lesson. Try again.');
+  }
   return { artifactType: 'deep_learn', artifactId: raw.noteId, persistedResourceId: raw.noteId, rendererVersion: 1, title: 'Deep Learn lesson ready', summary: `${raw.title || raw.topic} · ${String(p.lessonMode)} style`, payload: raw as unknown as Record<string, unknown> };
 }
 

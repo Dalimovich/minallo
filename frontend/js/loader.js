@@ -372,7 +372,7 @@
             'css/mobile-responsive.css?v=4',
             'css/auth.css?v=6',
             'css/onboarding.css?v=2',
-            'views/toast/toast.css',
+            'views/toast/toast.css?v=2',
             'views/games/games.css',
             // Light-mode polish loads LAST so it wins source-order ties
             // against feature CSS that still hard-codes greys.

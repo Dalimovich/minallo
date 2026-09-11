@@ -589,7 +589,7 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   if (libraryState.activeTab !== 'saved') void renderSaved(savedPanel, root);
 }
 
-export type StudyWorkspaceKind = 'examforge' | 'flashcards' | 'deep_learn';
+export type StudyWorkspaceKind = 'examforge' | 'flashcards' | 'deep_learn' | 'cheatsheet';
 
 /** Open the canonical course tool inside the chatbot overlay. Typed commands,
  * quick actions and Saved artifacts all converge on these production mounts. */
@@ -598,17 +598,19 @@ export async function openStudyToolWorkspace(
   courseId: string,
   parameters: Record<string, unknown> = {},
   documentIds: string[] = [],
-  documentName = ''
+  documentName = '',
+  extraMountOptions: Record<string, unknown> = {}
 ): Promise<boolean> {
   const root = activeWorkspaceRoot;
   const course = courses().find((candidate) => candidate.id === courseId);
   if (!root || !course) return false;
-  const body = openOverlay(root, kind === 'examforge' ? 'ExamForge Quiz' : kind === 'flashcards' ? 'Flashcards' : 'Deep Learn');
+  const title = kind === 'examforge' ? 'ExamForge Quiz' : kind === 'flashcards' ? 'Flashcards' : kind === 'cheatsheet' ? 'Cheatsheet' : 'Deep Learn';
+  const body = openOverlay(root, title);
   if (!body) return false;
   body.innerHTML = '<div class="ncb-library-status">Opening study tool&hellip;</div>';
   const loaderKind = kind === 'deep_learn' ? 'deeplearn' : kind;
   try {
-    await window._ssLoadFeatureSection?.(loaderKind);
+    await window._ssLoadPortalFeature?.(loaderKind);
     await hydrate(course);
     let resolvedDocumentIds = documentIds.slice();
     if (!resolvedDocumentIds.length && documentName) {
@@ -622,11 +624,12 @@ export async function openStudyToolWorkspace(
       if (matches.length === 1 && matches[0]?.id) resolvedDocumentIds = [matches[0].id];
       else throw new Error(matches.length > 1 ? 'More than one course document matches that name.' : 'The selected PDF could not be resolved to an indexed course document.');
     }
-    const options = { initialParameters: parameters, initialDocumentIds: resolvedDocumentIds };
+    const options = { initialParameters: parameters, initialDocumentIds: resolvedDocumentIds, ...extraMountOptions };
     const staging = document.createElement('div');
     if (kind === 'examforge' && typeof window.mountExamForge === 'function') (window.mountExamForge as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
     else if (kind === 'flashcards' && typeof window.mountFlashcards === 'function') window.mountFlashcards(staging, course, { ...options, generate: window._generateStudyTool });
     else if (kind === 'deep_learn' && typeof window.mountDeepLearn === 'function') (window.mountDeepLearn as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
+    else if (kind === 'cheatsheet' && typeof window.mountCheatsheet === 'function') (window.mountCheatsheet as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
     else throw new Error('This study tool viewer is unavailable.');
     if (!staging.firstElementChild) throw new Error('study_tool_mount_returned_empty');
     body.replaceChildren(...Array.from(staging.childNodes));

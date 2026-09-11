@@ -1,0 +1,2924 @@
+[
+  {
+    "id": "S01",
+    "goal": "General clarification",
+    "userTurns": [
+      "What is torque?",
+      "But I do not get it yet."
+    ],
+    "priorAssistantFixture": "Torque measures the turning effect of force.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "But I do not get it yet.",
+      "dialogue_act": "new_question",
+      "resolved_request": "But I do not get it yet.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S02",
+    "goal": "Grounded clarification",
+    "userTurns": [
+      "Explain torque from my lecture",
+      "Can you explain that another way?"
+    ],
+    "priorAssistantFixture": "The lecture defines torque as force times lever arm.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Can you explain that another way?",
+      "dialogue_act": "new_question",
+      "resolved_request": "Can you explain that another way?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S03",
+    "goal": "Grounded verification",
+    "userTurns": [
+      "What does my professor say about friction?",
+      "Are you sure?"
+    ],
+    "priorAssistantFixture": "The lecture uses a constant coefficient.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Are you sure?",
+      "dialogue_act": "verify_previous_answer",
+      "resolved_request": "Independently verify the immediately previous answer about exercise the active question against the exact active evidence. Do not rely on the previous assistant answer as evidence.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "question",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "fast_grounded",
+      "processingPipeline": "relevance",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "conversation_continues_grounded_task",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "requestsProfessorSpecificContent"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_grounded"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S04",
+    "goal": "General verification",
+    "userTurns": [
+      "What is 7 times 8?",
+      "Are you certain about that?"
+    ],
+    "priorAssistantFixture": "It is 56.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Are you certain about that?",
+      "dialogue_act": "new_question",
+      "resolved_request": "Are you certain about that?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S05",
+    "goal": "Exact source",
+    "userTurns": [
+      "Explain torque from the lecture",
+      "Where exactly does the professor say that?"
+    ],
+    "priorAssistantFixture": "Torque is introduced as a moment.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Where exactly does the professor say that?",
+      "dialogue_act": "new_question",
+      "resolved_request": "Where exactly does the professor say that?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "standard_rag",
+      "processingPipeline": "relevance",
+      "complexity": "standard",
+      "confidence": 0.7,
+      "reason": "conservative_standard_fallback",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "requestsProfessorSpecificContent",
+        "requestsExactCitationOrLocation"
+      ],
+      "mayEscalate": false,
+      "initialLane": "standard_rag"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S06",
+    "goal": "Course unrelated topic",
+    "userTurns": [
+      "Explain torsion",
+      "What is the capital of Italy?"
+    ],
+    "priorAssistantFixture": "Torsion twists a shaft.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "What is the capital of Italy?",
+      "dialogue_act": "new_question",
+      "resolved_request": "What is the capital of Italy?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "question",
+      "task_family": "unknown",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_general",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.95,
+      "reason": "simple_general_academic_question",
+      "signals": [
+        "isDefinition",
+        "isShortFactualQuestion"
+      ],
+      "mayEscalate": false,
+      "initialLane": "fast_general"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S07",
+    "goal": "PDF unrelated social",
+    "userTurns": [
+      "Explain this diagram",
+      "How was your day?"
+    ],
+    "priorAssistantFixture": "It shows a beam.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "viewer",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "How was your day?",
+      "dialogue_act": "new_question",
+      "resolved_request": "How was your day?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S08",
+    "goal": "PDF deictic",
+    "userTurns": [
+      "Explain this diagram",
+      "What does this mean?"
+    ],
+    "priorAssistantFixture": "It shows a beam.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "viewer",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "What does this mean?",
+      "dialogue_act": "ask_about_previous_step",
+      "resolved_request": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: What does this mean?. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "brief",
+      "explanation_attempt": 1,
+      "conversation_intent": "follow_up_explanation",
+      "referent_type": "calculation_step",
+      "referent_text": "It shows a beam.",
+      "relation": "continuation",
+      "speech_act": "question",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S09",
+    "goal": "Selected only",
+    "userTurns": [
+      "Use lecture.pdf only",
+      "Explain the stress convention using this PDF only."
+    ],
+    "priorAssistantFixture": "I will use that PDF.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Explain the stress convention using this PDF only.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Explain the stress convention using this PDF only.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S10",
+    "goal": "Deleted selected file",
+    "userTurns": [
+      "Explain lecture.pdf",
+      "Show me its exact page again."
+    ],
+    "priorAssistantFixture": "The diagram shows a beam.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "document_deleted",
+    "resolvedMeaning": {
+      "original_message": "Show me its exact page again.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Show me its exact page again.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "fast_grounded",
+      "processingPipeline": "relevance",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "conversation_continues_grounded_task",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "requestsProfessorSpecificContent"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_grounded"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S11",
+    "goal": "Full scan",
+    "userTurns": [
+      "Can you help with my exam?",
+      "Extract all questions in the entire exam."
+    ],
+    "priorAssistantFixture": "Yes, what should we work on?",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Extract all questions in the entire exam.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Extract all questions in the entire exam.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "task_request",
+      "task_family": "extract",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "full_document",
+    "accessReason": "natural_language_full_document_intent",
+    "executionPlan": {
+      "groundingMode": "full_document",
+      "executionLane": "full_document",
+      "processingPipeline": "extraction",
+      "complexity": "deep",
+      "confidence": 1.0,
+      "reason": "resolved_full_document_access",
+      "signals": [
+        "needsFullCoverage",
+        "isExtraction"
+      ],
+      "mayEscalate": false,
+      "initialLane": "full_document"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S12",
+    "goal": "Resume full scan",
+    "userTurns": [
+      "Extract every exam question",
+      "Continue from where you stopped."
+    ],
+    "priorAssistantFixture": "Pages 1 through 20 were processed.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "worker_interruption",
+    "resolvedMeaning": {
+      "original_message": "Continue from where you stopped.",
+      "dialogue_act": "continue_from_step",
+      "resolved_request": "Continue exercise the active question from the next unfinished line in the previous answer. Do not restart.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "task_request",
+      "task_family": "extract",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "standard_rag",
+      "processingPipeline": "relevance",
+      "complexity": "standard",
+      "confidence": 0.7,
+      "reason": "conservative_standard_fallback",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "requestsProfessorSpecificContent",
+        "requestsExactCitationOrLocation"
+      ],
+      "mayEscalate": false,
+      "initialLane": "standard_rag"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S13",
+    "goal": "General calculation",
+    "userTurns": [
+      "Explain speed",
+      "Calculate 120 divided by 3."
+    ],
+    "priorAssistantFixture": "Speed is distance per time.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Calculate 120 divided by 3.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Calculate 120 divided by 3.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "task_request",
+      "task_family": "calculate",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "deep_reasoning",
+      "processingPipeline": "calculation",
+      "complexity": "deep",
+      "confidence": 0.97,
+      "reason": "calculation_or_derivation",
+      "signals": [
+        "isCalculation"
+      ],
+      "mayEscalate": false,
+      "initialLane": "deep_reasoning"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S14",
+    "goal": "Course calculation",
+    "userTurns": [
+      "Use my lecture assumptions",
+      "Calculate the velocity according to my lecture."
+    ],
+    "priorAssistantFixture": "The script assumes constant acceleration.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Calculate the velocity according to my lecture.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Calculate the velocity according to my lecture.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "task_request",
+      "task_family": "calculate",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "deep_reasoning",
+      "processingPipeline": "calculation",
+      "complexity": "deep",
+      "confidence": 0.97,
+      "reason": "calculation_or_derivation",
+      "signals": [
+        "needsCourseEvidence",
+        "isCalculation",
+        "requestsProfessorSpecificContent"
+      ],
+      "mayEscalate": false,
+      "initialLane": "deep_reasoning"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S15",
+    "goal": "Recommendation without course",
+    "userTurns": [
+      "I feel behind",
+      "What should I study first?"
+    ],
+    "priorAssistantFixture": "We can choose a manageable next step.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "none",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "What should I study first?",
+      "dialogue_act": "new_question",
+      "resolved_request": "What should I study first?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "question",
+      "task_family": "study_recommendation",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "standard_rag",
+      "processingPipeline": "relevance",
+      "complexity": "standard",
+      "confidence": 0.7,
+      "reason": "conservative_standard_fallback",
+      "signals": [],
+      "mayEscalate": false,
+      "initialLane": "standard_rag"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S16",
+    "goal": "Recommendation with course",
+    "userTurns": [
+      "I struggle in mechanics",
+      "What should I study first?"
+    ],
+    "priorAssistantFixture": "We can focus on weak topics.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "What should I study first?",
+      "dialogue_act": "new_question",
+      "resolved_request": "What should I study first?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "question",
+      "task_family": "study_recommendation",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "standard_rag",
+      "processingPipeline": "relevance",
+      "complexity": "standard",
+      "confidence": 0.7,
+      "reason": "conservative_standard_fallback",
+      "signals": [],
+      "mayEscalate": false,
+      "initialLane": "standard_rag"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S17",
+    "goal": "Flashcard confirmation",
+    "userTurns": [
+      "Help me learn this",
+      "That sounds like a good way to start."
+    ],
+    "priorAssistantFixture": "I can create flashcards for these definitions.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "That sounds like a good way to start.",
+      "dialogue_act": "new_question",
+      "resolved_request": "That sounds like a good way to start.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "flashcards",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup",
+        "isGeneration"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S18",
+    "goal": "ExamForge reopen",
+    "userTurns": [
+      "Generate an ExamForge exam",
+      "Open that exact saved exam again."
+    ],
+    "priorAssistantFixture": "Your exam is saved as session-1.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "saved_reopen",
+    "resolvedMeaning": {
+      "original_message": "Open that exact saved exam again.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Open that exact saved exam again.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "examforge",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup",
+        "isGeneration"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S19",
+    "goal": "Stop then next",
+    "userTurns": [
+      "Explain stress in detail",
+      "Actually explain strain instead."
+    ],
+    "priorAssistantFixture": "Stress describes internal force per area.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "stop",
+    "resolvedMeaning": {
+      "original_message": "Actually explain strain instead.",
+      "dialogue_act": "correct_assistant",
+      "resolved_request": "Correct the immediately previous answer about the immediately previous answer using fresh exact evidence. Student correction: Actually explain strain instead.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": true,
+      "requested_depth": "normal",
+      "explanation_attempt": 2,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "correction",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "general_knowledge"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S20",
+    "goal": "Before token failure",
+    "userTurns": [
+      "Explain stress",
+      "Try that once more please."
+    ],
+    "priorAssistantFixture": "Generation could not start.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "before_first_token",
+    "resolvedMeaning": {
+      "original_message": "Try that once more please.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Try that once more please.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S21",
+    "goal": "After token failure",
+    "userTurns": [
+      "Explain stress",
+      "Please continue that explanation."
+    ],
+    "priorAssistantFixture": "Stress is force divided",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "partial_stream_failure",
+    "resolvedMeaning": {
+      "original_message": "Please continue that explanation.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Please continue that explanation.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S22",
+    "goal": "Expired JWT",
+    "userTurns": [
+      "Explain my lecture",
+      "Explain the next chapter."
+    ],
+    "priorAssistantFixture": "The first chapter introduces vectors.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "expired_jwt",
+    "resolvedMeaning": {
+      "original_message": "Explain the next chapter.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Explain the next chapter.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "task_request",
+      "task_family": "explain",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_general",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.95,
+      "reason": "simple_general_academic_question",
+      "signals": [
+        "isDefinition",
+        "isShortFactualQuestion"
+      ],
+      "mayEscalate": false,
+      "initialLane": "fast_general"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S23",
+    "goal": "Revoked session",
+    "userTurns": [
+      "Explain my lecture",
+      "Can we keep going?"
+    ],
+    "priorAssistantFixture": "The first chapter introduces vectors.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "refresh_rejected",
+    "resolvedMeaning": {
+      "original_message": "Can we keep going?",
+      "dialogue_act": "new_question",
+      "resolved_request": "Can we keep going?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S24",
+    "goal": "Chat switch",
+    "userTurns": [
+      "Explain beam bending",
+      "What is photosynthesis?"
+    ],
+    "priorAssistantFixture": "The beam deflects under load.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course_b_viewer_a",
+    "scenarioEventNotInjected": "switch_chat",
+    "resolvedMeaning": {
+      "original_message": "What is photosynthesis?",
+      "dialogue_act": "new_question",
+      "resolved_request": "What is photosynthesis?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "question",
+      "task_family": "unknown",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_general",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.95,
+      "reason": "simple_general_academic_question",
+      "signals": [
+        "isDefinition",
+        "isShortFactualQuestion"
+      ],
+      "mayEscalate": false,
+      "initialLane": "fast_general"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S25",
+    "goal": "Structured model failure",
+    "userTurns": [
+      "Explain angular momentum",
+      "Can you put it another way?"
+    ],
+    "priorAssistantFixture": "Angular momentum depends on position and momentum.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Can you put it another way?",
+      "dialogue_act": "new_question",
+      "resolved_request": "Can you put it another way?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S26",
+    "goal": "Unseen plan confirmation",
+    "userTurns": [
+      "I need a plan",
+      "Sounds sensible, let us run with that."
+    ],
+    "priorAssistantFixture": "I can make a study plan for your exam.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Sounds sensible, let us run with that.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Sounds sensible, let us run with that.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "study_plan",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup",
+        "isGeneration"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S27",
+    "goal": "Same acknowledgement no offer",
+    "userTurns": [
+      "Hello",
+      "Sounds sensible, let us run with that."
+    ],
+    "priorAssistantFixture": "Hello!",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "none",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Sounds sensible, let us run with that.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Sounds sensible, let us run with that.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S28",
+    "goal": "Plan revision",
+    "userTurns": [
+      "Make me a seven day study plan",
+      "Make it five days instead."
+    ],
+    "priorAssistantFixture": "Day 1 vectors, day 2 forces, then practice.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Make it five days instead.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Make it five days instead.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "study_plan",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup",
+        "isGeneration"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S29",
+    "goal": "Screw followup",
+    "userTurns": [
+      "Compare bolts and rivets",
+      "Same for screws."
+    ],
+    "priorAssistantFixture": "Bolts can be removed; rivets are permanent.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Same for screws.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Same for screws.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "compare",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S30",
+    "goal": "Choice correction",
+    "userTurns": [
+      "Which example?",
+      "Not that one, the second one."
+    ],
+    "priorAssistantFixture": "We can do the beam or the shaft.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Not that one, the second one.",
+      "dialogue_act": "reject_answer",
+      "resolved_request": "The previous answer was rejected. Re-resolve and answer the immediately previous answer; the student's correction is: Not that one, the second one.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": true,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "rejection",
+      "speech_act": "rejection",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "fast_grounded",
+      "processingPipeline": "relevance",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "conversation_continues_grounded_task",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "requestsProfessorSpecificContent"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_grounded"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S31",
+    "goal": "Delegation",
+    "userTurns": [
+      "Which topic should I revise?",
+      "You choose."
+    ],
+    "priorAssistantFixture": "Would you prefer statics or dynamics?",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "You choose.",
+      "dialogue_act": "new_question",
+      "resolved_request": "You choose.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "answer_to_assistant",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S32",
+    "goal": "Algebra followup",
+    "userTurns": [
+      "Why does x squared differentiate to 2x?",
+      "Why?"
+    ],
+    "priorAssistantFixture": "The exponent comes down and decreases by one.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Why?",
+      "dialogue_act": "ask_about_previous_step",
+      "resolved_request": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: Why?. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "brief",
+      "explanation_attempt": 1,
+      "conversation_intent": "follow_up_why",
+      "referent_type": "calculation_step",
+      "referent_text": "The exponent comes down and decreases by one.",
+      "relation": "continuation",
+      "speech_act": "question",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S33",
+    "goal": "Wrong assumption correction",
+    "userTurns": [
+      "Water boils at 50 C, right?",
+      "Oh, I meant at lower pressure."
+    ],
+    "priorAssistantFixture": "At normal pressure it boils near 100 C.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "none",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Oh, I meant at lower pressure.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Oh, I meant at lower pressure.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S34",
+    "goal": "Typo question",
+    "userTurns": [
+      "Explain force",
+      "cn u explane inertia real simple"
+    ],
+    "priorAssistantFixture": "Force changes motion.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "cn u explane inertia real simple",
+      "dialogue_act": "new_question",
+      "resolved_request": "cn u explane inertia real simple",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S35",
+    "goal": "Casual slang",
+    "userTurns": [
+      "Explain entropy",
+      "nah im still lost lol"
+    ],
+    "priorAssistantFixture": "Entropy describes the multiplicity of microscopic states.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "nah im still lost lol",
+      "dialogue_act": "new_question",
+      "resolved_request": "nah im still lost lol",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S36",
+    "goal": "German clarification",
+    "userTurns": [
+      "Was ist Drehmoment?",
+      "Ich verstehe das irgendwie noch nicht."
+    ],
+    "priorAssistantFixture": "Kraft mal Hebelarm.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Ich verstehe das irgendwie noch nicht.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Ich verstehe das irgendwie noch nicht.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S37",
+    "goal": "Translation",
+    "userTurns": [
+      "Explain friction",
+      "Auf Deutsch bitte."
+    ],
+    "priorAssistantFixture": "Friction opposes relative motion.",
+    "priorProvenanceFixture": "general",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Auf Deutsch bitte.",
+      "dialogue_act": "request_translation",
+      "resolved_request": "Restate the immediately preceding assistant answer in de, preserving its exact exercise, values, formulas, reasoning and conclusion.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "de",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "task_request",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "conversation_only"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S38",
+    "goal": "Web reverify",
+    "userTurns": [
+      "Find current internship openings",
+      "Is this still current?"
+    ],
+    "priorAssistantFixture": "Here are current openings from the web.",
+    "priorProvenanceFixture": "web",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Is this still current?",
+      "dialogue_act": "new_question",
+      "resolved_request": "Is this still current?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "web"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "web",
+      "executionLane": "web",
+      "processingPipeline": "web",
+      "complexity": "standard",
+      "confidence": 0.96,
+      "reason": "current_external_information_required",
+      "signals": [
+        "needsCurrentWeb",
+        "isFollowup"
+      ],
+      "mayEscalate": false,
+      "initialLane": "web"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S39",
+    "goal": "Topic after web",
+    "userTurns": [
+      "Find current internships",
+      "What is the Pythagorean theorem?"
+    ],
+    "priorAssistantFixture": "These openings were advertised today.",
+    "priorProvenanceFixture": "web",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "What is the Pythagorean theorem?",
+      "dialogue_act": "new_question",
+      "resolved_request": "What is the Pythagorean theorem?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "new_topic",
+      "speech_act": "question",
+      "task_family": "unknown",
+      "continues_previous_goal": false,
+      "confidence": 1.0,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_general",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.95,
+      "reason": "simple_general_academic_question",
+      "signals": [
+        "isDefinition",
+        "isShortFactualQuestion"
+      ],
+      "mayEscalate": false,
+      "initialLane": "fast_general"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S40",
+    "goal": "Visible formula",
+    "userTurns": [
+      "Explain page 7",
+      "Explain this formula."
+    ],
+    "priorAssistantFixture": "It contains a bending formula.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "viewer",
+    "scenarioEventNotInjected": "page_7_to_8",
+    "resolvedMeaning": {
+      "original_message": "Explain this formula.",
+      "dialogue_act": "ask_about_previous_step",
+      "resolved_request": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: Explain this formula.. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "brief",
+      "explanation_attempt": 1,
+      "conversation_intent": "follow_up_explanation",
+      "referent_type": "calculation_step",
+      "referent_text": "It contains a bending formula.",
+      "relation": "continuation",
+      "speech_act": "task_request",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "visible_page",
+    "accessReason": "visible_page_reference",
+    "executionPlan": {
+      "groundingMode": "visible_page",
+      "executionLane": "visible_page",
+      "processingPipeline": "visible_page",
+      "complexity": "standard",
+      "confidence": 1.0,
+      "reason": "resolved_visible_page_access",
+      "signals": [
+        "needsVisiblePage",
+        "isFollowup"
+      ],
+      "mayEscalate": false,
+      "initialLane": "visible_page"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S41",
+    "goal": "Viewer close",
+    "userTurns": [
+      "Explain this diagram",
+      "What does this formula mean?"
+    ],
+    "priorAssistantFixture": "The arrow is a force.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "viewer",
+    "scenarioEventNotInjected": "viewer_closed",
+    "resolvedMeaning": {
+      "original_message": "What does this formula mean?",
+      "dialogue_act": "ask_about_previous_step",
+      "resolved_request": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: What does this formula mean?. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "brief",
+      "explanation_attempt": 1,
+      "conversation_intent": "follow_up_explanation",
+      "referent_type": "calculation_step",
+      "referent_text": "The arrow is a force.",
+      "relation": "continuation",
+      "speech_act": "question",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 1.0,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "not called by production gate",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "visible_page",
+    "accessReason": "visible_page_reference",
+    "executionPlan": {
+      "groundingMode": "visible_page",
+      "executionLane": "visible_page",
+      "processingPipeline": "visible_page",
+      "complexity": "standard",
+      "confidence": 1.0,
+      "reason": "resolved_visible_page_access",
+      "signals": [
+        "needsVisiblePage",
+        "isFollowup"
+      ],
+      "mayEscalate": false,
+      "initialLane": "visible_page"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S42",
+    "goal": "Cheatsheet request",
+    "userTurns": [
+      "My exam is tomorrow",
+      "Create a cheatsheet using my selected PDF."
+    ],
+    "priorAssistantFixture": "A compact review might help.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Create a cheatsheet using my selected PDF.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Create a cheatsheet using my selected PDF.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup",
+        "isGeneration"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S43",
+    "goal": "Deep Learn confirmation",
+    "userTurns": [
+      "I need depth",
+      "Yes, walk me through it properly."
+    ],
+    "priorAssistantFixture": "I can create a Deep Learn lesson.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Yes, walk me through it properly.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Yes, walk me through it properly.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "deep_learn",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S44",
+    "goal": "Professor mock exam",
+    "userTurns": [
+      "Help me practice",
+      "Make a mock exam in my professor style."
+    ],
+    "priorAssistantFixture": "We can generate practice questions.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": null,
+    "resolvedMeaning": {
+      "original_message": "Make a mock exam in my professor style.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Make a mock exam in my professor style.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "fast_grounded",
+      "processingPipeline": "relevance",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "conversation_continues_grounded_task",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "isGeneration",
+        "requestsProfessorSpecificContent"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_grounded"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S45",
+    "goal": "Quiz malformed output",
+    "userTurns": [
+      "Make a quiz",
+      "Try again with three questions."
+    ],
+    "priorAssistantFixture": "The quiz could not be generated.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "malformed_quiz",
+    "resolvedMeaning": {
+      "original_message": "Try again with three questions.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Try again with three questions.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "quiz",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup",
+        "isGeneration"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S46",
+    "goal": "Missing embedding",
+    "userTurns": [
+      "Explain my selected script",
+      "According to my script, what is stiffness?"
+    ],
+    "priorAssistantFixture": "The script is selected.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "embedding_unavailable",
+    "resolvedMeaning": {
+      "original_message": "According to my script, what is stiffness?",
+      "dialogue_act": "new_question",
+      "resolved_request": "According to my script, what is stiffness?",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": true,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "course_retrieval"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "relevance",
+      "executionLane": "fast_grounded",
+      "processingPipeline": "relevance",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "conversation_continues_grounded_task",
+      "signals": [
+        "needsCourseEvidence",
+        "isFollowup",
+        "requestsProfessorSpecificContent"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_grounded"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S47",
+    "goal": "No relevant chunks",
+    "userTurns": [
+      "Read lecture.pdf only",
+      "Using this PDF only, explain quantum entanglement."
+    ],
+    "priorAssistantFixture": "The selected PDF is ready.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "zero_chunks",
+    "resolvedMeaning": {
+      "original_message": "Using this PDF only, explain quantum entanglement.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Using this PDF only, explain quantum entanglement.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S48",
+    "goal": "Rename document",
+    "userTurns": [
+      "Explain lecture.pdf",
+      "Show the definition again."
+    ],
+    "priorAssistantFixture": "The document defines strain.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "document_renamed",
+    "resolvedMeaning": {
+      "original_message": "Show the definition again.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Show the definition again.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "explain",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S49",
+    "goal": "Reload followup",
+    "userTurns": [
+      "Explain my lecture",
+      "Explain that difference more simply."
+    ],
+    "priorAssistantFixture": "The professor distinguishes static and kinetic friction.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "course",
+    "scenarioEventNotInjected": "reload",
+    "resolvedMeaning": {
+      "original_message": "Explain that difference more simply.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Explain that difference more simply.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "compare",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "course"
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isSimpleExplanation",
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  },
+  {
+    "id": "S50",
+    "goal": "Retry source changed",
+    "userTurns": [
+      "Use lecture.pdf only",
+      "Retry the same request."
+    ],
+    "priorAssistantFixture": "Retrieval temporarily failed.",
+    "priorProvenanceFixture": "grounded",
+    "uiFixture": "selected",
+    "scenarioEventNotInjected": "selection_changed_before_retry",
+    "resolvedMeaning": {
+      "original_message": "Retry the same request.",
+      "dialogue_act": "new_question",
+      "resolved_request": "Retry the same request.",
+      "active_question": null,
+      "previous_question": null,
+      "response_language": "en",
+      "requires_new_retrieval": false,
+      "invalidate_previous_answer": false,
+      "requested_depth": "normal",
+      "explanation_attempt": 1,
+      "conversation_intent": "new_question",
+      "referent_type": "unknown",
+      "referent_text": null,
+      "relation": "continuation",
+      "speech_act": "answer",
+      "task_family": "unknown",
+      "continues_previous_goal": true,
+      "confidence": 0.55,
+      "evidence_requirement": "reuse_prior_grounded"
+    },
+    "semanticModel": "injected TimeoutError; real fallback executed",
+    "sourceScope": "not executed: source router and stream preflight excluded",
+    "requestedRetrievalScope": {
+      "type": "documents",
+      "documentIds": [
+        "fixture-doc-a"
+      ]
+    },
+    "documentAccess": "relevance",
+    "accessReason": "relevance_default",
+    "executionPlan": {
+      "groundingMode": "general",
+      "executionLane": "fast_contextual",
+      "processingPipeline": "general",
+      "complexity": "fast",
+      "confidence": 0.92,
+      "reason": "sufficient_recent_conversation",
+      "signals": [
+        "isFollowup"
+      ],
+      "mayEscalate": true,
+      "initialLane": "fast_contextual"
+    },
+    "toolsAndRetrievalUsed": "not executed",
+    "terminalState": "not executed",
+    "visibleAnswerOrError": "not executed",
+    "evidenceLevel": "REAL UNIT EXECUTION: dialogue, evidence, document access, execution router; synthetic prior conversation; NOT E2E"
+  }
+]

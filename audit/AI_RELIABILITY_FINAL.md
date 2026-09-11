@@ -1,5 +1,7 @@
 # Minallo AI Reliability Final
 
+> Historical closure assessment. The subsequent [independent follow-up audit](AI_RELIABILITY_AUDIT.md) found and fixed two additional P1 failures and records incomplete evidence for the full 25-journey acceptance gate. Consult that report for the later assessment.
+
 ## Audited SHA
 
 `53a8106daa6b09b0c9bdd91ef4bc819369645e28` (current `origin/main`), plus one follow-up commit made

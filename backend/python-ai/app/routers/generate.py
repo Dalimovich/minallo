@@ -516,7 +516,7 @@ def generate_deep_learn_endpoint(payload: GenerateDeepLearnRequest) -> GenerateD
         promptTokens=out.get("promptTokens"),
         completionTokens=out.get("completionTokens"),
         reused=False,
-        lessonStatus="complete" if note_id else None,
+        lessonStatus=out.get("lessonStatus"),
     )
 
 

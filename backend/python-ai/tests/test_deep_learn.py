@@ -211,6 +211,63 @@ def test_generate_deep_learn_requires_topic():
     assert out["error"]
 
 
+def test_topic_coverage_accepts_cross_language_semantic_match():
+    # "screws" vs German "Schrauben" source text: no literal word overlap,
+    # but retrieval's own embedding similarity is strong — that must be
+    # enough on its own (screws/Schrauben/production incident).
+    buckets = {
+        name: [
+            {"text": "Schrauben uebertragen Vorspannkraft.", "similarity": 0.62},
+            {"text": "Schraubenverbindung: Nachgiebigkeit und Vorspannung.", "similarity": 0.55},
+        ]
+        for name in list(dl._EVIDENCE_BUCKETS)[:3]
+    }
+    assert dl._topic_coverage_ok("screws", buckets) is True
+
+
+def test_topic_coverage_rejects_weak_similarity_with_no_literal_match():
+    # Enough chunks to clear the recall floor, but all weakly relevant
+    # (barely above retrieval's loose 0.10 recall gate) and no literal term
+    # match either — this must NOT be treated as covered.
+    buckets = {
+        name: [
+            {"text": "Unrelated background paragraph about scheduling.", "similarity": 0.12},
+            {"text": "Another tangential mention with no real overlap.", "similarity": 0.15},
+        ]
+        for name in list(dl._EVIDENCE_BUCKETS)[:3]
+    }
+    assert dl._topic_coverage_ok("medieval French poetry", buckets) is False
+
+
+def test_generate_deep_learn_cross_language_topic_reaches_generation(monkeypatch):
+    # End-to-end: topic="screws" against only-German evidence with strong
+    # similarity must actually invoke the model and produce a lesson, not
+    # bail out at the coverage gate (the exact production incident shape).
+    monkeypatch.setattr(dl, "retrieve_learning_context", lambda **k: [
+        {"chunkId": "c1", "documentId": "d1", "pageStart": 12, "similarity": 0.58,
+         "text": "Schrauben uebertragen die Vorspannkraft in der Verbindung."},
+    ])
+    called = {"chat": 0}
+
+    def fake_chat_json(**kwargs):
+        called["chat"] += 1
+        return _FakeChatResult({
+            "title": "Screws",
+            "learningGoal": "Understand preload in screw connections.",
+            "coreExplanation": "Screws transmit preload force through the joint.",
+        })
+
+    monkeypatch.setattr(dl, "chat_json", fake_chat_json)
+    out = dl.generate_deep_learn(
+        user_id="u", course_id="c", topic="screws", document_ids=["d1"],
+        doc_names={"d1": "GdK.pdf"},
+    )
+    assert called["chat"] >= 1  # main generation pass (plus a fact-extraction pass)
+    assert out["structuredLesson"] is not None
+    assert out["lesson"]
+    assert out.get("error") is None
+
+
 def test_generate_deep_learn_drops_empty_check(monkeypatch):
     monkeypatch.setattr(dl, "retrieve_learning_context", lambda **k: [
         {"chunkId": "c1", "documentId": "d1", "pageStart": 1, "text": "x"},

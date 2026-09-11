@@ -483,6 +483,19 @@ async function _launchDeepLearn(targetCourseId: string, topic: string): Promise<
   }
 }
 
+// Cheatsheet has no "needs a topic first" requirement like Deep Learn, but it
+// gets the same overlay-aware launcher so "Open course files"/"Review
+// cheatsheets" stop dumping the student on the legacy Course Overview tab.
+async function _launchCheatsheet(targetCourseId: string): Promise<boolean> {
+  try {
+    const mod = await import('../chatbot-new/workspace-library.js');
+    if (typeof mod.openStudyToolWorkspace !== 'function') return false;
+    return await mod.openStudyToolWorkspace('cheatsheet', targetCourseId, {});
+  } catch {
+    return false;
+  }
+}
+
 // The feature panels mount asynchronously (see _mountFeaturePanel's retry
 // loop), so the generate button may not exist yet right after navigation.
 // Poll briefly for it, then click once.
@@ -522,6 +535,27 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const tab = AI_ACTION_TABS[action];
       if (!tab) return;
       const targetCourseId = btn.dataset.aiTargetCourseId || '';
+
+      if ((action === 'open_cheatsheet' || action === 'generate_cheatsheet') && btn.closest('.ncb-root') && targetCourseId) {
+        btn.disabled = true;
+        void _launchCheatsheet(targetCourseId).then((opened) => {
+          if (opened) {
+            if (action === 'generate_cheatsheet') _clickGenerateWhenReady('#csGenerate');
+            return;
+          }
+          btn.disabled = false;
+          // The overlay launcher is only wired up in the chatbot surface's
+          // workspace library; fall back to the ordinary tab navigation
+          // rather than leaving the click inert.
+          if (_runCourseTabAction(tab, targetCourseId)) {
+            const genSel = AI_ACTION_GENERATE_BTN[action];
+            if (genSel) _clickGenerateWhenReady(genSel);
+          } else if (typeof window.showToast === 'function') {
+            window.showToast('Open a course first', 'Go to Courses and open the course, then try again.');
+          }
+        });
+        return;
+      }
 
       if (action === 'start_deeplearn' && btn.closest('.ncb-root') && targetCourseId) {
         btn.disabled = true;

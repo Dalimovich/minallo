@@ -676,6 +676,8 @@ export interface DeepLearnResult {
   evidenceSummary?: Record<string, number>;
   warning?: string;
   error?: string;
+  lessonStatus?: string | null;
+  reused?: boolean;
 }
 
 export async function generateDeepLearn(

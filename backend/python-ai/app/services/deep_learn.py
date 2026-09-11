@@ -26,6 +26,10 @@ _BUCKET_TOP_K = 6
 _MIN_TOTAL_EVIDENCE = 3
 _MIN_BUCKETS_WITH_EVIDENCE = 2
 _MAX_CHUNK_CHARS = 1100
+# Retrieval's own float floor (_MIN_SIMILARITY in retrieval.py) is a loose 0.10
+# recall gate, not a relevance signal. This is the bar a chunk's embedding
+# similarity must clear to count as real coverage evidence on its own.
+_MIN_COVERAGE_SIMILARITY = 0.30
 
 _EVIDENCE_BUCKETS: dict[str, dict[str, Any]] = {
     "definitions": {
@@ -615,12 +619,19 @@ def _topic_coverage_ok(topic: str, buckets: dict[str, list[dict[str, Any]]]) -> 
     non_empty = sum(1 for v in buckets.values() if v)
     if total < _MIN_TOTAL_EVIDENCE or non_empty < _MIN_BUCKETS_WITH_EVIDENCE:
         return False
+    all_chunks = [c for chunks in buckets.values() for c in chunks]
+    # Embedding similarity is language-agnostic (a "screws" query legitimately
+    # matches German "Schrauben" source text), so a chunk clearing a real
+    # relevance bar is coverage evidence on its own — no literal match needed.
+    if any(float(c.get("similarity") or 0.0) >= _MIN_COVERAGE_SIMILARITY for c in all_chunks):
+        return True
+    # Fallback for same-language jargon where embedding similarity is modest
+    # but the exact term appears verbatim in the source text.
     topic_words = [w for w in re.findall(r"[A-Za-zÄÖÜäöüß0-9]{4,}", topic.lower()) if w]
     if not topic_words:
         return True
     combined = " ".join((c.get("text") or "").lower() for chunks in buckets.values() for c in chunks[:3])
-    hits = sum(1 for w in topic_words if w in combined)
-    return hits > 0
+    return any(w in combined for w in topic_words)
 
 
 def _format_evidence_by_bucket(
@@ -1450,6 +1461,8 @@ def generate_deep_learn(
             "warning": _citation_warning(effective_language),
             "groundedSources": [],
             "evidenceSummary": {k: len(v) for k, v in buckets.items()},
+            "error": "This topic could not be grounded in the selected course materials.",
+            "lessonStatus": "topic_not_covered",
         }
 
     merged = _merge_evidence(buckets)
@@ -1563,6 +1576,10 @@ def generate_deep_learn(
         "citationWarning": structured.get("citationWarning") or None,
         "evidenceSummary": {k: len(v) for k, v in buckets.items()},
         "factsExtracted": len(extracted_facts),
+        # A lesson was generated (structured content exists) but not saved:
+        # distinct from topic_not_covered/generation-failure, both of which
+        # return before reaching this point without a structuredLesson.
+        "lessonStatus": "complete" if (note_id or not save) else "persistence_failed",
         "model": res.model,
         "promptTokens": res.prompt_tokens,
         "completionTokens": res.completion_tokens,

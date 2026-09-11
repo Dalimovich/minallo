@@ -41,7 +41,7 @@ import { classifyAiError } from '../../services/ai-error-message.js';
 import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { aiMakePdfBlob } from '../ai-chat/ai-export.js';
-import { initWorkspaceLibrary } from './workspace-library.js';
+import { initWorkspaceLibrary, openStudyToolWorkspace } from './workspace-library.js';
 import {
   openAttachmentViewer,
   renderAttachmentCard,
@@ -4179,37 +4179,42 @@ function appendAskStreamMeta(bubble: HTMLElement, meta: Record<string, unknown>)
         card.remove();
       });
       card.querySelector<HTMLButtonElement>('.ncb-learning-recommendation__start')?.addEventListener('click', () => {
-        const launch = {
-          courseId: String(recommendation.courseId || ''),
+        const startBtn = card.querySelector<HTMLButtonElement>('.ncb-learning-recommendation__start')!;
+        const courseId = String(recommendation.courseId || '');
+        const documentIds = Array.isArray(recommendation.documentIds) ? recommendation.documentIds.map(String) : [];
+        const parameters: Record<string, unknown> = {
           topic: String(recommendation.topic || ''),
-          documentIds: Array.isArray(recommendation.documentIds) ? recommendation.documentIds.map(String) : [],
-          sourceChunkIds: Array.isArray(recommendation.sourceChunkIds) ? recommendation.sourceChunkIds.map(String) : [],
-          visualIds: Array.isArray(recommendation.visualIds) ? recommendation.visualIds.map(String) : [],
           lessonMode: String(recommendation.lessonMode || 'simple'),
           lessonLanguage: String(recommendation.lessonLanguage || 'same'),
           learningGoals: Array.isArray(recommendation.learningGoals) ? recommendation.learningGoals.map(String) : [],
+        };
+        const extraMountOptions: Record<string, unknown> = {
+          initialSourceChunkIds: Array.isArray(recommendation.sourceChunkIds) ? recommendation.sourceChunkIds.map(String) : [],
+          initialVisualIds: Array.isArray(recommendation.visualIds) ? recommendation.visualIds.map(String) : [],
           origin: 'ai_chat_recommendation',
           originConversationId: chatStore.getActive().id,
           originMessageId: bubble.closest<HTMLElement>('[data-message-id]')?.dataset.messageId,
           recommendationId: id,
-          existingLessonId: recommendation.existingLessonId ? String(recommendation.existingLessonId) : undefined,
+          initialExistingLessonId: recommendation.existingLessonId ? String(recommendation.existingLessonId) : undefined,
           autoStart: !recommendation.existingLessonId,
         };
-        const w = window as unknown as {
-          __minalloDeepLearnLaunch?: typeof launch;
-          activeCourseRef?: unknown;
-          openCourse?: (course: unknown) => void;
-          showCourseSection?: (course: unknown, section: string) => void;
-          showToast?: (title: string, message?: string) => void;
-        };
-        w.__minalloDeepLearnLaunch = launch;
-        if (w.activeCourseRef && typeof w.openCourse === 'function' && typeof w.showCourseSection === 'function') {
-          w.openCourse(w.activeCourseRef);
-          w.showCourseSection(w.activeCourseRef, 'deeplearn');
-          card.querySelector<HTMLButtonElement>('.ncb-learning-recommendation__start')!.disabled = true;
-        } else {
+        const w = window as unknown as { showToast?: (title: string, message?: string) => void };
+        if (!courseId) {
           w.showToast?.('Open the course first', 'Deep Learn needs the active course workspace.');
+          return;
         }
+        startBtn.disabled = true;
+        void openStudyToolWorkspace('deep_learn', courseId, parameters, documentIds, '', extraMountOptions)
+          .then((opened) => {
+            if (!opened) {
+              startBtn.disabled = false;
+              w.showToast?.("Couldn't open Deep Learn", 'Please try again.');
+            }
+          })
+          .catch(() => {
+            startBtn.disabled = false;
+            w.showToast?.("Couldn't open Deep Learn", 'Please try again.');
+          });
       });
       bubble.appendChild(card);
     }
