@@ -9,6 +9,33 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+# Only routing identifiers, bounded status values and counts belong in logs.
+# An allowlist prevents future debug payloads from exposing conversation text.
+_SCALAR_FIELDS = frozenset({
+    "conversationId", "taskFamily", "relation", "speechAct", "evidenceRequirement",
+    "executionLane", "sourceScope", "documentAccess", "selectedDocumentCount",
+    "failureStage", "errorCode", "recoveryAttempted", "terminalState", "terminalEvent",
+    "contextSectionHash", "activeDocumentId", "documentCount", "visiblePage",
+    "imageCount", "resolvedAssistantMode", "workspaceRequired", "visualKind",
+    "numericalValidation", "preDisplayVerification", "textFallbackAllowed",
+    "taskType", "resolvedTaskPage", "identityResolutionMethod", "visualIdentityBinding",
+    "allowCourseFallback", "activePdfFound", "activeDocumentIdPresent",
+    "pageTextStatus", "pageTextChars", "scopedJobId", "jobId", "coverageIntent",
+    "chunkCount", "exerciseVisibleOnPage", "exerciseVisibleOnVisiblePage",
+    "result", "repairAttempts", "success", "semanticMismatch",
+})
+_LIST_FIELDS = frozenset({"identityEvidencePages", "preferredPages", "imageRegions"})
+
+
+def _safe_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if key in _SCALAR_FIELDS and (value is None or isinstance(value, (str, int, float, bool))):
+            safe[key] = value
+        elif key in _LIST_FIELDS and isinstance(value, (list, tuple)):
+            safe[key] = [item for item in value if isinstance(item, (str, int, float, bool))][:100]
+    return safe
+
 
 @dataclass
 class PipelineObserver:
@@ -39,11 +66,7 @@ class PipelineObserver:
         duration_ms: float,
         metadata: dict[str, Any],
     ) -> None:
-        safe = {
-            key: value
-            for key, value in {**self.metadata, **metadata}.items()
-            if key not in {"imageBase64", "documentText", "openContext"}
-        }
+        safe = _safe_metadata({**self.metadata, **metadata})
         log.info(
             "ai_pipeline_stage request_id=%s stage=%s status=%s duration_ms=%.1f metadata=%s",
             self.request_id,

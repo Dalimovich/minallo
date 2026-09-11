@@ -3187,7 +3187,11 @@ async def _prepare_ask_stream_response(
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
-    observer.event("turn_resolved", **dialogue.to_api())
+    observer.event(
+        "turn_resolved", taskFamily=dialogue.task_family.value,
+        relation=dialogue.relation.value, speechAct=dialogue.speech_act.value,
+        evidenceRequirement=dialogue.evidence_requirement.value,
+    )
     if is_pure_social_turn(question, dialogue):
         social_decision = classify_source_scope(
             question=question,
