@@ -25,6 +25,6 @@ def test_truncated_full_document_is_rejected(monkeypatch, failed_call):
             return SimpleNamespace(data=[{'page_number': 1, 'cleaned_text': 'facts', 'index_revision': 'r1'}])
     monkeypatch.setattr(processing, 'get_supabase', lambda: SimpleNamespace(table=lambda name: Query()))
     with pytest.raises(ValueError, match="incomplete"):
-        result = processing.process_full_documents(user_id='u', course_id='c', question='Summarize every topic',
+        processing.process_full_documents(user_id='u', course_id='c', question='Summarize every topic',
             pipeline='summarization', documents={'d': {'active_index_revision': 'r1'}},
             manifests={'d': [CanonicalPage(page_number=1, source_page_id='p1', required_for_processing=True, status='ready')]})

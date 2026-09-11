@@ -16,14 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import replace
 
 import pytest
 
 from app.services.dialogue_state import (
     EvidenceRequirement,
-    SpeechAct,
-    TaskFamily,
     TurnRelation,
     resolve_dialogue,
     resolve_dialogue_semantically,
