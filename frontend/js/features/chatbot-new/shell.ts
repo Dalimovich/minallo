@@ -1975,60 +1975,13 @@ function showPdfSettingsCard(
   });
 }
 
-/** Lazily load cheatsheet.js + cheatsheet.css so the paper view is available. */
-function ensureCheatsheetScripts(): Promise<void> {
-  const w = window as unknown as {
-    openCheatsheetPaper?: unknown;
-    _csScriptsLoading?: Promise<void>;
-  };
-  if (typeof w.openCheatsheetPaper === 'function') return Promise.resolve();
-  if (w._csScriptsLoading) return w._csScriptsLoading;
-
-  // Cache-bust with the same assetVersion the loader uses — without it the
-  // browser keeps serving a stale cheatsheet.js/css from this unversioned URL.
-  const assetVersion = String(
-    (window as unknown as { MinalloConfig?: { assetVersion?: string } }).MinalloConfig
-      ?.assetVersion || '1'
-  );
-  const versioned = (src: string): string =>
-    src + (src.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(assetVersion);
-
-  const loadScript = (src: string): Promise<void> =>
-    new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src^="${src}"]`)) { resolve(); return; }
-      const s = document.createElement('script');
-      s.src = versioned(src);
-      s.onload = () => resolve();
-      s.onerror = () => {
-        // Remove the dead tag: the querySelector dedupe above would otherwise
-        // see it on the retry and resolve instantly without the library.
-        s.remove();
-        reject(new Error('Failed to load: ' + src));
-      };
-      document.head.appendChild(s);
-    });
-
-  const loadStyle = (href: string): void => {
-    if (document.querySelector(`link[href^="${href}"]`)) return;
-    const l = document.createElement('link');
-    l.rel = 'stylesheet';
-    l.href = versioned(href);
-    l.onerror = () => { l.remove(); };
-    document.head.appendChild(l);
-  };
-
-  w._csScriptsLoading = loadScript('/js/utils/db-helpers.js')
-    .then(() => {
-      loadStyle('/views/cheatsheet/cheatsheet.css');
-      return loadScript('/views/cheatsheet/cheatsheet.js');
-    })
-    .catch((err: unknown) => {
-      // Never cache a failed load — with the rejection cached, "Open PDF
-      // viewer" stayed dead for the whole session after one network blip.
-      w._csScriptsLoading = undefined;
-      throw err;
-    });
-  return w._csScriptsLoading;
+/** Load the cheatsheet-workspace module so the paper/PDF view is available.
+ *  This used to lazily inject the legacy views/cheatsheet/cheatsheet.js
+ *  script; cheatsheet-workspace.ts is a native chatbot-new module now, so a
+ *  plain dynamic import (cached by the module loader) replaces that CDN-style
+ *  script-tag dance entirely. */
+function loadCheatsheetPaperOpener(): Promise<(opts: Record<string, unknown>) => void> {
+  return import('./cheatsheet-workspace.js').then((mod) => mod.openCheatsheetPaper);
 }
 
 /** All of the student's courses across every semester (id + display name). */
@@ -2229,14 +2182,6 @@ async function handleIntentRoute(
   const padMap: Record<string, string> = { tight: '6mm', normal: '10mm', wide: '16mm' };
   const fontCsMap: Record<string, string> = { small: 'xs', medium: 'sm', large: 'md' };
 
-  /**
-   * Return the openCheatsheetPaper function (already loaded or no-op if missing).
-   * Wrapped in a thunk so it's re-read after ensureCheatsheetScripts() resolves.
-   */
-  const getOpenPaper = (): ((opts: Record<string, unknown>) => void) =>
-    (window as unknown as { openCheatsheetPaper?: (o: Record<string, unknown>) => void })
-      .openCheatsheetPaper ?? (() => { /* not yet loaded */ });
-
   /** Build CSS layout settings from the user's card choices. */
   const buildLayoutSettings = (s: PdfChatSettings, styleName = 'academic'): Record<string, unknown> => ({
     columns: s.columns,
@@ -2257,9 +2202,9 @@ async function handleIntentRoute(
     btn.addEventListener('click', () => {
       btn.disabled = true;
       btn.textContent = 'Loading…';
-      ensureCheatsheetScripts()
-        .then(() => { const o = getPaperOpts(); if (o) getOpenPaper()(o); })
-        .catch(() => { const o = getPaperOpts(); if (o) getOpenPaper()(o); })
+      loadCheatsheetPaperOpener()
+        .then((openPaper) => { const o = getPaperOpts(); if (o) openPaper(o); })
+        .catch(() => { /* module failed to load — nothing to open */ })
         .finally(() => { btn.disabled = false; btn.textContent = '⤓ Open PDF viewer'; });
     });
     host.appendChild(btn);
@@ -2292,7 +2237,7 @@ async function handleIntentRoute(
     try {
       const [modSum] = await Promise.all([
         import('../../services/ai-service.js'),
-        ensureCheatsheetScripts(),
+        import('./cheatsheet-workspace.js'),
       ]);
       throwIfAborted(controller.signal);
 
@@ -2404,7 +2349,7 @@ async function handleIntentRoute(
     try {
       const [mod] = await Promise.all([
         import('../../services/ai-service.js'),
-        ensureCheatsheetScripts(),
+        import('./cheatsheet-workspace.js'),
       ]);
       throwIfAborted(controller.signal);
 
@@ -2450,7 +2395,7 @@ async function handleIntentRoute(
     const savedNote = !!result.noteId;
     const text = paperOpts
       ? 'Your cheatsheet is ready. Click **⤓ Open PDF viewer** below to view and download it.' +
-        (savedNote ? ' It\'s also **saved to your notes** — you can find it in the Cheatsheet tab of this course.' : '')
+        (savedNote ? ' It\'s also **saved to your notes** — you can find it under Saved > Cheatsheets.' : '')
       : 'No cheatsheet content was returned. Please try again.';
     if (bubble) renderRichBubble(bubble, text);
 

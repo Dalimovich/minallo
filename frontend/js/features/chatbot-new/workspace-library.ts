@@ -609,10 +609,11 @@ export async function openStudyToolWorkspace(
   if (!body) return false;
   body.innerHTML = '<div class="ncb-library-status">Opening study tool&hellip;</div>';
   try {
-    // deep_learn and files are native chatbot-new modules (deep-learn-workspace.ts,
-    // course-files-workspace.ts) and don't need the legacy portal-feature bundle/CSS
-    // lazy-loader — there is no 'files' portal feature to begin with.
-    if (kind !== 'deep_learn' && kind !== 'files') await window._ssLoadPortalFeature?.(kind);
+    // deep_learn, cheatsheet and files are all native chatbot-new modules
+    // (deep-learn-workspace.ts / cheatsheet-workspace.ts / course-files-workspace.ts)
+    // and don't need the legacy portal-feature bundle/CSS lazy-loader — there
+    // is no 'files' portal feature to begin with.
+    if (kind !== 'deep_learn' && kind !== 'cheatsheet' && kind !== 'files') await window._ssLoadPortalFeature?.(kind);
     await hydrate(course);
     let resolvedDocumentIds = documentIds.slice();
     if (!resolvedDocumentIds.length && documentName) {
@@ -634,7 +635,10 @@ export async function openStudyToolWorkspace(
       const deepLearnModule = await import('./deep-learn-workspace.js');
       deepLearnModule.mountDeepLearnWorkspace(staging, course, options);
     }
-    else if (kind === 'cheatsheet' && typeof window.mountCheatsheet === 'function') (window.mountCheatsheet as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
+    else if (kind === 'cheatsheet') {
+      const cheatsheetModule = await import('./cheatsheet-workspace.js');
+      cheatsheetModule.mountCheatsheetWorkspace(staging, course, options);
+    }
     else if (kind === 'files') {
       const filesModule = await import('./course-files-workspace.js');
       filesModule.mountCourseFilesWorkspace(staging, course, options);
@@ -1963,18 +1967,17 @@ async function renderResolvedSaved(overlay: HTMLElement, item: SavedItem): Promi
   if (item.kind === 'cheatsheets' && item.note) {
     const note = await getNoteById(item.note.id);
     if (!note) throw new SavedOpenError('not_found', 'This saved cheatsheet is no longer available.');
-    await ensureArtifactRenderer('cheatsheet');
-    const openPaper = (window as unknown as { openCheatsheetPaper?: (options: Record<string, unknown>) => void }).openCheatsheetPaper;
-    if (typeof openPaper !== 'function') throw new SavedOpenError('renderer_unavailable', 'The cheatsheet viewer could not be loaded.');
-    // Only dismiss the workspace popup once the paper viewer is confirmed
-    // ready to take over. The previous code called `overlay.remove()` here —
-    // but `overlay` is the shared `.ncb-workspace-body` node from the static
-    // chatbot markup (see openOverlay), not a per-open wrapper, and it is
-    // never recreated. Removing it outright (rather than closing the overlay
-    // properly) permanently broke every later Saved/account/PDF open in the
-    // session, not just this cheatsheet.
+    const cheatsheetModule = await import('./cheatsheet-workspace.js');
+    // Only dismiss the workspace popup once the paper viewer module has
+    // loaded successfully and is ready to take over. The previous code
+    // called `overlay.remove()` here — but `overlay` is the shared
+    // `.ncb-workspace-body` node from the static chatbot markup (see
+    // openOverlay), not a per-open wrapper, and it is never recreated.
+    // Removing it outright (rather than closing the overlay properly)
+    // permanently broke every later Saved/account/PDF open in the session,
+    // not just this cheatsheet.
     closeOverlay(overlay.closest<HTMLElement>('[data-workspace-overlay]')!);
-    openPaper({
+    cheatsheetModule.openCheatsheetPaper({
       kind: 'cheatsheet', course: item.course.id, noteId: note.id,
       title: note.title || item.title, scope: note.title || item.title,
       markdown: note.content_markdown || '', meta: item.meta,
@@ -2059,14 +2062,12 @@ async function resolveCachedSavedItem(item: SavedItem): Promise<SavedItem> {
 }
 
 const rendererLoads = new Map<string, Promise<void>>();
-function ensureArtifactRenderer(kind: 'flashcards' | 'cheatsheet'): Promise<void> {
-  const loaded = kind === 'flashcards'
-    ? typeof (window as unknown as { mountFlashcardDeckPlayer?: unknown }).mountFlashcardDeckPlayer === 'function'
-    : typeof (window as unknown as { openCheatsheetPaper?: unknown }).openCheatsheetPaper === 'function';
+function ensureArtifactRenderer(kind: 'flashcards'): Promise<void> {
+  const loaded = typeof (window as unknown as { mountFlashcardDeckPlayer?: unknown }).mountFlashcardDeckPlayer === 'function';
   if (loaded) return Promise.resolve();
   const existing = rendererLoads.get(kind);
   if (existing) return existing;
-  const base = kind === 'flashcards' ? '/views/flashcards/flashcards' : '/views/cheatsheet/cheatsheet';
+  const base = '/views/flashcards/flashcards';
   const promise = new Promise<void>((resolve, reject) => {
     if (!document.querySelector(`link[data-artifact-renderer="${kind}"]`)) {
       const link = document.createElement('link');

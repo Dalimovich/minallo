@@ -23,9 +23,9 @@ test('openStudyToolWorkspace("files", ...) mounts mountCourseFilesWorkspace via 
   assert.match(workspaceLibrary, /kind === 'files'/);
   assert.match(workspaceLibrary, /await import\('\.\/course-files-workspace\.js'\)/);
   assert.match(workspaceLibrary, /filesModule\.mountCourseFilesWorkspace\(staging, course, options\)/);
-  // 'files' is a native chatbot-new module like 'deep_learn' — no legacy
-  // portal-feature bundle should be requested for it.
-  assert.match(workspaceLibrary, /kind !== 'deep_learn' && kind !== 'files'/);
+  // 'files' is a native chatbot-new module like 'deep_learn'/'cheatsheet' —
+  // no legacy portal-feature bundle should be requested for it.
+  assert.match(workspaceLibrary, /kind !== 'deep_learn' && kind !== 'cheatsheet' && kind !== 'files'/);
 });
 
 test('course-files-workspace.ts exports a synchronous mountCourseFilesWorkspace(target, course, options) that reuses renderCourseDetail (no duplicated upload/delete/reindex logic)', () => {

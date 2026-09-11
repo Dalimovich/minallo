@@ -577,17 +577,17 @@ test('saved cheatsheet opening never deletes the shared workspace body node', ()
     moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"),
     moduleSource.indexOf("if (item.note) {", moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"))
   );
-  // Renderer + openPaper existence must be confirmed BEFORE the overlay is
-  // dismissed, and dismissal must go through closeOverlay (which restores
-  // the persistent .ncb-workspace-body for reuse) rather than .remove()
-  // (which deleted that singleton node outright and broke every later
-  // "open" click in the session until a full page reload).
+  // The cheatsheet-workspace module (which exports openCheatsheetPaper) must
+  // be loaded BEFORE the overlay is dismissed, and dismissal must go through
+  // closeOverlay (which restores the persistent .ncb-workspace-body for
+  // reuse) rather than .remove() (which deleted that singleton node outright
+  // and broke every later "open" click in the session until a full page
+  // reload).
   const noteIdx = cheatsheetBranch.indexOf('if (!note)');
-  const rendererIdx = cheatsheetBranch.indexOf('ensureArtifactRenderer');
-  const openPaperCheckIdx = cheatsheetBranch.indexOf("typeof openPaper !== 'function'");
+  const moduleLoadIdx = cheatsheetBranch.indexOf("await import('./cheatsheet-workspace.js')");
   const closeIdx = cheatsheetBranch.indexOf('closeOverlay(overlay.closest');
-  const invokeIdx = cheatsheetBranch.indexOf('openPaper({');
-  assert.ok(noteIdx >= 0 && rendererIdx > noteIdx && openPaperCheckIdx > rendererIdx && closeIdx > openPaperCheckIdx && invokeIdx > closeIdx);
+  const invokeIdx = cheatsheetBranch.indexOf('cheatsheetModule.openCheatsheetPaper({');
+  assert.ok(noteIdx >= 0 && moduleLoadIdx > noteIdx && closeIdx > moduleLoadIdx && invokeIdx > closeIdx);
   // Only the explanatory comment may mention the old call; no live statement may.
   assert.doesNotMatch(cheatsheetBranch, /[^`]overlay\.remove\(\);/);
 });
