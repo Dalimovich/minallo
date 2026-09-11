@@ -1,6 +1,8 @@
 // Lightweight markdown → HTML renderer for AI message bubbles. Handles
 // headings, code blocks, math (KaTeX), lists, blockquotes, inline emphasis.
 
+import { resolveCourseById, resolveCourseByNameInText } from './course-resolver.js';
+
 // Map of common fence-language aliases to display names. Anything not in
 // here is shown capitalised. "Code" is the fallback when no lang is given.
 const LANG_DISPLAY: Record<string, string> = {
@@ -415,7 +417,14 @@ export const AI_ACTION_GENERATE_BTN: Record<string, string> = {
   start_deeplearn: '#dlGenerate',
 };
 
-function _runCourseTabAction(tab: string): boolean {
+// targetCourseId (resolved at render time from the message the AI actually
+// answered about — see renderActionButtons) always outranks whatever course
+// happens to be open right now. activeCourseRef is only consulted when the
+// action carries no explicit target, so an action generated while on one
+// course's page can never silently execute against a DIFFERENT course that
+// happens to be active later (e.g. a reloaded old message, or a user who
+// navigated elsewhere before clicking).
+function _runCourseTabAction(tab: string, targetCourseId?: string): boolean {
   const w = window as unknown as {
     activeCourseRef?: unknown;
     openCourse?: (course: unknown) => void;
@@ -423,8 +432,9 @@ function _runCourseTabAction(tab: string): boolean {
     showPortalSection?: (section: string) => void;
     setNavActive?: (id: string) => void;
   };
+  const target = (targetCourseId && resolveCourseById(targetCourseId)) || w.activeCourseRef;
   if (
-    !w.activeCourseRef ||
+    !target ||
     typeof w.openCourse !== 'function' ||
     typeof w.showCourseSection !== 'function'
   ) {
@@ -439,9 +449,38 @@ function _runCourseTabAction(tab: string): boolean {
   // course (file view + overview), then switch to the requested tab.
   if (typeof w.setNavActive === 'function') w.setNavActive('pcStudip');
   if (typeof w.showPortalSection === 'function') w.showPortalSection('studip');
-  w.openCourse(w.activeCourseRef);
-  w.showCourseSection(w.activeCourseRef, tab);
+  w.openCourse(target);
+  w.showCourseSection(target, tab);
   return true;
+}
+
+// Deep Learn needs more than a tab switch: it requires a topic before its
+// own Generate button will do anything, so blindly navigating-then-clicking
+// (like the other generate actions) just reproduces "Pick a topic". The
+// chatbot overlay already has a purpose-built launcher — the same popup and
+// production Deep Learn engine "Saved" reopen and the Deep Learn tab use —
+// that accepts a course + initial parameters directly. Reached via a
+// dynamic import: workspace-library.ts already imports this file (for
+// renderMarkdown), so a static import here would be circular.
+async function _launchDeepLearn(targetCourseId: string, topic: string): Promise<boolean> {
+  try {
+    const mod = await import('../chatbot-new/workspace-library.js');
+    if (typeof mod.openStudyToolWorkspace !== 'function') return false;
+    const params: Record<string, unknown> = { lessonMode: 'exam' };
+    if (topic) params.topic = topic;
+    const opened = await mod.openStudyToolWorkspace('deep_learn', targetCourseId, params);
+    // A topic means the model actually recommended a concrete starting
+    // point (see ACTIONS_CONTRACT) — the mount above already prefilled it,
+    // so start the session immediately instead of making the student press
+    // "Teach me this" themselves. No topic means the model didn't have one
+    // to recommend; leave the picker visible rather than guess.
+    if (opened && topic) {
+      document.querySelector<HTMLButtonElement>('#dlGenerate')?.click();
+    }
+    return opened;
+  } catch {
+    return false;
+  }
 }
 
 // The feature panels mount asynchronously (see _mountFeaturePanel's retry
@@ -482,10 +521,32 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
       const tab = AI_ACTION_TABS[action];
       if (!tab) return;
-      if (_runCourseTabAction(tab)) {
+      const targetCourseId = btn.dataset.aiTargetCourseId || '';
+
+      if (action === 'start_deeplearn' && btn.closest('.ncb-root') && targetCourseId) {
+        btn.disabled = true;
+        const topic = btn.dataset.aiTopic || '';
+        void _launchDeepLearn(targetCourseId, topic).then((opened) => {
+          if (opened) return;
+          btn.disabled = false;
+          // The overlay launcher is only wired up in the chatbot surface's
+          // workspace library; fall back to the ordinary tab navigation
+          // rather than leaving the click inert.
+          if (_runCourseTabAction(tab, targetCourseId) && typeof window.showToast === 'function') {
+            window.showToast('Pick a topic', 'Choose a topic, then press "Teach me this".');
+          } else if (typeof window.showToast === 'function') {
+            window.showToast("Couldn't open Deep Learn", 'Please try again.');
+          }
+        });
+        return;
+      }
+
+      if (_runCourseTabAction(tab, targetCourseId)) {
         // For generate actions, start the flow for the student instead of
-        // telling them to click the Generate button themselves.
-        const genSel = AI_ACTION_GENERATE_BTN[action];
+        // telling them to click the Generate button themselves. Deep Learn
+        // is excluded (handled above): it needs a topic first, so blindly
+        // clicking its Generate button just reproduces "Pick a topic".
+        const genSel = action === 'start_deeplearn' ? undefined : AI_ACTION_GENERATE_BTN[action];
         if (genSel) _clickGenerateWhenReady(genSel);
       } else if (typeof window.showToast === 'function') {
         window.showToast('Open a course first', 'Go to Courses and open the course, then try again.');
@@ -1461,22 +1522,49 @@ export function renderMarkdown(text: string): string {
   function renderActionButtons(raw: string): string {
     const escAttr = (s: string): string => esc(s).replace(/"/g, '&quot;');
     try {
-      const spec = JSON.parse(raw) as { actions?: Array<{ action?: string; label?: string }> };
+      const spec = JSON.parse(raw) as {
+        actions?: Array<{ action?: string; label?: string; topic?: string }>;
+      };
+      // The model names a course in prose (or names none) but never supplies
+      // an id — resolve the ONE course this whole message is actually about
+      // from the answer text itself, against the real account course
+      // registry (never trust an id from the model). window.activeCourseRef
+      // is only a fallback for the "already on this course's page" case.
+      const namedCourse = resolveCourseByNameInText(text);
+      const w = window as unknown as { activeCourseRef?: { id?: string } };
+      const fallbackCourseId = namedCourse ? '' : String(w.activeCourseRef?.id || '');
+      const targetCourseId = namedCourse ? String(namedCourse.id || '') : fallbackCourseId;
       const buttons = (Array.isArray(spec.actions) ? spec.actions : [])
-        .filter(
-          (a) =>
-            a && typeof a.action === 'string' &&
-            (AI_ACTION_TABS[a.action] || AI_ASK_ACTIONS[a.action]) &&
-            typeof a.label === 'string' && a.label.trim()
-        )
+        .filter((a) => {
+          if (!a || typeof a.action !== 'string' || typeof a.label !== 'string' || !a.label.trim()) {
+            return false;
+          }
+          if (AI_ASK_ACTIONS[a.action]) return true;
+          if (!AI_ACTION_TABS[a.action]) return false;
+          // A course-bound action button that can't resolve to a real,
+          // currently-open-or-named course must not render at all — a
+          // rendered AI action button must always be able to execute; it
+          // must never dead-end into "open a course first".
+          return !!targetCourseId;
+        })
         .slice(0, 3);
       if (!buttons.length) return '';
       const html = buttons
         .map((a) => {
           const label = String(a.label).trim().slice(0, 48);
+          const targetAttr = AI_ACTION_TABS[String(a.action)] && targetCourseId
+            ? ' data-ai-target-course-id="' + escAttr(targetCourseId) + '"'
+            : '';
+          // Only start_deeplearn honors a topic, and only a short, plausible
+          // one — never the whole course name, never something long enough
+          // to be a paragraph the model forgot to summarize.
+          const topic = String(a.topic || '').trim();
+          const topicAttr = a.action === 'start_deeplearn' && topic && topic.length <= 80
+            ? ' data-ai-topic="' + escAttr(topic) + '"'
+            : '';
           return (
             '<button type="button" class="md-ai-action" data-ai-action="' +
-            escAttr(String(a.action)) + '">' + esc(label) + '</button>'
+            escAttr(String(a.action)) + '"' + targetAttr + topicAttr + '>' + esc(label) + '</button>'
           );
         })
         .join('');

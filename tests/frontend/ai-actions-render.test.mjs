@@ -6,6 +6,13 @@ import assert from 'node:assert/strict';
 // `typeof document !== 'undefined'`, so a bare window stub is enough.
 globalThis.window = globalThis.window || {};
 
+// Tab-action buttons now only render when they can resolve to a real course
+// (see course-resolver.ts) — activeCourseRef is the "already on this
+// course's page" fallback most of these pre-existing tests rely on; tests
+// specifically about course targeting manage window.SEMS/activeCourseRef
+// themselves.
+globalThis.window.activeCourseRef = { id: 'active-course', name: 'Active Course' };
+
 const { renderMarkdown, AI_ACTION_TABS, AI_ASK_ACTIONS, AI_ACTION_GENERATE_BTN } = await import(
   '../../frontend/js/features/ai-chat/ai-markdown.ts'
 );
@@ -160,6 +167,79 @@ test('HTML in labels is escaped (no injection)', () => {
 test('a missing or empty label drops the button', () => {
   const html = renderActions({ actions: [{ action: 'open_flashcards' }, { action: 'open_files', label: '  ' }] });
   assert.ok(!html.includes('<button'));
+});
+
+test('a course named in the answer text resolves as the explicit target, outranking activeCourseRef', () => {
+  const priorSems = globalThis.window.SEMS;
+  globalThis.window.SEMS = {
+    s1: {
+      courses: [
+        { id: 'active-course', name: 'Active Course' },
+        { id: 'gdk', name: 'Grundlagen des Konstruierens' },
+      ],
+    },
+  };
+  try {
+    const html = renderMarkdown(
+      'Here is your plan for Grundlagen des Konstruierens.\n\n' +
+      '```minallo-actions\n' +
+      JSON.stringify({ actions: [{ action: 'open_files', label: 'Open course files' }] }) +
+      '\n```'
+    );
+    assert.ok(html.includes('data-ai-action="open_files"'));
+    assert.ok(html.includes('data-ai-target-course-id="gdk"'));
+    assert.ok(!html.includes('data-ai-target-course-id="active-course"'));
+  } finally {
+    globalThis.window.SEMS = priorSems;
+  }
+});
+
+test('no resolvable course at all hides tab-action buttons; ask actions still render', () => {
+  const priorActive = globalThis.window.activeCourseRef;
+  const priorSems = globalThis.window.SEMS;
+  globalThis.window.activeCourseRef = null;
+  globalThis.window.SEMS = undefined;
+  try {
+    const html = renderActions({
+      actions: [
+        { action: 'open_files', label: 'Open course files' },
+        { action: 'create_study_plan', label: 'Create a study plan' },
+      ],
+    });
+    assert.ok(!html.includes('data-ai-action="open_files"'), 'tab action must not render with no resolvable course');
+    assert.ok(html.includes('data-ai-action="create_study_plan"'), 'ask actions never depend on a course target');
+  } finally {
+    globalThis.window.activeCourseRef = priorActive;
+    globalThis.window.SEMS = priorSems;
+  }
+});
+
+test('start_deeplearn carries an optional topic through to a data attribute, capped and only for start_deeplearn', () => {
+  const withTopic = renderActions({
+    actions: [{ action: 'start_deeplearn', label: 'Start Deep Learn session', topic: 'Passungen' }],
+  });
+  assert.ok(withTopic.includes('data-ai-topic="Passungen"'));
+
+  const noTopic = renderActions({
+    actions: [{ action: 'start_deeplearn', label: 'Start Deep Learn session' }],
+  });
+  assert.ok(!noTopic.includes('data-ai-topic'));
+
+  const topicOnWrongAction = renderActions({
+    actions: [{ action: 'open_files', label: 'Open course files', topic: 'Passungen' }],
+  });
+  assert.ok(!topicOnWrongAction.includes('data-ai-topic'));
+
+  const tooLong = renderActions({
+    actions: [{ action: 'start_deeplearn', label: 'Start Deep Learn session', topic: 'x'.repeat(200) }],
+  });
+  assert.ok(!tooLong.includes('data-ai-topic'));
+});
+
+test('a tab action falls back to activeCourseRef when no course is named in the text', () => {
+  const html = renderActions({ actions: [{ action: 'open_files', label: 'Open course files' }] });
+  assert.ok(html.includes('data-ai-action="open_files"'));
+  assert.ok(html.includes('data-ai-target-course-id="active-course"'));
 });
 
 test('every nav action maps to one of the six real course tabs', () => {

@@ -677,6 +677,14 @@ Rules:
   generate_flashcards, generate_cheatsheet, generate_examforge_exam,
   start_deeplearn, create_study_plan, review_weak_topics.
 - At most 3 actions. Labels ≤ 40 chars, in the student's language.
+- start_deeplearn may include an OPTIONAL "topic" field naming ONE concrete,
+  narrow topic to start the session on — e.g. the first topic you actually
+  recommended in your answer, or the one weak/priority topic the student
+  named. Never the whole course name, never a vague phrase ("the basics").
+  Omit "topic" entirely when you did not actually recommend a specific
+  starting topic — the student picks one themselves in that case, and
+  guessing one would start the wrong lesson:
+  {"action":"start_deeplearn","label":"Start Deep Learn session","topic":"Passungen"}
 - The block must be the LAST thing in the answer, after the prose.
 - Never emit the block for pure content questions that need no follow-up.
 - A course/account snapshot being available in this prompt does not make
