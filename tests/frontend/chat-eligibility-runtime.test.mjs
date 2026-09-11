@@ -9,7 +9,7 @@ function runtime(overrides = {}) {
     sourceLibrary: { items: [] }, getActivePdfContext: () => null,
     isPdfViewerVisible: () => false, listCourses: () => [],
     resolveRequestCourseId: () => 'course-a', ...overrides,
-  }, ['ragEligibility']);
+  }, ['ragEligibility', 'clipboardAttachmentText']);
 }
 
 test('unavailable selected source cannot resolve to the generic eligibility path', () => {
