@@ -1446,7 +1446,14 @@ async def ask_stream_endpoint(
         previous_question=previous_user_question,
         resolved_turn=turn_resolution,
         has_course_context=bool(payload.courseId),
-        has_specific_file=bool(payload.documentIds or payload.activeDocumentId),
+        # Mirrors the "Viewer availability is deliberately excluded: it is
+        # not a selection" rule above — a merely-open activeDocumentId does
+        # not count; only an explicit multi-select or courseFileScope
+        # narrowed to specific_files does.
+        has_specific_file=bool(
+            payload.documentIds
+            or (payload.courseFileScope or "").casefold() == "specific_files"
+        ),
     )
     routing_ms = (time.perf_counter() - routing_started) * 1000
     for document_id in payload.documentIds or []:
