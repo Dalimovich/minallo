@@ -2853,9 +2853,20 @@ async def ask_stream_endpoint(
                 retry_as_fast_contextual = (
                     not persisted_answer
                     and payload.sourceMode == "auto"
-                    and turn_resolution.evidence_requirement in {
-                        EvidenceRequirement.CONVERSATION_ONLY, EvidenceRequirement.GENERAL_KNOWLEDGE,
-                    }
+                    and (
+                        turn_resolution.evidence_requirement in {
+                            EvidenceRequirement.CONVERSATION_ONLY, EvidenceRequirement.GENERAL_KNOWLEDGE,
+                        }
+                        # A brand-new topic with no explicit course signal
+                        # defaults evidence_requirement to course_retrieval
+                        # purely so retrieval can run and the post-retrieval
+                        # relevance gate can decide (see dialogue_state.py's
+                        # documented KNOWN GAP) — it is not an explicit
+                        # grounded request. needsCourseEvidence is the
+                        # signal that actually distinguishes "the user
+                        # named a source" from this conservative default.
+                        or not _task_profile.needsCourseEvidence
+                    )
                     and execution_plan.executionLane in {
                         ExecutionLane.STANDARD_RAG, ExecutionLane.FAST_GROUNDED,
                     }
