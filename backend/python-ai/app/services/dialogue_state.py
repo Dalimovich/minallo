@@ -535,6 +535,48 @@ def _active_questions(message: str, turns: list[dict[str, str]]) -> tuple[str | 
     return active, previous
 
 
+def _label_confirmed_by_last_turn_pair(
+    label: str | None, last_user: str | None, last_assistant: str | None,
+) -> bool:
+    """Does the immediately preceding user/assistant turn pair actually
+    concern `label`, so a correction/rejection may still safely name it?
+
+    Naming the label is safe when the STUDENT's own most recent message
+    named it (test_assistants_wrong_label_never_overrides_users_active_
+    question: the assistant answered the wrong exercise, but the user's own
+    immediately preceding turn still established the real one — user labels
+    always outrank the assistant's), or when the assistant's reply itself
+    carries the same label. It is unsafe when neither the immediately
+    preceding user turn nor the immediately preceding assistant turn
+    mentions any exercise label at all — that means the active label is
+    left over from further back in history and the conversation has since
+    moved to an unlabeled topic (e.g. a plain conceptual question) that the
+    correction is actually objecting to.
+    """
+    if label is None:
+        return True
+    if last_user and label in _labels(last_user):
+        return True
+    if last_assistant and label in _labels(last_assistant):
+        return True
+    return False
+
+
+def _stale_active_label(active: str | None, text: str, last_user: str | None,
+                        last_assistant: str | None) -> bool:
+    """Should a correction/rejection avoid naming `active` in its resolved
+    request? Only when it was NOT named by the student's current message
+    itself (that always wins outright — see
+    test_explicit_corrected_question_number_outranks_old_reference) and the
+    immediately preceding turn pair gives no evidence it's still what's
+    being discussed (see _label_confirmed_by_last_turn_pair)."""
+    if active is None:
+        return False
+    if active in _labels(text):
+        return False
+    return not _label_confirmed_by_last_turn_pair(active, last_user, last_assistant)
+
+
 def _explanation_attempt(turns: list[dict[str, str]]) -> int:
     attempts = 0
     for turn in reversed(turns[-8:]):
@@ -587,17 +629,21 @@ def resolve_dialogue(
     elif _REJECTION_RE.search(text):
         act = DialogueAct.REJECT_ANSWER
         invalidate = True
+        if _stale_active_label(active, text, last_user, last_assistant):
+            active = None
         resolved = (
             f"The previous answer was rejected. Re-resolve and answer "
-            f"{('exercise ' + active) if active else 'the exact active question'}; "
+            f"{('exercise ' + active) if active else 'the immediately previous answer'}; "
             f"the student's correction is: {text}"
         )
     elif _CORRECTION_RE.match(text):
         act = DialogueAct.CORRECT_ASSISTANT
         invalidate = True
+        if _stale_active_label(active, text, last_user, last_assistant):
+            active = None
         resolved = (
             f"Correct the immediately previous answer about "
-            f"{('exercise ' + active) if active else 'the active question'} using "
+            f"{('exercise ' + active) if active else 'the immediately previous answer'} using "
             f"fresh exact evidence. Student correction: {text}"
         )
     elif continuation:
@@ -831,13 +877,25 @@ def needs_semantic_resolution(message: str, resolution: DialogueResolution,
         r"where\s+(?:is|are|was)|how\s+(?:many|much)|does\s+|do\s+you\s+know)\b",
         message or "", re.I,
     ))
+    # A message replying to an assistant turn that explicitly offered a
+    # concrete task ("would you like me to build a study plan?") must not be
+    # dropped just because it's a longer, pronoun-free confirmation
+    # ("Absolutely, please proceed exactly as you described...") — the
+    # length/pronoun gate below exists to bound cost on ambiguous short
+    # replies, not to skip semantic resolution when there is a known pending
+    # task to confirm into.
+    has_pending_task = _infer_pending_assistant_task(previous_turns or []) is not TaskFamily.UNKNOWN
     return bool(
         previous_turns
         and (not standalone or referential)
         and resolution.dialogue_act is DialogueAct.NEW_QUESTION
         # Knowing WHAT task was requested does not resolve WHAT it refers to.
         and (resolution.task_family is TaskFamily.UNKNOWN or referential)
-        and (len((message or "").split()) <= 12 or referential)
+        and (
+            has_pending_task
+            or referential
+            or len((message or "").split()) <= 12
+        )
     )
 
 

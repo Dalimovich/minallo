@@ -79,6 +79,28 @@ def test_assistants_wrong_label_never_overrides_users_active_question():
     assert "exercise 13.6" in result.resolved_request
 
 
+def test_correction_after_unrelated_turn_does_not_retarget_stale_exercise():
+    # Student solves Aufgabe 3.2, then asks an unrelated conceptual question,
+    # gets an answer, then rejects THAT answer ("No, that's not right.").
+    # The correction must attach to the entropy answer being objected to,
+    # never silently reach back to the stale "3.2" label from two turns ago
+    # (neither the immediately preceding user nor assistant turn mentions it).
+    result = resolve_dialogue(
+        "No, that's not right.",
+        previous_turns=turns(
+            ("user", "Solve Aufgabe 3.2 step by step."),
+            ("assistant", "Aufgabe 3.2 gives x = 4."),
+            ("user", "What is entropy?"),
+            ("assistant", "Entropy is a measure of disorder in a system."),
+        ),
+        response_language="en",
+    )
+    assert result.dialogue_act == DialogueAct.CORRECT_ASSISTANT
+    assert result.active_question is None
+    assert "immediately previous answer" in result.resolved_request
+    assert "3.2" not in result.resolved_request
+
+
 def test_bare_number_continues_same_workflow():
     result = resolve_dialogue(
         "now 12.2",
@@ -239,6 +261,26 @@ def test_ambiguous_reply_families_request_semantic_resolution(message: str) -> N
 
     turns = [
         {"role": "assistant", "text": "Would you like statics or dynamics?"},
+    ]
+    resolution = resolve_dialogue(message, previous_turns=turns)
+    assert needs_semantic_resolution(message, resolution, turns)
+
+
+def test_long_unpronouned_confirmation_of_pending_task_requests_semantic_resolution() -> None:
+    # 13 words, no demonstrative pronoun — fails both of
+    # needs_semantic_resolution's existing gates (<=12 words OR a pronoun
+    # regex) — but the assistant just offered a concrete task (a study plan),
+    # so the confirmation must still be routed to the semantic resolver
+    # instead of being silently dropped.
+    from app.services.dialogue_state import needs_semantic_resolution, resolve_dialogue
+
+    message = (
+        "Absolutely, please proceed exactly as you described and get "
+        "everything started right now"
+    )
+    assert len(message.split()) > 12
+    turns = [
+        {"role": "assistant", "text": "Would you like me to build a study plan for you?"},
     ]
     resolution = resolve_dialogue(message, previous_turns=turns)
     assert needs_semantic_resolution(message, resolution, turns)

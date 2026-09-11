@@ -188,7 +188,8 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
                           source_mode: str | None, has_previous_answer: bool,
                           previous_question: str | None = None,
                           resolved_turn: Any | None = None,
-                          has_course_context: bool = False) -> TaskProfile:
+                          has_course_context: bool = False,
+                          has_specific_file: bool = False) -> TaskProfile:
     q = " ".join((question or "").split())
     continues = bool(getattr(resolved_turn, "continues_previous_goal", False))
     family = str(getattr(getattr(resolved_turn, "task_family", None), "value", ""))
@@ -207,6 +208,14 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
     course = bool(
         _COURSE_RE.search(q)
         or (source_mode or "").casefold() == "course_files"
+        # An explicitly selected/active document (document_ids or
+        # active_document_id) is the strongest possible evidence signal —
+        # source_router.classify_source_scope's own has_specific_file rule
+        # (source_router.py ~line 317) already treats it as outranking
+        # everything except a pasted URL. source_mode staying "auto" (the UI
+        # default) must never let that selection be silently skipped just
+        # because the question itself has no possessive/course wording.
+        or has_specific_file
         # Only a follow-up's OWN resolved evidence requirement counts here —
         # resolve_evidence_requirement defaults a brand-new, self-contained
         # question to course_retrieval too (so retrieval still runs and the
@@ -261,11 +270,13 @@ def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAc
                            has_previous_answer: bool = False,
                            previous_question: str | None = None,
                            resolved_turn: Any | None = None,
-                           has_course_context: bool = False) -> tuple[TaskProfile, ExecutionPlan]:
+                           has_course_context: bool = False,
+                           has_specific_file: bool = False) -> tuple[TaskProfile, ExecutionPlan]:
     profile = classify_task_profile(
         question=question, resolved_access=resolved_access, source_mode=source_mode,
         has_previous_answer=has_previous_answer, previous_question=previous_question,
         resolved_turn=resolved_turn, has_course_context=has_course_context,
+        has_specific_file=has_specific_file,
     )
     signals = tuple(key for key, value in asdict(profile).items()
                     if value is True and key != "estimatedComplexity")

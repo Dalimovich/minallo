@@ -1446,6 +1446,7 @@ async def ask_stream_endpoint(
         previous_question=previous_user_question,
         resolved_turn=turn_resolution,
         has_course_context=bool(payload.courseId),
+        has_specific_file=bool(payload.documentIds or payload.activeDocumentId),
     )
     routing_ms = (time.perf_counter() - routing_started) * 1000
     for document_id in payload.documentIds or []:

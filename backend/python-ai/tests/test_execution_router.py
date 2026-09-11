@@ -682,3 +682,27 @@ def test_mixed_language_phrasing_routes_sanely(question) -> None:
     # grounding when the question itself asks for course/location evidence.
     if "lecture" in question or "wo " in question:
         assert plan.executionLane in (ExecutionLane.STANDARD_RAG, ExecutionLane.FAST_GROUNDED), question
+
+
+# ── Explicit document selection must never be silently dropped ─────────────
+# A student who explicitly selects a course file (document_ids or an
+# active_document_id) has given the strongest possible evidence signal —
+# source_router.classify_source_scope's own has_specific_file rule already
+# treats this as outranking everything except a pasted URL. Plain
+# source_mode="auto" (the UI default) must not let a short, definition-shaped
+# question skip that selection by routing into a lane that never consults it.
+
+@pytest.mark.parametrize(("document_ids", "active_document_id"), [
+    (["11111111-1111-1111-1111-111111111111"], None),
+    ([], "22222222-2222-2222-2222-222222222222"),
+])
+def test_explicit_document_selection_is_never_silently_dropped(document_ids, active_document_id) -> None:
+    has_specific_file = bool(document_ids or active_document_id)
+    _, plan = resolve_execution_plan(
+        question="What is entropy?",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance",
+        source_mode="auto",
+        has_specific_file=has_specific_file,
+    )
+    assert plan.executionLane not in (ExecutionLane.FAST_GENERAL, ExecutionLane.FAST_CONTEXTUAL)
