@@ -484,13 +484,29 @@ async function _launchDeepLearn(targetCourseId: string, topic: string): Promise<
 }
 
 // Cheatsheet has no "needs a topic first" requirement like Deep Learn, but it
-// gets the same overlay-aware launcher so "Open course files"/"Review
-// cheatsheets" stop dumping the student on the legacy Course Overview tab.
+// gets the same overlay-aware launcher so "Review cheatsheets" stops dumping
+// the student on the legacy Course Overview tab.
 async function _launchCheatsheet(targetCourseId: string): Promise<boolean> {
   try {
     const mod = await import('../chatbot-new/workspace-library.js');
     if (typeof mod.openStudyToolWorkspace !== 'function') return false;
     return await mod.openStudyToolWorkspace('cheatsheet', targetCourseId, {});
+  } catch {
+    return false;
+  }
+}
+
+// "Open course files" prefers the popup-native Course Files workspace
+// (course-files-workspace.ts) so the student stays inside the chatbot flow
+// instead of being dropped on the legacy Course Overview Files tab. That tab
+// still exists and still works (it's core PDF-viewer navigation, not just a
+// feature tab) — _runCourseTabAction below remains the fallback when the
+// overlay launcher is unavailable (e.g. outside the chatbot surface).
+async function _launchCourseFilesWorkspace(targetCourseId: string): Promise<boolean> {
+  try {
+    const mod = await import('../chatbot-new/workspace-library.js');
+    if (typeof mod.openStudyToolWorkspace !== 'function') return false;
+    return await mod.openStudyToolWorkspace('files', targetCourseId, {});
   } catch {
     return false;
   }
@@ -551,6 +567,22 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             const genSel = AI_ACTION_GENERATE_BTN[action];
             if (genSel) _clickGenerateWhenReady(genSel);
           } else if (typeof window.showToast === 'function') {
+            window.showToast('Open a course first', 'Go to Courses and open the course, then try again.');
+          }
+        });
+        return;
+      }
+
+      if (action === 'open_files' && btn.closest('.ncb-root') && targetCourseId) {
+        btn.disabled = true;
+        void _launchCourseFilesWorkspace(targetCourseId).then((opened) => {
+          if (opened) return;
+          btn.disabled = false;
+          // The overlay launcher is only wired up in the chatbot surface's
+          // workspace library; fall back to the ordinary tab navigation
+          // (the legacy Course Overview Files tab) rather than leaving the
+          // click inert.
+          if (!_runCourseTabAction(tab, targetCourseId) && typeof window.showToast === 'function') {
             window.showToast('Open a course first', 'Go to Courses and open the course, then try again.');
           }
         });

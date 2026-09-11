@@ -589,7 +589,7 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   if (libraryState.activeTab !== 'saved') void renderSaved(savedPanel, root);
 }
 
-export type StudyWorkspaceKind = 'examforge' | 'flashcards' | 'deep_learn' | 'cheatsheet';
+export type StudyWorkspaceKind = 'examforge' | 'flashcards' | 'deep_learn' | 'cheatsheet' | 'files';
 
 /** Open the canonical course tool inside the chatbot overlay. Typed commands,
  * quick actions and Saved artifacts all converge on these production mounts. */
@@ -604,14 +604,15 @@ export async function openStudyToolWorkspace(
   const root = activeWorkspaceRoot;
   const course = courses().find((candidate) => candidate.id === courseId);
   if (!root || !course) return false;
-  const title = kind === 'examforge' ? 'ExamForge Quiz' : kind === 'flashcards' ? 'Flashcards' : kind === 'cheatsheet' ? 'Cheatsheet' : 'Deep Learn';
+  const title = kind === 'examforge' ? 'ExamForge Quiz' : kind === 'flashcards' ? 'Flashcards' : kind === 'cheatsheet' ? 'Cheatsheet' : kind === 'files' ? 'Course Files' : 'Deep Learn';
   const body = openOverlay(root, title);
   if (!body) return false;
   body.innerHTML = '<div class="ncb-library-status">Opening study tool&hellip;</div>';
   try {
-    // deep_learn is a native chatbot-new module (deep-learn-workspace.ts) and
-    // no longer needs the legacy portal-feature bundle/CSS lazy-loader.
-    if (kind !== 'deep_learn') await window._ssLoadPortalFeature?.(kind);
+    // deep_learn and files are native chatbot-new modules (deep-learn-workspace.ts,
+    // course-files-workspace.ts) and don't need the legacy portal-feature bundle/CSS
+    // lazy-loader — there is no 'files' portal feature to begin with.
+    if (kind !== 'deep_learn' && kind !== 'files') await window._ssLoadPortalFeature?.(kind);
     await hydrate(course);
     let resolvedDocumentIds = documentIds.slice();
     if (!resolvedDocumentIds.length && documentName) {
@@ -634,6 +635,10 @@ export async function openStudyToolWorkspace(
       deepLearnModule.mountDeepLearnWorkspace(staging, course, options);
     }
     else if (kind === 'cheatsheet' && typeof window.mountCheatsheet === 'function') (window.mountCheatsheet as unknown as (target: HTMLElement, course: LibraryCourse, options: Record<string, unknown>) => void)(staging, course, options);
+    else if (kind === 'files') {
+      const filesModule = await import('./course-files-workspace.js');
+      filesModule.mountCourseFilesWorkspace(staging, course, options);
+    }
     else throw new Error('This study tool viewer is unavailable.');
     if (!staging.firstElementChild) throw new Error('study_tool_mount_returned_empty');
     body.replaceChildren(...Array.from(staging.childNodes));
@@ -885,7 +890,13 @@ function bindSubjectAdd(panel: HTMLElement): void {
   });
 }
 
-async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Promise<void> {
+// Exported so course-files-workspace.ts (the "Files" study-tool popup opened
+// via openStudyToolWorkspace('files', ...)) can reuse this same engine —
+// hydration, caching, upload/delete/reindex wiring, PDF-open with source
+// selection — instead of duplicating it. This is the identical function the
+// library sidebar's "Courses" tab uses; the popup is just a second entry
+// point into it.
+export async function renderCourseDetail(panel: HTMLElement, course: LibraryCourse): Promise<void> {
   const state = studyLibraryState();
   const previousId = panel.dataset.activeCourseId;
   if (previousId && previousId !== course.id) {
