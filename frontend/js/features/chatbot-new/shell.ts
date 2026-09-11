@@ -1494,7 +1494,10 @@ async function streamAiReply(
       }
       saveChatStore();
     }
-    if (options.resumeExistingRequest && assistantMessage.requestSnapshot?.activeDocumentId) {
+    const savedGrounding = assistantMessage.requestSnapshot;
+    const requiresOriginalPage = savedGrounding?.groundingRequest?.documentAccess?.requested === 'visible_page'
+      || savedGrounding?.groundingResolution?.documentAccess === 'visible_page';
+    if (options.resumeExistingRequest && requiresOriginalPage && savedGrounding?.activeDocumentId) {
       const active = initialRag?.activePdfContext;
       if (!active || active.documentId !== assistantMessage.requestSnapshot.activeDocumentId) {
         throw new AskStreamError({
