@@ -2262,7 +2262,7 @@ async function handleIntentRoute(
     pendingExpired: pendingNotes ? Date.now() - pendingNotes.createdAt >= NOTES_PENDING_TTL_MS : null,
   });
   if (pendingNotes && Date.now() - pendingNotes.createdAt < NOTES_PENDING_TTL_MS) {
-    const pendingFiles = getCourseNotesFiles(pendingNotes.courseId);
+    const pendingFiles = await getCourseNotesFiles(pendingNotes.courseId);
     const resolved = resolveNotesFileNameFromText(pendingFiles, last.text);
     // eslint-disable-next-line no-console
     console.debug('notes_route_debug_pending', {
@@ -2275,6 +2275,19 @@ async function handleIntentRoute(
       thinking?.remove(true);
       const notes = await handleNotesIntent(pendingNotes.courseId, bubble, controller.signal, originChat, last.text, true);
       return notesIntentRouteResult(notes, pendingNotes.courseId);
+    }
+    // A PDF reply is still a Notes selection even if the course catalog is
+    // temporarily unavailable or the filename no longer exists. Never send
+    // that turn to generic RAG and present its prose as generated notes.
+    if (/\.pdf\b/i.test(last.text)) {
+      if (thinking) await thinking.waitMinimum();
+      thinking?.remove(true);
+      const text = 'I could not find that PDF in this course. Choose a file below, or reopen the course and try again.';
+      if (bubble) {
+        if (pendingFiles.length) renderNotesFileChooser(bubble, text, pendingFiles);
+        else renderRichBubble(bubble, text);
+      }
+      return { text };
     }
     // Didn't look like a file selection — abandon the pending flow rather
     // than trap every later message as a (failed) notes reply, and let this
@@ -2948,19 +2961,29 @@ async function finishStudyBuilderLoading(builder: HTMLElement | null): Promise<v
 /** Same course/file lookup handleNotesIntent used to do inline — pulled out
  *  so the pending-reply check in handleIntentRoute can test a candidate
  *  filename against the exact same list before committing to it. */
-function getCourseNotesFiles(courseId: string): string[] {
-  const w = window as unknown as {
-    activeCourseRef?: { id?: string; files?: Array<{ name?: string }> } | null;
-    SEMS?: Record<string, { courses?: Array<{ id?: string; files?: Array<{ name?: string }> }> }>;
-    sdActiveSemId?: string;
-  };
-  const course =
-    (w.activeCourseRef?.id === courseId ? w.activeCourseRef : null) ||
-    w.SEMS?.[w.sdActiveSemId || '']?.courses?.find((c) => c.id === courseId) ||
-    null;
-  return (course?.files || [])
-    .map((f) => (typeof f.name === 'string' ? f.name : null))
-    .filter((name): name is string => !!name && /\.pdf$/i.test(name));
+async function getCourseNotesFiles(courseId: string): Promise<string[]> {
+  const active = (window as unknown as { activeCourseRef?: SemCourse | null }).activeCourseRef;
+  // Reuse the import picker's cross-semester catalog, including folders.
+  // A partial activeCourseRef must not hide a fuller stored course object.
+  const courses = listCourses().filter((course) => course.id === courseId);
+  if (active?.id === courseId) courses.push(active);
+  const names = courses.flatMap((course) => [
+    ...(course.files || []).map((file) => file.name),
+    ...(course.userFolders || []).flatMap((folder) => (folder.files || []).map((file) => file.name)),
+  ]);
+  // Uploaded/indexed documents can exist before the in-memory course tree
+  // hydrates. This is the same cached API used to resolve their stable IDs.
+  try {
+    const ai = await import('../../services/ai-service.js');
+    const docs = await ai.listCourseDocuments(courseId);
+    names.push(...docs.map((doc) => doc.file_name || doc.fileName || ''));
+  } catch { /* Local course files remain usable when the catalog is offline. */ }
+  const seen = new Set<string>();
+  return names.filter((name) => {
+    if (typeof name !== 'string' || !/\.pdf$/i.test(name) || seen.has(name.toLowerCase())) return false;
+    seen.add(name.toLowerCase());
+    return true;
+  });
 }
 
 /** Resolves a course filename to its indexed-document identity via the
@@ -3065,6 +3088,7 @@ async function handleNotesIntent(
       import('../pdf-viewer/pdf-text-extraction.js'),
       import('../../services/ai-service.js'),
     ]);
+    const courseFiles = await getCourseNotesFiles(courseId);
     const outcome = await runNotesFlow({
       courseId,
       latestText,
@@ -3073,7 +3097,7 @@ async function handleNotesIntent(
       ttlMs: NOTES_PENDING_TTL_MS,
       explicitCandidate,
     }, {
-      getCourseFiles: getCourseNotesFiles,
+      getCourseFiles: () => courseFiles,
       resolveDocument: resolveNotesDocument,
       extractPdfText: async (fileName, maxPages) => {
         const [rawText] = await extraction.extractMultiplePdfs([fileName], maxPages);

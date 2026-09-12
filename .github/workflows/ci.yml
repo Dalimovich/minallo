@@ -54,6 +54,9 @@ jobs:
       - name: Run Node.js unit tests
         run: npm test
 
+      - name: Verify Notes routing through the browser composer
+        run: npm run test:notes-browser
+
       - name: Run Python static analysis
         working-directory: backend/python-ai
         run: |

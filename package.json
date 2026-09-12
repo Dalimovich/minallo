@@ -10,6 +10,7 @@
     "format:check": "prettier --check .",
     "test": "npm run test:unit",
     "test:unit": "node scripts/run-unit-tests.mjs",
+    "test:notes-browser": "node tests/reliability/browser-notes-flow.mjs",
     "typecheck": "tsc -p backend/tsconfig.json && tsc -p frontend/tsconfig.json && tsc -p functions/tsconfig.json",
     "typecheck:backend": "tsc -p backend/tsconfig.json",
     "typecheck:frontend": "tsc -p frontend/tsconfig.json",
