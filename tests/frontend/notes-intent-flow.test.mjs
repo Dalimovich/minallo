@@ -61,6 +61,10 @@ test('turn 1 ("create a note") with multiple files sets a pending action and nev
   assert.equal(calls.generateNotes.length, 0);
   assert.equal(calls.resolveDocument.length, 0);
   assert.equal(calls.extractPdfText.length, 0);
+  // The clarification carries the exact file list separately from the
+  // rendered text, so a caller can render it as clickable choices — see
+  // renderNotesFileChooser in shell.ts.
+  assert.deepEqual(outcome.clarifyFiles, COURSE_FILES);
 });
 
 test('turn 2 (bare filename reply) resumes generation exactly once and clears the pending action', async () => {
@@ -167,7 +171,7 @@ test('a document with a ready indexed id skips raw PDF extraction entirely — n
   assert.equal(calls.generateNotes[0].opts.pdfText, '');
 });
 
-test('a document with no ready indexed id falls back to extraction with a generous (not 20-page) cap', async () => {
+test('a document with no ready indexed id falls back to extraction with no page cap at all', async () => {
   const { deps, calls } = makeDeps();
 
   await runNotesFlow({

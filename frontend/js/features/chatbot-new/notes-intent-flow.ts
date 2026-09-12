@@ -75,15 +75,26 @@ export interface NotesFlowOutcome {
   noteId?: string | null;
   pendingNotesAction: PendingNotesAction | null;
   generationAttempted: boolean;
+  /** Present only on the "which file?" clarification outcome — the caller
+   *  can render these as clickable choices in addition to the plain-text
+   *  list already baked into `text` (typing one of these names manually
+   *  must keep working exactly the same). */
+  clarifyFiles?: string[];
 }
 
-/** Only extracted for a file with no indexed/ready document — generous
- *  enough that a real lecture is never silently truncated (the old fixed
- *  cap of 20 pages was the exact bug reported: a 70-page lecture would
- *  generate notes from pages 1-20 only, with no indication anything was
- *  cut off). This is a client-side safety ceiling for raw extraction, not a
- *  content limit — the indexed/chunk path above has no page cap at all. */
-export const NOTES_FALLBACK_MAX_PAGES = 500;
+/** Only used for a file with no indexed/ready document. pdf.js already has
+ *  the entire PDF loaded client-side at this point (extractMultiplePdfs
+ *  fetches the full file before extracting), so there is no technical
+ *  reason to cap page count here at all — the old fixed 20-page cap was the
+ *  exact bug reported: a 70-page lecture silently generated notes from only
+ *  its first 20 pages. Infinity here means "every page pdf.js can read";
+ *  extractPdfText() still clamps to the document's real page count itself.
+ *  What CAN still get cut is the resulting text once it reaches the
+ *  backend's per-request character budget for a single LLM call — that
+ *  case is a token-budget limit, not a page limit, and the backend reports
+ *  it explicitly via `sourceTruncated` (see INCOMPLETE_SOURCE_NOTICE in
+ *  notes_full.py) rather than silently dropping content. */
+export const NOTES_FALLBACK_MAX_PAGES = Infinity;
 
 const CLARIFY_NO_FILES =
   'I can make notes from a course file. Open the source you want, then ask "make notes from this lecture".';
@@ -124,6 +135,7 @@ export async function runNotesFlow(input: NotesFlowInput, deps: NotesFlowDeps): 
       text: clarifyText(files),
       pendingNotesAction: { courseId: input.courseId, createdAt: input.now },
       generationAttempted: false,
+      clarifyFiles: files.slice(0, 8),
     };
   }
 

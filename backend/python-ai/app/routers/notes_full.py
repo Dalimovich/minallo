@@ -37,6 +37,16 @@ router = APIRouter(prefix="", tags=["notes"], dependencies=[Depends(require_inte
 
 _MAX_CONTEXT_CHARS = 28_000
 _EXAM_MERGE_CONTEXT_CHARS = 56_000
+
+# Shown when the raw pdfText fallback (no indexed document yet) is longer
+# than what fits in one generation call — the resulting notes cover only
+# part of the document, and the reader must be told that explicitly rather
+# than being handed a silently-truncated "whole document" result.
+INCOMPLETE_SOURCE_NOTICE = (
+    "\n\n---\n⚠️ *This document is long and not fully indexed yet, so these "
+    "notes are based on part of its content, not the whole document. Once "
+    "indexing finishes, regenerating will cover the full text.*"
+)
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _METADATA_NOISE = (
     "institut für", "technische universität", "prof.", "dr.-ing.", "wintersemester",
@@ -1190,8 +1200,10 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
         if chunks:
             context, sources = _build_context(chunks, payload.fileName)
 
+    source_truncated = False
     if not context:
         if payload.pdfText and len(payload.pdfText.strip()) > 100:
+            source_truncated = len(payload.pdfText) > _MAX_CONTEXT_CHARS
             context = f"QUELLE: {payload.fileName or 'PDF'}\n\n" + payload.pdfText[:_MAX_CONTEXT_CHARS]
         else:
             return {
@@ -1247,12 +1259,19 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
         + " — " + ("Zusammenfassung" if payload.tool == "summary" else "Notizen")
     )
     title = _extract_title(markdown, fallback_title)
+    # The truncation notice is persisted (not just shown once) — reopening
+    # this note later must still tell the reader it doesn't cover the whole
+    # document, not just the live chat response.
+    markdown_to_save = markdown + INCOMPLETE_SOURCE_NOTICE if source_truncated else markdown
     note_id = _save_note(
         payload.userId, payload.courseId, payload.documentId, title, payload.tool,
-        markdown, sources, filter_start, filter_end,
+        markdown_to_save, sources, filter_start, filter_end,
     )
-    content = markdown + HEAVY_CAP_NOTICE if heavy_capped else markdown
-    response: dict[str, Any] = {"note": {"id": note_id, "title": title, "type": payload.tool, "content_markdown": content, "sources": sources}, "heavyCapped": heavy_capped}
+    content = markdown_to_save + HEAVY_CAP_NOTICE if heavy_capped else markdown_to_save
+    response: dict[str, Any] = {
+        "note": {"id": note_id, "title": title, "type": payload.tool, "content_markdown": content, "sources": sources},
+        "heavyCapped": heavy_capped, "sourceTruncated": source_truncated,
+    }
     # Generation succeeded but the DB insert didn't — never let a caller infer
     # success from content_markdown alone (see _save_note).
     if note_id is None:

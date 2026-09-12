@@ -2219,8 +2219,8 @@ async function handleIntentRoute(
     if (resolved) {
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
-      const text = await handleNotesIntent(pendingNotes.courseId, bubble, controller.signal, originChat, last.text, true);
-      return { text };
+      const notes = await handleNotesIntent(pendingNotes.courseId, bubble, controller.signal, originChat, last.text, true);
+      return notesIntentRouteResult(notes, pendingNotes.courseId);
     }
     // Didn't look like a file selection — abandon the pending flow rather
     // than trap every later message as a (failed) notes reply, and let this
@@ -2598,8 +2598,8 @@ async function handleIntentRoute(
 
   if (route.intent === 'notes') {
     const explicitCandidate = pickExplicitNotesCandidate(route, selectedSourceIds, sourceLibrary.items, activePdf, route.target.courseId);
-    const text = await handleNotesIntent(route.target.courseId, bubble, controller.signal, originChat, last.text, false, explicitCandidate);
-    return { text };
+    const notes = await handleNotesIntent(route.target.courseId, bubble, controller.signal, originChat, last.text, false, explicitCandidate);
+    return notesIntentRouteResult(notes, route.target.courseId);
   }
 
   return null;
@@ -2976,6 +2976,25 @@ interface NotesIntentOutcome {
   text: string;
   noteId?: string | null;
   fileName?: string;
+}
+
+/** Wraps a Notes outcome as an IntentRouteResult, attaching a generatedDoc
+ *  (same shape cheatsheet/summary use) whenever a note was actually
+ *  persisted — this is what makes "show me those notes again"/reopening
+ *  deterministic instead of the chat bubble being indistinguishable from
+ *  plain assistant markdown. */
+function notesIntentRouteResult(notes: NotesIntentOutcome, courseId: string): IntentRouteResult {
+  if (!notes.noteId || !notes.fileName) return { text: notes.text };
+  return {
+    text: notes.text,
+    generatedDoc: {
+      kind: 'notes',
+      title: 'Notes — ' + notes.fileName.replace(/\.pdf$/i, ''),
+      markdown: notes.text,
+      courseId,
+      noteId: notes.noteId,
+    },
+  };
 }
 
 async function handleNotesIntent(
