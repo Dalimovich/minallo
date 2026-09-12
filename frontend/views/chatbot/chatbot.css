@@ -425,7 +425,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 }
 
 .ncb-input.ncb-input--placeholder {
-  min-height: 132px;
+  min-height: 112px;
 }
 
 /* Quick-action grid */
@@ -824,7 +824,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   /* overflow:hidden makes the rounded frame a hard boundary —
      attachments, textarea overflow, button shadows all stay inside. */
   overflow: hidden;
-  padding: 14px 14px 8px;
+  padding: 10px 14px 8px;
   box-sizing: border-box;
   background: rgba(8, 13, 30, 0.82);
   border-color: rgba(148, 163, 184, 0.28);
@@ -853,15 +853,14 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 }
 
 /* Bottom zone: attach/import on the left, send on the right. Vertically
-   centered — these are same-size round buttons now that the textarea
-   lives in its own row above. */
+   centered and pulled tight against the textarea above — no dedicated
+   "row block", just the buttons' own height plus a small gap. */
 .ncb-input-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 40px;
-  margin-top: 8px;
+  margin-top: 5px;
 }
 .ncb-input-actions-left {
   display: flex;
@@ -871,11 +870,11 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 }
 
 /* Middle zone: the message textarea, alone on its own row directly under
-   the top toolbar. */
+   the top toolbar. Idle height is just one line — no reserved block. */
 .ncb-input-textarea {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 30px;
+  min-height: 22px;
   max-height: 160px;
   resize: none;
   overflow-y: auto;
@@ -886,7 +885,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   font-size: 16px;
   line-height: 22px;
   font-family: inherit;
-  padding: 4px 4px;
+  padding: 0 4px;
   box-sizing: border-box;
   width: 100%;
   display: block;
@@ -900,9 +899,9 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 .ncb-input-action-btn {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   flex-shrink: 0;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -932,9 +931,9 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 .ncb-send-btn {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
   flex-shrink: 0;
   border-radius: 999px;
   border: 1px solid rgba(147, 197, 253, 0.36);
@@ -951,8 +950,8 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   box-shadow: 0 6px 16px rgba(37, 99, 235, 0.38);
 }
 .ncb-send-btn svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
 }
 /* While AI is streaming, the same arrow icon stays — the button becomes
    the "stop" affordance via color shift only (darker + ring). Clicking
@@ -978,10 +977,10 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
-  min-width: 135px;
+  height: 36px;
+  min-width: 132px;
   max-width: 150px;
-  padding: 0 13px;
+  padding: 0 12px;
   box-sizing: border-box;
   font: 600 13px/1 var(--font-main, inherit);
   color: var(--on-glass-muted, rgba(255, 255, 255, 0.72));
@@ -4425,7 +4424,7 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .ncb-tutor-modes {
   display: flex;
