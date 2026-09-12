@@ -6159,9 +6159,13 @@ body.ncb-pdf-workspace-open #drDrawer {
     flex: 1 1 0;
   }
   body.ncb-pdf-workspace-open .ncb-context {
+    /* Initial/default width only — the drag-resize JS owns the runtime
+       width via inline style.width/flexBasis once the user drags, so this
+       must not also act as a permanent max-width or the pane can shrink
+       but never grow back past its opening size. */
     width: min(38vw, 680px);
-    flex: 0 1 min(38vw, 680px);
-    max-width: min(38vw, 680px);
+    flex: 0 0 auto;
+    max-width: none;
   }
 
   .ncb-center {

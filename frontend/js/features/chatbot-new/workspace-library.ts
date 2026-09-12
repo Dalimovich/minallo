@@ -162,7 +162,13 @@ function refitWorkspacePdfAfterRender(): void {
   if (body.querySelector('.pdf-page-wrap canvas')) renderAtHostedWidth();
 }
 
-function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
+export const PDF_RESIZE_MIN_WIDTH = 360;
+export const PDF_RESIZE_MIN_CHAT_WIDTH = 420;
+
+/** Exported (only) so a real browser test can drive the actual drag
+ *  algorithm directly — see chatbot-pdf-resize-behavior.test.mjs. Not part
+ *  of the module's real public surface otherwise. */
+export function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
   pdfResizeCleanup?.();
   const handle = host.querySelector<HTMLElement>('.ncb-pdf-resize');
   if (!handle) return;
@@ -174,14 +180,27 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
   let frame = 0;
   let resizeRenderTimer = 0;
   let lastObservedWidth = 0;
+  // Bounds for the drag in progress, captured once at pointerdown so they
+  // stay stable while the pane's own rect is moving under the pointer —
+  // deriving max width from the pane's current left/width mid-drag makes it
+  // self-referential (each shrink lowers the max, ratcheting the pane so it
+  // can never widen back past wherever it last was).
+  let dragMin = PDF_RESIZE_MIN_WIDTH;
+  let dragMax = PDF_RESIZE_MIN_WIDTH;
 
   const workspace = context.closest<HTMLElement>('.ncb-card');
-  const widthBounds = (): { min: number; max: number } => {
-    const workspaceRect = workspace?.getBoundingClientRect();
-    const paneRect = context.getBoundingClientRect();
-    const measuredAvailable = workspaceRect ? workspaceRect.right - paneRect.left : paneRect.width;
-    const max = Math.max(0, Math.floor(measuredAvailable));
-    return { min: Math.min(360, max), max };
+  const centerEl = (): HTMLElement | null => workspace?.querySelector<HTMLElement>('.ncb-center') ?? null;
+
+  // Static (non-drag) bounds: derived from the PDF pane + chat center's
+  // combined width, which stays roughly constant regardless of how that
+  // space is currently split — unlike the pane's own left edge/width, this
+  // doesn't shift as the pane resizes, so it can't ratchet.
+  const staticWidthBounds = (): { min: number; max: number } => {
+    const pdfWidth = context.getBoundingClientRect().width;
+    const centerWidth = centerEl()?.getBoundingClientRect().width ?? 0;
+    const resizableSpace = pdfWidth + centerWidth;
+    const max = Math.max(PDF_RESIZE_MIN_WIDTH, Math.floor(resizableSpace - PDF_RESIZE_MIN_CHAT_WIDTH));
+    return { min: Math.min(PDF_RESIZE_MIN_WIDTH, max), max };
   };
 
   const applyWidth = (width: number): void => {
@@ -190,7 +209,7 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
       context.style.removeProperty('flex-basis');
       return;
     }
-    const bounds = widthBounds();
+    const bounds = dragging ? { min: dragMin, max: dragMax } : staticWidthBounds();
     const next = Math.round(Math.min(bounds.max, Math.max(bounds.min, width)));
     if (Math.abs(context.getBoundingClientRect().width - next) >= 1) {
       context.style.width = `${next}px`;
@@ -233,9 +252,12 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
 
   const start = (event: PointerEvent): void => {
     if (event.button !== 0 || window.matchMedia('(max-width: 1024px)').matches) return;
+    startWidth = context.getBoundingClientRect().width;
+    const centerWidth = centerEl()?.getBoundingClientRect().width ?? 0;
+    dragMin = PDF_RESIZE_MIN_WIDTH;
+    dragMax = Math.max(startWidth, startWidth + Math.max(0, centerWidth - PDF_RESIZE_MIN_CHAT_WIDTH));
     dragging = true;
     startX = event.clientX;
-    startWidth = context.getBoundingClientRect().width;
     pendingWidth = startWidth;
     context.classList.add('ncb-pdf-resizing');
     handle.classList.add('is-active');
@@ -252,7 +274,13 @@ function bindWorkspacePdfResize(context: HTMLElement, host: HTMLElement): void {
   const observer = typeof ResizeObserver !== 'undefined'
     ? new ResizeObserver(() => {
         const width = context.getBoundingClientRect().width;
-        scheduleWidth(width);
+        // While the user is actively dragging, the pointer (not layout
+        // feedback) owns the requested width — letting this observer call
+        // scheduleWidth() here would feed the just-applied width straight
+        // back in as the next request and could clobber it. Still trigger
+        // the refit/rerender behavior below so the PDF content stays in
+        // sync with the pane's actual size.
+        if (!dragging) scheduleWidth(width);
         if (Math.abs(width - lastObservedWidth) < 1) return;
         lastObservedWidth = width;
         window.clearTimeout(resizeRenderTimer);
