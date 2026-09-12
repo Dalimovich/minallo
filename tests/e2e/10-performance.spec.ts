@@ -18,6 +18,8 @@ test.describe('Performance budget', () => {
         !!document.querySelector('#sdCourseList') ||
         !!document.querySelector('#welcomeState') ||
         !!document.querySelector('#authEmail') ||
+        !!document.querySelector('#nlNavSignIn') ||
+        !!document.querySelector('#nlNavStartFree') ||
         !!document.querySelector('#landingLoginBtn') ||
         document.body?.getAttribute('data-ss-ready') === 'true',
       { timeout: LOAD_TIME_BUDGET_MS }

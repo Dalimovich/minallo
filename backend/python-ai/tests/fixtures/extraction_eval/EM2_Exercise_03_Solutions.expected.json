@@ -1,0 +1,9 @@
+{
+  "description": "Clean text-layer solution sheet (English). Good pdfminer extraction; classifies as solution_sheet; no OCR needed. Exercises 1.4 and 1.5 are detected via the 'Solution for Exercise N' pattern; CID-font artifacts must be stripped.",
+  "document_type": "solution_sheet",
+  "min_pages": 4,
+  "must_contain": ["TU Braunschweig", "Solution for Exercise 1.4", "v = const"],
+  "must_not_contain": ["(cid:"],
+  "must_have_exercises": ["1.4", "1.5"],
+  "expect_ocr_recommended": false
+}

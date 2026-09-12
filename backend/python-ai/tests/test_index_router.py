@@ -49,8 +49,9 @@ def client(monkeypatch) -> TestClient:
     fake = _fake_sb()
     monkeypatch.setattr("app.routers.index.get_supabase", lambda: fake)
     monkeypatch.setattr("app.services.indexing.get_supabase", lambda: fake)
-    # Don't actually run the background indexer in unit tests.
-    monkeypatch.setattr("app.routers.index.index_document", lambda *a, **kw: None)
+    # Don't actually run the background indexer in unit tests. The router now
+    # calls the concurrency-bounded entrypoint run_document_indexing.
+    monkeypatch.setattr("app.routers.index.run_document_indexing", lambda *a, **kw: None)
 
     from app.main import app  # noqa: WPS433
     return TestClient(app)

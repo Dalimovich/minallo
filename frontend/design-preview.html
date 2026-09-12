@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Minallo — Calm Study Preview</title>
+  <link rel="stylesheet" href="css/design-preview.css">
+</head>
+<body>
+  <div class="preview-note">
+    <span>Local concept preview</span>
+    <strong>Calm study workspace</strong>
+    <button id="focusToggle" type="button">Enter focus mode</button>
+  </div>
+
+  <main class="app-shell" id="appShell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <div class="brand"><span class="brand-mark">M</span><span class="brand-name">Minallo</span></div>
+      <nav>
+        <button class="nav-item" type="button" data-view="home"><span>⌂</span><em>Home</em></button>
+        <button class="nav-item active" type="button" data-view="study"><span>▱</span><em>Study</em></button>
+        <button class="nav-item" type="button" data-view="courses"><span>◫</span><em>Courses</em></button>
+        <button class="nav-item" type="button" data-view="library"><span>⌑</span><em>Library</em></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item" type="button"><span>?</span><em>Help</em></button>
+        <div class="avatar">DA</div>
+      </div>
+    </aside>
+
+    <section class="workspace app-view active" id="studyView">
+      <header class="topbar">
+        <div class="document-title">
+          <span class="eyebrow">Manufacturing Technology</span>
+          <div><h1>Exam solutions 2025</h1><span class="saved">Saved just now</span></div>
+        </div>
+        <div class="top-actions">
+          <div class="session-time"><span></span> 42 min focused</div>
+          <button class="icon-button" type="button" aria-label="More actions">•••</button>
+        </div>
+      </header>
+
+      <div class="study-layout">
+        <aside class="page-rail" aria-label="Document pages">
+          <div class="rail-heading"><span>Pages</span><button type="button" aria-label="Collapse pages">‹</button></div>
+          <button class="page-card active" type="button"><b>24</b><span class="page-mini"><i></i><i></i><i></i></span></button>
+          <button class="page-card" type="button"><b>25</b><span class="page-mini"><i></i><i></i></span></button>
+          <button class="page-card" type="button"><b>26</b><span class="page-mini"><i></i><i></i><i></i></span></button>
+        </aside>
+
+        <article class="document-stage">
+          <div class="document-toolbar">
+            <div class="toolbar-group">
+              <button type="button" aria-label="Previous page">‹</button>
+              <span>24 <small>/ 43</small></span>
+              <button type="button" aria-label="Next page">›</button>
+            </div>
+            <div class="toolbar-group quiet">
+              <button type="button">−</button><span>90%</span><button type="button">+</button>
+              <button type="button" aria-label="Fit page">⌗</button>
+            </div>
+          </div>
+
+          <div class="paper">
+            <div class="paper-head"><span>Aufgabe 14.4</span><span>Spritzgießen · 4 Punkte</span></div>
+            <h2>Bestimmen Sie das erforderliche Spritzvolumen.</h2>
+            <p>Berechnen Sie das Materialvolumen des dargestellten Bauteils unter Berücksichtigung der Wandstärke.</p>
+            <div class="diagram">
+              <div class="shape"><span>80 mm</span><span>120 mm</span><span>t = 3,73 mm</span></div>
+              <div class="formula">
+                <span>V<sub>gesamt</sub> = A<sub>p</sub> · h − V<sub>innen</sub></span>
+                <small>Use the exterior volume minus the internal cavity.</small>
+              </div>
+            </div>
+            <div class="options">
+              <div>□ V<sub>Spritz</sub> = 164 cm³</div>
+              <div class="selected">✓ V<sub>Spritz</sub> = 191 cm³</div>
+              <div>□ V<sub>Spritz</sub> = 228 cm³</div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="ai-panel">
+          <header>
+            <div><span class="ai-dot"></span><h2>Study assistant</h2></div>
+            <button id="closeAi" class="icon-button" type="button" aria-label="Close AI">×</button>
+          </header>
+          <div class="conversation">
+            <div class="message user">Why did the professor use that long formula?</div>
+            <div class="message assistant">
+              <p>The formula separates the part into two volumes:</p>
+              <ol>
+                <li>the complete outer shape;</li>
+                <li>the empty cavity inside it.</li>
+              </ol>
+              <div class="answer-callout">Material volume = outer volume − inner cavity</div>
+              <p>This is longer than multiplying one area by height, but it correctly preserves the <b>3.73 mm wall thickness</b>.</p>
+              <div class="message-actions"><button type="button">Copy</button><button type="button">•••</button></div>
+            </div>
+          </div>
+          <form class="composer">
+            <textarea aria-label="Ask Minallo" placeholder="Ask about this page…"></textarea>
+            <div class="composer-row">
+              <button class="source-pill" type="button"><span></span> Current page</button>
+              <div>
+                <button class="attach" type="button" aria-label="Attach">＋</button>
+                <button class="send" type="button" aria-label="Send">↑</button>
+              </div>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <section class="hub-view app-view" id="homeView">
+      <header class="hub-topbar"><div><span class="eyebrow">Friday, 24 July</span><h1>Good afternoon, Dalim</h1></div><button class="icon-button" type="button">•••</button></header>
+      <div class="hub-content">
+        <section class="continue-card">
+          <div><span class="eyebrow">Continue studying</span><h2>Exam solutions 2025</h2><p>Manufacturing Technology · page 24 of 43</p></div>
+          <button class="primary-action open-study" type="button">Continue</button>
+        </section>
+        <div class="hub-grid">
+          <section><div class="section-heading"><div><span class="eyebrow">Today</span><h2>Your study plan</h2></div></div><div class="simple-list"><div><span class="list-icon blue">▱</span><div><b>Review injection moulding</b><small>Continue the marked exam questions</small></div><em>25 min</em></div><div><span class="list-icon green">✓</span><div><b>Flashcard review</b><small>18 cards due today</small></div><em>10 min</em></div></div></section>
+          <section><div class="section-heading"><div><span class="eyebrow">Progress</span><h2>This week</h2></div></div><div class="progress-summary"><strong>4h 32m</strong><span>focused study</span><div class="progress-line"><i></i></div><small>68% of your weekly goal</small></div></section>
+        </div>
+      </div>
+    </section>
+
+    <section class="hub-view app-view" id="coursesView">
+      <header class="hub-topbar"><div><span class="eyebrow">Workspace</span><h1>Courses</h1></div><button class="primary-action small" type="button">New course</button></header>
+      <div class="hub-content">
+        <div class="section-heading"><div><h2>Current semester</h2><p>Choose a course to continue studying.</p></div><button class="text-action" type="button">Sort by recent</button></div>
+        <div class="course-grid">
+          <button class="course-card open-course" type="button"><span class="course-symbol">MT</span><div><h3>Manufacturing Technology</h3><p>12 files · Last studied today</p></div><span class="course-arrow">→</span></button>
+          <button class="course-card" type="button"><span class="course-symbol violet">TM</span><div><h3>Technical Mechanics II</h3><p>8 files · Last studied Tuesday</p></div><span class="course-arrow">→</span></button>
+          <button class="course-card" type="button"><span class="course-symbol amber">ME</span><div><h3>Machine Elements</h3><p>16 files · Last studied 5 days ago</p></div><span class="course-arrow">→</span></button>
+        </div>
+        <div class="archive-link"><span>Previous semesters</span><button type="button">View archive →</button></div>
+      </div>
+    </section>
+
+    <section class="hub-view app-view" id="libraryView">
+      <header class="hub-topbar"><div><span class="eyebrow">All material</span><h1>Library</h1></div><button class="primary-action small" type="button">Upload</button></header>
+      <div class="hub-content">
+        <div class="section-heading"><div><h2>Recent files</h2><p>Your material across all courses.</p></div><button class="text-action" type="button">Filter</button></div>
+        <div class="file-list">
+          <button class="file-row open-study" type="button"><span class="pdf-icon">PDF</span><div><b>Exam solutions 2025.pdf</b><small>Manufacturing Technology · 43 pages</small></div><em>Today</em><span>•••</span></button>
+          <button class="file-row" type="button"><span class="pdf-icon">PDF</span><div><b>Injection moulding — lecture 8.pdf</b><small>Manufacturing Technology · 68 pages</small></div><em>Yesterday</em><span>•••</span></button>
+          <button class="file-row" type="button"><span class="note-icon">TXT</span><div><b>Exam preparation notes</b><small>Technical Mechanics II · Note</small></div><em>Monday</em><span>•••</span></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="hub-view app-view" id="courseView">
+      <header class="hub-topbar course-header">
+        <button class="back-to-courses" type="button">← Courses</button>
+        <div><span class="eyebrow">Course</span><h1>Manufacturing Technology</h1></div>
+        <button class="icon-button" type="button">•••</button>
+      </header>
+      <div class="hub-content course-content">
+        <nav class="course-tabs" aria-label="Course sections"><button class="active" type="button">Overview</button><button type="button">Files</button><button type="button">Notes</button><button type="button">Flashcards</button><button type="button">Quizzes</button></nav>
+        <section class="course-hero">
+          <div><span class="eyebrow">Continue where you left off</span><h2>Exam solutions 2025</h2><p>Aufgabe 14.4 · Page 24 of 43</p></div>
+          <button class="primary-action open-study" type="button">Open PDF</button>
+        </section>
+        <div class="section-heading"><div><h2>Course files</h2><p>12 files, grouped by what you use most.</p></div><button class="text-action" type="button">View all</button></div>
+        <div class="file-list">
+          <button class="file-row open-study" type="button"><span class="pdf-icon">PDF</span><div><b>Exam solutions 2025.pdf</b><small>43 pages · Fully indexed</small></div><em>Opened today</em><span>•••</span></button>
+          <button class="file-row" type="button"><span class="pdf-icon">PDF</span><div><b>Injection moulding — lecture 8.pdf</b><small>68 pages · Fully indexed</small></div><em>Yesterday</em><span>•••</span></button>
+          <button class="file-row" type="button"><span class="pdf-icon">PDF</span><div><b>Formula sheet.pdf</b><small>6 pages · Fully indexed</small></div><em>12 July</em><span>•••</span></button>
+        </div>
+      </div>
+    </section>
+
+    <button id="openAi" class="floating-ai" type="button">Ask AI</button>
+  </main>
+  <script src="js/design-preview.js"></script>
+</body>
+</html>

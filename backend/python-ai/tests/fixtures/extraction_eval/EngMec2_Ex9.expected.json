@@ -1,0 +1,7 @@
+{
+  "description": "Diagram-heavy exercise PDF (21 pages, sparse text per page). Classifies as exercise_sheet; exercise number 2.11 is detected by the block detector.",
+  "document_type": "exercise_sheet",
+  "min_pages": 21,
+  "must_have_exercises": ["2.11"],
+  "expect_ocr_recommended": false
+}

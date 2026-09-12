@@ -1,0 +1,217 @@
+﻿frontend/views\chatbot\chatbot.js:53:    return fetch('views/chatbot/chatbot.html').then(function (r) {
+frontend/views\chat\chat.js:9:    return fetch(url).then(function (r) {
+frontend/views\chat\chat.js:392:      var token = _sbToken || sessionStorage.getItem('sb_sess_token') || SUPA_KEY;
+frontend/views\chat\chat.js:393:      var res = await fetch(
+frontend/views\chat\chat.js:399:            Authorization: 'Bearer ' + token,
+frontend/views\chat\chat.js:431:        var friendsRes = await fetch('/api/chat-friends', {
+frontend/views\chat\chat.js:432:          headers: { Authorization: 'Bearer ' + (_sbToken || '') }
+frontend/views\chat\chat.js:448:        await fetch(SUPA_URL + '/rest/v1/friendships?id=eq.' + encodeURIComponent(friendshipId), {
+frontend/views\chat\chat.js:470:        var res = await fetch(SUPA_URL + '/rest/v1/custom_rooms?order=created_at.asc', {
+frontend/views\chat\chat.js:477:        var memRes = await fetch(
+frontend/views\chat\chat.js:589:        fetch(
+frontend/views\chat\chat.js:654:          await fetch(
+frontend/views\chat\chat.js:670:          var createRes = await fetch(SUPA_URL + '/rest/v1/custom_rooms', {
+frontend/views\chat\chat.js:689:            await fetch(SUPA_URL + '/rest/v1/room_members', {
+frontend/views\chat\chat.js:708:              return fetch(SUPA_URL + '/rest/v1/room_members', {
+frontend/views\chat\chat.js:750:        await fetch(
+frontend/views\chat\chat.js:1182:        var res = await fetch(
+frontend/views\chat\chat.js:1384:        var res = await fetch(url, { headers: _sbHeaders() });
+frontend/views\chat\chat.js:1415:            var rRes = await fetch(
+frontend/views\chat\chat.js:1490:        var res = await fetch(
+frontend/views\chat\chat.js:1505:        var res = await fetch(
+frontend/views\chat\chat.js:1527:        var res = await fetch(
+frontend/views\chat\chat.js:1539:          await fetch(
+frontend/views\chat\chat.js:1550:          await fetch(SUPA_URL + '/rest/v1/message_reactions', {
+frontend/views\chat\chat.js:1640:        var res = await fetch(
+frontend/views\chat\chat.js:1669:        await fetch(SUPA_URL + '/rest/v1/typing_indicators', {
+frontend/views\chat\chat.js:1685:        await fetch(
+frontend/views\chat\chat.js:1827:          var res = await fetch('/api/join-room-by-code', {
+frontend/views\chat\chat.js:1858:          var res = await fetch(
+frontend/views\chat\chat.js:1898:                await fetch(SUPA_URL + '/rest/v1/room_members', {
+frontend/views\chat\chat.js:1973:          await fetch(SUPA_URL + '/rest/v1/messages?id=eq.' + encodeURIComponent(editId), {
+frontend/views\chat\chat.js:2061:        var res = await fetch(
+frontend/views\chat\chat.js:2081:        await fetch(SUPA_URL + '/rest/v1/blocked_users', {
+frontend/views\chat\chat.js:2114:        var res = await fetch(SUPA_URL + '/rest/v1/messages?id=eq.' + encodeURIComponent(msgId), {
+frontend/views\chat\chat.js:2136:        await fetch(SUPA_URL + '/rest/v1/pinned_messages', {
+frontend/views\chat\chat.js:2157:        var res = await fetch(
+frontend/views\chat\chat.js:2187:            await fetch(SUPA_URL + '/rest/v1/pinned_messages?id=eq.' + encodeURIComponent(p.id), {
+frontend/views\chat\chat.js:2225:        var res = await fetch(
+frontend/views\chat\chat.js:2262:        await fetch(SUPA_URL + '/rest/v1/room_nicknames', {
+frontend/views\chat\chat.js:2280:        await fetch(
+frontend/views\chat\chat.js:2300:      var res = await fetch('/api/send-chat-message', {
+frontend/views\chat\chat.js:2304:          Authorization: 'Bearer ' + (_sbToken || '')
+frontend/views\chat\chat.js:2396:      var token = _sbToken || sessionStorage.getItem('sb_sess_token') || SUPA_KEY;
+frontend/views\chat\chat.js:2397:      var res = await fetch(
+frontend/views\chat\chat.js:2403:            Authorization: 'Bearer ' + token,
+frontend/views\chat\chat.js:2454:        var res = await fetch(
+frontend/views\chat\chat.js:2472:        var res = await fetch(
+frontend/views\chat\chat.js:2586:        var res = await fetch(url, { headers: _sbHeaders() });
+frontend/views\chat\chat.js:2664:        var res = await fetch('/api/chat-user-search?q=' + encodeURIComponent(q), {
+frontend/views\chat\chat.js:2665:          headers: { Authorization: 'Bearer ' + (_sbToken || '') }
+frontend/views\chat\chat.js:2736:        await fetch(SUPA_URL + '/rest/v1/friendships', {
+frontend/views\chat\chat.js:2787:        var chk = await fetch('/api/chat-username-check?username=' + encodeURIComponent(val), {
+frontend/views\chat\chat.js:2788:          headers: { Authorization: 'Bearer ' + (_sbToken || '') }
+frontend/views\chat\chat.js:2803:        await fetch(SUPA_URL + '/rest/v1/profiles?id=eq.' + encodeURIComponent(_currentUser.id), {
+frontend/views\chat\chat.js:2850:        fetch('/api/join-room-by-code', {
+frontend/views\chat\chat.js:2879:          fetch(
+frontend/views\dashboard\dashboard-widget.js:278:        fetch(SUPA_URL + '/rest/v1/profiles?id=eq.' + encodeURIComponent(userId), {
+frontend/views\dashboard\dashboard-widget.js:325:      fetch(
+frontend/views\dashboard\dashboard-widget.js:673:        fetch(BACKEND_URL + '/api/ai', {
+frontend/views\dashboard\dashboard-widget.js:677:            Authorization: 'Bearer ' + (window._sbToken || '')
+frontend/views\dashboard\dashboard-widget.js:827:          fetch((window.BACKEND_URL || '') + '/api/ai', {
+frontend/views\dashboard\dashboard-widget.js:831:              Authorization: 'Bearer ' + (window._sbToken || '')
+frontend/views\dashboard\dashboard-widget.js:968:          fetch(url, { headers: { Authorization: 'Bearer ' + tok } })
+frontend/views\dashboard\dashboard-widget.js:1072:        function _fetch(courseId) {
+frontend/views\dashboard\dashboard-widget.js:1075:          var token = window._sbToken || '';
+frontend/views\dashboard\dashboard-widget.js:1076:          fetch((window.BACKEND_URL || '') + '/api/ai/mastery?courseId=' + encodeURIComponent(courseId), {
+frontend/views\dashboard\dashboard-widget.js:1077:            headers: { Authorization: 'Bearer ' + token }
+frontend/views\dashboard\dashboard-widget.js:1100:        _fetch(initial);
+frontend/views\dashboard\dashboard-widget.js:1103:          _fetch(sel.value);
+frontend/views\dashboard\dashboard-widget.js:1111:          else _fetch(sel.value);
+frontend/views\dashboard\dashboard-widget.js:1177:          fetch(SUPA_URL + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid), {
+frontend/views\dashboard\dashboard-calendar.js:68:    return fetch(
+frontend/views\dashboard\dashboard-calendar.js:71:        { headers: { Authorization: 'Bearer ' + _gcToken, 'Content-Type': 'application/json' } },
+frontend/views\examforge\examforge.js:29:    return fetch(url, {
+frontend/views\examforge\examforge.js:835:      fetch(_supaUrl() + '/rest/v1/exam_sessions?course_id=eq.' + encodeURIComponent(courseId) + '&select=*,exam_questions(id,position,question_type,topic,difficulty,points,question_text,options,source_document_names,source_pages,validation_status,validation_score)&order=created_at.desc&limit=20', {
+frontend/views\lecturenotes\lecturenotes.js:11:    return fetch(url).then(function (r) {
+frontend/views\lecturenotes\lecturenotes.js:179:        var r = await fetch(
+frontend/views\lecturenotes\lecturenotes.js:236:        await fetch(SUPA_URL + '/rest/v1/lecture_notes', {
+frontend/views\lecturenotes\lecturenotes.js:258:        await fetch(
+frontend/views\flashcards\flashcards.js:15:      Authorization: 'Bearer ' + (window._sbToken || '')
+frontend/views\flashcards\flashcards.js:25:      var part = (window._sbToken || '').split('.')[1];
+frontend/views\flashcards\flashcards.js:38:    return fetch(url, { headers: _supaHeaders() })
+frontend/views\flashcards\flashcards.js:47:    return fetch(_supaUrl() + '/rest/v1/flashcard_decks', {
+frontend/views\flashcards\flashcards.js:58:    fetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
+frontend/views\flashcards\flashcards.js:67:    fetch(_supaUrl() + '/rest/v1/flashcard_decks?id=eq.' + dbId, {
+frontend/views\flashcards\flashcards.js:80:  function _authHeaders() { return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') }; }
+frontend/views\flashcards\flashcards.js:85:    return fetch(_backendUrl() + '/api/study/flashcard-review?deckId=' + encodeURIComponent(dbDeckId), {
+frontend/views\flashcards\flashcards.js:102:    return fetch(_backendUrl() + '/api/study/flashcard-review', {
+frontend/views\flashcards\flashcards.js:792:      var token = window._sbToken || '';
+frontend/views\flashcards\flashcards.js:793:      fetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {
+frontend/views\flashcards\flashcards.js:794:        headers: { Authorization: 'Bearer ' + token }
+frontend/views\practice\practice.js:11:    return fetch(url).then(function (r) {
+frontend/views\practice\practice.js:363:      return fetch(_supaUrl() + '/rest/v1/quiz_runs', {
+frontend/views\practice\practice.js:374:      return fetch(url, { headers: _supaHeaders() })
+frontend/views\practice\practice.js:384:      return fetch(_supaUrl() + '/rest/v1/flashcard_decks', {
+frontend/views\practice\practice.js:395:      return fetch(url, { headers: _supaHeaders() })
+frontend/views\practice\practice.js:858:      var token = window._sbToken || '';
+frontend/views\practice\practice.js:860:        var r = await fetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {
+frontend/views\practice\practice.js:861:          headers: { Authorization: 'Bearer ' + token }
+frontend/views\practice\practice.js:900:        var resp = await fetch(BACKEND_URL + '/api/ai/generate', {
+frontend/views\practice\practice.js:902:          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
+frontend/views\practice\practice.js:1120:        var resp = await fetch(BACKEND_URL + '/api/ai', {
+frontend/views\practice\practice.js:1124:            Authorization: 'Bearer ' + (window._sbToken || '')
+frontend/views\editor\writer.js:81:        await fetch(SUPA_URL + '/rest/v1/editor_docs', {
+frontend/views\editor\writer.js:103:        var r = await fetch(
+frontend/views\editor\writer.js:130:        await fetch(
+frontend/views\notes\notes-panel.js:24:    return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') };
+frontend/views\notes\notes-panel.js:395:        var r = await fetch(
+frontend/views\notes\notes-panel.js:425:      var rc = await fetch(
+frontend/views\notes\notes-panel.js:450:      var r = await fetch(
+frontend/views\notes\notes-panel.js:477:    var resp = await fetch((window.BACKEND_URL || '') + '/api/notes/generate', {
+frontend/views\notes\notes-panel.js:479:      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
+frontend/views\notes\notes-panel.js:718:      var resp = await fetch(
+frontend/views\notes\notes-panel.js:741:      await fetch((window.BACKEND_URL || '') + '/api/notes?id=' + encodeURIComponent(id),
+frontend/views\notes\notes-panel.js:986:      var r = await fetch(
+frontend/views\notes\notes-panel.js:988:        { headers: { Authorization: 'Bearer ' + (window._sbToken || '') } }
+frontend/js/features\daily-mission\daily-mission-ui.ts:254:  const token = (window as unknown as { _sbToken?: string })._sbToken;
+frontend/js/features\daily-mission\daily-mission-ui.ts:383:  const token = (window as unknown as { _sbToken?: string })._sbToken;
+frontend/views\settings\settings.js:91:        var response = await fetch('/api/feedback', {
+frontend/views\settings\settings.js:93:          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (window._sbToken || '') },
+frontend/views\settings\settings.js:229:        var tok = window._sbToken || '';
+frontend/views\settings\settings.js:233:          serverDelete = fetch(
+frontend/views\settings\settings.js:239:                Authorization: 'Bearer ' + tok,
+frontend/views\settings\settings.js:348:        var token = _sbToken || sessionStorage.getItem('sb_sess_token');
+frontend/views\settings\settings.js:352:          Authorization: 'Bearer ' + token,
+frontend/views\settings\settings.js:367:              await fetch(
+frontend/views\settings\settings.js:388:          var delRes = await fetch('/api/admin-users', {
+frontend/views\settings\settings.js:390:            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+frontend/views\editor\editor.js:9:    return fetch(url).then(function (r) {
+frontend/js/features\daily-mission\daily-mission-ui.js:184:    const token = window._sbToken;
+frontend/js/features\daily-mission\daily-mission-ui.js:303:    const token = window._sbToken;
+frontend/views\subscription\subscription.js:416:    var adminRes = await fetch('/api/admin-users', {
+frontend/views\subscription\subscription.js:420:        Authorization: 'Bearer ' + (window._sbToken || '')
+frontend/js/features\writing-coach\writing-coach.ts:74:    const res = await fetch('views/writing-coach/writing-coach.html');
+frontend/js/features\writing-coach\writing-coach.js:60:        const res = await fetch('views/writing-coach/writing-coach.html');
+frontend/js/services\pdf-service.js:2:    fetch(path)
+frontend/js/services\pdf-service.js:58:            const r = await fetch(pdfPath);
+frontend/js/services\study-service.ts:118:  const token = (window as unknown as { _sbToken?: string })._sbToken;
+frontend/js/services\study-service.ts:123:        const t = (window as unknown as { _sbToken?: string })._sbToken;
+frontend/js/services\authenticated-fetch.ts:69:    headers.set('Authorization', `Bearer ${bearer}`);
+frontend/js/services\authenticated-fetch.ts:71:    return fetch(input, { ...init, headers });
+frontend/js/services\authenticated-fetch.ts:95:    const tokenBefore = window._sbToken || null;
+frontend/js/services\authenticated-fetch.ts:99:      if (!tokenNeedsRefresh(window._sbToken || null)) return;
+frontend/js/services\authenticated-fetch.ts:107:    const accessToken = window._sbToken || null;
+frontend/js/services\authenticated-fetch.ts:126:      getAccessToken: () => window._sbToken || null,
+frontend/js/services\study-service.js:51:    const token = window._sbToken;
+frontend/js/services\study-service.js:56:                const t = window._sbToken;
+frontend/js/services\authenticated-fetch.js:43:        headers.set('Authorization', `Bearer ${bearer}`);
+frontend/js/services\authenticated-fetch.js:46:        return fetch(input, { ...init, headers });
+frontend/js/services\authenticated-fetch.js:66:        const tokenBefore = window._sbToken || null;
+frontend/js/services\authenticated-fetch.js:70:            if (!tokenNeedsRefresh(window._sbToken || null))
+frontend/js/services\authenticated-fetch.js:79:        const accessToken = window._sbToken || null;
+frontend/js/services\authenticated-fetch.js:93:        getAccessToken: () => window._sbToken || null,
+frontend/js/services\progress-sync.ts:11:  _sbToken?: string;
+frontend/js/services\ai-usage.ts:18:    _sbToken?: string;
+frontend/js/services\ai-usage.ts:74:function _token(): string { return window._sbToken || ''; }
+frontend/js/services\subscription-service.ts:145:  const res = await fetch('/api/public-billing-config');
+frontend/views\games\games.js:9:    return fetch(url).then(function (r) {
+frontend/js/features\pdf-viewer\pdf-compare.js:57:    const res = await fetch(path);
+frontend/js/services\subscription-service.js:119:    const res = await fetch('/api/public-billing-config');
+frontend/js/services\ai-usage.js:31:function _token() { return window._sbToken || ''; }
+frontend/js/services\pdf-service.ts:8:  fetch(path)
+frontend/js/services\pdf-service.ts:78:      const r = await fetch(pdfPath);
+frontend/js/services\ai-service.ts:10:  return window._sbToken || '';
+frontend/js/services\ai-service.ts:16:    Authorization: 'Bearer ' + _token(),
+frontend/js/features\auth\user-data.ts:80:    const token = window._sbToken;
+frontend/js/services\ai-service.js:8:    return window._sbToken || '';
+frontend/js/services\ai-service.js:13:        Authorization: 'Bearer ' + _token(),
+frontend/js/features\auth\user-data.js:50:        const token = window._sbToken;
+frontend/js/features\pdf-viewer\pdf-compare.ts:73:  const res = await fetch(path);
+frontend/js/features\courses\course-files.ts:1072:  if (!window._sbToken) return;
+frontend/js/features\courses\course-view.ts:598:  if (!filesList || !course.id || !window._sbToken) return;
+frontend/js/features\courses\course-files.js:974:    if (!window._sbToken)
+frontend/js/features\chatbot-new\chat-attachments.js:126:    const response = await fetch(url, { cache: 'no-store' });
+frontend/js/features\courses\course-view.js:541:    if (!filesList || !course.id || !window._sbToken)
+frontend/js/features\courses\document-type-badge.js:109:    const token = opts?.token ?? w._sbToken ?? '';
+frontend/js/features\courses\document-type-badge.js:111:        const r = await fetch(base + '/api/documents/set-type', {
+frontend/js/features\courses\document-type-badge.js:113:            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+frontend/js/features\chatbot-new\chat-attachments.ts:131:  const response = await fetch(url, { cache: 'no-store' });
+frontend/js/features\courses\document-type-badge.ts:147:  const w = window as unknown as { BACKEND_URL?: string; _sbToken?: string };
+frontend/js/features\courses\document-type-badge.ts:149:  const token = opts?.token ?? w._sbToken ?? '';
+frontend/js/features\courses\document-type-badge.ts:151:    const r = await fetch(base + '/api/documents/set-type', {
+frontend/js/features\courses\document-type-badge.ts:153:      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+frontend/js/features\chatbot-new\saved-reply-sync.ts:42:   * and retries a safe request once after a 401. A raw fetch() here is
+frontend/js/features\chatbot-new\shell.js:4544:    const live = window._sbToken;
+frontend/js/features\chatbot-new\shell.js:5803:            // sending — a raw fetch() with the token captured at the top of this
+frontend/js/features\chatbot-new\shell.ts:5175:  const live = (window as unknown as { _sbToken?: string })._sbToken;
+frontend/js/features\chatbot-new\shell.ts:6497:      // sending — a raw fetch() with the token captured at the top of this
+frontend/js/features\chatbot-new\workspace-library.js:2150:        return window._sbToken || localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token') || '';
+frontend/js/features\chatbot-new\workspace-library.js:2153:        return window._sbToken || '';
+frontend/js/features\chatbot-new\workspace-library.js:2290:            if (!window._sbToken) {
+frontend/js/features\chatbot-new\workspace-library.js:2291:                window._sbToken = localStorage.getItem('sb_sess_token')
+frontend/js/features\chatbot-new\workspace-library.ts:2207:    return window._sbToken || localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token') || '';
+frontend/js/features\chatbot-new\workspace-library.ts:2208:  } catch { return window._sbToken || ''; }
+frontend/js/features\chatbot-new\workspace-library.ts:2356:      if (!window._sbToken) {
+frontend/js/features\chatbot-new\workspace-library.ts:2357:        window._sbToken = localStorage.getItem('sb_sess_token')
+frontend/js/features\ai-chat\services\ai-service.js:7:    return window._sbToken || '';
+frontend/js/features\ai-chat\services\ai-service.js:12:        Authorization: 'Bearer ' + _token(),
+frontend/js/features\ai-chat\services\ai-service.js:20:    const response = await fetch(_backendUrl() + '/api/ai', {
+frontend/js/features\ai-chat\services\ai-service.js:45:    const response = await fetch(_backendUrl() + '/api/ai/ask', {
+frontend/js/features\ai-chat\services\ai-service.js:75:                const response = await fetch(_backendUrl() + '/api/documents/upload', {
+frontend/js/features\ai-chat\services\ai-service.js:116:    const response = await fetch(_backendUrl() + '/api/documents/list?courseId=' + encodeURIComponent(courseId), { headers: { Authorization: 'Bearer ' + _token() } });
+frontend/js/features\ai-chat\services\ai-service.js:145:        const response = await fetch(_backendUrl() + '/api/documents/index-existing', {
+frontend/js/features\ai-chat\services\ai-service.js:168:    const response = await fetch(_backendUrl() + '/api/documents/delete', {
+frontend/js/features\ai-chat\services\ai-service.js:178:    const response = await fetch(_backendUrl() + '/api/documents/review-pages', {
+frontend/js/features\ai-chat\services\ai-service.js:193:    const response = await fetch(_backendUrl() + '/api/documents/correct-page', {
+frontend/js/features\ai-chat\services\ai-service.js:213:    const response = await fetch(_backendUrl() + '/api/learning/topic-map', {
+frontend/js/features\ai-chat\services\ai-service.js:228:    const response = await fetch(_backendUrl() + '/api/learning/topic-map-generate', {
+frontend/js/features\ai-chat\services\ai-service.js:241:    const response = await fetch(_backendUrl() + '/api/ai/generate', {
+frontend/js/features\ai-chat\services\ai-service.js:249:    const response = await fetch(_backendUrl() + '/api/ai/examforge', {
+frontend/js/features\ai-chat\services\ai-service.js:262:    const response = await fetch(_backendUrl() + '/api/ai/cheatsheet', {
+frontend/js/features\ai-chat\services\ai-service.js:271:    const response = await fetch(_backendUrl() + '/api/ai/deep-learn', {
+frontend/js/features\ai-chat\services\ai-service.js:281:    const response = await fetch(_backendUrl() + '/api/notes?courseId=' + encodeURIComponent(courseId), { headers: _authJsonHeaders() });
+frontend/js/features\ai-chat\services\ai-service.js:291:    const response = await fetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), { headers: _authJsonHeaders() });
+frontend/js/features\ai-chat\services\ai-service.js:301:    const response = await fetch(_backendUrl() + '/api/notes?id=' + encodeURIComponent(id), {
+frontend/js/features\ai-chat\services\ai-service.js:308:    const response = await fetch(_backendUrl() + '/api/ai/examforge', {
+frontend/js/features\ai-chat\services\ai-service.js:321:    const response = await fetch(_backendUrl() + '/api/ai/feedback', {

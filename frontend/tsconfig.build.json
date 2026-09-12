@@ -5,7 +5,7 @@
     "allowImportingTsExtensions": false,
     "allowJs": false,
     "declaration": false,
-    "sourceMap": true,
+    "sourceMap": false,
     "outDir": "./",
     "rootDir": "./"
   },

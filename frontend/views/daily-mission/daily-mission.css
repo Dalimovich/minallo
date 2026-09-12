@@ -1,0 +1,816 @@
+/* Shared Daily Mission UI — used by the dashboard widget, My Courses preview
+   card, and the chatbot Daily Mission panel. Keep these classes generic so the
+   same markup renders consistently (and stays in sync) across all surfaces. */
+
+.dm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text, #e2e8f0);
+}
+.dm-loading {
+  padding: 14px 0;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+/* Progress header */
+.dm-progress-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 2px; }
+.dm-progress-row { display: flex; align-items: center; gap: 6px; font-size: 0.92rem; opacity: 0.9; }
+.dm-progress-row strong { font-size: 1rem; }
+.dm-progress-sep { opacity: 0.4; }
+.dm-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.dm-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6366f1, #38bdf8);
+  transition: width 0.25s ease;
+}
+
+/* Task groups + cards */
+.dm-task-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.dm-task-group-head {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin-top: 4px;
+}
+.dm-task-card {
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--card-inner, rgba(255, 255, 255, 0.04));
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: dm-card-in 0.16s ease;
+}
+@keyframes dm-card-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dm-task-card--completed { opacity: 0.7; }
+.dm-task-card--unavailable, .dm-task-card--replaced { opacity: 0.55; }
+.dm-task-title-row { display: flex; align-items: center; gap: 8px; }
+.dm-task-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  flex: 0 0 auto;
+}
+.dm-task-check.is-done {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #06270f;
+}
+.dm-task-title { font-weight: 600; font-size: 0.94rem; }
+.dm-task-title.is-done { text-decoration: line-through; opacity: 0.7; }
+.dm-task-desc { font-size: 0.84rem; opacity: 0.75; }
+.dm-task-file {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-task-meta { font-size: 0.78rem; opacity: 0.6; }
+.dm-task-reason {
+  font-size: 0.82rem;
+  opacity: 0.8;
+  border-left: 2px solid rgba(99, 102, 241, 0.5);
+  padding-left: 8px;
+}
+.dm-task-reason[hidden] { display: none; }
+
+.dm-badge {
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.dm-badge--done { background: rgba(34, 197, 94, 0.18); color: #4ade80; }
+.dm-badge--progress { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+.dm-badge--skipped { background: rgba(148, 163, 184, 0.18); color: #cbd5e1; }
+.dm-badge--moved { background: rgba(56, 189, 248, 0.18); color: #7dd3fc; }
+.dm-badge--unavailable { background: rgba(248, 113, 113, 0.18); color: #fca5a5; }
+.dm-badge--replaced { background: rgba(148, 163, 184, 0.14); color: #94a3b8; }
+
+.dm-task-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.dm-task-btn {
+  padding: 5px 11px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e2e8f0);
+  cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.dm-task-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.dm-task-btn:disabled { opacity: 0.5; cursor: default; }
+.dm-task-btn--primary { background: #6366f1; border-color: #6366f1; color: #fff; }
+.dm-task-btn--primary:hover { background: #5457e6; }
+.dm-task-btn--ghost { opacity: 0.75; }
+
+/* Empty / setup / unavailable / completed states */
+.dm-state {
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 14px;
+  padding: 16px;
+  text-align: left;
+}
+.dm-state-title { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+.dm-state-text { font-size: 0.88rem; opacity: 0.78; margin: 0 0 10px; }
+.dm-state--completed { border-style: solid; border-color: rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.06); }
+.dm-state--unavailable, .dm-state--error { border-color: rgba(248, 113, 113, 0.35); background: rgba(248, 113, 113, 0.05); }
+.dm-cta {
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: none;
+  background: linear-gradient(120deg, #6366f1, #38bdf8);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.dm-cta:hover { filter: brightness(1.07); }
+.dm-cta:disabled { opacity: 0.6; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dm-task-card, .dm-progress-fill { animation: none; transition: none; }
+}
+
+body:not(.night) .dm-task-card,
+body:not(.night) .dm-state {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #1e293b;
+}
+body:not(.night) .dm-task-btn {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: #1e293b;
+}
+body:not(.night) .dm-progress-track { background: rgba(15, 23, 42, 0.08); }
+
+/* Widget — fills its dashboard tile (.dmw-root is height:100%) and stays
+   responsive to tile resizing via the dashboard's own .dw-resize handle. The
+   task list flexes to fill whatever height is left and scrolls internally, so a
+   tall widget never leaves dead space and the list is never cut short.
+   NOTE: no `resize: vertical` here — its handle collided with the dashboard's
+   resize handle (same corner) and set an explicit short height that cut the
+   list and got wiped on every re-render. Height is driven by the tile only. */
+.dm-widget {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+/* Widget header with course picker */
+.dm-widget-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dm-widget-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Course picker dropdown */
+.dm-course-picker {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e2e8f0);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.dm-course-picker:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.dm-course-picker:focus {
+  outline: none;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+}
+
+body:not(.night) .dm-course-picker {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: #1e293b;
+}
+
+/* Urgency alerts */
+.dm-widget-alert {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.dm-widget-alert--warning {
+  background: rgba(248, 113, 113, 0.15);
+  border-left: 3px solid #ef4444;
+  color: #fca5a5;
+}
+
+/* Study progress display */
+.dm-widget-urgency {
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dm-urgency-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+.dm-urgency-label { font-weight: 600; }
+.dm-urgency-time { opacity: 0.75; }
+.dm-urgency-bar {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.dm-urgency-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* Widget action buttons */
+.dm-widget-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.dm-btn-generate-exam,
+.dm-btn-generate-cheatsheet {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.dm-btn-generate-exam {
+  background: linear-gradient(120deg, #ef4444, #f97316);
+  color: #fff;
+}
+.dm-btn-generate-exam:hover {
+  filter: brightness(1.1);
+}
+.dm-btn-generate-cheatsheet {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.dm-btn-generate-cheatsheet:hover {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+/* Widget scrollable task list — flex-fills the widget's remaining height. */
+.dm-widget-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dm-widget-tasks--scrollable {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: var(--dm-widget-list-max-height, none);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  margin-right: -8px;
+}
+
+.dm-widget-tasks--scrollable::-webkit-scrollbar {
+  width: 6px;
+}
+.dm-widget-tasks--scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dm-widget-tasks--scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+.dm-widget-tasks--scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Exam date modal */
+.dm-exam-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.dm-exam-modal {
+  background: var(--card, rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.dm-exam-modal-header {
+  margin-bottom: 20px;
+}
+
+.dm-exam-modal-header h3 {
+  margin: 0 0 8px;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.dm-exam-modal-header p {
+  margin: 0;
+  opacity: 0.75;
+  font-size: 0.95rem;
+}
+
+.dm-exam-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dm-exam-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dm-exam-input-group label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.dm-exam-date-input {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.dm-exam-date-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.dm-exam-modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.dm-btn-exam-cancel,
+.dm-btn-exam-save {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.dm-btn-exam-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.dm-btn-exam-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dm-btn-exam-save {
+  background: linear-gradient(120deg, #6366f1, #38bdf8);
+  color: #fff;
+}
+
+.dm-btn-exam-save:hover {
+  filter: brightness(1.08);
+}
+
+.dm-btn-exam-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Tasks modal */
+.dm-tasks-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.dm-tasks-modal {
+  background: var(--card, rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.dm-tasks-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.dm-tasks-modal-header h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.dm-modal-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 24px;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+
+.dm-modal-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dm-tasks-modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 8px;
+  margin-right: -8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.dm-tasks-modal-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.dm-modal-empty {
+  padding: 24px;
+  text-align: center;
+  opacity: 0.7;
+  font-size: 0.95rem;
+}
+
+.dm-modal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dm-modal-group-title {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+body:not(.night) .dm-tasks-modal {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #1e293b;
+}
+
+body:not(.night) .dm-modal-close {
+  background: rgba(15, 23, 42, 0.08);
+  color: #1e293b;
+}
+
+body:not(.night) .dm-modal-close:hover {
+  background: rgba(15, 23, 42, 0.14);
+}
+
+/* Possible-match suggestion section */
+.dm-widget-matches {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.dm-widget-matches-heading {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  font-weight: 600;
+}
+
+.dm-widget-match-card {
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: 10px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: dm-card-in 0.16s ease;
+}
+
+.dm-widget-match-pair {
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-widget-match-arrow {
+  opacity: 0.55;
+  font-style: normal;
+}
+
+.dm-widget-match-reason {
+  font-size: 0.78rem;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-widget-match-actions {
+  display: flex;
+  gap: 6px;
+}
+
+body:not(.night) .dm-widget-matches {
+  border-top-color: rgba(15, 23, 42, 0.1);
+}
+
+body:not(.night) .dm-widget-match-card {
+  border-color: rgba(99, 102, 241, 0.18);
+  background: rgba(99, 102, 241, 0.04);
+  color: #1e293b;
+}
+
+/* Picker row + edit (study settings) button */
+.dm-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dm-picker-row .dm-course-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dm-edit-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e2e8f0);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.dm-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+body:not(.night) .dm-edit-btn {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: #1e293b;
+}
+
+/* Edit menu (floating) */
+.dm-edit-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1e293b;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+body:not(.night) .dm-edit-menu {
+  background: #fff;
+  border-color: rgba(15, 23, 42, 0.12);
+}
+.dm-edit-menu-item {
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.dm-edit-menu-item:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+body:not(.night) .dm-edit-menu-item {
+  color: #1e293b;
+}
+
+/* Completed-files modal */
+.dm-done-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.dm-done-modal {
+  background: var(--card, #1e293b);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 560px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.dm-done-modal-header { margin-bottom: 16px; }
+.dm-done-modal-header h3 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.dm-done-modal-header p {
+  margin: 0;
+  opacity: 0.75;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.dm-done-modal-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 60px;
+}
+.dm-done-loading, .dm-done-empty {
+  opacity: 0.7;
+  font-size: 0.9rem;
+  padding: 12px 4px;
+}
+.dm-done-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.dm-done-row:hover { background: rgba(255, 255, 255, 0.05); }
+body:not(.night) .dm-done-row:hover { background: rgba(15, 23, 42, 0.05); }
+.dm-done-check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+.dm-done-name {
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+.dm-done-modal-actions {
+  display: flex;
+  gap: 12px;
+}
+.dm-btn-done-cancel, .dm-btn-done-save {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.dm-btn-done-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+.dm-btn-done-cancel:hover { background: rgba(255, 255, 255, 0.12); }
+body:not(.night) .dm-btn-done-cancel { background: rgba(15, 23, 42, 0.06); color: #1e293b; }
+.dm-btn-done-save {
+  background: linear-gradient(120deg, #6366f1, #38bdf8);
+  color: #fff;
+}
+.dm-btn-done-save:hover { filter: brightness(1.08); }
+.dm-btn-done-save:disabled { opacity: 0.6; cursor: default; }
+
+/* Done checkbox inside the Today's Tasks modal rows */
+.dm-task-titlewrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.dm-task-check-toggle {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  accent-color: #22c55e;
+  cursor: pointer;
+  margin-top: 1px;
+}

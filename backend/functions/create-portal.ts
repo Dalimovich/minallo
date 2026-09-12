@@ -6,7 +6,7 @@ import { requireEnv } from '../lib/env';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface StripeResponse { url?: string; error?: { message?: string } }
-interface ProfileRow { stripe_customer_id?: string }
+interface SubscriptionRow { stripe_customer_id?: string | null }
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();
@@ -21,13 +21,14 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!user || !user.id) return fail(401, 'Invalid or expired session');
 
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
-  const profileRes = await supaRequest<ProfileRow[]>(
+  const subRes = await supaRequest<SubscriptionRow[]>(
     'GET',
-    'profiles?id=eq.' + encodeURIComponent(user.id) + '&select=stripe_customer_id',
+    'subscriptions?user_id=eq.' + encodeURIComponent(user.id) +
+      '&select=stripe_customer_id&stripe_customer_id=not.is.null&limit=1',
     null, serviceKey, { Accept: 'application/json' }
   );
-  const profile = Array.isArray(profileRes.body) ? profileRes.body[0] : null;
-  const customerId = profile && profile.stripe_customer_id;
+  const subscription = Array.isArray(subRes.body) ? subRes.body[0] : null;
+  const customerId = subscription && subscription.stripe_customer_id;
   if (!customerId) return fail(400, 'No Stripe account found for this user');
 
   try {

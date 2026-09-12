@@ -1,0 +1,9 @@
+{
+  "document_type": "unknown",
+  "min_pages": 1,
+  "must_contain": ["Exercise 13.11", "580 m/min", "Diameter D = 40 mm"],
+  "must_not_contain": ["560 m/min"],
+  "must_have_exercises": ["13.11"],
+  "max_unclear_markers": 0,
+  "expect_ocr_recommended": true
+}

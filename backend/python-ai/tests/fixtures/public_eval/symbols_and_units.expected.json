@@ -1,0 +1,9 @@
+{
+  "document_type": "unknown",
+  "min_pages": 1,
+  "must_contain": ["Exercise 2.4b", "-12.5 MPa", "80 mm"],
+  "must_not_contain": ["560 m/min"],
+  "must_have_exercises": ["2.4"],
+  "max_unclear_markers": 0,
+  "expect_ocr_recommended": true
+}

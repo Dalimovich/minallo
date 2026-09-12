@@ -29,6 +29,8 @@ export function initStudyLounge(): void {
     try {
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
     } catch { /* quota */ }
+    const ps = (window as unknown as { _progressSync?: { syncLoungeStats?: (s: LoungeStats) => void } })._progressSync;
+    ps?.syncLoungeStats?.(stats);
   }
 
   function getStats(): LoungeStats {

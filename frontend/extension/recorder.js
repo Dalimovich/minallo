@@ -36,6 +36,8 @@ btn.addEventListener('click', async () => {
     stopRecording();
   } else if (btn.dataset.state === 'transcribe') {
     await transcribeAndSend();
+  } else if (btn.dataset.state === 'download') {
+    downloadRecording();
   } else {
     await startRecording();
   }
@@ -50,18 +52,6 @@ async function startRecording() {
   }
 
   btn.disabled = true;
-  setStatus('🔍 Checking local transcription server…');
-
-  const serverOk = await checkServer();
-  if (!serverOk) {
-    statusEl.innerHTML =
-      '⚠️ Minallo Transcriber is not running.<br><br>' +
-      '<small>Download it once from your Minallo dashboard,<br>' +
-      'then double-click it — it runs silently in your system tray.</small>';
-    btn.disabled = false;
-    return;
-  }
-
   setStatus('🎙 Connecting to lecture audio…');
 
   chrome.tabCapture.getMediaStreamId({ targetTabId: lectureTabId }, async (streamId) => {
@@ -114,10 +104,27 @@ async function startRecording() {
 function stopRecording() {
   clearInterval(timerInterval);
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  setStatus(`✅ ${Math.round(seconds / 60)} min recorded. Click Transcribe to continue.`);
-  btn.textContent = '🧠 Transcribe + Summarize';
-  btn.dataset.state = 'transcribe';
+  const mins = Math.max(1, Math.round(seconds / 60));
+  setStatus(`✅ ${mins} min recorded. Transcription coming soon — download the audio for now.`);
+  btn.textContent = '⬇ Download Recording';
+  btn.dataset.state = 'download';
   btn.disabled = false;
+}
+
+function downloadRecording() {
+  const mimeType = mediaRecorder?.mimeType || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `minallo-lecture-${ts}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus('💾 Saved. You can close this window.');
 }
 
 // ── Transcription via local Python server ─────────────────────────────────

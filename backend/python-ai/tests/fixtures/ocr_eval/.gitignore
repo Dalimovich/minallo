@@ -1,0 +1,7 @@
+*.actual.md
+*.*.actual.md
+
+# Source PDFs are local-only — they're course materials and shouldn't
+# live in the repo. The .expected.md ground-truth files ARE checked in.
+# Drop the PDFs in this directory manually to run the eval.
+*.pdf

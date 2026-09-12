@@ -52,6 +52,41 @@ test.describe('PDF Reader', () => {
     expect(text?.trim().length).toBeGreaterThan(0);
   });
 
+  test('document rail split state is cleared after leaving PDF', async ({ page }) => {
+    const app = new AppPage(page);
+    const opened = await openAnyPdf(page, app);
+    if (!opened) { test.skip(true, 'No PDF available'); return; }
+
+    const aiRailButton = page.locator('.dr-rail-btn[data-dr-mode="ai"]');
+    await expect(aiRailButton).toBeVisible({ timeout: 10000 });
+
+    const beforeBox = await page.locator('#pdfViewerWrap').boundingBox();
+    await aiRailButton.click();
+    await expect(page.locator('#drDrawer')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('body')).toHaveClass(/dr-pdf-split-open/);
+    await expect(page.locator('#drRoot')).toHaveClass(/is-open/);
+
+    const splitBox = await page.locator('#pdfViewerWrap').boundingBox();
+    expect(splitBox?.width || 0).toBeLessThan(beforeBox?.width || 99999);
+
+    await page.locator('#breadcrumb').click();
+    await expect(page.locator('#courseOverview')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('body')).not.toHaveClass(/dr-pdf-split-open/);
+    await expect(page.locator('#drRoot')).not.toHaveClass(/is-open/);
+    await expect.poll(() => page.evaluate(() => document.body.style.getPropertyValue('--dr-drawer-w'))).toBe('');
+    await expect.poll(() =>
+      page.evaluate(() => document.getElementById('drRoot')?.style.getPropertyValue('--dr-drawer-w') || '')
+    ).toBe('');
+
+    await app.openFirstFile();
+    await expect(page.locator('#pdfView')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('body')).not.toHaveClass(/dr-pdf-split-open/);
+    const reopenedBox = await page.locator('#pdfViewerWrap').boundingBox();
+    expect(Math.round(reopenedBox?.width || 0)).toBeGreaterThanOrEqual(
+      Math.round((beforeBox?.width || 0) * 0.95)
+    );
+  });
+
   test('page bookmark restores after reload', async ({ page }) => {
     const app = new AppPage(page);
     const opened = await openAnyPdf(page, app);

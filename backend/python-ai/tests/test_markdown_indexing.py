@@ -1,0 +1,412 @@
+"""Tests for services.markdown_indexing.
+
+Covers: empty-page fallback, heading promotion (numbered + ALL-CAPS), formula
+detection, bullet normalisation, document-level assembly, chunk wrapping, and
+extraction-quality grading.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.services.markdown_indexing import (
+    PageMarkdown,
+    _grade_extraction,
+    _looks_like_heading,
+    _looks_like_math,
+    assemble_document_markdown,
+    page_to_markdown,
+    wrap_chunk_markdown,
+)
+
+
+# ── page_to_markdown ────────────────────────────────────────────────────────
+
+
+def test_empty_page_returns_unclear_with_failed_quality():
+    result = page_to_markdown("", page_number=3)
+    assert result.markdown == "[unclear]"
+    assert result.quality == "failed"
+    assert result.page_number == 3
+
+
+def test_whitespace_only_page_is_failed():
+    result = page_to_markdown("   \n\n  \t  \n", page_number=1)
+    assert result.markdown == "[unclear]"
+    assert result.quality == "failed"
+
+
+def test_normal_paragraph_keeps_text_and_grades_good():
+    text = (
+        "Newton's second law states that the net force on an object equals "
+        "its mass times its acceleration. This relationship is foundational "
+        "in classical mechanics and applies to all rigid bodies."
+    )
+    result = page_to_markdown(text, page_number=2)
+    assert "Newton" in result.markdown
+    assert result.quality == "good"
+
+
+def test_numbered_heading_is_promoted():
+    text = "1.2 Bending Moment\n\nThe bending moment M is defined as the product of force and lever arm."
+    result = page_to_markdown(text, page_number=4)
+    # Depth: "1.2" has one dot → ###
+    assert result.markdown.startswith("### 1.2 Bending Moment")
+
+
+def test_deeper_numbered_heading_gets_deeper_level():
+    text = "2.3.1 Subcase\n\nThis subsection covers an edge case in detail with examples and step by step derivations."
+    result = page_to_markdown(text, page_number=5)
+    assert result.markdown.startswith("#### 2.3.1 Subcase")
+
+
+def test_all_caps_short_line_is_heading():
+    text = "INTRODUCTION\n\nThis chapter introduces the core concepts of statics and how they apply to engineering problems."
+    result = page_to_markdown(text, page_number=1)
+    assert result.markdown.startswith("## INTRODUCTION")
+
+
+def test_formula_line_gets_display_math():
+    text = "1.2 Bending Moment\n\nM = F * l\n\nUnit: [M] = Nm and the formula applies in static equilibrium under the given assumptions."
+    result = page_to_markdown(text, page_number=4)
+    assert "$$" in result.markdown
+    assert "M = F * l" in result.markdown
+
+
+def test_bullet_lines_normalised_to_dash():
+    text = (
+        "Required equipment for the experiment includes:\n\n"
+        "* meter stick\n"
+        "- stopwatch\n"
+        "• mass set\n"
+    )
+    result = page_to_markdown(text, page_number=2)
+    assert "- meter stick" in result.markdown
+    assert "- stopwatch" in result.markdown
+    assert "- mass set" in result.markdown
+    # The original "*"/"•" markers should be gone.
+    assert "* meter" not in result.markdown
+    assert "• mass" not in result.markdown
+
+
+def test_lettered_bullets_are_recognised():
+    text = (
+        "Possible answers are:\n\n"
+        "(a) tension increases\n"
+        "(b) tension decreases\n"
+        "(c) tension stays the same\n"
+    )
+    result = page_to_markdown(text, page_number=2)
+    assert "- tension increases" in result.markdown
+    assert "- tension decreases" in result.markdown
+
+
+def test_very_short_page_grades_weak():
+    # Above the 20-char "failed" floor but below MIN_GOOD_CHARS → "weak".
+    result = page_to_markdown("Page 7 of 24 — Appendix entry.", page_number=7)
+    assert result.quality == "weak"
+
+
+def test_wall_of_symbols_grades_weak():
+    # Long string, no spaces → low space density, looks like OCR noise.
+    text = "x" * 200
+    result = page_to_markdown(text, page_number=9)
+    assert result.quality == "weak"
+
+
+def test_sentence_ending_with_period_not_treated_as_math():
+    text = "The mass is constant. The acceleration is variable. The force is calculated using the standard equation."
+    result = page_to_markdown(text, page_number=1)
+    assert "$$" not in result.markdown
+
+
+def test_quality_failed_when_only_punctuation():
+    result = page_to_markdown("....", page_number=1)
+    assert result.quality == "failed"
+
+
+# ── assemble_document_markdown ──────────────────────────────────────────────
+
+
+def test_assemble_includes_source_and_page_markers():
+    pages = [
+        PageMarkdown(page_number=1, markdown="## Intro\n\nFirst page body.", quality="good"),
+        PageMarkdown(page_number=2, markdown="Second page body here.", quality="good"),
+    ]
+    md = assemble_document_markdown(pages, source_filename="EngMec.pdf")
+    assert "<!-- source: EngMec.pdf -->" in md
+    assert "<!-- page: 1 -->" in md
+    assert "<!-- page: 2 -->" in md
+    assert "First page body." in md
+    assert "Second page body here." in md
+    # Source comment appears once, before any page marker.
+    assert md.index("<!-- source: EngMec.pdf -->") < md.index("<!-- page: 1 -->")
+
+
+def test_assemble_with_no_pages_returns_empty_string():
+    assert assemble_document_markdown([], source_filename="x.pdf") == ""
+
+
+def test_assemble_keeps_unclear_pages():
+    pages = [
+        PageMarkdown(page_number=1, markdown="[unclear]", quality="failed"),
+        PageMarkdown(page_number=2, markdown="Real content here.", quality="good"),
+    ]
+    md = assemble_document_markdown(pages, source_filename="x.pdf")
+    assert "[unclear]" in md
+    assert "Real content here." in md
+
+
+# ── wrap_chunk_markdown ─────────────────────────────────────────────────────
+
+
+def test_wrap_chunk_with_single_page():
+    out = wrap_chunk_markdown(
+        "Some chunk text",
+        source_filename="EngMec.pdf",
+        page_start=4,
+        page_end=4,
+        chunk_type="formula",
+    )
+    assert "<!-- source: EngMec.pdf -->" in out
+    assert "<!-- page: 4 -->" in out
+    assert "<!-- chunk_type: formula -->" in out
+    assert "Some chunk text" in out
+
+
+def test_wrap_chunk_with_page_range():
+    out = wrap_chunk_markdown(
+        "Spans two pages",
+        source_filename="x.pdf",
+        page_start=3,
+        page_end=5,
+        chunk_type="exercise",
+    )
+    assert "<!-- page: 3-5 -->" in out
+
+
+def test_wrap_chunk_with_section_title():
+    out = wrap_chunk_markdown(
+        "body",
+        source_filename="x.pdf",
+        page_start=1,
+        page_end=1,
+        chunk_type="definition",
+        section_title="1.2 Bending Moment",
+    )
+    assert "<!-- section: 1.2 Bending Moment -->" in out
+
+
+def test_wrap_chunk_with_empty_text_falls_back_to_unclear():
+    out = wrap_chunk_markdown(
+        "",
+        source_filename="x.pdf",
+        page_start=1,
+        page_end=1,
+        chunk_type="general",
+    )
+    assert "[unclear]" in out
+
+
+@pytest.mark.parametrize(
+    "chunk_type",
+    ["definition", "theorem", "formula", "example", "exercise", "solution", "general"],
+)
+def test_wrap_chunk_accepts_all_known_types(chunk_type):
+    out = wrap_chunk_markdown(
+        "body",
+        source_filename="x.pdf",
+        page_start=1,
+        page_end=1,
+        chunk_type=chunk_type,
+    )
+    assert f"<!-- chunk_type: {chunk_type} -->" in out
+
+
+# ── Phase 2 — math-line classifier (assignment-pattern path) ────────────────
+
+
+@pytest.mark.parametrize("line", [
+    "Setzbetrag fz,ges = 20 μm = 0.02 mm",
+    "τ_Schw = F / A",
+    "A = π · d · a",
+    "Umfang = π × 35 mm",
+    "F = 5.000 N",
+    "R_e = 355 N/mm²",
+    "J_S = 1 / (A_S · E_S + A_P · E_P)",
+    "d_3 = 20.32 mm",
+    "z = 30",
+    "Wirksame Schweißnahtdicke a = 5 mm",
+])
+def test_math_classifier_catches_engineering_formulas(line: str) -> None:
+    assert _looks_like_math(line), f"expected math: {line!r}"
+
+
+@pytest.mark.parametrize("line", [
+    "Die Schubspannung berechnet sich nach Hooke.",
+    "Funktion = Quatsch",                       # no numeric/Greek/operator RHS
+    "Section 4.3.2",                            # no `=`
+    "Vergleich von Methoden und Resultaten",    # no `=`
+    "Hooke entdeckte das Gesetz im Jahre 1660.",  # sentence with digit
+])
+def test_math_classifier_rejects_prose(line: str) -> None:
+    assert not _looks_like_math(line), f"prose treated as math: {line!r}"
+
+
+# ── Phase 2 — heading classifier (colon + DE keywords + period-tightened) ──
+
+
+@pytest.mark.parametrize("line", [
+    "4.3.2 Zulässige Spannung",
+    "Schweißnaht-Berechnung",
+    "Spannungsnachweis:",
+    "Biegung und Torsion.",
+    "Lösung:",
+    "Gegeben:",
+    "Die Schraubenverbindung",
+    "INTRODUCTION",
+    "Newton's Second Law",
+])
+def test_heading_classifier_catches_german_lecture_headings(line: str) -> None:
+    assert _looks_like_heading(line), f"expected heading: {line!r}"
+
+
+@pytest.mark.parametrize("line", [
+    "Die Schubspannung in der Schweißnaht beträgt 9,09 N/mm².",
+    "Zunächst berechnen wir die Querschnittsfläche.",
+    "Berechnen Sie die Spannung nach Hooke.",
+    "wobei A die Fläche der Schweißnaht ist",
+    "Es gilt das Hookesche Gesetz.",
+])
+def test_heading_classifier_rejects_prose(line: str) -> None:
+    assert not _looks_like_heading(line), f"prose treated as heading: {line!r}"
+
+
+def test_heading_strips_trailing_colon_in_formatted_output() -> None:
+    result = page_to_markdown("Lösung:\n\nFolgendes ist zu berechnen.", page_number=1)
+    assert "## Lösung" in result.markdown
+    assert "## Lösung:" not in result.markdown
+
+
+# ── Phase 2 — stricter page-quality grading ────────────────────────────────
+
+
+def test_fragmented_pdfminer_wrap_is_demoted_to_weak() -> None:
+    # Avg word length collapses well below 3 when pdfminer breaks every
+    # word at a column wrap — the grader must catch it.
+    fragmented = ("Sch w eiss n a h t b e rec h nung ist " * 6).strip()
+    assert _grade_extraction(fragmented) == "weak"
+
+
+def test_runaway_punctuation_is_demoted_to_weak() -> None:
+    # TOC dotted-leader lines and similar punctuation-heavy noise — looks
+    # passable on chars/letters but is useless for retrieval.
+    toc = "Einleitung ............ 1 .... Kapitel 2 .......... 14 .... Kapitel 3 .......... 25 .... Kapitel 4 ......... 33"
+    assert _grade_extraction(toc) == "weak"
+
+
+def test_normal_german_paragraph_still_grades_good() -> None:
+    # Regression guard: real lecture prose must remain "good" after the
+    # tightened checks.
+    text = (
+        "Die Schubspannung in einer Schweißnaht ergibt sich aus der "
+        "wirkenden Kraft geteilt durch die wirksame Querschnittsfläche. "
+        "Diese Beziehung gilt nur unter idealisierten Bedingungen, in "
+        "denen das Material homogen und der Querschnitt konstant ist."
+    )
+    assert _grade_extraction(text) == "good"
+
+
+# ── Heading recovery for inline exercise labels ────────────────────────────
+
+
+def test_exercise_label_buried_mid_block_is_promoted_to_heading() -> None:
+    """The TU lecture template emits each page as: doc-banner + lecturer
+    names + exercise label + body — all without blank lines between them.
+    Without splitting at the exercise label, the heading gets buried and
+    detect_exercises never fires. After the split, the exercise label
+    must land as its own ``## `` heading regardless of surrounding lines.
+    """
+    from app.services.markdown_indexing import page_to_markdown
+
+    page_text = "\n".join([
+        "Grundlagen",
+        "des Konstruierens",
+        "SoSe 2023",
+        "Prof. Dr.-Ing. T. Vietor",
+        "Dipl.-Ing. D. Philipp",
+        "Übungsaufgabe 9.1",
+        "Der in Bild 1.1 dargestellte Deckel ist über 30 Schrauben befestigt.",
+    ])
+    pm = page_to_markdown(page_text, 1)
+    md = pm.markdown
+    assert "## Übungsaufgabe 9.1" in md, (
+        f"exercise label must be promoted to a heading; got:\n{md!r}"
+    )
+    # The body must follow the heading — not be absorbed into the banner.
+    assert "Der in Bild 1.1" in md
+    # And the heading must precede the body (heading promotion not order
+    # reversal).
+    assert md.index("## Übungsaufgabe 9.1") < md.index("Der in Bild 1.1")
+
+
+def test_compound_uebungsaufgabe_recognised_as_heading_directly() -> None:
+    """``_looks_like_heading`` must short-circuit to True for an exercise
+    label, even though it doesn't pass any of the generic shape filters
+    (not all-caps, not numbered-prefix-style, not in the German keyword
+    whitelist). Previously failed for ``Übungsaufgabe 9.1`` because the
+    keyword list had only ``übung`` and the title-case rule rejects
+    8-character strings."""
+    from app.services.markdown_indexing import _looks_like_heading
+
+    assert _looks_like_heading("Übungsaufgabe 9.1")
+    assert _looks_like_heading("Übungsaufgabe 9.1 a)")
+    assert _looks_like_heading("Uebungsaufgabe 9.2")
+    assert _looks_like_heading("Exercise 3")
+    assert _looks_like_heading("Beispiel 2 b")
+
+
+# ── Unicode math-symbol normalisation ───────────────────────────────────────
+
+
+def test_unicode_math_symbols_get_normalised_to_ascii() -> None:
+    """German engineering Formelzettel PDFs typeset formulas in the
+    Mathematical Alphanumeric Symbols block (U+1D400-1D7FF). Without
+    NFKC normalisation pdfminer hands the chunker text like
+    ``𝐴𝑒𝑟𝑠 = 𝜋/4 (𝐷𝐴² − 𝑑ℎ²)`` and:
+      * the assignment-pattern math detector misses it because the LHS
+        identifier is non-ASCII;
+      * the chunk_text isn't lexically searchable from a normal query.
+    Normalising at the top of ``page_to_markdown`` makes the same content
+    surface as ``Aers = π/4 (DA2 − dh2)``."""
+    from app.services.markdown_indexing import page_to_markdown, _looks_like_math
+
+    raw = "Aers-Formel\n\n𝐴𝑒𝑟𝑠 = 𝜋/4 (𝐷𝐴² − 𝑑ℎ²)"
+    pm = page_to_markdown(raw, 1)
+
+    # The Unicode italic letters must be gone from the stored markdown —
+    # if they survive, downstream retrieval can't lexically match a query
+    # for "Aers" or "DA".
+    assert "𝐴" not in pm.markdown
+    assert "𝜋" not in pm.markdown
+    assert "Aers" in pm.markdown
+    # π is a normal Greek letter (U+03C0) which IS searchable and used by
+    # Phase-2 math detection — NFKC maps the math-italic π (U+1D70B) to it.
+    assert "π" in pm.markdown
+
+    # The post-normalisation assignment line should now be recognised as
+    # math by `_looks_like_math` so the chunker's formula-companion code
+    # fires on reindex.
+    assert _looks_like_math("Aers = π/4 (DA2 − dh2)")
+
+
+def test_unicode_math_normalisation_leaves_plain_text_alone() -> None:
+    """Regression guard: NFKC must not corrupt ordinary German lecture
+    prose (umlauts, ß, etc.)."""
+    from app.services.markdown_indexing import _normalise_math_unicode
+
+    plain = (
+        "Die Schubspannung in der Schweißnaht ergibt sich aus der "
+        "Kraft geteilt durch die Querschnittsfläche."
+    )
+    assert _normalise_math_unicode(plain) == plain

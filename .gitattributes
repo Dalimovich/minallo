@@ -23,6 +23,7 @@ build/
 # large binaries
 *.exe
 *.dll
+*.pdf binary
 
 # OS/editor
 .DS_Store

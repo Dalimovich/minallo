@@ -2,11 +2,11 @@
   <!-- LEFT SIDEBAR -->
   <div class="dc-sidebar">
     <div class="dc-sidebar-top">
-      <span class="dc-sidebar-title">Chat</span>
+      <span class="dc-sidebar-title" data-i18n="chat_title">Chat</span>
       <div class="dc-sidebar-btns">
-        <button class="dc-top-btn" id="chatCreateRoomBtn">&#x2B; Room</button>
-        <button class="dc-top-btn" id="chatJoinRoomBtn">&#x1F4AC; Join</button>
-        <button class="dc-top-btn" id="chatAddFriendBtn">&#x1F464;+</button>
+        <button class="dc-top-btn" id="chatCreateRoomBtn" data-i18n="chat_btn_room">&#x2B; Room</button>
+        <button class="dc-top-btn" id="chatJoinRoomBtn" data-i18n="chat_btn_join">&#x1F4AC; Join</button>
+        <button class="dc-top-btn" id="chatAddFriendBtn" data-i18n-title="chat_btn_add_friend">&#x1F464;+</button>
       </div>
     </div>
     <div class="dc-sidebar-body" id="chatRoomsList"></div>
@@ -14,10 +14,10 @@
       <div class="dc-user-chip">
         <div class="dc-user-av" id="dcUserAv">?</div>
         <div class="dc-user-meta">
-          <div class="dc-user-name" id="dcUserName2">You</div>
-          <div class="dc-user-status"><span class="dc-dot online"></span>Online</div>
+          <div class="dc-user-name" id="dcUserName2" data-i18n="chat_you">You</div>
+          <div class="dc-user-status"><span class="dc-dot online"></span><span data-i18n="chat_online">Online</span></div>
         </div>
-        <button class="dc-cog-btn" id="chatSidebarSettingsBtn" title="Settings">&#x2699;</button>
+        <button class="dc-cog-btn" id="chatSidebarSettingsBtn" data-i18n-title="chat_settings_tt" title="Settings">&#x2699;</button>
       </div>
     </div>
   </div>
@@ -25,17 +25,18 @@
   <div class="dc-main">
     <div class="dc-main-hdr">
       <div class="dc-main-hdr-left">
-        <span class="dc-main-room-name" id="chatRoomName">Select a room</span>
+        <span class="dc-main-room-name" id="chatRoomName" data-i18n="chat_select_room">Select a room</span>
         <span class="dc-main-room-desc" id="chatRoomTopic"></span>
       </div>
       <div class="dc-main-hdr-right">
-        <button class="dc-hdr-icon-btn" id="chatSearchToggleBtn" title="Search messages">
+        <button class="dc-hdr-icon-btn" id="chatSearchToggleBtn" data-i18n-title="chat_search_msgs_tt" title="Search messages">
           &#x1F50D;
         </button>
         <button
           class="dc-hdr-icon-btn"
           id="chatPinsBtn"
           style="display: none"
+          data-i18n-title="chat_pinned_msgs"
           title="Pinned Messages"
         >
           &#x2606;
@@ -44,6 +45,7 @@
           class="dc-hdr-icon-btn"
           id="chatNicknameBtn"
           style="display: none"
+          data-i18n-title="chat_set_nickname"
           title="Set Nickname"
         >
           &#x270F;&#xFE0F;
@@ -52,15 +54,17 @@
           class="dc-hdr-icon-btn"
           id="chatCopyInviteHdrBtn"
           style="display: none"
+          data-i18n-title="chat_copy_invite_tt"
           title="Copy Invite Link"
         >
           &#x1F517;
         </button>
-        <button class="dc-hdr-icon-btn" id="chatMembersToggleBtn" title="Members">&#x1F465;</button>
+        <button class="dc-hdr-icon-btn" id="chatMembersToggleBtn" data-i18n-title="chat_members_tt" title="Members">&#x1F465;</button>
         <button
           class="dc-hdr-icon-btn"
           id="chatRoomSettingsBtn"
           style="display: none"
+          data-i18n-title="chat_room_settings_tt"
           title="Room Settings"
         >
           &#x22EE;
@@ -89,10 +93,11 @@
       "
     >
       <div style="font-size: 3rem">&#x1F514;</div>
-      <div style="font-family: 'Fredoka One', cursive; font-size: 1.4rem; color: #fff">
+      <div style="font-family: var(--font-main); font-size: 1.4rem; color: #fff" data-i18n="chat_nsfw_title">
         NSFW Channel
       </div>
       <div
+        data-i18n="chat_nsfw_warning"
         style="
           font-size: 0.82rem;
           color: rgba(255, 255, 255, 0.5);
@@ -109,19 +114,20 @@
           background: linear-gradient(135deg, #3b82f6, #0ea5e9);
           border: none;
           border-radius: 30px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           color: #fff;
           cursor: pointer;
           font-size: 0.9rem;
         "
+        data-i18n="chat_nsfw_enter"
       >
         I&#x2019;m 18+ &#x2014; Enter
       </button>
     </div>
     <!-- Messages -->
     <div class="dc-msgs" id="chatMsgs">
-      <div class="chat-empty">Select a room to start chatting &#x1F4AC;</div>
+      <div class="chat-empty" data-i18n="chat_empty">Select a room to start chatting &#x1F4AC;</div>
     </div>
     <!-- Reaction picker -->
     <div
@@ -179,7 +185,7 @@
       "
     >
       <span
-        >&#x21A9;&#xFE0F; Replying to <b id="chatReplyName"></b>:
+        >&#x21A9;&#xFE0F; <span data-i18n="chat_replying_to">Replying to</span> <b id="chatReplyName"></b>:
         <span id="chatReplyPreview" style="opacity: 0.7"></span
       ></span>
       <button
@@ -265,6 +271,7 @@
       <input
         id="chatGifSearch"
         type="text"
+        data-i18n-ph="chat_search_gifs_ph"
         placeholder="Search GIFs..."
         style="
           width: 100%;
@@ -272,7 +279,7 @@
           border: 1px solid rgba(59, 130, 246, 0.2);
           border-radius: 20px;
           padding: 7px 14px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-size: 0.82rem;
           font-weight: 700;
           color: var(--on-glass);
@@ -308,6 +315,7 @@
       <input
         id="chatSearchInput"
         type="text"
+        data-i18n-ph="chat_search_msgs_ph"
         placeholder="Search messages&#x2026;"
         style="
           flex: 1;
@@ -315,7 +323,7 @@
           border: 1px solid rgba(59, 130, 246, 0.2);
           border-radius: 20px;
           padding: 7px 14px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-size: 0.82rem;
           font-weight: 700;
           color: var(--on-glass);
@@ -341,21 +349,21 @@
         type="file"
         id="chatFileInput"
         style="display: none"
-        accept=".pdf,.txt,.docx,.png,.jpg,.jpeg"
+        accept=".pdf,.txt,.md,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.zip,.rar,.7z,.png,.jpg,.jpeg,.gif,.webp,.heic,.mp4,.mov,.webm,.mp3,.wav,.m4a"
       />
-      <button class="dc-input-btn" id="chatAttachBtn" disabled title="Attach file">&#x2B;</button>
-      <button class="dc-input-btn" id="chatGifBtn" disabled title="Send GIF">GIF</button>
+      <button class="dc-input-btn" id="chatAttachBtn" disabled data-i18n-title="chat_attach_tt" title="Attach file">&#x2B;</button>
+      <button class="dc-input-btn" id="chatGifBtn" disabled data-i18n-title="chat_send_gif_tt" title="Send GIF">GIF</button>
       <div class="dc-input-wrap">
         <input
           class="dc-text-input"
           id="chatInput"
           type="text"
+          data-i18n-ph="chat_select_room_first_ph"
           placeholder="Select a room first&#x2026;"
           maxlength="500"
           autocomplete="off"
           disabled
         />
-        <button class="dc-mic-btn" type="button" title="Voice">&#x1F3A4;</button>
       </div>
       <button class="dc-send-btn" id="chatSendBtn" disabled>
         <svg
@@ -378,11 +386,11 @@
   <!-- RIGHT: Members panel -->
   <div class="dc-members-panel" id="chatMembersPanel">
     <div class="dc-members-section">
-      <div class="dc-members-label">ONLINE &#x2014; <span id="chatOnlineCount">0</span></div>
+      <div class="dc-members-label"><span data-i18n="chat_online_upper">ONLINE</span> &#x2014; <span id="chatOnlineCount">0</span></div>
       <div id="chatOnlineList"></div>
     </div>
     <div class="dc-members-section">
-      <div class="dc-members-label">OFFLINE &#x2014; <span id="chatOfflineCount">0</span></div>
+      <div class="dc-members-label"><span data-i18n="chat_offline_upper">OFFLINE</span> &#x2014; <span id="chatOfflineCount">0</span></div>
       <div id="chatOfflineList"></div>
     </div>
   </div>
@@ -413,7 +421,7 @@
         justify-content: space-between;
       "
     >
-      <span style="font-weight: 800; font-size: 0.88rem; color: var(--on-glass)"
+      <span style="font-weight: 800; font-size: 0.88rem; color: var(--on-glass)" data-i18n="chat_pinned_msgs_panel"
         >&#x1F4CC; Pinned Messages</span
       >
       <button
@@ -450,13 +458,14 @@
 >
   <div class="chat-friend-box" style="max-width: 380px; width: 100%">
     <div class="chat-friend-box-hdr">
-      <span id="chatRoomModalTitle">&#x2B; Create Room</span>
+      <span id="chatRoomModalTitle" data-i18n="chat_create_room">&#x2B; Create Room</span>
       <button class="chat-friend-box-close" id="chatRoomModalClose">&#x2715;</button>
     </div>
     <input
       class="chat-friend-search"
       id="chatRoomNameInput"
       type="text"
+      data-i18n-ph="chat_room_name_ph"
       placeholder="Room name..."
       maxlength="40"
       autocomplete="off"
@@ -465,6 +474,7 @@
       class="chat-friend-search"
       id="chatRoomDescInput"
       type="text"
+      data-i18n-ph="chat_room_desc_ph"
       placeholder="Description (optional)..."
       maxlength="100"
       autocomplete="off"
@@ -473,19 +483,20 @@
       class="chat-friend-search"
       id="chatRoomTopicInput"
       type="text"
+      data-i18n-ph="chat_room_topic_ph"
       placeholder="Topic (shown at top of chat)..."
       maxlength="200"
       autocomplete="off"
     />
     <div style="display: flex; gap: 8px; padding: 14px 20px 10px">
-      <button class="chat-vis-btn active" data-vis="public" id="visPublic" type="button">
-        ?? Public
+      <button class="chat-vis-btn active" data-vis="public" id="visPublic" type="button" data-i18n="chat_vis_public">
+        Public
       </button>
-      <button class="chat-vis-btn" data-vis="friends" id="visFriends" type="button">
-        ?? Friends
+      <button class="chat-vis-btn" data-vis="friends" id="visFriends" type="button" data-i18n="chat_vis_friends">
+        Friends
       </button>
-      <button class="chat-vis-btn" data-vis="invite" id="visInvite" type="button">
-        ?? Invite only
+      <button class="chat-vis-btn" data-vis="invite" id="visInvite" type="button" data-i18n="chat_vis_invite">
+        Invite only
       </button>
     </div>
     <div style="display: flex; gap: 12px; align-items: center; padding: 4px 20px 12px">
@@ -494,7 +505,7 @@
           display: flex;
           align-items: center;
           gap: 8px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-size: 0.8rem;
           font-weight: 800;
           color: rgba(255, 255, 255, 0.5);
@@ -502,21 +513,21 @@
           flex: 1;
         "
       >
-        <input type="checkbox" id="chatRoomNsfwCheck" style="accent-color: #6c63ff" /> ?? NSFW
+        <input type="checkbox" id="chatRoomNsfwCheck" style="accent-color: #6c63ff" /> <span data-i18n="chat_nsfw">NSFW</span>
       </label>
       <label
         style="
           display: flex;
           align-items: center;
           gap: 8px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-size: 0.8rem;
           font-weight: 800;
           color: rgba(255, 255, 255, 0.5);
           flex: 2;
         "
       >
-        ?? Slowmode:
+        <span data-i18n="chat_slowmode_label">Slowmode:</span>
         <select
           id="chatRoomSlowmodeSelect"
           style="
@@ -525,7 +536,7 @@
             border: 1px solid rgba(255, 255, 255, 0.14);
             border-radius: 10px;
             padding: 5px 10px;
-            font-family: 'Nunito', sans-serif;
+            font-family: var(--font-main);
             font-weight: 700;
             font-size: 0.78rem;
             color: rgba(255, 255, 255, 0.82);
@@ -533,12 +544,12 @@
             outline: none;
           "
         >
-          <option value="0">Off</option>
+          <option value="0" data-i18n="chat_slowmode_off">Off</option>
           <option value="5">5s</option>
           <option value="10">10s</option>
           <option value="30">30s</option>
-          <option value="60">1 min</option>
-          <option value="300">5 min</option>
+          <option value="60" data-i18n="chat_slowmode_1min">1 min</option>
+          <option value="300" data-i18n="chat_slowmode_5min">5 min</option>
         </select>
       </label>
     </div>
@@ -552,14 +563,15 @@
           backdrop-filter: blur(8px);
           border: 1px solid rgba(108, 99, 255, 0.3);
           border-radius: 14px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           font-size: 0.78rem;
           color: #60a5fa;
           cursor: pointer;
         "
+        data-i18n="chat_copy_invite_btn"
       >
-        ?? Copy invite link
+        Copy invite link
       </button>
     </div>
     <div id="chatRoomFriendPicker" style="display: none; padding: 0 20px 12px">
@@ -572,6 +584,7 @@
           text-transform: uppercase;
           letter-spacing: 0.06em;
         "
+        data-i18n="chat_add_friends_to_room"
       >
         Add friends to this room
       </div>
@@ -607,13 +620,14 @@
           backdrop-filter: blur(8px);
           border: 1px solid rgba(255, 255, 255, 0.18);
           border-radius: 14px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           font-size: 0.9rem;
           color: #fff;
           cursor: pointer;
           box-shadow: 0 4px 20px rgba(108, 99, 255, 0.45);
         "
+        data-i18n="chat_create_btn"
       >
         Create ?
       </button>
@@ -626,12 +640,13 @@
           backdrop-filter: blur(8px);
           border: 1px solid rgba(239, 68, 68, 0.28);
           border-radius: 14px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           font-size: 0.9rem;
           color: #f87171;
           cursor: pointer;
         "
+        data-i18n="chat_delete_btn"
       >
         Delete
       </button>
@@ -654,10 +669,11 @@
 >
   <div class="chat-friend-box" style="max-width: 360px; width: 100%">
     <div class="chat-friend-box-hdr">
-      <span>&#x270F;&#xFE0F; Set Nickname</span>
+      <span data-i18n="chat_set_nickname_title">&#x270F;&#xFE0F; Set Nickname</span>
       <button class="chat-friend-box-close" id="chatNicknameModalClose">&#x2715;</button>
     </div>
     <p
+      data-i18n="chat_nickname_explainer"
       style="
         font-size: 0.78rem;
         color: rgba(255, 255, 255, 0.5);
@@ -672,6 +688,7 @@
       class="chat-friend-search"
       id="chatNicknameInput"
       type="text"
+      data-i18n-ph="chat_nickname_ph"
       placeholder="Your nickname..."
       maxlength="32"
       autocomplete="off"
@@ -685,12 +702,13 @@
           background: linear-gradient(135deg, #3b82f6, #0ea5e9);
           border: none;
           border-radius: 30px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           font-size: 0.88rem;
           color: #fff;
           cursor: pointer;
         "
+        data-i18n="chat_save"
       >
         Save
       </button>
@@ -701,12 +719,13 @@
           background: rgba(239, 68, 68, 0.12);
           border: 1px solid rgba(239, 68, 68, 0.2);
           border-radius: 30px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           font-size: 0.88rem;
           color: #ef4444;
           cursor: pointer;
         "
+        data-i18n="chat_clear"
       >
         Clear
       </button>
@@ -729,9 +748,10 @@
 >
   <div class="chat-friend-box" style="max-width: 360px; width: 100%">
     <div class="chat-friend-box-hdr" style="margin-bottom: 6px">
-      <span>&#x1F464; Choose a Username</span>
+      <span data-i18n="chat_choose_username">&#x1F464; Choose a Username</span>
     </div>
     <p
+      data-i18n="chat_username_explainer"
       style="
         font-size: 0.78rem;
         color: rgba(255, 255, 255, 0.5);
@@ -745,6 +765,7 @@
       class="chat-friend-search"
       id="chatUsernameInput"
       type="text"
+      data-i18n-ph="chat_username_ph"
       placeholder="e.g. mohamed_ali"
       autocomplete="off"
       maxlength="32"
@@ -768,7 +789,7 @@
         background: linear-gradient(135deg, #3b82f6, #0ea5e9);
         border: none;
         border-radius: 30px;
-        font-family: 'Nunito', sans-serif;
+        font-family: var(--font-main);
         font-weight: 800;
         font-size: 0.9rem;
         color: #fff;
@@ -795,13 +816,14 @@
 >
   <div class="chat-friend-box" style="max-width: 400px; width: 100%">
     <div class="chat-friend-box-hdr">
-      <span>&#x1F50D; Join a Room</span>
+      <span data-i18n="chat_join_room_title">&#x1F50D; Join a Room</span>
       <button class="chat-friend-box-close" id="chatJoinRoomModalClose">&#x2715;</button>
     </div>
     <input
       class="chat-friend-search"
       id="chatJoinRoomInput"
       type="text"
+      data-i18n-ph="chat_join_room_ph"
       placeholder="Paste invite link or type a room name..."
       autocomplete="off"
     />
@@ -817,6 +839,7 @@
       "
     >
       <div
+        data-i18n="chat_join_room_hint"
         style="font-size: 0.75rem; color: var(--on-glass-faint); font-weight: 700; padding: 6px 4px"
       >
         Type a room name to search public rooms, or paste an invite link
@@ -844,18 +867,19 @@
 >
   <div class="chat-friend-box">
     <div class="chat-friend-box-hdr">
-      <span>&#x1F50D; Find Students</span>
+      <span data-i18n="chat_find_students">&#x1F50D; Find Students</span>
       <button class="chat-friend-box-close" id="chatFriendModalClose">&#x2715;</button>
     </div>
     <input
       class="chat-friend-search"
       id="chatFriendSearchInput"
       type="text"
+      data-i18n-ph="chat_search_name_email_ph"
       placeholder="Search by name or email&#x2026;"
       autocomplete="off"
     />
     <div class="chat-friend-results" id="chatFriendResults">
-      <div class="chat-friend-hint">Type a name to search for students</div>
+      <div class="chat-friend-hint" data-i18n="chat_search_hint">Type a name to search for students</div>
     </div>
   </div>
 </div>

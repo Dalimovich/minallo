@@ -7,6 +7,7 @@ ai-evaluate.js). Both are simple enough that they live in one file.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,7 +43,7 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/feedback")
-async def feedback_endpoint(payload: FeedbackRequest) -> dict[str, Any]:
+def feedback_endpoint(payload: FeedbackRequest) -> dict[str, Any]:
     if payload.rating not in _VALID_RATINGS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -60,9 +61,9 @@ async def feedback_endpoint(payload: FeedbackRequest) -> dict[str, Any]:
     sb = get_supabase()
     try:
         sb.table("ai_feedback").insert(row).execute()
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         log.exception("feedback insert failed")
-        raise HTTPException(status_code=500, detail=f"Failed to save feedback: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
     return {"ok": True}
 
 
@@ -107,7 +108,7 @@ def _judge(ev: dict[str, Any], answer: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/evaluate-retrieval")
-async def evaluate_endpoint(payload: EvaluateRequest) -> dict[str, Any]:
+def evaluate_endpoint(payload: EvaluateRequest) -> dict[str, Any]:
     sb = get_supabase()
     q = sb.table("ai_evaluations").select(
         "id, test_question, expected_behavior, expected_sources"
@@ -131,7 +132,7 @@ async def evaluate_endpoint(payload: EvaluateRequest) -> dict[str, Any]:
                 query=question, document_ids=None, top_k=12,
             )
             answer = generate_answer(question=question, chunks=chunks, doc_names=doc_names)
-        except Exception as e:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             log.exception("eval question failed")
             answer = {"answer": "", "retrievalMode": "none", "groundedSources": []}
         verdict = _judge(ev, answer)
@@ -142,7 +143,7 @@ async def evaluate_endpoint(payload: EvaluateRequest) -> dict[str, Any]:
                 "actual_confidence": "high" if answer.get("retrievalMode") == "strong" else "low",
                 "passed":            verdict["passed"],
                 "failure_reason":    verdict["failure_reason"],
-                "run_at":            "now()",
+                "run_at":            datetime.now(timezone.utc).isoformat(),
             }).eq("id", ev["id"]).execute()
         except Exception:
             log.exception("eval result store failed (non-fatal)")
