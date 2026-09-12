@@ -5,16 +5,25 @@ import { readFileSync } from 'node:fs';
 const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
 const html = readFileSync('frontend/views/chatbot/chatbot.html', 'utf8');
 
-test('auto is the visible and persisted default for missing or invalid modes', () => {
-  assert.match(html, /ncb-source-mode--active" data-source-mode="auto"/);
+test('auto is the persisted default for missing or invalid modes, with no visible mode picker', () => {
+  // The composer no longer exposes a source-mode picker UI (see
+  // chatbot-composer-single-row.test.mjs) — Auto is now the sole implicit
+  // default, driven by normaliseSourceMode()'s fallback rather than a button.
   assert.match(shell, /\? v : 'auto'/);
   assert.match(shell, /sourceMode: 'auto'/);
+  assert.doesNotMatch(html, /data-source-mode=/);
 });
 
-test('outside-knowledge modes require explicit source choices', () => {
-  assert.match(html, /data-source-mode="course_plus_general"/);
-  assert.match(html, /data-source-mode="general"/);
-  assert.match(html, /data-source-mode="internet"/);
+test('outside-knowledge source modes remain valid internal states even with no UI to pick them', () => {
+  // course_plus_general/general/internet are retired as user-facing toggles
+  // (no more explicit override button — see the composer redesign), but the
+  // SourceMode type + normaliseSourceMode() must still recognise them so a
+  // chat.sourceMode value set by any future/programmatic path (or a legacy
+  // persisted chat) is not silently coerced away.
+  assert.match(shell, /type SourceMode = 'auto' \| 'course_files' \| 'course_plus_general' \| 'internet' \| 'general'/);
+  assert.match(shell, /v === 'course_plus_general'/);
+  assert.match(shell, /v === 'internet'/);
+  assert.match(shell, /v === 'general'/);
 });
 
 test('an open PDF is a priority hint unless selected-files-only is active', () => {
