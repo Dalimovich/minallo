@@ -619,16 +619,27 @@ class GenerateNotesRequest(BaseModel):
     documentIds: list[str] | None = None
     topic: str | None = None
     title: str | None = None
+    # "notes" | "summary" — both persist to the same `notes` table via the
+    # same save_note() call, just tagged differently so Saved's noteKind()
+    # can classify them (type === 'summary' -> Summaries tab). This endpoint
+    # is currently only ever called (from ai-generate.ts) with noteType
+    # 'summary'; the default keeps the field backward-compatible.
+    noteType: Literal["notes", "summary"] = "notes"
     save: bool = True
 
 
 class GenerateNotesResponse(BaseModel):
     text: str
+    title: str | None = None
     pageCount: int | None = None
     lengthCue: str | None = None
     groundedSources: list[dict[str, Any]] = []
     warning: str | None = None
     noteId: str | None = None
+    # True when generation produced text but the DB insert failed (or was
+    # skipped) — distinct from "no text was generated at all". Callers must
+    # not claim the result was saved when this is true.
+    persistFailed: bool = False
     model: str | None = None
     promptTokens: int | None = None
     completionTokens: int | None = None
@@ -651,26 +662,35 @@ def generate_notes_endpoint(payload: GenerateNotesRequest) -> GenerateNotesRespo
     )
 
     note_id: str | None = None
-    if payload.save and out.get("text"):
-        # If exactly one doc was passed, anchor the note to it for the
-        # frontend's per-file notes view; otherwise leave document_id null.
-        anchor_doc = payload.documentIds[0] if (payload.documentIds and len(payload.documentIds) == 1) else None
-        note_id = save_note(
-            user_id=payload.userId,
-            course_id=payload.courseId,
-            document_id=anchor_doc,
-            title=payload.title or "AI study notes",
-            text=out["text"],
-            sources=out.get("groundedSources") or [],
-        )
+    persist_failed = False
+    resolved_title = payload.title or ("Summary" if payload.noteType == "summary" else "AI study notes")
+    if out.get("text"):
+        if payload.save:
+            # If exactly one doc was passed, anchor the note to it for the
+            # frontend's per-file notes view; otherwise leave document_id null.
+            anchor_doc = payload.documentIds[0] if (payload.documentIds and len(payload.documentIds) == 1) else None
+            note_id = save_note(
+                user_id=payload.userId,
+                course_id=payload.courseId,
+                document_id=anchor_doc,
+                title=resolved_title,
+                text=out["text"],
+                sources=out.get("groundedSources") or [],
+                note_type=payload.noteType,
+            )
+            persist_failed = note_id is None
+        else:
+            persist_failed = False
 
     return GenerateNotesResponse(
         text=out.get("text", ""),
+        title=resolved_title,
         pageCount=out.get("pageCount"),
         lengthCue=out.get("lengthCue"),
         groundedSources=out.get("groundedSources", []),
         warning=out.get("warning"),
         noteId=note_id,
+        persistFailed=persist_failed,
         model=out.get("model"),
         promptTokens=out.get("promptTokens"),
         completionTokens=out.get("completionTokens"),

@@ -96,6 +96,7 @@ const assetPaths = [
   'js/features/chatbot-new/shell.js',
   'js/features/chatbot-new/notes-intent-flow.js',
   'js/features/chatbot-new/workspace-library.js',
+  'js/features/chatbot-new/cheatsheet-workspace.js',
   'views/chatbot/chatbot.css'
 ];
 writeFileSync(

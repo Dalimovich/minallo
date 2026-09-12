@@ -31,6 +31,7 @@ interface PyResponse {
   questions?: PyQuizQuestion[];
   cards?: unknown[];
   text?: string;
+  title?: string;
   groundedSources?: unknown[];
   warning?: string;
   error?: string;
@@ -39,6 +40,8 @@ interface PyResponse {
   requestedCount?: number;
   actualCount?: number;
   readiness?: Record<string, unknown>;
+  noteId?: string | null;
+  persistFailed?: boolean;
 }
 
 // Normalise the Python pipeline's per-type output into stable shapes the
@@ -200,8 +203,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       save: false
     };
   } else {
+    // Summary reuses the exact same generate-notes pipeline (and the same
+    // `notes` table via save_note) that Notes generation persists through —
+    // tagged noteType:'summary' so Saved's noteKind() files it under
+    // Summaries instead of Notes. This is a real study artifact and must
+    // get the same durability contract as Notes/Cheatsheets: persist
+    // server-side, return a real noteId, never only a client-side cache.
     endpoint = 'generate-notes';
-    pyPayload = { userId: user.id, courseId, documentIds: docIds, topic: topic ?? null, save: false };
+    pyPayload = {
+      userId: user.id, courseId, documentIds: docIds, topic: topic ?? null,
+      title: typeof body.title === 'string' ? body.title.slice(0, 180) : null,
+      noteType: 'summary', save: true
+    };
   }
 
   const upstream = await forwardToPython<PyResponse>(endpoint, pyPayload);
@@ -216,7 +229,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const py = upstream.body as PyResponse;
   let mapped: Record<string, unknown>;
   if (tool === 'summary') {
-    mapped = { tool, items: [], text: py.text || '', sources: py.groundedSources || [] };
+    mapped = {
+      tool, items: [], text: py.text || '', sources: py.groundedSources || [],
+      title: py.title || null,
+      noteId: py.noteId || null,
+      // Mirrors the Notes persistence contract (notes-intent-flow.ts):
+      // text present but no noteId means the DB insert failed, not that
+      // nothing was generated — the frontend must not claim it was saved.
+      error: (py.text && py.persistFailed) ? 'persist_failed' : null
+    };
   } else if (tool === 'quiz') {
     mapped = { tool, items: _normaliseQuizQuestions(py.questions), sources: py.groundedSources || [] };
   } else {

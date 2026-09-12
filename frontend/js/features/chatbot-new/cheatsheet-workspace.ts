@@ -88,6 +88,38 @@ export interface PaperOpenOpts {
   [key: string]: unknown;
 }
 
+/** A caller's opts may already be in hand (sync), or may need an async
+ *  lookup (e.g. re-fetching a persisted note by id after a page refresh) —
+ *  openPaperArtifact() accepts either so a resolver that starts a fetch
+ *  doesn't have to return null immediately and lose the result. */
+export type PaperOpenResolver = () => PaperOpenOpts | null | Promise<PaperOpenOpts | null>;
+
+export class PaperOpenError extends Error {
+  code: 'opts_unavailable' | 'overlay_did_not_mount';
+  constructor(code: PaperOpenError['code']) {
+    super(code);
+    this.code = code;
+  }
+}
+
+/** Canonical entry point for the shared paper/PDF viewer overlay — used by
+ *  chat Summary, chat Cheatsheet, Saved Summary, and Saved Cheatsheet so
+ *  all four share one place that resolves opts (sync or async), validates
+ *  there's real content, opens the viewer, and confirms `.cs-paper-overlay`
+ *  actually mounted — instead of four call sites each reimplementing that
+ *  contract slightly differently. Every caller must await this and handle
+ *  a thrown PaperOpenError; it never fails silently. */
+export async function openPaperArtifact(resolve: PaperOpenResolver): Promise<void> {
+  const opts = await resolve();
+  if (!opts || !String(opts.markdown || '').trim()) {
+    throw new PaperOpenError('opts_unavailable');
+  }
+  openCheatsheetPaper(opts);
+  if (!document.querySelector('.cs-paper-overlay')) {
+    throw new PaperOpenError('overlay_did_not_mount');
+  }
+}
+
 // The real markdown+KaTeX renderer lives in the AI render bridge, which the
 // app loads lazily (only when the chatbot opens). Until then window.renderMarkdown
 // is a plain escapeHtml stub — so without this the cheatsheet shows raw "##" and
@@ -1217,6 +1249,17 @@ function addPaperImage(ov: HTMLElement, paper: PaperEl, file: File): void {
  *  (kind: 'summary' hides the image button — images are a cheatsheet-only
  *  canvas feature; a summary still gets in-place text editing). */
 export function openCheatsheetPaper(opts: PaperOpenOpts = {}): void {
+  // The .cs-paper-overlay CSS (position:fixed, z-index, background, etc.)
+  // lives in the same stylesheet as the full Library Cheatsheet workspace
+  // and is only injected by ensureStyles() — previously called solely from
+  // mountCheatsheetWorkspace(). Every OTHER entry point into this viewer
+  // (chat Summary/Cheatsheet reopen buttons, Saved Summary/Cheatsheet) never
+  // mounts that workspace, so the overlay appended below mounted with no
+  // styling at all: position:static, z-index:auto, transparent — invisible,
+  // not an exception, so nothing here ever threw or logged. ensureStyles()
+  // is idempotent (checks for its <style> tag first), so calling it here
+  // unconditionally is free once a session already has it.
+  ensureStyles();
   closePaper();
   const kind = opts.kind || 'cheatsheet';
   const ov = document.createElement('div');

@@ -1977,6 +1977,38 @@ function renderSavedOpenError(overlay: HTMLElement, error: unknown, retry: () =>
   overlay.querySelector<HTMLButtonElement>('.ncb-saved-retry')?.addEventListener('click', retry);
 }
 
+/** Shared by Saved > Cheatsheets and Saved > Summaries — both reopen the
+ *  same paper/PDF viewer via the canonical openPaperArtifact() (see
+ *  cheatsheet-workspace.ts), so this is the one place that fetches the
+ *  note, builds its opts, and only dismisses the workspace popup once the
+ *  viewer has actually mounted (closing it earlier meant an open failure
+ *  rendered into an overlay that was already gone). */
+async function openSavedPaperArtifact(
+  overlay: HTMLElement,
+  item: SavedItem,
+  kind: 'cheatsheet' | 'summary'
+): Promise<void> {
+  const notFoundMessage = kind === 'cheatsheet'
+    ? 'This saved cheatsheet is no longer available.'
+    : 'This saved summary is no longer available.';
+  const note = item.note ? await getNoteById(item.note.id) : null;
+  if (!note) throw new SavedOpenError('not_found', notFoundMessage);
+  const cheatsheetModule = await import('./cheatsheet-workspace.js');
+  try {
+    await cheatsheetModule.openPaperArtifact(() => ({
+      kind, course: item.course.id, noteId: note.id,
+      title: note.title || item.title, scope: note.title || item.title,
+      markdown: note.content_markdown || '', meta: item.meta,
+      settings: kind === 'cheatsheet'
+        ? readCheatsheetSettings(item.course.id, note.id)
+        : readSummarySettings(item.course.id, note.id),
+    }));
+  } catch {
+    throw new SavedOpenError('invalid', `The ${kind} viewer failed to open.`);
+  }
+  closeOverlay(overlay.closest<HTMLElement>('[data-workspace-overlay]')!);
+}
+
 async function openSaved(root: HTMLElement, item: SavedItem): Promise<void> {
   const overlay = openOverlay(root, item.title);
   if (!overlay) return;
@@ -2005,33 +2037,8 @@ async function renderResolvedSaved(overlay: HTMLElement, item: SavedItem): Promi
     overlay.innerHTML = `<article class="ncb-resource-document ncb-bookmarked-response">${renderMarkdown(text)}</article>`;
     return;
   }
-  if (item.kind === 'cheatsheets' && item.note) {
-    const note = await getNoteById(item.note.id);
-    if (!note) throw new SavedOpenError('not_found', 'This saved cheatsheet is no longer available.');
-    const cheatsheetModule = await import('./cheatsheet-workspace.js');
-    if (typeof cheatsheetModule.openCheatsheetPaper !== 'function') {
-      throw new SavedOpenError('invalid', 'The cheatsheet viewer failed to load.');
-    }
-    cheatsheetModule.openCheatsheetPaper({
-      kind: 'cheatsheet', course: item.course.id, noteId: note.id,
-      title: note.title || item.title, scope: note.title || item.title,
-      markdown: note.content_markdown || '', meta: item.meta,
-      settings: readCheatsheetSettings(item.course.id, note.id),
-    });
-    // Only dismiss the workspace popup once the paper viewer has actually
-    // mounted. The previous code closed this popup right after the dynamic
-    // import resolved, before openCheatsheetPaper() ran — if that call threw,
-    // the resulting error was rendered into an overlay already closed/emptied
-    // by closeOverlay() (see below), so the user saw nothing at all instead
-    // of an error. An earlier version called `overlay.remove()` here instead
-    // of closeOverlay() — `overlay` is the shared `.ncb-workspace-body` node
-    // from the static chatbot markup (see openOverlay), not a per-open
-    // wrapper, and removing it outright permanently broke every later
-    // Saved/account/PDF open in the session, not just this cheatsheet.
-    if (!document.querySelector('.cs-paper-overlay')) {
-      throw new SavedOpenError('invalid', 'The cheatsheet viewer failed to open.');
-    }
-    closeOverlay(overlay.closest<HTMLElement>('[data-workspace-overlay]')!);
+  if ((item.kind === 'cheatsheets' || item.kind === 'summaries') && item.note) {
+    await openSavedPaperArtifact(overlay, item, item.kind === 'cheatsheets' ? 'cheatsheet' : 'summary');
     return;
   }
   if (item.note) {
@@ -2139,6 +2146,14 @@ function readCheatsheetSettings(courseId: string, noteId: string): Record<string
     if (stored?.noteId === noteId && stored.settings) return stored.settings;
   } catch { /* legacy artifacts use deterministic renderer defaults */ }
   return { columns: 3, font: 'sm', pad: '10mm', style: 'academic', rendererVersion: 1 };
+}
+
+function readSummarySettings(courseId: string, noteId: string): Record<string, unknown> {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`minallo_sum_last_${courseId}`) || 'null') as { noteId?: string; settings?: Record<string, unknown> } | null;
+    if (stored?.noteId === noteId && stored.settings) return stored.settings;
+  } catch { /* legacy artifacts use deterministic renderer defaults */ }
+  return { columns: 2, font: 'sm', pad: '10mm', style: 'academic', rendererVersion: 1 };
 }
 
 // Practical traversal ceiling, not a product limit — 25 pages of the

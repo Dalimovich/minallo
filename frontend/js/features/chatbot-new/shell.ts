@@ -2132,15 +2132,6 @@ function showPdfSettingsCard(
   });
 }
 
-/** Load the cheatsheet-workspace module so the paper/PDF view is available.
- *  This used to lazily inject the legacy views/cheatsheet/cheatsheet.js
- *  script; cheatsheet-workspace.ts is a native chatbot-new module now, so a
- *  plain dynamic import (cached by the module loader) replaces that CDN-style
- *  script-tag dance entirely. */
-function loadCheatsheetPaperOpener(): Promise<(opts: Record<string, unknown>) => void> {
-  return import('./cheatsheet-workspace.js').then((mod) => mod.openCheatsheetPaper);
-}
-
 /** All of the student's courses across every semester (id + display name). */
 function listAllCourses(): Array<{ id: string; name: string }> {
   const w = window as unknown as {
@@ -2387,10 +2378,19 @@ async function handleIntentRoute(
     style: styleName,
   });
 
-  /** Attach a persistent "Open PDF viewer" button whose click reopens the overlay. */
+  /** Attach a persistent "Open PDF viewer" button whose click reopens the
+   *  overlay. `getPaperOpts` may return its opts synchronously, or may need
+   *  to resolve them asynchronously (e.g. re-fetching a persisted note by
+   *  id after a page refresh, when nothing is in-memory yet) — it can
+   *  return a Promise, which is awaited before deciding opts are
+   *  unavailable. Returning null immediately here used to be
+   *  indistinguishable from "there really is nothing to show", which made
+   *  the button falsely report failure while an async lookup was still in
+   *  flight. Opening itself goes through the same openPaperArtifact() used
+   *  by every other paper-viewer entry point (Saved Summary/Cheatsheet). */
   function attachReopenButton(
     host: HTMLElement,
-    getPaperOpts: () => Record<string, unknown> | null
+    getPaperOpts: () => Record<string, unknown> | null | Promise<Record<string, unknown> | null>
   ): void {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -2399,15 +2399,8 @@ async function handleIntentRoute(
     btn.addEventListener('click', () => {
       btn.disabled = true;
       btn.textContent = 'Loading…';
-      loadCheatsheetPaperOpener()
-        .then((openPaper) => {
-          const o = getPaperOpts();
-          if (!o) throw new Error('paper_opts_unavailable');
-          openPaper(o);
-          if (!document.querySelector('.cs-paper-overlay')) {
-            throw new Error('paper_overlay_did_not_mount');
-          }
-        })
+      import('./cheatsheet-workspace.js')
+        .then((mod) => mod.openPaperArtifact(getPaperOpts))
         .catch((error) => {
           console.error('cheatsheet_pdf_viewer_open_failed', error);
           (window as unknown as { showToast?: (title: string, detail?: string) => void })
@@ -2438,10 +2431,14 @@ async function handleIntentRoute(
       return { text };
     }
 
-    // 2. Generate
+    // 2. Generate — same durability contract as Notes/Cheatsheets: this must
+    // persist server-side (notes.type='summary', via the same generate-notes
+    // -> save_note pipeline) and return a real noteId. localStorage below is
+    // only an identity cache (noteId + settings) for reopening after a
+    // refresh, never the source of truth.
     const builderSum = showStudyBuilderLoading(bubble, 'summary');
 
-    let sumResult: { text?: string; title?: string };
+    let sumResult: { text?: string; title?: string; noteId?: string | null; error?: string };
     try {
       const [modSum] = await Promise.all([
         import('../../services/ai-service.js'),
@@ -2450,8 +2447,8 @@ async function handleIntentRoute(
       throwIfAborted(controller.signal);
 
       sumResult = await modSum.generateStudyTool(
-        route.target.courseId, 'summary', undefined, controller.signal
-      ) as { text?: string; title?: string };
+        route.target.courseId, 'summary', { title: 'Summary' }, controller.signal
+      ) as { text?: string; title?: string; noteId?: string | null; error?: string };
       throwIfAborted(controller.signal);
     } catch (err) {
       cancelStudyBuilderLoading(builderSum);
@@ -2460,59 +2457,77 @@ async function handleIntentRoute(
 
     await finishStudyBuilderLoading(builderSum);
 
-    // 3. Build opts; persist full markdown to localStorage (no noteId for summary)
+    const sumHasText = !!(sumResult && sumResult.text);
+    const sumPersistFailed = sumHasText && sumResult.error === 'persist_failed';
+    const sumPersisted = sumHasText && !!sumResult.noteId && !sumPersistFailed;
+
+    // 3. Build opts only when actually persisted — a Summary that only
+    // exists in this browser tab must not be presented as "ready".
     const sumLayout = buildLayoutSettings(chatSettings);
     const sumLsKey = 'minallo_sum_last_' + route.target.courseId;
-    let sumPaperOpts: Record<string, unknown> | null = sumResult && sumResult.text ? {
+    let sumPaperOpts: Record<string, unknown> | null = sumPersisted ? {
       kind: 'summary',
       course: route.target.courseId,
       title: sumResult.title || 'Summary',
       scope: sumResult.title || 'Course summary',
       meta: '',
       markdown: sumResult.text,
+      noteId: sumResult.noteId,
       settings: sumLayout,
     } : null;
 
-    if (sumPaperOpts) {
+    if (sumPersisted) {
       try {
         localStorage.setItem(sumLsKey, JSON.stringify({
-          markdown: sumResult.text,
+          noteId: sumResult.noteId,
           title: sumResult.title || 'Summary',
           settings: sumLayout,
         }));
       } catch { /* storage full — non-fatal */ }
+      // Tell Saved immediately — same cache-invalidate + event Notes uses,
+      // so Saved > Summaries reflects this without a refresh/reopen/cache TTL.
+      const svc = await import('../../services/ai-service.js');
+      svc.invalidateCourseNotesCache(route.target.courseId);
+      document.dispatchEvent(new CustomEvent('minallo:notes-created', { detail: { courseId: route.target.courseId } }));
     }
 
-    const sumGeneratedDoc: GeneratedDoc | undefined = sumResult && sumResult.text
+    const sumGeneratedDoc: GeneratedDoc | undefined = sumPersisted
       ? {
           kind: 'summary',
           title: sumResult.title || 'Summary',
-          markdown: sumResult.text,
+          markdown: sumResult.text as string,
           courseId: route.target.courseId,
+          noteId: sumResult.noteId as string,
         }
       : undefined;
 
-    const sumText = sumPaperOpts
-      ? 'Your summary is ready. Click **⤓ Open PDF viewer** below to view and download it.'
-      : 'No summary could be generated from your course sources. Please try again.';
+    const sumText = sumPersisted
+      ? 'Your summary is ready. Click **⤓ Open PDF viewer** below to view and download it. It\'s also **saved to your notes** — you can find it under Saved > Summaries.'
+      : sumPersistFailed
+        ? 'I generated your summary, but it could not be saved. Please try again.'
+        : 'No summary could be generated from your course sources. Please try again.';
     if (bubble) renderRichBubble(bubble, sumText);
 
     if (bubble && sumPaperOpts) {
-      attachReopenButton(bubble, () => {
+      attachReopenButton(bubble, async () => {
         if (sumPaperOpts) return sumPaperOpts;
-        // Fallback: restore from localStorage after page refresh
+        // Fallback: resolve the persisted note by id after a page refresh.
         try {
           const stored = JSON.parse(localStorage.getItem(sumLsKey) || 'null') as
-            { markdown: string; title: string; settings: Record<string, unknown> } | null;
-          if (stored?.markdown) {
-            sumPaperOpts = {
+            { noteId?: string; title?: string; settings?: Record<string, unknown> } | null;
+          const noteId = stored?.noteId ?? sumResult.noteId;
+          if (noteId) {
+            const svc = await import('../../services/ai-service.js');
+            const note = await svc.getNoteById(noteId);
+            if (note) sumPaperOpts = {
               kind: 'summary',
               course: route.target.courseId,
-              title: stored.title,
-              scope: stored.title,
+              title: note.title || stored?.title || 'Summary',
+              scope: note.title || 'Course summary',
               meta: '',
-              markdown: stored.markdown,
-              settings: stored.settings ?? sumLayout,
+              markdown: note.content_markdown,
+              noteId: note.id,
+              settings: stored?.settings ?? sumLayout,
             };
           }
         } catch { /* ignore */ }
@@ -2598,6 +2613,13 @@ async function handleIntentRoute(
           settings: csLayoutSettings,
         }));
       } catch { /* storage full — non-fatal */ }
+      // Tell Saved immediately — same cache-invalidate + event Notes/Summary
+      // use, so Saved > Cheatsheets reflects this without a refresh/reopen/
+      // cache TTL. This was previously missing here even though the note
+      // was already being persisted.
+      const svc = await import('../../services/ai-service.js');
+      svc.invalidateCourseNotesCache(route.target.courseId);
+      document.dispatchEvent(new CustomEvent('minallo:notes-created', { detail: { courseId: route.target.courseId } }));
     }
 
     const savedNote = !!result.noteId;
@@ -2608,26 +2630,27 @@ async function handleIntentRoute(
     if (bubble) renderRichBubble(bubble, text);
 
     if (bubble && (paperOpts || result.noteId)) {
-      attachReopenButton(bubble, () => {
+      attachReopenButton(bubble, async () => {
         if (paperOpts) return paperOpts;
-        // Restore from localStorage/API after page refresh
+        // Restore from localStorage/API after page refresh — awaited so the
+        // click handler actually waits for the note instead of treating
+        // "not loaded yet" as "doesn't exist".
         try {
           const stored = JSON.parse(localStorage.getItem(lsKey) || 'null') as
             { noteId: string; title: string; settings: Record<string, unknown> } | null;
           const noteId = stored?.noteId ?? result.noteId;
           if (noteId) {
-            // Async load — we return null here and the button retries via the click handler
-            import('../../services/ai-service.js').then(svc => svc.getNoteById(noteId)).then(note => {
-              if (note) paperOpts = {
-                kind: 'cheatsheet',
-                course: route.target.courseId,
-                title: note.title || stored?.title || 'Cheatsheet',
-                scope: note.title || 'Course cheatsheet',
-                meta: '',
-                markdown: note.content_markdown,
-                settings: stored?.settings ?? csLayoutSettings,
-              };
-            }).catch(() => { /* non-fatal */ });
+            const svc = await import('../../services/ai-service.js');
+            const note = await svc.getNoteById(noteId);
+            if (note) paperOpts = {
+              kind: 'cheatsheet',
+              course: route.target.courseId,
+              title: note.title || stored?.title || 'Cheatsheet',
+              scope: note.title || 'Course cheatsheet',
+              meta: '',
+              markdown: note.content_markdown,
+              settings: stored?.settings ?? csLayoutSettings,
+            };
           }
         } catch { /* ignore */ }
         return paperOpts;

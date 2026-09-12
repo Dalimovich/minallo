@@ -572,32 +572,39 @@ test('opening a saved practice exam mounts that exact session, not a generic emp
   assert.match(examforgeSource, /if \(requested && st\.activeId !== initialSessionId\) \{[\s\S]{0,120}st\.activeId = initialSessionId;/);
 });
 
-test('saved cheatsheet opening never deletes the shared workspace body node', () => {
-  const cheatsheetBranch = moduleSource.slice(
-    moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"),
-    moduleSource.indexOf("if (item.note) {", moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"))
+test('saved cheatsheet/summary opening never deletes the shared workspace body node', () => {
+  // Saved Cheatsheets and Saved Summaries share one helper now
+  // (openSavedPaperArtifact), which itself delegates the actual mount +
+  // validation to cheatsheet-workspace.ts's canonical openPaperArtifact().
+  const helperBody = moduleSource.slice(
+    moduleSource.indexOf('async function openSavedPaperArtifact('),
+    moduleSource.indexOf('\n}\n', moduleSource.indexOf('async function openSavedPaperArtifact('))
   );
-  // The cheatsheet-workspace module (which exports openCheatsheetPaper) must
-  // be loaded BEFORE the paper viewer is invoked, and the workspace overlay
-  // must not be dismissed until AFTER openCheatsheetPaper() has run and its
-  // .cs-paper-overlay is confirmed mounted. Closing first (the old order) meant
-  // an exception from openCheatsheetPaper() rendered its error into an overlay
-  // that had already been closed/emptied, so the user saw nothing. Dismissal
-  // itself must go through closeOverlay (which restores the persistent
+  // The cheatsheet-workspace module must be loaded BEFORE the paper viewer
+  // is invoked, and the workspace overlay must not be dismissed until AFTER
+  // openPaperArtifact() has resolved successfully (it throws if the note is
+  // missing content or `.cs-paper-overlay` never mounted). Closing first (the
+  // old order) meant a failure rendered its error into an overlay that had
+  // already been closed/emptied, so the user saw nothing. Dismissal itself
+  // must go through closeOverlay (which restores the persistent
   // .ncb-workspace-body for reuse) rather than .remove() (which deleted that
   // singleton node outright and broke every later "open" click in the session
   // until a full page reload).
-  const noteIdx = cheatsheetBranch.indexOf('if (!note)');
-  const moduleLoadIdx = cheatsheetBranch.indexOf("await import('./cheatsheet-workspace.js')");
-  const invokeIdx = cheatsheetBranch.indexOf('cheatsheetModule.openCheatsheetPaper({');
-  const mountCheckIdx = cheatsheetBranch.indexOf("document.querySelector('.cs-paper-overlay')");
-  const closeIdx = cheatsheetBranch.indexOf('closeOverlay(overlay.closest');
+  const noteIdx = helperBody.indexOf('if (!note)');
+  const moduleLoadIdx = helperBody.indexOf("await import('./cheatsheet-workspace.js')");
+  const invokeIdx = helperBody.indexOf('cheatsheetModule.openPaperArtifact(');
+  const closeIdx = helperBody.indexOf('closeOverlay(overlay.closest');
   assert.ok(
-    noteIdx >= 0 && moduleLoadIdx > noteIdx && invokeIdx > moduleLoadIdx
-    && mountCheckIdx > invokeIdx && closeIdx > mountCheckIdx
+    noteIdx >= 0 && moduleLoadIdx > noteIdx && invokeIdx > moduleLoadIdx && closeIdx > invokeIdx
   );
+  // closeOverlay must sit after the try/catch wrapping openPaperArtifact,
+  // i.e. outside it — reachable only when that call did not throw.
+  assert.match(helperBody, /catch \{[\s\S]*?\}\s*closeOverlay\(overlay\.closest/);
   // Only the explanatory comment may mention the old call; no live statement may.
-  assert.doesNotMatch(cheatsheetBranch, /[^`]overlay\.remove\(\);/);
+  assert.doesNotMatch(helperBody, /[^`]overlay\.remove\(\);/);
+
+  // Both call sites in renderResolvedSaved must route through this one helper.
+  assert.match(moduleSource, /\(item\.kind === 'cheatsheets' \|\| item\.kind === 'summaries'\) && item\.note\) \{\s*await openSavedPaperArtifact\(overlay, item, item\.kind === 'cheatsheets' \? 'cheatsheet' : 'summary'\);/);
 });
 
 test('saved notes and summaries distinguish a deleted note from a load failure', () => {
