@@ -1540,7 +1540,7 @@ async function streamAiReply(
     // Grounded course files, active-PDF captures, and pasted screenshots use
     // /ask-stream. Arbitrary non-indexed file attachments retain their
     // explicit generic attachment policy; images are never silently omitted.
-    const routed = await handleIntentRoute(requestState, bubble, thinking, controller, intentContext);
+    const routed = await handleIntentRoute(requestState, bubble, thinking, controller, originChat, intentContext);
     if (routed) {
       const routedText = continuationBase ? `${continuationBase}\n\n${routed.text}` : routed.text;
       Object.assign(assistantMessage, {
@@ -2096,16 +2096,43 @@ function showCoursePickCard(
   });
 }
 
+// A stray notes-file reply is only honoured for a short window after the
+// clarification was asked — otherwise an unrelated later message that
+// happens to name a file (rare, but possible) would silently hijack normal
+// chat into notes generation.
+const NOTES_PENDING_TTL_MS = 10 * 60 * 1000;
+
 async function handleIntentRoute(
   state: ConversationState,
   bubble: HTMLElement | null,
   thinking: AIThinkingStatus | null,
   controller: AbortController,
+  originChat: SavedChat,
   submittedContext?: { courseId: string | null; selectedSourceIds: string[]; pdf: ActivePdfContext | null },
 ): Promise<IntentRouteResult | null> {
   const last = state.messages[state.messages.length - 1];
   if (!last || last.role !== 'user' || !last.text) return null;
   if ((last.images && last.images.length) || (last.files && last.files.length)) return null;
+
+  // Resume a Notes flow that's waiting on a source-file reply BEFORE running
+  // it back through the intent router — a bare filename ("Foo.pdf") doesn't
+  // match any notes trigger phrase on its own, so without this it silently
+  // fell through to a normal chat/RAG answer instead of resuming generation.
+  const pendingNotes = originChat.pendingNotesAction;
+  if (pendingNotes && Date.now() - pendingNotes.createdAt < NOTES_PENDING_TTL_MS) {
+    const pendingFiles = getCourseNotesFiles(pendingNotes.courseId);
+    const resolved = resolveNotesFileNameFromText(pendingFiles, last.text);
+    if (resolved) {
+      if (thinking) await thinking.waitMinimum();
+      thinking?.remove(true);
+      const text = await handleNotesIntent(pendingNotes.courseId, bubble, controller.signal, originChat, resolved);
+      return { text };
+    }
+    // Didn't look like a file selection — abandon the pending flow rather
+    // than trap every later message as a (failed) notes reply, and let this
+    // turn route normally below.
+    originChat.pendingNotesAction = null;
+  }
 
   const resolvedCourse = resolveIntentCourse(last.text, submittedContext?.courseId);
   const selectedSourceIds = submittedContext?.selectedSourceIds || chatStore.getActive().selectedSourceIds.slice();
@@ -2476,7 +2503,8 @@ async function handleIntentRoute(
   }
 
   if (route.intent === 'notes') {
-    const text = await handleNotesIntent(route.target.courseId, bubble, controller.signal);
+    const explicitCandidate = pickExplicitNotesCandidate(route, selectedSourceIds, activePdf, route.target.courseId);
+    const text = await handleNotesIntent(route.target.courseId, bubble, controller.signal, originChat, undefined, explicitCandidate);
     return { text };
   }
 
@@ -2769,37 +2797,98 @@ async function finishStudyBuilderLoading(builder: HTMLElement | null): Promise<v
   el.remove();
 }
 
-/** Notes need a single, concrete source — unlike summary/cheatsheet which can
- *  pull from "current course sources" broadly. This resolves a target file
- *  (the one the student has open, or the course's only file), asks a
- *  clarifying question when the choice is ambiguous, then grounds generation
- *  on that file's extracted text via the same single-shot `/api/notes/generate`
- *  call the Notes panel uses for short documents. */
-async function handleNotesIntent(
-  courseId: string,
-  bubble: HTMLElement | null,
-  signal?: AbortSignal
-): Promise<string> {
+/** Same course/file lookup handleNotesIntent used to do inline — pulled out
+ *  so the pending-reply check in handleIntentRoute can test a candidate
+ *  filename against the exact same list before committing to it. */
+function getCourseNotesFiles(courseId: string): string[] {
   const w = window as unknown as {
-    activeFileName?: string | null;
     activeCourseRef?: { id?: string; files?: Array<{ name?: string }> } | null;
     SEMS?: Record<string, { courses?: Array<{ id?: string; files?: Array<{ name?: string }> }> }>;
     sdActiveSemId?: string;
   };
-
   const course =
     (w.activeCourseRef?.id === courseId ? w.activeCourseRef : null) ||
     w.SEMS?.[w.sdActiveSemId || '']?.courses?.find((c) => c.id === courseId) ||
     null;
-  const files = (course?.files || [])
+  return (course?.files || [])
     .map((f) => (typeof f.name === 'string' ? f.name : null))
     .filter((name): name is string => !!name && /\.pdf$/i.test(name));
+}
 
-  let fileName: string | null = null;
-  if (w.activeFileName && files.includes(w.activeFileName)) fileName = w.activeFileName;
-  else if (files.length === 1) fileName = files[0] ?? null;
+/** Matches a free-text reply (a bare filename, "make notes from X", or a
+ *  filename the user typed with minor punctuation/case differences) against
+ *  the course's actual file list. Exact match (with/without extension) wins;
+ *  otherwise falls back to a substring match in either direction so close
+ *  paraphrases of a long filename still resolve. */
+function resolveNotesFileNameFromText(files: string[], text: string): string | null {
+  const norm = (s: string): string => s.toLowerCase().trim().replace(/^["'*_\s]+|["'*_\s]+$/g, '');
+  const t = norm(text);
+  if (!t) return null;
+  for (const f of files) {
+    const fn = norm(f);
+    if (t === fn || t === fn.replace(/\.pdf$/, '')) return f;
+  }
+  for (const f of files) {
+    const fnNoExt = norm(f).replace(/\.pdf$/, '');
+    if (fnNoExt.length > 3 && (t.includes(fnNoExt) || fnNoExt.includes(t))) return f;
+  }
+  return null;
+}
+
+/** Source priority for a fresh "make notes…" command (before any pending
+ *  clarification exists): an explicit filename the user named beats an
+ *  explicitly selected Course file, which beats whatever PDF is currently
+ *  open. Returns raw text to resolve against the file list — not a filename
+ *  itself, since e.g. route.sourcePhrase can be loosely worded. */
+function pickExplicitNotesCandidate(
+  route: { explicitSourceReference: boolean; sourcePhrase?: string },
+  selectedSourceIds: string[],
+  activePdf: ActivePdfContext | null,
+  courseId: string
+): string | undefined {
+  if (
+    route.explicitSourceReference && route.sourcePhrase &&
+    !/^(?:open_document|this (?:pdf|document)|current page|whole course)$/i.test(route.sourcePhrase)
+  ) {
+    return route.sourcePhrase;
+  }
+  if (selectedSourceIds.length) {
+    const docs = sourceLibrary.items
+      .filter((item) => selectedSourceIds.includes(item.id) && item.courseId === courseId)
+      .flatMap((item) => item.documents || []);
+    if (docs.length === 1 && docs[0]?.name) return docs[0].name;
+  }
+  if (activePdf?.courseId === courseId && activePdf.fileName) return activePdf.fileName;
+  return undefined;
+}
+
+/** Notes need a single, concrete source — unlike summary/cheatsheet which can
+ *  pull from "current course sources" broadly. This resolves a target file
+ *  (an explicit filename/selection/open PDF, a forced match from a resumed
+ *  pending reply, the one the student has open, or the course's only file),
+ *  asks a clarifying question when the choice is still ambiguous — recording
+ *  a pending action on the chat so the NEXT reply resumes this flow instead
+ *  of falling through to normal chat — then grounds generation on that
+ *  file's extracted text via the same single-shot `/api/notes/generate` call
+ *  the Notes panel uses for short documents. */
+async function handleNotesIntent(
+  courseId: string,
+  bubble: HTMLElement | null,
+  signal: AbortSignal | undefined,
+  chat: SavedChat,
+  forcedFileName?: string,
+  explicitCandidate?: string
+): Promise<string> {
+  const w = window as unknown as { activeFileName?: string | null };
+  const files = getCourseNotesFiles(courseId);
+
+  let fileName: string | null = forcedFileName || null;
+  if (!fileName && explicitCandidate) fileName = resolveNotesFileNameFromText(files, explicitCandidate);
+  if (!fileName && w.activeFileName && files.includes(w.activeFileName)) fileName = w.activeFileName;
+  if (!fileName && files.length === 1) fileName = files[0] ?? null;
 
   if (!fileName) {
+    chat.pendingNotesAction = { courseId, createdAt: Date.now() };
     const text = files.length
       ? 'Which file should I make notes from?\n\n' +
         files.slice(0, 8).map((n) => '• ' + n).join('\n') +
@@ -2808,6 +2897,7 @@ async function handleNotesIntent(
     if (bubble) renderRichBubble(bubble, text);
     return text;
   }
+  chat.pendingNotesAction = null;
 
   if (bubble) renderRichBubble(bubble, 'Reading **' + fileName + '** and writing your notes…');
   try {
@@ -6978,6 +7068,11 @@ interface SavedChat {
   /** Runtime-only guards for authoritative transcript hydration. */
   durableHydrated?: boolean;
   hydrationRevision?: string;
+  /** Set while the Notes intent is waiting for the user to pick a source
+   *  file (see handleNotesIntent). The NEXT user turn is checked against
+   *  this before normal intent routing so a bare filename reply resumes
+   *  notes generation instead of falling through to a generic chat answer. */
+  pendingNotesAction?: { courseId: string; createdAt: number } | null;
 }
 
 interface ChatStore {
@@ -7223,6 +7318,7 @@ function compactChatForStorage(c: SavedChat): SavedChat {
     pinned: !!c.pinned,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
+    pendingNotesAction: c.pendingNotesAction ? { ...c.pendingNotesAction } : null,
   };
 }
 

@@ -7,7 +7,7 @@ const workspace = fs.readFileSync('frontend/js/features/chatbot-new/workspace-li
 const workflow = fs.readFileSync('frontend/js/features/chatbot-new/study-tool-workflow.ts', 'utf8');
 
 test('chat submission gates study tools before RAG and never falls through after routing', () => {
-  const gate = shell.indexOf('await handleIntentRoute(requestState, bubble, thinking, controller, intentContext)');
+  const gate = shell.indexOf('await handleIntentRoute(requestState, bubble, thinking, controller, originChat, intentContext)');
   const rag = shell.indexOf('const rag = initialRag;', gate);
   assert.ok(gate > 0 && rag > gate);
   assert.match(shell.slice(gate, rag), /if \(routed\)[\s\S]*return(?: true)?;/);
