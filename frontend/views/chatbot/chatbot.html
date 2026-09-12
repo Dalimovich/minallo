@@ -185,6 +185,21 @@
                       <span class="ncb-add-files-count" hidden>0</span>
                     </button>
                     <div class="ncb-add-files-popup" role="menu" hidden>
+                      <button type="button" class="ncb-add-files-option ncb-add-files-auto" data-testid="chatbot-source-auto"
+                              role="menuitemradio" aria-checked="true">
+                        <span class="ncb-add-files-check" aria-hidden="true">
+                          <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </span>
+                        <span class="ncb-add-files-auto-label" data-i18n="cb_source_auto">Auto</span>
+                      </button>
+                      <button type="button" class="ncb-add-files-option ncb-add-files-selected" data-testid="chatbot-source-selected"
+                              role="menuitemradio" aria-checked="false" hidden>
+                        <span class="ncb-add-files-check" aria-hidden="true">
+                          <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        </span>
+                        <span class="ncb-add-files-selected-label">Use selected files</span>
+                      </button>
+                      <div class="ncb-add-files-divider"></div>
                       <button type="button" class="ncb-add-files-option ncb-upload-btn" data-testid="chatbot-upload"
                               data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn" role="menuitem"
                               title="Upload photos & files" aria-label="Upload photos & files">
@@ -207,6 +222,7 @@
 
                   <textarea
                     class="ncb-input-textarea"
+                    rows="1"
                     data-testid="chatbot-input"
                     data-i18n-ph="cb_input_placeholder"
                     data-i18n-aria="cb_input_aria"

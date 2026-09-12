@@ -733,6 +733,31 @@ function updateAddFilesBadge(root: HTMLElement, count: number): void {
   badge.textContent = String(count);
 }
 
+// Auto and "explicit course files" are the same canonical state the old
+// standalone source-mode picker used (chatStore.getActive().selectedSourceIds
+// — populated by Import from Course / the right-rail Sources card), not a
+// second model invented for this menu. Auto is simply "no explicit
+// selection": clicking it clears selectedSourceIds and normal automatic
+// routing resumes. uploadedCount is this turn's pasted/uploaded attachments
+// (state.files) — a different, transient thing from the persisted course-file
+// selection, but both count toward the one compact "how much context is
+// attached" badge on the trigger.
+function updateAddFilesMenu(root: HTMLElement, uploadedCount: number): void {
+  const selectedCount = chatStore.getActive().selectedSourceIds.length;
+  const auto = root.querySelector<HTMLButtonElement>('.ncb-add-files-auto');
+  if (auto) auto.setAttribute('aria-checked', selectedCount === 0 ? 'true' : 'false');
+  const selected = root.querySelector<HTMLButtonElement>('.ncb-add-files-selected');
+  if (selected) {
+    selected.hidden = selectedCount === 0;
+    selected.setAttribute('aria-checked', selectedCount > 0 ? 'true' : 'false');
+    const label = selected.querySelector<HTMLElement>('.ncb-add-files-selected-label');
+    if (label) {
+      label.textContent = selectedCount === 1 ? 'Use selected file' : `Use selected files (${selectedCount})`;
+    }
+  }
+  updateAddFilesBadge(root, uploadedCount + selectedCount);
+}
+
 function initAddFilesMenu(root: HTMLElement): void {
   const control = root.querySelector<HTMLElement>('.ncb-add-files');
   if (!control || control.dataset.ncbBound === '1') return;
@@ -741,7 +766,19 @@ function initAddFilesMenu(root: HTMLElement): void {
   const trigger = control.querySelector<HTMLButtonElement>('.ncb-add-files-trigger');
   trigger?.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    setAddFilesPopupOpen(control, control.dataset.open !== 'true');
+    const opening = control.dataset.open !== 'true';
+    if (opening) updateAddFilesMenu(root, getOrInitLiveState().files.length);
+    setAddFilesPopupOpen(control, opening);
+  });
+
+  control.querySelector<HTMLButtonElement>('.ncb-add-files-auto')?.addEventListener('click', () => {
+    const active = chatStore.getActive();
+    if (!active.selectedSourceIds.length) return;
+    active.selectedSourceIds = [];
+    saveChatStore();
+    renderSourcesCard(root);
+    updateContextPill(root);
+    updateAddFilesMenu(root, getOrInitLiveState().files.length);
   });
 
   // Upload/import each fully own their own click behavior (file picker,
@@ -6597,6 +6634,7 @@ function addToSourceLibraryAndSelect(
   renderSourcesCard(root);
   updateSourceControls(root);
   updateContextPill(root);
+  updateAddFilesMenu(root, getOrInitLiveState().files.length);
 }
 
 export function selectChatbotPdfSource(
@@ -6648,6 +6686,7 @@ export function deselectChatbotSource(sourceId: string): void {
   renderSourcesCard(root);
   updateSourceControls(root);
   updateContextPill(root);
+  updateAddFilesMenu(root, getOrInitLiveState().files.length);
 }
 
 // Reflect the active chat's selected sources in the header context pill.
@@ -6729,6 +6768,7 @@ function renderSourcesCard(root: HTMLElement): void {
       saveChatStore();
       renderSourcesCard(root);
       updateContextPill(root);
+      updateAddFilesMenu(root, getOrInitLiveState().files.length);
     });
   });
   // Remove from library entirely (also deselects from all chats).
@@ -6745,6 +6785,7 @@ function renderSourcesCard(root: HTMLElement): void {
       saveChatStore();
       renderSourcesCard(root);
       updateContextPill(root);
+      updateAddFilesMenu(root, getOrInitLiveState().files.length);
     });
   });
 }
@@ -7984,6 +8025,7 @@ function loadActiveChatIntoCenter(root: HTMLElement): void {
   renderAttachChips(root);
   renderSourcesCard(root);
   updateContextPill(root);
+  updateAddFilesMenu(root, getOrInitLiveState().files.length);
   const count = root.querySelector<HTMLElement>('.ncb-notes-count');
   if (count) count.textContent = String(chat.savedReplies.length);
   const notesCard = root.querySelector<HTMLElement>('.ncb-notes-card');
@@ -8957,7 +8999,7 @@ function renderPdfPagesAsImages(
 function renderFilesRow(root: HTMLElement, state: ConversationState): void {
   const row = root.querySelector<HTMLElement>('.ncb-files-row');
   if (!row) return;
-  updateAddFilesBadge(root, state.files.length);
+  updateAddFilesMenu(root, state.files.length);
   if (!state.files.length) {
     row.hidden = true;
     row.innerHTML = '';
@@ -9462,7 +9504,16 @@ function initTextareaAutoSize(root: HTMLElement): void {
   const MIN = 24;
   const MAX = 160;
   const resize = (): void => {
-    ta.style.height = 'auto';
+    // Collapse to a hard 0px (not 'auto') before measuring. For a <textarea>,
+    // height:auto resolves via the element's own rows-based intrinsic sizing
+    // algorithm, NOT a content shrink-to-fit — with no `rows` attribute that
+    // default is rows=2, so 'auto' would keep it two lines tall (scrollHeight
+    // then reads that same ~44px, never the true 1-line height) and the
+    // placeholder text sits at the top of a box roughly twice as tall as the
+    // Add-files/Send buttons it's supposed to be centered against. Collapsing
+    // to 0px first forces the browser to report the real content height via
+    // scrollHeight regardless of the rows attribute.
+    ta.style.height = '0px';
     const next = Math.max(MIN, Math.min(MAX, ta.scrollHeight));
     ta.style.height = next + 'px';
     ta.style.overflowY = ta.scrollHeight > MAX ? 'auto' : 'hidden';
