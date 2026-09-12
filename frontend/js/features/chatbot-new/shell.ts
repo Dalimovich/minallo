@@ -29,6 +29,7 @@ import {
   type AIThinkingStatus
 } from '../ai-chat/ai-thinking-status.js';
 import { routeStudyIntent } from '../ai-chat/intent-router.js';
+import { resolveNotesFileNameFromText, pickExplicitNotesCandidate } from './notes-intent-resolver.js';
 import { buildPageContext } from '../ai-chat/ai-page-context.js';
 import { shouldReuseRecentVisualContext, type LastAiImageContext } from '../ai-chat/visual-context.js';
 import type { DailyMissionPanelHandlers } from '../daily-mission/daily-mission-ui.js';
@@ -2119,9 +2120,23 @@ async function handleIntentRoute(
   // match any notes trigger phrase on its own, so without this it silently
   // fell through to a normal chat/RAG answer instead of resuming generation.
   const pendingNotes = originChat.pendingNotesAction;
+  // TEMPORARY diagnostic — remove once the reported "notes reply falls
+  // through to RAG" bug is confirmed fixed in a real browser session.
+  // eslint-disable-next-line no-console
+  console.debug('notes_route_debug', {
+    latestText: last.text,
+    pendingNotesAction: pendingNotes ? { ...pendingNotes } : null,
+    pendingExpired: pendingNotes ? Date.now() - pendingNotes.createdAt >= NOTES_PENDING_TTL_MS : null,
+  });
   if (pendingNotes && Date.now() - pendingNotes.createdAt < NOTES_PENDING_TTL_MS) {
     const pendingFiles = getCourseNotesFiles(pendingNotes.courseId);
     const resolved = resolveNotesFileNameFromText(pendingFiles, last.text);
+    // eslint-disable-next-line no-console
+    console.debug('notes_route_debug_pending', {
+      pendingCourseId: pendingNotes.courseId,
+      pendingFiles,
+      resolvedFile: resolved,
+    });
     if (resolved) {
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
@@ -2503,7 +2518,7 @@ async function handleIntentRoute(
   }
 
   if (route.intent === 'notes') {
-    const explicitCandidate = pickExplicitNotesCandidate(route, selectedSourceIds, activePdf, route.target.courseId);
+    const explicitCandidate = pickExplicitNotesCandidate(route, selectedSourceIds, sourceLibrary.items, activePdf, route.target.courseId);
     const text = await handleNotesIntent(route.target.courseId, bubble, controller.signal, originChat, undefined, explicitCandidate);
     return { text };
   }
@@ -2817,50 +2832,9 @@ function getCourseNotesFiles(courseId: string): string[] {
 
 /** Matches a free-text reply (a bare filename, "make notes from X", or a
  *  filename the user typed with minor punctuation/case differences) against
- *  the course's actual file list. Exact match (with/without extension) wins;
- *  otherwise falls back to a substring match in either direction so close
- *  paraphrases of a long filename still resolve. */
-function resolveNotesFileNameFromText(files: string[], text: string): string | null {
-  const norm = (s: string): string => s.toLowerCase().trim().replace(/^["'*_\s]+|["'*_\s]+$/g, '');
-  const t = norm(text);
-  if (!t) return null;
-  for (const f of files) {
-    const fn = norm(f);
-    if (t === fn || t === fn.replace(/\.pdf$/, '')) return f;
-  }
-  for (const f of files) {
-    const fnNoExt = norm(f).replace(/\.pdf$/, '');
-    if (fnNoExt.length > 3 && (t.includes(fnNoExt) || fnNoExt.includes(t))) return f;
-  }
-  return null;
-}
-
-/** Source priority for a fresh "make notes…" command (before any pending
- *  clarification exists): an explicit filename the user named beats an
- *  explicitly selected Course file, which beats whatever PDF is currently
- *  open. Returns raw text to resolve against the file list — not a filename
- *  itself, since e.g. route.sourcePhrase can be loosely worded. */
-function pickExplicitNotesCandidate(
-  route: { explicitSourceReference: boolean; sourcePhrase?: string },
-  selectedSourceIds: string[],
-  activePdf: ActivePdfContext | null,
-  courseId: string
-): string | undefined {
-  if (
-    route.explicitSourceReference && route.sourcePhrase &&
-    !/^(?:open_document|this (?:pdf|document)|current page|whole course)$/i.test(route.sourcePhrase)
-  ) {
-    return route.sourcePhrase;
-  }
-  if (selectedSourceIds.length) {
-    const docs = sourceLibrary.items
-      .filter((item) => selectedSourceIds.includes(item.id) && item.courseId === courseId)
-      .flatMap((item) => item.documents || []);
-    if (docs.length === 1 && docs[0]?.name) return docs[0].name;
-  }
-  if (activePdf?.courseId === courseId && activePdf.fileName) return activePdf.fileName;
-  return undefined;
-}
+ *  the course's actual file list — see notes-intent-resolver.ts for the
+ *  implementation and its direct unit tests. Re-exported name kept local so
+ *  the rest of this file doesn't need to change. */
 
 /** Notes need a single, concrete source — unlike summary/cheatsheet which can
  *  pull from "current course sources" broadly. This resolves a target file
