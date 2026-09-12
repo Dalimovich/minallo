@@ -145,18 +145,16 @@ def test_the_persisted_note_also_carries_the_truncation_notice(monkeypatch: pyte
     assert "not fully indexed" in saved_markdown
 
 
-def test_an_indexed_document_path_is_never_flagged_as_truncated_by_this_mechanism(
+def test_a_short_indexed_document_uses_the_single_shot_path_and_is_not_flagged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """documentId + chunks has its own (uncapped, page-based) coverage —
-    _MAX_CONTEXT_CHARS truncation of pdfText must not apply to that path at
-    all, since pdfText is ignored whenever real chunks were found."""
+    """A short indexed document (well under the 150-chunk fetch cap and the
+    28k character budget) is fully covered by a single _fetch_chunks() +
+    _build_context() call — no need for the section/merge fan-out."""
     from app.routers import notes_full
 
     _stub_llm(monkeypatch)
     _fake_table_deps(monkeypatch)
-    # Ownership verification is a separate concern from sourceTruncated —
-    # stub it out so this test can focus on the chunk-vs-pdfText branch.
     monkeypatch.setattr(notes_full, "_verify_document_owner", lambda *a, **kw: None)
     monkeypatch.setattr(
         notes_full, "_fetch_chunks",
@@ -171,4 +169,100 @@ def test_an_indexed_document_path_is_never_flagged_as_truncated_by_this_mechanis
         pdfText=None,
     ))
 
+    assert result.get("sourceTruncated") is False
+
+
+def _build_fake_indexed_document(page_count: int, sentinel_page: int, sentinel: str):
+    """A synthetic document whose chunks together exceed BOTH the 150-row
+    single-fetch cap and the 28,000-char context budget — the exact
+    conditions under which the old code would have silently generated
+    "whole document" notes from only an early prefix. One page carries a
+    unique sentinel string so the test can prove that page's content
+    actually reached the final merged/persisted output, not just that no
+    error was raised."""
+    chunks = []
+    for page in range(1, page_count + 1):
+        text = f"Filler discussion of course material on page {page}. " * 6
+        if page == sentinel_page:
+            text += sentinel
+        chunks.append({"page_start": page, "page_end": page, "chunk_text": text})
+    return chunks
+
+
+def test_a_long_indexed_document_covers_every_page_via_section_and_merge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """This is the regression test for the actual reported bug: an indexed,
+    fully-processed 70+ page lecture must not be silently reduced to an
+    early prefix just because a single generate call can't hold it all.
+    _call_openai is stubbed to echo its input verbatim, so the sentinel
+    planted on a LATE page can only appear in the final persisted content if
+    that page's chunk was (a) fetched, (b) sent through section generation,
+    and (c) survived the merge step — proving real coverage, not just the
+    absence of a `sourceTruncated` flag."""
+    from app.routers import notes_full
+
+    page_count = 200
+    # Deliberately beyond BOTH old-code failure points: the 150-row single
+    # fetch cap (so the old code's unscoped _fetch_chunks call would never
+    # even retrieve this chunk) AND the ~28,000-char single-shot budget
+    # (which this fixture's chunk sizes exhaust by ~page 90 on its own) —
+    # confirmed empirically before picking this page, not guessed.
+    sentinel_page = 175
+    sentinel = "FINAL_LATE_DOCUMENT_CONCEPT"
+    all_chunks = _build_fake_indexed_document(page_count, sentinel_page, sentinel)
+    # Sanity check the fixture actually exercises both real limits.
+    total_chars = sum(len(c["chunk_text"]) for c in all_chunks)
+    assert total_chars > notes_full._MAX_CONTEXT_CHARS
+    assert page_count > 150
+
+    monkeypatch.setattr(notes_full, "_verify_document_owner", lambda *a, **kw: None)
+    _fake_table_deps(monkeypatch)
+    # Echo the prompt back as the "generated" text for both section and merge
+    # calls — real section/merge prompting is exercised elsewhere (prompt
+    # content tests); this test is purely about which PAGES survive to the
+    # final saved note.
+    monkeypatch.setattr(
+        notes_full, "_call_openai",
+        lambda system_prompt, user_message, max_tokens=4000, user_id=None, heavy=False: (user_message, False),
+    )
+    monkeypatch.setattr(
+        notes_full, "_fetch_page_structure",
+        lambda user_id, course_id, document_id: [
+            {"page_start": c["page_start"], "page_end": c["page_end"], "section_title": None}
+            for c in all_chunks
+        ],
+    )
+
+    def fake_fetch_chunks(user_id, course_id, document_id, page_start, page_end):
+        limit = 150 if (page_start is None and page_end is None) else 80
+        if page_start is None and page_end is None:
+            rows = all_chunks
+        else:
+            rows = [
+                c for c in all_chunks
+                if (page_end is None or c["page_start"] <= page_end)
+                and (page_start is None or c["page_end"] >= page_start)
+            ]
+        return rows[:limit]
+
+    monkeypatch.setattr(notes_full, "_fetch_chunks", fake_fetch_chunks)
+
+    result = notes_full.notes_generate(_payload(
+        documentId="44444444-4444-4444-4444-444444444444",
+        pdfText=None,
+        scope="document",
+    ))
+
+    content = result["note"]["content_markdown"]
+    # The whole point: content from page 75 must be present in the final
+    # note, not silently dropped because it fell outside the first
+    # 150-chunk fetch / 28k-char single-shot window.
+    assert sentinel in content
+    # Sanity: content from the very first and very last pages too — full
+    # coverage, not just "somewhere in the middle got lucky".
+    assert "page 1." in content or "page 1 " in content
+    assert f"page {page_count}." in content or f"page {page_count} " in content
+    assert result["note"]["id"] == "note-123"
+    assert result.get("error") is None
     assert result.get("sourceTruncated") is False

@@ -731,12 +731,20 @@ def _fetch_chunks(
     return [r for r in rows if not _is_metadata_chunk(r.get("chunk_text"))]
 
 
-def _build_context(chunks: list[dict[str, Any]], file_name: str | None) -> tuple[str, list[dict[str, Any]]]:
+def _build_context(
+    chunks: list[dict[str, Any]], file_name: str | None
+) -> tuple[str, list[dict[str, Any]], bool]:
+    """Returns (context, sources, truncated) — `truncated` is True whenever
+    the character budget forced the loop to stop before every given chunk
+    was included. A caller that already knows `chunks` is the FULL set for a
+    scope (not just one page-window's worth) must treat truncated=True as
+    "did not cover the whole thing", not silently accept a partial result."""
     if not chunks:
-        return "", []
+        return "", [], False
     ctx = f"QUELLE: {file_name or 'PDF'}\n\n"
     chars = 0
     sources: list[dict[str, Any]] = []
+    truncated = False
     for c in chunks:
         ps, pe = c.get("page_start"), c.get("page_end")
         page_ref = ""
@@ -745,11 +753,12 @@ def _build_context(chunks: list[dict[str, Any]], file_name: str | None) -> tuple
         section = f"[{c['section_title']}] " if c.get("section_title") else ""
         line = f"{section}{page_ref}\n{c.get('chunk_text', '')}\n\n"
         if chars + len(line) > _MAX_CONTEXT_CHARS:
+            truncated = True
             break
         ctx += line
         chars += len(line)
         sources.append({"page_start": ps, "page_end": pe})
-    return ctx, sources
+    return ctx, sources, truncated
 
 
 # ── ANALYZE: deterministic page grouping (no LLM) ────────────────────────────
@@ -976,6 +985,89 @@ def _merge_with_staging(
     return merged, heavy_capped or capped
 
 
+def _generate_full_indexed_document(
+    payload: "NotesGenerateRequest",
+) -> tuple[str, list[dict[str, Any]], bool]:
+    """Whole-document coverage for an indexed document whose chunks don't fit
+    a single _MAX_CONTEXT_CHARS generate call (or whose count hits the
+    single-fetch chunk limit, meaning there may be more beyond what was
+    fetched). Mirrors the frontend's existing analyze -> section -> merge
+    pipeline (notes-panel.js's multi-section flow) internally within one
+    'generate' request, so the chatbot's single generateNotes() call still
+    gets one final, fully-covering note back — every page group is generated
+    from ITS OWN chunk fetch (bounded per-section, not the whole-document
+    150-row cap), then merged with the same staged-merge that already proves
+    (see test_staged_merge_sends_all_sections_without_silent_truncation) it
+    never silently drops a section.
+    """
+    rows = _fetch_page_structure(payload.userId, payload.courseId, payload.documentId)
+    groups, _effective = _group_pages(rows)
+    if not groups:
+        return "", [], False
+
+    heavy = _is_heavy_notes(payload.tool, payload.detailLevel)
+    sec_tokens = 4000 if _normalize_detail(payload.detailLevel) == "exam" else 2500
+    sections: list[dict[str, Any]] = []
+    heavy_capped_any = False
+    for g in groups:
+        sec_start, sec_end = g["pageStart"], g["pageEnd"]
+        try:
+            chunks = _fetch_chunks(payload.userId, payload.courseId, payload.documentId, sec_start, sec_end)
+        except Exception:
+            log.exception("full-document section fetch_chunks failed")
+            continue
+        context, _src, _trunc = _build_context(chunks, payload.fileName)
+        if not context:
+            continue
+        instr = (
+            f"Erstelle eine Zusammenfassung NUR für diesen Abschnitt (S. {sec_start}–{sec_end})."
+            if payload.tool == "summary"
+            else "Erstelle detaillierte Lernnotizen NUR für diesen Abschnitt."
+        )
+        sys_p = _section_prompt(payload.language, sec_start, sec_end, payload.tool, payload.detailLevel)
+        md, capped = _call_openai(
+            sys_p, f"PDF-INHALT (Seiten {sec_start}–{sec_end}):\n\n{context}\n\n{instr}",
+            max_tokens=sec_tokens, user_id=payload.userId, heavy=heavy,
+        )
+        heavy_capped_any = heavy_capped_any or capped
+        sections.append({"title": g.get("title"), "pageStart": sec_start, "pageEnd": sec_end, "markdown": md})
+
+    if not sections:
+        return "", [], False
+
+    combined_parts = []
+    for i, s in enumerate(sections):
+        hdr = f"=== SECTION {i + 1}: Seiten {s['pageStart']}–{s['pageEnd']} ==="
+        if s.get("title"):
+            hdr += f" — {s['title']}"
+        combined_parts.append(hdr + "\n\n" + (s.get("markdown") or ""))
+    combined = "\n\n".join(combined_parts)
+    instruction = (
+        "Merge these section summaries into one final structured study summary:\n\n"
+        if payload.tool == "summary"
+        else "Merge these section notes into one final study note:\n\n"
+    )
+    is_exam_summary = payload.tool == "summary" and _normalize_detail(payload.detailLevel) == "exam"
+    merge_tokens = 8000 if is_exam_summary else 5000
+    system_prompt = _merge_prompt(payload.language, payload.tool, payload.detailLevel)
+    max_chars = _EXAM_MERGE_CONTEXT_CHARS if is_exam_summary else _MAX_CONTEXT_CHARS
+    if len(combined) > max_chars:
+        merged, merge_capped = _merge_with_staging(
+            system_prompt, instruction, combined_parts, max_chars, merge_tokens,
+            user_id=payload.userId, heavy=heavy,
+        )
+    else:
+        merged, merge_capped = _call_openai(
+            system_prompt, instruction + combined, max_tokens=merge_tokens, user_id=payload.userId, heavy=heavy,
+        )
+
+    sources = [
+        {"page_start": s["pageStart"], "page_end": s["pageEnd"]}
+        for s in sections if s.get("pageStart") is not None
+    ]
+    return merged, sources, heavy_capped_any or merge_capped
+
+
 _TITLE_RE = re.compile(r"^#\s+(.+)", re.MULTILINE)
 
 
@@ -1153,7 +1245,7 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
             except Exception:
                 log.exception("section fetch_chunks failed")
         if chunks:
-            context, _src = _build_context(chunks, payload.fileName)
+            context, _src, _trunc = _build_context(chunks, payload.fileName)
         elif payload.pdfText and len(payload.pdfText.strip()) > 50:
             context = f"QUELLE: {payload.fileName or 'PDF'}\n\n" + payload.pdfText[:_MAX_CONTEXT_CHARS]
         else:
@@ -1191,6 +1283,9 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
     chunks: list[dict[str, Any]] = []
     context = ""
     sources: list[dict[str, Any]] = []
+    markdown = ""
+    heavy_capped = False
+    used_full_document_path = False
 
     if payload.documentId:
         try:
@@ -1198,10 +1293,28 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
         except Exception:
             log.exception("generate fetch_chunks failed")
         if chunks:
-            context, sources = _build_context(chunks, payload.fileName)
+            context, sources, context_truncated = _build_context(chunks, payload.fileName)
+            # A single _fetch_chunks() + _build_context() pass cannot be
+            # trusted to cover the whole document: the fetch itself is capped
+            # at 150 rows (there may be more beyond that), and the character
+            # budget can stop the context loop early even when every chunk
+            # WAS fetched. Either signal means "don't know we have it all" —
+            # only for whole-document requests; a specific page/range is
+            # expected to fit one call. Silently generating "whole document"
+            # notes from a truncated prefix is exactly the bug being fixed.
+            needs_full_coverage = payload.scope == "document" and (context_truncated or len(chunks) >= 150)
+            if needs_full_coverage:
+                try:
+                    full_markdown, full_sources, full_heavy_capped = _generate_full_indexed_document(payload)
+                except Exception as e:  # noqa: BLE001
+                    log.exception("full-document notes generation failed")
+                    return {"error": f"KI-Generierung fehlgeschlagen: {e}"}
+                if full_markdown:
+                    markdown, sources, heavy_capped = full_markdown, full_sources, full_heavy_capped
+                    used_full_document_path = True
 
     source_truncated = False
-    if not context:
+    if not used_full_document_path and not context:
         if payload.pdfText and len(payload.pdfText.strip()) > 100:
             source_truncated = len(payload.pdfText) > _MAX_CONTEXT_CHARS
             context = f"QUELLE: {payload.fileName or 'PDF'}\n\n" + payload.pdfText[:_MAX_CONTEXT_CHARS]
@@ -1214,42 +1327,43 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
                 "indexing": bool(payload.documentId),
             }
 
-    system_prompt = (
-        _summary_prompt(payload.language, payload.detailLevel)
-        if payload.tool == "summary"
-        else _notes_prompt(payload.language)
-    )
-    page_hint = ""
-    if filter_start is not None:
-        page_hint = "\n\nFOKUS: " + (
-            f"Seite {filter_start}" if filter_start == filter_end else f"Seiten {filter_start}–{filter_end}"
-        ) + " des PDFs. Verwende NUR Inhalte aus diesem Seitenbereich."
-    if payload.tool == "summary" and _normalize_detail(payload.detailLevel) == "exam":
-        total_hint = ""
-        if payload.effectivePages:
-            total_hint = f" Das Dokument hat insgesamt {payload.effectivePages} Seiten."
-        instr = (
-            "Erstelle eine vollständige Prüfungszusammenfassung aus dem obigen Text. "
-            "Gehe JEDE Seite systematisch durch. Erfasse ALLE Definitionen, DIN-Klassifikationen, "
-            "Formeln, Verfahren, Werkstoffeigenschaften, Diagramme und Vergleiche. "
-            "Überspringe KEINE Seite und KEIN Konzept."
-            + total_hint
+    if not used_full_document_path:
+        system_prompt = (
+            _summary_prompt(payload.language, payload.detailLevel)
+            if payload.tool == "summary"
+            else _notes_prompt(payload.language)
         )
-    elif payload.tool == "summary":
-        instr = (
-            "Erstelle eine studentengerechte Zusammenfassung aus dem obigen Text. "
-            "Halte dich strikt an den Seitenbereich. Erfasse alle wichtigen Definitionen, Formeln, Listen, Prozesse und Vergleiche."
-        )
-    else:
-        instr = "Erstelle detaillierte Lernnotizen aus dem obigen Text. Erfasse ALLE Definitionen, Listen, Formeln und Prozessschritte."
-    user_message = f"PDF-INHALT:\n\n{context}{page_hint}\n\n{instr}"
+        page_hint = ""
+        if filter_start is not None:
+            page_hint = "\n\nFOKUS: " + (
+                f"Seite {filter_start}" if filter_start == filter_end else f"Seiten {filter_start}–{filter_end}"
+            ) + " des PDFs. Verwende NUR Inhalte aus diesem Seitenbereich."
+        if payload.tool == "summary" and _normalize_detail(payload.detailLevel) == "exam":
+            total_hint = ""
+            if payload.effectivePages:
+                total_hint = f" Das Dokument hat insgesamt {payload.effectivePages} Seiten."
+            instr = (
+                "Erstelle eine vollständige Prüfungszusammenfassung aus dem obigen Text. "
+                "Gehe JEDE Seite systematisch durch. Erfasse ALLE Definitionen, DIN-Klassifikationen, "
+                "Formeln, Verfahren, Werkstoffeigenschaften, Diagramme und Vergleiche. "
+                "Überspringe KEINE Seite und KEIN Konzept."
+                + total_hint
+            )
+        elif payload.tool == "summary":
+            instr = (
+                "Erstelle eine studentengerechte Zusammenfassung aus dem obigen Text. "
+                "Halte dich strikt an den Seitenbereich. Erfasse alle wichtigen Definitionen, Formeln, Listen, Prozesse und Vergleiche."
+            )
+        else:
+            instr = "Erstelle detaillierte Lernnotizen aus dem obigen Text. Erfasse ALLE Definitionen, Listen, Formeln und Prozessschritte."
+        user_message = f"PDF-INHALT:\n\n{context}{page_hint}\n\n{instr}"
 
-    gen_tokens = 8000 if (payload.tool == "summary" and _normalize_detail(payload.detailLevel) == "exam") else 6000
-    try:
-        markdown, heavy_capped = _call_openai(system_prompt, user_message, max_tokens=gen_tokens, user_id=payload.userId, heavy=_is_heavy_notes(payload.tool, payload.detailLevel))
-    except Exception as e:  # noqa: BLE001
-        log.exception("notes LLM failed")
-        return {"error": f"KI-Generierung fehlgeschlagen: {e}"}
+        gen_tokens = 8000 if (payload.tool == "summary" and _normalize_detail(payload.detailLevel) == "exam") else 6000
+        try:
+            markdown, heavy_capped = _call_openai(system_prompt, user_message, max_tokens=gen_tokens, user_id=payload.userId, heavy=_is_heavy_notes(payload.tool, payload.detailLevel))
+        except Exception as e:  # noqa: BLE001
+            log.exception("notes LLM failed")
+            return {"error": f"KI-Generierung fehlgeschlagen: {e}"}
 
     page_label = ""
     if filter_start is not None:
