@@ -1,4 +1,5 @@
-import { clearCourseDocumentCache, getNoteById, indexExistingDocument, listCourseDocuments, listCourseNotes, type CourseDocument, type SavedNote } from '../../services/ai-service.js';
+import { clearCourseDocumentCache, deleteNote, getNoteById, indexExistingDocument, invalidateCourseNotesCache, listCourseDocuments, listCourseNotes, type CourseDocument, type SavedNote } from '../../services/ai-service.js';
+import { deleteSavedReplyById } from './shell.js';
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { checkAdminStatus } from '../../services/admin-service.js';
@@ -1795,6 +1796,7 @@ function savedItemCache(item: SavedItem): CachedSavedItem {
   return {
     id: item.id, kind: item.kind, title: item.title, courseId: item.course.id,
     courseName: item.course.name || 'Course', meta: item.meta, noteId: item.note?.id,
+    chatId: item.kind === 'responses' ? (item.payload as { chatId?: string } | undefined)?.chatId : undefined,
   };
 }
 
@@ -1803,7 +1805,8 @@ function savedItemsFromCache(cached: CachedSavedItem[], allCourses: LibraryCours
   return cached.map((item) => {
     const course = map.get(item.courseId) || { id: item.courseId, name: item.courseName, files: [], userFolders: [] } as LibraryCourse;
     const note = item.noteId ? { id: item.noteId, title: item.title, type: item.kind === 'summaries' ? 'summary' : item.kind === 'cheatsheets' ? 'cheatsheet' : 'note' } as SavedNote : undefined;
-    return { id: item.id, kind: item.kind as SavedKind, title: item.title, course, meta: item.meta, note };
+    const payload = item.kind === 'responses' && item.chatId ? { chatId: item.chatId } : undefined;
+    return { id: item.id, kind: item.kind as SavedKind, title: item.title, course, meta: item.meta, note, payload };
   });
 }
 
@@ -1867,7 +1870,7 @@ function renderSavedKind(
     persistStudyLibrary();
     renderSavedKinds(panel, root, items, allCourses);
   });
-  bindSaved(panel, root, ofKind);
+  bindSaved(panel, root, items, allCourses, kind);
   bindSavedLoadMore(panel, root, allCourses, kind);
 }
 
@@ -1886,6 +1889,12 @@ function setSavedPageCursor(courseId: string, category: PaginatedSavedCategory, 
   savedPageCursors.set(savedPageKey(courseId, category), { offset: loaded, hasMore });
 }
 
+// One row is a wrapper <div> around two SIBLING buttons (open, delete) plus
+// a hidden inline confirm bar — never a <button> nested inside another
+// <button>, which is invalid HTML and breaks click/accessibility handling.
+// The confirm bar covers the row in place (position:absolute, see CSS)
+// instead of opening a second floating popup, so deleting never shifts the
+// composer or the rest of the list.
 function savedKindHtml(items: SavedItem[], allCourses: LibraryCourse[], kind: SavedKind): string {
   const paginated = kind === 'flashcards' || kind === 'exams' ? (kind as PaginatedSavedCategory) : null;
   return allCourses.map((course) => {
@@ -1896,17 +1905,105 @@ function savedKindHtml(items: SavedItem[], allCourses: LibraryCourse[], kind: Sa
       ? `<button type="button" class="ncb-saved-load-more" data-load-more-course="${escapeHtml(course.id)}">Load more</button>`
       : '';
     return `<div class="ncb-saved-course"><h4>${escapeHtml(course.name || 'Course')}</h4>${grouped.map((item) => `
-      <button type="button" class="ncb-saved-row" data-saved-kind="${item.kind}" data-saved-id="${escapeHtml(item.id)}">
-        ${icon(item.kind)}<span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.meta)}</small></span><b>Open</b>
-      </button>`).join('')}${loadMore}</div>`;
+      <div class="ncb-saved-row" data-saved-kind="${escapeHtml(item.kind)}" data-saved-id="${escapeHtml(item.id)}">
+        <button type="button" class="ncb-saved-open">
+          ${icon(item.kind)}<span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.meta)}</small></span><b>Open</b>
+        </button>
+        <button type="button" class="ncb-saved-delete ncb-library-delete" aria-label="${escapeHtml('Delete ' + item.title)}" title="Delete">
+          ${trashIcon()}
+        </button>
+        <div class="ncb-saved-confirm" hidden>
+          <span class="ncb-saved-confirm-text">Delete &ldquo;<b>${escapeHtml(item.title)}</b>&rdquo;? This will permanently remove it from Saved.</span>
+          <div class="ncb-saved-confirm-actions">
+            <button type="button" class="ncb-saved-confirm-cancel">Cancel</button>
+            <button type="button" class="ncb-saved-confirm-delete">Delete</button>
+          </div>
+        </div>
+      </div>`).join('')}${loadMore}</div>`;
   }).join('');
 }
 
-function bindSaved(panel: HTMLElement, root: HTMLElement, items: SavedItem[]): void {
-  panel.querySelectorAll<HTMLButtonElement>('.ncb-saved-row').forEach((button) => {
-    button.addEventListener('click', () => {
-      const item = items.find((candidate) => candidate.id === button.dataset.savedId && candidate.kind === button.dataset.savedKind);
-      if (item) void openSaved(root, item);
+function setSavedRowConfirming(row: HTMLElement, confirming: boolean): void {
+  row.querySelector<HTMLElement>('.ncb-saved-confirm')!.hidden = !confirming;
+  if (confirming) {
+    row.querySelector<HTMLButtonElement>('.ncb-saved-confirm-delete')?.focus();
+  } else {
+    row.querySelector<HTMLButtonElement>('.ncb-saved-open')?.focus();
+  }
+}
+
+// Deleting is the one action in Saved that must survive the panel being
+// re-rendered mid-flight (a slow DELETE, the user switching tabs and back).
+// Rather than reach back into a specific <button> element that may no
+// longer exist, this closes over the STATE (items array, cache, panel/root)
+// needed to redraw once the server confirms the row is actually gone.
+async function runSavedDelete(
+  panel: HTMLElement, root: HTMLElement, row: HTMLElement,
+  items: SavedItem[], allCourses: LibraryCourse[], kind: SavedKind, item: SavedItem
+): Promise<void> {
+  const confirmBar = row.querySelector<HTMLElement>('.ncb-saved-confirm')!;
+  const deleteBtn = confirmBar.querySelector<HTMLButtonElement>('.ncb-saved-confirm-delete')!;
+  const cancelBtn = confirmBar.querySelector<HTMLButtonElement>('.ncb-saved-confirm-cancel')!;
+  deleteBtn.disabled = true;
+  cancelBtn.disabled = true;
+  const originalDeleteHtml = deleteBtn.innerHTML;
+  deleteBtn.innerHTML = '<span class="ncb-saved-confirm-spinner" aria-hidden="true"></span>';
+  let ok = false;
+  try {
+    ok = await deleteSavedItem(item);
+  } catch (error) {
+    console.error('[saved-delete-error]', {
+      kind: item.kind, id: item.id, courseId: item.course.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (!ok) {
+    console.error('[saved-delete-error]', { kind: item.kind, id: item.id, courseId: item.course.id, error: 'delete returned false' });
+    deleteBtn.disabled = false;
+    cancelBtn.disabled = false;
+    deleteBtn.innerHTML = originalDeleteHtml;
+    window.showToast?.('Could not delete', `"${item.title}" was not removed — please try again.`);
+    return;
+  }
+  // Success: drop it from the in-memory list AND the persisted Saved cache
+  // (studyLibraryState().savedItems) so it cannot reappear on a tab switch
+  // or reload before the next full refresh, then redraw so the category
+  // count and (if this was the last one) the empty state update instantly.
+  const index = items.findIndex((candidate) => candidate.id === item.id && candidate.kind === item.kind);
+  if (index !== -1) items.splice(index, 1);
+  const state = studyLibraryState();
+  state.savedItems = state.savedItems.filter((cached) => !(cached.id === item.id && cached.kind === item.kind));
+  persistStudyLibrary();
+  invalidateSaved();
+  window.showToast?.('Deleted', `"${item.title}" was removed from Saved.`);
+  renderSavedKind(panel, root, items, allCourses, kind);
+}
+
+function bindSaved(
+  panel: HTMLElement, root: HTMLElement, items: SavedItem[], allCourses: LibraryCourse[], kind: SavedKind
+): void {
+  panel.querySelectorAll<HTMLElement>('.ncb-saved-row').forEach((row) => {
+    const item = items.find((candidate) => candidate.id === row.dataset.savedId && candidate.kind === row.dataset.savedKind);
+    if (!item) return;
+    row.querySelector<HTMLButtonElement>('.ncb-saved-open')?.addEventListener('click', () => {
+      void openSaved(root, item);
+    });
+    row.querySelector<HTMLButtonElement>('.ncb-saved-delete')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setSavedRowConfirming(row, true);
+    });
+    row.querySelector<HTMLButtonElement>('.ncb-saved-confirm-cancel')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setSavedRowConfirming(row, false);
+    });
+    row.querySelector<HTMLButtonElement>('.ncb-saved-confirm-delete')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      void runSavedDelete(panel, root, row, items, allCourses, kind, item);
+    });
+    row.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && !row.querySelector<HTMLElement>('.ncb-saved-confirm')!.hidden) {
+        setSavedRowConfirming(row, false);
+      }
     });
   });
 }
@@ -2279,7 +2376,7 @@ async function loadBookmarkedResponses(): Promise<{ items: SavedItem[]; groups: 
         title: row.source_prompt ? responseTitle(String(row.source_prompt)) : responseTitle(text),
         course: groupMap.get(groupId)!,
         meta: `${titles.get(chatId) || 'AI conversation'} · ${formatDate(row.created_at)}`,
-        payload: { text }
+        payload: { text, chatId }
       };
     })
   };
@@ -2402,6 +2499,74 @@ async function fetchRowById(table: string, id: string): Promise<Record<string, u
   const data = await response.json();
   const rows = Array.isArray(data) ? data : [];
   return rows[0] || null;
+}
+
+// Canonical DB delete for the two tables this panel already reads directly
+// via authenticatedSupabaseFetch (flashcard_decks, exam_sessions — see
+// fetchRows/fetchRowById above). Both tables' RLS policies scope every
+// operation to auth.uid() = user_id, so this is the same trust boundary the
+// legacy flashcards.js/examforge.js views already rely on for their own
+// deletes — not a new persistence system, just the same client-Supabase
+// pattern this file already uses for these two tables, extended to DELETE.
+// Their child rows (exam_questions, exam answers) are declared
+// ON DELETE CASCADE (see 20260604_000002_examforge.sql), so a single row
+// delete here cannot leave orphans.
+async function deleteRowById(table: string, id: string): Promise<boolean> {
+  const db = window._ssDb;
+  if (!db) return false;
+  const response = await authenticatedSupabaseFetch(
+    `${db.supaUrl()}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`,
+    { method: 'DELETE' }
+  ).catch(() => null);
+  return !!response?.ok;
+}
+
+// The "Open PDF viewer" reopen button (shell.ts) and readCheatsheetSettings/
+// readSummarySettings above fall back to minallo_cs_last_<courseId> /
+// minallo_sum_last_<courseId> — a small { noteId, title, settings } identity
+// cache written whenever a cheatsheet/summary is generated, used to restore
+// the paper viewer after a page refresh without re-fetching. If the note
+// these point at is the one just deleted, that cache must be cleared too, or
+// a later reopen/follow-up could still act as if the artifact exists. A
+// cache pointing at a DIFFERENT (newer) artifact must be left alone.
+function clearArtifactIdentityCacheIfMatches(kind: 'cheatsheets' | 'summaries', courseId: string, noteId: string): void {
+  const key = (kind === 'cheatsheets' ? 'minallo_cs_last_' : 'minallo_sum_last_') + courseId;
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) || 'null') as { noteId?: string } | null;
+    if (stored?.noteId === noteId) localStorage.removeItem(key);
+  } catch { /* corrupted cache entry — nothing to preserve either way */ }
+}
+
+// One canonical entry point for deleting any Saved artifact. This function
+// only decides WHICH real persistence layer to call and reports success —
+// it does not implement any deletion logic itself. Each branch reuses the
+// exact same DB path the rest of the app already uses for that artifact
+// type (see the comments on deleteNote / deleteRowById / deleteSavedReplyById).
+async function deleteSavedItem(item: SavedItem): Promise<boolean> {
+  switch (item.kind) {
+    case 'notes':
+    case 'summaries':
+    case 'cheatsheets': {
+      const noteId = item.note?.id || item.id;
+      const ok = await deleteNote(noteId);
+      if (ok) {
+        invalidateCourseNotesCache(item.course.id); // deleteNote() already does this; explicit for clarity/defensiveness
+        if (item.kind !== 'notes') clearArtifactIdentityCacheIfMatches(item.kind, item.course.id, noteId);
+      }
+      return ok;
+    }
+    case 'flashcards':
+      return deleteRowById('flashcard_decks', item.id);
+    case 'exams':
+      return deleteRowById('exam_sessions', item.id);
+    case 'responses': {
+      const chatId = (item.payload as { chatId?: string } | undefined)?.chatId;
+      if (!chatId) return false;
+      return deleteSavedReplyById(chatId, item.id);
+    }
+    default:
+      return false;
+  }
 }
 
 function formatDate(value?: string): string {

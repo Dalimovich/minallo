@@ -2227,6 +2227,41 @@ function showCoursePickCard(
 // chat into notes generation.
 const NOTES_PENDING_TTL_MS = 10 * 60 * 1000;
 
+/** Attach a persistent "Open PDF viewer" button whose click reopens the
+ *  overlay. `getPaperOpts` may return its opts synchronously, or may need
+ *  to resolve them asynchronously (e.g. re-fetching a persisted note by id
+ *  after a page refresh, when nothing is in-memory yet) — it can return a
+ *  Promise, which is awaited before deciding opts are unavailable.
+ *  Returning null immediately here used to be indistinguishable from
+ *  "there really is nothing to show", which made the button falsely report
+ *  failure while an async lookup was still in flight. Opening itself goes
+ *  through the same openPaperArtifact() used by every other paper-viewer
+ *  entry point (Saved Summary/Cheatsheet). Module-level (not nested inside
+ *  handleIntentRoute) so appendStoredMessage can also re-attach a working
+ *  button to a restored history bubble, not just a live one. */
+function attachReopenButton(
+  host: HTMLElement,
+  getPaperOpts: () => Record<string, unknown> | null | Promise<Record<string, unknown> | null>
+): void {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ncb-cs-reopen-btn';
+  btn.textContent = '⤓ Open PDF viewer';
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    import('./cheatsheet-workspace.js')
+      .then((mod) => mod.openPaperArtifact(getPaperOpts))
+      .catch((error) => {
+        console.error('cheatsheet_pdf_viewer_open_failed', error);
+        (window as unknown as { showToast?: (title: string, detail?: string) => void })
+          .showToast?.('Could not open the PDF viewer', 'Please try again.');
+      })
+      .finally(() => { btn.disabled = false; btn.textContent = '⤓ Open PDF viewer'; });
+  });
+  host.appendChild(btn);
+}
+
 async function handleIntentRoute(
   state: ConversationState,
   bubble: HTMLElement | null,
@@ -2377,39 +2412,6 @@ async function handleIntentRoute(
     pad: padMap[s.padding] || '10mm',
     style: styleName,
   });
-
-  /** Attach a persistent "Open PDF viewer" button whose click reopens the
-   *  overlay. `getPaperOpts` may return its opts synchronously, or may need
-   *  to resolve them asynchronously (e.g. re-fetching a persisted note by
-   *  id after a page refresh, when nothing is in-memory yet) — it can
-   *  return a Promise, which is awaited before deciding opts are
-   *  unavailable. Returning null immediately here used to be
-   *  indistinguishable from "there really is nothing to show", which made
-   *  the button falsely report failure while an async lookup was still in
-   *  flight. Opening itself goes through the same openPaperArtifact() used
-   *  by every other paper-viewer entry point (Saved Summary/Cheatsheet). */
-  function attachReopenButton(
-    host: HTMLElement,
-    getPaperOpts: () => Record<string, unknown> | null | Promise<Record<string, unknown> | null>
-  ): void {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ncb-cs-reopen-btn';
-    btn.textContent = '⤓ Open PDF viewer';
-    btn.addEventListener('click', () => {
-      btn.disabled = true;
-      btn.textContent = 'Loading…';
-      import('./cheatsheet-workspace.js')
-        .then((mod) => mod.openPaperArtifact(getPaperOpts))
-        .catch((error) => {
-          console.error('cheatsheet_pdf_viewer_open_failed', error);
-          (window as unknown as { showToast?: (title: string, detail?: string) => void })
-            .showToast?.('Could not open the PDF viewer', 'Please try again.');
-        })
-        .finally(() => { btn.disabled = false; btn.textContent = '⤓ Open PDF viewer'; });
-    });
-    host.appendChild(btn);
-  }
 
   // ── summary ──────────────────────────────────────────────────────────────────
   if (route.intent === 'summary') {
@@ -2592,20 +2594,27 @@ async function handleIntentRoute(
 
     await finishStudyBuilderLoading(builderCs);
 
-    // 4. Build opts and persist
+    // 4. Build opts only when actually persisted — same durability contract
+    // as Summary: text alone (result.noteId missing/persistFailed) must
+    // never be presented as "ready", since it would vanish on refresh.
     const csLayoutSettings = buildLayoutSettings(chatSettings, (result.settings && result.settings.style as string) || 'academic');
-    let paperOpts: Record<string, unknown> | null = result && result.text ? {
+    const csHasText = !!(result && result.text);
+    const csPersistFailed = csHasText && !!result.persistFailed;
+    const csPersisted = csHasText && !!result.noteId && !csPersistFailed;
+
+    let paperOpts: Record<string, unknown> | null = csPersisted ? {
       kind: 'cheatsheet',
       course: route.target.courseId,
       title: result.title || 'Cheatsheet',
       scope: result.title || 'Course cheatsheet',
       meta: '',
       markdown: result.text,
+      noteId: result.noteId,
       settings: csLayoutSettings,
     } : null;
 
     const lsKey = 'minallo_cs_last_' + route.target.courseId;
-    if (paperOpts && result.noteId) {
+    if (csPersisted) {
       try {
         localStorage.setItem(lsKey, JSON.stringify({
           noteId: result.noteId,
@@ -2615,21 +2624,20 @@ async function handleIntentRoute(
       } catch { /* storage full — non-fatal */ }
       // Tell Saved immediately — same cache-invalidate + event Notes/Summary
       // use, so Saved > Cheatsheets reflects this without a refresh/reopen/
-      // cache TTL. This was previously missing here even though the note
-      // was already being persisted.
+      // cache TTL. Only fires for an actually-persisted note.
       const svc = await import('../../services/ai-service.js');
       svc.invalidateCourseNotesCache(route.target.courseId);
       document.dispatchEvent(new CustomEvent('minallo:notes-created', { detail: { courseId: route.target.courseId } }));
     }
 
-    const savedNote = !!result.noteId;
-    const text = paperOpts
-      ? 'Your cheatsheet is ready. Click **⤓ Open PDF viewer** below to view and download it.' +
-        (savedNote ? ' It\'s also **saved to your notes** — you can find it under Saved > Cheatsheets.' : '')
-      : 'No cheatsheet content was returned. Please try again.';
+    const text = csPersisted
+      ? 'Your cheatsheet is ready. Click **⤓ Open PDF viewer** below to view and download it. It\'s also **saved to your notes** — you can find it under Saved > Cheatsheets.'
+      : csPersistFailed
+        ? 'I generated your cheatsheet, but it could not be saved. Please try again.'
+        : 'No cheatsheet content was returned. Please try again.';
     if (bubble) renderRichBubble(bubble, text);
 
-    if (bubble && (paperOpts || result.noteId)) {
+    if (bubble && paperOpts) {
       attachReopenButton(bubble, async () => {
         if (paperOpts) return paperOpts;
         // Restore from localStorage/API after page refresh — awaited so the
@@ -2657,15 +2665,15 @@ async function handleIntentRoute(
       });
     }
 
-    if (result && result.text) {
+    if (csPersisted) {
       return {
         text,
         generatedDoc: {
           kind: 'cheatsheet',
           title: result.title || 'Cheatsheet',
-          markdown: result.text,
+          markdown: result.text as string,
           courseId: route.target.courseId,
-          noteId: result.noteId || undefined,
+          noteId: result.noteId as string,
         },
       };
     }
@@ -6910,6 +6918,36 @@ const { syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync }
   apiUrl: SAVED_REPLIES_API,
 });
 
+// Canonical AI-response deletion entry point for callers outside this chat
+// surface (the Saved panel's per-item delete control lives in
+// workspace-library.ts, a sibling module). syncSavedReplyDelete above is
+// deliberately fire-and-forget (it queues a tombstone and retries later on
+// its own schedule) so a caller can never learn whether the row was actually
+// removed — fine for the in-chat "unbookmark" button (which already knows
+// the delete succeeded, or will retry, from its own tombstone bookkeeping),
+// but wrong for a UI that must not hide a row until the DB deletion is
+// confirmed. This performs the exact same request (same endpoint) but
+// AWAITS it, then applies the identical local cleanup the in-chat handler
+// does (splice chat.savedReplies, drop any tombstone, persist, dispatch the
+// same 'minallo:saved-replies-changed' event) only once the server confirms
+// success — so a stale local copy can never resurrect a response that was
+// actually deleted, and the caller gets a real success/failure signal.
+export async function deleteSavedReplyById(chatId: string, id: string): Promise<boolean> {
+  const response = await authenticatedFetch(
+    SAVED_REPLIES_API + '?id=' + encodeURIComponent(id),
+    { method: 'DELETE' }
+  ).catch(() => null);
+  if (!response || !response.ok) return false;
+  const chat = chatStore.chats.find((c) => c.id === chatId);
+  if (chat) {
+    chat.savedReplies = chat.savedReplies.filter((r) => r.id !== id);
+    delete chat.pendingSavedReplyDeletes[id];
+    saveChatStore();
+  }
+  dispatchSavedReplyChanged({ id, action: 'deleted' });
+  return true;
+}
+
 const _savedRepliesSyncedChats = new Set<string>();
 
 type SavedReplyServerRow = {
@@ -8241,6 +8279,42 @@ function appendStoredMessage(msgs: HTMLElement, m: ChatMessage): void {
     note.className = 'ncb-bubble-aborted';
     note.textContent = 'This response was interrupted before completion.';
     bubble.appendChild(note);
+  }
+  // A persisted Summary/Cheatsheet message's "Open PDF viewer" button is
+  // only ever created live, at generation time (attachReopenButton) — a
+  // restored history bubble otherwise has no button at all to click, even
+  // though the artifact is durably saved. Re-attach it here, resolving by
+  // the persisted noteId rather than trusting the inline markdown: the
+  // stored generatedDoc.markdown is capped to NCB_GENERATED_DOC_CONTEXT_CHARS
+  // (see the `compact` serialization above) so it's a truncated preview
+  // after reload, not the full saved content.
+  if (bubble && m.generatedDoc?.noteId
+    && (m.generatedDoc.kind === 'summary' || m.generatedDoc.kind === 'cheatsheet')) {
+    const doc = m.generatedDoc;
+    attachReopenButton(bubble, async () => {
+      try {
+        const svc = await import('../../services/ai-service.js');
+        const note = await svc.getNoteById(doc.noteId as string);
+        if (!note) return null;
+        const lsKey = (doc.kind === 'summary' ? 'minallo_sum_last_' : 'minallo_cs_last_') + doc.courseId;
+        let settings: Record<string, unknown> | undefined;
+        try {
+          const stored = JSON.parse(localStorage.getItem(lsKey) || 'null') as
+            { noteId?: string; settings?: Record<string, unknown> } | null;
+          if (stored?.noteId === note.id) settings = stored.settings;
+        } catch { /* ignore */ }
+        return {
+          kind: doc.kind,
+          course: doc.courseId,
+          noteId: note.id,
+          title: note.title || doc.title,
+          scope: note.title || doc.title,
+          meta: '',
+          markdown: note.content_markdown,
+          settings,
+        };
+      } catch { return null; }
+    });
   }
   appendBubbleActions(row, m.text, m);
 }

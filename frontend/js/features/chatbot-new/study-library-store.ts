@@ -39,6 +39,9 @@ export interface CachedSavedItem {
   courseName: string;
   meta: string;
   noteId?: string;
+  /** 'responses' items only — the owning chat, needed to delete the durable
+   *  saved-reply row (see deleteSavedReplyById in shell.ts). */
+  chatId?: string;
 }
 
 interface StudyLibraryCache {
