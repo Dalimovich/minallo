@@ -535,6 +535,18 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
     if (!savedPanel.hidden) void renderSaved(savedPanel, root, true);
   };
   document.addEventListener('minallo:saved-replies-changed', handleSavedRepliesChanged);
+
+  // Fired by the chatbot's Notes intent (shell.ts) right after a note is
+  // both generated AND actually persisted (a null note id never fires
+  // this) — force-refreshes Saved so the new note appears immediately
+  // instead of waiting out listCourseNotes()'s 30s cache or a manual
+  // close/reopen of the panel.
+  const handleNotesCreated = (): void => {
+    invalidateSaved();
+    if (!savedPanel.hidden) void renderSaved(savedPanel, root, true);
+  };
+  document.addEventListener('minallo:notes-created', handleNotesCreated);
+
   const refreshForAuthenticatedUser = (): void => {
     resetStudyLibraryMemory();
     renderCourses(coursePanel);
@@ -566,6 +578,7 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
 
   workspaceLibraryCleanup = () => {
     document.removeEventListener('minallo:saved-replies-changed', handleSavedRepliesChanged);
+    document.removeEventListener('minallo:notes-created', handleNotesCreated);
     document.removeEventListener('minallo:auth:signed-in', refreshForAuthenticatedUser);
     document.removeEventListener('minallo:auth:entered', refreshForAuthenticatedUser);
     window.removeEventListener('minallo:course-registry-ready', handleCourseRegistryReady);

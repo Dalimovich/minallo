@@ -30,6 +30,7 @@ import {
 } from '../ai-chat/ai-thinking-status.js';
 import { routeStudyIntent } from '../ai-chat/intent-router.js';
 import { resolveNotesFileNameFromText, pickExplicitNotesCandidate } from './notes-intent-resolver.js';
+import { runNotesFlow, type ResolvedNotesDocument } from './notes-intent-flow.js';
 import { buildPageContext } from '../ai-chat/ai-page-context.js';
 import { shouldReuseRecentVisualContext, type LastAiImageContext } from '../ai-chat/visual-context.js';
 import type { DailyMissionPanelHandlers } from '../daily-mission/daily-mission-ui.js';
@@ -2140,7 +2141,7 @@ async function handleIntentRoute(
     if (resolved) {
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
-      const text = await handleNotesIntent(pendingNotes.courseId, bubble, controller.signal, originChat, resolved);
+      const text = await handleNotesIntent(pendingNotes.courseId, bubble, controller.signal, originChat, last.text, true);
       return { text };
     }
     // Didn't look like a file selection — abandon the pending flow rather
@@ -2519,7 +2520,7 @@ async function handleIntentRoute(
 
   if (route.intent === 'notes') {
     const explicitCandidate = pickExplicitNotesCandidate(route, selectedSourceIds, sourceLibrary.items, activePdf, route.target.courseId);
-    const text = await handleNotesIntent(route.target.courseId, bubble, controller.signal, originChat, undefined, explicitCandidate);
+    const text = await handleNotesIntent(route.target.courseId, bubble, controller.signal, originChat, last.text, false, explicitCandidate);
     return { text };
   }
 
@@ -2830,73 +2831,90 @@ function getCourseNotesFiles(courseId: string): string[] {
     .filter((name): name is string => !!name && /\.pdf$/i.test(name));
 }
 
-/** Matches a free-text reply (a bare filename, "make notes from X", or a
- *  filename the user typed with minor punctuation/case differences) against
- *  the course's actual file list — see notes-intent-resolver.ts for the
- *  implementation and its direct unit tests. Re-exported name kept local so
- *  the rest of this file doesn't need to change. */
+/** Resolves a course filename to its indexed-document identity via the
+ *  canonical documents API — mirrors notes-panel.js's `_resolveDocumentId`
+ *  so Notes generation prefers indexed chunks (no page cap) over a raw
+ *  client-side PDF extraction whenever an indexed document actually exists
+ *  and is ready. */
+async function resolveNotesDocument(courseId: string, fileName: string): Promise<ResolvedNotesDocument> {
+  try {
+    const ai = await import('../../services/ai-service.js');
+    const docs = await ai.listCourseDocuments(courseId);
+    const target = fileName.toLowerCase();
+    const doc = docs.find((d) => (d.file_name || d.fileName || '').toLowerCase() === target);
+    if (!doc) return { documentId: null, ready: false };
+    const ready = doc.processing_status === 'ready'
+      && Number(doc.page_count || 0) > 0 && Number(doc.chunk_count || 0) > 0;
+    return { documentId: doc.id, ready };
+  } catch {
+    return { documentId: null, ready: false };
+  }
+}
 
 /** Notes need a single, concrete source — unlike summary/cheatsheet which can
  *  pull from "current course sources" broadly. This resolves a target file
- *  (an explicit filename/selection/open PDF, a forced match from a resumed
- *  pending reply, the one the student has open, or the course's only file),
- *  asks a clarifying question when the choice is still ambiguous — recording
- *  a pending action on the chat so the NEXT reply resumes this flow instead
- *  of falling through to normal chat — then grounds generation on that
- *  file's extracted text via the same single-shot `/api/notes/generate` call
- *  the Notes panel uses for short documents. */
+ *  (an explicit filename/selection/open PDF, a resumed pending reply, or the
+ *  course's only file), asks a clarifying question when the choice is still
+ *  ambiguous — recording a pending action on the chat so the NEXT reply
+ *  resumes this flow instead of falling through to normal chat — then
+ *  generates through the canonical indexed-document Notes pipeline (falling
+ *  back to raw extraction only when nothing is indexed yet). All of the
+ *  actual decision logic lives in notes-intent-flow.ts's runNotesFlow, which
+ *  is unit-tested directly with mock dependencies; this function only wires
+ *  up the real window/network/DOM effects around it. */
 async function handleNotesIntent(
   courseId: string,
   bubble: HTMLElement | null,
   signal: AbortSignal | undefined,
   chat: SavedChat,
-  forcedFileName?: string,
+  latestText: string,
+  usePendingAction: boolean,
   explicitCandidate?: string
 ): Promise<string> {
-  const w = window as unknown as { activeFileName?: string | null };
-  const files = getCourseNotesFiles(courseId);
-
-  let fileName: string | null = forcedFileName || null;
-  if (!fileName && explicitCandidate) fileName = resolveNotesFileNameFromText(files, explicitCandidate);
-  if (!fileName && w.activeFileName && files.includes(w.activeFileName)) fileName = w.activeFileName;
-  if (!fileName && files.length === 1) fileName = files[0] ?? null;
-
-  if (!fileName) {
-    chat.pendingNotesAction = { courseId, createdAt: Date.now() };
-    const text = files.length
-      ? 'Which file should I make notes from?\n\n' +
-        files.slice(0, 8).map((n) => '• ' + n).join('\n') +
-        '\n\nOpen the file you want, then ask me again — e.g. "make notes from this lecture".'
-      : 'I can make notes from a course file. Open the source you want, then ask "make notes from this lecture".';
-    if (bubble) renderRichBubble(bubble, text);
-    return text;
-  }
-  chat.pendingNotesAction = null;
-
-  if (bubble) renderRichBubble(bubble, 'Reading **' + fileName + '** and writing your notes…');
   try {
     const [extraction, ai] = await Promise.all([
       import('../pdf-viewer/pdf-text-extraction.js'),
-      import('../../services/ai-service.js')
+      import('../../services/ai-service.js'),
     ]);
-    const [rawText] = await extraction.extractMultiplePdfs([fileName], 20);
-    if (signal) throwIfAborted(signal);
-    const pdfText = (rawText || '').replace(/^=== .*? ===\n/, '');
-    const result = await ai.generateNotes(courseId, { fileName, pdfText }, signal);
-    if (signal) throwIfAborted(signal);
-    if (result.error || !result.note?.content_markdown) {
-      const text = 'I could not generate notes from ' + fileName + ' right now. Please try again from the Notes tab.';
-      if (bubble) renderRichBubble(bubble, text);
-      return text;
-    }
-    const text =
-      'Notes from ' + fileName + ' (saved to your Notes tab):\n\n' + result.note.content_markdown;
-    if (bubble) renderRichBubble(bubble, text);
-    return text;
+    const outcome = await runNotesFlow({
+      courseId,
+      latestText,
+      pendingNotesAction: usePendingAction ? (chat.pendingNotesAction || null) : null,
+      now: Date.now(),
+      ttlMs: NOTES_PENDING_TTL_MS,
+      explicitCandidate,
+    }, {
+      getCourseFiles: getCourseNotesFiles,
+      resolveDocument: resolveNotesDocument,
+      extractPdfText: async (fileName, maxPages) => {
+        const [rawText] = await extraction.extractMultiplePdfs([fileName], maxPages);
+        if (signal) throwIfAborted(signal);
+        return rawText || '';
+      },
+      generateNotes: async (cid, opts) => {
+        const result = await ai.generateNotes(cid, opts, signal);
+        if (signal) throwIfAborted(signal);
+        return result;
+      },
+      onNoteSaved: (cid) => {
+        ai.invalidateCourseNotesCache(cid);
+        // No canonical exported "Saved just changed" call for notes exists
+        // yet (see minallo:saved-replies-changed, which is bookmark-only) —
+        // this event is the equivalent for notes; workspace-library.ts
+        // listens for it and force-refreshes the Saved panel.
+        document.dispatchEvent(new CustomEvent('minallo:notes-created', { detail: { courseId: cid } }));
+      },
+      onFileResolved: (fileName) => {
+        if (bubble) renderRichBubble(bubble, 'Reading **' + fileName + '** and writing your notes…');
+      },
+    });
+    chat.pendingNotesAction = outcome.pendingNotesAction;
+    if (bubble && outcome.text) renderRichBubble(bubble, outcome.text);
+    return outcome.text;
   } catch (err) {
     // Pause pressed: let the caller render the standard "Response stopped."
     if ((err as Error)?.name === 'AbortError') throw err;
-    const text = 'I could not generate notes from ' + fileName + ' right now. Please try again from the Notes tab.';
+    const text = 'I could not generate notes right now. Please try again from the Notes tab.';
     if (bubble) renderRichBubble(bubble, text);
     return text;
   }

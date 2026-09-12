@@ -576,7 +576,10 @@ export async function generateCheatsheet(
 
 export interface NotesResult {
   note?: {
-    id: string;
+    // The backend can genuinely fail to persist after generation succeeds
+    // (RLS violation, DB outage, ...) — callers MUST treat a null id as "not
+    // saved" even when content_markdown is present. See error: 'persist_failed'.
+    id: string | null;
     title?: string | null;
     content_markdown?: string;
     type?: string;

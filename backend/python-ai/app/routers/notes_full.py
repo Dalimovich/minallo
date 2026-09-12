@@ -1125,7 +1125,12 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
             merged, merge_sources, filter_start, filter_end,
         )
         content = merged + HEAVY_CAP_NOTICE if heavy_capped else merged
-        return {"note": {"id": note_id, "title": title, "type": payload.tool, "content_markdown": content, "sources": merge_sources}, "heavyCapped": heavy_capped}
+        response: dict[str, Any] = {"note": {"id": note_id, "title": title, "type": payload.tool, "content_markdown": content, "sources": merge_sources}, "heavyCapped": heavy_capped}
+        # Generation succeeded but the DB insert didn't — never let a caller
+        # infer success from content_markdown alone (see _save_note).
+        if note_id is None:
+            response["error"] = "persist_failed"
+        return response
 
     # ── SECTION ─────────────────────────────────────────────────────────────
     if payload.mode == "section":
@@ -1247,4 +1252,9 @@ def notes_generate(payload: NotesGenerateRequest) -> dict[str, Any]:
         markdown, sources, filter_start, filter_end,
     )
     content = markdown + HEAVY_CAP_NOTICE if heavy_capped else markdown
-    return {"note": {"id": note_id, "title": title, "type": payload.tool, "content_markdown": content, "sources": sources}, "heavyCapped": heavy_capped}
+    response: dict[str, Any] = {"note": {"id": note_id, "title": title, "type": payload.tool, "content_markdown": content, "sources": sources}, "heavyCapped": heavy_capped}
+    # Generation succeeded but the DB insert didn't — never let a caller infer
+    # success from content_markdown alone (see _save_note).
+    if note_id is None:
+        response["error"] = "persist_failed"
+    return response
