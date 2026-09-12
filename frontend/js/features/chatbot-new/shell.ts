@@ -637,7 +637,10 @@ function renderAddFilesSourceMenu(root: HTMLElement): void {
   }).join('');
 
   list.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (ev) => {
+      // Rendering replaces this button. Keep the detached click target from
+      // being treated as an outside click by the document listener.
+      ev.stopPropagation();
       const chat = chatStore.getActive();
       const nextMode = normaliseSourceMode(btn.dataset.sourceMode);
       chat.sourceMode = nextMode;

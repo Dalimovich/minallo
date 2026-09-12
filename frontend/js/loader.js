@@ -600,7 +600,7 @@
                 const lazyCssMap = {
                     dashboard: ['views/dashboard/dashboard.css?v=6'],
                     chat: ['views/chat/chat.css?v=2'],
-                    aipage: ['views/chatbot/chatbot.css?v=43'],
+                    aipage: ['views/chatbot/chatbot.css?v=44'],
                     german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
                     notes: ['views/lecturenotes/lecturenotes.css'],
                     profile: ['views/profile/profile.css'],
@@ -688,13 +688,13 @@
                 function prewarmChatbotShell() {
                     const w = window;
                     if (!w._ncbHtmlPromise) {
-                        w._ncbHtmlPromise = _fetchTimeout('views/chatbot/chatbot.html', 10000).then((r) => {
+                        w._ncbHtmlPromise = _fetchTimeout(versioned('views/chatbot/chatbot.html'), 10000).then((r) => {
                             if (!r.ok)
                                 throw new Error('HTTP ' + r.status + ' loading chatbot.html');
                             return r.text();
                         });
                     }
-                    const shellSrc = 'js/features/chatbot-new/shell.js?v=9&av=' +
+                    const shellSrc = 'js/features/chatbot-new/shell.js?v=' +
                         encodeURIComponent(String(window.MinalloConfig?.assetVersion || SS?.version || '1'));
                     const exists = Array.from(document.querySelectorAll('link[rel="modulepreload"]')).some((link) => (link.getAttribute('href') || '') === shellSrc);
                     if (!exists) {

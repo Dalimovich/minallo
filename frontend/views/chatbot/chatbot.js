@@ -10,6 +10,8 @@
   var container = document.getElementById('psec-aipage');
   if (!container) return;
 
+  var av = window.MinalloConfig && window.MinalloConfig.assetVersion ? window.MinalloConfig.assetVersion : '1';
+
   // Inject the shell module exactly once. Subsequent navigations just call
   // the already-registered window.initNewChatbotShell. A transient network
   // failure on the script must NOT permanently blank the page: we retry the
@@ -24,7 +26,6 @@
     // edge cache the chatbot shell indefinitely, so prompt updates
     // (e.g. MINALLO_APP_CONTEXT) never reach existing users. Bump on
     // every shell-affecting change.
-    var av = window.MinalloConfig && window.MinalloConfig.assetVersion ? window.MinalloConfig.assetVersion : '1';
     var attempts = 0;
     function tryLoad() {
       attempts++;
@@ -50,7 +51,7 @@
   // Re-fetch the markup with a couple of retries if the prewarmed promise is
   // missing or rejected, for the same transient-failure resilience.
   function fetchHtml(retries) {
-    return fetch('views/chatbot/chatbot.html').then(function (r) {
+    return fetch('views/chatbot/chatbot.html?v=' + encodeURIComponent(av)).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
     }).catch(function (err) {

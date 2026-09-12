@@ -814,6 +814,8 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 
 .ncb-input {
   display: flex;
+  position: relative;
+  z-index: 2;
   flex-direction: column;
   /* Don't let the flex parent (.ncb-empty in active chats) compress
      the composer when the message list grows. */
