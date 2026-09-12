@@ -30,6 +30,7 @@ import {
 } from '../ai-chat/ai-thinking-status.js';
 import { routeStudyIntent } from '../ai-chat/intent-router.js';
 import { buildPageContext } from '../ai-chat/ai-page-context.js';
+import { shouldReuseRecentVisualContext, type LastAiImageContext } from '../ai-chat/visual-context.js';
 import type { DailyMissionPanelHandlers } from '../daily-mission/daily-mission-ui.js';
 import {
   generateDailyMission,
@@ -501,6 +502,25 @@ function initTutorModes(root: HTMLElement): void {
 
 function getCurrentTutorMode(): TutorMode {
   return currentTutorMode || TUTOR_MODE_DEFAULT;
+}
+
+// SOLVE_WITH_ME (the "solve" tutor pill) is a Socratic mode that withholds the
+// final answer until the student explicitly asks for it. It only recognises
+// a handful of literal example phrases in its own prompt ("show me the
+// answer" / "zeig die Lösung" / "I give up"), so close paraphrases like
+// "give me the answer" or "solve it yourself" were falling through and still
+// getting hints. Detect the intent directly and drop the persisted pill for
+// just this turn instead of relying on the model to generalise the wording.
+const _DIRECT_ANSWER_REQUEST_RE =
+  /\b(give me the answer|just (?:give|tell) me|solve it yourself|tell me the answer|show me the answer|what'?s the (?:final |numerical )?answer|just (?:solve|answer|calculate) it|i give up|final answer|numerical answer)\b/i;
+const _DIRECT_ANSWER_REQUEST_DE_RE =
+  /\b(gib mir (?:die|einfach die) antwort|zeig(?: mir)? die l[oö]sung|l[oö]se es (?:einfach |selbst )?f[uü]r mich|ich gebe auf|die (?:end|finale) l[oö]sung)\b/i;
+
+function resolveTutorModeForTurn(question: string): TutorMode {
+  const mode = getCurrentTutorMode();
+  if (mode !== 'solve') return mode;
+  const q = question || '';
+  return _DIRECT_ANSWER_REQUEST_RE.test(q) || _DIRECT_ANSWER_REQUEST_DE_RE.test(q) ? 'explain' : mode;
 }
 
 function normaliseSourceMode(v: unknown): SourceMode {
@@ -1579,10 +1599,13 @@ async function streamAiReply(
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
       const followUpDoc = await resolveFollowUpDoc(requestMessages, rag.courseId || null);
+      const turnImages = resolveTurnImages(
+        rag.question, rag.courseId, durable!.conversationId, requestMessages.at(-1)?.images || []
+      );
       const streamed = await streamFromAskStream(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
         rag.documentIds, rag.documentNames, rag.groundingRequest, followUpDoc, allowDiagrams,
-        rag.activePdfContext, durable!.conversationId, requestMessages.at(-1)?.images || [], true,
+        rag.activePdfContext, durable!.conversationId, turnImages, true,
         assistantMessage.requestId, assistantMessage
       );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
@@ -3041,6 +3064,46 @@ function clipboardAttachmentText(message: ChatMessage): string[] {
     .map((file) => file.textContent!.trim());
 }
 
+/** A text-only follow-up ("what's this image about?", "solve question a")
+ * has no attachment of its own — ragEligibility bypasses the visual stream
+ * entirely for messages with images, so a follow-up about a PREVIOUS turn's
+ * image would otherwise reach the backend with zero image evidence and the
+ * model has nothing to look at. Mirrors ai-ask.ts's window._lastAiImageContext
+ * pattern (shared key) so a short anaphoric window survives across turns. */
+function resolveTurnImages(
+  question: string,
+  courseId: string,
+  conversationId: string,
+  currentImages: PastedImage[]
+): PastedImage[] {
+  const w = window as unknown as { _lastAiImageContext?: LastAiImageContext };
+  if (currentImages.length) {
+    w._lastAiImageContext = {
+      images: currentImages.map((img) => {
+        const comma = img.dataUrl.indexOf(',');
+        return { mediaType: img.mediaType, data: comma >= 0 ? img.dataUrl.slice(comma + 1) : img.dataUrl };
+      }),
+      courseId: courseId || undefined,
+      conversationId: conversationId || undefined,
+      timestamp: Date.now(),
+      remainingTurns: 4,
+    };
+    return currentImages;
+  }
+  const ctx = w._lastAiImageContext;
+  if (!shouldReuseRecentVisualContext(question, ctx, {
+    courseId: courseId || undefined,
+    conversationId: conversationId || undefined,
+  })) return [];
+  w._lastAiImageContext = { ...ctx!, remainingTurns: ctx!.remainingTurns - 1 };
+  return ctx!.images.map((img, i) => ({
+    id: `carried-image-${i}`,
+    name: 'carried-image',
+    mediaType: img.mediaType,
+    dataUrl: `data:${img.mediaType};base64,${img.data}`,
+  }));
+}
+
 /** Decide whether the latest user turn should go through RAG (`/ask-stream`)
  * or the generic chat endpoint. Returns the resolved RAG payload when
  * eligible, else null. */
@@ -3495,7 +3558,7 @@ async function streamFromAskStream(
       requestSnapshot: assistantMessage?.requestSnapshot,
       groundingRequest: effectiveGroundingRequest,
       question,
-      tutorMode: getCurrentTutorMode(),
+      tutorMode: resolveTutorModeForTurn(question),
       sourceMode: effectiveSourceMode,
       // When we send a document selection, tell the backend to hard-scope to
       // it (specific_files); otherwise it would treat the default
@@ -9133,10 +9196,10 @@ function initTextareaAutoSize(root: HTMLElement): void {
   // MIN must be slightly above what scrollHeight reports for a single
   // line (one baseline + textarea padding) — otherwise the first
   // keystroke pushes scrollHeight from N → N+1 (subpixel rounding) and
-  // the composer visibly grows by 1–2px. Clamping at 30 keeps the
-  // composer stable for one-line input (tuned for the compact 4px
-  // vertical textarea padding).
-  const MIN = 30;
+  // the composer visibly grows by 1–2px. Clamping at 24 keeps the
+  // composer stable for one-line input (tuned for the zero vertical
+  // textarea padding — line-height alone is ~22px).
+  const MIN = 24;
   const MAX = 160;
   const resize = (): void => {
     ta.style.height = 'auto';
