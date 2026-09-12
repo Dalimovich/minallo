@@ -58,9 +58,9 @@ test('source selector supports ready-state multi-selection without resetting par
 });
 
 test('source selector is a compact collapsible card control', () => {
-  assert.match(workflow, /ncb-source-trigger/);
+  assert.match(workflow, /ncb-stw-source-trigger/);
   assert.match(workflow, /aria-expanded/);
-  assert.match(workflow, /ncb-source-popover/);
+  assert.match(workflow, /ncb-stw-source-popover/);
   assert.match(workflow, /panel\.hidden = !marker\.sourcePickerOpen/);
 });
 

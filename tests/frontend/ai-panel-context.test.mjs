@@ -77,7 +77,7 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.doesNotMatch(MESSAGE_NAVIGATOR, /width:\s*calc\(var\(--dr-rail-w[^\n]+\+\s*24px\)/);
   assert.match(MESSAGE_NAVIGATOR, /width:\s*var\(--dr-rail-w,\s*66px\)/);
   assert.match(LOADER, /document-rail\.css\?v=35/);
-  assert.match(INDEX, /loader\.js\?v=56/);
+  assert.match(INDEX, /loader\.js\?v=57/);
 });
 
 test('AI drawer composer uses the compact rounded two-row shell', () => {

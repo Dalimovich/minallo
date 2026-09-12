@@ -237,32 +237,37 @@
                 <input type="file" class="ncb-file-input" data-testid="chatbot-file-input" multiple hidden
                        accept="image/*,application/pdf,text/plain,.txt,.md" />
 
-                <!-- Single inline input row: icon-only action buttons →
-                     textarea → send. ChatGPT-style. -->
+                <!-- Middle zone: the textarea alone, so the composer reads as
+                     three compact horizontal bands (modes/course → textarea →
+                     attach/send) instead of one tall single row. -->
+                <textarea
+                  class="ncb-input-textarea"
+                  data-testid="chatbot-input"
+                  data-i18n-ph="cb_input_placeholder"
+                  data-i18n-aria="cb_input_aria"
+                  placeholder="Ask anything about your lectures, exercises, or course files..."
+                  aria-label="Type your message"
+                ></textarea>
+
+                <!-- Bottom zone: attach/import on the left, send on the right. -->
                 <div class="ncb-input-row">
-                  <button type="button" class="ncb-input-action-btn ncb-upload-btn" data-testid="chatbot-upload"
-                          data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn"
-                          title="Upload photos & files" aria-label="Upload photos & files">
-                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M13.234 20.252 21 12.3"/>
-                      <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
-                    </svg>
-                  </button>
-                  <button type="button" class="ncb-input-action-btn ncb-import-btn" data-testid="import-course"
-                          data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn"
-                          title="Import from Course" aria-label="Import from Course">
-                    <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
-                    </svg>
-                  </button>
-                  <textarea
-                    class="ncb-input-textarea"
-                    data-testid="chatbot-input"
-                    data-i18n-ph="cb_input_placeholder"
-                    data-i18n-aria="cb_input_aria"
-                    placeholder="Ask anything about your lectures, exercises, or course files..."
-                    aria-label="Type your message"
-                  ></textarea>
+                  <div class="ncb-input-actions-left">
+                    <button type="button" class="ncb-input-action-btn ncb-upload-btn" data-testid="chatbot-upload"
+                            data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn"
+                            title="Upload photos & files" aria-label="Upload photos & files">
+                      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M13.234 20.252 21 12.3"/>
+                        <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
+                      </svg>
+                    </button>
+                    <button type="button" class="ncb-input-action-btn ncb-import-btn" data-testid="import-course"
+                            data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn"
+                            title="Import from Course" aria-label="Import from Course">
+                      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+                      </svg>
+                    </button>
+                  </div>
                   <button type="button" class="ncb-send-btn" data-testid="chatbot-send" data-i18n-title="cb_send_btn" data-i18n-aria="cb_send_btn" title="Send message" aria-label="Send message">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 19V5"/>

@@ -9133,9 +9133,10 @@ function initTextareaAutoSize(root: HTMLElement): void {
   // MIN must be slightly above what scrollHeight reports for a single
   // line (one baseline + textarea padding) — otherwise the first
   // keystroke pushes scrollHeight from N → N+1 (subpixel rounding) and
-  // the composer visibly grows by 1–2px. Clamping at 36 keeps the
-  // composer stable for one-line input.
-  const MIN = 36;
+  // the composer visibly grows by 1–2px. Clamping at 30 keeps the
+  // composer stable for one-line input (tuned for the compact 4px
+  // vertical textarea padding).
+  const MIN = 30;
   const MAX = 160;
   const resize = (): void => {
     ta.style.height = 'auto';
