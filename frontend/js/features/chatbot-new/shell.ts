@@ -2253,23 +2253,9 @@ async function handleIntentRoute(
   // match any notes trigger phrase on its own, so without this it silently
   // fell through to a normal chat/RAG answer instead of resuming generation.
   const pendingNotes = originChat.pendingNotesAction;
-  // TEMPORARY diagnostic — remove once the reported "notes reply falls
-  // through to RAG" bug is confirmed fixed in a real browser session.
-  // eslint-disable-next-line no-console
-  console.debug('notes_route_debug', {
-    latestText: last.text,
-    pendingNotesAction: pendingNotes ? { ...pendingNotes } : null,
-    pendingExpired: pendingNotes ? Date.now() - pendingNotes.createdAt >= NOTES_PENDING_TTL_MS : null,
-  });
   if (pendingNotes && Date.now() - pendingNotes.createdAt < NOTES_PENDING_TTL_MS) {
     const pendingFiles = await getCourseNotesFiles(pendingNotes.courseId);
     const resolved = resolveNotesFileNameFromText(pendingFiles, last.text);
-    // eslint-disable-next-line no-console
-    console.debug('notes_route_debug_pending', {
-      pendingCourseId: pendingNotes.courseId,
-      pendingFiles,
-      resolvedFile: resolved,
-    });
     if (resolved) {
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
