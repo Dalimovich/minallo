@@ -159,9 +159,15 @@
               </button>
 
               <div class="ncb-input">
-                <!-- Tutor-mode pill row. Locale-aware labels (DE / EN) are
-                     applied by the shell on init. Only one may be active and
-                     the active pill can be clicked again to clear it. -->
+                <!-- Tutor-mode pill row + source-mode picker. Hidden from the
+                     compact single-row composer (see .ncb-composer-modes in
+                     CSS) — Auto/Explain stay the internal defaults with no
+                     visible toggle. The markup is kept (not removed) so the
+                     underlying state/behavior and existing tests keep working
+                     if this ever needs to resurface (e.g. in a settings menu).
+                     Locale-aware labels (DE / EN) are applied by the shell on
+                     init. Only one tutor pill may be active and the active
+                     pill can be clicked again to clear it. -->
                 <div class="ncb-composer-modes">
                 <div class="ncb-tutor-modes" role="radiogroup" data-i18n-aria="cb_tutor_group_aria" aria-label="Tutor mode" data-testid="chatbot-tutor-modes">
                   <button type="button" class="ncb-tutor-mode" data-mode="solve" aria-pressed="false"
@@ -230,44 +236,59 @@
 
                 <!-- Attachment / paste / files previews. Empty by default,
                      populated by JS when the user attaches things. Each
-                     is auto-hidden when empty via CSS :empty. -->
+                     is auto-hidden when empty via CSS :empty. Shown ABOVE
+                     the single-row bar below (not part of the idle row), so
+                     the idle composer stays one line while an active
+                     attachment still gets a visible preview + remove
+                     controls. -->
                 <div class="ncb-attach-row" hidden></div>
                 <div class="ncb-files-row" hidden></div>
                 <div class="ncb-paste-row" hidden></div>
                 <input type="file" class="ncb-file-input" data-testid="chatbot-file-input" multiple hidden
                        accept="image/*,application/pdf,text/plain,.txt,.md" />
 
-                <!-- Middle zone: the textarea alone, so the composer reads as
-                     three compact horizontal bands (modes/course → textarea →
-                     attach/send) instead of one tall single row. -->
-                <textarea
-                  class="ncb-input-textarea"
-                  data-testid="chatbot-input"
-                  data-i18n-ph="cb_input_placeholder"
-                  data-i18n-aria="cb_input_aria"
-                  placeholder="Ask anything about your lectures, exercises, or course files..."
-                  aria-label="Type your message"
-                ></textarea>
-
-                <!-- Bottom zone: attach/import on the left, send on the right. -->
+                <!-- Single compact row: Add files, textarea, Send — nothing
+                     above or below it in the idle state. -->
                 <div class="ncb-input-row">
-                  <div class="ncb-input-actions-left">
-                    <button type="button" class="ncb-input-action-btn ncb-upload-btn" data-testid="chatbot-upload"
-                            data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn"
-                            title="Upload photos & files" aria-label="Upload photos & files">
-                      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M13.234 20.252 21 12.3"/>
-                        <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
+                  <div class="ncb-add-files" data-open="false">
+                    <button type="button" class="ncb-add-files-trigger" aria-haspopup="true" aria-expanded="false"
+                            data-i18n-aria="cb_add_files_aria" aria-label="Add files">
+                      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14"/><path d="M12 5v14"/>
                       </svg>
+                      <span class="ncb-add-files-label" data-i18n="cb_add_files_label">Add files</span>
+                      <span class="ncb-add-files-count" hidden>0</span>
                     </button>
-                    <button type="button" class="ncb-input-action-btn ncb-import-btn" data-testid="import-course"
-                            data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn"
-                            title="Import from Course" aria-label="Import from Course">
-                      <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
-                      </svg>
-                    </button>
+                    <div class="ncb-add-files-popup" role="menu" hidden>
+                      <button type="button" class="ncb-add-files-option ncb-upload-btn" data-testid="chatbot-upload"
+                              data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn" role="menuitem"
+                              title="Upload photos & files" aria-label="Upload photos & files">
+                        <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M13.234 20.252 21 12.3"/>
+                          <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
+                        </svg>
+                        <span data-i18n="cb_upload_btn">Upload from device</span>
+                      </button>
+                      <button type="button" class="ncb-add-files-option ncb-import-btn" data-testid="import-course"
+                              data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn" role="menuitem"
+                              title="Import from Course" aria-label="Import from Course">
+                        <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                        <span data-i18n="cb_import_btn">Import from course</span>
+                      </button>
+                    </div>
                   </div>
+
+                  <textarea
+                    class="ncb-input-textarea"
+                    data-testid="chatbot-input"
+                    data-i18n-ph="cb_input_placeholder"
+                    data-i18n-aria="cb_input_aria"
+                    placeholder="Ask anything about your lectures, exercises, or course files..."
+                    aria-label="Type your message"
+                  ></textarea>
+
                   <button type="button" class="ncb-send-btn" data-testid="chatbot-send" data-i18n-title="cb_send_btn" data-i18n-aria="cb_send_btn" title="Send message" aria-label="Send message">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 19V5"/>

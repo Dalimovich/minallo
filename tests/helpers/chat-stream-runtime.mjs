@@ -8,7 +8,7 @@ import { SseParser } from '../../frontend/js/services/sse-parser.ts';
 const source = fs.readFileSync(new URL('../../frontend/js/features/chatbot-new/shell.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('shell.ts', source, ts.ScriptTarget.Latest, true);
 export function shellRuntime(overrides = {}, extraNames = []) {
-  const names = ['streamFromAskStream', 'AskStreamError', ...extraNames];
+  const names = ['streamFromAskStream', 'AskStreamError', 'resolveTutorModeForTurn', ...extraNames];
   const selected = ast.statements.filter(n => n.name && names.includes(n.name.text)).map(n => n.getText(ast)).join('\n');
   const code = ts.transpileModule(selected, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const context = {

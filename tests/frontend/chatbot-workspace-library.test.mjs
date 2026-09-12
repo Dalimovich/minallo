@@ -578,16 +578,24 @@ test('saved cheatsheet opening never deletes the shared workspace body node', ()
     moduleSource.indexOf("if (item.note) {", moduleSource.indexOf("if (item.kind === 'cheatsheets' && item.note) {"))
   );
   // The cheatsheet-workspace module (which exports openCheatsheetPaper) must
-  // be loaded BEFORE the overlay is dismissed, and dismissal must go through
-  // closeOverlay (which restores the persistent .ncb-workspace-body for
-  // reuse) rather than .remove() (which deleted that singleton node outright
-  // and broke every later "open" click in the session until a full page
-  // reload).
+  // be loaded BEFORE the paper viewer is invoked, and the workspace overlay
+  // must not be dismissed until AFTER openCheatsheetPaper() has run and its
+  // .cs-paper-overlay is confirmed mounted. Closing first (the old order) meant
+  // an exception from openCheatsheetPaper() rendered its error into an overlay
+  // that had already been closed/emptied, so the user saw nothing. Dismissal
+  // itself must go through closeOverlay (which restores the persistent
+  // .ncb-workspace-body for reuse) rather than .remove() (which deleted that
+  // singleton node outright and broke every later "open" click in the session
+  // until a full page reload).
   const noteIdx = cheatsheetBranch.indexOf('if (!note)');
   const moduleLoadIdx = cheatsheetBranch.indexOf("await import('./cheatsheet-workspace.js')");
-  const closeIdx = cheatsheetBranch.indexOf('closeOverlay(overlay.closest');
   const invokeIdx = cheatsheetBranch.indexOf('cheatsheetModule.openCheatsheetPaper({');
-  assert.ok(noteIdx >= 0 && moduleLoadIdx > noteIdx && closeIdx > moduleLoadIdx && invokeIdx > closeIdx);
+  const mountCheckIdx = cheatsheetBranch.indexOf("document.querySelector('.cs-paper-overlay')");
+  const closeIdx = cheatsheetBranch.indexOf('closeOverlay(overlay.closest');
+  assert.ok(
+    noteIdx >= 0 && moduleLoadIdx > noteIdx && invokeIdx > moduleLoadIdx
+    && mountCheckIdx > invokeIdx && closeIdx > mountCheckIdx
+  );
   // Only the explanatory comment may mention the old call; no live statement may.
   assert.doesNotMatch(cheatsheetBranch, /[^`]overlay\.remove\(\);/);
 });

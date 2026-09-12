@@ -126,6 +126,7 @@ export function initNewChatbotShell(): void {
   initKeyboardShortcuts(newRoot);
   initTutorModes(newRoot);
   initSourceControls(newRoot);
+  initAddFilesMenu(newRoot);
   initWorkspaceLibrary(newRoot);
   initFullbleed();
 
@@ -513,16 +514,19 @@ function getCurrentTutorMode(): TutorMode {
 // "give me the answer" or "solve it yourself" were falling through and still
 // getting hints. Detect the intent directly and drop the persisted pill for
 // just this turn instead of relying on the model to generalise the wording.
-const _DIRECT_ANSWER_REQUEST_RE =
-  /\b(give me the answer|just (?:give|tell) me|solve it yourself|tell me the answer|show me the answer|what'?s the (?:final |numerical )?answer|just (?:solve|answer|calculate) it|i give up|final answer|numerical answer)\b/i;
-const _DIRECT_ANSWER_REQUEST_DE_RE =
-  /\b(gib mir (?:die|einfach die) antwort|zeig(?: mir)? die l[oö]sung|l[oö]se es (?:einfach |selbst )?f[uü]r mich|ich gebe auf|die (?:end|finale) l[oö]sung)\b/i;
-
+// The regexes are declared INSIDE the function (not as module-level consts)
+// because tests/helpers/chat-stream-runtime.mjs extracts individual function
+// declarations out of this file by name to execute in isolation — a
+// module-level const dependency would be a dangling reference there.
 function resolveTutorModeForTurn(question: string): TutorMode {
   const mode = getCurrentTutorMode();
   if (mode !== 'solve') return mode;
   const q = question || '';
-  return _DIRECT_ANSWER_REQUEST_RE.test(q) || _DIRECT_ANSWER_REQUEST_DE_RE.test(q) ? 'explain' : mode;
+  const directAnswerRequestRe =
+    /\b(give me the answer|just (?:give|tell) me|solve it yourself|tell me the answer|show me the answer|what'?s the (?:final |numerical )?answer|just (?:solve|answer|calculate) it|i give up|final answer|numerical answer)\b/i;
+  const directAnswerRequestDeRe =
+    /\b(gib mir (?:die|einfach die) antwort|zeig(?: mir)? die l[oö]sung|l[oö]se es (?:einfach |selbst )?f[uü]r mich|ich gebe auf|die (?:end|finale) l[oö]sung)\b/i;
+  return directAnswerRequestRe.test(q) || directAnswerRequestDeRe.test(q) ? 'explain' : mode;
 }
 
 function normaliseSourceMode(v: unknown): SourceMode {
@@ -687,6 +691,80 @@ function initSourceControls(root: HTMLElement): void {
   updateSourceControls(root);
 }
 
+// The single-row composer collapses the old separate upload/import round
+// buttons into one "+ Add files" trigger that opens a small floating menu
+// containing the SAME .ncb-upload-btn / .ncb-import-btn elements (moved into
+// the popup, not duplicated) — initUploads()/initImportModal() bind their
+// click handlers to those exact elements regardless of where they live in
+// the DOM, so no file-selection logic is duplicated here. This function only
+// owns opening/closing the small menu, mirroring positionSourcePopup /
+// setSourcePopupOpen above.
+function positionAddFilesPopup(control: HTMLElement): void {
+  const trigger = control.querySelector<HTMLButtonElement>('.ncb-add-files-trigger');
+  const popup = control.querySelector<HTMLElement>('.ncb-add-files-popup');
+  if (!trigger || !popup) return;
+  const r = trigger.getBoundingClientRect();
+  const pw = popup.offsetWidth;
+  const ph = popup.offsetHeight;
+  const margin = 8;
+  let left = r.left;
+  const maxLeft = window.innerWidth - pw - margin;
+  if (left > maxLeft) left = Math.max(margin, maxLeft);
+  let top = r.top - ph - margin;
+  if (top < margin) top = r.bottom + margin; // not enough room above → below
+  popup.style.left = left + 'px';
+  popup.style.top = top + 'px';
+}
+
+function setAddFilesPopupOpen(control: HTMLElement, open: boolean): void {
+  control.dataset.open = open ? 'true' : 'false';
+  const trigger = control.querySelector<HTMLButtonElement>('.ncb-add-files-trigger');
+  const popup = control.querySelector<HTMLElement>('.ncb-add-files-popup');
+  if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (!popup) return;
+  popup.hidden = !open;
+  if (open) positionAddFilesPopup(control);
+}
+
+function updateAddFilesBadge(root: HTMLElement, count: number): void {
+  const badge = root.querySelector<HTMLElement>('.ncb-add-files-count');
+  if (!badge) return;
+  badge.hidden = count <= 0;
+  badge.textContent = String(count);
+}
+
+function initAddFilesMenu(root: HTMLElement): void {
+  const control = root.querySelector<HTMLElement>('.ncb-add-files');
+  if (!control || control.dataset.ncbBound === '1') return;
+  control.dataset.ncbBound = '1';
+
+  const trigger = control.querySelector<HTMLButtonElement>('.ncb-add-files-trigger');
+  trigger?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setAddFilesPopupOpen(control, control.dataset.open !== 'true');
+  });
+
+  // Upload/import each fully own their own click behavior (file picker,
+  // import modal) via initUploads()/initImportModal() — this just dismisses
+  // the small menu afterward so it doesn't linger open behind the modal.
+  control.querySelectorAll<HTMLButtonElement>('.ncb-add-files-option').forEach((btn) => {
+    btn.addEventListener('click', () => setAddFilesPopupOpen(control, false));
+  });
+
+  document.addEventListener('click', (ev) => {
+    if (control.dataset.open !== 'true') return;
+    if (!control.contains(ev.target as Node)) setAddFilesPopupOpen(control, false);
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && control.dataset.open === 'true') setAddFilesPopupOpen(control, false);
+  });
+  const reposition = (): void => {
+    if (control.dataset.open === 'true') positionAddFilesPopup(control);
+  };
+  window.addEventListener('resize', reposition);
+  window.addEventListener('scroll', reposition, true);
+}
+
 // ============ PR-03: Conversation (input, send, paste, render, abort) ============
 
 interface PastedImage {
@@ -756,7 +834,7 @@ interface MissionMarker {
  *  created") can hand the content back to the model — the visible reply only
  *  says "Your cheatsheet is ready", which gives the AI nothing to explain. */
 interface GeneratedDoc {
-  kind: 'cheatsheet' | 'summary';
+  kind: 'cheatsheet' | 'summary' | 'notes';
   title: string;
   markdown: string;
   courseId: string;
@@ -2851,6 +2929,38 @@ async function resolveNotesDocument(courseId: string, fileName: string): Promise
   }
 }
 
+/** Renders the "which file?" clarification as clickable choices instead of a
+ *  plain bullet list the student has to retype by hand. Clicking a file
+ *  dispatches the SAME `minallo-ai-input-submit` event the interactive
+ *  minallo-input forms use (see ai-markdown.ts / initConversation's listener)
+ *  — that already routes the text through the real composer send path, so
+ *  clicking resumes the pending Notes action through the exact same,
+ *  already-tested pendingNotesAction -> runNotesFlow code path a typed reply
+ *  uses. Typing the filename manually keeps working unchanged. */
+function renderNotesFileChooser(bubble: HTMLElement, introText: string, files: string[]): void {
+  const intro = introText.split('\n\n')[0] || 'Which file should I make notes from?';
+  const card = document.createElement('div');
+  card.className = 'ncb-notes-file-chooser';
+  card.innerHTML =
+    '<p class="ncb-notes-file-chooser-intro">' + escapeHtml(intro) + '</p>' +
+    '<div class="ncb-notes-file-chooser-list">' +
+      files.map((name) =>
+        '<button type="button" class="ncb-cs-opt ncb-notes-file-pick" data-filename="' +
+        escapeAttr(name) + '">' + escapeHtml(name) + '</button>'
+      ).join('') +
+    '</div>';
+  card.addEventListener('click', (e) => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>('.ncb-notes-file-pick');
+    if (!btn) return;
+    const filename = btn.dataset.filename;
+    if (!filename) return;
+    card.querySelectorAll('.ncb-notes-file-pick').forEach((b) => (b as HTMLButtonElement).disabled = true);
+    document.dispatchEvent(new CustomEvent('minallo-ai-input-submit', { detail: { text: filename, surface: 'chatbot' } }));
+  });
+  bubble.innerHTML = '';
+  bubble.appendChild(card);
+}
+
 /** Notes need a single, concrete source — unlike summary/cheatsheet which can
  *  pull from "current course sources" broadly. This resolves a target file
  *  (an explicit filename/selection/open PDF, a resumed pending reply, or the
@@ -2862,6 +2972,12 @@ async function resolveNotesDocument(courseId: string, fileName: string): Promise
  *  actual decision logic lives in notes-intent-flow.ts's runNotesFlow, which
  *  is unit-tested directly with mock dependencies; this function only wires
  *  up the real window/network/DOM effects around it. */
+interface NotesIntentOutcome {
+  text: string;
+  noteId?: string | null;
+  fileName?: string;
+}
+
 async function handleNotesIntent(
   courseId: string,
   bubble: HTMLElement | null,
@@ -2870,7 +2986,7 @@ async function handleNotesIntent(
   latestText: string,
   usePendingAction: boolean,
   explicitCandidate?: string
-): Promise<string> {
+): Promise<NotesIntentOutcome> {
   try {
     const [extraction, ai] = await Promise.all([
       import('../pdf-viewer/pdf-text-extraction.js'),
@@ -2909,14 +3025,29 @@ async function handleNotesIntent(
       },
     });
     chat.pendingNotesAction = outcome.pendingNotesAction;
-    if (bubble && outcome.text) renderRichBubble(bubble, outcome.text);
-    return outcome.text;
+    if (bubble && outcome.text) {
+      if (outcome.clarifyFiles?.length) renderNotesFileChooser(bubble, outcome.text, outcome.clarifyFiles);
+      else renderRichBubble(bubble, outcome.text);
+    }
+    // Same cross-chat "reopen the doc I just made" pointer cheatsheet/summary
+    // already use — lets a later "show me those notes again" in a DIFFERENT
+    // chat (or after a refresh) still find this note. See
+    // restoreGeneratedDocForCourse's tryNotes().
+    if (outcome.noteId && outcome.fileName) {
+      try {
+        localStorage.setItem('minallo_notes_last_' + courseId, JSON.stringify({
+          noteId: outcome.noteId,
+          title: 'Notes — ' + outcome.fileName.replace(/\.pdf$/i, ''),
+        }));
+      } catch { /* storage full — non-fatal */ }
+    }
+    return { text: outcome.text, noteId: outcome.noteId, fileName: outcome.fileName };
   } catch (err) {
     // Pause pressed: let the caller render the standard "Response stopped."
     if ((err as Error)?.name === 'AbortError') throw err;
     const text = 'I could not generate notes right now. Please try again from the Notes tab.';
     if (bubble) renderRichBubble(bubble, text);
-    return text;
+    return { text };
   }
 }
 
@@ -3027,7 +3158,7 @@ const NCB_GENERATED_DOC_CONTEXT_CHARS = 20000;
 // directly responding to, so unrelated later questions don't drag a 20k-char
 // document into every prompt.
 const GENERATED_DOC_REF_RE =
-  /\b(cheat\s*-?\s*sheets?|spickzettel|formelsammlung|formula sheets?|summar(y|ies)|zusammenfassung(en)?|(that|the|this|das|die) (file|document|doc|sheet|datei|dokument))\b/i;
+  /\b(cheat\s*-?\s*sheets?|spickzettel|formelsammlung|formula sheets?|summar(y|ies)|zusammenfassung(en)?|notes?|notizen|(that|the|this|das|die) (file|document|doc|sheet|datei|dokument))\b/i;
 
 /** The generated doc the latest user message is asking about, if any.
  *  Always returns the doc when the user is replying directly to the
@@ -3051,7 +3182,7 @@ function generatedDocForFollowUp(messages: ChatMessage[]): GeneratedDoc | null {
 }
 
 function generatedDocLabel(doc: GeneratedDoc): string {
-  const kind = doc.kind === 'summary' ? 'Summary' : 'Cheatsheet';
+  const kind = doc.kind === 'summary' ? 'Summary' : doc.kind === 'notes' ? 'Notes' : 'Cheatsheet';
   return doc.title && doc.title !== kind ? kind + ' — ' + doc.title : kind;
 }
 
@@ -3060,25 +3191,28 @@ function generatedDocLabel(doc: GeneratedDoc): string {
 // "pdf") is fine when the doc demonstrably exists in THIS chat, but too loose
 // to justify fetching a note and attaching 20k chars on a hunch.
 const GENERATED_DOC_KIND_RE =
-  /\b(cheat\s*-?\s*sheets?|spickzettel|formelsammlung|formula sheets?|summar(y|ies)|zusammenfassung(en)?)\b/i;
+  /\b(cheat\s*-?\s*sheets?|spickzettel|formelsammlung|formula sheets?|summar(y|ies)|zusammenfassung(en)?|notes?|notizen)\b/i;
 const GENERATED_DOC_MADE_RE =
   /\b(you|du) (just )?(made|created|generated|erstellt|generiert)\b/i;
 
-/** Restore the last generated cheatsheet/summary for a course from the
- *  pointers written at generation time: `minallo_cs_last_<courseId>` holds a
- *  noteId (the content lives in the saved note), `minallo_sum_last_<courseId>`
- *  holds the markdown inline. */
+/** Restore the last generated cheatsheet/summary/notes for a course from the
+ *  pointers written at generation time: `minallo_cs_last_<courseId>` and
+ *  `minallo_notes_last_<courseId>` hold a noteId (the content lives in the
+ *  saved note), `minallo_sum_last_<courseId>` holds the markdown inline. */
 async function restoreGeneratedDocForCourse(
   courseId: string,
   userText: string
 ): Promise<GeneratedDoc | null> {
   const mentionsSummary = /\b(summar|zusammenfassung)/i.test(userText);
   const mentionsCheatsheet = /\b(cheat|spickzettel|formelsammlung|formula sheet)/i.test(userText);
+  const mentionsNotes = /\b(notes?|notizen)\b/i.test(userText);
 
-  const tryCheatsheet = async (): Promise<GeneratedDoc | null> => {
+  const tryNoteBackedDoc = async (
+    storageKey: string, kind: 'cheatsheet' | 'notes', fallbackTitle: string
+  ): Promise<GeneratedDoc | null> => {
     let stored: { noteId?: string; title?: string } | null = null;
     try {
-      stored = JSON.parse(localStorage.getItem('minallo_cs_last_' + courseId) || 'null') as
+      stored = JSON.parse(localStorage.getItem(storageKey) || 'null') as
         { noteId?: string; title?: string } | null;
     } catch { return null; }
     if (!stored?.noteId) return null;
@@ -3087,14 +3221,18 @@ async function restoreGeneratedDocForCourse(
       const note = await svc.getNoteById(stored.noteId);
       if (!note?.content_markdown) return null;
       return {
-        kind: 'cheatsheet',
-        title: note.title || stored.title || 'Cheatsheet',
+        kind,
+        title: note.title || stored.title || fallbackTitle,
         markdown: note.content_markdown,
         courseId,
         noteId: stored.noteId,
       };
     } catch { return null; }
   };
+  const tryCheatsheet = (): Promise<GeneratedDoc | null> =>
+    tryNoteBackedDoc('minallo_cs_last_' + courseId, 'cheatsheet', 'Cheatsheet');
+  const tryNotes = (): Promise<GeneratedDoc | null> =>
+    tryNoteBackedDoc('minallo_notes_last_' + courseId, 'notes', 'Notes');
 
   const trySummary = (): GeneratedDoc | null => {
     try {
@@ -3105,8 +3243,11 @@ async function restoreGeneratedDocForCourse(
     } catch { return null; }
   };
 
-  if (mentionsSummary && !mentionsCheatsheet) return trySummary() ?? await tryCheatsheet();
-  return (await tryCheatsheet()) ?? trySummary();
+  if (mentionsNotes && !mentionsCheatsheet && !mentionsSummary) {
+    return (await tryNotes()) ?? trySummary() ?? await tryCheatsheet();
+  }
+  if (mentionsSummary && !mentionsCheatsheet) return trySummary() ?? await tryCheatsheet() ?? await tryNotes();
+  return (await tryCheatsheet()) ?? trySummary() ?? await tryNotes();
 }
 
 /** The generated doc the latest user message asks about. In-chat generatedDoc
@@ -8797,6 +8938,7 @@ function renderPdfPagesAsImages(
 function renderFilesRow(root: HTMLElement, state: ConversationState): void {
   const row = root.querySelector<HTMLElement>('.ncb-files-row');
   if (!row) return;
+  updateAddFilesBadge(root, state.files.length);
   if (!state.files.length) {
     row.hidden = true;
     row.innerHTML = '';

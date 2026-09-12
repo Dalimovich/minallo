@@ -806,11 +806,11 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   color: #94a3b8;
 }
 
-/* Compact three-band composer:
-   [ pills …               course files v ]   ← top: modes + source
-   [ textarea                              ]   ← middle: message
-   [📎] [📁]                          [ ↑ ]    ← bottom: attach + send
-   Optional image previews stack above (see order rules below). */
+/* Single-row composer: everything lives on ONE horizontal line —
+   [+ Add files]  [ textarea ]  [ Send ]  — nothing reserved above or below
+   it in the idle state. An attached-files preview (.ncb-files-row) can still
+   appear ABOVE this row when non-empty, but the row itself never grows a
+   top/bottom band the way the old three-band layout did. */
 
 .ncb-input {
   display: flex;
@@ -824,15 +824,24 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   /* overflow:hidden makes the rounded frame a hard boundary —
      attachments, textarea overflow, button shadows all stay inside. */
   overflow: hidden;
-  padding: 10px 14px 8px;
+  padding: 7px 9px 7px 10px;
   box-sizing: border-box;
   background: rgba(8, 13, 30, 0.82);
   border-color: rgba(148, 163, 184, 0.28);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
 }
 
+/* The tutor-mode pills + source-mode picker are no longer part of the
+   visible composer — Explain/Auto stay the internal defaults with no
+   toggle. The markup is kept (not deleted) so existing state/tests and a
+   future settings surface can reuse it, but it must reserve zero space. */
+.ncb-composer-modes {
+  display: none;
+}
+
 /* Attachment / paste / files preview rows live inside the same frame,
-   above the input row. */
+   above the single-row bar. Empty by default (hidden), so they add no
+   height until the user actually attaches something. */
 .ncb-input > .ncb-attach-row,
 .ncb-input > .ncb-files-row,
 .ncb-input > .ncb-paste-row {
@@ -852,25 +861,17 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   margin-bottom: 0;
 }
 
-/* Bottom zone: attach/import on the left, send on the right. Vertically
-   centered and pulled tight against the textarea above — no dedicated
-   "row block", just the buttons' own height plus a small gap. */
+/* The single row: Add files, textarea, Send — vertically centered,
+   textarea takes all remaining width. */
 .ncb-input-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  margin-top: 5px;
-}
-.ncb-input-actions-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  min-height: 38px;
 }
 
-/* Middle zone: the message textarea, alone on its own row directly under
-   the top toolbar. Idle height is just one line — no reserved block. */
+/* Middle zone: the message textarea fills the row. Idle height is just
+   one line — no reserved block above or below it. */
 .ncb-input-textarea {
   flex: 1 1 auto;
   min-width: 0;
@@ -894,39 +895,83 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   color: rgba(226, 232, 240, 0.55);
 }
 
-/* Icon-only round action buttons (📎 upload, 📁 import). Tooltip via
-   the native title attribute on the <button>. */
-.ncb-input-action-btn {
-  display: grid;
-  place-items: center;
-  width: 36px;
+/* "+ Add files" pill trigger — replaces the separate upload/import round
+   buttons with one compact control that opens a small floating menu. */
+.ncb-add-files {
+  position: relative;
+  flex: 0 0 auto;
+}
+.ncb-add-files-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 36px;
-  min-width: 36px;
+  padding: 0 12px 0 10px;
   flex-shrink: 0;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.25);
   background: rgba(15, 23, 42, 0.75);
   color: #e5e7eb;
+  font: 600 0.82rem/1 var(--font-main, inherit);
   cursor: pointer;
-  padding: 0;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.ncb-input-action-btn:hover {
+.ncb-add-files-trigger:hover,
+.ncb-add-files[data-open="true"] .ncb-add-files-trigger {
   background: rgba(30, 41, 59, 0.92);
   border-color: rgba(96, 165, 250, 0.42);
   color: #ffffff;
 }
-.ncb-input-action-btn .ncb-icon { width: 18px; height: 18px; }
-
-.ncb-input-action-icon {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
+.ncb-add-files-trigger .ncb-icon { width: 16px; height: 16px; }
+.ncb-add-files-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(96, 165, 250, 0.28);
   color: #bfdbfe;
+  font-size: 0.68rem;
+  font-weight: 700;
 }
+
+/* Floating menu: Upload from device / Import from course. position:fixed
+   (placed by JS, same pattern as .ncb-source-popup) so the composer's
+   overflow:hidden never clips it. */
+.ncb-add-files-popup {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 6px;
+  gap: 2px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+}
+.ncb-add-files-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #e5e7eb;
+  font: 500 0.86rem/1.2 var(--font-main, inherit);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.ncb-add-files-option:hover {
+  background: rgba(96, 165, 250, 0.14);
+}
+.ncb-add-files-option .ncb-icon { width: 17px; height: 17px; flex-shrink: 0; }
 
 .ncb-send-btn {
   display: grid;
@@ -4197,7 +4242,7 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   .ncb-msg-row--ai { gap: 8px; }
   .ncb-avatar { width: 32px; height: 32px; }
 
-  /* Composer is icon-only by default now — nothing to override here. */
+  /* Composer stays a single row — nothing to override here. */
 }
 
 /* ≤ 480px: tighten everything one more notch. */
@@ -4209,6 +4254,10 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   .ncb-pill { padding: 4px 10px; font-size: 0.75rem; }
   .ncb-input-row { gap: 6px; }
   .ncb-input-textarea { font-size: 0.95rem; }
+  /* Very narrow widths: drop the "Add files" text label, keep the icon —
+     the textarea keeps priority for width. */
+  .ncb-add-files-label { display: none; }
+  .ncb-add-files-trigger { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .ncb-empty-title { font-size: 1.75rem; }
   .ncb-msgs { gap: 14px; margin-bottom: 16px; }
   .ncb-bubble { padding: 12px 14px; font-size: 0.875rem; }
@@ -4515,7 +4564,8 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 
 .ncb-action-card,
 .ncb-new-chat-btn,
-.ncb-input-action-btn,
+.ncb-add-files-trigger,
+.ncb-add-files-option,
 .ncb-send-btn,
 .ncb-modal-import {
   transition-property: background, border-color, color, opacity !important;
@@ -4619,6 +4669,37 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   font-size: 0.86rem;
   border-radius: 8px;
 }
+
+/* Notes "which file?" clarification — clickable choices instead of a plain
+   bullet list the student had to retype by hand. */
+.ncb-notes-file-chooser {
+  display: grid;
+  gap: 10px;
+  max-width: 480px;
+  animation: ncb-stream-reveal 180ms ease-out both;
+}
+.ncb-notes-file-chooser-intro {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(241, 245, 249, 0.92);
+}
+.ncb-notes-file-chooser-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ncb-notes-file-pick {
+  width: 100%;
+  padding: 9px 14px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  text-align: left;
+}
+.ncb-notes-file-pick:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 .ncb-course-pick-cancel {
   opacity: 0.75;
 }
@@ -4642,7 +4723,8 @@ body:not(.night) .ncb-cs-settings {
   background: rgba(239, 246, 255, 0.85);
 }
 
-body:not(.night) .ncb-cs-settings-title { color: #1e293b; }
+body:not(.night) .ncb-cs-settings-title,
+body:not(.night) .ncb-notes-file-chooser-intro { color: #1e293b; }
 
 body:not(.night) .ncb-cs-settings-label { color: #64748b; }
 
