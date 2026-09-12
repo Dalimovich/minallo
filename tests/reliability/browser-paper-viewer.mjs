@@ -135,7 +135,13 @@ async function withPage(run) {
         messages: [], sourceMode: 'auto', courseFileScope: 'all_course_files', courseId,
         selectedSourceIds: [], savedReplies: []
       };
-      localStorage.setItem('ss_ncb_chats_v1:paper-test', JSON.stringify([chat]));
+      // addInitScript re-runs on every navigation, including a reload — this
+      // guard means it only seeds the chat once, so a reload sees whatever
+      // the app itself has since persisted (generatedDoc, noteId, etc.)
+      // instead of this stale empty seed clobbering it every time.
+      if (!localStorage.getItem('ss_ncb_chats_v1:paper-test')) {
+        localStorage.setItem('ss_ncb_chats_v1:paper-test', JSON.stringify([chat]));
+      }
       localStorage.setItem('ss_ncb_active_v1:paper-test', chat.id);
     }, { base, courseId });
     const page = await context.newPage();
@@ -156,6 +162,19 @@ async function generateViaChat(page, userText) {
   await page.locator('.ncb-cs-generate').waitFor({ timeout: 15000 });
   await page.locator('.ncb-cs-generate').click();
   await page.locator('.ncb-cs-reopen-btn').waitFor({ timeout: 20000 });
+  // The reopen button appears mid-turn (inside handleIntentRoute), before
+  // its caller assigns generatedDoc onto the assistant message and calls
+  // saveChatStore() — a reload immediately after the button appears races
+  // that write, and can even persist a message that's still "processing"
+  // (the send-button's own UI state is not a reliable proxy for this — it
+  // can revert before the chat store write lands). Wait on the actual
+  // persisted store instead, the same technique browser-notes-flow.mjs
+  // uses for the same reason.
+  await page.waitForFunction(
+    () => JSON.parse(localStorage.getItem('ss_ncb_chats_v1:paper-test') || '[]')[0]
+      ?.messages?.some((m) => m.generatedDoc?.noteId),
+    { timeout: 15_000 }
+  );
 }
 
 async function overlayState(page) {
@@ -256,37 +275,59 @@ test('Saved Cheatsheet: clicking the saved item opens the same paper viewer', { 
   });
 });
 
-test('Refresh: Summary reopens from its persisted noteId, not from localStorage markdown', { timeout: 60_000 }, async () => {
+async function reopenAfterRefreshJourney(page, kind, generateText, expectedContent) {
+  await generateViaChat(page, generateText);
+  const noteId = notes[0].id;
+
+  // The identity cache must only hold identity (noteId/title/settings),
+  // never markdown — the durability contract requires the server, not
+  // localStorage, to be the source of truth for the content itself.
+  const lsPrefix = kind === 'summary' ? 'minallo_sum_last_' : 'minallo_cs_last_';
+  const cached = await page.evaluate(
+    ({ prefix, cid }) => JSON.parse(localStorage.getItem(prefix + cid) || 'null'),
+    { prefix: lsPrefix, cid: courseId }
+  );
+  assert.ok(cached, 'a lightweight identity cache should exist');
+  assert.equal(cached.noteId, noteId);
+  assert.equal('markdown' in cached, false, 'localStorage must not cache the full markdown as canonical content');
+
+  // Real end-to-end journey: reload the page, let the app restore the
+  // actual chat history from its own persisted storage (not a test
+  // shortcut), find the SAME historical message's "Open PDF viewer"
+  // button, and click it — exercising the real
+  // generatedDoc -> attachReopenButton -> async getNoteById() ->
+  // openPaperArtifact() -> openCheatsheetPaper() chain, not a stand-in.
+  await page.reload();
+  await page.waitForFunction(() => window.harnessReady);
+
+  const restoredButton = page.locator('.ncb-cs-reopen-btn');
+  await restoredButton.waitFor({ timeout: 15_000 });
+  requests.length = 0; // isolate to exactly what the click itself triggers
+  await restoredButton.click();
+
+  await page.waitForFunction(() => !!document.querySelector('.cs-paper-overlay'), { timeout: 15_000 });
+  const state = await overlayState(page);
+  assert.equal(state.mounted, true, 'overlay must mount from the restored history button');
+  assert.equal(state.position, 'fixed', 'overlay must be styled, not just present');
+  assert.match(state.text, expectedContent, 'overlay must show the persisted (not truncated inline) content');
+
+  // The restore path must have gone through the network (getNoteById),
+  // proving the async resolver was truly awaited rather than the click
+  // handler reusing stale in-memory opts from before the reload.
+  assert.ok(
+    requests.some((r) => r.path === '/api/notes' && r.method === 'GET'),
+    'reopening after reload must re-fetch the note, not rely on pre-reload state'
+  );
+}
+
+test('Refresh: Summary\'s historical Open PDF viewer button still works after reload', { timeout: 60_000 }, async () => {
   await withPage(async (page) => {
-    await generateViaChat(page, 'create a summary');
-    const noteId = notes[0].id;
+    await reopenAfterRefreshJourney(page, 'summary', 'create a summary', /Mechanics summary/);
+  });
+});
 
-    // Cache must only hold identity (noteId/title/settings), never markdown —
-    // the durability contract requires the server, not localStorage, to be
-    // the source of truth for the content itself.
-    const cached = await page.evaluate(
-      (cid) => JSON.parse(localStorage.getItem('minallo_sum_last_' + cid) || 'null'),
-      courseId
-    );
-    assert.ok(cached, 'a lightweight identity cache should exist');
-    assert.equal(cached.noteId, noteId);
-    assert.equal('markdown' in cached, false, 'localStorage must not cache the full markdown as canonical content');
-
-    await page.reload();
-    await page.waitForFunction(() => window.harnessReady);
-    await page.locator('.ncb-input-textarea').fill('create a summary');
-    // Re-send is unnecessary for this journey; the prior turn's reopen
-    // button lives in chat history, which is not reconstructed by this
-    // minimal fixture (no chat-history hydration mock). Instead verify the
-    // reopen path works the same way Saved does after reload: the note is
-    // still resolvable by id from the (now-empty in-memory, but server-
-    // truth-shaped) notes store — i.e. persistence, not the tab, is what
-    // survives.
-    const note = await page.evaluate(async (id) => {
-      const svc = await import('/js/services/ai-service.js');
-      return svc.getNoteById(id);
-    }, noteId);
-    assert.ok(note, 'the persisted note must still be resolvable by id after reload');
-    assert.match(note.content_markdown, /Mechanics summary/);
+test('Refresh: Cheatsheet\'s historical Open PDF viewer button still works after reload (async resolver race)', { timeout: 60_000 }, async () => {
+  await withPage(async (page) => {
+    await reopenAfterRefreshJourney(page, 'cheatsheet', 'create a cheatsheet', /Mechanics cheatsheet/);
   });
 });

@@ -197,6 +197,10 @@ class GenerateCheatsheetRequest(BaseModel):
 
 class GenerateCheatsheetResponse(BaseModel):
     noteId: str | None = None
+    # True when generation produced text but the DB insert failed — distinct
+    # from "no text was generated" or "save=False". See GenerateNotesResponse
+    # (Summary uses the same contract).
+    persistFailed: bool = False
     title: str | None = None
     text: str
     topicsCovered: list[str] = []
@@ -396,6 +400,7 @@ def generate_cheatsheet_endpoint(payload: GenerateCheatsheetRequest) -> Generate
     )
     return GenerateCheatsheetResponse(
         noteId=out.get("noteId"),
+        persistFailed=out.get("persistFailed", False),
         title=out.get("title"),
         text=out.get("text", ""),
         topicsCovered=out.get("topicsCovered", []),

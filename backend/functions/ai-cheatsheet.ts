@@ -20,6 +20,7 @@ const MAX_TOPIC_LENGTH = 500;
 
 interface PyCheatsheetResponse {
   noteId?: string | null;
+  persistFailed?: boolean;
   title?: string | null;
   text?: string;
   topicsCovered?: unknown[];
@@ -118,6 +119,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     const err = (upstream.body as { error?: string }).error;
     return jsonResponse(200, {
       noteId: null,
+      persistFailed: false,
       title: 'Cheatsheet',
       text: '',
       topicsCovered: [],

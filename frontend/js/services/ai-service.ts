@@ -535,6 +535,10 @@ export interface CheatsheetResolvedSettings extends CheatsheetSettings {
 
 export interface CheatsheetResult {
   noteId?: string | null;
+  // True when generation produced text but the DB insert failed — distinct
+  // from noteId being null because save was skipped or nothing was
+  // generated. Mirrors the Summary/Notes persistence contract.
+  persistFailed?: boolean;
   title?: string | null;
   text: string;
   topicsCovered?: string[];

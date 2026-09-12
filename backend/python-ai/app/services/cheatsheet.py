@@ -3486,6 +3486,12 @@ def generate_cheatsheet(
     )
 
     note_id: str | None = None
+    # Distinct from "not saved because save=False or no text" — this is
+    # specifically "we tried to persist and the DB insert failed", so the
+    # frontend can tell the difference instead of inferring it from
+    # noteId == None (which is also the value in those other, legitimate
+    # unsaved cases).
+    persist_failed = False
     if save and text.strip():
         # Course-wide cheatsheets have no single document_id; per-doc selections
         # of exactly one document keep the FK so it shows under that document.
@@ -3499,9 +3505,11 @@ def generate_cheatsheet(
             sources=sources,
             note_type="cheatsheet",
         )
+        persist_failed = note_id is None
 
     out: dict[str, Any] = {
         "noteId": note_id,
+        "persistFailed": persist_failed,
         "title": title,
         "text": text,
         "topicsCovered": covered_labels,
