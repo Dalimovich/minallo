@@ -94,7 +94,9 @@ const index = readFileSync(join(OUT, 'index.html'), 'utf8');
 const assetPaths = [
   'js/loader.js',
   'js/features/chatbot-new/shell.js',
-  'js/features/chatbot-new/notes-intent-flow.js'
+  'js/features/chatbot-new/notes-intent-flow.js',
+  'js/features/chatbot-new/workspace-library.js',
+  'views/chatbot/chatbot.css'
 ];
 writeFileSync(
   join(OUT, 'build-info.json'),
