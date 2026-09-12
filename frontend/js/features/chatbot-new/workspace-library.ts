@@ -1968,21 +1968,29 @@ async function renderResolvedSaved(overlay: HTMLElement, item: SavedItem): Promi
     const note = await getNoteById(item.note.id);
     if (!note) throw new SavedOpenError('not_found', 'This saved cheatsheet is no longer available.');
     const cheatsheetModule = await import('./cheatsheet-workspace.js');
-    // Only dismiss the workspace popup once the paper viewer module has
-    // loaded successfully and is ready to take over. The previous code
-    // called `overlay.remove()` here — but `overlay` is the shared
-    // `.ncb-workspace-body` node from the static chatbot markup (see
-    // openOverlay), not a per-open wrapper, and it is never recreated.
-    // Removing it outright (rather than closing the overlay properly)
-    // permanently broke every later Saved/account/PDF open in the session,
-    // not just this cheatsheet.
-    closeOverlay(overlay.closest<HTMLElement>('[data-workspace-overlay]')!);
+    if (typeof cheatsheetModule.openCheatsheetPaper !== 'function') {
+      throw new SavedOpenError('invalid', 'The cheatsheet viewer failed to load.');
+    }
     cheatsheetModule.openCheatsheetPaper({
       kind: 'cheatsheet', course: item.course.id, noteId: note.id,
       title: note.title || item.title, scope: note.title || item.title,
       markdown: note.content_markdown || '', meta: item.meta,
       settings: readCheatsheetSettings(item.course.id, note.id),
     });
+    // Only dismiss the workspace popup once the paper viewer has actually
+    // mounted. The previous code closed this popup right after the dynamic
+    // import resolved, before openCheatsheetPaper() ran — if that call threw,
+    // the resulting error was rendered into an overlay already closed/emptied
+    // by closeOverlay() (see below), so the user saw nothing at all instead
+    // of an error. An earlier version called `overlay.remove()` here instead
+    // of closeOverlay() — `overlay` is the shared `.ncb-workspace-body` node
+    // from the static chatbot markup (see openOverlay), not a per-open
+    // wrapper, and removing it outright permanently broke every later
+    // Saved/account/PDF open in the session, not just this cheatsheet.
+    if (!document.querySelector('.cs-paper-overlay')) {
+      throw new SavedOpenError('invalid', 'The cheatsheet viewer failed to open.');
+    }
+    closeOverlay(overlay.closest<HTMLElement>('[data-workspace-overlay]')!);
     return;
   }
   if (item.note) {

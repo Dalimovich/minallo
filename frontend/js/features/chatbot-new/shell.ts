@@ -2226,8 +2226,19 @@ async function handleIntentRoute(
       btn.disabled = true;
       btn.textContent = 'Loading…';
       loadCheatsheetPaperOpener()
-        .then((openPaper) => { const o = getPaperOpts(); if (o) openPaper(o); })
-        .catch(() => { /* module failed to load — nothing to open */ })
+        .then((openPaper) => {
+          const o = getPaperOpts();
+          if (!o) throw new Error('paper_opts_unavailable');
+          openPaper(o);
+          if (!document.querySelector('.cs-paper-overlay')) {
+            throw new Error('paper_overlay_did_not_mount');
+          }
+        })
+        .catch((error) => {
+          console.error('cheatsheet_pdf_viewer_open_failed', error);
+          (window as unknown as { showToast?: (title: string, detail?: string) => void })
+            .showToast?.('Could not open the PDF viewer', 'Please try again.');
+        })
         .finally(() => { btn.disabled = false; btn.textContent = '⤓ Open PDF viewer'; });
     });
     host.appendChild(btn);
