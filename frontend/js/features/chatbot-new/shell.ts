@@ -125,7 +125,6 @@ export function initNewChatbotShell(): void {
   initActionCards(newRoot);
   initKeyboardShortcuts(newRoot);
   initTutorModes(newRoot);
-  initSourceControls(newRoot);
   initAddFilesMenu(newRoot);
   initWorkspaceLibrary(newRoot);
   initFullbleed();
@@ -582,123 +581,106 @@ function courseFileScopeForActiveChat(): CourseFileScope {
   return normaliseCourseFileScope(chatStore.getActive().courseFileScope);
 }
 
-// The popup is position:fixed (so the composer's overflow:hidden can't clip
-// it), which means we place it by hand relative to the trigger: above it,
-// right-aligned, falling back to below when there's no room above.
-function positionSourcePopup(control: HTMLElement): void {
-  const trigger = control.querySelector<HTMLButtonElement>('.ncb-source-trigger');
-  const popup = control.querySelector<HTMLElement>('.ncb-source-popup');
-  if (!trigger || !popup) return;
-  const r = trigger.getBoundingClientRect();
-  const pw = popup.offsetWidth;
-  const ph = popup.offsetHeight;
-  const margin = 8;
-  let left = r.right - pw;
-  if (left < margin) left = margin;
-  const maxLeft = window.innerWidth - pw - margin;
-  if (left > maxLeft) left = Math.max(margin, maxLeft);
-  let top = r.top - ph - margin;
-  if (top < margin) top = r.bottom + margin; // not enough room above → below
-  popup.style.left = left + 'px';
-  popup.style.top = top + 'px';
+// Source is "where is Minallo allowed/preferred to answer from" (sourceMode +
+// courseFileScope) — a completely different concept from selectedSourceIds
+// ("which specific files are selected"). This renders the Auto/Course files
+// (+All files/Selected file(s))/Course+general/General/Internet submenu that
+// used to live in a standalone .ncb-source-control button; it now lives
+// in-place inside the Add-files popup (see initAddFilesMenu), but the state
+// it reads and writes — chat.sourceMode / chat.courseFileScope — is
+// unchanged from the old picker.
+function sourceModeLabel(mode: SourceMode): string {
+  switch (mode) {
+    case 'course_files': return tStr('cb_source_course_files', 'Course files');
+    case 'course_plus_general': return tStr('cb_source_course_plus_general', 'Course + general knowledge');
+    case 'general': return tStr('cb_source_general', 'General knowledge');
+    case 'internet': return tStr('cb_source_internet', 'Internet');
+    default: return tStr('cb_source_auto', 'Auto');
+  }
 }
 
-function setSourcePopupOpen(control: HTMLElement, open: boolean): void {
-  control.dataset.open = open ? 'true' : 'false';
-  const trigger = control.querySelector<HTMLButtonElement>('.ncb-source-trigger');
-  const popup = control.querySelector<HTMLElement>('.ncb-source-popup');
-  if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (!popup) return;
-  popup.hidden = !open;
-  // Measure-then-place: it must be visible (not [hidden]) to have a size.
-  if (open) positionSourcePopup(control);
+function renderAddFilesSourceLabel(root: HTMLElement): void {
+  const label = root.querySelector<HTMLElement>('.ncb-add-files-source-label');
+  if (!label) return;
+  const mode = normaliseSourceMode(chatStore.getActive().sourceMode);
+  label.textContent = tStr('cb_source_prefix', 'Source: ') + sourceModeLabel(mode);
 }
 
-function updateSourceControls(root: HTMLElement): void {
+function renderAddFilesSourceMenu(root: HTMLElement): void {
+  const list = root.querySelector<HTMLElement>('.ncb-add-files-source-list');
+  if (!list) return;
   const active = chatStore.getActive();
   const mode = normaliseSourceMode(active.sourceMode);
   const scope = normaliseCourseFileScope(active.courseFileScope);
-  let activeModeLabel = '';
-  root.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
-    const on = btn.dataset.sourceMode === mode;
-    btn.classList.toggle('ncb-source-mode--active', on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    if (on) activeModeLabel = (btn.textContent || '').trim();
-  });
-  root.querySelectorAll<HTMLButtonElement>('.ncb-course-scope').forEach((btn) => {
-    const on = btn.dataset.courseFileScope === scope;
-    btn.classList.toggle('ncb-course-scope--active', on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  });
-  // Reflect the current mode on the collapsed trigger, and hide the file-scope
-  // section when Internet mode is selected (no course files involved then).
-  const label = root.querySelector<HTMLElement>('.ncb-source-trigger-label');
-  if (label) label.textContent = activeModeLabel || 'Auto';
-  const scopeSection = root.querySelector<HTMLElement>('.ncb-source-scope-section');
-  if (scopeSection) scopeSection.hidden = mode === 'internet' || mode === 'general';
-}
+  const modes: SourceMode[] = ['auto', 'course_files', 'course_plus_general', 'general', 'internet'];
+  const check =
+    '<span class="ncb-add-files-check" aria-hidden="true">' +
+      '<svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' +
+    '</span>';
+  list.innerHTML = modes.map((m) => {
+    const on = m === mode;
+    const row =
+      `<button type="button" class="ncb-add-files-option ncb-source-mode" data-source-mode="${m}" role="menuitemradio" aria-checked="${on}">` +
+        check + `<span>${escapeHtml(sourceModeLabel(m))}</span>` +
+      '</button>';
+    if (m !== mode || (mode !== 'course_files' && mode !== 'course_plus_general')) return row;
+    // Both course-based modes share the persisted file scope.
+    const scopeRow = (value: CourseFileScope, text: string): string => {
+      const scopeOn = value === scope;
+      return `<button type="button" class="ncb-add-files-option ncb-add-files-scope ncb-course-scope" data-course-file-scope="${value}" role="menuitemradio" aria-checked="${scopeOn}">` +
+        check + `<span>${escapeHtml(text)}</span></button>`;
+    };
+    return row
+      + `<div class="ncb-add-files-scope-group" role="group" aria-label="${escapeHtml(tStr('cb_source_files', 'Files'))}"><div class="ncb-add-files-scope-heading">${escapeHtml(tStr('cb_source_files', 'Files'))}</div>`
+      + scopeRow('all_course_files', tStr('cb_source_scope_all', 'All files'))
+      + scopeRow('specific_files', tStr('cb_source_scope_selected', 'Selected file(s)')) + '</div>';
+  }).join('');
 
-function initSourceControls(root: HTMLElement): void {
-  const control = root.querySelector<HTMLElement>('.ncb-source-control');
-  if (!control || control.dataset.ncbBound === '1') return;
-  control.dataset.ncbBound = '1';
-
-  const trigger = control.querySelector<HTMLButtonElement>('.ncb-source-trigger');
-  trigger?.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    setSourcePopupOpen(control, control.dataset.open !== 'true');
-  });
-
-  control.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
+  list.querySelectorAll<HTMLButtonElement>('.ncb-source-mode').forEach((btn) => {
     btn.addEventListener('click', () => {
       const chat = chatStore.getActive();
-      chat.sourceMode = normaliseSourceMode(btn.dataset.sourceMode);
+      const nextMode = normaliseSourceMode(btn.dataset.sourceMode);
+      chat.sourceMode = nextMode;
       chat.updatedAt = Date.now();
       saveChatStore();
-      updateSourceControls(root);
-      // Picking a source is the primary action — close the drop-up after it.
-      setSourcePopupOpen(control, false);
+      renderAddFilesSourceLabel(root);
+      renderAddFilesSourceMenu(root); // re-render to show/hide the scope rows
+      list.querySelector<HTMLButtonElement>(`[data-source-mode="${nextMode}"]`)?.focus();
+      const control = root.querySelector<HTMLElement>('.ncb-add-files');
+      if (control) positionAddFilesPopup(control);
     });
   });
-  control.querySelectorAll<HTMLButtonElement>('.ncb-course-scope').forEach((btn) => {
-    btn.addEventListener('click', () => {
+  list.querySelectorAll<HTMLButtonElement>('.ncb-add-files-scope').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
       const chat = chatStore.getActive();
-      chat.courseFileScope = normaliseCourseFileScope(btn.dataset.courseFileScope);
+      const nextScope = normaliseCourseFileScope(btn.dataset.courseFileScope);
+      chat.courseFileScope = nextScope;
       chat.updatedAt = Date.now();
       saveChatStore();
-      updateSourceControls(root);
+      renderAddFilesSourceMenu(root);
+      list.querySelector<HTMLButtonElement>(`[data-course-file-scope="${nextScope}"]`)?.focus();
+      // Selecting "Selected file(s)" with nothing selected yet has nothing to
+      // scope to — send the student straight to the existing course-file
+      // picker instead of leaving them at an empty selection.
+      if (nextScope === 'specific_files' && !chat.selectedSourceIds.length) {
+        const control = root.querySelector<HTMLElement>('.ncb-add-files');
+        if (control) setAddFilesPopupOpen(control, false);
+        root.querySelector<HTMLButtonElement>('.ncb-import-btn')?.click();
+      }
     });
   });
-
-  // Close on outside click / Escape. Bound once on document; guarded by the
-  // open state so it's a cheap no-op otherwise.
-  document.addEventListener('click', (ev) => {
-    if (control.dataset.open !== 'true') return;
-    if (!control.contains(ev.target as Node)) setSourcePopupOpen(control, false);
-  });
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && control.dataset.open === 'true') setSourcePopupOpen(control, false);
-  });
-
-  // The popup is position:fixed, so re-place it if the viewport shifts while
-  // it's open (scrolling the message list, resizing the window).
-  const reposition = (): void => {
-    if (control.dataset.open === 'true') positionSourcePopup(control);
-  };
-  window.addEventListener('resize', reposition);
-  window.addEventListener('scroll', reposition, true);
-
-  updateSourceControls(root);
 }
 
 // The single-row composer collapses the old separate upload/import round
-// buttons into one "+ Add files" trigger that opens a small floating menu
-// containing the SAME .ncb-upload-btn / .ncb-import-btn elements (moved into
-// the popup, not duplicated) — initUploads()/initImportModal() bind their
-// click handlers to those exact elements regardless of where they live in
-// the DOM, so no file-selection logic is duplicated here. This function only
-// owns opening/closing the small menu, mirroring positionSourcePopup /
-// setSourcePopupOpen above.
+// buttons AND the old standalone source-mode picker into one "+ Add files"
+// trigger that opens a small floating menu. The menu contains the SAME
+// .ncb-upload-btn / .ncb-import-btn elements (moved into the popup, not
+// duplicated) — initUploads()/initImportModal() bind their click handlers to
+// those exact elements regardless of where they live in the DOM, so no
+// file-selection logic is duplicated here. This function only owns
+// opening/closing the small menu itself; renderAddFilesSourceMenu above owns
+// the nested source submenu's content and state.
 function positionAddFilesPopup(control: HTMLElement): void {
   const trigger = control.querySelector<HTMLButtonElement>('.ncb-add-files-trigger');
   const popup = control.querySelector<HTMLElement>('.ncb-add-files-popup');
@@ -733,29 +715,34 @@ function updateAddFilesBadge(root: HTMLElement, count: number): void {
   badge.textContent = String(count);
 }
 
-// Auto and "explicit course files" are the same canonical state the old
-// standalone source-mode picker used (chatStore.getActive().selectedSourceIds
-// — populated by Import from Course / the right-rail Sources card), not a
-// second model invented for this menu. Auto is simply "no explicit
-// selection": clicking it clears selectedSourceIds and normal automatic
-// routing resumes. uploadedCount is this turn's pasted/uploaded attachments
-// (state.files) — a different, transient thing from the persisted course-file
-// selection, but both count toward the one compact "how much context is
-// attached" badge on the trigger.
+// Badge count is "how much explicit context is attached" — this turn's
+// uploads plus persisted course-file selections. It is independent of
+// sourceMode (which answers a different question: where Minallo is allowed
+// to look, not what's attached) — see renderAddFilesSourceMenu for that.
 function updateAddFilesMenu(root: HTMLElement, uploadedCount: number): void {
+  renderAddFilesSourceLabel(root);
   const selectedCount = chatStore.getActive().selectedSourceIds.length;
-  const auto = root.querySelector<HTMLButtonElement>('.ncb-add-files-auto');
-  if (auto) auto.setAttribute('aria-checked', selectedCount === 0 ? 'true' : 'false');
-  const selected = root.querySelector<HTMLButtonElement>('.ncb-add-files-selected');
-  if (selected) {
-    selected.hidden = selectedCount === 0;
-    selected.setAttribute('aria-checked', selectedCount > 0 ? 'true' : 'false');
-    const label = selected.querySelector<HTMLElement>('.ncb-add-files-selected-label');
-    if (label) {
-      label.textContent = selectedCount === 1 ? 'Use selected file' : `Use selected files (${selectedCount})`;
-    }
-  }
   updateAddFilesBadge(root, uploadedCount + selectedCount);
+}
+
+// Switches the Add-files popup between its two views IN PLACE (same popup,
+// same position:fixed anchor) rather than opening a second floating flyout —
+// the popup's own height changes, but the composer row itself never does.
+function setAddFilesSourceView(root: HTMLElement, showSource: boolean): void {
+  const control = root.querySelector<HTMLElement>('.ncb-add-files');
+  const mainView = root.querySelector<HTMLElement>('.ncb-add-files-view[data-view="main"]');
+  const sourceView = root.querySelector<HTMLElement>('.ncb-add-files-view[data-view="source"]');
+  const trigger = root.querySelector<HTMLButtonElement>('.ncb-add-files-source-trigger');
+  if (mainView) mainView.hidden = showSource;
+  if (sourceView) sourceView.hidden = !showSource;
+  if (trigger) trigger.setAttribute('aria-expanded', showSource ? 'true' : 'false');
+  if (showSource) renderAddFilesSourceMenu(root);
+  (showSource
+    ? sourceView?.querySelector<HTMLButtonElement>('[data-source-mode][aria-checked="true"]')
+    : trigger)?.focus();
+  // The popup's height just changed (different view swapped in) — re-place it
+  // since positionAddFilesPopup measures offsetHeight.
+  if (control) positionAddFilesPopup(control);
 }
 
 function initAddFilesMenu(root: HTMLElement): void {
@@ -767,39 +754,66 @@ function initAddFilesMenu(root: HTMLElement): void {
   trigger?.addEventListener('click', (ev) => {
     ev.stopPropagation();
     const opening = control.dataset.open !== 'true';
-    if (opening) updateAddFilesMenu(root, getOrInitLiveState().files.length);
+    if (opening) {
+      updateAddFilesMenu(root, getOrInitLiveState().files.length);
+      setAddFilesSourceView(root, false); // always reopen on the main view
+    }
     setAddFilesPopupOpen(control, opening);
   });
 
-  control.querySelector<HTMLButtonElement>('.ncb-add-files-auto')?.addEventListener('click', () => {
-    const active = chatStore.getActive();
-    if (!active.selectedSourceIds.length) return;
-    active.selectedSourceIds = [];
-    saveChatStore();
-    renderSourcesCard(root);
-    updateContextPill(root);
-    updateAddFilesMenu(root, getOrInitLiveState().files.length);
+  control.querySelector<HTMLButtonElement>('.ncb-add-files-source-trigger')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setAddFilesSourceView(root, true);
+  });
+  control.querySelector<HTMLButtonElement>('.ncb-add-files-source-back')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setAddFilesSourceView(root, false);
+  });
+
+  control.addEventListener('keydown', (ev) => {
+    if (control.dataset.open !== 'true') return;
+    const view = control.querySelector<HTMLElement>('.ncb-add-files-view:not([hidden])');
+    const buttons = Array.from(view?.querySelectorAll<HTMLButtonElement>('button') || []);
+    if (ev.key === 'ArrowLeft' && view?.dataset.view === 'source') {
+      ev.preventDefault();
+      setAddFilesSourceView(root, false);
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(ev.key) || !buttons.length) return;
+    ev.preventDefault();
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const index = ev.key === 'Home' ? 0 : ev.key === 'End' ? buttons.length - 1
+      : ev.key === 'ArrowDown' ? (current + 1) % buttons.length
+      : (current < 0 ? buttons.length - 1 : (current - 1 + buttons.length) % buttons.length);
+    buttons[index]?.focus();
   });
 
   // Upload/import each fully own their own click behavior (file picker,
   // import modal) via initUploads()/initImportModal() — this just dismisses
   // the small menu afterward so it doesn't linger open behind the modal.
-  control.querySelectorAll<HTMLButtonElement>('.ncb-add-files-option').forEach((btn) => {
-    btn.addEventListener('click', () => setAddFilesPopupOpen(control, false));
-  });
+  // Deliberately scoped to just these two buttons (not every
+  // .ncb-add-files-option) — picking a source MODE must stay open to reveal
+  // file-scope rows. Selecting an empty file scope opens the import modal.
+  control.querySelector<HTMLButtonElement>('.ncb-upload-btn')?.addEventListener('click', () => setAddFilesPopupOpen(control, false));
+  control.querySelector<HTMLButtonElement>('.ncb-import-btn')?.addEventListener('click', () => setAddFilesPopupOpen(control, false));
 
   document.addEventListener('click', (ev) => {
     if (control.dataset.open !== 'true') return;
     if (!control.contains(ev.target as Node)) setAddFilesPopupOpen(control, false);
   });
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && control.dataset.open === 'true') setAddFilesPopupOpen(control, false);
+    if (ev.key === 'Escape' && control.dataset.open === 'true') {
+      setAddFilesPopupOpen(control, false);
+      trigger?.focus();
+    }
   });
   const reposition = (): void => {
     if (control.dataset.open === 'true') positionAddFilesPopup(control);
   };
   window.addEventListener('resize', reposition);
   window.addEventListener('scroll', reposition, true);
+
+  renderAddFilesSourceLabel(root);
 }
 
 // ============ PR-03: Conversation (input, send, paste, render, abort) ============
@@ -3485,7 +3499,10 @@ function ragEligibility(
     const stem = full.replace(/\.(?:pdf|docx?|txt|pptx?)$/i, '');
     return full.length >= 4 && (normalQuestion.includes(full) || (stem.length >= 4 && normalQuestion.includes(stem)));
   });
-  const requestSources = explicitlyNamed.length ? explicitlyNamed : selected;
+  const mode = normaliseSourceMode(active.sourceMode);
+  const allCourseFiles = (mode === 'course_files' || mode === 'course_plus_general')
+    && normaliseCourseFileScope(active.courseFileScope) === 'all_course_files';
+  const requestSources = explicitlyNamed.length ? explicitlyNamed : allCourseFiles ? [] : selected;
   const namedCourseFiles = listCourses().flatMap((course) => [
     ...(course.files || []).map((file) => ({ courseId: course.id, file })),
     ...(course.userFolders || []).flatMap((folder) =>
@@ -3497,18 +3514,15 @@ function ragEligibility(
     return full.length >= 4 && (normalQuestion.includes(full) || (stem.length >= 4 && normalQuestion.includes(stem)));
   });
 
-  // Selecting sources is an explicit scoping action: whenever the user has any
-  // sources selected, narrow retrieval to exactly those files — regardless of
-  // the all/specific toggle (which most users never touch, so a selection used
-  // to be silently ignored and retrieval searched the whole course). Only when
-  // nothing is selected do we fall back to a whole-course search.
+  // Explicit course modes honor All files even when selections are retained.
+  // Auto continues to use selected sources, and named files override either scope.
   // The client only knows storage file NAMES (the document-table id lives
   // server-side), so we send names and let the backend resolve them to ids; ids
   // are sent too when known.
   let documentIds: string[] = [];
   let documentNames: string[] = [];
   const scopeToSelection =
-    active.selectedSourceIds.length > 0 || requestSources.length > 0
+    (!allCourseFiles && active.selectedSourceIds.length > 0) || requestSources.length > 0
     || normaliseCourseFileScope(active.courseFileScope) === 'specific_files';
   if (scopeToSelection) {
     const ids = new Set<string>();
@@ -3544,7 +3558,7 @@ function ragEligibility(
     && !(selectedMatchesOpenPdf || namedOpenPdf)
   ) || (
     explicitlyNamed.length === 0 && namedCourseFiles.length === 0
-    && selected.length > 0 && !selectedMatchesOpenPdf
+    && requestSources.length > 0 && !selectedMatchesOpenPdf
   );
   const rawActivePdfContext = explicitSourceOverride ? null : openPdf;
 
@@ -6632,7 +6646,7 @@ function addToSourceLibraryAndSelect(
   saveSourceLibrary();
   saveChatStore();
   renderSourcesCard(root);
-  updateSourceControls(root);
+  renderAddFilesSourceLabel(root);
   updateContextPill(root);
   updateAddFilesMenu(root, getOrInitLiveState().files.length);
 }
@@ -6684,7 +6698,7 @@ export function deselectChatbotSource(sourceId: string): void {
   active.selectedSourceIds.splice(index, 1);
   saveChatStore();
   renderSourcesCard(root);
-  updateSourceControls(root);
+  renderAddFilesSourceLabel(root);
   updateContextPill(root);
   updateAddFilesMenu(root, getOrInitLiveState().files.length);
 }

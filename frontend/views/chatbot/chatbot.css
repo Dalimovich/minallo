@@ -954,6 +954,14 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   background: rgba(15, 23, 42, 0.98);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
 }
+.ncb-add-files-popup { max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; }
+.ncb-add-files-popup[hidden], .ncb-add-files-view[hidden] { display: none; }
+.ncb-add-files-view, .ncb-add-files-source-list { display: flex; flex-direction: column; gap: 2px; }
+.ncb-add-files-source-caret { width: 16px; height: 16px; flex-shrink: 0; }
+.ncb-add-files-source-trigger { justify-content: space-between; }
+.ncb-add-files-scope-group { margin-left: 18px; border-left: 1px solid rgba(148, 163, 184, 0.22); padding-left: 4px; }
+.ncb-add-files-scope-heading { padding: 6px 10px 2px; font-size: 0.75rem; color: #94a3b8; }
+.ncb-add-files-option:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
 .ncb-add-files-option {
   display: flex;
   align-items: center;
@@ -973,8 +981,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 }
 .ncb-add-files-option .ncb-icon { width: 17px; height: 17px; flex-shrink: 0; }
 
-/* Auto / Use-selected-files rows: a checkmark radio indicator instead of an
-   icon, so "Auto" reads as a state toggle rather than another action. */
+/* Checkmarks reflect the persisted source mode and file scope. */
 .ncb-add-files-check {
   display: inline-flex;
   align-items: center;

@@ -185,38 +185,41 @@
                       <span class="ncb-add-files-count" hidden>0</span>
                     </button>
                     <div class="ncb-add-files-popup" role="menu" hidden>
-                      <button type="button" class="ncb-add-files-option ncb-add-files-auto" data-testid="chatbot-source-auto"
-                              role="menuitemradio" aria-checked="true">
-                        <span class="ncb-add-files-check" aria-hidden="true">
-                          <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                        </span>
-                        <span class="ncb-add-files-auto-label" data-i18n="cb_source_auto">Auto</span>
-                      </button>
-                      <button type="button" class="ncb-add-files-option ncb-add-files-selected" data-testid="chatbot-source-selected"
-                              role="menuitemradio" aria-checked="false" hidden>
-                        <span class="ncb-add-files-check" aria-hidden="true">
-                          <svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                        </span>
-                        <span class="ncb-add-files-selected-label">Use selected files</span>
-                      </button>
-                      <div class="ncb-add-files-divider"></div>
-                      <button type="button" class="ncb-add-files-option ncb-upload-btn" data-testid="chatbot-upload"
-                              data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn" role="menuitem"
-                              title="Upload photos & files" aria-label="Upload photos & files">
-                        <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M13.234 20.252 21 12.3"/>
-                          <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
-                        </svg>
-                        <span data-i18n="cb_upload_btn">Upload from device</span>
-                      </button>
-                      <button type="button" class="ncb-add-files-option ncb-import-btn" data-testid="import-course"
-                              data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn" role="menuitem"
-                              title="Import from Course" aria-label="Import from Course">
-                        <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
-                        </svg>
-                        <span data-i18n="cb_import_btn">Import from course</span>
-                      </button>
+                      <!-- Main view: source-mode summary row (opens the submenu
+                           below, in place — the popup itself never becomes a
+                           second floating flyout) + the actual file actions. -->
+                      <div class="ncb-add-files-view" data-view="main">
+                        <button type="button" class="ncb-add-files-option ncb-add-files-source-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false">
+                          <span class="ncb-add-files-source-label">Source: Auto</span>
+                          <svg class="ncb-add-files-source-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        </button>
+                        <div class="ncb-add-files-divider"></div>
+                        <button type="button" class="ncb-add-files-option ncb-upload-btn" data-testid="chatbot-upload"
+                                data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn" role="menuitem"
+                                title="Upload photos & files" aria-label="Upload photos & files">
+                          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M13.234 20.252 21 12.3"/>
+                            <path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486"/>
+                          </svg>
+                          <span data-i18n="cb_upload_btn">Upload from device</span>
+                        </button>
+                        <button type="button" class="ncb-add-files-option ncb-import-btn" data-testid="import-course"
+                                data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn" role="menuitem"
+                                title="Import from Course" aria-label="Import from Course">
+                          <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+                          </svg>
+                          <span data-i18n="cb_import_btn">Import from course</span>
+                        </button>
+                      </div>
+                      <!-- Source modes and shared file scope are rendered from the active chat. -->
+                      <div class="ncb-add-files-view ncb-add-files-source-view" data-view="source" hidden>
+                        <button type="button" class="ncb-add-files-option ncb-add-files-source-back" role="menuitem">
+                          <svg class="ncb-add-files-source-caret ncb-add-files-source-caret--back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                          <span data-i18n="cb_source_back">Source</span>
+                        </button>
+                        <div class="ncb-add-files-source-list"></div>
+                      </div>
                     </div>
                   </div>
 

@@ -55,29 +55,14 @@ test('the Add files popup reuses the existing upload/import elements, not a dupl
   assert.match(composer, /class="ncb-add-files-option ncb-import-btn" data-testid="import-course"/);
 });
 
-test('Auto lives inside the unified Add-files popup, not as a separate composer button', () => {
-  // Auto must be an option row inside .ncb-add-files-popup...
-  assert.match(composer, /class="ncb-add-files-option ncb-add-files-auto"[\s\S]{0,120}role="menuitemradio"/);
-  assert.match(composer, /class="ncb-add-files-option ncb-add-files-selected"[\s\S]{0,150}hidden/);
-  // ...and there is no standalone top-level Auto/source button anywhere.
-  assert.doesNotMatch(html, /class="ncb-source-trigger-label">Auto</);
-  assert.doesNotMatch(html, /class="ncb-add-files-trigger">\s*Auto/);
+test('source modes live in an expandable view inside Add files', () => {
+  assert.match(composer, /ncb-add-files-source-trigger/);
+  assert.match(composer, /data-view="source" hidden/);
+  assert.doesNotMatch(composer, /ncb-add-files-auto|ncb-add-files-selected/);
+  assert.match(css, /\.ncb-add-files-view\[hidden\]\s*\{ display: none; \}/);
 });
 
 const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
-
-test('Auto reuses chatStore.selectedSourceIds instead of a second state model', () => {
-  const menuFnStart = shell.indexOf('function updateAddFilesMenu(');
-  const menuFnEnd = shell.indexOf('\nfunction initAddFilesMenu', menuFnStart);
-  const menuFn = shell.slice(menuFnStart, menuFnEnd);
-  assert.match(menuFn, /chatStore\.getActive\(\)\.selectedSourceIds\.length/);
-
-  const autoHandlerStart = shell.indexOf(".ncb-add-files-auto')?.addEventListener('click'");
-  assert.ok(autoHandlerStart > 0, 'Auto click handler not found');
-  const autoHandler = shell.slice(autoHandlerStart, autoHandlerStart + 400);
-  assert.match(autoHandler, /active\.selectedSourceIds = \[\]/);
-  assert.doesNotMatch(autoHandler, /new (?:Set|Map)\(/); // no parallel state store
-});
 
 test('the idle textarea is a genuine one-line box, not a browser-default two-row textarea', () => {
   assert.match(composer, /<textarea[\s\S]{0,150}rows="1"/);
