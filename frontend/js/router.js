@@ -646,23 +646,51 @@ _bindIf('psbLearnerHome', 'click', function () {
   });
 });
 
+// Set by callers (e.g. the chatbot-new learner Practice panel) just before
+// dispatching a click on #psbGerman, so this handler opens that specific
+// skill instead of the skill-selection home. Consumed once and cleared —
+// a plain psbGerman click (sidebar nav) always lands on the home view.
+var _glPendingNavSkill = '';
+window._glSetPendingSkill = function (skill) {
+  _glPendingNavSkill = skill || '';
+};
+
 _bindIf('psbGerman', 'click', function () {
   setNavActive('psbGerman');
   showPortalSection('german');
   _finalizeNav('german');
   _ssAfterFeature('german', function () {
-    if (typeof window._glBackToHome === 'function') window._glBackToHome();
+    var pendingSkill = _glPendingNavSkill;
+    _glPendingNavSkill = '';
+    if (pendingSkill && typeof window._glOpenSkill === 'function') {
+      window._glOpenSkill(pendingSkill);
+    } else if (typeof window._glBackToHome === 'function') {
+      window._glBackToHome();
+    }
     _ssSetGermanTitle('nav_practice', 'Practice');
   });
 });
 
+function _openWritingCoachNow() {
+  if (typeof window._wcOpen === 'function') window._wcOpen();
+}
+
+// Writing Coach is still loaded lazily (main.ts's ensureWritingCoach(),
+// mirroring ensureStudyTimer's eager-load-on-first-interaction pattern) — a
+// click here can beat that load, so route through the shared load promise
+// instead of only checking whether window._wcOpen already exists. Never
+// silently drop the user's first click.
 _bindIf('psbWritingCoach', 'click', function () {
   setNavActive('psbWritingCoach');
   showPortalSection('german');
   _finalizeNav('german');
   _ssAfterFeature('german', function () {
     if (typeof window._glBackToHome === 'function') window._glBackToHome();
-    if (typeof window._wcOpen === 'function') window._wcOpen();
+    if (typeof window._ensureWritingCoach === 'function') {
+      window._ensureWritingCoach().then(_openWritingCoachNow).catch(function () {});
+    } else {
+      _openWritingCoachNow();
+    }
     _ssSetGermanTitle('nav_writing_coach', 'Writing Coach');
   });
 });

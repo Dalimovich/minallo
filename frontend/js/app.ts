@@ -980,7 +980,7 @@ try {
   const lastUid = localStorage.getItem('ss_last_uid');
   if (lastUid) {
     _cpCached = JSON.parse(localStorage.getItem('profile_cache_' + lastUid) || 'null');
-    if (_cpCached && _cpCached.full_name && typeof applyProfile === 'function') {
+    if (_cpCached && typeof applyProfile === 'function') {
       applyProfile(_cpCached);
     }
   }
@@ -1006,7 +1006,7 @@ try {
             unknown
           > | null)
         : null;
-      if (cp && cp.full_name && typeof applyProfile === 'function') applyProfile(cp);
+      if (cp && typeof applyProfile === 'function') applyProfile(cp);
     } catch {
       /* corrupted cache — ignore */
     }

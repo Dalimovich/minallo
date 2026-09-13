@@ -103,6 +103,65 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await applyProfile(page, { user_type: 'enrolled' });
   });
 
+  test('German panel links (Vocabulary/Grammar/Reading/Writing Coach) deep-link into their own Practice skill', async ({
+    page,
+  }) => {
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+    await app.navigateTo('chatbot');
+    await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+
+    await page.locator('[data-testid="german-panel-vocab"]').click();
+    await expect(page.locator('#psec-german')).toBeVisible();
+    await expect(page.locator('#glSkillView')).toHaveAttribute('data-active-skill', 'vocab');
+
+    await app.navigateTo('chatbot');
+    await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+    await page.locator('[data-testid="german-panel-grammar"]').click();
+    await expect(page.locator('#psec-german')).toBeVisible();
+    await expect(page.locator('#glSkillView')).toHaveAttribute('data-active-skill', 'grammar');
+
+    await app.navigateTo('chatbot');
+    await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+    await page.locator('[data-testid="german-panel-reading"]').click();
+    await expect(page.locator('#psec-german')).toBeVisible();
+    await expect(page.locator('#glSkillView')).toHaveAttribute('data-active-skill', 'reading');
+
+    await app.navigateTo('chatbot');
+    await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+    await page.locator('[data-testid="german-panel-writing"]').click();
+    await expect(page.locator('#psec-german')).toBeVisible();
+    await expect(page.locator('#wcView')).toBeVisible({ timeout: 15000 });
+
+    // Listening has no real Practice content behind it yet — it must stay
+    // hidden rather than silently opening vocab content under a "Hörverstehen"
+    // label (see practice.js's _glSampleTools, which has no 'listening' entry).
+    await expect(page.locator('[data-testid="german-panel-listening"]')).toBeHidden();
+
+    await applyProfile(page, { user_type: 'enrolled' });
+  });
+
+  test('German level renders from the profile even when the account has no full_name set', async ({
+    page,
+  }) => {
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+    await app.navigateTo('chatbot');
+
+    // Regression: loadUserData() used to skip applying the ENTIRE fresh
+    // profile row (user_type, german_level, ...) whenever full_name was
+    // falsy, so a learner mid-onboarding without a display name would be
+    // stuck showing "Level –" forever, never just transiently.
+    await applyProfile(page, { user_type: 'learner', german_level: 'B2', full_name: '' });
+
+    await expect(page.locator('#ncbGermanLevelBadge')).toHaveText('B2');
+    await expect(page.locator('#ncbGermanLevelValue')).toHaveText('B2');
+
+    await applyProfile(page, { user_type: 'enrolled' });
+  });
+
   test('enrolled account keeps the current student chatbot shell completely unchanged', async ({
     page,
   }) => {

@@ -103,7 +103,7 @@ export async function loadUserData(uid: string): Promise<void> {
       const cached = localStorage.getItem('profile_cache_' + uid);
       if (cached) {
         const cp = JSON.parse(cached) as ProfileRow;
-        if (cp && cp.full_name && window.applyProfile) window.applyProfile(cp);
+        if (cp && window.applyProfile) window.applyProfile(cp);
         if (cp && cp.courses) scheduleUserCoursesLoad(cp.courses);
       }
     } catch {
@@ -151,7 +151,13 @@ export async function loadUserData(uid: string): Promise<void> {
     ]);
 
     applyAffiliateAccess(profile);
-    if (profile && profile.full_name) {
+    // Apply whenever a row came back — not just when full_name is set. This
+    // used to gate on full_name, which silently dropped the ENTIRE fresh
+    // profile (user_type, german_test, german_level, etc.) for any account
+    // that hadn't filled in a display name, e.g. a learner mid-onboarding.
+    // applyProfile() already falls back to email/'You' when full_name is
+    // missing, so there's nothing unsafe about applying a nameless row.
+    if (profile) {
       try {
         localStorage.setItem('profile_cache_' + uid, JSON.stringify(profile));
       } catch {

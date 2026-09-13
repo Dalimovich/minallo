@@ -14,8 +14,10 @@
           </svg>
         </div>
         <div class="ncb-header-text">
-          <h1 class="ncb-header-title" data-i18n="cb_header_title">Chatbot</h1>
-          <p class="ncb-header-subtitle" data-i18n="cb_header_subtitle">Course-aware AI tutor</p>
+          <h1 class="ncb-header-title ncb-student-only" data-i18n="cb_header_title">Chatbot</h1>
+          <p class="ncb-header-subtitle ncb-student-only" data-i18n="cb_header_subtitle">Course-aware AI tutor</p>
+          <h1 class="ncb-header-title ncb-learner-only" data-i18n="cb_header_title_learner" hidden>Deutsch üben</h1>
+          <p class="ncb-header-subtitle ncb-learner-only" data-i18n="cb_header_subtitle_learner" hidden>Your German practice AI tutor</p>
         </div>
       </div>
 
@@ -163,7 +165,8 @@
                   <p class="ncb-eyebrow" data-i18n="cb_current_chat">Current chat</p>
                   <h2 class="ncb-chat-header-title" data-i18n="cb_chat_title_new">New chat</h2>
                 </div>
-                <span class="ncb-chat-context-pill" data-i18n="cb_context_active">Course context active</span>
+                <span class="ncb-chat-context-pill ncb-student-only" data-i18n="cb_context_active">Course context active</span>
+                <span class="ncb-chat-context-pill ncb-learner-only" data-i18n="cb_context_active_learner" hidden>German practice session</span>
               </div>
 
               <div class="ncb-msgs"></div>
@@ -233,7 +236,7 @@
                           <span class="ncb-add-files-source-label">Source: Auto</span>
                           <svg class="ncb-add-files-source-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                         </button>
-                        <div class="ncb-add-files-divider"></div>
+                        <div class="ncb-add-files-divider ncb-student-only"></div>
                         <button type="button" class="ncb-add-files-option ncb-upload-btn" data-testid="chatbot-upload"
                                 data-i18n-title="cb_upload_btn" data-i18n-aria="cb_upload_btn" role="menuitem"
                                 title="Upload photos & files" aria-label="Upload photos & files">
@@ -243,7 +246,7 @@
                           </svg>
                           <span data-i18n="cb_upload_btn">Upload from device</span>
                         </button>
-                        <button type="button" class="ncb-add-files-option ncb-import-btn" data-testid="import-course"
+                        <button type="button" class="ncb-add-files-option ncb-import-btn ncb-student-only" data-testid="import-course"
                                 data-i18n-title="cb_import_btn" data-i18n-aria="cb_import_btn" role="menuitem"
                                 title="Import from Course" aria-label="Import from Course">
                           <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -269,6 +272,8 @@
                     data-testid="chatbot-input"
                     data-i18n-ph="cb_input_placeholder"
                     data-i18n-aria="cb_input_aria"
+                    data-i18n-ph-learner="cb_input_placeholder_learner"
+                    data-i18n-aria-learner="cb_input_aria_learner"
                     placeholder="Ask anything about your lectures, exercises, or course files..."
                     aria-label="Type your message"
                   ></textarea>
@@ -438,19 +443,23 @@
                   <strong id="ncbGermanLevelValue">&ndash;</strong>
                 </div>
                 <div class="ncb-german-panel-links">
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-vocab" data-nav-target="german">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-vocab" data-nav-target="german" data-gl-skill="vocab">
                     <span data-i18n="cb_german_link_vocab">Vocabulary</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-nav-target="german">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-nav-target="german" data-gl-skill="grammar">
                     <span data-i18n="cb_german_link_grammar">Grammar</span>
                   </button>
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-nav-target="writing-coach">
                     <span data-i18n="nav_writing_coach">Writing Coach</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-nav-target="german">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-nav-target="german" data-gl-skill="reading">
                     <span data-i18n="cb_german_link_reading">Reading</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-listening" data-nav-target="german">
+                  <!-- Listening has no real Practice skill behind it yet (practice.js's
+                       _glSampleTools has no 'listening' entry and silently falls back to
+                       vocab content), so it's hidden rather than shown as a dead/misleading
+                       button. Re-enable with data-gl-skill="listening" once it's built. -->
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-listening" data-nav-target="german" data-gl-skill="listening" hidden>
                     <span data-i18n="cb_german_link_listening">Listening</span>
                   </button>
                 </div>

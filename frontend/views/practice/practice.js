@@ -282,7 +282,10 @@
       var home = document.getElementById('glHome');
       var detail = document.getElementById('glSkillView');
       if (home) home.style.display = 'none';
-      if (detail) detail.style.display = '';
+      if (detail) {
+        detail.style.display = '';
+        detail.setAttribute('data-active-skill', skill);
+      }
       var titleEl = document.getElementById('glSkillTitle');
       var subEl = document.getElementById('glSkillSub');
       var eyebrowEl = document.getElementById('glSkillEyebrow');
@@ -325,7 +328,10 @@
       var wcView = document.getElementById('wcView');
       var learnerHome = document.getElementById('glLearnerHome');
       if (home) home.style.display = '';
-      if (detail) detail.style.display = 'none';
+      if (detail) {
+        detail.style.display = 'none';
+        detail.removeAttribute('data-active-skill');
+      }
       // Also collapse the Schreibtrainer detail view — otherwise it
       // stays visible underneath the cards when the user navigates
       // away mid-session and clicks Practice again.

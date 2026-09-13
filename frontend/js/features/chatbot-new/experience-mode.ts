@@ -78,6 +78,15 @@ export function initChatbotExperienceMode(root: HTMLElement): void {
     const navId = NAV_TARGET_IDS[dest];
     if (!navId) return;
     ev.preventDefault();
+    // The German panel links (Vocabulary/Grammar/Reading) all navigate to the
+    // 'german' section, but each one must deep-link into its own skill inside
+    // the existing Practice view rather than dumping the user on its home
+    // screen — see router.js's psbGerman handler, which consumes this via
+    // window._glSetPendingSkill before opening the section.
+    const skill = target.dataset.glSkill || '';
+    const setPendingSkill = (window as unknown as { _glSetPendingSkill?: (s: string) => void })
+      ._glSetPendingSkill;
+    if (skill && typeof setPendingSkill === 'function') setPendingSkill(skill);
     document.getElementById(navId)?.click();
   });
 
