@@ -3625,9 +3625,16 @@ function ragEligibility(
   // are sent too when known.
   let documentIds: string[] = [];
   let documentNames: string[] = [];
+  // active.selectedSourceIds/active.courseFileScope are the chat's own raw
+  // stored fields — for a learner they can still literally read
+  // 'specific_files' with old ids from before a role switch. Reading them
+  // here directly (instead of the already-neutralized `selected`/`mode`
+  // above) would flip scopeToSelection on with nothing in requestSources,
+  // which throws document_identity_unavailable for a plain question instead
+  // of just answering it generically — so both raw reads are gated on !isLearner.
   const scopeToSelection =
-    (!allCourseFiles && active.selectedSourceIds.length > 0) || requestSources.length > 0
-    || normaliseCourseFileScope(active.courseFileScope) === 'specific_files';
+    (!allCourseFiles && !isLearner && active.selectedSourceIds.length > 0) || requestSources.length > 0
+    || (!isLearner && normaliseCourseFileScope(active.courseFileScope) === 'specific_files');
   if (scopeToSelection) {
     const ids = new Set<string>();
     const names = new Set<string>();
@@ -3711,7 +3718,7 @@ function ragEligibility(
     // content" — the backend's auto router resolves a URL question to its
     // INTERNET branch (mirrors _URL_RE in source_router.py). Course Files
     // stays on the generic path when there's no course to ground against.
-    const mode = normaliseSourceMode(active.sourceMode);
+    const mode = isLearner ? 'auto' : normaliseSourceMode(active.sourceMode);
     const hasUrl = /(?:https?:\/\/|www\.)\S+|\byoutu\.be\/\S+|\b(?:youtube|wikipedia|github|stackoverflow)\.(?:com|org)\b/i.test(currentQuestion);
     if ((last.images || []).length || mode === 'internet' || (mode === 'auto' && hasUrl)) {
       return {
@@ -3821,7 +3828,10 @@ async function ensureDurableConversation(
         messageText: context.message?.text,
         assistantMessageId: context.assistantMessage?.id,
         requestId: context.assistantMessage?.requestId,
-        requestSnapshot: context.assistantMessage?.requestSnapshot
+        // Same stale-snapshot risk as streamFromAskStream's requestSnapshot
+        // field: a learner's assistantMessage.requestSnapshot can still be a
+        // real course-scoped student request from before a role switch.
+        requestSnapshot: isLearnerAccount() ? undefined : context.assistantMessage?.requestSnapshot
       })
     }, { safeToRetry: true });
     if (!response.ok) {
@@ -3869,18 +3879,37 @@ async function streamFromAskStream(
   assistantMessage?: ChatMessage,
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const submitted = assistantMessage?.requestSnapshot;
-  // Defense-in-depth: `submitted` (the requestSnapshot) is already
-  // learner-neutralized at the point it's created, but the sourceModeForActiveChat()/
-  // courseFileScopeForActiveChat() fallback reads the chat's own stored fields
-  // directly — which can still literally be 'course_files' from before a role
-  // switch (nothing is deleted). Never let that reach the outgoing payload.
-  const effectiveSourceMode = isLearnerAccount()
+  const learnerAccount = isLearnerAccount();
+  // courseId/activePdfContext are caller-resolved params (normally
+  // ragEligibility()'s already learner-neutral results), but this is the
+  // last chokepoint before the network call — force them neutral here too
+  // rather than trust every caller. Reassigning the parameter itself (rather
+  // than threading a separate `effective*` variable through the rest of the
+  // function) means every existing read below — snapshot capture, the
+  // page-drift check, the viewerContext fallback — is covered for free.
+  const effectiveCourseId = learnerAccount ? '' : courseId;
+  if (learnerAccount) activePdfContext = null;
+  // Defense-in-depth: `submitted` is the requestSnapshot the caller ATTACHED
+  // to this message when it was first created — for a "regenerate" on a
+  // message created before a role switch, that snapshot's sourceMode/
+  // courseFileScope/groundingRequest can still literally be a real,
+  // course-scoped student request. It is NOT safe to trust just because
+  // ragEligibility() ran earlier this turn: the caller's own restore path
+  // (see the `submittedGrounding`/`initialRag.groundingRequest` handling
+  // above ragEligibility's call site) is itself gated on isLearnerAccount(),
+  // but `submitted.groundingRequest` still sits unmodified in storage from
+  // whenever it was written, and this is the last point before the network
+  // request is built — so every one of these three reads is force-neutralized
+  // here regardless of what's stored, rather than trusting the snapshot.
+  const effectiveSourceMode = learnerAccount
     ? 'auto'
     : (submitted?.sourceMode || sourceModeForActiveChat());
-  const effectiveCourseFileScope = isLearnerAccount()
+  const effectiveCourseFileScope = learnerAccount
     ? 'all_course_files'
     : (submitted?.courseFileScope || courseFileScopeForActiveChat());
-  const submittedGrounding = structuredClone(submitted?.groundingRequest || groundingRequest);
+  const submittedGrounding = learnerAccount
+    ? undefined
+    : structuredClone(submitted?.groundingRequest || groundingRequest);
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {
     throw new AskStreamError({
@@ -3957,6 +3986,24 @@ async function streamFromAskStream(
   const requestId = logicalRequestId || (typeof crypto?.randomUUID === 'function'
     ? crypto.randomUUID()
     : `ask-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  // The raw requestSnapshot travels to the backend as its own field (used for
+  // resume/regenerate), separately from the effective* fields above — so a
+  // learner's stale, pre-role-switch snapshot (courseId/selectedSourceIds/
+  // activeDocumentId/groundingRequest) must be neutralized here too, or all
+  // the guarding above is bypassed by this field alone.
+  const outgoingRequestSnapshot = learnerAccount && submitted
+    ? {
+      ...submitted,
+      sourceMode: 'auto' as SourceMode,
+      courseFileScope: 'all_course_files' as CourseFileScope,
+      courseId: '',
+      selectedSourceIds: [],
+      activeDocumentId: undefined,
+      activeDocumentName: undefined,
+      visiblePage: undefined,
+      groundingRequest: undefined,
+    }
+    : submitted;
   const resp = await authenticatedFetch(aiHost + '/ask-stream', {
     method: 'POST',
     signal: controller.signal,
@@ -3966,13 +4013,13 @@ async function streamFromAskStream(
       'X-Idempotency-Key': requestId,
     },
     body: JSON.stringify({
-      courseId,
+      courseId: effectiveCourseId,
       conversationId,
       durableConversation,
       clientMessageId: assistantMessage?.parentUserMessageId,
       assistantMessageId: assistantMessage?.id,
       requestId,
-      requestSnapshot: assistantMessage?.requestSnapshot,
+      requestSnapshot: outgoingRequestSnapshot,
       groundingRequest: effectiveGroundingRequest,
       question,
       tutorMode: resolveTutorModeForTurn(question),

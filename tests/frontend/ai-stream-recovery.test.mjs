@@ -79,7 +79,9 @@ test('durable tutor turns persist the assistant placeholder and request snapshot
   const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
   assert.match(shell, /assistantMessageId: context\.assistantMessage\?\.id/);
   assert.match(shell, /requestId: context\.assistantMessage\?\.requestId/);
-  assert.match(shell, /requestSnapshot: context\.assistantMessage\?\.requestSnapshot/);
+  // Neutralized for learner accounts (see isLearnerAccount() guard right
+  // above this line) so a stale, pre-role-switch snapshot can't ride along.
+  assert.match(shell, /requestSnapshot: isLearnerAccount\(\) \? undefined : context\.assistantMessage\?\.requestSnapshot/);
   assert.match(shell, /assistantMessage\.requestId, assistantMessage\s*\n\s*\)/);
 });
 
@@ -135,7 +137,10 @@ test('ask-stream body carries the same durable identity as its headers', () => {
   assert.match(shell, /'X-Idempotency-Key': requestId/);
   assert.match(shell, /clientMessageId: assistantMessage\?\.parentUserMessageId/);
   assert.match(shell, /assistantMessageId: assistantMessage\?\.id/);
-  assert.match(shell, /requestId,\s*\n\s*requestSnapshot: assistantMessage\?\.requestSnapshot/);
+  // requestSnapshot is neutralized for learner accounts before it ships (see
+  // outgoingRequestSnapshot in shell.ts), but it must still ride along in the
+  // same request body as requestId — just via that derived variable now.
+  assert.match(shell, /requestId,\s*\n\s*requestSnapshot: outgoingRequestSnapshot/);
 });
 
 test('non-2xx ask-stream responses preserve typed preflight failures', () => {
