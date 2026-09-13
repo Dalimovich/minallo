@@ -47,7 +47,7 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     expect(boundBefore).toBe('1');
 
     // Student baseline: course chrome visible, learner chrome absent.
-    await expect(page.locator('.ncb-safe-card.ncb-student-only')).toBeVisible();
+    await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
     await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
     await expect(page.locator('[data-library-tab="german"]')).toBeHidden();
     await expect(page.locator('.ncb-actions.ncb-learner-only')).toBeHidden();
@@ -58,7 +58,7 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await applyProfile(page, { user_type: 'learner', german_test: 'TestDaF', german_level: 'B1' });
 
     // No reload anywhere in this test — the mounted shell must react live.
-    await expect(page.locator('.ncb-safe-card.ncb-student-only')).toBeHidden();
+    await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
     await expect(page.locator('[data-library-tab="courses"]')).toBeHidden();
     await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeHidden();
     await expect(page.locator('.ncb-actions.ncb-student-only')).toBeHidden();
@@ -226,7 +226,7 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await applyProfile(page, { user_type: 'enrolled' });
   });
 
-  test('enrolled account keeps the current student chatbot shell completely unchanged', async ({
+  test('enrolled account keeps course controls without the sidebar banner', async ({
     page,
   }) => {
     const app = new AppPage(page);
@@ -236,12 +236,12 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await app.navigateTo('chatbot');
 
     await expect(page.locator(chatbotSelectors.root)).toBeVisible();
-    await expect(page.locator('.ncb-safe-card.ncb-student-only')).toBeVisible();
+    await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
     await expect(page.locator('.ncb-actions.ncb-student-only')).toBeVisible();
     await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
     await expect(page.locator('.ncb-empty-title.ncb-student-only')).toBeVisible();
 
-    await expect(page.locator('.ncb-safe-card.ncb-learner-only')).toBeHidden();
+    await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
     await expect(page.locator('.ncb-actions.ncb-learner-only')).toBeHidden();
     await expect(page.locator('[data-library-tab="german"]')).toBeHidden();
     await expect(page.locator('.ncb-learner-nav')).toBeHidden();

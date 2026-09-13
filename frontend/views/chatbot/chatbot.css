@@ -783,28 +783,6 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   opacity: 1;
 }
 
-.ncb-safe-card {
-  margin-top: auto;
-  padding: 14px;
-  border-radius: 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.05);
-}
-.ncb-safe-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  color: #dbeafe;
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-.ncb-safe-text {
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.5;
-  color: #94a3b8;
-}
 
 /* Learner-mode sidebar destinations — same button component as New chat. */
 .ncb-learner-nav {
@@ -1342,7 +1320,6 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
 
 .ncb-sidebar[data-collapsed="true"] .ncb-sidebar-head-text,
 .ncb-sidebar[data-collapsed="true"] .ncb-search,
-.ncb-sidebar[data-collapsed="true"] .ncb-safe-card,
 .ncb-sidebar[data-collapsed="true"] .ncb-chat-section-label,
 .ncb-sidebar[data-collapsed="true"] .ncb-chat-text,
 .ncb-sidebar[data-collapsed="true"] .ncb-chat-more,
@@ -4121,7 +4098,6 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   .ncb-sidebar .ncb-sidebar-head { justify-content: center; width: 100%; }
   .ncb-sidebar .ncb-sidebar-head-text,
   .ncb-sidebar .ncb-search,
-  .ncb-sidebar .ncb-safe-card,
   .ncb-sidebar .ncb-chat-section-label,
   .ncb-sidebar .ncb-chat-text,
   .ncb-sidebar .ncb-chat-more,
@@ -4407,7 +4383,6 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 .ncb-context-card,
 .ncb-notes-card,
 .ncb-streak-card,
-.ncb-safe-card,
 .ncb-input,
 .ncb-action-card,
 .ncb-modal,

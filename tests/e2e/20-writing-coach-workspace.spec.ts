@@ -49,8 +49,8 @@ test.describe('Writing Coach workspace mode', () => {
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_level: 'B1' });
 
-    // Student-only card must never take sidebar space for a learner.
-    await expect(page.locator('.ncb-safe-card.ncb-student-only')).toBeHidden();
+    // The informational card must be absent from the DOM for learners too.
+    await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
     // The old learner "German learning" card was removed entirely, not
     // just hidden — it must not exist anywhere in the DOM at all.
     await expect(page.locator('.ncb-safe-card.ncb-learner-only')).toHaveCount(0);
@@ -63,15 +63,27 @@ test.describe('Writing Coach workspace mode', () => {
     await applyProfile(page, { user_type: 'enrolled' });
   });
 
-  test('student sidebar keeps Course-safe mode exactly as before', async ({ page }) => {
+  test('student sidebar has no Course-safe card and course source controls still work', async ({ page }) => {
     const app = new AppPage(page);
     await app.goto();
     expect(await app.loginIfNeeded()).toBeTruthy();
     await applyProfile(page, { user_type: 'enrolled' });
     await app.navigateTo('chatbot');
 
-    await expect(page.locator('.ncb-safe-card.ncb-student-only')).toBeVisible();
-    await expect(page.locator('.ncb-safe-card.ncb-student-only')).toContainText(/course-safe mode/i);
+    await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
+    await expect(page.locator('.ncb-chat-list')).toBeVisible();
+    await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
+    await expect(page.locator('[data-testid="import-course"]')).toBeVisible();
+    await page.locator('.ncb-add-files-trigger').click();
+    await page.locator('.ncb-add-files-source-trigger').click();
+    for (const mode of ['course_files', 'course_plus_general']) {
+      await page.locator(`[data-source-mode="${mode}"]`).click();
+      await expect(page.locator(`[data-source-mode="${mode}"]`)).toHaveAttribute('aria-checked', 'true');
+      await expect(page.locator('[data-course-file-scope="all_course_files"]')).toBeVisible();
+      await expect(page.locator('[data-course-file-scope="specific_files"]')).toBeVisible();
+    }
+    await page.locator('[data-course-file-scope="specific_files"]').click();
+    await expect(page.locator('#ncbImportModal')).toBeVisible();
   });
 
   test('clicking Writing Coach switches the shell in place, hides chat chrome and the right panel', async ({

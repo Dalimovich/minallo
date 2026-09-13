@@ -9683,8 +9683,8 @@ function initClearAll(root: HTMLElement): void {
   const sidebar = root.querySelector<HTMLElement>('.ncb-sidebar');
   if (!sidebar || sidebar.querySelector('.ncb-clear-all')) return;
 
-  // Inject the clear-all button just before the safe-card.
-  const safe = sidebar.querySelector<HTMLElement>('.ncb-safe-card');
+  // Keep the clear-all button between chat history and account controls.
+  const account = sidebar.querySelector<HTMLElement>('.ncb-account');
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'ncb-clear-all';
@@ -9702,7 +9702,7 @@ function initClearAll(root: HTMLElement): void {
     renderSidebar(root);
     loadActiveChatIntoCenter(root);
   });
-  if (safe) sidebar.insertBefore(btn, safe);
+  if (account) sidebar.insertBefore(btn, account);
   else sidebar.appendChild(btn);
 }
 

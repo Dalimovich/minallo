@@ -26,6 +26,17 @@ const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageer
 
 try {
  await page.goto(base); await page.waitForFunction(() => window.harnessReady);
+ for (const role of ['learner', 'enrolled']) {
+  await page.evaluate(async (role) => {
+   window._userType = role;
+   const { applyChatbotExperienceMode } = await import('/js/features/chatbot-new/experience-mode.js');
+   applyChatbotExperienceMode();
+  }, role);
+  assert.equal(await page.locator('.ncb-safe-card').count(), 0, `${role}: sidebar banner must not exist in DOM`);
+  assert.equal(await page.locator('.ncb-chat-list').isVisible(), true);
+ }
+ assert.equal(await page.locator('.ncb-clear-all + .ncb-account').count(), 1);
+
  const composer = page.locator('.ncb-input');
  const before = await composer.boundingBox();
  await page.locator('.ncb-add-files-trigger').click();

@@ -367,7 +367,6 @@ body:not(.night) .ncb-card,
 body:not(.night) .ncb-action-card,
 body:not(.night) .ncb-context-card,
 body:not(.night) .ncb-notes-card,
-body:not(.night) .ncb-safe-card,
 body:not(.night) .ncb-sources-card,
 body:not(.night) .ncb-streak-card,
 /* Landing / marketing */
@@ -637,7 +636,6 @@ body:not(.night) .ncb-header-subtitle,
 body:not(.night) .ncb-chat-meta,
 body:not(.night) .ncb-empty-subtitle,
 body:not(.night) .ncb-action-desc,
-body:not(.night) .ncb-safe-text,
 body:not(.night) .ed-home-empty-sub,
 body:not(.night) .nl-card__text,
 body:not(.night) .nl-lifestyle__card-text,
@@ -1167,7 +1165,6 @@ body:not(.night) .ncb-chat-icon {
   background: rgba(37, 99, 235, 0.10) !important;
   color: #1d4ed8 !important;
 }
-body:not(.night) .ncb-safe-head,
 body:not(.night) .ncb-greet-pill,
 body:not(.night) .ncb-chat-context-pill {
   background: rgba(37, 99, 235, 0.08) !important;
