@@ -1,5 +1,5 @@
 import { clearCourseDocumentCache, deleteNote, getNoteById, indexExistingDocument, invalidateCourseNotesCache, listCourseDocuments, listCourseNotes, type CourseDocument, type SavedNote } from '../../services/ai-service.js';
-import { deleteSavedReplyById } from './shell.js';
+import { deleteSavedReplyById } from './saved-reply-service.js';
 import { renderMarkdown } from '../ai-chat/ai-markdown.js';
 import { escapeHtml } from '../../utils/escape-html.js';
 import { checkAdminStatus } from '../../services/admin-service.js';

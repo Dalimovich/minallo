@@ -126,14 +126,21 @@ test('the create/delete/flush mutation queue lives in saved-reply-sync.ts, not d
   // retry, success-over-stale-failure) is covered by real execution tests
   // in tests/frontend/saved-reply-sync-engine.test.mjs.
   assert.match(shell, /import \{ createSavedReplySyncEngine \} from '\.\/saved-reply-sync\.js';/);
-  const wiring = slice(shell, 'const { syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync }', 'apiUrl: SAVED_REPLIES_API,');
+  const wiring = slice(shell, 'const savedReplyEngine = createSavedReplySyncEngine({', 'apiUrl: SAVED_REPLIES_API,');
   assert.match(wiring, /getChats: \(\) => chatStore\.chats,/);
   assert.match(wiring, /saveChatStore,/);
   assert.match(wiring, /getToken: getSbToken,/);
   assert.match(wiring, /dispatchChanged: dispatchSavedReplyChanged,/);
+  assert.match(shell, /const \{ syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync \} = savedReplyEngine;/);
   assert.doesNotMatch(shell, /function syncSavedReplyCreate\(/);
   assert.doesNotMatch(shell, /function syncSavedReplyDelete\(/);
   assert.doesNotMatch(shell, /function flushPendingSavedReplySync\(/);
+  // The same engine instance (including its awaited deleteSavedReplyById)
+  // is registered onto saved-reply-service.ts so workspace-library.ts can
+  // reach it without importing this whole module — see that file's header.
+  assert.match(shell, /import \{ setSavedReplyEngine \} from '\.\/saved-reply-service\.js';/);
+  assert.match(shell, /setSavedReplyEngine\(savedReplyEngine\);/);
+  assert.doesNotMatch(shell, /export async function deleteSavedReplyById\(/);
 });
 
 test('a reply confirmed by a successful server GET is marked synced, never left stale', () => {

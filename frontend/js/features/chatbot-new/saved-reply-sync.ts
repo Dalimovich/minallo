@@ -52,6 +52,7 @@ export interface SavedReplySyncEngine {
   syncSavedReplyCreate: (chatId: string, r: SyncableSavedReply) => void;
   syncSavedReplyDelete: (chatId: string, id: string) => void;
   flushPendingSavedReplySync: () => void;
+  deleteSavedReplyById: (chatId: string, id: string) => Promise<boolean>;
 }
 
 export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReplySyncEngine {
@@ -231,5 +232,36 @@ export function createSavedReplySyncEngine(deps: SavedReplySyncDeps): SavedReply
     }
   }
 
-  return { syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync };
+  // Canonical AI-response deletion entry point for callers outside the chat
+  // surface (the Saved panel's per-item delete control lives in
+  // workspace-library.ts, a sibling module — see saved-reply-service.ts for
+  // how it reaches this without importing shell.ts). syncSavedReplyDelete
+  // above is deliberately fire-and-forget (it queues a tombstone and
+  // retries later on its own schedule) so a caller can never learn whether
+  // the row was actually removed — fine for the in-chat "unbookmark" button
+  // (which already knows the delete succeeded, or will retry, from its own
+  // tombstone bookkeeping), but wrong for a UI that must not hide a row
+  // until the DB deletion is confirmed. This performs the exact same
+  // request (same endpoint) but AWAITS it, then applies the identical
+  // local cleanup the in-chat handler does (splice chat.savedReplies, drop
+  // any tombstone, persist, dispatch the same 'minallo:saved-replies-changed'
+  // event) only once the server confirms success — so a stale local copy
+  // can never resurrect a response that was actually deleted, and the
+  // caller gets a real success/failure signal.
+  async function deleteSavedReplyById(chatId: string, id: string): Promise<boolean> {
+    const response = await fetchImpl(apiUrl + '?id=' + encodeURIComponent(id), {
+      method: 'DELETE',
+    }).catch(() => null);
+    if (!response || !response.ok) return false;
+    const chat = getChats().find((c) => c.id === chatId);
+    if (chat) {
+      chat.savedReplies = chat.savedReplies.filter((r) => r.id !== id);
+      delete chat.pendingSavedReplyDeletes[id];
+      saveChatStore();
+    }
+    dispatchChanged({ id, action: 'deleted' });
+    return true;
+  }
+
+  return { syncSavedReplyCreate, syncSavedReplyDelete, flushPendingSavedReplySync, deleteSavedReplyById };
 }

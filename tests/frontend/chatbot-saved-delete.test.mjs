@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs';
 // here. These tests instead pin the exact contract that spec depends on.
 
 const moduleSource = readFileSync('frontend/js/features/chatbot-new/workspace-library.ts', 'utf8');
-const shellSource = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
+const savedReplySyncSource = readFileSync('frontend/js/features/chatbot-new/saved-reply-sync.ts', 'utf8');
+const savedReplyServiceSource = readFileSync('frontend/js/features/chatbot-new/saved-reply-service.ts', 'utf8');
 const css = readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
 
 test('the delete control is never nested inside the open button', () => {
@@ -107,16 +108,31 @@ test('flashcard decks and practice exams delete the real flashcard_decks/exam_se
 });
 
 test('AI response deletion goes through the canonical saved-reply system, not a separate localStorage-only removal', () => {
-  assert.match(moduleSource, /import \{ deleteSavedReplyById \} from '\.\/shell\.js';/);
-  const fnStart = shellSource.indexOf('export async function deleteSavedReplyById(');
-  const fnEnd = shellSource.indexOf('\n}', fnStart) + 2;
-  const fn = shellSource.slice(fnStart, fnEnd);
-  // Awaits the real DELETE and only mutates local state / fires the shared
-  // 'deleted' event AFTER the server confirms success.
+  // workspace-library.ts (the Saved panel) reaches this via the
+  // DOM-independent saved-reply-service.ts registry, NOT by importing
+  // shell.ts directly — shell.ts is a large monolith and workspace-library.ts
+  // importing from it created an unwanted two-way dependency between the
+  // library/Saved surface and the chat surface.
+  assert.match(moduleSource, /import \{ deleteSavedReplyById \} from '\.\/saved-reply-service\.js';/);
+  assert.doesNotMatch(moduleSource, /from '\.\/shell\.js'/);
+
+  // The service is a thin pass-through to the engine shell.ts registers at
+  // module init — it must not implement its own deletion logic.
+  assert.match(savedReplyServiceSource, /export async function deleteSavedReplyById/);
+  assert.match(savedReplyServiceSource, /if \(!activeEngine\) return false;/);
+  assert.match(savedReplyServiceSource, /return activeEngine\.deleteSavedReplyById\(chatId, id\);/);
+
+  // The real implementation lives in saved-reply-sync.ts (no DOM dependency,
+  // directly unit-testable) and awaits the real DELETE, only mutating local
+  // state / firing the shared 'deleted' event AFTER the server confirms
+  // success.
+  const fnStart = savedReplySyncSource.indexOf('async function deleteSavedReplyById(');
+  const fnEnd = savedReplySyncSource.indexOf('\n  }', fnStart) + 4;
+  const fn = savedReplySyncSource.slice(fnStart, fnEnd);
   assert.match(fn, /method: 'DELETE'/);
   assert.match(fn, /if \(!response \|\| !response\.ok\) return false;/);
   assert.match(fn, /chat\.savedReplies = chat\.savedReplies\.filter/);
-  assert.match(fn, /dispatchSavedReplyChanged\(\{ id, action: 'deleted' \}\)/);
+  assert.match(fn, /dispatchChanged\(\{ id, action: 'deleted' \}\)/);
   // The Saved panel already listens for this exact event to drop the id from
   // deletedResponseIds so it can never resurrect via the server-reconcile
   // merge in loadBookmarkedResponses.

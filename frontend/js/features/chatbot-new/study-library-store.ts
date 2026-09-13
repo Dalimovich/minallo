@@ -40,7 +40,7 @@ export interface CachedSavedItem {
   meta: string;
   noteId?: string;
   /** 'responses' items only — the owning chat, needed to delete the durable
-   *  saved-reply row (see deleteSavedReplyById in shell.ts). */
+   *  saved-reply row (see deleteSavedReplyById in saved-reply-service.ts). */
   chatId?: string;
 }
 
