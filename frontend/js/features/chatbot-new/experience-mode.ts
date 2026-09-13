@@ -94,11 +94,11 @@ export function applyChatbotExperienceMode(): void {
     el.hidden = !inWritingCoachView;
   });
 
-  const level = currentGermanLevel() || '–';
-  const levelBadge = document.getElementById('ncbGermanLevelBadge');
+  // The sidebar's old "German learning" level card (#ncbGermanLevelBadge)
+  // was removed entirely — the level only needs to render in the right
+  // Practice panel now (#ncbGermanLevelValue).
   const levelValue = document.getElementById('ncbGermanLevelValue');
-  if (levelBadge) levelBadge.textContent = level;
-  if (levelValue) levelValue.textContent = level;
+  if (levelValue) levelValue.textContent = currentGermanLevel() || '–';
 
   // The composer textarea is a single shared element (not a duplicated
   // student/learner pair like the other copy), so its placeholder/aria-label

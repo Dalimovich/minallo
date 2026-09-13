@@ -66,7 +66,6 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await expect(page.locator('[data-library-tab="german"]')).toBeVisible();
     await expect(page.locator('[data-library-tab="german"]')).toHaveClass(/ncb-library-tab--active/);
     await expect(page.locator('.ncb-german-panel')).toBeVisible();
-    await expect(page.locator('#ncbGermanLevelBadge')).toHaveText('B1');
     await expect(page.locator('#ncbGermanLevelValue')).toHaveText('B1');
     await expect(page.locator('[data-testid="quick-german-practice"]')).toBeVisible();
     await expect(page.locator('[data-testid="quick-writing-coach"]')).toBeVisible();
@@ -173,7 +172,6 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     // stuck showing "Level –" forever, never just transiently.
     await applyProfile(page, { user_type: 'learner', german_level: 'B2', full_name: '' });
 
-    await expect(page.locator('#ncbGermanLevelBadge')).toHaveText('B2');
     await expect(page.locator('#ncbGermanLevelValue')).toHaveText('B2');
 
     await applyProfile(page, { user_type: 'enrolled' });
