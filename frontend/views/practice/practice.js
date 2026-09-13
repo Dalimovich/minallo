@@ -124,6 +124,47 @@
     }
     _glRefreshHero();
 
+    // Learner home (the default landing subview for the "Home" sidebar item)
+    // greets the user and hands off to the existing Practice/Writing Coach
+    // subviews below — kept inside #psec-german alongside them rather than
+    // as a separate portal section (see writing-coach.ts header comment on
+    // why Practice/Writing Coach are DOM-coupled).
+    function _glRefreshLearnerHome() {
+      var nameEl = document.getElementById('glHomeGreeting');
+      if (!nameEl) return;
+      var authName = document.getElementById('authName');
+      var name = (authName && authName.textContent && authName.textContent.trim()) || '';
+      if (name.indexOf('Loading') === 0) name = '';
+      var hour = new Date().getHours();
+      var greeting = hour < 12 ? 'Guten Morgen' : hour < 18 ? 'Guten Tag' : 'Guten Abend';
+      nameEl.textContent = name ? greeting + ', ' + name : greeting;
+    }
+    _glRefreshLearnerHome();
+    window.addEventListener('ss-profile-updated', _glRefreshLearnerHome);
+
+    var glLearnerHome = document.getElementById('glLearnerHome');
+    if (glLearnerHome) {
+      glLearnerHome.addEventListener('click', function (e) {
+        if (e.target.closest('#glHomePracticeBtn')) {
+          window._glBackToHome();
+        } else if (e.target.closest('#glHomeWritingCoachBtn')) {
+          if (typeof window._wcOpen === 'function') window._wcOpen();
+        }
+      });
+    }
+
+    window._glShowLearnerHome = function () {
+      _glActiveSkill = '';
+      var home = document.getElementById('glHome');
+      var detail = document.getElementById('glSkillView');
+      var wcView = document.getElementById('wcView');
+      var learnerHome = document.getElementById('glLearnerHome');
+      if (home) home.style.display = 'none';
+      if (detail) detail.style.display = 'none';
+      if (wcView) wcView.style.display = 'none';
+      if (learnerHome) learnerHome.style.display = '';
+    };
+
     // Wire skill cards via event delegation. Anchor on the home wrapper so
     // a card click anywhere inside (including the "Open practice" button)
     // resolves to the right skill.
@@ -154,12 +195,14 @@
           var home = document.getElementById('glHome');
           var detail = document.getElementById('glSkillView');
           var wcView = document.getElementById('wcView');
+          var learnerHome = document.getElementById('glLearnerHome');
           if (home) home.style.display = '';
           if (detail) detail.style.display = 'none';
           // Also collapse the Schreibtrainer detail view — otherwise it
           // stays visible underneath the cards when the user navigates
           // away mid-session and clicks Practice again.
           if (wcView) wcView.style.display = 'none';
+          if (learnerHome) learnerHome.style.display = 'none';
           var aiChipsEl = document.querySelector('.ai-chips');
           if (aiChipsEl && aiChipsEl._originalHTML) {
             aiChipsEl.innerHTML = aiChipsEl._originalHTML;
@@ -280,12 +323,14 @@
       var home = document.getElementById('glHome');
       var detail = document.getElementById('glSkillView');
       var wcView = document.getElementById('wcView');
+      var learnerHome = document.getElementById('glLearnerHome');
       if (home) home.style.display = '';
       if (detail) detail.style.display = 'none';
       // Also collapse the Schreibtrainer detail view — otherwise it
       // stays visible underneath the cards when the user navigates
       // away mid-session and clicks Practice again.
       if (wcView) wcView.style.display = 'none';
+      if (learnerHome) learnerHome.style.display = 'none';
       var aiChipsEl = document.querySelector('.ai-chips');
       if (aiChipsEl && aiChipsEl._originalHTML) {
         aiChipsEl.innerHTML = aiChipsEl._originalHTML;

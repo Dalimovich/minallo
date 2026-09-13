@@ -32,7 +32,12 @@ export default defineConfig({
     },
     {
       name: 'Mobile Chrome',
-      testMatch: ['**/12-navigation-map.spec.ts', '**/13-chatbot.spec.ts', '**/16-responsive.spec.ts'],
+      testMatch: [
+        '**/12-navigation-map.spec.ts',
+        '**/13-chatbot.spec.ts',
+        '**/16-responsive.spec.ts',
+        '**/18-german-learner.spec.ts',
+      ],
       use: {
         ...devices['Pixel 5'],
         storageState: 'tests/e2e/.auth/user.json',
@@ -41,7 +46,12 @@ export default defineConfig({
     },
     {
       name: 'Tablet',
-      testMatch: ['**/12-navigation-map.spec.ts', '**/13-chatbot.spec.ts', '**/16-responsive.spec.ts'],
+      testMatch: [
+        '**/12-navigation-map.spec.ts',
+        '**/13-chatbot.spec.ts',
+        '**/16-responsive.spec.ts',
+        '**/18-german-learner.spec.ts',
+      ],
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 820, height: 1180 },

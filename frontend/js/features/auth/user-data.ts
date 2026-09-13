@@ -326,11 +326,14 @@ export function applyUserTypeUI(): void {
       ? (germanTest || germanTestLabel) + (germanLevel ? ' · ' + germanLevel : '')
       : uni;
   }
-  const coursesNav = document.getElementById('pcStudip');
-  const germanNav = document.getElementById('psbGerman');
+  // Sidebar items/dividers/section-labels opt into role-gating via
+  // data-roles="student" / "learner" (comma-separated for both); everything
+  // else is unaffected, so student nav stays pixel-identical.
+  document.querySelectorAll<HTMLElement>('[data-roles]').forEach((el) => {
+    const roles = (el.getAttribute('data-roles') || '').split(',').map((r) => r.trim());
+    el.style.display = roles.includes(isLearner ? 'learner' : 'student') ? '' : 'none';
+  });
   const problemRailBtn = document.querySelector<HTMLElement>('.dr-rail-btn[data-dr-mode="problem"]');
-  if (coursesNav) coursesNav.style.display = isLearner ? 'none' : '';
-  if (germanNav) germanNav.style.display = isLearner ? '' : 'none';
   if (problemRailBtn) problemRailBtn.style.display = isLearner ? 'none' : '';
 
   const glSub = document.getElementById('glTestBadge');

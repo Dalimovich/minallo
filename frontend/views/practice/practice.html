@@ -1,5 +1,24 @@
 <!-- GERMAN LEARNER PRACTICE PAGE - injected by views/practice/practice.js -->
 <div id="psec-german" class="portal-section" style="display: none">
+  <!-- Learner home: default landing for the "Home" sidebar item. Kept inside
+       psec-german (not a separate portal section) alongside Practice/Writing
+       Coach — see writing-coach.ts header comment. -->
+  <div id="glLearnerHome" style="display: none">
+    <div class="sd-shell gl-home-shell">
+      <div class="gl-home-card">
+        <h1 class="gl-home-greeting" id="glHomeGreeting">Guten Abend</h1>
+        <p class="gl-home-sub" data-i18n="gl_home_sub">What would you like to practice today?</p>
+        <div class="gl-home-actions">
+          <button type="button" class="gl-home-btn gl-home-btn-primary" id="glHomePracticeBtn">
+            <span data-i18n="gl_home_practice_btn">Practice German</span>
+          </button>
+          <button type="button" class="gl-home-btn gl-home-btn-secondary" id="glHomeWritingCoachBtn">
+            <span data-i18n="nav_writing_coach">Writing Coach</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="glHome">
     <div class="sd-shell gl-shell">
       <section class="gl-hero-v2">

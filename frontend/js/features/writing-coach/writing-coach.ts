@@ -52,6 +52,20 @@ export function initWritingCoach(): void {
   } else {
     _tryInject();
   }
+  (window as unknown as { _wcOpen: typeof openWritingCoach })._wcOpen = openWritingCoach;
+}
+
+/** Public entry point for the router's "Writing Coach" sidebar item — opens
+ * the detail view without duplicating its DOM logic. Retries briefly since
+ * this module's own async injection (_tryInject/_inject above) may not have
+ * finished mounting #wcView yet when the sidebar click fires. */
+export function openWritingCoach(attempt = 0): void {
+  if (document.getElementById('wcView')) {
+    _openView();
+    return;
+  }
+  if (attempt > 40) return;
+  window.setTimeout(() => openWritingCoach(attempt + 1), 250);
 }
 
 function _tryInject(attempt = 0): void {

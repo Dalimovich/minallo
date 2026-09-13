@@ -264,6 +264,23 @@ function _ssPortalNavId(section) {
 }
 
 function _ssApplyHistoryState(state) {
+  // A brand-new learner account has no persisted 'german' section yet, so the
+  // generic dashboard fallback below would land them on the student dashboard
+  // with no matching sidebar item visible (psbDashboard is learner-hidden).
+  // Best-effort: only fires when the profile has already set _userType by the
+  // time this runs; if not, this is a no-op and behaves exactly as before.
+  if (
+    window._userType === 'learner' &&
+    (!state || (state.view === 'portal' && (!state.section || state.section === 'dashboard')))
+  ) {
+    showPortal();
+    setNavActive('psbLearnerHome');
+    showPortalSection('german');
+    _ssAfterFeature('german', function () {
+      if (typeof window._glShowLearnerHome === 'function') window._glShowLearnerHome();
+    });
+    return;
+  }
   if (!state) {
     showPortal();
     // Default to dashboard when we have no state at all.
@@ -607,12 +624,46 @@ _bindIf('psbDashboard', 'click', function () {
   _ssAfterFeature('dashboard');
 });
 
+// The three learner nav destinations all live inside the single 'german'
+// portal section (psec-german) as subviews — see writing-coach.ts / practice.js
+// for why that's kept as one DOM root rather than split into separate routes.
+// Set the topbar title per-subview since showPortalSection only knows the
+// shared 'german' section name.
+function _ssSetGermanTitle(i18nKey, fallback) {
+  var tt = document.getElementById('topTitle');
+  if (!tt) return;
+  tt.textContent = typeof window._t === 'function' ? window._t(i18nKey) : fallback;
+  tt.setAttribute('data-i18n', i18nKey);
+}
+
+_bindIf('psbLearnerHome', 'click', function () {
+  setNavActive('psbLearnerHome');
+  showPortalSection('german');
+  _finalizeNav('german');
+  _ssAfterFeature('german', function () {
+    if (typeof window._glShowLearnerHome === 'function') window._glShowLearnerHome();
+    _ssSetGermanTitle('nav_home', 'Home');
+  });
+});
+
 _bindIf('psbGerman', 'click', function () {
   setNavActive('psbGerman');
   showPortalSection('german');
   _finalizeNav('german');
   _ssAfterFeature('german', function () {
     if (typeof window._glBackToHome === 'function') window._glBackToHome();
+    _ssSetGermanTitle('nav_practice', 'Practice');
+  });
+});
+
+_bindIf('psbWritingCoach', 'click', function () {
+  setNavActive('psbWritingCoach');
+  showPortalSection('german');
+  _finalizeNav('german');
+  _ssAfterFeature('german', function () {
+    if (typeof window._glBackToHome === 'function') window._glBackToHome();
+    if (typeof window._wcOpen === 'function') window._wcOpen();
+    _ssSetGermanTitle('nav_writing_coach', 'Writing Coach');
   });
 });
 

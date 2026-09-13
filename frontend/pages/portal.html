@@ -606,18 +606,18 @@
 
       <div class="sb-nav">
         <div class="sb-section-label" data-i18n="sb_section_workspace">Workspace</div>
-        <div class="sb-item psb on" id="psbDashboard" data-testid="sidebar-home">
+        <div class="sb-item psb on" id="psbDashboard" data-testid="sidebar-home" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="home"></span></div>
           <span data-i18n="nav_home">Home</span>
         </div>
-        <div class="sb-item psb" id="pcStudip" data-testid="sidebar-courses">
+        <!-- German learner Home &mdash; same markup/style as psbDashboard, hidden for students -->
+        <div class="sb-item psb" id="psbLearnerHome" data-testid="sidebar-learner-home" data-roles="learner" style="display: none">
+          <div class="sb-item-icon"><span class="sb-sprite" data-sprite="home"></span></div>
+          <span data-i18n="nav_home">Home</span>
+        </div>
+        <div class="sb-item psb" id="pcStudip" data-testid="sidebar-courses" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="courses"></span></div>
           <span data-i18n="nav_courses">Courses</span>
-        </div>
-        <!-- German learner nav &mdash; hidden for enrolled students -->
-        <div class="sb-item psb" id="psbGerman" style="display: none">
-          <div class="sb-item-icon">&#x1F1E9;&#x1F1EA;</div>
-          <span data-i18n="nav_practice">Practice</span>
         </div>
         <div class="sb-item psb" id="psbNotes" data-testid="sidebar-notes" data-coming-soon="1" style="display: none">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="notes"></span></div>
@@ -631,23 +631,34 @@
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="chatbot"></span></div>
           <span data-i18n="nav_chatbot">Chatbot</span>
         </div>
-        <div class="sb-item psb" id="psbChat" data-testid="sidebar-chat">
+        <div class="sb-item psb" id="psbChat" data-testid="sidebar-chat" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="chat"></span></div>
           <span data-i18n="nav_chat">Chat</span>
         </div>
-        <div class="sb-divider"></div>
-        <div class="sb-section-label" data-i18n="sb_section_activity">Activity</div>
-        <div class="sb-item psb" id="psbGames" data-testid="sidebar-games">
+        <!-- German learner nav &mdash; hidden for enrolled students -->
+        <div class="sb-divider" id="psbGermanDivider" data-roles="learner" style="display: none"></div>
+        <div class="sb-section-label" id="psbGermanLabel" data-roles="learner" data-i18n="sb_section_german" style="display: none">Learn German</div>
+        <div class="sb-item psb" id="psbGerman" data-testid="sidebar-practice" data-roles="learner" style="display: none">
+          <div class="sb-item-icon">&#x1F1E9;&#x1F1EA;</div>
+          <span data-i18n="nav_practice">Practice</span>
+        </div>
+        <div class="sb-item psb" id="psbWritingCoach" data-testid="sidebar-writing-coach" data-roles="learner" style="display: none">
+          <div class="sb-item-icon">&#x1F1E9;&#x1F1EA;</div>
+          <span data-i18n="nav_writing_coach">Writing Coach</span>
+        </div>
+        <div class="sb-divider" id="psbActivityDivider" data-roles="student"></div>
+        <div class="sb-section-label" id="psbActivityLabel" data-roles="student" data-i18n="sb_section_activity">Activity</div>
+        <div class="sb-item psb" id="psbGames" data-testid="sidebar-games" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="games"></span></div>
           <span data-i18n="nav_games">Games</span>
         </div>
-        <div class="sb-item psb" id="psbLounge" data-testid="sidebar-lounge">
+        <div class="sb-item psb" id="psbLounge" data-testid="sidebar-lounge" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="lounge"></span></div>
           <span data-i18n="nav_lounge">Study Lounge</span>
         </div>
         <div class="sb-divider"></div>
         <div class="sb-section-label" data-i18n="sb_section_account">Account</div>
-        <div class="sb-item psb" id="psbNotifications" data-testid="sidebar-notifications">
+        <div class="sb-item psb" id="psbNotifications" data-testid="sidebar-notifications" data-roles="student">
           <div class="sb-item-icon">
             <span class="sb-sprite" data-sprite="notifications"></span>
           </div>
@@ -657,11 +668,11 @@
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="profile"></span></div>
           <span data-i18n="nav_profile">Profile</span>
         </div>
-        <div class="sb-item psb" id="psbSettings" data-testid="sidebar-settings">
+        <div class="sb-item psb" id="psbSettings" data-testid="sidebar-settings" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="settings"></span></div>
           <span data-i18n="nav_settings">Settings</span>
         </div>
-        <div class="sb-item psb" id="psbSubscription" data-testid="sidebar-subscription">
+        <div class="sb-item psb" id="psbSubscription" data-testid="sidebar-subscription" data-roles="student">
           <div class="sb-item-icon"><span class="sb-sprite" data-sprite="subscription"></span></div>
           <span data-i18n="nav_subscription">Subscription</span>
         </div>
