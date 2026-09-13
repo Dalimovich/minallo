@@ -46,7 +46,7 @@ import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { aiMakePdfBlob } from '../ai-chat/ai-export.js';
 import { initWorkspaceLibrary, openStudyToolWorkspace } from './workspace-library.js';
-import { initChatbotExperienceMode, applyChatbotExperienceMode } from './experience-mode.js';
+import { initChatbotExperienceMode, applyChatbotExperienceMode, transitionLearnerWorkspace } from './experience-mode.js';
 import {
   openAttachmentViewer,
   renderAttachmentCard,
@@ -296,7 +296,7 @@ function bindChatItems(sidebar: HTMLElement): void {
   list.dataset.ncbBound = '1';
 
   // Event delegation: re-renders of the list (PR-05) keep the binding alive.
-  list.addEventListener('click', (ev) => {
+  list.addEventListener('click', async (ev) => {
     const target = ev.target as HTMLElement | null;
     if (!target) return;
 
@@ -319,6 +319,7 @@ function bindChatItems(sidebar: HTMLElement): void {
     const chatId = item.dataset.chatId;
     const root = sidebar.closest<HTMLElement>('.ncb-root');
     if (chatId && root) {
+      await transitionLearnerWorkspace('chat');
       switchActiveChat(root, chatId);
     } else {
       selectChatItem(list, item);
@@ -338,11 +339,12 @@ function bindNewChat(sidebar: HTMLElement): void {
   if (!btn || btn.dataset.ncbBound === '1') return;
   btn.dataset.ncbBound = '1';
 
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     if (sidebar.dataset.collapsed === 'true') setCollapsed(sidebar, false);
 
     const root = sidebar.closest<HTMLElement>('.ncb-root');
     if (!root) return;
+    await transitionLearnerWorkspace('chat');
 
     // PR-05: de-dupe — if there's already an empty draft chat, just switch to it
     // instead of creating a second one (matches the React preview's handleNewChat).

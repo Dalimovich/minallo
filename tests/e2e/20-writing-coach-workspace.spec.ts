@@ -86,7 +86,7 @@ test.describe('Writing Coach workspace mode', () => {
     await expect(page.locator('#ncbImportModal')).toBeVisible();
   });
 
-  test('clicking Writing Coach switches the shell in place, hides chat chrome and the right panel', async ({
+  test('clicking Writing Coach switches the shell in place, keeps chat controls and hides the right panel', async ({
     page,
   }) => {
     const app = new AppPage(page);
@@ -105,11 +105,11 @@ test.describe('Writing Coach workspace mode', () => {
     await expect(root).toHaveClass(/ncb-view-writing-coach/);
     await expect(page.locator('.ncb-sidebar')).toBeVisible();
 
-    // Chat chrome hidden.
-    await expect(page.locator('.ncb-widget-launcher')).toBeHidden();
-    await expect(page.locator('.ncb-sidebar > .ncb-new-chat-btn')).toBeHidden();
-    await expect(page.locator('.ncb-search')).toBeHidden();
-    await expect(page.locator('.ncb-chat-list')).toBeHidden();
+    // Sidebar controls persist.
+    await expect(page.locator('.ncb-widget-launcher')).toBeVisible();
+    await expect(page.locator('.ncb-sidebar > .ncb-new-chat-btn')).toBeVisible();
+    await expect(page.locator('.ncb-search')).toBeVisible();
+    await expect(page.locator('.ncb-chat-list')).toBeVisible();
 
     // Nav button flips to Home.
     await expect(page.locator('[data-testid="chatbot-nav-writing-coach"]')).toBeHidden();

@@ -1,6 +1,12 @@
 // ── GERMAN LEARNER PRACTICE ──────────────────────────────────────────────────
 (function () {
   var container = document.getElementById('psec-german');
+  // Modern entry points can initialize without the legacy portal page.
+  if (!container && document.getElementById('ncbRoot')) {
+    container = document.createElement('div');
+    container.hidden = true;
+    document.getElementById('ncbRoot').appendChild(container);
+  }
   if (!container) return;
 
   // Retry the markup fetch a couple of times: this dispatcher only runs once
@@ -20,7 +26,7 @@
       throw err;
     });
   }
-  _ssFetchText('views/practice/practice.html', 2)
+  window._glReady = _ssFetchText('views/practice/practice.html', 2)
     .then(function (html) {
       var tmp = document.createElement('div');
       tmp.innerHTML = html;
@@ -256,7 +262,7 @@
 
     document.addEventListener('keydown', function (e) {
       var detail = document.getElementById('glSkillView');
-      if (!detail || detail.style.display === 'none') return;
+      if (!detail || detail.style.display === 'none' || !detail.getClientRects().length) return;
       if (e.target && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return;
       if (_glToolMode === 'cards') {
         if (e.key === ' ') {

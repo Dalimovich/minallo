@@ -22,7 +22,10 @@
 // single visibility pass as the role markers so the two axes can never fight
 // over one element's `hidden` property (see applyChatbotExperienceMode()).
 
-export type LearnerWorkspaceView = 'chat' | 'writing-coach';
+export type LearnerWorkspaceView = 'chat' | 'writing-coach' | 'practice';
+export type GermanSkill = 'vocab' | 'grammar' | 'reading';
+let activeSkill: GermanSkill | undefined;
+let transitionQueue = Promise.resolve();
 
 let _workspaceView: LearnerWorkspaceView = 'chat';
 
@@ -50,13 +53,85 @@ export function getLearnerWorkspaceView(): LearnerWorkspaceView {
   return _workspaceView;
 }
 
-/** Switches the in-shell workspace view for learners. Pure DOM-state toggle —
- * callers that need Writing Coach's module loaded/initialized first should
- * await ensureWritingCoach() (main.ts) before calling this with
- * 'writing-coach'; see the [data-workspace-view] handler below. */
+/** Serialize workspace changes so rapid navigation cannot reveal stale content. */
+export function transitionLearnerWorkspace(
+  view: LearnerWorkspaceView,
+  options: { skill?: GermanSkill } = {}
+): Promise<void> {
+  const run = async () => {
+    const root = document.getElementById('ncbRoot');
+    if (!root || currentUserType() !== 'learner') return;
+    if (view === 'practice') {
+      await window._ssLoadPortalFeature?.('german');
+      await (window as unknown as { _glReady?: Promise<void> })._glReady;
+      if (!document.getElementById('glSkillView') || !window._glOpenSkill) {
+        throw new Error('Practice could not load. Please try again.');
+      }
+    }
+    if (currentUserType() !== 'learner') return;
+    if (_workspaceView === view && (view !== 'practice' || activeSkill === options.skill)) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const panel = () => root.querySelector<HTMLElement>(
+      _workspaceView === 'chat' ? '.ncb-center' :
+      _workspaceView === 'practice' ? '.ncb-practice-panel' : '.ncb-writing-coach-panel'
+    );
+    const fade = (element: HTMLElement | null) => new Promise<void>((resolve) => {
+      const done = () => { clearTimeout(timer); element?.removeEventListener('transitionend', end); resolve(); };
+      const end = (event: TransitionEvent) => { if (event.target === element && event.propertyName === 'opacity') done(); };
+      const timer = window.setTimeout(done, 180);
+      element?.addEventListener('transitionend', end);
+    });
+    try {
+      if (!reduced) {
+        root.classList.add('ncb-workspace-leaving');
+        await fade(panel());
+      }
+      if (currentUserType() !== 'learner') return;
+      if (view === 'practice') {
+        const detail = document.getElementById('glSkillView')!;
+        let host = root.querySelector<HTMLElement>('.ncb-practice-panel');
+        if (!host) {
+          host = document.createElement('section');
+          host.className = 'ncb-practice-panel ncb-learner-only ncb-practice-view-only';
+          host.dataset.testid = 'practice-workspace';
+          host.hidden = true;
+          root.querySelector('.ncb-center')?.after(host);
+        }
+        host.appendChild(detail);
+        activeSkill = options.skill || 'vocab';
+        window._glOpenSkill?.(activeSkill);
+        const back = detail.querySelector<HTMLButtonElement>('#glBackBtn');
+        if (back && !back.dataset.workspaceBound) {
+          back.dataset.workspaceBound = '1';
+          back.textContent = 'Home';
+          back.addEventListener('click', (event) => {
+            event.stopImmediatePropagation();
+            void transitionLearnerWorkspace('chat');
+          }, true);
+        }
+      }
+      _workspaceView = view;
+      root.classList.remove('ncb-workspace-leaving');
+      if (!reduced) root.classList.add('ncb-workspace-entering');
+      applyChatbotExperienceMode();
+      if (!reduced) {
+        // Commit the starting opacity before revealing the destination.
+        panel()?.getBoundingClientRect();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        root.classList.remove('ncb-workspace-entering');
+        await fade(panel());
+      }
+    } finally {
+      root.classList.remove('ncb-workspace-leaving', 'ncb-workspace-entering');
+    }
+  };
+  const result = transitionQueue.then(run);
+  transitionQueue = result.catch(() => {});
+  return result;
+}
+
 export function setLearnerWorkspaceView(view: LearnerWorkspaceView): void {
-  _workspaceView = view;
-  applyChatbotExperienceMode();
+  void transitionLearnerWorkspace(view);
 }
 
 /** Re-derives the chatbot shell's role mode AND workspace view from
@@ -74,9 +149,13 @@ export function applyChatbotExperienceMode(): void {
   const isLearner = currentUserType() === 'learner';
   // Workspace-view mode only ever applies to learners; a student (or a
   // learner who hasn't opened Writing Coach) is always effectively 'chat'.
+  const inPracticeView = isLearner && _workspaceView === 'practice';
+  const inWorkspace = isLearner && _workspaceView !== 'chat';
   const inWritingCoachView = isLearner && _workspaceView === 'writing-coach';
   root.classList.toggle('ncb-learner-mode', isLearner);
   root.classList.toggle('ncb-view-writing-coach', inWritingCoachView);
+  root.classList.toggle('ncb-view-practice', inPracticeView);
+  root.dataset.workspaceView = isLearner ? _workspaceView : 'chat';
 
   // #ncbImportModal is a sibling of #ncbRoot (both injected by chatbot.js
   // into #psec-aipage), not nested inside it, so this must be document-scoped
@@ -88,11 +167,15 @@ export function applyChatbotExperienceMode(): void {
     el.hidden = !isLearner;
   });
   document.querySelectorAll<HTMLElement>('.ncb-chat-view-only').forEach((el) => {
-    el.hidden = inWritingCoachView;
+    el.hidden = inWorkspace || (isLearner && el.classList.contains('ncb-student-only')) || (!isLearner && el.classList.contains('ncb-learner-only'));
   });
   document.querySelectorAll<HTMLElement>('.ncb-writing-coach-view-only').forEach((el) => {
     el.hidden = !inWritingCoachView;
   });
+
+  root.querySelectorAll<HTMLElement>('.ncb-practice-view-only').forEach(el => { el.hidden = !inPracticeView; });
+  const home = root.querySelector<HTMLElement>('[data-testid="chatbot-nav-home"]');
+  if (home) home.hidden = !inWorkspace;
 
   // The sidebar's old "German learning" level card (#ncbGermanLevelBadge)
   // was removed entirely — the level only needs to render in the right
@@ -137,7 +220,16 @@ export function initChatbotExperienceMode(root: HTMLElement): void {
   root.addEventListener('click', (ev) => {
     const target = ev.target as HTMLElement;
 
-    const viewTarget = target.closest<HTMLElement>('[data-workspace-view]');
+    const skillTarget = target.closest<HTMLElement>('[data-workspace-skill]');
+    if (skillTarget) {
+      ev.preventDefault();
+      void transitionLearnerWorkspace('practice', { skill: skillTarget.dataset.workspaceSkill as GermanSkill }).catch((error) => {
+        window.alert(error.message);
+      });
+      return;
+    }
+
+    const viewTarget = target.closest<HTMLElement>('button[data-workspace-view]');
     if (viewTarget) {
       ev.preventDefault();
       const view = viewTarget.dataset.workspaceView === 'writing-coach' ? 'writing-coach' : 'chat';

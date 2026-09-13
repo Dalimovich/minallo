@@ -38,8 +38,7 @@
           <div class="ncb-sidebar-head">
             <div class="ncb-sidebar-head-text">
               <p class="ncb-eyebrow" data-i18n="cb_sidebar_eyebrow">Minallo</p>
-              <h2 class="ncb-sidebar-title ncb-chat-view-only" data-i18n="cb_sidebar_title">AI Chats</h2>
-              <h2 class="ncb-sidebar-title ncb-writing-coach-view-only" data-i18n="nav_writing_coach" hidden>Writing Coach</h2>
+              <h2 class="ncb-sidebar-title" data-i18n="cb_sidebar_title">AI Chats</h2>
             </div>
             <button type="button" class="ncb-collapse-btn" data-i18n-aria="cb_collapse_sidebar" aria-label="Collapse sidebar">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -48,7 +47,7 @@
             </button>
           </div>
 
-          <div class="ncb-widget-launcher ncb-chat-view-only">
+          <div class="ncb-widget-launcher">
             <button type="button" class="ncb-widgets-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Widgets">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/>
@@ -63,14 +62,14 @@
             </div>
           </div>
 
-          <button type="button" class="ncb-new-chat-btn ncb-chat-view-only">
+          <button type="button" class="ncb-new-chat-btn">
             <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14"/><path d="M12 5v14"/>
             </svg>
             <span data-i18n="cb_new_chat">New chat</span>
           </button>
 
-          <div class="ncb-search ncb-chat-view-only">
+          <div class="ncb-search">
             <svg class="ncb-icon ncb-icon--sm ncb-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"/>
               <path d="m21 21-4.3-4.3"/>
@@ -99,7 +98,7 @@
             </button>
           </div>
 
-          <div class="ncb-chat-list ncb-no-scrollbar ncb-chat-view-only">
+          <div class="ncb-chat-list ncb-no-scrollbar">
             <!-- Rendered from chat store at runtime (PR-05). -->
           </div>
 
@@ -471,16 +470,16 @@
                   <strong id="ncbGermanLevelValue">&ndash;</strong>
                 </div>
                 <div class="ncb-german-panel-links">
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-vocab" data-nav-target="german" data-gl-skill="vocab">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-vocab" data-workspace-skill="vocab">
                     <span data-i18n="cb_german_link_vocab">Vocabulary</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-nav-target="german" data-gl-skill="grammar">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-workspace-skill="grammar">
                     <span data-i18n="cb_german_link_grammar">Grammar</span>
                   </button>
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-workspace-view="writing-coach">
                     <span data-i18n="nav_writing_coach">Writing Coach</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-nav-target="german" data-gl-skill="reading">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-workspace-skill="reading">
                     <span data-i18n="cb_german_link_reading">Reading</span>
                   </button>
                   <!-- Listening has no real Practice skill behind it yet (practice.js's

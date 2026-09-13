@@ -6796,3 +6796,24 @@ body.ncb-pdf-workspace-open #drDrawer {
   .ncb-markdown-preview { max-height: 90vh; padding: 17px; border-radius: 19px; }
   .ncb-markdown-preview-content textarea { min-height: 220px; height: 48vh; }
 }
+
+/* The sidebar persists while the learner's workspace changes. */
+.ncb-root.ncb-view-practice .ncb-center,
+.ncb-root.ncb-view-practice .ncb-context { display: none; }
+.ncb-practice-panel { flex: 1; min-width: 0; overflow-y: auto; padding: 32px 40px; }
+.ncb-practice-panel[hidden] { display: none; }
+.ncb-practice-panel .gl-skill-view { animation: none; }
+.ncb-learner-mode .ncb-card > .ncb-center,
+.ncb-learner-mode .ncb-card > .ncb-context,
+.ncb-learner-mode .ncb-card > .ncb-writing-coach-panel,
+.ncb-learner-mode .ncb-card > .ncb-practice-panel {
+  transition: opacity 110ms ease-out, transform 110ms ease-out;
+}
+.ncb-workspace-leaving .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel),
+.ncb-workspace-entering .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel) {
+  opacity: 0; transform: translateY(6px);
+}
+@media (max-width: 768px) { .ncb-practice-panel { padding: 20px 16px; } }
+@media (prefers-reduced-motion: reduce) {
+  .ncb-learner-mode .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel) { transition: none; }
+}

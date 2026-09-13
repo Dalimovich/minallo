@@ -20,7 +20,7 @@ import {
   WritingAnalysis,
 } from './writing-coach-ai.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
-import { setLearnerWorkspaceView } from '../chatbot-new/experience-mode.js';
+import { transitionLearnerWorkspace } from '../chatbot-new/experience-mode.js';
 
 const DRAFT_KEY = 'ss_writing_coach_draft';
 const TASK_KEY = 'ss_writing_coach_task';
@@ -73,11 +73,14 @@ export function openWritingCoach(attempt = 0): void {
     window.setTimeout(() => openWritingCoach(attempt + 1), 250);
     return;
   }
-  setLearnerWorkspaceView('writing-coach');
+  void transitionLearnerWorkspace('writing-coach').then(() => {
+    if (document.getElementById('ncbRoot')?.dataset.workspaceView === 'writing-coach') {
+      document.getElementById('wcInput')?.focus();
+    }
+  });
   _renderProfileLevel();
   _updateAnalyzeEnabled();
-  const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
-  ta?.focus();
+
 }
 
 function _tryWire(attempt = 0): void {
