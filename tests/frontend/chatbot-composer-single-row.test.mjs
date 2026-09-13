@@ -17,7 +17,10 @@ const html = readFileSync('frontend/views/chatbot/chatbot.html', 'utf8');
 const css = readFileSync('frontend/views/chatbot/chatbot.css', 'utf8');
 
 const inputStart = html.indexOf('<div class="ncb-input">');
-const inputEnd = html.indexOf('<div class="ncb-actions">', inputStart);
+// Match the actions container by class prefix, not an exact string — the
+// role-aware shell (student/learner) adds a role marker class to it.
+const actionsMatch = /<div class="ncb-actions[^"]*">/.exec(html.slice(inputStart));
+const inputEnd = actionsMatch ? inputStart + actionsMatch.index : -1;
 if (inputStart < 0 || inputEnd < 0) throw new Error('composer markup not found in chatbot.html');
 const composer = html.slice(inputStart, inputEnd);
 

@@ -46,6 +46,7 @@ import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { aiMakePdfBlob } from '../ai-chat/ai-export.js';
 import { initWorkspaceLibrary, openStudyToolWorkspace } from './workspace-library.js';
+import { initChatbotExperienceMode } from './experience-mode.js';
 import {
   openAttachmentViewer,
   renderAttachmentCard,
@@ -128,6 +129,7 @@ export function initNewChatbotShell(): void {
   initTutorModes(newRoot);
   initAddFilesMenu(newRoot);
   initWorkspaceLibrary(newRoot);
+  initChatbotExperienceMode(newRoot);
   initFullbleed();
 
   renderSidebar(newRoot);

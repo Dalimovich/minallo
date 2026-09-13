@@ -806,6 +806,13 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   color: #94a3b8;
 }
 
+/* Learner-mode sidebar destinations — same button component as New chat. */
+.ncb-learner-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* Single-row composer: everything lives on ONE horizontal line —
    [+ Add files]  [ textarea ]  [ Send ]  — nothing reserved above or below
    it in the idle state. An attached-files preview (.ncb-files-row) can still
@@ -5002,6 +5009,43 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 }
 
 .ncb-library-panel { padding-bottom: 24px; }
+
+/* Learner "Practice" library panel content — reuses the library-status card
+ * language above rather than introducing a new visual system. */
+.ncb-german-panel { display: flex; flex-direction: column; gap: 14px; }
+.ncb-german-level-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.16);
+  color: #c9dcf5;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.ncb-german-level-row strong { color: #eff6ff; font-size: 0.95rem; }
+.ncb-german-panel-links { display: flex; flex-direction: column; gap: 6px; }
+.ncb-german-panel-link {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  color: #8194ae;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ncb-german-panel-link:hover {
+  color: #eff6ff;
+  background: rgba(37, 99, 235, 0.14);
+}
 
 .ncb-library-status,
 .ncb-library-error,

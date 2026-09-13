@@ -75,11 +75,34 @@
             <input type="text" class="ncb-search-input" data-i18n-ph="cb_search_chats" data-i18n-aria="cb_search_chats_aria" placeholder="Search chats..." aria-label="Search chats" />
           </div>
 
+          <!-- Learner-only quick destinations. Same button component as
+               New chat above; navigating away calls the existing portal
+               sidebar handlers (see experience-mode.ts) rather than
+               duplicating their logic. -->
+          <div class="ncb-learner-nav ncb-learner-only" hidden>
+            <button type="button" class="ncb-new-chat-btn" data-nav-target="learner-home" data-testid="chatbot-nav-home">
+              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>
+              </svg>
+              <span data-i18n="nav_home">Home</span>
+            </button>
+            <button type="button" class="ncb-new-chat-btn" data-nav-target="german" data-testid="chatbot-nav-practice">
+              <span aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
+              <span data-i18n="nav_practice">Practice</span>
+            </button>
+            <button type="button" class="ncb-new-chat-btn" data-nav-target="writing-coach" data-testid="chatbot-nav-writing-coach">
+              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+              </svg>
+              <span data-i18n="nav_writing_coach">Writing Coach</span>
+            </button>
+          </div>
+
           <div class="ncb-chat-list ncb-no-scrollbar">
             <!-- Rendered from chat store at runtime (PR-05). -->
           </div>
 
-          <div class="ncb-safe-card">
+          <div class="ncb-safe-card ncb-student-only">
             <div class="ncb-safe-head">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
@@ -89,6 +112,19 @@
             </div>
             <p class="ncb-safe-text" data-i18n="cb_safe_text">
               Answers can be restricted to uploaded lectures, exercises, and course files.
+            </p>
+          </div>
+
+          <div class="ncb-safe-card ncb-learner-only" hidden>
+            <div class="ncb-safe-head">
+              <span aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
+              <span data-i18n="cb_german_card_title">German learning</span>
+            </div>
+            <p class="ncb-safe-text">
+              <span data-i18n="cb_german_card_level_label">Level:</span>
+              <strong id="ncbGermanLevelBadge">&ndash;</strong>
+              &middot;
+              <span data-i18n="cb_german_card_text">Practice adapted to your German level.</span>
             </p>
           </div>
 
@@ -140,9 +176,13 @@
                   </svg>
                   <span data-i18n="cb_greet_full">Hi &mdash; ready to study smarter?</span>
                 </div>
-                <h2 class="ncb-empty-title" data-i18n="cb_empty_title">What are we studying today?</h2>
-                <p class="ncb-empty-subtitle" data-i18n="cb_empty_subtitle">
+                <h2 class="ncb-empty-title ncb-student-only" data-i18n="cb_empty_title">What are we studying today?</h2>
+                <p class="ncb-empty-subtitle ncb-student-only" data-i18n="cb_empty_subtitle">
                   Upload a lecture, import a course file, solve an exercise, create notes, or ask Minallo to explain the topic like a personal tutor.
+                </p>
+                <h2 class="ncb-empty-title ncb-learner-only" data-i18n="cb_empty_title_learner" hidden>What would you like to practice today?</h2>
+                <p class="ncb-empty-subtitle ncb-learner-only" data-i18n="cb_empty_subtitle_learner" hidden>
+                  Practice German, improve your writing, ask a grammar question, or prepare for your German exam.
                 </p>
               </div>
 
@@ -242,7 +282,7 @@
                 </div>
               </div>
 
-              <div class="ncb-actions">
+              <div class="ncb-actions ncb-student-only">
                 <button type="button" class="ncb-action-card" data-testid="quick-summarize"
                         data-prefill="Summarize the attached lecture into clean, structured notes with headings, bullet points, and any formulas in LaTeX.">
                   <span class="ncb-action-icon">
@@ -300,6 +340,48 @@
                   <span class="ncb-action-desc" data-i18n="cb_action_flash_desc">Save key concepts fast</span>
                 </button>
               </div>
+
+              <div class="ncb-actions ncb-learner-only" hidden>
+                <button type="button" class="ncb-action-card" data-testid="quick-german-practice" data-nav-target="german">
+                  <span class="ncb-action-icon" aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
+                  <span class="ncb-action-title" data-i18n="cb_action_practice_title">Practice German</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_practice_desc">Vocabulary, grammar, and more</span>
+                </button>
+
+                <button type="button" class="ncb-action-card" data-testid="quick-writing-coach" data-nav-target="writing-coach">
+                  <span class="ncb-action-icon">
+                    <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                    </svg>
+                  </span>
+                  <span class="ncb-action-title" data-i18n="cb_action_writing_title">Writing Coach</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_writing_desc">Get feedback on your writing</span>
+                </button>
+
+                <button type="button" class="ncb-action-card" data-testid="quick-explain-grammar"
+                        data-prefill="Explain a common German grammar topic for my level, with two short example sentences and a quick practice question.">
+                  <span class="ncb-action-icon">
+                    <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>
+                    </svg>
+                  </span>
+                  <span class="ncb-action-title" data-i18n="cb_action_grammar_title">Explain grammar</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_grammar_desc">A rule, examples, and a quick check</span>
+                </button>
+
+                <button type="button" class="ncb-action-card" data-testid="quick-practice-vocab"
+                        data-prefill="Quiz me on 10 German words for my level, with the article, translation, and an example sentence for each.">
+                  <span class="ncb-action-icon">
+                    <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>
+                      <rect width="16" height="20" x="4" y="2" rx="2"/>
+                      <path d="M16 2v20"/>
+                    </svg>
+                  </span>
+                  <span class="ncb-action-title" data-i18n="cb_action_vocab_title">Practice vocabulary</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_vocab_desc">Quiz yourself on new words</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -308,8 +390,10 @@
           <div class="ncb-context-inner ncb-no-scrollbar">
             <div class="ncb-context-head">
               <div class="ncb-context-head-text">
-                <p class="ncb-eyebrow" data-i18n="cb_ctx_eyebrow">Context</p>
-                <h2 class="ncb-context-title" data-i18n="cb_ctx_title">Study panel</h2>
+                <p class="ncb-eyebrow ncb-student-only" data-i18n="cb_ctx_eyebrow">Context</p>
+                <h2 class="ncb-context-title ncb-student-only" data-i18n="cb_ctx_title">Study panel</h2>
+                <p class="ncb-eyebrow ncb-learner-only" data-i18n="cb_ctx_eyebrow_learner" hidden>German</p>
+                <h2 class="ncb-context-title ncb-learner-only" data-i18n="cb_ctx_title_learner" hidden>Learning panel</h2>
               </div>
               <button type="button" class="ncb-context-close-btn" data-i18n-aria="cb_close_panel" aria-label="Close context panel">
                 <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -321,13 +405,17 @@
             </div>
 
             <div class="ncb-library-tabs" role="tablist" aria-label="Study library">
-              <button type="button" class="ncb-library-tab ncb-library-tab--active" role="tab" aria-selected="true" data-library-tab="courses">
+              <button type="button" class="ncb-library-tab ncb-library-tab--active ncb-student-only" role="tab" aria-selected="true" data-library-tab="courses">
                 <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
                   <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
                   <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
                 </svg>
                 <span>Courses</span>
+              </button>
+              <button type="button" class="ncb-library-tab ncb-learner-only" role="tab" aria-selected="false" data-library-tab="german" hidden>
+                <span aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
+                <span data-i18n="cb_tab_practice">Practice</span>
               </button>
               <button type="button" class="ncb-library-tab" role="tab" aria-selected="false" data-library-tab="saved">
                 <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -339,8 +427,34 @@
               </button>
             </div>
 
-            <section class="ncb-library-panel" data-library-panel="courses">
+            <section class="ncb-library-panel ncb-student-only" data-library-panel="courses">
               <div class="ncb-library-status">Loading courses&hellip;</div>
+            </section>
+
+            <section class="ncb-library-panel ncb-learner-only" data-library-panel="german" hidden>
+              <div class="ncb-german-panel">
+                <div class="ncb-german-level-row">
+                  <span data-i18n="cb_german_level_label">Level</span>
+                  <strong id="ncbGermanLevelValue">&ndash;</strong>
+                </div>
+                <div class="ncb-german-panel-links">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-vocab" data-nav-target="german">
+                    <span data-i18n="cb_german_link_vocab">Vocabulary</span>
+                  </button>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-nav-target="german">
+                    <span data-i18n="cb_german_link_grammar">Grammar</span>
+                  </button>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-nav-target="writing-coach">
+                    <span data-i18n="nav_writing_coach">Writing Coach</span>
+                  </button>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-nav-target="german">
+                    <span data-i18n="cb_german_link_reading">Reading</span>
+                  </button>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-listening" data-nav-target="german">
+                    <span data-i18n="cb_german_link_listening">Listening</span>
+                  </button>
+                </div>
+              </div>
             </section>
 
             <section class="ncb-library-panel" data-library-panel="saved" hidden>

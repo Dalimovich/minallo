@@ -487,6 +487,9 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
 
   const coursePanel = context.querySelector<HTMLElement>('[data-library-panel="courses"]');
   const savedPanel = context.querySelector<HTMLElement>('[data-library-panel="saved"]');
+  // Generic panel list so extra tabs (e.g. the learner "german" panel) get
+  // hidden/shown correctly without this function needing to know about them.
+  const panels = Array.from(context.querySelectorAll<HTMLElement>('[data-library-panel]'));
   const tabs = Array.from(context.querySelectorAll<HTMLButtonElement>('[data-library-tab]'));
   if (!coursePanel || !savedPanel) return;
 
@@ -494,16 +497,19 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
   const selectTab = (selected: string): void => {
     const currentState = studyLibraryState();
     if (currentState.activeTab === 'courses') currentState.courseScrollTop = coursePanel.scrollTop;
-    else currentState.savedScrollTop = savedPanel.scrollTop;
+    else if (currentState.activeTab === 'saved') currentState.savedScrollTop = savedPanel.scrollTop;
     tabs.forEach((candidate) => {
       const active = candidate.dataset.libraryTab === selected;
       candidate.classList.toggle('ncb-library-tab--active', active);
       candidate.setAttribute('aria-selected', String(active));
     });
-    coursePanel.hidden = selected !== 'courses';
-    savedPanel.hidden = selected !== 'saved';
-    currentState.activeTab = selected === 'saved' ? 'saved' : 'courses';
-    persistStudyLibrary();
+    panels.forEach((panel) => { panel.hidden = panel.dataset.libraryPanel !== selected; });
+    // Only 'courses'/'saved' are persisted — other tabs (e.g. the learner
+    // "german" panel) are role-derived at mount time, not user preference.
+    if (selected === 'saved' || selected === 'courses') {
+      currentState.activeTab = selected;
+      persistStudyLibrary();
+    }
     if (selected === 'saved') {
       void renderSaved(savedPanel, root);
       // Retry trigger for shell.ts's durable bookmark sync queue — opening
