@@ -37,6 +37,7 @@ export default defineConfig({
         '**/13-chatbot.spec.ts',
         '**/16-responsive.spec.ts',
         '**/18-german-learner.spec.ts',
+        '**/20-writing-coach-workspace.spec.ts',
       ],
       use: {
         ...devices['Pixel 5'],
@@ -51,6 +52,7 @@ export default defineConfig({
         '**/13-chatbot.spec.ts',
         '**/16-responsive.spec.ts',
         '**/18-german-learner.spec.ts',
+        '**/20-writing-coach-workspace.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

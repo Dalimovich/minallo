@@ -38,7 +38,8 @@
           <div class="ncb-sidebar-head">
             <div class="ncb-sidebar-head-text">
               <p class="ncb-eyebrow" data-i18n="cb_sidebar_eyebrow">Minallo</p>
-              <h2 class="ncb-sidebar-title" data-i18n="cb_sidebar_title">AI Chats</h2>
+              <h2 class="ncb-sidebar-title ncb-chat-view-only" data-i18n="cb_sidebar_title">AI Chats</h2>
+              <h2 class="ncb-sidebar-title ncb-writing-coach-view-only" data-i18n="nav_writing_coach" hidden>Writing Coach</h2>
             </div>
             <button type="button" class="ncb-collapse-btn" data-i18n-aria="cb_collapse_sidebar" aria-label="Collapse sidebar">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -47,7 +48,7 @@
             </button>
           </div>
 
-          <div class="ncb-widget-launcher">
+          <div class="ncb-widget-launcher ncb-chat-view-only">
             <button type="button" class="ncb-widgets-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Widgets">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/>
@@ -62,14 +63,14 @@
             </div>
           </div>
 
-          <button type="button" class="ncb-new-chat-btn">
+          <button type="button" class="ncb-new-chat-btn ncb-chat-view-only">
             <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14"/><path d="M12 5v14"/>
             </svg>
             <span data-i18n="cb_new_chat">New chat</span>
           </button>
 
-          <div class="ncb-search">
+          <div class="ncb-search ncb-chat-view-only">
             <svg class="ncb-icon ncb-icon--sm ncb-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"/>
               <path d="m21 21-4.3-4.3"/>
@@ -77,34 +78,32 @@
             <input type="text" class="ncb-search-input" data-i18n-ph="cb_search_chats" data-i18n-aria="cb_search_chats_aria" placeholder="Search chats..." aria-label="Search chats" />
           </div>
 
-          <!-- Learner-only quick destinations. Same button component as
-               New chat above; navigating away calls the existing portal
-               sidebar handlers (see experience-mode.ts) rather than
-               duplicating their logic. -->
+          <!-- Learner-only workspace toggle. Same button component as New
+               chat above. Clicking these switches the shell's internal
+               'chat' | 'writing-coach' view (see experience-mode.ts /
+               setLearnerWorkspaceView) — Writing Coach never leaves #ncbRoot
+               anymore, so this is a plain in-shell state swap, not portal
+               navigation. Only one of the pair is visible at a time. -->
           <div class="ncb-learner-nav ncb-learner-only" hidden>
-            <button type="button" class="ncb-new-chat-btn" data-nav-target="learner-home" data-testid="chatbot-nav-home">
-              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>
-              </svg>
-              <span data-i18n="nav_home">Home</span>
-            </button>
-            <button type="button" class="ncb-new-chat-btn" data-nav-target="german" data-testid="chatbot-nav-practice">
-              <span aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
-              <span data-i18n="nav_practice">Practice</span>
-            </button>
-            <button type="button" class="ncb-new-chat-btn" data-nav-target="writing-coach" data-testid="chatbot-nav-writing-coach">
+            <button type="button" class="ncb-new-chat-btn ncb-chat-view-only" data-workspace-view="writing-coach" data-testid="chatbot-nav-writing-coach">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
               </svg>
               <span data-i18n="nav_writing_coach">Writing Coach</span>
             </button>
+            <button type="button" class="ncb-new-chat-btn ncb-writing-coach-view-only" data-workspace-view="chat" data-testid="chatbot-nav-home" hidden>
+              <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>
+              </svg>
+              <span data-i18n="nav_home">Home</span>
+            </button>
           </div>
 
-          <div class="ncb-chat-list ncb-no-scrollbar">
+          <div class="ncb-chat-list ncb-no-scrollbar ncb-chat-view-only">
             <!-- Rendered from chat store at runtime (PR-05). -->
           </div>
 
-          <div class="ncb-safe-card ncb-student-only">
+          <div class="ncb-safe-card ncb-student-only ncb-chat-view-only">
             <div class="ncb-safe-head">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
@@ -117,7 +116,7 @@
             </p>
           </div>
 
-          <div class="ncb-safe-card ncb-learner-only" hidden>
+          <div class="ncb-safe-card ncb-learner-only ncb-chat-view-only" hidden>
             <div class="ncb-safe-head">
               <span aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
               <span data-i18n="cb_german_card_title">German learning</span>
@@ -353,7 +352,7 @@
                   <span class="ncb-action-desc" data-i18n="cb_action_practice_desc">Vocabulary, grammar, and more</span>
                 </button>
 
-                <button type="button" class="ncb-action-card" data-testid="quick-writing-coach" data-nav-target="writing-coach">
+                <button type="button" class="ncb-action-card" data-testid="quick-writing-coach" data-workspace-view="writing-coach">
                   <span class="ncb-action-icon">
                     <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
@@ -388,6 +387,61 @@
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- Writing Coach workspace mode — lives inside #ncbRoot as a
+             sibling of .ncb-center/.ncb-context rather than a separate
+             #psec-german page (see experience-mode.ts's
+             setLearnerWorkspaceView). Hidden by default; shown (and
+             .ncb-center/.ncb-context hidden) only while
+             #ncbRoot.ncb-view-writing-coach is set. writing-coach.ts wires
+             the ids below — same analyzeParagraph()/state logic as before,
+             new host markup only. -->
+        <section class="ncb-writing-coach-panel ncb-no-scrollbar ncb-learner-only ncb-writing-coach-view-only" data-testid="writing-coach-workspace" hidden>
+          <div class="ncb-wc-inner">
+            <div class="ncb-wc-header">
+              <h2 class="ncb-wc-title" data-i18n="wc_page_title">Writing Coach</h2>
+              <p class="ncb-wc-subtitle" data-i18n="wc_page_subtitle">Improve your German writing with level-aware AI feedback.</p>
+            </div>
+
+            <div id="wcNoLevel" class="ncb-wc-card ncb-wc-no-level" hidden>
+              <p data-i18n="wc_no_level_sub">The writing coach grades your text against the level on your profile. Open Profile, set your level (e.g. B2 or C1 Hochschule), then come back here.</p>
+              <button type="button" id="wcGoProfile" class="ncb-wc-btn-secondary" data-i18n="wc_go_profile">Go to Profile</button>
+            </div>
+
+            <div id="wcWriter" class="ncb-wc-card">
+              <div class="ncb-wc-row">
+                <div class="ncb-wc-level" data-i18n-title="wc_level_title" title="Edit your level in Profile">
+                  <span data-i18n="wc_level_source">Imported from Profile</span>
+                  <strong id="wcLevelValue">&ndash;</strong>
+                </div>
+                <div class="ncb-wc-task">
+                  <label for="wcTaskType" data-i18n="wc_text_type">Text type</label>
+                  <select id="wcTaskType" class="ncb-wc-select" data-i18n-aria="wc_text_type" aria-label="Text type">
+                    <option value="freier_text">Freier Text</option>
+                    <option value="email">E-Mail</option>
+                    <option value="stellungnahme">Stellungnahme</option>
+                    <option value="argumentation">Argumentation</option>
+                    <option value="zusammenfassung">Zusammenfassung</option>
+                    <option value="bericht">Bericht</option>
+                    <option value="motivationsschreiben">Motivationsschreiben</option>
+                  </select>
+                </div>
+              </div>
+              <textarea id="wcInput" class="ncb-wc-textarea" rows="10" data-testid="writing-coach-input"
+                        data-i18n-ph="wc_input_ph" placeholder="Write your German paragraph here&hellip;"></textarea>
+              <div class="ncb-wc-actions">
+                <button type="button" id="wcAnalyze" class="ncb-wc-btn-primary" data-testid="writing-coach-analyze" disabled data-i18n="wc_analyze">Analyze with AI</button>
+              </div>
+            </div>
+
+            <div id="wcLoading" class="ncb-wc-loading" hidden>
+              <span class="ncb-wc-spinner" aria-hidden="true"></span>
+              <span data-i18n="wc_analyzing">Analyzing&hellip;</span>
+            </div>
+
+            <div id="wcResults" class="ncb-wc-results" data-testid="writing-coach-results" hidden></div>
           </div>
         </section>
 
@@ -449,7 +503,7 @@
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-nav-target="german" data-gl-skill="grammar">
                     <span data-i18n="cb_german_link_grammar">Grammar</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-nav-target="writing-coach">
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-workspace-view="writing-coach">
                     <span data-i18n="nav_writing_coach">Writing Coach</span>
                   </button>
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-nav-target="german" data-gl-skill="reading">

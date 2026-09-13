@@ -675,23 +675,25 @@ function _openWritingCoachNow() {
   if (typeof window._wcOpen === 'function') window._wcOpen();
 }
 
-// Writing Coach is still loaded lazily (main.ts's ensureWritingCoach(),
-// mirroring ensureStudyTimer's eager-load-on-first-interaction pattern) — a
-// click here can beat that load, so route through the shared load promise
-// instead of only checking whether window._wcOpen already exists. Never
-// silently drop the user's first click.
+// Writing Coach now lives INSIDE the modern chatbot shell (#ncbRoot, see
+// experience-mode.ts's setLearnerWorkspaceView) as a workspace-view toggle,
+// not a #psec-german subview — writing-coach.ts no longer touches
+// #glHome/#wcView at all. This legacy portal-sidebar entry point (kept for
+// deep-links/history-restore) therefore opens the aipage/chatbot section
+// instead of 'german', then switches that shell into Writing Coach view.
+// Still routes through the same ensureWritingCoach() load promise
+// (main.ts, mirroring ensureStudyTimer) so an early click loads-then-opens
+// instead of silently doing nothing.
 _bindIf('psbWritingCoach', 'click', function () {
-  setNavActive('psbWritingCoach');
-  showPortalSection('german');
-  _finalizeNav('german');
-  _ssAfterFeature('german', function () {
-    if (typeof window._glBackToHome === 'function') window._glBackToHome();
+  setNavActive('psbAIPage');
+  showPortalSection('aipage');
+  _finalizeNav('aipage');
+  _ssAfterFeature('aipage', function () {
     if (typeof window._ensureWritingCoach === 'function') {
       window._ensureWritingCoach().then(_openWritingCoachNow).catch(function () {});
     } else {
       _openWritingCoachNow();
     }
-    _ssSetGermanTitle('nav_writing_coach', 'Writing Coach');
   });
 });
 

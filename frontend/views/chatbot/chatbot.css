@@ -5047,6 +5047,229 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   background: rgba(37, 99, 235, 0.14);
 }
 
+/* ── Writing Coach workspace mode ──────────────────────────────────────────
+ * Writing Coach lives inside #ncbRoot as a sibling of .ncb-center/.ncb-context
+ * rather than a separate #psec-german page (see experience-mode.ts's
+ * setLearnerWorkspaceView). While active, the chat column and the right
+ * Practice/Saved panel are hidden and this panel takes the freed width —
+ * the sidebar container itself never changes size/position, only its
+ * content (.ncb-chat-view-only / .ncb-writing-coach-view-only below). */
+.ncb-root.ncb-view-writing-coach .ncb-center,
+.ncb-root.ncb-view-writing-coach .ncb-context {
+  display: none;
+}
+.ncb-writing-coach-panel {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 32px 40px;
+}
+.ncb-root.ncb-view-writing-coach .ncb-writing-coach-panel {
+  display: block;
+}
+@media (max-width: 768px) {
+  .ncb-writing-coach-panel { padding: 20px 16px; }
+}
+
+.ncb-wc-inner {
+  margin: 0 auto;
+  max-width: 46rem;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.ncb-wc-header { text-align: left; }
+.ncb-wc-title {
+  margin: 0 0 6px;
+  font-family: var(--font-main, inherit);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #eff6ff;
+}
+.ncb-wc-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+.ncb-wc-card {
+  padding: 22px;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.045);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ncb-wc-no-level { align-items: flex-start; gap: 12px; }
+.ncb-wc-no-level p { margin: 0; color: #94a3b8; font-size: 0.88rem; }
+
+.ncb-wc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ncb-wc-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+  color: #c9dcf5;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.ncb-wc-level strong { color: #eff6ff; font-size: 0.95rem; }
+.ncb-wc-task { display: inline-flex; align-items: center; gap: 8px; }
+.ncb-wc-task label { color: #8194ae; font-size: 0.8rem; font-weight: 600; }
+.ncb-wc-select {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.6);
+  color: #eff6ff;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.ncb-wc-textarea {
+  width: 100%;
+  min-height: 220px;
+  padding: 16px;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(15, 23, 42, 0.5);
+  color: #f1f5f9;
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+.ncb-wc-textarea:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.ncb-wc-actions { display: flex; justify-content: flex-end; }
+.ncb-wc-btn-primary {
+  padding: 12px 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 28px -8px rgba(37, 99, 235, 0.65);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.15s ease;
+}
+.ncb-wc-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 32px -8px rgba(59, 130, 246, 0.8);
+}
+.ncb-wc-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+.ncb-wc-btn-secondary {
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eff6ff;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ncb-wc-btn-secondary:hover { background: rgba(255, 255, 255, 0.1); }
+
+.ncb-wc-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+.ncb-wc-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-top-color: #60a5fa;
+  animation: ncb-wc-spin 0.8s linear infinite;
+}
+@keyframes ncb-wc-spin { to { transform: rotate(360deg); } }
+
+.ncb-wc-results { display: flex; flex-direction: column; gap: 16px; }
+
+/* Re-theme writing-coach.ts's generated .wc-* result markup (score/issue/
+ * structure cards — the render functions themselves are unchanged) to match
+ * this navy glass-card language instead of the old standalone page's theme. */
+.ncb-wc-results .wc-result-section {
+  padding: 20px;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+}
+.ncb-wc-results .wc-result-title { color: #eff6ff; font-size: 0.95rem; font-weight: 800; margin: 0 0 10px; }
+.ncb-wc-results .wc-result-subtitle { color: #94a3b8; font-size: 0.82rem; }
+.ncb-wc-results .wc-score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 10px;
+}
+.ncb-wc-results .wc-score-cell {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  text-align: center;
+}
+.ncb-wc-results .wc-score-label { color: #8194ae; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+.ncb-wc-results .wc-score-value { color: #eff6ff; font-size: 1.3rem; font-weight: 800; }
+.ncb-wc-results .wc-issue-grid { display: grid; gap: 10px; }
+.ncb-wc-results .wc-issue {
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(15, 23, 42, 0.4);
+}
+.ncb-wc-results .wc-issue-header { display: flex; align-items: center; gap: 8px; color: #c9dcf5; font-size: 0.8rem; font-weight: 700; }
+.ncb-wc-results .wc-issue-change { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 0.85rem; }
+.ncb-wc-results .wc-issue-original { color: #f87171; text-decoration: line-through; }
+.ncb-wc-results .wc-issue-correction { color: #4ade80; }
+.ncb-wc-results .wc-issue-explanation { color: #94a3b8; font-size: 0.82rem; margin: 0; }
+.ncb-wc-results .wc-corrected,
+.ncb-wc-results .wc-improved { color: #e2e8f0; font-size: 0.9rem; line-height: 1.6; }
+.ncb-wc-results .wc-ai-warning {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  color: #fbbf24;
+  font-size: 0.78rem;
+  margin: 8px 0;
+}
+.ncb-wc-results .wc-error,
+.ncb-wc-results .wc-empty { color: #94a3b8; font-size: 0.85rem; }
+.ncb-wc-results .wc-result-actions { display: flex; justify-content: flex-end; }
+.ncb-wc-results .wc-btn-secondary {
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eff6ff;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .ncb-library-status,
 .ncb-library-error,
 .ncb-library-empty {

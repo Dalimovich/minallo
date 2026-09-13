@@ -1,8 +1,13 @@
-// Writing Coach — view logic (mount, show/hide, submit, localStorage).
+// Writing Coach — view logic (mount, submit, localStorage).
 //
-// HTML/CSS live under frontend/views/writing-coach/. This module fetches the
-// HTML at runtime, injects it into #psec-german (next to #glHome), and wires
-// the entry card + detail view. AI calls are delegated to writing-coach-ai.
+// Writing Coach is a workspace mode INSIDE the modern chatbot shell
+// (#ncbRoot, see frontend/views/chatbot/chatbot.html's
+// .ncb-writing-coach-panel and frontend/js/features/chatbot-new/
+// experience-mode.ts's setLearnerWorkspaceView) rather than a separate
+// #psec-german page. Its markup ships as part of chatbot.html directly (no
+// separate fetch+inject step); this module only waits for that markup to
+// exist (chatbot.html itself is lazy-fetched by chatbot.js) and wires it.
+// AI calls are delegated to writing-coach-ai — unchanged by this move.
 
 import {
   analyzeParagraph,
@@ -15,6 +20,7 @@ import {
   WritingAnalysis,
 } from './writing-coach-ai.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
+import { setLearnerWorkspaceView } from '../chatbot-new/experience-mode.js';
 
 const DRAFT_KEY = 'ss_writing_coach_draft';
 const TASK_KEY = 'ss_writing_coach_task';
@@ -43,82 +49,49 @@ function _activeTaskType(): TaskType {
   return (allowed as string[]).includes(stored) ? stored : DEFAULT_TASK;
 }
 
-let _injected = false;
+let _wired = false;
 let _activeAbort: AbortController | null = null;
 
 export function initWritingCoach(): void {
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => _tryInject());
+    document.addEventListener('DOMContentLoaded', () => _tryWire());
   } else {
-    _tryInject();
+    _tryWire();
   }
   (window as unknown as { _wcOpen: typeof openWritingCoach })._wcOpen = openWritingCoach;
 }
 
-/** Public entry point for the router's "Writing Coach" sidebar item — opens
- * the detail view without duplicating its DOM logic. Retries briefly since
- * this module's own async injection (_tryInject/_inject above) may not have
- * finished mounting #wcView yet when the sidebar click fires. */
+/** Public entry point — called both by router.js's legacy portal sidebar
+ * item and by the [data-workspace-view="writing-coach"] click delegation in
+ * experience-mode.ts. Switches the shell into Writing Coach view and does
+ * this view's own render/focus setup. Retries briefly since chatbot.html
+ * (and therefore #wcInput) may not have finished its own async fetch/inject
+ * into #ncbRoot yet when this fires. */
 export function openWritingCoach(attempt = 0): void {
-  if (document.getElementById('wcView')) {
-    _openView();
-    return;
-  }
-  if (attempt > 40) return;
-  window.setTimeout(() => openWritingCoach(attempt + 1), 250);
-}
-
-function _tryInject(attempt = 0): void {
-  if (_injected) return;
-  const psecGerman = document.getElementById('psec-german');
-  const glHome = psecGerman?.querySelector('#glHome');
-  // psec-german + glHome are injected asynchronously by practice.js. Retry
-  // until both are present, but cap retries so we don't spin forever.
-  if (!psecGerman || !glHome) {
+  if (!document.getElementById('wcInput')) {
     if (attempt > 40) return;
-    window.setTimeout(() => _tryInject(attempt + 1), 250);
+    window.setTimeout(() => openWritingCoach(attempt + 1), 250);
     return;
   }
-  _injected = true;
-  void _inject(psecGerman as HTMLElement);
+  setLearnerWorkspaceView('writing-coach');
+  _renderProfileLevel();
+  _updateAnalyzeEnabled();
+  const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
+  ta?.focus();
 }
 
-async function _inject(psecGerman: HTMLElement): Promise<void> {
-  try {
-    const res = await fetch('views/writing-coach/writing-coach.html');
-    if (!res.ok) {
-      console.error('[writing-coach] fetch failed:', res.status);
-      return;
-    }
-    const html = await res.text();
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-
-    // Card → append at the end of the practice home shell (below the skill
-    // grid as a full-width feature card). Prefer .sd-shell so margins line
-    // up with the grid; fall back to #glHome for older markup.
-    const card = tmp.querySelector('#wcCard');
-    const view = tmp.querySelector('#wcView');
-    const target =
-      psecGerman.querySelector('#glHome .sd-shell') ||
-      psecGerman.querySelector('#glHome');
-    if (card && target) target.appendChild(card);
-    if (view) psecGerman.appendChild(view);
-    window.applyLanguage?.(window._lang || localStorage.getItem('ss_lang') || 'en');
-
-    _wire();
-  } catch (e) {
-    console.error('[writing-coach] inject error:', e);
+function _tryWire(attempt = 0): void {
+  if (_wired) return;
+  if (!document.getElementById('wcInput')) {
+    if (attempt > 40) return;
+    window.setTimeout(() => _tryWire(attempt + 1), 250);
+    return;
   }
+  _wired = true;
+  _wire();
 }
 
 function _wire(): void {
-  const card = document.getElementById('wcCard');
-  card?.addEventListener('click', _openView);
-
-  const back = document.getElementById('wcBack');
-  back?.addEventListener('click', _closeView);
-
   // Level is no longer user-selected here; it comes from the profile.
   // Wire the "Go to Profile" button in the empty state.
   const goProfile = document.getElementById('wcGoProfile');
@@ -154,23 +127,6 @@ function _wire(): void {
   });
 
   _updateAnalyzeEnabled();
-
-  // Belt-and-braces: psec-german is already learner-gated, but hide the card
-  // anyway if userType is known and not 'learner'.
-  if (typeof window._userType === 'string' && window._userType !== 'learner') {
-    if (card) card.style.display = 'none';
-  }
-}
-
-function _openView(): void {
-  const home = document.getElementById('glHome');
-  const view = document.getElementById('wcView');
-  if (home) home.style.display = 'none';
-  if (view) view.style.display = '';
-  _renderProfileLevel();
-  const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
-  ta?.focus();
-  _updateAnalyzeEnabled();
 }
 
 /** Toggle between the writer card and the empty state based on whether
@@ -183,23 +139,12 @@ function _renderProfileLevel(): void {
   const valueEl = document.getElementById('wcLevelValue');
   if (level) {
     if (valueEl) valueEl.textContent = level;
-    if (writer) writer.style.display = '';
-    if (noLevel) noLevel.style.display = 'none';
+    if (writer) writer.hidden = false;
+    if (noLevel) noLevel.hidden = true;
   } else {
-    if (writer) writer.style.display = 'none';
-    if (noLevel) noLevel.style.display = '';
+    if (writer) writer.hidden = true;
+    if (noLevel) noLevel.hidden = false;
   }
-}
-
-function _closeView(): void {
-  if (_activeAbort) {
-    _activeAbort.abort();
-    _activeAbort = null;
-  }
-  const home = document.getElementById('glHome');
-  const view = document.getElementById('wcView');
-  if (view) view.style.display = 'none';
-  if (home) home.style.display = '';
 }
 
 function _updateAnalyzeEnabled(): void {
@@ -225,9 +170,9 @@ async function _analyze(): Promise<void> {
   _activeAbort = new AbortController();
 
   btn.disabled = true;
-  if (loading) loading.style.display = 'flex';
+  if (loading) loading.hidden = false;
   if (results) {
-    results.style.display = 'none';
+    results.hidden = true;
     results.innerHTML = '';
   }
 
@@ -243,12 +188,12 @@ async function _analyze(): Promise<void> {
     if (e instanceof DOMException && e.name === 'AbortError') return;
     console.error('[writing-coach] analyze error:', e);
     if (results) {
-      results.style.display = '';
+      results.hidden = false;
       const msg = friendlyAiErrorMessage(e);
       results.innerHTML = `<div class="wc-error">${_escape(msg)}</div>`;
     }
   } finally {
-    if (loading) loading.style.display = 'none';
+    if (loading) loading.hidden = true;
     btn.disabled = ta.value.trim().length < MIN_CHARS;
     _activeAbort = null;
   }
@@ -263,7 +208,7 @@ async function _analyze(): Promise<void> {
 function _renderResults(a: WritingAnalysis): void {
   const root = document.getElementById('wcResults');
   if (!root) return;
-  root.style.display = '';
+  root.hidden = false;
 
   if (a.insufficientContext) {
     root.innerHTML = _renderInsufficient(a.insufficientContext) + _renderFeedbackList(a.feedbackItems);
@@ -470,7 +415,7 @@ function _resetForm(): void {
   }
   localStorage.removeItem(DRAFT_KEY);
   if (results) {
-    results.style.display = 'none';
+    results.hidden = true;
     results.innerHTML = '';
   }
   _updateAnalyzeEnabled();

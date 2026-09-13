@@ -637,7 +637,11 @@ interface LandingTranslation {
           const lazyCssMap: Record<string, string[]> = {
             dashboard: ['views/dashboard/dashboard.css?v=6'],
             chat: ['views/chat/chat.css?v=2'],
-            aipage: ['views/chatbot/chatbot.css?v=45'],
+            // writing-coach.css is loaded here too (not only under 'german')
+            // because Writing Coach now mounts inside the aipage/chatbot
+            // shell (#ncbRoot) — a learner can open it without ever
+            // triggering the separate 'german'/Practice feature load.
+            aipage: ['views/chatbot/chatbot.css?v=46', 'views/writing-coach/writing-coach.css'],
             german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
             notes: ['views/lecturenotes/lecturenotes.css'],
             profile: ['views/profile/profile.css'],
