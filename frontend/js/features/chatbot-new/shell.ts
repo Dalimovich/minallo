@@ -46,7 +46,7 @@ import { SseParser } from '../../services/sse-parser.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import { aiMakePdfBlob } from '../ai-chat/ai-export.js';
 import { initWorkspaceLibrary, openStudyToolWorkspace } from './workspace-library.js';
-import { initChatbotExperienceMode } from './experience-mode.js';
+import { initChatbotExperienceMode, applyChatbotExperienceMode } from './experience-mode.js';
 import {
   openAttachmentViewer,
   renderAttachmentCard,
@@ -147,6 +147,11 @@ export function initNewChatbotShell(): void {
     window.addEventListener('minallo:lang-changed', () => {
       const root = document.getElementById('ncbRoot') as HTMLElement | null;
       if (root) applyChatbotI18n(root);
+      // The generic i18n pass sets the composer placeholder/aria-label from
+      // the element's default data-i18n-ph/-aria, which would silently
+      // overwrite experience-mode.ts's learner-mode override — reapply role
+      // mode right after so a language switch mid-session doesn't revert it.
+      applyChatbotExperienceMode();
     });
   }
 
@@ -551,7 +556,21 @@ function currentVisibleCourseId(): string {
     || recentStudyPanelCourseId();
 }
 
+// Canonical learner-mode guard. A German learner account may have used
+// Minallo as a student before (or an account's role can be switched live —
+// see experience-mode.ts), leaving old university courseId/sourceMode/
+// courseFileScope/selectedSourceIds/open-PDF state sitting on chats and in
+// module-level libraries (sourceLibrary, listCourses()). None of that is
+// deleted, but it must never be read back into a request while the account
+// is in learner mode. Every place that resolves course scope for a request
+// (resolveRequestCourseId, the requestSnapshot builder, createSubmissionSnapshot,
+// ragEligibility, and the Add-files source-mode picker) goes through this.
+function isLearnerAccount(): boolean {
+  return (window as unknown as { _userType?: string })._userType === 'learner';
+}
+
 function resolveRequestCourseId(chat: SavedChat): string {
+  if (isLearnerAccount()) return '';
   return String(chat.courseId || '') || currentVisibleCourseId();
 }
 
@@ -605,7 +624,10 @@ function sourceModeLabel(mode: SourceMode): string {
 function renderAddFilesSourceLabel(root: HTMLElement): void {
   const label = root.querySelector<HTMLElement>('.ncb-add-files-source-label');
   if (!label) return;
-  const mode = normaliseSourceMode(chatStore.getActive().sourceMode);
+  // A learner's chat may still carry a stored 'course_files' sourceMode from
+  // before the role switch (nothing is deleted) — never surface that in the
+  // label, even though the request layer already ignores it.
+  const mode = isLearnerAccount() ? 'auto' : normaliseSourceMode(chatStore.getActive().sourceMode);
   label.textContent = tStr('cb_source_prefix', 'Source: ') + sourceModeLabel(mode);
 }
 
@@ -613,9 +635,15 @@ function renderAddFilesSourceMenu(root: HTMLElement): void {
   const list = root.querySelector<HTMLElement>('.ncb-add-files-source-list');
   if (!list) return;
   const active = chatStore.getActive();
-  const mode = normaliseSourceMode(active.sourceMode);
+  const isLearner = isLearnerAccount();
+  const mode = isLearner ? 'auto' : normaliseSourceMode(active.sourceMode);
   const scope = normaliseCourseFileScope(active.courseFileScope);
-  const modes: SourceMode[] = ['auto', 'course_files', 'course_plus_general', 'general', 'internet'];
+  // Learners never get a university course library, so the course-scoped
+  // modes have nothing to offer — offering them would just relabel old
+  // student chrome rather than remove it.
+  const modes: SourceMode[] = isLearner
+    ? ['auto', 'general', 'internet']
+    : ['auto', 'course_files', 'course_plus_general', 'general', 'internet'];
   const check =
     '<span class="ncb-add-files-check" aria-hidden="true">' +
       '<svg class="ncb-icon ncb-icon--xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' +
@@ -1170,14 +1198,15 @@ function createSubmissionSnapshot(
 ): ChatSubmission {
   const chat = chatStore.getActive();
   const files = state.files.slice();
+  const isLearner = isLearnerAccount();
   const courseId = resolveRequestCourseId(chat);
   return Object.freeze({
     text: textarea.value.trim(),
     images: state.pasted.map(clonePendingImage),
     files: files.map(clonePendingFile),
-    sourceMode: normaliseSourceMode(chat.sourceMode),
-    courseFileScope: normaliseCourseFileScope(chat.courseFileScope),
-    selectedFileIds: chat.selectedSourceIds.slice(),
+    sourceMode: isLearner ? 'auto' : normaliseSourceMode(chat.sourceMode),
+    courseFileScope: isLearner ? 'all_course_files' : normaliseCourseFileScope(chat.courseFileScope),
+    selectedFileIds: isLearner ? [] : chat.selectedSourceIds.slice(),
     courseId: courseId || undefined,
     draftRevision: state.draftRevision
   });
@@ -1563,19 +1592,24 @@ async function streamAiReply(
     interrupted: false, updatedAt: nowIso
   });
   if (!assistantMessage.requestSnapshot) {
-    const pdf = getActivePdfContext();
+    const isLearner = isLearnerAccount();
+    const pdf = isLearner ? null : getActivePdfContext();
     const directAttachment = sourceUser?.attachmentRefs?.[0];
+    // A course-scoped attachment reference (has .courseId — e.g. a prior
+    // "Import from Course" pick) must not carry into a learner request; a
+    // plain device upload for THIS message (no .courseId) still works.
+    const usableAttachment = isLearner && directAttachment?.courseId ? undefined : directAttachment;
     assistantMessage.requestSnapshot = {
       userText: sourceUser?.text || '',
-      sourceMode: normaliseSourceMode(originChat.sourceMode),
-      courseFileScope: normaliseCourseFileScope(originChat.courseFileScope),
-      courseId: resolveRequestCourseId(originChat) || undefined,
-      selectedSourceIds: originChat.selectedSourceIds.slice(),
+      sourceMode: isLearner ? 'auto' : normaliseSourceMode(originChat.sourceMode),
+      courseFileScope: isLearner ? 'all_course_files' : normaliseCourseFileScope(originChat.courseFileScope),
+      courseId: isLearner ? undefined : (resolveRequestCourseId(originChat) || undefined),
+      selectedSourceIds: isLearner ? [] : originChat.selectedSourceIds.slice(),
       // A file attached to this exact message always wins over a PDF that may
       // merely still be open elsewhere in the UI.
-      activeDocumentId: directAttachment?.fileId || pdf?.documentId,
-      activeDocumentName: directAttachment?.filename || pdf?.fileName,
-      visiblePage: directAttachment?.currentPage || pdf?.visiblePage,
+      activeDocumentId: usableAttachment?.fileId || pdf?.documentId,
+      activeDocumentName: usableAttachment?.filename || pdf?.fileName,
+      visiblePage: usableAttachment?.currentPage || pdf?.visiblePage,
     };
   }
   if (!originMessages.some((message) => message.id === assistantMessage.id)) originMessages.push(assistantMessage);
@@ -3475,6 +3509,14 @@ function ragEligibility(
   if (!messages.length) return null;
   const last = messages[messages.length - 1]!;
   if (last.role !== 'user') return null;
+  // Canonical learner-mode guard (see isLearnerAccount() doc comment above):
+  // every input this function reads that could carry old university course
+  // scope — the submitted-grounding retry shortcut, a course-scoped
+  // attachment ref, the chat's selectedSourceIds/sourceMode/courseFileScope,
+  // the module-level sourceLibrary/listCourses() name-matching, and any open
+  // PDF viewer state — is neutralized below when the account is a learner.
+  const isLearner = isLearnerAccount();
+  if (isLearner) requestCourseId = '';
   const attachedClipboardText = clipboardAttachmentText(last);
   // Long pastes are represented as Markdown attachment cards for the UI, but
   // their contents are still part of this user turn. Merge them before intent
@@ -3482,7 +3524,7 @@ function ragEligibility(
   // instruction such as "answer all of these".
   const currentQuestion = [...attachedClipboardText, last.text.trim()].filter(Boolean).join('\n\n');
   if (!currentQuestion) return null;
-  if (submittedGrounding) {
+  if (submittedGrounding && !isLearner) {
     // Retries already have authoritative IDs. Rebuilding them from today's
     // library can erase the original scope after deletion or a library outage.
     const openPdf = getActivePdfContext();
@@ -6238,11 +6280,10 @@ function initImportModal(root: HTMLElement): void {
   // German-learner accounts don't have RAG-indexed courses — surfacing this
   // button only leads to a "No courses loaded" empty state and (worse, before
   // the per-user-id localStorage scoping fix) leaks the previous account's
-  // courses. Hide it for learners.
-  if ((window as unknown as { _userType?: string })._userType === 'learner') {
-    trigger.style.display = 'none';
-    return;
-  }
+  // courses. The trigger carries .ncb-student-only in chatbot.html and is
+  // hidden/shown reactively by experience-mode.ts's applyChatbotExperienceMode()
+  // (this one-time synchronous check ran before the real profile/user_type
+  // was known and never re-evaluated, which was itself a stale-role bug).
 
   const closeBtn = overlay.querySelector<HTMLButtonElement>('.ncb-modal-close');
   const cancelBtn = overlay.querySelector<HTMLButtonElement>('.ncb-modal-cancel');

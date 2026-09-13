@@ -29,6 +29,12 @@ function currentGermanLevel(): string {
   return (window as unknown as { _germanLevel?: string })._germanLevel || '';
 }
 
+function translate(key: string, fallback: string): string {
+  const t = (window as unknown as { _t?: (k: string) => string })._t;
+  const result = typeof t === 'function' ? t(key) : '';
+  return result || fallback;
+}
+
 /** Re-derives the chatbot shell's role mode from window._userType. Safe to
  * call repeatedly/idempotently — it only forces a library-tab switch when
  * the currently active tab is wrong for the role, so it never resets a tab
@@ -39,10 +45,13 @@ export function applyChatbotExperienceMode(): void {
 
   const isLearner = currentUserType() === 'learner';
   root.classList.toggle('ncb-learner-mode', isLearner);
-  root.querySelectorAll<HTMLElement>('.ncb-student-only').forEach((el) => {
+  // #ncbImportModal is a sibling of #ncbRoot (both injected by chatbot.js
+  // into #psec-aipage), not nested inside it, so this must be document-scoped
+  // — a root-scoped query silently misses it and anything else outside root.
+  document.querySelectorAll<HTMLElement>('.ncb-student-only').forEach((el) => {
     el.hidden = isLearner;
   });
-  root.querySelectorAll<HTMLElement>('.ncb-learner-only').forEach((el) => {
+  document.querySelectorAll<HTMLElement>('.ncb-learner-only').forEach((el) => {
     el.hidden = !isLearner;
   });
 
@@ -51,6 +60,17 @@ export function applyChatbotExperienceMode(): void {
   const levelValue = document.getElementById('ncbGermanLevelValue');
   if (levelBadge) levelBadge.textContent = level;
   if (levelValue) levelValue.textContent = level;
+
+  // The composer textarea is a single shared element (not a duplicated
+  // student/learner pair like the other copy), so its placeholder/aria-label
+  // are swapped directly rather than via .ncb-student-only/.ncb-learner-only.
+  const textarea = root.querySelector<HTMLTextAreaElement>('.ncb-input-textarea');
+  if (textarea) {
+    const phKey = isLearner ? textarea.dataset.i18nPhLearner : textarea.dataset.i18nPh;
+    const ariaKey = isLearner ? textarea.dataset.i18nAriaLearner : textarea.dataset.i18nAria;
+    if (phKey) textarea.placeholder = translate(phKey, textarea.placeholder);
+    if (ariaKey) textarea.setAttribute('aria-label', translate(ariaKey, textarea.getAttribute('aria-label') || ''));
+  }
 
   const coursesTab = root.querySelector<HTMLButtonElement>('[data-library-tab="courses"]');
   const germanTab = root.querySelector<HTMLButtonElement>('[data-library-tab="german"]');

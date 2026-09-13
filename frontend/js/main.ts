@@ -148,7 +148,26 @@ document.addEventListener('click', (e) => {
     .catch(() => { /* import failed; idle fallback will retry */ });
 }, true);
 runIdle(() => { void ensureStudyTimer(); });
-runDelayed(() => lazyImportEncoded('Li9mZWF0dXJlcy93cml0aW5nLWNvYWNoL3dyaXRpbmctY29hY2guanM=').then((m) => (m.initWritingCoach as () => void)()));
+
+// Writing Coach: same "eager-load-on-first-interaction" shape as the study
+// timer above. The plain 20s runDelayed prewarm used to be the ONLY loader —
+// a router click on "Writing Coach" before that timer fired left
+// window._wcOpen undefined, and the click was silently dropped (the router
+// only did `if (typeof window._wcOpen === 'function')`). ensureWritingCoach()
+// is now the single load path: the prewarm calls it, and router.js's
+// psbWritingCoach handler awaits the same promise before opening, so a click
+// that beats the prewarm still loads-then-opens instead of losing the click.
+let _wcInitPromise: Promise<void> | null = null;
+function ensureWritingCoach(): Promise<void> {
+  if (!_wcInitPromise) {
+    _wcInitPromise = lazyImportEncoded('Li9mZWF0dXJlcy93cml0aW5nLWNvYWNoL3dyaXRpbmctY29hY2guanM=')
+      .then((m) => { (m.initWritingCoach as () => void)(); })
+      .catch((err: unknown) => { _wcInitPromise = null; throw err; });
+  }
+  return _wcInitPromise;
+}
+(window as unknown as { _ensureWritingCoach?: () => Promise<void> })._ensureWritingCoach = ensureWritingCoach;
+runDelayed(() => { void ensureWritingCoach(); });
 
 // Notifications shell: the portal section #psec-notifications is scaffolded
 // UI without a backend feed yet. Wire #notifMarkAll so the button gives
