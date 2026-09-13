@@ -55,7 +55,9 @@ test('no stylesheet rule can revive the removed toolbar', () => {
 
 test('the Add files popup reuses the existing upload/import elements, not a duplicate control', () => {
   assert.match(composer, /class="ncb-add-files-option ncb-upload-btn" data-testid="chatbot-upload"/);
-  assert.match(composer, /class="ncb-add-files-option ncb-import-btn" data-testid="import-course"/);
+  // Learner mode hides Import-from-Course (.ncb-student-only), so the class
+  // list now carries that role marker too.
+  assert.match(composer, /class="ncb-add-files-option ncb-import-btn ncb-student-only" data-testid="import-course"/);
 });
 
 test('source modes live in an expandable view inside Add files', () => {

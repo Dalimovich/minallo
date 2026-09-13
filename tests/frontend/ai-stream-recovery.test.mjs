@@ -153,7 +153,10 @@ test('error references are validated and never truncated to ncb_msg_', () => {
 
 test('page-reading recovery reopens the exact saved PDF page before retrying', () => {
   const shell = readFileSync('frontend/js/features/chatbot-new/shell.ts', 'utf8');
-  assert.match(shell, /activeDocumentName: directAttachment\?\.filename \|\| pdf\?\.fileName/);
+  // usableAttachment replaces directAttachment as of the learner-mode guard
+  // (a course-scoped attachment ref is dropped for learner accounts — see
+  // isLearnerAccount() — a plain device attachment still flows through).
+  assert.match(shell, /activeDocumentName: usableAttachment\?\.filename \|\| pdf\?\.fileName/);
   assert.match(shell, /failure\.action === 'read_current_page'/);
   assert.match(shell, /handleSourceClick\(\{[\s\S]*documentId: message\.requestSnapshot\.activeDocumentId[\s\S]*page: message\.requestSnapshot\.visiblePage/);
 });

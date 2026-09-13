@@ -70,6 +70,10 @@ test('deselectChatbotSource exists and is exposed for the PDF-close path to call
 
 test('request snapshots preserve course identity and file scope', () => {
   assert.match(shell, /requestSnapshot\?: \{[\s\S]*courseFileScope: CourseFileScope;[\s\S]*courseId\?: string;/);
-  assert.match(shell, /courseId: resolveRequestCourseId\(originChat\) \|\| undefined/);
+  // Learner-mode guard: a German learner account must never have old
+  // university courseId resolved back into a new request's snapshot (see
+  // isLearnerAccount() / course-grounding-learner-guard.test.mjs), so
+  // resolveRequestCourseId(originChat) is only reached on the non-learner path.
+  assert.match(shell, /courseId: isLearner \? undefined : \(resolveRequestCourseId\(originChat\) \|\| undefined\)/);
   assert.match(shell, /alternative\.requestSnapshot = structuredClone\(original\.requestSnapshot\)/);
 });

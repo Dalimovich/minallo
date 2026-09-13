@@ -1664,23 +1664,34 @@ async function streamAiReply(
     const allowDiagrams = latestUserAllowsDiagrams(requestMessages);
   try {
     const latestFileLabel = latestUserFileLabel(requestMessages);
+    const isLearner = isLearnerAccount();
     const initialRag = ragEligibility(
       requestMessages, requestChat, requestChat.courseId || '',
       assistantMessage.requestSnapshot?.groundingRequest,
     );
+    // A learner's chat.courseId/selectedSourceIds can still literally be an
+    // old university course (nothing is deleted on a role switch) — never
+    // hand them to intent routing, which can otherwise generate a quiz/exam
+    // scoped to that stale course for what should be a plain German answer.
     const intentContext = {
-      courseId: requestChat.courseId || null,
-      selectedSourceIds: requestChat.selectedSourceIds.slice(),
+      courseId: isLearner ? null : requestChat.courseId || null,
+      selectedSourceIds: isLearner ? [] : requestChat.selectedSourceIds.slice(),
       pdf: initialRag?.activePdfContext || null,
     };
     if (initialRag && assistantMessage.requestSnapshot) {
-      const submittedGrounding = assistantMessage.requestSnapshot.groundingRequest;
+      // assistantMessage.requestSnapshot is whatever this message was created
+      // with — for a "regenerate" on a message from before a role switch,
+      // that can still be a real, course-scoped groundingRequest. Restoring
+      // it onto initialRag (which ragEligibility() already neutralized above)
+      // would resurrect old university document ids/scope for a learner, so
+      // this restore path is skipped entirely for learner accounts.
+      const submittedGrounding = isLearner ? undefined : assistantMessage.requestSnapshot.groundingRequest;
       if (submittedGrounding) {
         initialRag.groundingRequest = structuredClone(submittedGrounding);
         if (submittedGrounding.retrievalScope.type === 'documents') {
           initialRag.documentIds = submittedGrounding.retrievalScope.documentIds.slice();
         }
-      } else {
+      } else if (!isLearner) {
         assistantMessage.requestSnapshot.groundingRequest = structuredClone(initialRag.groundingRequest);
       }
       saveChatStore();
@@ -3541,7 +3552,7 @@ function ragEligibility(
     };
   }
   const explicitAttachment = last.attachmentRefs?.[0];
-  if (explicitAttachment?.fileId && explicitAttachment.courseId) {
+  if (!isLearner && explicitAttachment?.fileId && explicitAttachment.courseId) {
     const openPdf = getActivePdfContext();
     const compatibleOpenPdf = openPdf?.courseId === explicitAttachment.courseId ? openPdf : null;
     const documentIds = Array.from(new Set([
@@ -3574,8 +3585,8 @@ function ragEligibility(
       }
     };
   }
-  const selected = sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
-  const openPdf = getActivePdfContext();
+  const selected = isLearner ? [] : sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
+  const openPdf = isLearner ? null : getActivePdfContext();
   // Missing incidental viewer state is resolved by backend evidence planning;
   // it must not block questions that do not require the visible page.
   // Screenshots always stay on the explicit visual stream. With an open PDF
@@ -3583,16 +3594,20 @@ function ragEligibility(
   // must never be silently omitted by the generic attachment path.
   if ((last.files || []).length) return null;
   const normalQuestion = currentQuestion.toLocaleLowerCase();
-  const explicitlyNamed = sourceLibrary.items.filter((source) => {
+  // sourceLibrary/listCourses() are module-level (not chat-scoped), so a
+  // learner's old course-imported sources/files could still text-match here
+  // regardless of the chat's own sourceMode/selectedSourceIds — must be
+  // excluded outright, not just left to the chat-level gates below.
+  const explicitlyNamed = isLearner ? [] : sourceLibrary.items.filter((source) => {
     const full = source.name.trim().toLocaleLowerCase();
     const stem = full.replace(/\.(?:pdf|docx?|txt|pptx?)$/i, '');
     return full.length >= 4 && (normalQuestion.includes(full) || (stem.length >= 4 && normalQuestion.includes(stem)));
   });
-  const mode = normaliseSourceMode(active.sourceMode);
+  const mode = isLearner ? 'auto' : normaliseSourceMode(active.sourceMode);
   const allCourseFiles = (mode === 'course_files' || mode === 'course_plus_general')
     && normaliseCourseFileScope(active.courseFileScope) === 'all_course_files';
   const requestSources = explicitlyNamed.length ? explicitlyNamed : allCourseFiles ? [] : selected;
-  const namedCourseFiles = listCourses().flatMap((course) => [
+  const namedCourseFiles = isLearner ? [] : listCourses().flatMap((course) => [
     ...(course.files || []).map((file) => ({ courseId: course.id, file })),
     ...(course.userFolders || []).flatMap((folder) =>
       (folder.files || []).map((file) => ({ courseId: course.id, file }))
@@ -3854,8 +3869,17 @@ async function streamFromAskStream(
   assistantMessage?: ChatMessage,
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const submitted = assistantMessage?.requestSnapshot;
-  const effectiveSourceMode = submitted?.sourceMode || sourceModeForActiveChat();
-  const effectiveCourseFileScope = submitted?.courseFileScope || courseFileScopeForActiveChat();
+  // Defense-in-depth: `submitted` (the requestSnapshot) is already
+  // learner-neutralized at the point it's created, but the sourceModeForActiveChat()/
+  // courseFileScopeForActiveChat() fallback reads the chat's own stored fields
+  // directly — which can still literally be 'course_files' from before a role
+  // switch (nothing is deleted). Never let that reach the outgoing payload.
+  const effectiveSourceMode = isLearnerAccount()
+    ? 'auto'
+    : (submitted?.sourceMode || sourceModeForActiveChat());
+  const effectiveCourseFileScope = isLearnerAccount()
+    ? 'all_course_files'
+    : (submitted?.courseFileScope || courseFileScopeForActiveChat());
   const submittedGrounding = structuredClone(submitted?.groundingRequest || groundingRequest);
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) {

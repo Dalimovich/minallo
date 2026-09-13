@@ -83,6 +83,9 @@ test('an identical ready PDF reuses its durable chat file instead of uploading a
 
 test('composer locks while attachments persist and direct attachment owns the request snapshot', () => {
   assert.match(shell, /state\.isSending = true;\s*sendBtn\.disabled = true;\s*try \{\s*await persistMessageAttachments/);
-  assert.match(shell, /activeDocumentId: directAttachment\?\.fileId \|\| pdf\?\.documentId/);
-  assert.match(shell, /activeDocumentName: directAttachment\?\.filename \|\| pdf\?\.fileName/);
+  // usableAttachment replaces directAttachment as of the learner-mode guard
+  // (a course-scoped attachment ref is dropped for learner accounts — see
+  // isLearnerAccount() — a plain device attachment still flows through).
+  assert.match(shell, /activeDocumentId: usableAttachment\?\.fileId \|\| pdf\?\.documentId/);
+  assert.match(shell, /activeDocumentName: usableAttachment\?\.filename \|\| pdf\?\.fileName/);
 });

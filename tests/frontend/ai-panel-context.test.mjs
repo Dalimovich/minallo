@@ -115,7 +115,9 @@ test('new chatbot sends one stable active-PDF snapshot to ask-stream', () => {
   assert.match(NEW_CHATBOT, /openFileImages: openFileImages\.length/);
   assert.match(NEW_CHATBOT, /visualEvidenceExpected: !!snapshot\?\.visualEvidenceExpected/);
   assert.match(NEW_CHATBOT, /conversationId,/);
-  assert.match(NEW_CHATBOT, /const explicitlyNamed = sourceLibrary\.items\.filter/);
+  // Learner-mode guard: sourceLibrary text-matching is skipped outright for
+  // learner accounts (see isLearnerAccount()), so this is now conditional.
+  assert.match(NEW_CHATBOT, /const explicitlyNamed = isLearner \? \[\] : sourceLibrary\.items\.filter/);
   assert.match(NEW_CHATBOT, /const payloadPdf = useGeneratedArtifact \? null : activePdf/);
   assert.match(NEW_CHATBOT, /region: 'selected_region'/);
   assert.match(NEW_CHATBOT, /empty_completed_response/);

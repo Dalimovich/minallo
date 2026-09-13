@@ -73,6 +73,23 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await expect(page.locator('.ncb-empty-title.ncb-learner-only')).toBeVisible();
     await expect(page.locator('.ncb-empty-title.ncb-learner-only')).toContainText(/practice/i);
 
+    // Import-from-Course / course-context pill / course-specific placeholder
+    // must be gone, not merely relabeled — #ncbImportModal's own trigger is
+    // outside #ncbRoot, so this also proves the document-scoped toggle works.
+    await expect(page.locator('[data-testid="import-course"]')).toBeHidden();
+    await expect(page.locator('.ncb-chat-context-pill.ncb-student-only')).toBeHidden();
+    await expect(page.locator('.ncb-chat-context-pill.ncb-learner-only')).toBeVisible();
+    await expect(page.locator(chatbotSelectors.input)).not.toHaveAttribute('placeholder', /course files/i);
+    await expect(page.locator(chatbotSelectors.input)).toHaveAttribute('placeholder', /German|grammar|vocabulary|writing/i);
+
+    // Course-only source choices must not be offered in the Add-files menu.
+    await page.locator('.ncb-add-files-trigger').click();
+    await page.locator('.ncb-add-files-source-trigger').click();
+    await expect(page.locator('.ncb-add-files-source-list')).toBeVisible();
+    await expect(page.locator('[data-source-mode="course_files"]')).toHaveCount(0);
+    await expect(page.locator('[data-source-mode="course_plus_general"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
     // Same shell instance — not torn down/remounted to switch modes.
     const boundAfter = await root.getAttribute('data-ncb-experience-bound');
     expect(boundAfter).toBe('1');
@@ -162,6 +179,55 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await applyProfile(page, { user_type: 'enrolled' });
   });
 
+  test('learner mode never forwards a lingering university courseId/scope to /ask-stream', async ({
+    page,
+  }) => {
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+    await app.ensureQaCourse();
+    await app.navigateTo('chatbot');
+
+    // Simulate the exact production leak vector this fix closes: an old
+    // university course context lingering on the page (window.activeCourseId
+    // is the real fallback resolveRequestCourseId()/currentVisibleCourseId()
+    // read when the chat itself has no explicit courseId) from before the
+    // account was switched to learner mode. Nothing about the chat/library
+    // data is deleted — the guard must simply refuse to read it back.
+    await page.evaluate(() => {
+      (window as unknown as { activeCourseId?: string }).activeCourseId = 'e2e-course';
+    });
+
+    await applyProfile(page, { user_type: 'learner', german_level: 'B1' });
+
+    let capturedBody: Record<string, unknown> | null = null;
+    await page.route('**/ask-stream', async (route) => {
+      capturedBody = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: 'data: {"type":"done","text":"Mocked German practice answer."}\n\n',
+      });
+    });
+
+    await page.locator(chatbotSelectors.input).fill('Erkläre mir den deutschen Dativ.');
+    await page.locator(chatbotSelectors.send).click();
+
+    await expect.poll(() => capturedBody, { timeout: 10000 }).not.toBeNull();
+    const body = capturedBody as unknown as {
+      courseId?: string;
+      documentIds?: string[];
+      documentNames?: string[];
+      courseFileScope?: string;
+    };
+    expect(body.courseId || '').toBe('');
+    expect(body.documentIds || []).toEqual([]);
+    expect(body.documentNames || []).toEqual([]);
+    expect(body.courseFileScope).not.toBe('specific_files');
+
+    await applyProfile(page, { user_type: 'enrolled' });
+  });
+
   test('enrolled account keeps the current student chatbot shell completely unchanged', async ({
     page,
   }) => {
@@ -181,5 +247,18 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await expect(page.locator('.ncb-actions.ncb-learner-only')).toBeHidden();
     await expect(page.locator('[data-library-tab="german"]')).toBeHidden();
     await expect(page.locator('.ncb-learner-nav')).toBeHidden();
+
+    // Import-from-Course, the course-context pill, and course-only source
+    // choices must all remain exactly as before for students.
+    await expect(page.locator('[data-testid="import-course"]')).toBeVisible();
+    await expect(page.locator('.ncb-chat-context-pill.ncb-student-only')).toBeVisible();
+    await expect(page.locator('.ncb-chat-context-pill.ncb-learner-only')).toBeHidden();
+    await expect(page.locator(chatbotSelectors.input)).toHaveAttribute('placeholder', /course files/i);
+
+    await page.locator('.ncb-add-files-trigger').click();
+    await page.locator('.ncb-add-files-source-trigger').click();
+    await expect(page.locator('[data-source-mode="course_files"]')).toBeVisible();
+    await expect(page.locator('[data-source-mode="course_plus_general"]')).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 });
