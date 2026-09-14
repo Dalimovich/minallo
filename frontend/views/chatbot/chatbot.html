@@ -16,8 +16,8 @@
         <div class="ncb-header-text">
           <h1 class="ncb-header-title ncb-student-only" data-i18n="cb_header_title">Chatbot</h1>
           <p class="ncb-header-subtitle ncb-student-only" data-i18n="cb_header_subtitle">Course-aware AI tutor</p>
-          <h1 class="ncb-header-title ncb-learner-only" data-i18n="cb_header_title_learner" hidden>Deutsch üben</h1>
-          <p class="ncb-header-subtitle ncb-learner-only" data-i18n="cb_header_subtitle_learner" hidden>Your German practice AI tutor</p>
+          <h1 class="ncb-header-title ncb-learner-only ncb-role-hidden" data-i18n="cb_header_title_learner">Deutsch üben</h1>
+          <p class="ncb-header-subtitle ncb-learner-only ncb-role-hidden" data-i18n="cb_header_subtitle_learner">Your German practice AI tutor</p>
         </div>
       </div>
 
@@ -83,7 +83,7 @@
                setLearnerWorkspaceView) — Writing Coach never leaves #ncbRoot
                anymore, so this is a plain in-shell state swap, not portal
                navigation. Only one of the pair is visible at a time. -->
-          <div class="ncb-learner-nav ncb-learner-only" hidden>
+          <div class="ncb-learner-nav ncb-learner-only ncb-role-hidden">
             <button type="button" class="ncb-new-chat-btn ncb-chat-view-only" data-workspace-view="writing-coach" data-testid="chatbot-nav-writing-coach">
               <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
@@ -138,7 +138,7 @@
                   <h2 class="ncb-chat-header-title" data-i18n="cb_chat_title_new">New chat</h2>
                 </div>
                 <span class="ncb-chat-context-pill ncb-student-only" data-i18n="cb_context_active">Course context active</span>
-                <span class="ncb-chat-context-pill ncb-learner-only" data-i18n="cb_context_active_learner" hidden>German practice session</span>
+                <span class="ncb-chat-context-pill ncb-learner-only ncb-role-hidden" data-i18n="cb_context_active_learner">German practice session</span>
               </div>
 
               <div class="ncb-msgs"></div>
@@ -155,8 +155,8 @@
                 <p class="ncb-empty-subtitle ncb-student-only" data-i18n="cb_empty_subtitle">
                   Upload a lecture, import a course file, solve an exercise, create notes, or ask Minallo to explain the topic like a personal tutor.
                 </p>
-                <h2 class="ncb-empty-title ncb-learner-only" data-i18n="cb_empty_title_learner" hidden>What would you like to practice today?</h2>
-                <p class="ncb-empty-subtitle ncb-learner-only" data-i18n="cb_empty_subtitle_learner" hidden>
+                <h2 class="ncb-empty-title ncb-learner-only ncb-role-hidden" data-i18n="cb_empty_title_learner">What would you like to practice today?</h2>
+                <p class="ncb-empty-subtitle ncb-learner-only ncb-role-hidden" data-i18n="cb_empty_subtitle_learner">
                   Practice German, improve your writing, ask a grammar question, or prepare for your German exam.
                 </p>
               </div>
@@ -318,7 +318,7 @@
                 </button>
               </div>
 
-              <div class="ncb-actions ncb-learner-only" hidden>
+              <div class="ncb-actions ncb-learner-only ncb-role-hidden">
                 <button type="button" class="ncb-action-card" data-testid="quick-german-practice" data-nav-target="german">
                   <span class="ncb-action-icon" aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
                   <span class="ncb-action-title" data-i18n="cb_action_practice_title">Practice German</span>
@@ -424,8 +424,8 @@
               <div class="ncb-context-head-text">
                 <p class="ncb-eyebrow ncb-student-only" data-i18n="cb_ctx_eyebrow">Context</p>
                 <h2 class="ncb-context-title ncb-student-only" data-i18n="cb_ctx_title">Study panel</h2>
-                <p class="ncb-eyebrow ncb-learner-only" data-i18n="cb_ctx_eyebrow_learner" hidden>German</p>
-                <h2 class="ncb-context-title ncb-learner-only" data-i18n="cb_ctx_title_learner" hidden>Learning panel</h2>
+                <p class="ncb-eyebrow ncb-learner-only ncb-role-hidden" data-i18n="cb_ctx_eyebrow_learner">German</p>
+                <h2 class="ncb-context-title ncb-learner-only ncb-role-hidden" data-i18n="cb_ctx_title_learner">Learning panel</h2>
               </div>
               <button type="button" class="ncb-context-close-btn" data-i18n-aria="cb_close_panel" aria-label="Close context panel">
                 <svg class="ncb-icon ncb-icon--sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -445,7 +445,7 @@
                 </svg>
                 <span>Courses</span>
               </button>
-              <button type="button" class="ncb-library-tab ncb-learner-only" role="tab" aria-selected="false" data-library-tab="german" hidden>
+              <button type="button" class="ncb-library-tab ncb-learner-only ncb-role-hidden" role="tab" aria-selected="false" data-library-tab="german">
                 <span aria-hidden="true">&#x1F1E9;&#x1F1EA;</span>
                 <span data-i18n="cb_tab_practice">Practice</span>
               </button>

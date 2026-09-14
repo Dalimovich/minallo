@@ -14,6 +14,15 @@
 .ncb-root [hidden],
 .ncb-modal-overlay[hidden] { display: none !important; }
 
+/* Role visibility (.ncb-student-only / .ncb-learner-only, toggled in
+   experience-mode.ts) is a separate axis from tab/workspace visibility and
+   must not fight over the `hidden` attribute those own (library tabs via
+   [data-library-panel], writing-coach/practice workspace panels, modals).
+   Global (not .ncb-root-scoped) because role-marked elements can live
+   outside #ncbRoot — see applyChatbotExperienceMode()'s document-scoped
+   query. */
+.ncb-role-hidden { display: none !important; }
+
 /* Fullbleed mode (active when #psec-aipage is visible AND the flag is on).
    Hides the portal topbar with the legacy "Chatbot" h1 and expands the
    section so the new shell fills the viewport. The portal sidebar (left

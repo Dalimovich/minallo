@@ -160,17 +160,24 @@ export function applyChatbotExperienceMode(): void {
   root.classList.toggle('ncb-view-practice', inPracticeView);
   root.dataset.workspaceView = isLearner ? _workspaceView : 'chat';
 
+  // Role visibility is its own axis (.ncb-role-hidden, a plain CSS class) so
+  // it never fights over the `hidden` attribute with whatever else owns that
+  // element's hidden state — library tabs ([data-library-panel]), workspace
+  // views (.ncb-writing-coach-view-only / .ncb-practice-view-only), modals,
+  // etc. Two independent mechanisms (hidden attribute + this class) combine
+  // fine in CSS: either one hides the element. See chatbot.css.
+  //
   // #ncbImportModal is a sibling of #ncbRoot (both injected by chatbot.js
   // into #psec-aipage), not nested inside it, so this must be document-scoped
   // — a root-scoped query silently misses it and anything else outside root.
   document.querySelectorAll<HTMLElement>('.ncb-student-only').forEach((el) => {
-    el.hidden = isLearner;
+    el.classList.toggle('ncb-role-hidden', isLearner);
   });
   document.querySelectorAll<HTMLElement>('.ncb-learner-only').forEach((el) => {
-    el.hidden = !isLearner;
+    el.classList.toggle('ncb-role-hidden', !isLearner);
   });
   document.querySelectorAll<HTMLElement>('.ncb-chat-view-only').forEach((el) => {
-    el.hidden = inWorkspace || (isLearner && el.classList.contains('ncb-student-only')) || (!isLearner && el.classList.contains('ncb-learner-only'));
+    el.hidden = inWorkspace;
   });
   document.querySelectorAll<HTMLElement>('.ncb-writing-coach-view-only').forEach((el) => {
     el.hidden = !inWritingCoachView;
