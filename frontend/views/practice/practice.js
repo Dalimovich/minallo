@@ -321,11 +321,16 @@
         return;
       }
 
-      if (skill === 'grammar') {
+      // Grammatik has its own dedicated sentence-building/correction
+      // workspace (see the Grammatik IIFE below), same pattern as Lesen.
+      // The typeof guard is defensive only, in case this controller ever
+      // fails to load — falls back to the generic template rather than
+      // throwing on an undefined function.
+      if (skill === 'grammar' && typeof window._glOpenGrammarView === 'function') {
         _glSetGenericSkillPiecesVisible(false);
         if (readingView) readingView.style.display = 'none';
         if (grammarView) grammarView.style.display = '';
-        _glOpenGrammarView();
+        window._glOpenGrammarView();
         return;
       }
 
@@ -1487,12 +1492,19 @@
         answers: {}, // idx -> { status: 'answered'|'correct'|'review', selected, evidenceShown }
         hintShown: {},
         matchChoices: {},
-        done: false
+        done: false,
+        isSample: true,
+        // Bumped by every rdLoadSet call. A long-running "from my files"
+        // generation captures this before its request and checks it hasn't
+        // moved before applying results, so a stale response can never
+        // clobber a session the user has since navigated away from or reset.
+        genToken: 0
       };
 
       function rdEl(id) { return document.getElementById(id); }
 
-      function rdLoadSet(set) {
+      function rdLoadSet(set, isSample) {
+        rd.genToken++;
         rd.passage = set.passage;
         rd.questions = set.questions;
         rd.index = 0;
@@ -1500,6 +1512,7 @@
         rd.hintShown = {};
         rd.matchChoices = {};
         rd.done = false;
+        rd.isSample = isSample !== false;
       }
 
       window._glOpenReadingView = function () {
@@ -1587,7 +1600,8 @@
         var html =
           '<div class="gl-reading-text-eyebrow">Reading</div>' +
           '<h3 class="gl-reading-text-title">' + _glEscape(rd.passage.title) + '</h3>' +
-          '<p class="gl-reading-text-meta">' + _glEscape(rd.passage.meta) + '</p>' +
+          '<p class="gl-reading-text-meta">' + _glEscape(rd.passage.meta) +
+          (rd.isSample ? ' <span class="gl-reading-sample-badge">Sample practice</span>' : '') + '</p>' +
           '<div class="gl-reading-text-body">' +
           rd.passage.paragraphs.map(function (para, pIdx) {
             var sentences = rdSentences(para).map(function (s, sIdx) {
@@ -1621,7 +1635,21 @@
       function rdShowEvidence(evidenceText, persistent) {
         var span = rdFindSentenceSpan(evidenceText);
         if (!span) return;
-        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Scroll only the reading-text container, never the ancestor page —
+        // span.scrollIntoView() would otherwise walk up through every
+        // scrollable ancestor (including the portal shell) and yank the
+        // whole page along with it.
+        var container = rdEl('glReadingTextPanel');
+        if (container) {
+          var cRect = container.getBoundingClientRect();
+          var sRect = span.getBoundingClientRect();
+          var delta = (sRect.top - cRect.top) - (container.clientHeight / 2) + (sRect.height / 2);
+          container.scrollBy({ top: delta, behavior: 'smooth' });
+        }
+        // Never accumulate more than one bright/settled highlight at a time.
+        container && container.querySelectorAll('.gl-evidence-flash, .gl-evidence-settled').forEach(function (el) {
+          if (el !== span) el.classList.remove('gl-evidence-flash', 'gl-evidence-settled');
+        });
         span.classList.add('gl-evidence-flash');
         setTimeout(function () {
           span.classList.remove('gl-evidence-flash');
@@ -1698,7 +1726,13 @@
             '<input type="text" class="gl-reading-short-input" id="glReadingShortInput" placeholder="Type your answer..."' +
             (answer ? ' disabled value="' + _glEscape(answer.selected || '') + '"' : '') + '>';
         } else if (q.type === 'match') {
+          var usedElsewhere = {};
+          rd.passage.paragraphs.forEach(function (_, pIdx) {
+            var c = rd.matchChoices[pIdx];
+            if (c !== undefined && c !== '') usedElsewhere[c] = (usedElsewhere[c] || 0) + 1;
+          });
           body =
+            '<div class="gl-reading-match-hint">Assign each heading once — already-used headings are marked below.</div>' +
             '<div class="gl-reading-match-list">' +
             rd.passage.paragraphs.map(function (_, pIdx) {
               var chosen = rd.matchChoices[pIdx];
@@ -1709,7 +1743,9 @@
                 ' style="' + (answer ? (isRight ? 'border-color:#22c55e' : 'border-color:#f87171') : '') + '">' +
                 '<option value="">Choose heading…</option>' +
                 q.headings.map(function (h, hIdx) {
-                  return '<option value="' + hIdx + '"' + (String(chosen) === String(hIdx) ? ' selected' : '') + '>' + _glEscape(h) + '</option>';
+                  var usedByOther = usedElsewhere[String(hIdx)] && String(chosen) !== String(hIdx);
+                  return '<option value="' + hIdx + '"' + (String(chosen) === String(hIdx) ? ' selected' : '') + '>' +
+                    _glEscape(h) + (usedByOther ? ' (used)' : '') + '</option>';
                 }).join('') +
                 '</select></div>';
             }).join('') +
@@ -1813,6 +1849,9 @@
           document.querySelectorAll('[data-match-p]').forEach(function (sel) {
             sel.addEventListener('change', function () {
               rd.matchChoices[sel.getAttribute('data-match-p')] = sel.value;
+              // Re-render so "(used)" markers on other rows' options stay
+              // in sync — cheap since only this question's DOM is rebuilt.
+              rdRenderQuestion();
             });
           });
         }
@@ -1829,8 +1868,65 @@
         if (nextBtn) nextBtn.addEventListener('click', function () { rdGoTo(1); });
       }
 
-      function rdCheckAnswer() {
+      async function rdCheckAnswer() {
         var q = rd.questions[rd.index];
+        if (q.type === 'short') {
+          // Pin which question this grading call belongs to — the AI round
+          // trip below can outlive the user clicking Next/Previous, and a
+          // late result must land on the question it actually graded, not
+          // wherever rd.index happens to be when the response arrives.
+          var qIndex = rd.index;
+          var input = rdEl('glReadingShortInput');
+          var val = input ? input.value.trim() : '';
+          if (!val) return;
+          var lower = val.toLowerCase();
+          var keywordHit = (q.keywords || []).some(function (kw) { return lower.indexOf(kw) !== -1; });
+          if (keywordHit) {
+            rd.answers[qIndex] = { status: 'correct', selected: val, selectedLabel: val, correctLabel: null };
+            rd._pendingSelected = null;
+            if (rd.index === qIndex) { rdRenderText(); rdRenderQuestion(); }
+            return;
+          }
+          // No literal keyword overlap — don't fail a semantically correct
+          // answer just because it's phrased differently. Reuse the same
+          // /api/ai chat endpoint already used elsewhere in this file
+          // (_glAskAboutFile, from-my-files generation) rather than building
+          // a second grading path.
+          var checkBtn = rdEl('glReadingCheckBtn');
+          if (checkBtn) { checkBtn.disabled = true; checkBtn.textContent = 'Checking…'; }
+          if (input) input.disabled = true;
+          var isCorrect = false;
+          try {
+            var resp = await _authFetch(BACKEND_URL + '/api/ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-6',
+                max_tokens: 5,
+                system: 'You grade a short reading-comprehension answer on meaning, not exact wording or language. Reply with exactly one word: YES or NO.',
+                messages: [{
+                  role: 'user',
+                  content: 'Question: ' + q.prompt +
+                    '\nModel answer: ' + (q.explanation || '') +
+                    '\nStudent answer: ' + val +
+                    '\nDoes the student answer convey the same core meaning as the model answer?'
+                }]
+              })
+            });
+            var data = resp.ok ? await resp.json() : null;
+            var text = (data && data.content ? data.content.map(function (b) { return b.text || ''; }).join('') : '').trim().toUpperCase();
+            isCorrect = text.indexOf('YES') === 0;
+          } catch (e) {
+            isCorrect = false; // fail closed to "needs review", never silently marks a wrong answer correct
+          }
+          rd.answers[qIndex] = { status: isCorrect ? 'correct' : 'review', selected: val, selectedLabel: val, correctLabel: null };
+          if (rd.index === qIndex) {
+            rd._pendingSelected = null;
+            rdRenderText();
+            rdRenderQuestion();
+          }
+          return;
+        }
         if (q.type === 'mc' || q.type === 'meaning') {
           var sel = rd._pendingSelected;
           if (!sel) return;
@@ -1846,13 +1942,6 @@
           if (!selTf) return;
           var correctTf = selTf === q.answer;
           rd.answers[rd.index] = { status: correctTf ? 'correct' : 'review', selected: selTf, selectedLabel: selTf, correctLabel: q.answer };
-        } else if (q.type === 'short') {
-          var input = rdEl('glReadingShortInput');
-          var val = input ? input.value.trim() : '';
-          if (!val) return;
-          var lower = val.toLowerCase();
-          var hit = (q.keywords || []).some(function (kw) { return lower.indexOf(kw) !== -1; });
-          rd.answers[rd.index] = { status: hit ? 'correct' : 'review', selected: val, selectedLabel: val, correctLabel: null };
         } else if (q.type === 'match') {
           var allRight = rd.passage.paragraphs.every(function (_, pIdx) {
             return Number(rd.matchChoices[pIdx]) === q.answer[pIdx];
@@ -1925,9 +2014,40 @@
           '</div>';
 
         var weakBtn = rdEl('glReadingPracticeWeakBtn');
-        if (weakBtn) weakBtn.addEventListener('click', function () { rdSetTab('weak'); });
+        if (weakBtn) weakBtn.addEventListener('click', function () {
+          // Target the category that was actually weakest this session
+          // (e.g. Inference 0/2) instead of always restarting the same
+          // generic weak-areas sample set.
+          rd.tab = 'weak';
+          rdRenderTabs();
+          rdRenderFilesPanel(false);
+          rdEl('glReadingWorkspace').style.display = '';
+          rdEl('glReadingEnd').style.display = 'none';
+          rdLoadSet(rdWeakSetForCategory(weakest), true);
+          rdRenderText();
+          rdRenderQuestion();
+        });
         var newBtn = rdEl('glReadingNewTextBtn');
         if (newBtn) newBtn.addEventListener('click', rdNewText);
+      }
+
+      // Pulls the questions matching `category` from whichever sample passage
+      // has the most of them, so the follow-up session stays evidence-
+      // consistent (every question's `evidence` string must exist in the
+      // SAME passage that's loaded). Falls back to the generic weak set if
+      // nothing matches.
+      function rdWeakSetForCategory(category) {
+        if (!category) return RD_WEAK_SET;
+        var best = null;
+        var bestCount = 0;
+        RD_SETS.forEach(function (set) {
+          var matches = set.questions.filter(function (q) { return q.category === category; });
+          if (matches.length > bestCount) {
+            bestCount = matches.length;
+            best = { passage: set.passage, questions: matches };
+          }
+        });
+        return best || RD_WEAK_SET;
       }
 
       // ── From my files ────────────────────────────────────────────────────
@@ -1982,7 +2102,16 @@
         var level = rdEl('glReadingCfgLevel') ? rdEl('glReadingCfgLevel').value : 'B2';
         var count = rdEl('glReadingCfgCount') ? rdEl('glReadingCfgCount').value : '5';
         var startBtn = rdEl('glReadingStartBtn');
-        if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
+        // Baseline token: if the user navigates away/resets before this
+        // resolves, rd.genToken moves on and the stale result below is
+        // discarded instead of clobbering whatever the user is doing now.
+        var myToken = rd.genToken;
+        if (startBtn) { startBtn.disabled = true; }
+        var configRow = document.querySelector('.gl-reading-files-config');
+        var loadingEl = document.createElement('div');
+        loadingEl.className = 'gl-reading-generating';
+        loadingEl.innerHTML = '<span class="gl-reading-spinner" aria-hidden="true"></span><span>Preparing your reading exercise from "' + _glEscape(fname) + '"…</span>';
+        if (configRow && configRow.parentNode) configRow.parentNode.appendChild(loadingEl);
 
         try {
           var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
@@ -2004,7 +2133,6 @@
             messageContent = [{ type: 'text', text: 'DOCUMENT CONTENT:\n' + textContent + '\n\n' + rdGeneratePrompt(level, count) }];
           } else {
             if (typeof showToast === 'function') showToast('Unsupported file', 'Only PDF and text files can be turned into a reading exercise right now.');
-            if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start reading'; }
             return;
           }
 
@@ -2018,13 +2146,19 @@
               messages: [{ role: 'user', content: messageContent }]
             })
           });
+          if (!resp.ok) throw new Error('http-' + resp.status);
           var data = await resp.json();
           var text = data.content ? data.content.map(function (b) { return b.text || ''; }).join('') : '';
           var parsed = rdParseGenerated(text);
-          if (!parsed) throw new Error('Could not parse a reading exercise from this file.');
+          if (!parsed) throw new Error('parse-failed');
+
+          // Someone navigated/reset/started a different generation while we
+          // were waiting — this result is stale, drop it silently rather
+          // than overwriting whatever session is now live.
+          if (myToken !== rd.genToken) return;
 
           rd.setIndex = -1; // "New text" after a file-based set should fall back to the sample pool
-          rdLoadSet(parsed);
+          rdLoadSet(parsed, false);
           rd.tab = 'practice';
           rdRenderTabs();
           rdRenderFilesPanel(false);
@@ -2033,9 +2167,13 @@
           rdRenderText();
           rdRenderQuestion();
         } catch (e) {
-          if (typeof showToast === 'function') showToast('Could not generate exercise', e.message || 'Try a different file.');
+          console.error('Lesen from-my-files generation failed:', e);
+          if (myToken === rd.genToken && typeof showToast === 'function') {
+            showToast('Couldn’t create a reading exercise', 'Couldn’t create a reading exercise from this file. Try again.');
+          }
         } finally {
-          if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start reading'; }
+          if (startBtn) startBtn.disabled = false;
+          if (loadingEl && loadingEl.parentNode) loadingEl.parentNode.removeChild(loadingEl);
         }
       }
 
@@ -2047,17 +2185,916 @@
           'Valid "type" values: mc, tf (answer one of "True"/"False"/"Not stated"), short (include a "keywords" array instead of options/answer), meaning (same shape as mc). Every question needs an "evidence" field that is an exact, verbatim substring of one of the paragraphs.';
       }
 
+      var RD_VALID_TYPES = { mc: 1, tf: 1, short: 1, meaning: 1, evidence: 1, match: 1 };
+
+      // A generated exercise that's merely valid JSON but structurally broken
+      // (missing options, an evidence string that isn't actually in the
+      // passage, an unsupported type) would render a half-working quiz
+      // instead of failing loudly — reject it here so the caller shows the
+      // "couldn't create an exercise" toast instead.
+      function rdValidateGenerated(obj) {
+        if (!obj || !Array.isArray(obj.paragraphs) || !obj.paragraphs.length) return false;
+        if (!Array.isArray(obj.questions) || !obj.questions.length) return false;
+        var joined = obj.paragraphs.join(' ');
+        return obj.questions.every(function (q) {
+          if (!q || !RD_VALID_TYPES[q.type] || typeof q.prompt !== 'string' || !q.prompt.trim()) return false;
+          if (q.type === 'mc' || q.type === 'meaning') {
+            if (!q.options || !q.answer || !q.options[q.answer]) return false;
+          }
+          if (q.type === 'tf' && ['True', 'False', 'Not stated'].indexOf(q.answer) === -1) return false;
+          if (q.type === 'short' && (!Array.isArray(q.keywords) || !q.keywords.length)) return false;
+          if (q.type === 'match' && (!Array.isArray(q.headings) || !Array.isArray(q.answer) || q.headings.length !== obj.paragraphs.length)) return false;
+          // Every evidence-bearing question must point at real text, or
+          // "Show evidence in text" would silently do nothing.
+          if (q.evidence && joined.indexOf(q.evidence) === -1) return false;
+          if (q.type === 'evidence' && !q.evidence) return false;
+          return true;
+        });
+      }
+
       function rdParseGenerated(text) {
         try {
           var cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
           var obj = JSON.parse(cleaned);
-          if (!obj.paragraphs || !obj.paragraphs.length || !obj.questions || !obj.questions.length) return null;
+          if (!rdValidateGenerated(obj)) return null;
           return { passage: { title: obj.title || 'Reading passage', meta: obj.meta || 'From your file', paragraphs: obj.paragraphs }, questions: obj.questions };
         } catch (e) {
           return null;
         }
       }
     })();
+
+    // ── Grammatik (interactive sentence-building/correction) ─────────────────
+    // Dedicated workspace, distinct from the generic quiz/cards template and
+    // from Lesen's reading layout — a sentence-builder/corrector, not another
+    // quiz generator. Lives entirely inside #glGrammarView (see practice.html)
+    // and is only mounted when _glOpenSkill('grammar') runs.
+    (function () {
+      var GM_TOPICS = [
+        { id: 'verbPosition', label: 'Verb position' },
+        { id: 'cases', label: 'Cases' },
+        { id: 'articles', label: 'Articles' },
+        { id: 'prepositions', label: 'Prepositions' },
+        { id: 'adjectiveEndings', label: 'Adjective endings' },
+        { id: 'konjunktivII', label: 'Konjunktiv II' },
+        { id: 'passive', label: 'Passive' },
+        { id: 'relativeClauses', label: 'Relative clauses' },
+        { id: 'connectors', label: 'Connectors' },
+        { id: 'tenses', label: 'Tenses' },
+        { id: 'pronouns', label: 'Pronouns' },
+        { id: 'verbPrep', label: 'Verb-preposition combinations' }
+      ];
+      var GM_TOPICS_C1 = [
+        { id: 'nominalisation', label: 'Nominalisierung' },
+        { id: 'partizip', label: 'Partizipialattribute' },
+        { id: 'indirectSpeech', label: 'Indirect speech / Konjunktiv I' },
+        { id: 'advConnectors', label: 'Advanced connectors' }
+      ];
+      var GM_ALL_TOPICS = GM_TOPICS.concat(GM_TOPICS_C1);
+
+      var GM_BANK = {
+        verbPosition: [
+          { type: 'order', words: ['weil', 'ich', 'heute', 'lernen', 'muss'], answer: 'weil ich heute lernen muss',
+            rule: { focus: 'Verb position', think: 'Where does the conjugated verb go after "weil"?', why: '"weil" introduces a subordinate clause, so the conjugated verb moves to the end.', mainRule: 'weil + subject + ... + conjugated verb', example: 'Ich bleibe zu Hause, weil ich morgen arbeiten muss.' },
+            hints: ['The word "weil" changes the sentence structure.', 'Look at the position of the conjugated verb — it goes last.'] },
+          { type: 'gap', promptHtml: 'Obwohl er sehr müde ___, arbeitet er weiter.', accepted: ['ist'],
+            rule: { focus: 'Verb position after obwohl', think: '"obwohl" also introduces a subordinate clause.', why: '"obwohl" introduces a subordinate clause, so the conjugated verb moves to the end of it.', mainRule: 'obwohl + subject + ... + conjugated verb', example: 'Obwohl es regnet, gehen wir spazieren.' },
+            hints: ['"obwohl" behaves like "weil" for word order.', 'The verb "sein" (conjugated as "ist") belongs at the end of this clause.'] },
+          { type: 'correct', sentenceWrong: 'Ich habe gestern ein neues Buch gekauft, weil ich brauche es für die Universität.',
+            accepted: ['ich habe gestern ein neues buch gekauft weil ich es für die universität brauche'],
+            highlightCorrect: '...weil ich es für die Universität <strong>brauche</strong>.',
+            rule: { focus: 'Verb position', think: 'What is wrong after "weil"?', why: 'In a subordinate clause introduced by "weil", the conjugated verb moves to the end.', mainRule: 'weil + subject + ... + conjugated verb', example: 'Ich bin müde, weil ich schlecht geschlafen habe.' },
+            hints: ['Look at where "brauche" sits in the sentence.', 'After "weil", the verb has to move all the way to the end of the clause.'] }
+        ],
+        cases: [
+          { type: 'choice', promptHtml: 'Ich fahre mit ___ neuen Auto meines Bruders.', options: ['der', 'die', 'dem', 'den'], answerIndex: 2,
+            logic: ['mit → always Dativ', 'das Auto → Dativ singular = dem Auto', 'adjective: dem neuen Auto'],
+            rule: { focus: 'Cases after mit', think: '"mit" always takes which case?', why: '"mit" is a fixed dative preposition, so the article and adjective ending both take the dative form.', mainRule: 'mit + Dativ', example: 'Ich spreche mit dem Mann.' },
+            hints: ['"mit" never changes case — it is always the same one.', 'Dative for "das Auto" (neuter) is "dem Auto".'] },
+          { type: 'gap', promptHtml: 'Ich helfe ___ Frau (die Frau) mit dem Koffer.', accepted: ['der'],
+            rule: { focus: 'Cases after helfen', think: '"helfen" always takes which case?', why: '"helfen" is a fixed dative verb.', mainRule: 'helfen + Dativ', example: 'Ich helfe dem Kind.' },
+            hints: ['"helfen" behaves like "mit" — it always takes the same case.', 'Dative for "die Frau" (feminine) is "der Frau".'] }
+        ],
+        articles: [
+          { type: 'choice', promptHtml: 'Ich kaufe ___ Apfel (der Apfel).', options: ['der', 'den', 'dem', 'die'], answerIndex: 1,
+            logic: ['kaufen + Akkusativ (direct object)', 'der Apfel → Akkusativ = den Apfel'],
+            rule: { focus: 'Articles in the accusative', think: 'What case does a direct object take?', why: 'The thing being bought is the direct object, so it takes the accusative case.', mainRule: 'Subjekt + Verb + Akkusativobjekt', example: 'Ich kaufe den Apfel.' },
+            hints: ['Ask: what am I buying? That is the direct object.', 'Masculine "der" becomes "den" in the accusative.'] }
+        ],
+        prepositions: [
+          { type: 'choice', promptHtml: 'Ich interessiere mich ___ deutsche Geschichte.', options: ['an', 'auf', 'für', 'mit'], answerIndex: 2,
+            pattern: ['sich interessieren', 'für', 'Akkusativ'],
+            rule: { focus: 'Verb-preposition combination', think: '"sich interessieren" is always followed by which preposition?', why: '"sich interessieren für + Akkusativ" is a fixed combination — it has to be learned as a unit.', mainRule: 'sich interessieren für + Akkusativ', example: 'Ich interessiere mich für deutsche Geschichte.' },
+            hints: ['This is a fixed expression — the preposition never changes.', 'Think: "interested IN" in English maps to "für" here.'] },
+          { type: 'choice', promptHtml: 'Ich warte ___ den Bus.', options: ['auf', 'für', 'mit', 'bei'], answerIndex: 0,
+            pattern: ['warten', 'auf', 'Akkusativ'],
+            rule: { focus: 'Verb-preposition combination', think: '"warten" is always followed by which preposition?', why: '"warten auf + Akkusativ" is a fixed combination.', mainRule: 'warten auf + Akkusativ', example: 'Wir warten auf den Zug.' },
+            hints: ['This is another fixed verb + preposition pair.', 'English "to wait FOR" maps to "auf" in German.'] }
+        ],
+        adjectiveEndings: [
+          { type: 'gap', promptHtml: 'Ich trinke einen ___ Kaffee (stark).', accepted: ['starken'],
+            rule: { focus: 'Adjective endings after ein-words', think: 'Masculine, accusative, after "einen" — which ending?', why: 'After ein-words in the accusative masculine, the adjective takes -en.', mainRule: 'einen + adjective-en + masculine noun (Akkusativ)', example: 'Ich trinke einen kalten Kaffee.' },
+            hints: ['"Kaffee" is masculine — der Kaffee.', 'Masculine accusative adjective endings after ein-words are always -en.'] },
+          { type: 'choice', promptHtml: 'Das ist ein ___ Auto (schnell).', options: ['schnelle', 'schnelles', 'schneller', 'schnellen'], answerIndex: 1,
+            logic: ['das Auto → neuter', 'Nominativ after ein-words, neuter → -es', 'ein schnelles Auto'],
+            rule: { focus: 'Adjective endings after ein-words', think: 'Neuter, nominative, after "ein" — which ending?', why: 'After ein-words in the nominative neuter, the adjective takes -es, because "ein" itself carries no gender marker there.', mainRule: 'ein + adjective-es + neuter noun (Nominativ)', example: 'Das ist ein schönes Haus.' },
+            hints: ['"Auto" is neuter — das Auto.', 'When "ein" does not show the gender itself, the adjective ending has to.'] }
+        ],
+        konjunktivII: [
+          { type: 'transform', originalLines: ['Ich habe kein Auto.', 'Deshalb fahre ich nicht nach Berlin.'], promptPrefix: 'Wenn ich ...',
+            accepted: ['wenn ich ein auto hätte würde ich nach berlin fahren'], betterAnswer: 'Wenn ich ein Auto hätte, würde ich nach Berlin fahren.',
+            rule: { focus: 'Konjunktiv II word order', think: 'Where does the conjugated verb go in the main clause after a "wenn" clause?', why: 'The subordinate clause takes position 1, so the conjugated verb begins the main clause immediately afterward.', mainRule: 'Wenn + Subjekt + ... + Konjunktiv-II-Verb, Verb + Subjekt + ...', example: 'Wenn ich Zeit hätte, würde ich mehr lesen.' },
+            hints: ['Use "hätte" for the "wenn" clause (haben → Konjunktiv II) and "würde + Infinitiv" for the result.', 'After the comma, the verb comes first, then the subject "ich".'] },
+          { type: 'transform', originalLines: ['Ich bin krank.', 'Deshalb gehe ich nicht zur Arbeit.'], promptPrefix: 'Wenn ich ...',
+            accepted: ['wenn ich nicht krank wäre würde ich zur arbeit gehen'], betterAnswer: 'Wenn ich nicht krank wäre, würde ich zur Arbeit gehen.',
+            rule: { focus: 'Konjunktiv II word order', think: 'How do you form Konjunktiv II of "sein"?', why: 'The subordinate clause takes position 1, so the conjugated verb begins the main clause immediately afterward.', mainRule: 'Wenn + Subjekt + ... + Konjunktiv-II-Verb, Verb + Subjekt + ...', example: 'Wenn ich mehr Geld hätte, würde ich reisen.' },
+            hints: ['sein → Konjunktiv II is "wäre".', 'Remember the "nicht" and keep "würde + Infinitiv" for the main clause.'] }
+        ],
+        passive: [
+          { type: 'gap', promptHtml: 'Das Auto ___ repariert (werden, Präsens).', accepted: ['wird'],
+            rule: { focus: 'Passive with werden', think: 'What is the passive auxiliary verb in the present tense?', why: 'The passive voice is built with a conjugated form of "werden" plus the Partizip II.', mainRule: 'Subjekt + werden + ... + Partizip II', example: 'Die Tür wird geöffnet.' },
+            hints: ['The passive auxiliary is "werden", not "sein".', '"Das Auto" is 3rd person singular → "wird".'] }
+        ],
+        relativeClauses: [
+          { type: 'combine', sentenceA: 'Das ist der Mann.', sentenceB: 'Der Mann wohnt neben mir.', connector: '(Relativsatz)',
+            accepted: ['das ist der mann der neben mir wohnt'], display: 'Das ist der Mann, der neben mir wohnt.',
+            rule: { focus: 'Relative clauses', think: 'Which relative pronoun matches "der Mann"?', why: 'The relative pronoun matches the gender/number of its noun and takes the case of its role inside the relative clause — here it is the subject, so nominative "der".', mainRule: 'Nomen + Relativpronomen + ... + Verb', example: 'Das ist die Frau, die hier arbeitet.' },
+            hints: ['"der Mann" is masculine, so the relative pronoun is also "der".', 'The conjugated verb of the relative clause goes to the end, just like after "weil".'] }
+        ],
+        connectors: [
+          { type: 'combine', sentenceA: 'Er ist müde.', sentenceB: 'Er arbeitet weiter.', connector: 'obwohl',
+            accepted: ['obwohl er müde ist arbeitet er weiter'], display: 'Obwohl er müde ist, arbeitet er weiter.',
+            rule: { focus: 'Connectors: obwohl', think: 'Where does the verb go in each clause?', why: '"obwohl" introduces a subordinate clause, so its conjugated verb moves to the end; when a sentence starts with that subordinate clause, the main-clause verb comes right after the comma.', mainRule: 'Obwohl + Subjekt + ... + Verb, Verb + Subjekt + ...', example: 'Obwohl es regnet, gehen wir spazieren.' },
+            hints: ['Start with "Obwohl" and put "ist" at the end of that first clause.', 'After the comma, the verb "arbeitet" comes immediately, before "er".'] },
+          { type: 'gap', promptHtml: 'Er ist müde, ___ arbeitet er weiter.', accepted: ['trotzdem'],
+            rule: { focus: 'Connectors: trotzdem', think: '"trotzdem" is an adverb, not a subordinating conjunction — what does that do to word order?', why: '"trotzdem" occupies position 1, which pushes the conjugated verb into position 2, directly followed by the subject.', mainRule: 'Satz 1. Trotzdem + Verb + Subjekt + ...', example: 'Es regnet. Trotzdem gehen wir spazieren.' },
+            hints: ['This connector starts a new main clause, not a subordinate one.', 'It means "nevertheless" / "despite that".'] }
+        ],
+        tenses: [
+          { type: 'choice', promptHtml: 'Gestern ___ ich ins Kino gegangen.', options: ['habe', 'bin', 'hatte', 'war'], answerIndex: 1,
+            logic: ['gehen = verb of motion', 'verbs of motion use sein in the Perfekt', 'ich bin gegangen'],
+            rule: { focus: 'Perfekt with sein', think: 'Does "gehen" use haben or sein in the Perfekt?', why: 'Verbs of motion or change of state (gehen, fahren, kommen, werden...) form the Perfekt with "sein".', mainRule: 'Subjekt + sein + ... + Partizip II (verbs of motion)', example: 'Ich bin nach Hause gefahren.' },
+            hints: ['"gehen" describes movement from one place to another.', 'Motion verbs take "sein", not "haben".'] }
+        ],
+        pronouns: [
+          { type: 'gap', promptHtml: 'Ich sehe ___ (der Mann) nicht.', accepted: ['ihn'],
+            rule: { focus: 'Personal pronouns in the accusative', think: '"der Mann" is the direct object here — which pronoun replaces it?', why: 'Direct objects take the accusative case; the accusative form of "er" is "ihn".', mainRule: 'er → ihn (Akkusativ)', example: 'Ich kenne ihn gut.' },
+            hints: ['"sehen" takes a direct object (accusative).', 'er → ihn, sie → sie, es → es in the accusative.'] }
+        ],
+        verbPrep: [
+          { type: 'choice', promptHtml: 'Ich denke oft ___ meine Familie.', options: ['an', 'auf', 'für', 'mit'], answerIndex: 0,
+            pattern: ['denken', 'an', 'Akkusativ'],
+            rule: { focus: 'Verb-preposition combination', think: '"denken" is always followed by which preposition?', why: '"denken an + Akkusativ" is a fixed combination.', mainRule: 'denken an + Akkusativ', example: 'Ich denke an dich.' },
+            hints: ['This is a fixed expression to memorise as a unit.', 'English "to think OF/ABOUT" maps to "an" here.'] }
+        ],
+        nominalisation: [
+          { type: 'choice', promptHtml: 'Er kritisierte das ständige ___ (zu spät kommen).', options: ['Zuspätkommen', 'Zuspätkommt', 'Zuspätgekommen', 'Zuspätkam'], answerIndex: 0,
+            logic: ['infinitive → nominalised noun', 'always neuter, always capitalised', 'zu spät kommen → das Zuspätkommen'],
+            rule: { focus: 'Nominalisierung', think: 'How do you turn an infinitive into a noun?', why: 'German infinitives can be used as neuter nouns simply by capitalising them.', mainRule: 'Infinitiv → das + Infinitiv (großgeschrieben)', example: 'Das Rauchen ist hier verboten.' },
+            hints: ['Nominalised infinitives are always neuter: "das ...".', 'The verb stays in its infinitive form, just capitalised.'] }
+        ],
+        partizip: [
+          { type: 'choice', promptHtml: 'Der ___ Mann (gerade ankommen) wartet am Gleis.', options: ['ankommende', 'ankommender', 'angekommene', 'ankommend'], answerIndex: 0,
+            logic: ['ankommen → Partizip I: ankommend', 'used as adjective before "der Mann" (Nominativ, maskulin)', 'der ankommende Mann'],
+            rule: { focus: 'Partizipialattribute', think: 'Is the man arriving (ongoing) or already arrived?', why: 'Partizip I (-end) describes an ongoing action, used here as an adjective with regular adjective endings.', mainRule: 'Partizip I + adjective ending + Nomen', example: 'die wartenden Passagiere' },
+            hints: ['"Partizip I" is the -end form and describes an action still happening.', 'It takes normal adjective endings — here, masculine nominative -e after "der".'] }
+        ],
+        indirectSpeech: [
+          { type: 'gap', promptHtml: 'Er sagte, er ___ (sein) müde.', accepted: ['sei'],
+            rule: { focus: 'Konjunktiv I in indirect speech', think: 'Formal reported speech uses Konjunktiv I, not Konjunktiv II — what is the Konjunktiv I form of "sein"?', why: 'Konjunktiv I marks reported speech in formal/written German, distancing the speaker from the claim.', mainRule: 'er/sie/es + Konjunktiv-I-Verb', example: 'Sie sagte, sie habe keine Zeit.' },
+            hints: ['This is formal reported speech, so use Konjunktiv I, not "würde".', 'sein → ich sei, er/sie/es sei.'] }
+        ],
+        advConnectors: [
+          { type: 'combine', sentenceA: 'Die Preise steigen.', sentenceB: 'Die Nachfrage sinkt nicht.', connector: 'obgleich',
+            accepted: ['obgleich die preise steigen sinkt die nachfrage nicht'], display: 'Obgleich die Preise steigen, sinkt die Nachfrage nicht.',
+            rule: { focus: 'Advanced connectors: obgleich', think: 'This is a more formal, written equivalent of "obwohl" — does word order change?', why: '"obgleich" behaves exactly like "obwohl": it introduces a subordinate clause, so the conjugated verb moves to the end, and the main clause verb follows immediately after the comma.', mainRule: 'Obgleich + Subjekt + ... + Verb, Verb + Subjekt + ...', example: 'Obgleich er wenig Zeit hatte, half er mir.' },
+            hints: ['Treat "obgleich" exactly like "obwohl" for word order.', 'It is more common in formal/written German than in speech.'] }
+        ]
+      };
+
+      var gm = {
+        tab: 'practice', topic: 'verbPosition', level: 'B2',
+        queue: [], index: 0, score: 0, answers: {}, hintLevel: {}, tries: {},
+        orderBuilt: {}, orderPool: {}, selected: {}, _lastUser: {}
+      };
+
+      function gmEl(id) { return document.getElementById(id); }
+
+      function gmNormalize(s) {
+        return String(s == null ? '' : s).toLowerCase()
+          .replace(/[.,!?;:"„“]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function gmShuffle(arr) {
+        for (var i = arr.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+        }
+        return arr;
+      }
+
+      function gmWordOverlap(a, b) {
+        var wa = gmNormalize(a).split(' ').filter(Boolean);
+        var wb = gmNormalize(b).split(' ').filter(Boolean);
+        if (!wa.length || !wb.length) return 0;
+        var setB = {};
+        wb.forEach(function (w) { setB[w] = (setB[w] || 0) + 1; });
+        var hits = 0;
+        wa.forEach(function (w) { if (setB[w] > 0) { hits++; setB[w]--; } });
+        return hits / Math.max(wa.length, wb.length);
+      }
+
+      // ── per-topic accuracy, tracked locally so "Weak areas" reflects real
+      // practice history instead of a static mock. ────────────────────────
+      function gmStatsLoad() {
+        try { return JSON.parse(localStorage.getItem('ss_gl_gram_stats') || '{}'); } catch (e) { return {}; }
+      }
+      function gmStatsSave(stats) {
+        try { localStorage.setItem('ss_gl_gram_stats', JSON.stringify(stats)); } catch (e) { /* ignore */ }
+      }
+      function gmStatsRecord(topic, correct) {
+        var stats = gmStatsLoad();
+        if (!stats[topic]) stats[topic] = { correct: 0, total: 0 };
+        stats[topic].total++;
+        if (correct) stats[topic].correct++;
+        gmStatsSave(stats);
+      }
+
+      function gmBuildTopicSelect() {
+        var sel = gmEl('glGramTopic');
+        if (!sel) return;
+        var prev = gm.topic;
+        var list = GM_TOPICS.concat(gm.level === 'C1' ? GM_TOPICS_C1 : []);
+        sel.innerHTML = list.map(function (t) {
+          return '<option value="' + t.id + '">' + _glEscape(t.label) + '</option>';
+        }).join('');
+        if (list.some(function (t) { return t.id === prev; })) sel.value = prev;
+        else { sel.value = list[0].id; gm.topic = list[0].id; }
+      }
+
+      function gmPickExercises(topic, count) {
+        var pool = (GM_BANK[topic] || []).slice();
+        if (!pool.length) return [];
+        var out = [];
+        var i = 0;
+        while (out.length < count) { out.push(pool[i % pool.length]); i++; }
+        return out;
+      }
+
+      function gmStartQueue(topic, count) {
+        gm.queue = gmPickExercises(topic, count || 10);
+        gm.index = 0;
+        gm.score = 0;
+        gm.answers = {};
+        gm.hintLevel = {};
+        gm.tries = {};
+        gm.orderBuilt = {};
+        gm.orderPool = {};
+        gm.selected = {};
+        gm._lastUser = {};
+        gmEl('glGramEnd').style.display = 'none';
+        gmEl('glGramWorkspace').style.display = '';
+        gmRenderExercise();
+      }
+
+      window._glOpenGrammarView = function () {
+        gm.tab = 'practice';
+        gmBuildTopicSelect();
+        gmRenderTabs();
+        gmSetTabView('practice');
+        gmStartQueue(gm.topic, 10);
+        gmWireHeader();
+      };
+
+      function gmWireHeader() {
+        var tabsWrap = document.querySelector('.gl-gram-tabs');
+        if (tabsWrap && !tabsWrap._gmWired) {
+          tabsWrap._gmWired = true;
+          tabsWrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('.gl-gram-tab');
+            if (!btn) return;
+            gmSetTabView(btn.getAttribute('data-gram-tab'));
+          });
+        }
+        var topicSel = gmEl('glGramTopic');
+        var levelSel = gmEl('glGramLevel');
+        if (topicSel && !topicSel._gmWired) {
+          topicSel._gmWired = true;
+          topicSel.addEventListener('change', function () {
+            gm.topic = topicSel.value;
+            if (gm.tab === 'practice') gmStartQueue(gm.topic, 10);
+          });
+        }
+        if (levelSel && !levelSel._gmWired) {
+          levelSel._gmWired = true;
+          levelSel.addEventListener('change', function () {
+            gm.level = levelSel.value;
+            gmBuildTopicSelect();
+            if (gm.tab === 'practice') gmStartQueue(gm.topic, 10);
+          });
+        }
+      }
+
+      function gmRenderTabs() {
+        document.querySelectorAll('.gl-gram-tab').forEach(function (btn) {
+          var active = btn.getAttribute('data-gram-tab') === gm.tab;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+      }
+
+      function gmSetTabView(tab) {
+        gm.tab = tab;
+        gmRenderTabs();
+        gmEl('glGramPractice').style.display = tab === 'practice' ? '' : 'none';
+        gmEl('glGramWeak').style.display = tab === 'weak' ? '' : 'none';
+        gmEl('glGramFiles').style.display = tab === 'files' ? '' : 'none';
+        if (tab === 'practice') {
+          if (!gm.queue.length) gmStartQueue(gm.topic, 10);
+        } else if (tab === 'weak') {
+          gmRenderWeak();
+        } else if (tab === 'files') {
+          gmRenderFilesPanel();
+        }
+      }
+
+      function gmCurrentEx() { return gm.queue[gm.index]; }
+
+      function gmProgress() {
+        var label = gmEl('glGramProgressLabel');
+        var fill = gmEl('glGramProgressFill');
+        if (label) label.textContent = Math.min(gm.index + 1, gm.queue.length) + ' / ' + gm.queue.length;
+        if (fill) fill.style.width = Math.round(((gm.index + (gm.answers[gm.index] ? 1 : 0)) / gm.queue.length) * 100) + '%';
+      }
+
+      function gmRenderExercise() {
+        var ex = gmCurrentEx();
+        if (!ex) return;
+        gmProgress();
+        var answer = gm.answers[gm.index];
+        gmEl('glGramExercise').innerHTML = gmExerciseHtml(ex, answer);
+        gmWireExercise(ex, answer);
+        gmEl('glGramFeedback').innerHTML = answer ? gmFeedbackAfterHtml(ex, answer) : gmFeedbackBeforeHtml(ex);
+        gmWireFeedback(ex, answer);
+      }
+
+      function gmExerciseHtml(ex, answer) {
+        var idx = gm.index;
+        var locked = !!answer;
+
+        if (ex.type === 'order') {
+          if (!gm.orderPool[idx] && !gm.orderBuilt[idx]) {
+            gm.orderPool[idx] = gmShuffle(ex.words.slice());
+            gm.orderBuilt[idx] = [];
+          }
+          var pool = locked ? [] : gm.orderPool[idx];
+          var built = locked ? ex.answer.split(' ') : gm.orderBuilt[idx];
+          var canCheck = !locked && gm.orderBuilt[idx].length === ex.words.length;
+          return '<div class="gl-gram-ex-eyebrow">Put the sentence in the correct order</div>' +
+            '<p class="gl-gram-ex-instruction">Arrange the words to form a correct sentence.</p>' +
+            '<div class="gl-gram-build" id="glGramBuild">' +
+            (built.length
+              ? built.map(function (w, i) { return '<button type="button" class="gl-gram-chip gl-gram-chip-built" data-i="' + i + '"' + (locked ? ' disabled' : '') + '>' + _glEscape(w) + '</button>'; }).join('')
+              : '<span class="gl-gram-build-placeholder">Tap words below to build the sentence</span>') +
+            '</div>' +
+            '<div class="gl-gram-chips" id="glGramChips">' +
+            pool.map(function (w, i) { return '<button type="button" class="gl-gram-chip" data-i="' + i + '">' + _glEscape(w) + '</button>'; }).join('') +
+            '</div>' +
+            '<div class="gl-gram-ex-actions">' +
+            '<button type="button" class="gl-gram-btn" id="glGramResetBtn"' + (locked ? ' disabled' : '') + '>Reset</button>' +
+            '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramCheckBtn"' + (locked || !canCheck ? ' disabled' : '') + '>Check answer →</button>' +
+            '</div>';
+        }
+
+        if (ex.type === 'choice') {
+          var sel = gm.selected[idx];
+          return '<div class="gl-gram-ex-eyebrow">Choose the correct form</div>' +
+            '<p class="gl-gram-ex-prompt">' + ex.promptHtml.replace('___', '<span class="gl-gram-blank">___</span>') + '</p>' +
+            '<div class="gl-gram-options" id="glGramOptions">' +
+            ex.options.map(function (opt, i) {
+              var cls = 'gl-gram-option';
+              if (locked) {
+                if (i === ex.answerIndex) cls += ' gl-gram-opt-correct';
+                else if (i === answer.selectedIndex) cls += ' gl-gram-opt-incorrect';
+              } else if (sel === i) cls += ' gl-gram-opt-selected';
+              return '<button type="button" class="' + cls + '" data-i="' + i + '"' + (locked ? ' disabled' : '') + '>' + _glEscape(opt) + '</button>';
+            }).join('') +
+            '</div>' +
+            '<div class="gl-gram-ex-actions">' +
+            '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramCheckBtn"' + (locked || sel == null ? ' disabled' : '') + '>Check answer →</button>' +
+            '</div>';
+        }
+
+        var eyebrow = { gap: 'Fill the gap', transform: 'Sentence transformation', combine: 'Combine the sentences', correct: 'Correct the sentence' }[ex.type];
+        var body = '';
+        if (ex.type === 'gap') {
+          body = '<p class="gl-gram-ex-prompt">' +
+            ex.promptHtml.replace('___', '<input type="text" class="gl-gram-inline-input" id="glGramFreeInput"' + (locked ? ' disabled value="' + _glEscape(answer.userValue || '') + '"' : '') + '>') +
+            '</p>';
+        } else if (ex.type === 'transform') {
+          body = '<p class="gl-gram-ex-instruction">Original:</p>' +
+            '<div class="gl-gram-original">' + ex.originalLines.map(_glEscape).join('<br>') + '</div>' +
+            '<p class="gl-gram-ex-prefix">"' + _glEscape(ex.promptPrefix) + '"</p>' +
+            '<textarea class="gl-gram-textarea" id="glGramFreeInput" placeholder="Type your answer..."' + (locked ? ' disabled' : '') + '>' + (locked ? _glEscape(answer.userValue || '') : '') + '</textarea>';
+        } else if (ex.type === 'combine') {
+          var instr = /^\(/.test(ex.connector) ? 'Combine into one sentence using a relative clause.' : 'Combine using "' + ex.connector + '".';
+          body = '<p class="gl-gram-ex-instruction">' + _glEscape(instr) + '</p>' +
+            '<div class="gl-gram-original">' + _glEscape(ex.sentenceA) + '<br>' + _glEscape(ex.sentenceB) + '</div>' +
+            '<textarea class="gl-gram-textarea" id="glGramFreeInput" placeholder="Type your combined sentence..."' + (locked ? ' disabled' : '') + '>' + (locked ? _glEscape(answer.userValue || '') : '') + '</textarea>';
+        } else if (ex.type === 'correct') {
+          body = '<div class="gl-gram-quote">“' + _glEscape(ex.sentenceWrong) + '”</div>' +
+            '<p class="gl-gram-ex-instruction">What is wrong?</p>' +
+            '<textarea class="gl-gram-textarea" id="glGramFreeInput" placeholder="Rewrite the sentence correctly..."' + (locked ? ' disabled' : '') + '>' + (locked ? _glEscape(answer.userValue || '') : '') + '</textarea>';
+        }
+        return '<div class="gl-gram-ex-eyebrow">' + eyebrow + '</div>' + body +
+          '<div class="gl-gram-ex-actions">' +
+          '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramCheckBtn"' + (locked ? ' disabled' : '') + '>Check answer →</button>' +
+          '</div>';
+      }
+
+      function gmWireExercise(ex, answer) {
+        var idx = gm.index;
+        var locked = !!answer;
+        if (ex.type === 'order' && !locked) {
+          var chipsWrap = gmEl('glGramChips');
+          if (chipsWrap) chipsWrap.querySelectorAll('.gl-gram-chip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var i = Number(btn.getAttribute('data-i'));
+              var word = gm.orderPool[idx].splice(i, 1)[0];
+              gm.orderBuilt[idx].push(word);
+              gmRenderExercise();
+            });
+          });
+          var buildWrap = gmEl('glGramBuild');
+          if (buildWrap) buildWrap.querySelectorAll('.gl-gram-chip-built').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var i = Number(btn.getAttribute('data-i'));
+              var word = gm.orderBuilt[idx].splice(i, 1)[0];
+              gm.orderPool[idx].push(word);
+              gmRenderExercise();
+            });
+          });
+          var resetBtn = gmEl('glGramResetBtn');
+          if (resetBtn) resetBtn.addEventListener('click', function () {
+            gm.orderPool[idx] = gmShuffle(ex.words.slice());
+            gm.orderBuilt[idx] = [];
+            gmRenderExercise();
+          });
+        } else if (ex.type === 'choice' && !locked) {
+          var optWrap = gmEl('glGramOptions');
+          if (optWrap) optWrap.querySelectorAll('.gl-gram-option').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              gm.selected[idx] = Number(btn.getAttribute('data-i'));
+              gmRenderExercise();
+            });
+          });
+        }
+        var checkBtn = gmEl('glGramCheckBtn');
+        if (checkBtn && !checkBtn.disabled) checkBtn.addEventListener('click', gmCheck);
+      }
+
+      function gmCheck() {
+        var ex = gmCurrentEx();
+        var idx = gm.index;
+        var correct = false;
+        var almost = false;
+        var userDisplay = '';
+        var selectedIndex = null;
+
+        if (ex.type === 'order') {
+          userDisplay = (gm.orderBuilt[idx] || []).join(' ');
+          correct = gmNormalize(userDisplay) === gmNormalize(ex.answer);
+        } else if (ex.type === 'choice') {
+          selectedIndex = gm.selected[idx];
+          if (selectedIndex == null) return;
+          userDisplay = ex.options[selectedIndex];
+          correct = selectedIndex === ex.answerIndex;
+        } else if (ex.type === 'gap') {
+          var gi = gmEl('glGramFreeInput');
+          userDisplay = gi ? gi.value : '';
+          if (!userDisplay.trim()) return;
+          correct = ex.accepted.indexOf(gmNormalize(userDisplay)) !== -1;
+        } else {
+          var fi = gmEl('glGramFreeInput');
+          userDisplay = fi ? fi.value : '';
+          if (!userDisplay.trim()) return;
+          correct = ex.accepted.indexOf(gmNormalize(userDisplay)) !== -1;
+          if (!correct && ex.type === 'transform') {
+            if (gmWordOverlap(userDisplay, ex.betterAnswer) >= 0.55) almost = true;
+          }
+        }
+
+        gm._lastUser[idx] = userDisplay;
+
+        if (correct) {
+          gm.answers[idx] = { status: 'correct', userValue: userDisplay, selectedIndex: selectedIndex };
+          gm.score++;
+          gmStatsRecord(gm.topic, true);
+          gmRenderExercise();
+        } else if (almost) {
+          gm.answers[idx] = { status: 'almost', userValue: userDisplay, selectedIndex: selectedIndex };
+          gmStatsRecord(gm.topic, false);
+          gmRenderExercise();
+        } else {
+          gm.tries[idx] = (gm.tries[idx] || 0) + 1;
+          gmRenderPendingWrong(ex, userDisplay);
+        }
+      }
+
+      function gmRenderPendingWrong(ex, userDisplay) {
+        var fbWrap = gmEl('glGramFeedback');
+        fbWrap.innerHTML =
+          '<div class="gl-gram-fb gl-gram-fb-incorrect">' +
+          '<div class="gl-gram-fb-title">Not quite.</div>' +
+          (userDisplay ? '<div class="gl-gram-fb-line">Your answer:<br><strong>' + _glEscape(userDisplay) + '</strong></div>' : '') +
+          '<div class="gl-gram-fb-actions">' +
+          '<button type="button" class="gl-gram-btn" id="glGramTryAgain">Try again</button>' +
+          '<button type="button" class="gl-gram-btn" id="glGramShowSolution">Show solution</button>' +
+          '</div>' +
+          '<div class="gl-gram-fb-actions gl-gram-fb-actions-secondary">' +
+          '<button type="button" class="gl-gram-btn gl-gram-btn-ghost" id="glGramExplainBtn">Explain this rule</button>' +
+          '</div>' +
+          '</div>';
+        gmEl('glGramTryAgain').addEventListener('click', gmTryAgain);
+        gmEl('glGramShowSolution').addEventListener('click', gmShowSolution);
+        gmEl('glGramExplainBtn').addEventListener('click', function () { gmExplainRule(ex); });
+      }
+
+      function gmTryAgain() {
+        var idx = gm.index;
+        var ex = gm.queue[idx];
+        if (ex.type === 'order') {
+          gm.orderPool[idx] = gmShuffle(ex.words.slice());
+          gm.orderBuilt[idx] = [];
+        }
+        gm.selected[idx] = null;
+        gmRenderExercise();
+      }
+
+      function gmShowSolution() {
+        var idx = gm.index;
+        gm.answers[idx] = { status: 'revealed', userValue: (gm._lastUser && gm._lastUser[idx]) || '', selectedIndex: gm.selected[idx] };
+        gmStatsRecord(gm.topic, false);
+        gmRenderExercise();
+      }
+
+      function gmFeedbackBeforeHtml(ex) {
+        var hLevel = gm.hintLevel[gm.index] || 0;
+        var hasHints = ex.hints && ex.hints.length;
+        var hintsHtml = '';
+        for (var i = 0; i < hLevel; i++) hintsHtml += '<div class="gl-gram-hint-box">' + _glEscape(ex.hints[i]) + '</div>';
+        var hintDisabled = !hasHints || hLevel >= ex.hints.length;
+        var hintLabel = hLevel === 0 ? 'Give me a hint' : (hintDisabled ? 'No more hints' : 'Another hint');
+        return '<div class="gl-gram-focus">' +
+          '<div class="gl-gram-focus-eyebrow">Grammar focus</div>' +
+          '<div class="gl-gram-focus-title">' + _glEscape(ex.rule.focus) + '</div>' +
+          '<div class="gl-gram-focus-think">Think about:<br>' + _glEscape(ex.rule.think) + '</div>' +
+          hintsHtml +
+          '<button type="button" class="gl-gram-hint-btn" id="glGramHintBtn"' + (hintDisabled ? ' disabled' : '') + '>' + hintLabel + '</button>' +
+          '</div>';
+      }
+
+      function gmFeedbackAfterHtml(ex, answer) {
+        var isCorrect = answer.status === 'correct';
+        var isAlmost = answer.status === 'almost';
+        var title = isCorrect ? '✓ Correct' : isAlmost ? 'Almost correct.' : 'Not quite.';
+        var cls = isCorrect ? 'gl-gram-fb-correct' : isAlmost ? 'gl-gram-fb-almost' : 'gl-gram-fb-incorrect';
+        var lines = '';
+
+        if (ex.type === 'correct') {
+          lines += isCorrect
+            ? '<div class="gl-gram-fb-line">' + ex.highlightCorrect + '</div>'
+            : '<div class="gl-gram-fb-line">Your answer:<br><strong>' + _glEscape(answer.userValue || '(none)') + '</strong></div>' +
+              '<div class="gl-gram-fb-line">Correct:<br>' + ex.highlightCorrect + '</div>';
+        } else if (!isCorrect) {
+          var better = ex.type === 'transform' ? ex.betterAnswer
+            : ex.type === 'combine' ? ex.display
+            : ex.type === 'order' ? ex.answer
+            : ex.type === 'choice' ? ex.options[ex.answerIndex]
+            : (ex.accepted && ex.accepted[0]);
+          lines += '<div class="gl-gram-fb-line">Your answer:<br><strong>' + _glEscape(answer.userValue || '(none)') + '</strong></div>' +
+            '<div class="gl-gram-fb-line">' + (isAlmost ? 'Better' : 'Correct') + ':<br><strong>' + _glEscape(better || '') + '</strong></div>';
+        } else if (ex.type === 'order') {
+          lines += '<div class="gl-gram-fb-line"><strong>' + _glEscape(ex.answer) + '</strong></div>';
+        }
+
+        var patternHtml = ex.pattern
+          ? '<div class="gl-gram-pattern">' + ex.pattern.map(function (p) { return '<span class="gl-gram-pattern-chip">' + _glEscape(p) + '</span>'; }).join('<span class="gl-gram-pattern-plus">+</span>') + '</div>'
+          : '';
+        var logicHtml = ex.logic
+          ? '<div class="gl-gram-logic">' + ex.logic.map(function (l) { return '<div class="gl-gram-logic-row">' + _glEscape(l) + '</div>'; }).join('<div class="gl-gram-logic-arrow">↓</div>') + '</div>'
+          : '';
+
+        return '<div class="gl-gram-fb ' + cls + '">' +
+          '<div class="gl-gram-fb-title">' + title + '</div>' +
+          lines + patternHtml + logicHtml +
+          '<div class="gl-gram-fb-why"><strong>Why?</strong><br>' + _glEscape(ex.rule.why) +
+          '<br><br><span class="gl-gram-fb-mainrule">' + _glEscape(ex.rule.mainRule) + '</span>' +
+          '<br><span class="gl-gram-fb-example">' + _glEscape(ex.rule.example) + '</span></div>' +
+          '<div class="gl-gram-fb-actions">' +
+          '<button type="button" class="gl-gram-btn gl-gram-btn-ghost" id="glGramExplainBtn">Explain this rule</button>' +
+          '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramNextBtn">Next →</button>' +
+          '</div>' +
+          '</div>';
+      }
+
+      function gmWireFeedback(ex, answer) {
+        if (!answer) {
+          var hb = gmEl('glGramHintBtn');
+          if (hb) hb.addEventListener('click', function () {
+            gm.hintLevel[gm.index] = (gm.hintLevel[gm.index] || 0) + 1;
+            gmEl('glGramFeedback').innerHTML = gmFeedbackBeforeHtml(ex);
+            gmWireFeedback(ex, null);
+          });
+          return;
+        }
+        var eb = gmEl('glGramExplainBtn');
+        if (eb) eb.addEventListener('click', function () { gmExplainRule(ex); });
+        var nb = gmEl('glGramNextBtn');
+        if (nb) nb.addEventListener('click', gmNext);
+      }
+
+      function gmExplainRule(ex) {
+        var topicLabel = (GM_ALL_TOPICS.filter(function (t) { return t.id === gm.topic; })[0] || {}).label || gm.topic;
+        var prompt = 'Explain this German grammar rule in a short, clear way for a ' + gm.level + ' learner: "' + ex.rule.focus + '". ' +
+          ex.rule.why + ' Rule: ' + ex.rule.mainRule + '. Example: ' + ex.rule.example;
+        window._glAsk(prompt, 'Grammatik — ' + topicLabel);
+      }
+
+      function gmNext() {
+        gm.index++;
+        if (gm.index >= gm.queue.length) { gmRenderEnd(); return; }
+        gmRenderExercise();
+      }
+
+      function gmRenderEnd() {
+        gmEl('glGramWorkspace').style.display = 'none';
+        var wrap = gmEl('glGramEnd');
+        wrap.style.display = '';
+        var total = gm.queue.length;
+        var pct = total ? Math.round((gm.score / total) * 100) : 0;
+        var stats = gmStatsLoad();
+        var rows = Object.keys(stats).map(function (t) {
+          var s = stats[t];
+          var acc = s.total ? s.correct / s.total : 0;
+          var label = (GM_ALL_TOPICS.filter(function (x) { return x.id === t; })[0] || {}).label || t;
+          return { topic: t, label: label, acc: acc, total: s.total };
+        }).filter(function (r) { return r.total >= 2; });
+        var strong = rows.filter(function (r) { return r.acc >= 0.8; }).map(function (r) { return r.label; });
+        var weak = rows.filter(function (r) { return r.acc < 0.6; }).sort(function (a, b) { return a.acc - b.acc; });
+        var recommend = weak[0] || null;
+
+        wrap.innerHTML =
+          '<div class="gl-gram-end-card">' +
+          '<div class="gl-gram-end-title">Grammar practice complete</div>' +
+          '<div class="gl-gram-end-score">' + gm.score + ' / ' + total + '</div>' +
+          '<div class="gl-gram-end-pct">' + pct + '%</div>' +
+          (strong.length ? '<div class="gl-gram-end-row"><b>Strong:</b> ' + strong.map(_glEscape).join(', ') + '</div>' : '') +
+          (weak.length ? '<div class="gl-gram-end-row"><b>Needs practice:</b> ' + weak.map(function (r) { return _glEscape(r.label); }).join(', ') + '</div>' : '') +
+          (recommend ? '<div class="gl-gram-end-recommend">Recommended next: <b>' + _glEscape(recommend.label) + '</b> · 6 min</div>' : '') +
+          '<div class="gl-gram-end-actions">' +
+          (recommend ? '<button type="button" class="gl-gram-btn" id="glGramEndWeak">Practice weak area</button>' : '') +
+          '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramEndNew">New session</button>' +
+          '</div>' +
+          '</div>';
+        var wb = gmEl('glGramEndWeak');
+        if (wb) wb.addEventListener('click', function () {
+          gm.topic = recommend.topic;
+          var sel = gmEl('glGramTopic');
+          if (sel) sel.value = recommend.topic;
+          gmStartQueue(gm.topic, 10);
+        });
+        var nsBtn = gmEl('glGramEndNew');
+        if (nsBtn) nsBtn.addEventListener('click', function () { gmStartQueue(gm.topic, 10); });
+      }
+
+      function gmRenderWeak() {
+        var wrap = gmEl('glGramWeak');
+        var stats = gmStatsLoad();
+        var rows = GM_ALL_TOPICS.map(function (t) {
+          var s = stats[t.id];
+          var total = s ? s.total : 0;
+          var acc = total ? s.correct / total : null;
+          var status = acc == null ? 'Not started' : acc < 0.6 ? 'Needs practice' : acc < 0.85 ? 'Improving' : 'Strong';
+          return { id: t.id, label: t.label, total: total, acc: acc, status: status };
+        }).filter(function (r) { return r.total > 0; })
+          .sort(function (a, b) { return (a.acc == null ? 0 : a.acc) - (b.acc == null ? 0 : b.acc); });
+
+        if (!rows.length) {
+          wrap.innerHTML = '<div class="gl-gram-files-empty">Practice a few exercises first — Minallo will track which grammar topics need more work.</div>';
+          return;
+        }
+        var recommend = rows.filter(function (r) { return r.status === 'Needs practice'; })[0] || rows[0];
+        wrap.innerHTML =
+          '<div class="gl-gram-weak-title">Your weak areas</div>' +
+          '<div class="gl-gram-weak-list">' +
+          rows.map(function (r) {
+            var badgeClass = r.status === 'Needs practice' ? 'gl-gram-badge-weak' : r.status === 'Improving' ? 'gl-gram-badge-mid' : 'gl-gram-badge-strong';
+            return '<div class="gl-gram-weak-row"><span>' + _glEscape(r.label) + '</span><span class="gl-gram-badge ' + badgeClass + '">' + r.status + '</span></div>';
+          }).join('') +
+          '</div>' +
+          '<div class="gl-gram-weak-recommend">' +
+          '<div class="gl-gram-weak-recommend-title">Recommended practice</div>' +
+          '<div class="gl-gram-weak-recommend-topic">' + _glEscape(recommend.label) + '</div>' +
+          '<div class="gl-gram-weak-recommend-meta">10 exercises · ~6 min</div>' +
+          '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramWeakStart">Start practice</button>' +
+          '</div>';
+        var wsBtn = gmEl('glGramWeakStart');
+        if (wsBtn) wsBtn.addEventListener('click', function () {
+          gm.topic = recommend.id;
+          var sel = gmEl('glGramTopic');
+          if (sel) sel.value = recommend.id;
+          gmSetTabView('practice');
+          gmStartQueue(recommend.id, 10);
+        });
+      }
+
+      // ── From my files ─────────────────────────────────────────────────────
+      var GM_DETECT_PATTERNS = [
+        { topic: 'verbPosition', re: /\b(weil|obwohl|dass|damit|wenn)\b/i },
+        { topic: 'relativeClauses', re: /,\s*(der|die|das|den|dem|deren|dessen)\b/i },
+        { topic: 'konjunktivII', re: /\b(würde|hätte|wäre|könnte)\b/i },
+        { topic: 'passive', re: /\b(wird|wurde|werden)\s+(\w+\s+)?(ge\w+|\w*t|geworden)\b/i },
+        { topic: 'connectors', re: /\b(trotzdem|deshalb|außerdem|allerdings|dennoch)\b/i },
+        { topic: 'prepositions', re: /\b(interessiere|warte|denke|freue)\s+(mich\s+)?(an|auf|für|über|von)\b/i },
+        { topic: 'tenses', re: /\bge\w+t\b|\bge\w+en\b/i }
+      ];
+
+      function gmDetectTopics(text) {
+        var found = [];
+        GM_DETECT_PATTERNS.forEach(function (p) {
+          if (p.re.test(text) && found.indexOf(p.topic) === -1) found.push(p.topic);
+        });
+        return found.slice(0, 4);
+      }
+
+      var gmChosenTopics = [];
+
+      async function gmRenderFilesPanel() {
+        var wrap = gmEl('glGramFiles');
+        var uid = _currentUser && (_currentUser.id || _currentUser.sub);
+        wrap.innerHTML = '<div class="gl-gram-files-empty">Loading your files…</div>';
+        if (!uid) {
+          wrap.innerHTML = '<div class="gl-gram-files-empty">Sign in to use your uploaded German files.</div>';
+          return;
+        }
+        var course = _glStorageCourse();
+        if (!course.files) course.files = [];
+        try { await _ufMerge(course); } catch (e) { /* ignore */ }
+        var files = course.files || [];
+        if (!files.length) {
+          wrap.innerHTML = '<div class="gl-gram-files-empty">No German files uploaded yet. Use Upload German file from another skill, then come back here.</div>';
+          return;
+        }
+        wrap.innerHTML =
+          '<div class="gl-gram-files-title">Choose a file to practice grammar from</div>' +
+          '<div id="glGramFileList">' +
+          files.map(function (f) {
+            var name = f.name || f.file_name || 'German file';
+            return '<label class="gl-gram-file-row"><input type="radio" name="glGramFile" value="' + _glEscape(name) + '"><span>' + _glEscape(name) + '</span></label>';
+          }).join('') +
+          '</div>' +
+          '<div class="gl-gram-files-detect" id="glGramDetect" style="display:none"></div>' +
+          '<div class="gl-gram-files-config">' +
+          '<label>Difficulty<select id="glGramCfgLevel"><option>A1</option><option>A2</option><option>B1</option><option selected>B2</option><option>C1</option></select></label>' +
+          '<label>Exercises<select id="glGramCfgCount"><option>5</option><option selected>10</option><option>15</option></select></label>' +
+          '<button type="button" class="gl-gram-start-btn" id="glGramFilesStart" disabled>Start practice</button>' +
+          '</div>';
+
+        document.querySelectorAll('input[name="glGramFile"]').forEach(function (radio) {
+          radio.addEventListener('change', function () { gmOnFileChosen(radio.value); });
+        });
+      }
+
+      async function gmOnFileChosen(fname) {
+        var detectWrap = gmEl('glGramDetect');
+        var startBtn = gmEl('glGramFilesStart');
+        gmChosenTopics = [];
+        if (startBtn) startBtn.disabled = true;
+        detectWrap.style.display = '';
+        detectWrap.innerHTML = 'Scanning file…';
+        var ext = (fname.split('.').pop() || '').toLowerCase();
+        var detected = [];
+        if (['txt', 'md'].indexOf(ext) !== -1) {
+          try {
+            var uid = _currentUser && (_currentUser.id || _currentUser.sub);
+            var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+            detected = gmDetectTopics(new TextDecoder().decode(bytes));
+          } catch (e) { /* fall through to default topics */ }
+        }
+        if (!detected.length) detected = ['verbPosition', 'cases', 'connectors'];
+        gmChosenTopics = detected.slice();
+        detectWrap.innerHTML =
+          '<div class="gl-gram-detect-label">We found:</div>' +
+          '<div class="gl-gram-detect-chips" id="glGramDetectChips">' +
+          detected.map(function (id) {
+            var t = GM_ALL_TOPICS.filter(function (x) { return x.id === id; })[0];
+            return '<button type="button" class="gl-gram-detect-chip active" data-topic="' + id + '">' + _glEscape(t ? t.label : id) + '</button>';
+          }).join('') +
+          '</div>' +
+          '<div class="gl-gram-detect-question">What should we practice?</div>';
+        detectWrap.querySelectorAll('.gl-gram-detect-chip').forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var id = chip.getAttribute('data-topic');
+            var i = gmChosenTopics.indexOf(id);
+            if (i === -1) { gmChosenTopics.push(id); chip.classList.add('active'); }
+            else { gmChosenTopics.splice(i, 1); chip.classList.remove('active'); }
+            if (startBtn) startBtn.disabled = !gmChosenTopics.length;
+          });
+        });
+        if (startBtn) {
+          startBtn.disabled = !gmChosenTopics.length;
+          startBtn.onclick = function () { gmStartFromFile(fname); };
+        }
+      }
+
+      function gmGeneratePrompt(level, count, topics) {
+        return 'Based on this German document, write ' + count + ' grammar practice exercises for a ' + level +
+          ' learner, focused on these grammar topics: ' + topics.join(', ') + '. Use sentences or structures inspired by the document where possible, not meaningless copies. ' +
+          'Reply with ONLY this JSON array, no other text, no markdown fences: ' +
+          '[{"type":"gap","promptHtml":"Sentence with ___ for the gap","accepted":["lowercase accepted answer(s), punctuation-free"],"rule":{"focus":"...","think":"...","why":"...","mainRule":"...","example":"..."},"hints":["hint1","hint2"]}]. ' +
+          'Valid "type" values and their extra fields: ' +
+          '"order" needs "words" (array of the sentence\'s words, unordered) and "answer" (lowercase, space-joined correct order); ' +
+          '"choice" needs "options" (array of 4 short strings) and "answerIndex" (0-based number); ' +
+          '"gap" needs "promptHtml" (containing ___) and "accepted" (array); ' +
+          '"transform" needs "originalLines" (array of 1-2 sentences), "promptPrefix", "accepted" (array, lowercase punctuation-free), "betterAnswer" (nicely cased sentence); ' +
+          '"combine" needs "sentenceA", "sentenceB", "connector", "accepted" (array, lowercase punctuation-free), "display" (nicely cased combined sentence); ' +
+          '"correct" needs "sentenceWrong", "accepted" (array, lowercase punctuation-free), "highlightCorrect" (nicely cased corrected sentence with the fixed word wrapped in <strong>). ' +
+          'Every exercise object needs "type", "rule" (with focus/think/why/mainRule/example) and "hints" (array of exactly 2 short strings), formatted as in the example above.';
+      }
+
+      function gmParseGenerated(text) {
+        try {
+          var cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+          var arr = JSON.parse(cleaned);
+          if (!Array.isArray(arr) || !arr.length) return null;
+          return arr.filter(function (ex) { return ex && ex.type && ex.rule; });
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function gmStartFromFile(fname) {
+        var uid = _currentUser && (_currentUser.id || _currentUser.sub);
+        var level = gmEl('glGramCfgLevel') ? gmEl('glGramCfgLevel').value : 'B2';
+        var count = gmEl('glGramCfgCount') ? gmEl('glGramCfgCount').value : '10';
+        var startBtn = gmEl('glGramFilesStart');
+        if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
+
+        try {
+          var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+          var ext = (fname.split('.').pop() || '').toLowerCase();
+          var messageContent;
+          if (ext === 'pdf') {
+            var b64 = '';
+            var chunkSize = 8192;
+            for (var i = 0; i < bytes.length; i += chunkSize) b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+            b64 = btoa(b64);
+            messageContent = [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
+              { type: 'text', text: gmGeneratePrompt(level, count, gmChosenTopics) }
+            ];
+          } else if (['txt', 'md'].indexOf(ext) !== -1) {
+            var textContent = new TextDecoder().decode(bytes);
+            messageContent = [{ type: 'text', text: 'DOCUMENT CONTENT:\n' + textContent + '\n\n' + gmGeneratePrompt(level, count, gmChosenTopics) }];
+          } else {
+            if (typeof showToast === 'function') showToast('Unsupported file', 'Only PDF and text files can be turned into grammar exercises right now.');
+            if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
+            return;
+          }
+
+          var resp = await _authFetch(BACKEND_URL + '/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 2200,
+              system: 'You are a German grammar exercise generator. Reply with ONLY valid JSON, no markdown fences, no commentary.',
+              messages: [{ role: 'user', content: messageContent }]
+            })
+          });
+          var data = await resp.json();
+          var text = data.content ? data.content.map(function (b) { return b.text || ''; }).join('') : '';
+          var parsed = gmParseGenerated(text);
+          if (!parsed) throw new Error('Could not generate grammar exercises from this file.');
+
+          gm.queue = parsed;
+          gm.index = 0; gm.score = 0; gm.answers = {}; gm.hintLevel = {}; gm.tries = {};
+          gm.orderBuilt = {}; gm.orderPool = {}; gm.selected = {}; gm._lastUser = {};
+          gmSetTabView('practice');
+          gmEl('glGramEnd').style.display = 'none';
+          gmEl('glGramWorkspace').style.display = '';
+          gmRenderExercise();
+        } catch (e) {
+          if (typeof showToast === 'function') showToast('Could not generate exercises', e.message || 'Try a different file.');
+        } finally {
+          if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
+        }
+      }
+    })();
+
 
     // Re-apply hero badge after profile loads (app.js fires this when profile is ready)
     window.addEventListener('ss-profile-updated', _glRefreshHero);

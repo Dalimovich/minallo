@@ -1254,6 +1254,10 @@
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(15, 23, 42, 0.58);
   color: #e2e8f0;
+  /* A long unbroken German compound word must never force this panel (or
+     the page) to scroll horizontally. */
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
 }
 .gl-reading-text-panel {
   max-height: min(72vh, 680px);
@@ -1284,6 +1288,44 @@
   font-size: 0.76rem;
   font-weight: 800;
   color: rgba(226, 232, 240, 0.45);
+}
+.gl-reading-sample-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: rgba(226, 232, 240, 0.55);
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gl-reading-generating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.gl-reading-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(56, 189, 248, 0.25);
+  border-top-color: #38bdf8;
+  animation: glReadingSpin 0.7s linear infinite;
+}
+@keyframes glReadingSpin {
+  to { transform: rotate(360deg); }
 }
 .gl-reading-text-body {
   font-size: 1.02rem;
@@ -1464,6 +1506,12 @@
   font-size: 0.8rem;
   font-weight: 700;
   line-height: 1.5;
+}
+.gl-reading-match-hint {
+  margin-bottom: 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.45);
 }
 .gl-reading-match-row {
   display: flex;
@@ -1823,6 +1871,773 @@
   .gl-study-tools *,
   .gl-study-tools *::before,
   .gl-study-tools *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+
+/* ── Grammatik (interactive sentence-building/correction workspace) ──
+ * Deliberately NOT another quiz/flashcard surface, and deliberately NOT a
+ * copy of Lesen's two-column reading layout — this is a workspace where the
+ * learner builds, corrects and transforms sentences, with a rule/feedback
+ * panel that explains WHY an answer is right or wrong. Only shown when
+ * data-active-skill="grammar" (toggled in practice.js); every other skill
+ * keeps its own template untouched. */
+.gl-gram-view {
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-gram-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.gl-gram-title {
+  margin: 0 0 4px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+  line-height: 1.1;
+}
+.gl-gram-sub {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.6);
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+.gl-gram-header-controls {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gl-gram-tabs {
+  display: inline-flex;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: rgba(10, 12, 22, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+.gl-gram-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s, box-shadow 0.16s;
+}
+.gl-gram-tab:hover { color: rgba(255, 255, 255, 0.85); }
+.gl-gram-tab.active {
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.28);
+}
+
+.gl-gram-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gl-gram-progress-label {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: rgba(226, 232, 240, 0.55);
+}
+.gl-gram-progress-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.gl-gram-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  transition: width 0.24s ease;
+}
+
+/* Exercise (left, ~60-65%) + rule/feedback (right, ~35-40%). This grid lives
+ * entirely inside the CENTER content column — it does not touch or push the
+ * app's global right-side panel, which sits outside #glGrammarView. */
+.gl-gram-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+.gl-gram-exercise,
+.gl-gram-feedback {
+  min-width: 0;
+  overflow: hidden;
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+}
+.gl-gram-feedback {
+  position: sticky;
+  top: 12px;
+}
+
+.gl-gram-ex-eyebrow {
+  margin-bottom: 10px;
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+.gl-gram-ex-instruction {
+  margin: 0 0 14px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.68);
+}
+.gl-gram-ex-prompt {
+  margin: 0 0 16px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.gl-gram-ex-prefix {
+  margin: 10px 0;
+  color: #7dd3fc;
+  font-weight: 800;
+  font-size: 0.94rem;
+}
+.gl-gram-original {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.gl-gram-quote {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-style: italic;
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+.gl-gram-blank {
+  padding: 0 4px;
+  color: #7dd3fc;
+  font-weight: 900;
+}
+
+/* Sentence-order builder */
+.gl-gram-build {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1.5px dashed rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.05);
+}
+.gl-gram-build-placeholder {
+  color: rgba(226, 232, 240, 0.4);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+.gl-gram-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.gl-gram-chip {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, transform 0.12s;
+}
+.gl-gram-chip:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.1);
+  transform: translateY(-1px);
+}
+.gl-gram-chip:disabled { cursor: default; opacity: 0.9; }
+.gl-gram-chip-built {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.16);
+  color: #dbeafe;
+}
+
+/* Multiple choice */
+.gl-gram-options {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.gl-gram-option {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.88);
+  font-family: var(--font-main);
+  font-weight: 750;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s;
+}
+.gl-gram-option:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+}
+.gl-gram-option:disabled { cursor: default; }
+.gl-gram-opt-selected {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.1);
+}
+.gl-gram-opt-correct {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+.gl-gram-opt-incorrect {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+
+/* Free-text inputs */
+.gl-gram-inline-input {
+  min-width: 120px;
+  padding: 4px 10px;
+  margin: 0 2px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 800;
+  font-size: 1rem;
+}
+.gl-gram-inline-input:focus-visible { outline: none; border-color: rgba(56, 189, 248, 0.7); }
+.gl-gram-textarea {
+  width: 100%;
+  min-height: 76px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.5;
+  resize: vertical;
+}
+.gl-gram-textarea:focus-visible { outline: none; border-color: rgba(56, 189, 248, 0.5); }
+
+.gl-gram-ex-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* Shared button language for the Grammatik workspace */
+.gl-gram-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.78);
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.16s, transform 0.16s;
+}
+.gl-gram-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.gl-gram-btn:disabled { opacity: 0.4; cursor: default; }
+.gl-gram-btn-primary {
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
+}
+.gl-gram-btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+.gl-gram-btn-primary:disabled { box-shadow: none; transform: none; }
+.gl-gram-btn-ghost {
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.08);
+  color: #7dd3fc;
+}
+.gl-gram-btn-ghost:hover { background: rgba(56, 189, 248, 0.16); }
+
+/* Rule/feedback panel — BEFORE an answer */
+.gl-gram-focus-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #60a5fa;
+  margin-bottom: 6px;
+}
+.gl-gram-focus-title {
+  margin: 0 0 12px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+.gl-gram-focus-think {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.gl-gram-hint-box {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.5;
+  animation: glFadeIn 0.2s ease both;
+}
+.gl-gram-hint-btn {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.75);
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.gl-gram-hint-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.gl-gram-hint-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Rule/feedback panel — AFTER an answer */
+.gl-gram-fb {
+  padding: 2px 0 0;
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-gram-fb-title {
+  margin: 0 0 10px;
+  font-family: var(--font-main);
+  font-weight: 1000;
+  font-size: 1rem;
+}
+.gl-gram-fb-correct .gl-gram-fb-title { color: #86efac; }
+.gl-gram-fb-incorrect .gl-gram-fb-title { color: #fca5a5; }
+.gl-gram-fb-almost .gl-gram-fb-title { color: #7dd3fc; }
+.gl-gram-fb-line {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.82);
+}
+.gl-gram-fb-line strong { color: #fff; }
+.gl-gram-fb-why {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.75);
+}
+.gl-gram-fb-why strong { color: #fff; }
+.gl-gram-fb-mainrule {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+.gl-gram-fb-example {
+  display: block;
+  margin-top: 8px;
+  color: rgba(226, 232, 240, 0.6);
+  font-style: italic;
+}
+.gl-gram-fb-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+}
+.gl-gram-fb-actions-secondary { margin-top: 10px; justify-content: flex-start; }
+
+/* Pattern chips (verb-preposition combinations) */
+.gl-gram-pattern {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.gl-gram-pattern-chip {
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #7dd3fc;
+  font-weight: 850;
+  font-size: 0.82rem;
+}
+.gl-gram-pattern-plus {
+  color: rgba(226, 232, 240, 0.4);
+  font-weight: 900;
+}
+
+/* Case logic breakdown */
+.gl-gram-logic {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.gl-gram-logic-row {
+  color: rgba(226, 232, 240, 0.85);
+  font-weight: 750;
+  font-size: 0.84rem;
+}
+.gl-gram-logic-arrow {
+  color: #60a5fa;
+  font-weight: 900;
+  margin: 2px 0;
+}
+
+/* End-of-session summary — replaces the workspace grid entirely. */
+.gl-gram-end-card {
+  padding: 28px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+  text-align: center;
+  animation: glFadeIn 0.24s ease both;
+}
+.gl-gram-end-title {
+  margin: 0 0 10px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.2rem, 2.4vw, 1.5rem);
+}
+.gl-gram-end-score {
+  font-family: var(--font-main);
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 1000;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gl-gram-end-pct {
+  margin: 2px 0 20px;
+  color: rgba(226, 232, 240, 0.55);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.gl-gram-end-row {
+  max-width: 460px;
+  margin: 0 auto 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: rgba(226, 232, 240, 0.8);
+  text-align: left;
+}
+.gl-gram-end-row b { color: #fff; }
+.gl-gram-end-recommend {
+  max-width: 460px;
+  margin: 12px auto 20px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  font-size: 0.84rem;
+  font-weight: 750;
+  color: rgba(226, 232, 240, 0.85);
+  text-align: left;
+}
+.gl-gram-end-recommend b { color: #7dd3fc; }
+.gl-gram-end-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Weak areas tab */
+.gl-gram-weak-title {
+  margin: 0 0 14px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+}
+.gl-gram-weak-list {
+  display: grid;
+  gap: 8px;
+  max-width: 520px;
+  margin-bottom: 22px;
+}
+.gl-gram-weak-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+.gl-gram-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.gl-gram-badge-weak { background: rgba(248, 113, 113, 0.14); color: #fca5a5; }
+.gl-gram-badge-mid { background: rgba(250, 204, 21, 0.14); color: #fde68a; }
+.gl-gram-badge-strong { background: rgba(34, 197, 94, 0.14); color: #86efac; }
+.gl-gram-weak-recommend {
+  max-width: 380px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+.gl-gram-weak-recommend-title {
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #60a5fa;
+  margin-bottom: 8px;
+}
+.gl-gram-weak-recommend-topic {
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+  margin-bottom: 4px;
+}
+.gl-gram-weak-recommend-meta {
+  color: rgba(226, 232, 240, 0.5);
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+/* From my files tab */
+.gl-gram-files-title {
+  margin: 0 0 12px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.02rem;
+}
+.gl-gram-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 6px;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gl-gram-files-detect {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+}
+.gl-gram-detect-label {
+  font-size: 0.72rem;
+  font-weight: 1000;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #60a5fa;
+  margin-bottom: 8px;
+}
+.gl-gram-detect-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.gl-gram-detect-chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(148, 163, 184, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.6);
+  font-family: var(--font-main);
+  font-weight: 800;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, color 0.16s;
+}
+.gl-gram-detect-chip.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+}
+.gl-gram-detect-question {
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.gl-gram-files-config {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.gl-gram-files-config label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(226, 232, 240, 0.45);
+}
+.gl-gram-files-config select {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 700;
+}
+.gl-gram-start-btn {
+  margin-left: auto;
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.gl-gram-start-btn:disabled { opacity: 0.45; cursor: default; }
+.gl-gram-files-empty {
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  color: rgba(226, 232, 240, 0.5);
+  font-weight: 750;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .gl-gram-workspace {
+    grid-template-columns: 1fr;
+  }
+  .gl-gram-feedback {
+    position: static;
+  }
+}
+@media (max-width: 600px) {
+  .gl-gram-header {
+    flex-direction: column;
+  }
+  .gl-gram-header-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .gl-gram-files-config {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .gl-gram-start-btn {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-gram-view *,
+  .gl-gram-view *::before,
+  .gl-gram-view *::after {
     animation: none !important;
     transition: none !important;
   }
