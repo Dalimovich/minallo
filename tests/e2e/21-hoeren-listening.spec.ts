@@ -152,36 +152,37 @@ test.describe('Hören listening workspace (authenticated)', () => {
       await expect(page.locator('#glListenEnd')).toBeHidden();
     }
 
-    // Hören -> Grammatik via the Learning panel (staying inside the practice
-    // workspace, switching skill): must go through practice.js's
-    // window._glOpenSkill, whose top-of-function teardown hook stops audio.
-    await page.click('#glListenPlayBtn');
-    await page.waitForFunction(() => (window as unknown as { __speakCalls: string[] }).__speakCalls.length > 0);
-    const cancelCountBeforeSwitch = await page.evaluate(() => (window as unknown as { __cancelCalls: number }).__cancelCalls);
-    await page.locator('[data-testid="german-panel-grammar"]').click();
-    await expect(page.locator('#glGrammarView')).toBeVisible();
-    await expect(listenView).toBeHidden();
-    const cancelCountAfterSwitch = await page.evaluate(() => (window as unknown as { __cancelCalls: number }).__cancelCalls);
-    expect(cancelCountAfterSwitch).toBeGreaterThan(cancelCountBeforeSwitch);
-
-    // Back to Hören via the panel, then leave the practice workspace
-    // entirely via the shell's "Home" button (relabeled by
-    // experience-mode.ts, which calls transitionLearnerWorkspace('chat')
-    // directly via a capturing listener that bypasses
-    // window._glBackToHome — this is the path the shell-level teardown fix
-    // added alongside this feature specifically covers).
-    await page.locator('[data-testid="german-panel-listening"]').click();
-    await expect(listenView).toBeVisible();
+    // Leave Practice entirely via the real, actually-visible left-sidebar
+    // "Home" button ([data-testid="chatbot-nav-home"], data-workspace-view=
+    // "chat"). The in-panel #glBackBtn that experience-mode.ts also
+    // relabels "Home" is deliberately hidden here by practice.js's
+    // _glSetGenericSkillPiecesVisible(false) — true for every dedicated
+    // skill view (Lesen/Grammatik/Wortschatz too), not a Hören-specific
+    // issue — so the sidebar button is the one real learners actually use.
+    // It's wired through the same experience-mode.ts click delegation
+    // ([data-workspace-view] -> setLearnerWorkspaceView('chat') ->
+    // transitionLearnerWorkspace('chat')), which is exactly where the
+    // shell-level window._glCloseListeningView() teardown fix was added.
     await page.click('#glListenPlayBtn');
     await page.waitForFunction(() => (window as unknown as { __speakCalls: string[] }).__speakCalls.length > 0);
     const cancelCountBeforeHome = await page.evaluate(() => (window as unknown as { __cancelCalls: number }).__cancelCalls);
-    await page.click('#glBackBtn');
+    await page.locator('[data-testid="chatbot-nav-home"]').click();
     await expect(listenView).toBeHidden();
     const cancelCountAfterHome = await page.evaluate(() => (window as unknown as { __cancelCalls: number }).__cancelCalls);
     expect(cancelCountAfterHome).toBeGreaterThan(cancelCountBeforeHome);
 
-    // Return to Hören: session persists (still on the same question/segment
-    // position) but audio stays paused — no new speak call fires on its own.
+    // Back in 'chat' view, the Learning panel is visible again — switch to
+    // Grammatik from there. This goes through practice.js's
+    // window._glOpenSkill, whose own top-of-function teardown hook covers
+    // the same audio-stop guarantee for in-Practice skill switches.
+    await page.locator('[data-testid="german-panel-grammar"]').click();
+    await expect(page.locator('#glGrammarView')).toBeVisible();
+    await expect(listenView).toBeHidden();
+
+    // Back to chat, then back into Hören: session persists (still on the
+    // same question/segment position) but audio stays paused — no new
+    // speak call fires on its own.
+    await page.locator('[data-testid="chatbot-nav-home"]').click();
     const speakCountBeforeReturn = await page.evaluate(() => (window as unknown as { __speakCalls: string[] }).__speakCalls.length);
     await page.locator('[data-testid="german-panel-listening"]').click();
     await expect(listenView).toBeVisible();
