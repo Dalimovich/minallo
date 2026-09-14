@@ -33,10 +33,16 @@ export function pythonAiConfigured(): boolean {
 }
 
 /** Forwards `payload` to `<AI_SERVICE_URL>/<endpoint>`. `body` is the
- *  parsed JSON response when available, else `{ raw }`. `ok` is true only on 2xx. */
+ *  parsed JSON response when available, else `{ raw }`. `ok` is true only on 2xx.
+ *  `timeoutMs` overrides the shared AI_UPSTREAM_TIMEOUT_MS default for this one
+ *  call — e.g. a batch TTS request that fans out to several generations behind
+ *  a small server-side concurrency limit legitimately takes longer than a
+ *  single answer/generation call, and raising the shared default for every
+ *  endpoint just to accommodate that would hide real timeouts elsewhere. */
 export async function forwardToPython<T = unknown>(
   endpoint: string,
-  payload: unknown
+  payload: unknown,
+  timeoutMs?: number
 ): Promise<PythonProxyResult<T>> {
   const { serviceUrl, internalToken } = _config();
   if (!serviceUrl || !internalToken) {
@@ -50,7 +56,7 @@ export async function forwardToPython<T = unknown>(
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), _UPSTREAM_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? _UPSTREAM_TIMEOUT_MS);
   try {
     const res = await fetch(targetUrl, {
       method: 'POST',

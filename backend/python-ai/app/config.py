@@ -125,6 +125,13 @@ class Settings(BaseSettings):
     qwen_tts_model_version: str = Field("qwen3-tts-12hz-0.6b-base-v1", alias="QWEN_TTS_MODEL_VERSION")
     qwen_tts_voice: str = Field("minallo-de-1", alias="QWEN_TTS_VOICE")
     tts_audio_bucket: str = Field("generated-audio", alias="TTS_AUDIO_BUCKET")
+    # How many segments this service generates against Qwen at once for one
+    # /tts/generate-batch call. This is a SEPARATE, tighter backstop than
+    # qwen-tts's own QWEN_TTS_MAX_CONCURRENCY (which caps true model-level
+    # concurrency across ALL callers/hosts) — it exists so one browser
+    # session's 8-12 segment lesson can't itself open that many simultaneous
+    # requests against the single Qwen instance. Keep <= the Qwen-side limit.
+    tts_batch_max_concurrency: int = Field(2, alias="TTS_BATCH_MAX_CONCURRENCY")
 
 
 @lru_cache(maxsize=1)

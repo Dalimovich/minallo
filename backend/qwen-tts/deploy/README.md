@@ -36,6 +36,27 @@ modest CPU box first (e.g. 4 vCPU / 8GB RAM) and measure real per-sentence and
 worth the added cost. Do not point production at this service until that
 measurement is done and reported.
 
+**If measured latency turns out too high for a synchronous request** (a
+Hören lesson's audio takes noticeably longer to prepare than the lesson
+itself, or upstream HTTP timeouts start firing), the next step is a small
+job/polling API (`POST` returns a generation id, `GET` polls status) instead
+of the current synchronous batch call — deliberately **not** built yet,
+since building it before knowing whether it's needed would be premature.
+Revisit only after real measurements say so.
+
+## Concurrency — who actually controls how many generations run at once
+
+The browser never controls this. `python-ai`'s `/tts/generate-batch`
+(`TTS_BATCH_MAX_CONCURRENCY`, default 2) is the first bound: for one lesson's
+worth of segments, only that many generation calls are ever in flight against
+this service at once, regardless of how many segments the lesson has. This
+service's own `QWEN_TTS_MAX_CONCURRENCY` semaphore (`app/engine.py`, default
+2) is the second, global backstop — it caps true model-level concurrency
+across *every* caller/session, not just one batch request. Keep
+`TTS_BATCH_MAX_CONCURRENCY` <= `QWEN_TTS_MAX_CONCURRENCY` so python-ai never
+queues more concurrent work against this host than the host itself will run
+at once.
+
 ## One-time server setup
 
 Same shape as `backend/python-ai/deploy/README.md`, on a **separate**

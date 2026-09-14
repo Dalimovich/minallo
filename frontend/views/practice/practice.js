@@ -4024,29 +4024,46 @@
           window.speechSynthesis.speak(u);
         }
 
-        // ---- real audio (Qwen3-TTS via /api/ai/tts) ----
-        function fetchSegmentAudio(seg) {
-          return _authFetch(BACKEND_URL + '/api/ai/tts', {
+        // ---- real audio (Qwen3-TTS via /api/ai/tts-batch) ----
+        // One request for the whole lesson, not one per segment: the server
+        // (python-ai's /tts/generate-batch) checks the cache for every
+        // segment up front and fans out only the misses through its own
+        // small bounded concurrency pool — that's what actually protects the
+        // single Qwen instance, regardless of how many segments a lesson has
+        // or how this client calls it. Never re-introduce N parallel calls
+        // to the single-segment endpoint here.
+        function prepareSegments(segs, token) {
+          _authFetch(BACKEND_URL + '/api/ai/tts-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: seg.text, language: 'German' })
+            body: JSON.stringify({
+              segments: segs.map(function (s) { return { id: s.id, text: s.text }; }),
+              language: 'German'
+            })
           }).then(function (resp) {
-            if (!resp.ok) throw new Error('tts_http_' + resp.status);
+            if (!resp.ok) throw new Error('tts_batch_http_' + resp.status);
             return resp.json();
           }).then(function (data) {
-            if (!data || !data.audioUrl) throw new Error('tts_no_url');
-            audioMap[seg.id] = { url: data.audioUrl, status: 'ready' };
-            return true;
-          }).catch(function () {
-            audioMap[seg.id] = { status: 'failed' };
-            return false;
-          });
-        }
-        function prepareSegments(segs, token) {
-          Promise.all(segs.map(fetchSegmentAudio)).then(function (results) {
             if (token !== genToken) return; // a newer setSegments() superseded this run
-            usingFallback = !results.every(Boolean);
+            var byId = {};
+            (data && data.segments || []).forEach(function (s) { byId[s.id] = s; });
+            var allOk = true;
+            segs.forEach(function (seg) {
+              var r = byId[seg.id];
+              if (r && !r.failed && r.audioUrl) audioMap[seg.id] = { url: r.audioUrl, status: 'ready' };
+              else { audioMap[seg.id] = { status: 'failed' }; allOk = false; }
+            });
+            usingFallback = Boolean((data && data.degraded) || !allOk);
             if (usingFallback && typeof console !== 'undefined' && console.warn) {
+              console.warn('[Hören] TTS provider degraded to browser fallback.');
+            }
+            state = 'idle';
+            notify();
+          }).catch(function () {
+            if (token !== genToken) return;
+            segs.forEach(function (seg) { audioMap[seg.id] = { status: 'failed' }; });
+            usingFallback = true;
+            if (typeof console !== 'undefined' && console.warn) {
               console.warn('[Hören] TTS provider degraded to browser fallback.');
             }
             state = 'idle';
