@@ -61,6 +61,14 @@ export function transitionLearnerWorkspace(
   const run = async () => {
     const root = document.getElementById('ncbRoot');
     if (!root || currentUserType() !== 'learner') return;
+    // Leaving the practice workspace (e.g. the in-panel "Home" button, whose
+    // own click handler calls this directly and never reaches
+    // window._glBackToHome — see that handler below) must stop any Hören
+    // audio the same way switching skills inside Practice already does.
+    // Cheap no-op when Hören was never opened or nothing is playing.
+    if (_workspaceView === 'practice' && view !== 'practice' && typeof window._glCloseListeningView === 'function') {
+      window._glCloseListeningView();
+    }
     if (view === 'practice') {
       await window._ssLoadPortalFeature?.('german');
       await (window as unknown as { _glReady?: Promise<void> })._glReady;

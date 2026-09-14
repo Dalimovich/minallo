@@ -49,6 +49,7 @@ declare global {
     _statsStopFile?: () => void;
     _stRunning?: boolean;
     _glOpenSkill?: (skill: string) => void;
+    _glCloseListeningView?: () => void;
     _glOpenFile?: (uid: string, fileName: string) => void;
     _saveUserCourses?: () => void;
     _setAiChipsVisible?: (visible: boolean) => void;
