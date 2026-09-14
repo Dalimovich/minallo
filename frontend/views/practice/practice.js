@@ -3273,7 +3273,6 @@
       }
 
       window._glOpenVocabularyView = function () {
-        console.debug('[GermanPractice] opening dedicated vocabulary view');
         vc.tab = 'practice';
         vcBuildTopicSelect();
         vcRenderTabs();
