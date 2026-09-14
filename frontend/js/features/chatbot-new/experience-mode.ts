@@ -23,7 +23,7 @@
 // over one element's `hidden` property (see applyChatbotExperienceMode()).
 
 export type LearnerWorkspaceView = 'chat' | 'writing-coach' | 'practice';
-export type GermanSkill = 'vocab' | 'grammar' | 'reading';
+export type GermanSkill = 'vocab' | 'grammar' | 'reading' | 'listening';
 let activeSkill: GermanSkill | undefined;
 let transitionQueue = Promise.resolve();
 

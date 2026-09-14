@@ -358,6 +358,18 @@
                   <span class="ncb-action-title" data-i18n="cb_action_vocab_title">Practice vocabulary</span>
                   <span class="ncb-action-desc" data-i18n="cb_action_vocab_desc">Quiz yourself on new words</span>
                 </button>
+
+                <button type="button" class="ncb-action-card" data-testid="quick-listening" data-workspace-skill="listening">
+                  <span class="ncb-action-icon">
+                    <svg class="ncb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 14v-3a9 9 0 0 1 18 0v3"/>
+                      <path d="M21 14v3a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z"/>
+                      <path d="M3 14v3a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z"/>
+                    </svg>
+                  </span>
+                  <span class="ncb-action-title" data-i18n="cb_action_listening_title">H&ouml;ren</span>
+                  <span class="ncb-action-desc" data-i18n="cb_action_listening_desc">Train your listening comprehension</span>
+                </button>
               </div>
             </div>
           </div>
@@ -476,18 +488,14 @@
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-grammar" data-workspace-skill="grammar">
                     <span data-i18n="cb_german_link_grammar">Grammar</span>
                   </button>
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-workspace-view="writing-coach">
-                    <span data-i18n="nav_writing_coach">Writing Coach</span>
-                  </button>
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-reading" data-workspace-skill="reading">
                     <span data-i18n="cb_german_link_reading">Reading</span>
                   </button>
-                  <!-- Listening has no real Practice skill behind it yet (practice.js's
-                       _glSampleTools has no 'listening' entry and silently falls back to
-                       vocab content), so it's hidden rather than shown as a dead/misleading
-                       button. Re-enable with data-gl-skill="listening" once it's built. -->
-                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-listening" data-nav-target="german" data-gl-skill="listening" hidden>
-                    <span data-i18n="cb_german_link_listening">Listening</span>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-listening" data-workspace-skill="listening">
+                    <span data-i18n="cb_german_link_listening">H&ouml;ren</span>
+                  </button>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-workspace-view="writing-coach">
+                    <span data-i18n="nav_writing_coach">Writing Coach</span>
                   </button>
                 </div>
               </div>
