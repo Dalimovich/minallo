@@ -3791,12 +3791,14 @@
 
     // ── Hören (listening comprehension) ─────────────────────────────────────
     // Dedicated workspace, same pattern as Lesen/Grammatik/Wortschatz above.
-    // Audio is synthesized in the browser via SpeechSynthesis — no backend
-    // TTS call, no stored audio files, €0 marginal cost. Since there's no
-    // real audio file/timeline, content is authored as semantic segments
-    // ({id, text}) and every question ties its evidence to segment ids
-    // rather than timestamps — "Replay evidence" just re-speaks that
-    // segment. This mirrors Lesen's "Show evidence in text" but for audio.
+    // Audio is real Qwen3-TTS speech generated per segment via /api/ai/tts
+    // (see backend/python-ai/app/routers/tts.py), with browser SpeechSynthesis
+    // kept only as an automatic emergency fallback when the TTS service is
+    // unavailable/unconfigured — see lsPlayer below. Content is still authored
+    // as semantic segments ({id, text}) and every question ties its evidence
+    // to segment ids rather than timestamps — "Replay evidence" plays exactly
+    // that segment's audio. This mirrors Lesen's "Show evidence in text" but
+    // for audio.
     (function () {
       var LS_CATEGORIES = ['Main idea', 'Detail comprehension', 'True/False/Not stated', 'Dictation', 'Fill in the gap'];
 
@@ -3924,19 +3926,40 @@
         }
       ];
 
-      // ── Small SpeechSynthesis wrapper ───────────────────────────────────
-      // Segment-based, not a real audio timeline: play/pause/restart/±segment
-      // and "replay this exact segment" cover everything the exercises need
-      // without pretending browser TTS has seekable audio.
+      // ── Audio player: real Qwen3-TTS audio, browser SpeechSynthesis as
+      // emergency fallback ─────────────────────────────────────────────────
+      // Public API is unchanged from the SpeechSynthesis-only version this
+      // replaced (setSegments/setRate/play/pause/restart/prevSegment/
+      // nextSegment/replaySegment/pauseForLeave/stopAll/getState/
+      // getSegIndex/getSegCount/onChange) — every caller elsewhere in this
+      // file (lsRenderPlayerChrome, lsWirePlayerControls, lsWireSupportEvents,
+      // _glCloseListeningView, ...) needed zero changes.
+      //
+      // setSegments() kicks off one /api/ai/tts request per segment in
+      // parallel (state becomes 'loading' until all resolve). If EVERY
+      // segment's audio generated successfully we play real HTML5 audio for
+      // the whole session; if ANY segment failed (TTS service down/
+      // unconfigured/timed out), the whole session falls back to browser
+      // SpeechSynthesis instead — never a mix of real and robotic voices
+      // within one listening clip. Per-segment results are cached server-side
+      // (see tts_cache.py), so re-entering Hören on the same set is instant.
       var lsPlayer = (function () {
-        var supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+        var speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
         var segments = [];
+        var audioMap = {}; // segId -> { url, status: 'ready' | 'failed' }
+        var usingFallback = false;
         var rate = 1;
         var segIndex = 0;
-        var state = 'idle'; // idle | playing | paused
+        var state = 'idle'; // idle | loading | playing | paused | clip
         var voice = null;
         var onStateChange = null;
+        var genToken = 0; // bumped on every setSegments(); stale generations are ignored
+        var audioEl = (typeof window !== 'undefined' && typeof Audio === 'function') ? new Audio() : null;
+        if (audioEl) audioEl.preload = 'auto';
 
+        function notify() { if (onStateChange) onStateChange(state, segIndex); }
+
+        // ---- browser SpeechSynthesis (fallback only) ----
         function scoreVoice(v) {
           var s = 0;
           if (/^de-DE$/i.test(v.lang)) s += 10;
@@ -3947,7 +3970,7 @@
           return s;
         }
         function pickVoice() {
-          if (!supported) return null;
+          if (!speechSupported) return null;
           var voices = window.speechSynthesis.getVoices() || [];
           var de = voices.filter(function (v) { return /^de/i.test(v.lang); });
           if (!de.length) return null;
@@ -3963,15 +3986,13 @@
           return chosen;
         }
         function ensureVoice() { if (!voice) voice = pickVoice(); }
-        if (supported) {
+        if (speechSupported) {
           ensureVoice();
           window.speechSynthesis.addEventListener('voiceschanged', function () { voice = pickVoice(); });
         }
 
-        function notify() { if (onStateChange) onStateChange(state, segIndex); }
-
-        function speakFrom(idx) {
-          if (!supported) return;
+        function speakFallbackFrom(idx) {
+          if (!speechSupported) { state = 'idle'; notify(); return; }
           window.speechSynthesis.cancel();
           if (idx < 0 || idx >= segments.length) { state = 'idle'; notify(); return; }
           segIndex = idx;
@@ -3982,47 +4003,161 @@
           if (voice) u.voice = voice;
           u.rate = rate;
           u.onend = function () {
-            if (state !== 'playing') return; // stopped/left elsewhere; don't auto-advance
-            if (segIndex + 1 < segments.length) speakFrom(segIndex + 1);
+            if (state !== 'playing') return;
+            if (segIndex + 1 < segments.length) speakFallbackFrom(segIndex + 1);
             else { state = 'idle'; segIndex = 0; notify(); }
           };
           u.onerror = function () { state = 'idle'; notify(); };
           window.speechSynthesis.speak(u);
         }
+        function speakFallbackClip(seg) {
+          if (!speechSupported) return;
+          window.speechSynthesis.cancel();
+          state = 'clip';
+          notify();
+          var u = new SpeechSynthesisUtterance(seg.text);
+          u.lang = 'de-DE';
+          if (voice) u.voice = voice;
+          u.rate = rate;
+          u.onend = function () { state = 'idle'; notify(); };
+          u.onerror = function () { state = 'idle'; notify(); };
+          window.speechSynthesis.speak(u);
+        }
+
+        // ---- real audio (Qwen3-TTS via /api/ai/tts) ----
+        function fetchSegmentAudio(seg) {
+          return _authFetch(BACKEND_URL + '/api/ai/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: seg.text, language: 'German' })
+          }).then(function (resp) {
+            if (!resp.ok) throw new Error('tts_http_' + resp.status);
+            return resp.json();
+          }).then(function (data) {
+            if (!data || !data.audioUrl) throw new Error('tts_no_url');
+            audioMap[seg.id] = { url: data.audioUrl, status: 'ready' };
+            return true;
+          }).catch(function () {
+            audioMap[seg.id] = { status: 'failed' };
+            return false;
+          });
+        }
+        function prepareSegments(segs, token) {
+          Promise.all(segs.map(fetchSegmentAudio)).then(function (results) {
+            if (token !== genToken) return; // a newer setSegments() superseded this run
+            usingFallback = !results.every(Boolean);
+            if (usingFallback && typeof console !== 'undefined' && console.warn) {
+              console.warn('[Hören] TTS provider degraded to browser fallback.');
+            }
+            state = 'idle';
+            notify();
+          });
+        }
+
+        function playAudioFrom(idx) {
+          if (idx < 0 || idx >= segments.length) { state = 'idle'; if (audioEl) audioEl.pause(); notify(); return; }
+          var entry = audioMap[segments[idx].id];
+          if (!audioEl || !entry || entry.status !== 'ready') {
+            // Defensive fallback — shouldn't happen in the normal path since
+            // usingFallback is decided for the whole session before playback
+            // starts, but never dead-end a segment that has no audio.
+            usingFallback = true;
+            speakFallbackFrom(idx);
+            return;
+          }
+          segIndex = idx;
+          state = 'playing';
+          notify();
+          audioEl.src = entry.url;
+          audioEl.playbackRate = rate;
+          audioEl.play().catch(function () { state = 'idle'; notify(); });
+        }
+        if (audioEl) {
+          audioEl.addEventListener('ended', function () {
+            if (state === 'clip') { state = 'idle'; notify(); return; }
+            if (state !== 'playing') return;
+            if (segIndex + 1 < segments.length) playAudioFrom(segIndex + 1);
+            else { state = 'idle'; segIndex = 0; notify(); }
+          });
+          audioEl.addEventListener('error', function () {
+            if (state === 'playing' || state === 'clip') { state = 'idle'; notify(); }
+          });
+        }
+
+        function speakFrom(idx) { if (usingFallback) speakFallbackFrom(idx); else playAudioFrom(idx); }
 
         return {
-          supported: supported,
-          setSegments: function (segs) { if (supported) window.speechSynthesis.cancel(); segments = segs || []; segIndex = 0; state = 'idle'; notify(); },
-          setRate: function (r) { rate = r; if (state === 'playing') speakFrom(segIndex); },
-          play: function () { ensureVoice(); if (state === 'paused') { window.speechSynthesis.resume(); state = 'playing'; notify(); } else { speakFrom(segIndex); } },
-          pause: function () { if (supported) window.speechSynthesis.pause(); state = 'paused'; notify(); },
+          supported: speechSupported || !!audioEl,
+          setSegments: function (segs) {
+            if (speechSupported) window.speechSynthesis.cancel();
+            if (audioEl) { audioEl.pause(); try { audioEl.removeAttribute('src'); } catch (e) {} }
+            segments = segs || [];
+            audioMap = {};
+            usingFallback = false;
+            segIndex = 0;
+            state = segments.length ? 'loading' : 'idle';
+            notify();
+            var token = ++genToken;
+            if (segments.length) prepareSegments(segments, token);
+          },
+          setRate: function (r) {
+            rate = r;
+            if (audioEl) audioEl.playbackRate = r;
+            if (state === 'playing' && usingFallback) speakFallbackFrom(segIndex); // real audio applies rate live, no restart needed
+          },
+          play: function () {
+            ensureVoice();
+            if (state === 'loading') return; // still generating; UI disables the button meanwhile
+            if (state === 'paused') {
+              if (usingFallback) { window.speechSynthesis.resume(); state = 'playing'; notify(); }
+              else { audioEl.play().catch(function () {}); state = 'playing'; notify(); }
+            } else {
+              speakFrom(segIndex);
+            }
+          },
+          pause: function () {
+            if (usingFallback) { if (speechSupported) window.speechSynthesis.pause(); }
+            else if (audioEl) { audioEl.pause(); }
+            state = 'paused';
+            notify();
+          },
           restart: function () { speakFrom(0); },
           prevSegment: function () { speakFrom(Math.max(0, segIndex - 1)); },
           nextSegment: function () { speakFrom(Math.min(segments.length - 1, segIndex + 1)); },
           replaySegment: function (id) {
             ensureVoice();
-            if (!supported) return;
-            window.speechSynthesis.cancel();
             var seg = segments.filter(function (s) { return s.id === id; })[0];
             if (!seg) return;
+            if (usingFallback) { speakFallbackClip(seg); return; }
+            var entry = audioMap[seg.id];
+            if (!audioEl || !entry || entry.status !== 'ready') { speakFallbackClip(seg); return; }
+            audioEl.pause();
             state = 'clip';
             notify();
-            var u = new SpeechSynthesisUtterance(seg.text);
-            u.lang = 'de-DE';
-            if (voice) u.voice = voice;
-            u.rate = rate;
-            u.onend = function () { state = 'idle'; notify(); };
-            u.onerror = function () { state = 'idle'; notify(); };
-            window.speechSynthesis.speak(u);
+            audioEl.src = entry.url;
+            audioEl.playbackRate = rate;
+            audioEl.play().catch(function () { state = 'idle'; notify(); });
           },
-          // Cancels speech but keeps segIndex, so returning to Hören later
-          // resumes from the same segment rather than the start. Used only
-          // when navigating away from the view — never a hard reset.
-          pauseForLeave: function () { if (supported) window.speechSynthesis.cancel(); state = 'idle'; notify(); },
-          stopAll: function () { if (supported) window.speechSynthesis.cancel(); state = 'idle'; segIndex = 0; notify(); },
+          // Cancels/pauses audio but keeps segIndex, so returning to Hören
+          // later resumes from the same segment rather than the start. Used
+          // only when navigating away from the view — never a hard reset.
+          pauseForLeave: function () {
+            if (speechSupported) window.speechSynthesis.cancel();
+            if (audioEl) audioEl.pause();
+            state = 'idle';
+            notify();
+          },
+          stopAll: function () {
+            if (speechSupported) window.speechSynthesis.cancel();
+            if (audioEl) audioEl.pause();
+            state = 'idle';
+            segIndex = 0;
+            notify();
+          },
           getState: function () { return state; },
           getSegIndex: function () { return segIndex; },
           getSegCount: function () { return segments.length; },
+          isUsingFallback: function () { return usingFallback; },
           onChange: function (fn) { onStateChange = fn; }
         };
       })();
@@ -4180,13 +4315,19 @@
         if (setTitle && ls.set) setTitle.textContent = ls.set.meta.title + ' · ' + ls.set.meta.level + ' · ' + ls.set.meta.audioType;
         var count = lsPlayer.getSegCount();
         var idx = lsPlayer.getSegIndex();
+        var loading = lsPlayer.getState() === 'loading';
         var pos = lsEl('glListenPosition');
-        if (pos) pos.textContent = 'Segment ' + (count ? idx + 1 : 0) + ' / ' + count;
+        if (pos) pos.textContent = loading ? 'Preparing audio…' : ('Segment ' + (count ? idx + 1 : 0) + ' / ' + count);
         var fill = lsEl('glListenTrackFill');
         if (fill) fill.style.width = (count ? Math.round(((idx + 1) / count) * 100) : 0) + '%';
         var playBtn = lsEl('glListenPlayBtn');
         var playing = lsPlayer.getState() === 'playing';
-        if (playBtn) { playBtn.textContent = playing ? '⏸' : '▶'; playBtn.setAttribute('aria-label', playing ? 'Pause audio' : 'Play audio'); }
+        if (playBtn) {
+          playBtn.disabled = loading;
+          playBtn.classList.toggle('is-loading', loading);
+          playBtn.textContent = loading ? '…' : (playing ? '⏸' : '▶');
+          playBtn.setAttribute('aria-label', loading ? 'Preparing audio' : (playing ? 'Pause audio' : 'Play audio'));
+        }
         var wf = lsEl('glListenWaveform');
         if (wf) wf.classList.toggle('is-playing', playing);
       }

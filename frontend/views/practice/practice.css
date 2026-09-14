@@ -3493,6 +3493,13 @@
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.32);
 }
 .gl-listen-btn-play:hover { transform: translateY(-1px); }
+.gl-listen-btn-play.is-loading,
+.gl-listen-btn-play:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  box-shadow: none;
+}
+.gl-listen-btn-play:disabled:hover { transform: none; }
 .gl-listen-speeds {
   display: inline-flex;
   gap: 6px;

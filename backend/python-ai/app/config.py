@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     # "formulasheet_only"  — only for filenames matching the Formelzettel pattern
     # "always"             — every OCR page goes to Mathpix
 
+    # --- Hören TTS: isolated Qwen3-TTS host (backend/qwen-tts/), reachable
+    # only from this service. Left unset in production until that host is
+    # provisioned and measured — see backend/qwen-tts/deploy/README.md.
+    # TTSProvider (services/tts_provider.py) reports "unavailable" whenever
+    # this is empty, and the frontend falls back to browser SpeechSynthesis.
+    qwen_tts_service_url: str | None = Field(None, alias="QWEN_TTS_SERVICE_URL")
+    qwen_tts_internal_secret: str | None = Field(None, alias="QWEN_TTS_INTERNAL_SECRET")
+    qwen_tts_timeout_s: float = Field(45.0, alias="QWEN_TTS_TIMEOUT_S")
+    qwen_tts_model_version: str = Field("qwen3-tts-12hz-0.6b-base-v1", alias="QWEN_TTS_MODEL_VERSION")
+    qwen_tts_voice: str = Field("minallo-de-1", alias="QWEN_TTS_VOICE")
+    tts_audio_bucket: str = Field("generated-audio", alias="TTS_AUDIO_BUCKET")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

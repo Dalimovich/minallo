@@ -59,6 +59,7 @@ const ROUTES = [
   ['ai/usage',                        'ai-usage'],
   ['ai/quiz-attempt',                 'ai-quiz-attempt'],
   ['ai/mastery',                      'ai-mastery'],
+  ['ai/tts',                          'ai-tts'],
   ['notes/generate',                  'notes-generate'],
   ['notes',                           'notes-crud'],
   ['chat-saved-replies',              'chat-saved-replies'],
