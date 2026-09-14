@@ -161,6 +161,23 @@ export class AppPage {
   }
 
   async navigateTo(section: MainSection) {
+    // Every account now lands directly in the fullbleed modern chatbot shell
+    // on login (_enterApp() always targets 'aipage'), which hides the legacy
+    // portal sidebar (#psbAIPage etc.) via body.ncb-fullbleed — see
+    // chatbot.css's fullbleed rules. If the section's content is already
+    // showing, there's nothing to click through; waiting on the (hidden)
+    // legacy nav item would just time out.
+    // Give the section a moment to actually mount (e.g. right after a fresh
+    // login/reload, before the lazy chatbot chunk finishes fetching) rather
+    // than a single instant isVisible() check that races the app's own boot.
+    const alreadyThere = await this.page
+      .locator(sectionSelectors[section])
+      .first()
+      .waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
+    if (alreadyThere) return;
+
     const nav = this.page.locator(sidebarSelectors[section]).first();
 
     if (await this.page.locator('#portalHamburger').isVisible().catch(() => false)) {

@@ -73,8 +73,9 @@ test.describe('Writing Coach workspace mode', () => {
     await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
     await expect(page.locator('.ncb-chat-list')).toBeVisible();
     await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
-    await expect(page.locator('[data-testid="import-course"]')).toBeVisible();
+    // import-course lives inside the "+ Add files" popup, closed by default.
     await page.locator('.ncb-add-files-trigger').click();
+    await expect(page.locator('[data-testid="import-course"]')).toBeVisible();
     await page.locator('.ncb-add-files-source-trigger').click();
     for (const mode of ['course_files', 'course_plus_general']) {
       await page.locator(`[data-source-mode="${mode}"]`).click();

@@ -183,7 +183,6 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     const app = new AppPage(page);
     await app.goto();
     expect(await app.loginIfNeeded()).toBeTruthy();
-    await app.ensureQaCourse();
     await app.navigateTo('chatbot');
 
     // Simulate the exact production leak vector this fix closes: an old
@@ -248,12 +247,13 @@ test.describe('Chatbot shell role mode (production timing)', () => {
 
     // Import-from-Course, the course-context pill, and course-only source
     // choices must all remain exactly as before for students.
-    await expect(page.locator('[data-testid="import-course"]')).toBeVisible();
     await expect(page.locator('.ncb-chat-context-pill.ncb-student-only')).toBeVisible();
     await expect(page.locator('.ncb-chat-context-pill.ncb-learner-only')).toBeHidden();
     await expect(page.locator(chatbotSelectors.input)).toHaveAttribute('placeholder', /course files/i);
 
+    // import-course lives inside the "+ Add files" popup, closed by default.
     await page.locator('.ncb-add-files-trigger').click();
+    await expect(page.locator('[data-testid="import-course"]')).toBeVisible();
     await page.locator('.ncb-add-files-source-trigger').click();
     await expect(page.locator('[data-source-mode="course_files"]')).toBeVisible();
     await expect(page.locator('[data-source-mode="course_plus_general"]')).toBeVisible();
