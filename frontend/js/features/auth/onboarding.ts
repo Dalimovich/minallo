@@ -688,7 +688,6 @@ export function initOnboarding(): void {
   };
 
   window._obSelectPath = function (path: string) {
-    if (path === 'learner') return;
     document.querySelectorAll('.ob-path-card').forEach((c) => {
       c.classList.remove('selected');
     });
