@@ -179,6 +179,19 @@
           <div class="gl-skill-progress"><div class="gl-skill-progress-head"><span class="gl-skill-progress-label" data-i18n="gl_practice_progress">Practice progress</span><span class="gl-skill-progress-value"><span data-skill-progress="reading">42</span>%</span></div><div class="gl-skill-progress-track"><div class="gl-skill-progress-fill" style="width:42%"></div></div></div>
           <button type="button" class="gl-skill-open-btn" data-i18n="gl_open_practice">Open practice</button>
         </article>
+
+        <article class="gl-skill-card-v2 gl-skill-card" data-skill="listening" role="button" tabindex="0" aria-label="Open listening practice" style="--gl-card-grad:linear-gradient(90deg,#2563eb,#38bdf8)">
+          <div class="gl-skill-bar"></div>
+          <header class="gl-skill-head">
+            <div class="gl-skill-icon" aria-hidden="true">&#x1F3A7;</div>
+            <div class="gl-skill-head-text">
+              <h3 class="gl-skill-name">Hören</h3>
+              <div class="gl-skill-sub">Listen to real German and train your comprehension</div>
+            </div>
+          </header>
+          <div class="gl-skill-progress"><div class="gl-skill-progress-head"><span class="gl-skill-progress-label" data-i18n="gl_practice_progress">Practice progress</span><span class="gl-skill-progress-value"><span data-skill-progress="listening">0</span>%</span></div><div class="gl-skill-progress-track"><div class="gl-skill-progress-fill" style="width:0%"></div></div></div>
+          <button type="button" class="gl-skill-open-btn" data-i18n="gl_open_practice">Open practice</button>
+        </article>
       </div>
     </div>
   </div>
@@ -373,6 +386,88 @@
 
         <div class="gl-vocab-weak" id="glVocabWeak" style="display:none"></div>
         <div class="gl-vocab-files" id="glVocabFiles" style="display:none"></div>
+      </section>
+
+      <!-- Hören (listening comprehension) — dedicated workspace, shown only
+           when data-active-skill="listening". Audio is synthesized in the
+           browser (SpeechSynthesis) from static, segment-authored content —
+           no backend TTS call. Deliberately not the generic quiz/cards
+           template above, and deliberately not flashcards. See gl-listen-*
+           rules in practice.css. -->
+      <section class="gl-listen-view" id="glListeningView" style="display:none">
+        <div class="gl-listen-header">
+          <div>
+            <h2 class="gl-listen-title">Hören</h2>
+            <p class="gl-listen-sub">Listen to real German and train your comprehension.</p>
+          </div>
+          <div class="gl-listen-header-controls">
+            <select id="glListenTopic" class="gl-reading-select" aria-label="Topic">
+              <option value="Mixed">Mixed</option>
+              <option value="Alltag">Alltag</option>
+              <option value="Universität">Universität</option>
+              <option value="Arbeit & Beruf">Arbeit &amp; Beruf</option>
+              <option value="Reisen">Reisen</option>
+              <option value="Wohnen">Wohnen</option>
+              <option value="Gesundheit">Gesundheit</option>
+              <option value="Medien">Medien</option>
+              <option value="Gesellschaft">Gesellschaft</option>
+              <option value="Academic German">Academic German</option>
+            </select>
+            <select id="glListenLevel" class="gl-reading-select" aria-label="Level">
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
+              <option value="B1">B1</option>
+              <option value="B2" selected>B2</option>
+              <option value="C1">C1</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="gl-listen-tabs" role="tablist" aria-label="Hören mode">
+          <button type="button" class="gl-listen-tab active" data-listen-tab="practice" role="tab" aria-selected="true">Practice</button>
+          <button type="button" class="gl-listen-tab gl-listen-tab-soon" role="tab" aria-disabled="true" disabled title="Coming soon">Weak areas <span class="gl-listen-soon-badge">Soon</span></button>
+          <button type="button" class="gl-listen-tab gl-listen-tab-soon" role="tab" aria-disabled="true" disabled title="Coming soon">From my files <span class="gl-listen-soon-badge">Soon</span></button>
+        </div>
+
+        <div class="gl-listen-practice" id="glListenPractice">
+          <div class="gl-listen-progress">
+            <span class="gl-listen-progress-label" id="glListenProgressLabel">Question 1 / 8</span>
+            <div class="gl-listen-progress-track"><div class="gl-listen-progress-fill" id="glListenProgressFill"></div></div>
+          </div>
+
+          <div class="gl-listen-player" id="glListenPlayer">
+            <div class="gl-listen-player-top">
+              <span class="gl-listen-eyebrow">LISTENING</span>
+              <span class="gl-listen-set-title" id="glListenSetTitle"></span>
+            </div>
+            <div class="gl-listen-waveform" id="glListenWaveform" aria-hidden="true">
+              <span class="gl-listen-bar"></span><span class="gl-listen-bar"></span><span class="gl-listen-bar"></span>
+              <span class="gl-listen-bar"></span><span class="gl-listen-bar"></span><span class="gl-listen-bar"></span>
+              <span class="gl-listen-bar"></span><span class="gl-listen-bar"></span>
+            </div>
+            <div class="gl-listen-position" id="glListenPosition">Segment 1 / 5</div>
+            <div class="gl-listen-track"><div class="gl-listen-track-fill" id="glListenTrackFill"></div></div>
+            <div class="gl-listen-controls">
+              <button type="button" class="gl-listen-btn" id="glListenPrevBtn" aria-label="Previous segment">⏮</button>
+              <button type="button" class="gl-listen-btn gl-listen-btn-play" id="glListenPlayBtn" aria-label="Play audio">▶</button>
+              <button type="button" class="gl-listen-btn" id="glListenNextBtn" aria-label="Next segment">⏭</button>
+              <button type="button" class="gl-listen-btn gl-listen-btn-restart" id="glListenRestartBtn" aria-label="Restart from the beginning">↺</button>
+            </div>
+            <div class="gl-listen-speeds" role="group" aria-label="Playback speed">
+              <button type="button" class="gl-listen-speed" data-speed="0.75" aria-label="Set playback speed to 0.75 times">0.75×</button>
+              <button type="button" class="gl-listen-speed active" data-speed="1" aria-label="Set playback speed to normal">1×</button>
+              <button type="button" class="gl-listen-speed" data-speed="1.25" aria-label="Set playback speed to 1.25 times">1.25×</button>
+              <button type="button" class="gl-listen-speed" data-speed="1.5" aria-label="Set playback speed to 1.5 times">1.5×</button>
+            </div>
+          </div>
+
+          <div class="gl-listen-workspace" id="glListenWorkspace">
+            <div class="gl-listen-task-panel" id="glListenTaskPanel"></div>
+            <div class="gl-listen-support-panel" id="glListenSupportPanel"></div>
+          </div>
+
+          <div class="gl-listen-end" id="glListenEnd" style="display:none"></div>
+        </div>
       </section>
     </div>
   </div>

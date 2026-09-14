@@ -191,31 +191,33 @@
       }
     });
 
-    // Back button
+    // Back button. window._glBackToHome is set here, then fully redefined
+    // further down (it additionally clears data-active-skill and, now,
+    // stops any Hören audio). Bind a thin wrapper that looks the function up
+    // at click time instead of capturing this early definition as a
+    // closure, so the button always runs whichever implementation is
+    // current rather than this stale one.
     var glBackBtn = document.getElementById('glBackBtn');
-    if (glBackBtn)
-      glBackBtn.addEventListener(
-        'click',
-        (window._glBackToHome = function () {
-          _glActiveSkill = '';
-          var home = document.getElementById('glHome');
-          var detail = document.getElementById('glSkillView');
-          var wcView = document.getElementById('wcView');
-          var learnerHome = document.getElementById('glLearnerHome');
-          if (home) home.style.display = '';
-          if (detail) detail.style.display = 'none';
-          // Also collapse the Schreibtrainer detail view — otherwise it
-          // stays visible underneath the cards when the user navigates
-          // away mid-session and clicks Practice again.
-          if (wcView) wcView.style.display = 'none';
-          if (learnerHome) learnerHome.style.display = 'none';
-          var aiChipsEl = document.querySelector('.ai-chips');
-          if (aiChipsEl && aiChipsEl._originalHTML) {
-            aiChipsEl.innerHTML = aiChipsEl._originalHTML;
-            aiChipsEl._originalHTML = null;
-          }
-        })
-      );
+    window._glBackToHome = function () {
+      _glActiveSkill = '';
+      var home = document.getElementById('glHome');
+      var detail = document.getElementById('glSkillView');
+      var wcView = document.getElementById('wcView');
+      var learnerHome = document.getElementById('glLearnerHome');
+      if (home) home.style.display = '';
+      if (detail) detail.style.display = 'none';
+      // Also collapse the Schreibtrainer detail view — otherwise it
+      // stays visible underneath the cards when the user navigates
+      // away mid-session and clicks Practice again.
+      if (wcView) wcView.style.display = 'none';
+      if (learnerHome) learnerHome.style.display = 'none';
+      var aiChipsEl = document.querySelector('.ai-chips');
+      if (aiChipsEl && aiChipsEl._originalHTML) {
+        aiChipsEl.innerHTML = aiChipsEl._originalHTML;
+        aiChipsEl._originalHTML = null;
+      }
+    };
+    if (glBackBtn) glBackBtn.addEventListener('click', function () { window._glBackToHome(); });
 
     // Upload button
     var glUploadLabel = document.getElementById('glUploadLabel');
@@ -303,12 +305,18 @@
     }
 
     window._glOpenSkill = function (skill) {
+      // Leaving Hören (or never having opened it) is a cheap no-op; this
+      // guarantees speech never keeps playing invisibly once another skill
+      // is opened. See the Hören IIFE below for _glCloseListeningView.
+      if (typeof window._glCloseListeningView === 'function') window._glCloseListeningView();
+
       _glActiveSkill = skill;
       var home = document.getElementById('glHome');
       var detail = document.getElementById('glSkillView');
       var readingView = document.getElementById('glReadingView');
       var grammarView = document.getElementById('glGrammarView');
       var vocabView = document.getElementById('glVocabularyView');
+      var listenView = document.getElementById('glListeningView');
       if (home) home.style.display = 'none';
       if (detail) {
         detail.style.display = '';
@@ -319,6 +327,7 @@
         _glSetGenericSkillPiecesVisible(false);
         if (grammarView) grammarView.style.display = 'none';
         if (vocabView) vocabView.style.display = 'none';
+        if (listenView) listenView.style.display = 'none';
         if (readingView) readingView.style.display = '';
         _glOpenReadingView();
         return;
@@ -333,6 +342,7 @@
         _glSetGenericSkillPiecesVisible(false);
         if (readingView) readingView.style.display = 'none';
         if (vocabView) vocabView.style.display = 'none';
+        if (listenView) listenView.style.display = 'none';
         if (grammarView) grammarView.style.display = '';
         window._glOpenGrammarView();
         return;
@@ -345,14 +355,30 @@
         _glSetGenericSkillPiecesVisible(false);
         if (readingView) readingView.style.display = 'none';
         if (grammarView) grammarView.style.display = 'none';
+        if (listenView) listenView.style.display = 'none';
         if (vocabView) vocabView.style.display = '';
         window._glOpenVocabularyView();
+        return;
+      }
+
+      // Hören has its own dedicated audio-based listening workspace (see the
+      // Hören IIFE below), same pattern as Lesen/Grammatik/Wortschatz —
+      // deliberately not the generic quiz/cards template, and never
+      // flashcards.
+      if (skill === 'listening' && typeof window._glOpenListeningView === 'function') {
+        _glSetGenericSkillPiecesVisible(false);
+        if (readingView) readingView.style.display = 'none';
+        if (grammarView) grammarView.style.display = 'none';
+        if (vocabView) vocabView.style.display = 'none';
+        if (listenView) listenView.style.display = '';
+        window._glOpenListeningView();
         return;
       }
 
       if (readingView) readingView.style.display = 'none';
       if (grammarView) grammarView.style.display = 'none';
       if (vocabView) vocabView.style.display = 'none';
+      if (listenView) listenView.style.display = 'none';
       _glSetGenericSkillPiecesVisible(true);
 
       var titleEl = document.getElementById('glSkillTitle');
@@ -391,6 +417,7 @@
     };
 
     window._glBackToHome = function () {
+      if (typeof window._glCloseListeningView === 'function') window._glCloseListeningView();
       _glActiveSkill = '';
       var home = document.getElementById('glHome');
       var detail = document.getElementById('glSkillView');
@@ -3762,6 +3789,729 @@
       }
     })();
 
+    // ── Hören (listening comprehension) ─────────────────────────────────────
+    // Dedicated workspace, same pattern as Lesen/Grammatik/Wortschatz above.
+    // Audio is synthesized in the browser via SpeechSynthesis — no backend
+    // TTS call, no stored audio files, €0 marginal cost. Since there's no
+    // real audio file/timeline, content is authored as semantic segments
+    // ({id, text}) and every question ties its evidence to segment ids
+    // rather than timestamps — "Replay evidence" just re-speaks that
+    // segment. This mirrors Lesen's "Show evidence in text" but for audio.
+    (function () {
+      var LS_CATEGORIES = ['Main idea', 'Detail comprehension', 'True/False/Not stated', 'Dictation', 'Fill in the gap'];
+
+      var LISTEN_SETS = [
+        {
+          meta: { title: 'Ein Anruf beim Arzt', level: 'B1', audioType: 'Dialogue', topic: 'Alltag' },
+          segments: [
+            { id: 's1', text: 'Guten Tag, hier ist Anna Berger. Ich habe am Montag einen Termin bei Doktor Krüger.' },
+            { id: 's2', text: 'Leider muss ich diesen Termin absagen, weil ich am Montag beruflich verreisen muss.' },
+            { id: 's3', text: 'Kein Problem, Frau Berger. Wir können den Termin auf nächsten Dienstag um vierzehn Uhr verschieben.' },
+            { id: 's4', text: 'Das passt mir sehr gut. Vielen Dank für Ihre Hilfe.' },
+            { id: 's5', text: 'Gern geschehen. Bis Dienstag, Frau Berger.' }
+          ],
+          questions: [
+            {
+              type: 'main-idea', category: 'Main idea',
+              prompt: 'Worum geht es in diesem Gespräch?',
+              options: { A: 'To cancel the appointment permanently', B: 'To reschedule the appointment', C: 'To complain about the doctor', D: 'To request a refund' },
+              answer: 'B', segmentIds: ['s2', 's3'],
+              hints: ['Listen for what happens to the Monday appointment.', 'The receptionist offers a new day and time near the end of the call.'],
+              explanation: 'Anna cannot make Monday, so the receptionist moves the appointment to Tuesday at 14:00 — it is rescheduled, not cancelled for good.',
+              wrongWhy: { A: 'A new time is offered right after — the appointment isn’t dropped.', C: 'Anna never complains about the doctor.', D: 'No money or refund is mentioned.' },
+              highlight: 'auf nächsten Dienstag um vierzehn Uhr verschieben'
+            },
+            {
+              type: 'detail', category: 'Detail comprehension',
+              prompt: 'Warum kann Anna den Termin am Montag nicht wahrnehmen?',
+              options: { A: 'She is ill', B: 'She has a work trip', C: 'Her train was cancelled', D: 'She forgot about it' },
+              answer: 'B', segmentIds: ['s2'],
+              hints: ['Listen for the reason right after "weil".', 'It has to do with her job, not her health.'],
+              explanation: 'Anna says she has to travel for work ("beruflich verreisen") on Monday.',
+              wrongWhy: { A: 'Illness is never mentioned.', C: 'No train is mentioned.', D: 'She explicitly gives a reason — she didn’t just forget.' },
+              highlight: 'weil ich am Montag beruflich verreisen muss'
+            },
+            {
+              type: 'tf', category: 'True/False/Not stated',
+              prompt: '"Der neue Termin ist am Mittwoch."',
+              answer: 'False', segmentIds: ['s3'],
+              hints: ['Listen carefully to the day the receptionist proposes.', 'It is not Wednesday.'],
+              explanation: 'The receptionist proposes Tuesday ("nächsten Dienstag"), not Wednesday.',
+              highlight: 'nächsten Dienstag um vierzehn Uhr'
+            },
+            {
+              type: 'tf', category: 'True/False/Not stated',
+              prompt: '"Anna arbeitet bei einer Bank."',
+              answer: 'Not stated', segmentIds: [],
+              hints: ['Think about what Anna’s job actually is — is it ever named?', 'The call only mentions that she has to travel for work, not where she works.'],
+              explanation: 'The call never says where Anna works — only that she has a work trip. There isn’t enough information to call this true or false.'
+            },
+            {
+              type: 'dictation', category: 'Dictation',
+              prompt: 'Listen and type exactly what you hear.',
+              dictationSegmentId: 's4',
+              hints: ['It’s a short, polite closing sentence.', 'Starts with "Das passt..."']
+            },
+            {
+              type: 'fill-gap', category: 'Fill in the gap',
+              prompt: 'Listen to the sentence and fill in the missing word.',
+              blankSegmentId: 's2', blankAnswer: 'absagen',
+              displayText: 'Leider muss ich diesen Termin ______, weil ich am Montag beruflich verreisen muss.',
+              hints: ['It’s a verb meaning "to cancel".', 'It rhymes with "absagen".']
+            }
+          ]
+        },
+        {
+          meta: { title: 'Homeoffice-Regelung', level: 'B2', audioType: 'Announcement', topic: 'Arbeit & Beruf' },
+          segments: [
+            { id: 's1', text: 'Liebe Kolleginnen und Kollegen, ab nächstem Monat gilt eine neue Homeoffice-Regelung.' },
+            { id: 's2', text: 'Jeder darf künftig bis zu drei Tage pro Woche von zu Hause arbeiten.' },
+            { id: 's3', text: 'Am Dienstag und Donnerstag bitten wir jedoch alle Teams, im Büro anwesend zu sein, damit wichtige Besprechungen persönlich stattfinden können.' },
+            { id: 's4', text: 'Diese Änderung wurde eingeführt, weil viele Mitarbeiter mehr Flexibilität gewünscht hatten.' },
+            { id: 's5', text: 'Bei Fragen wenden Sie sich bitte an die Personalabteilung.' }
+          ],
+          questions: [
+            {
+              type: 'main-idea', category: 'Main idea',
+              prompt: 'Was ist der Hauptzweck dieser Ansage?',
+              options: { A: 'To announce layoffs', B: 'To introduce a new home-office policy', C: 'To cancel all meetings', D: 'To request employee feedback' },
+              answer: 'B', segmentIds: ['s1', 's2'],
+              hints: ['Listen for what changes "ab nächstem Monat".', 'It’s about where people are allowed to work.'],
+              explanation: 'The announcement introduces a new policy allowing home-office work up to three days a week.',
+              wrongWhy: { A: 'No layoffs are mentioned.', C: 'Meetings are mentioned, but not cancelled — the opposite, in fact.', D: 'Feedback isn’t requested here.' },
+              highlight: 'gilt eine neue Homeoffice-Regelung'
+            },
+            {
+              type: 'detail', category: 'Detail comprehension',
+              prompt: 'Wie viele Tage pro Woche darf man von zu Hause arbeiten?',
+              options: { A: 'One', B: 'Two', C: 'Three', D: 'Five' },
+              answer: 'C', segmentIds: ['s2'],
+              hints: ['Listen for the number right before "Tage pro Woche".'],
+              explanation: 'Employees may work from home up to three days per week.',
+              wrongWhy: { A: 'The number given is higher.', B: 'The number given is higher.', D: 'That would mean no office days at all — not what’s said.' },
+              highlight: 'bis zu drei Tage pro Woche'
+            },
+            {
+              type: 'tf', category: 'True/False/Not stated',
+              prompt: '"Am Dienstag müssen alle im Büro sein."',
+              answer: 'True', segmentIds: ['s3'],
+              hints: ['Listen for which two days are named as office days.'],
+              explanation: 'The announcement names Tuesday and Thursday as the days everyone should be in the office.',
+              highlight: 'Am Dienstag und Donnerstag'
+            },
+            {
+              type: 'tf', category: 'True/False/Not stated',
+              prompt: '"Die neue Regelung gilt sofort ab morgen."',
+              answer: 'False', segmentIds: ['s1'],
+              hints: ['Listen for when the new rule actually starts.'],
+              explanation: 'The rule starts next month ("ab nächstem Monat"), not tomorrow.',
+              highlight: 'ab nächstem Monat'
+            },
+            {
+              type: 'dictation', category: 'Dictation',
+              prompt: 'Listen and type exactly what you hear.',
+              dictationSegmentId: 's5',
+              hints: ['It tells employees who to contact with questions.', 'Ends with "...Personalabteilung."']
+            },
+            {
+              type: 'fill-gap', category: 'Fill in the gap',
+              prompt: 'Listen to the sentence and fill in the missing word.',
+              blankSegmentId: 's4', blankAnswer: 'Flexibilität',
+              displayText: 'Diese Änderung wurde eingeführt, weil viele Mitarbeiter mehr ______ gewünscht hatten.',
+              hints: ['It’s a noun meaning the freedom to organize your own time/place of work.', 'It starts with "Flex-".']
+            }
+          ]
+        }
+      ];
+
+      // ── Small SpeechSynthesis wrapper ───────────────────────────────────
+      // Segment-based, not a real audio timeline: play/pause/restart/±segment
+      // and "replay this exact segment" cover everything the exercises need
+      // without pretending browser TTS has seekable audio.
+      var lsPlayer = (function () {
+        var supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+        var segments = [];
+        var rate = 1;
+        var segIndex = 0;
+        var state = 'idle'; // idle | playing | paused
+        var voice = null;
+        var onStateChange = null;
+
+        function scoreVoice(v) {
+          var s = 0;
+          if (/^de-DE$/i.test(v.lang)) s += 10;
+          else if (/^de/i.test(v.lang)) s += 4;
+          if (v.localService) s += 5;
+          if (/natural|online|neural|premium/i.test(v.name)) s += 3;
+          if (/google|microsoft/i.test(v.name)) s += 2;
+          return s;
+        }
+        function pickVoice() {
+          if (!supported) return null;
+          var voices = window.speechSynthesis.getVoices() || [];
+          var de = voices.filter(function (v) { return /^de/i.test(v.lang); });
+          if (!de.length) return null;
+          var savedName = null;
+          try { savedName = localStorage.getItem('ls_voice_name'); } catch (e) {}
+          if (savedName) {
+            var saved = de.filter(function (v) { return v.name === savedName; })[0];
+            if (saved) return saved;
+          }
+          de.sort(function (a, b) { return scoreVoice(b) - scoreVoice(a); });
+          var chosen = de[0];
+          try { localStorage.setItem('ls_voice_name', chosen.name); } catch (e) {}
+          return chosen;
+        }
+        function ensureVoice() { if (!voice) voice = pickVoice(); }
+        if (supported) {
+          ensureVoice();
+          window.speechSynthesis.addEventListener('voiceschanged', function () { voice = pickVoice(); });
+        }
+
+        function notify() { if (onStateChange) onStateChange(state, segIndex); }
+
+        function speakFrom(idx) {
+          if (!supported) return;
+          window.speechSynthesis.cancel();
+          if (idx < 0 || idx >= segments.length) { state = 'idle'; notify(); return; }
+          segIndex = idx;
+          state = 'playing';
+          notify();
+          var u = new SpeechSynthesisUtterance(segments[idx].text);
+          u.lang = 'de-DE';
+          if (voice) u.voice = voice;
+          u.rate = rate;
+          u.onend = function () {
+            if (state !== 'playing') return; // stopped/left elsewhere; don't auto-advance
+            if (segIndex + 1 < segments.length) speakFrom(segIndex + 1);
+            else { state = 'idle'; segIndex = 0; notify(); }
+          };
+          u.onerror = function () { state = 'idle'; notify(); };
+          window.speechSynthesis.speak(u);
+        }
+
+        return {
+          supported: supported,
+          setSegments: function (segs) { if (supported) window.speechSynthesis.cancel(); segments = segs || []; segIndex = 0; state = 'idle'; notify(); },
+          setRate: function (r) { rate = r; if (state === 'playing') speakFrom(segIndex); },
+          play: function () { ensureVoice(); if (state === 'paused') { window.speechSynthesis.resume(); state = 'playing'; notify(); } else { speakFrom(segIndex); } },
+          pause: function () { if (supported) window.speechSynthesis.pause(); state = 'paused'; notify(); },
+          restart: function () { speakFrom(0); },
+          prevSegment: function () { speakFrom(Math.max(0, segIndex - 1)); },
+          nextSegment: function () { speakFrom(Math.min(segments.length - 1, segIndex + 1)); },
+          replaySegment: function (id) {
+            ensureVoice();
+            if (!supported) return;
+            window.speechSynthesis.cancel();
+            var seg = segments.filter(function (s) { return s.id === id; })[0];
+            if (!seg) return;
+            state = 'clip';
+            notify();
+            var u = new SpeechSynthesisUtterance(seg.text);
+            u.lang = 'de-DE';
+            if (voice) u.voice = voice;
+            u.rate = rate;
+            u.onend = function () { state = 'idle'; notify(); };
+            u.onerror = function () { state = 'idle'; notify(); };
+            window.speechSynthesis.speak(u);
+          },
+          // Cancels speech but keeps segIndex, so returning to Hören later
+          // resumes from the same segment rather than the start. Used only
+          // when navigating away from the view — never a hard reset.
+          pauseForLeave: function () { if (supported) window.speechSynthesis.cancel(); state = 'idle'; notify(); },
+          stopAll: function () { if (supported) window.speechSynthesis.cancel(); state = 'idle'; segIndex = 0; notify(); },
+          getState: function () { return state; },
+          getSegIndex: function () { return segIndex; },
+          getSegCount: function () { return segments.length; },
+          onChange: function (fn) { onStateChange = fn; }
+        };
+      })();
+
+      // ── Local grading helpers (no AI call needed for any v1 exercise) ──
+      function lsNormalizeWord(w) {
+        return (w || '').toLowerCase().replace(/ß/g, 'ss').replace(/[.,!?;:„"“”'’()]/g, '').trim();
+      }
+      function lsStripPunct(w) { return (w || '').replace(/[.,!?;:„"“”'’()]/g, ''); }
+      function lsTokenize(s) { return (s || '').trim().split(/\s+/).filter(Boolean); }
+
+      // Two separate scores — content vs spelling — so a learner who heard
+      // every word correctly but missed noun capitalization (e.g. "termin"
+      // vs "Termin") isn't shown a flat wrong answer.
+      function lsGradeDictation(correctText, userText) {
+        var correctWords = lsTokenize(correctText);
+        var userWords = lsTokenize(userText);
+        var contentCorrect = 0, spellingCorrect = 0;
+        var issues = [];
+        for (var i = 0; i < correctWords.length; i++) {
+          var cw = correctWords[i];
+          var uw = userWords[i];
+          var contentMatch = uw && lsNormalizeWord(uw) === lsNormalizeWord(cw);
+          if (contentMatch) {
+            contentCorrect++;
+            if (lsStripPunct(uw) === lsStripPunct(cw)) {
+              spellingCorrect++;
+            } else {
+              issues.push('capitalize “' + cw + '”');
+            }
+          } else {
+            issues.push('missed “' + cw + '”' + (uw ? ' (you wrote “' + uw + '”)' : ''));
+          }
+        }
+        return {
+          contentCorrect: contentCorrect, contentTotal: correctWords.length,
+          spellingCorrect: spellingCorrect,
+          contentOk: contentCorrect === correctWords.length,
+          spellingOk: spellingCorrect === contentCorrect,
+          issues: issues
+        };
+      }
+      function lsGradeFillGap(correctWord, userWord) {
+        var contentOk = lsNormalizeWord(userWord) === lsNormalizeWord(correctWord);
+        var spellingOk = lsStripPunct((userWord || '').trim()) === lsStripPunct(correctWord);
+        return { contentOk: contentOk, spellingOk: contentOk && spellingOk };
+      }
+
+      var ls = {
+        tab: 'practice',
+        setIndex: 0,
+        set: null,
+        questions: [],
+        index: 0,
+        answers: {}, // idx -> { attempts, finalStatus: null|'correct'|'review', selected/userText, retrying }
+        hintLevel: {},
+        transcriptRevealed: {},
+        fullTranscriptShown: false,
+        done: false,
+        _wired: false
+      };
+
+      function lsEl(id) { return document.getElementById(id); }
+      function lsSeg(id) {
+        var found = ls.set && ls.set.segments.filter(function (s) { return s.id === id; })[0];
+        return found ? found.text : '';
+      }
+
+      function lsScoreSet(set, level, topic) {
+        var s = 0;
+        if (set.meta.level === level) s += 2;
+        if (topic === 'Mixed' || set.meta.topic === topic) s += 1;
+        return s;
+      }
+      function lsPickSetIndex(avoidIdx) {
+        var level = lsEl('glListenLevel') ? lsEl('glListenLevel').value : 'B2';
+        var topic = lsEl('glListenTopic') ? lsEl('glListenTopic').value : 'Mixed';
+        var best = -1, bestScore = -1;
+        LISTEN_SETS.forEach(function (set, idx) {
+          if (LISTEN_SETS.length > 1 && idx === avoidIdx) return;
+          var sc = lsScoreSet(set, level, topic);
+          if (sc > bestScore) { bestScore = sc; best = idx; }
+        });
+        if (best === -1) best = (avoidIdx + 1) % LISTEN_SETS.length;
+        return best;
+      }
+
+      function lsLoadSet(setIndex, questionsOverride) {
+        ls.set = LISTEN_SETS[setIndex];
+        ls.setIndex = setIndex;
+        ls.questions = questionsOverride || ls.set.questions;
+        ls.index = 0;
+        ls.answers = {};
+        ls.hintLevel = {};
+        ls.transcriptRevealed = {};
+        ls.fullTranscriptShown = false;
+        ls.done = false;
+        lsPlayer.setSegments(ls.set.segments);
+        lsPlayer.setRate(1);
+      }
+
+      window._glOpenListeningView = function () {
+        ls.tab = 'practice';
+        lsLoadSet(ls.setIndex % LISTEN_SETS.length);
+        lsEl('glListenPractice').style.display = '';
+        lsEl('glListenEnd').style.display = 'none';
+        lsRenderPlayerChrome();
+        lsRenderWorkspace();
+        lsWireHeader();
+        lsWirePlayerControls();
+        lsPlayer.onChange(lsRenderPlayerChrome);
+      };
+
+      // Called whenever the user leaves Hören (switching skill or going back
+      // to the German Practice home) — see the _glOpenSkill/_glBackToHome
+      // edits below. Must never leave speech playing invisibly elsewhere.
+      window._glCloseListeningView = function () {
+        lsPlayer.pauseForLeave();
+      };
+
+      function lsWireHeader() {
+        var topicSel = lsEl('glListenTopic');
+        var levelSel = lsEl('glListenLevel');
+        if (topicSel && !topicSel._lsWired) { topicSel._lsWired = true; topicSel.addEventListener('change', function () { lsNewListening(); }); }
+        if (levelSel && !levelSel._lsWired) { levelSel._lsWired = true; levelSel.addEventListener('change', function () { lsNewListening(); }); }
+      }
+
+      function lsWirePlayerControls() {
+        var playBtn = lsEl('glListenPlayBtn');
+        if (playBtn && !playBtn._lsWired) {
+          playBtn._lsWired = true;
+          playBtn.addEventListener('click', function () {
+            if (lsPlayer.getState() === 'playing') lsPlayer.pause();
+            else lsPlayer.play();
+          });
+        }
+        var prevBtn = lsEl('glListenPrevBtn');
+        if (prevBtn && !prevBtn._lsWired) { prevBtn._lsWired = true; prevBtn.addEventListener('click', function () { lsPlayer.prevSegment(); }); }
+        var nextBtn = lsEl('glListenNextBtn');
+        if (nextBtn && !nextBtn._lsWired) { nextBtn._lsWired = true; nextBtn.addEventListener('click', function () { lsPlayer.nextSegment(); }); }
+        var restartBtn = lsEl('glListenRestartBtn');
+        if (restartBtn && !restartBtn._lsWired) { restartBtn._lsWired = true; restartBtn.addEventListener('click', function () { lsPlayer.restart(); }); }
+        document.querySelectorAll('.gl-listen-speed').forEach(function (btn) {
+          if (btn._lsWired) return;
+          btn._lsWired = true;
+          btn.addEventListener('click', function () {
+            document.querySelectorAll('.gl-listen-speed').forEach(function (b) { b.classList.toggle('active', b === btn); });
+            lsPlayer.setRate(parseFloat(btn.getAttribute('data-speed')));
+          });
+        });
+      }
+
+      function lsRenderPlayerChrome() {
+        var setTitle = lsEl('glListenSetTitle');
+        if (setTitle && ls.set) setTitle.textContent = ls.set.meta.title + ' · ' + ls.set.meta.level + ' · ' + ls.set.meta.audioType;
+        var count = lsPlayer.getSegCount();
+        var idx = lsPlayer.getSegIndex();
+        var pos = lsEl('glListenPosition');
+        if (pos) pos.textContent = 'Segment ' + (count ? idx + 1 : 0) + ' / ' + count;
+        var fill = lsEl('glListenTrackFill');
+        if (fill) fill.style.width = (count ? Math.round(((idx + 1) / count) * 100) : 0) + '%';
+        var playBtn = lsEl('glListenPlayBtn');
+        var playing = lsPlayer.getState() === 'playing';
+        if (playBtn) { playBtn.textContent = playing ? '⏸' : '▶'; playBtn.setAttribute('aria-label', playing ? 'Pause audio' : 'Play audio'); }
+        var wf = lsEl('glListenWaveform');
+        if (wf) wf.classList.toggle('is-playing', playing);
+      }
+
+      function lsQProgress() {
+        var total = ls.questions.length;
+        var pct = total ? Math.round(((ls.index + 1) / total) * 100) : 0;
+        var label = lsEl('glListenProgressLabel');
+        if (label) label.textContent = 'Question ' + (ls.index + 1) + ' / ' + total;
+        var fill = lsEl('glListenProgressFill');
+        if (fill) fill.style.width = pct + '%';
+      }
+
+      function lsRenderWorkspace() {
+        lsQProgress();
+        var q = ls.questions[ls.index];
+        if (!q) return;
+        var ans = ls.answers[ls.index] || (ls.answers[ls.index] = { attempts: 0, finalStatus: null, selected: null, userText: '' });
+        var resolved = !!ans.finalStatus;
+        var showingMinimalRetry = !resolved && ans.attempts >= 1 && !ans.retrying;
+
+        var body = '';
+        if (q.type === 'main-idea' || q.type === 'detail') {
+          var opts = ['A', 'B', 'C', 'D'].filter(function (l) { return q.options[l]; });
+          body = '<div class="gl-listen-options">' + opts.map(function (letter) {
+            var state = '';
+            if (resolved) {
+              if (letter === q.answer) state = 'gl-correct';
+              else if (letter === ans.selected) state = 'gl-incorrect';
+            }
+            return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + letter + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+              '<span class="gl-listen-opt-mark">' + letter + '</span><span>' + _glEscape(q.options[letter]) + '</span></button>';
+          }).join('') + '</div>';
+        } else if (q.type === 'tf') {
+          var tfOpts = ['True', 'False', 'Not stated'];
+          body = '<div class="gl-listen-options">' + tfOpts.map(function (opt) {
+            var state = '';
+            if (resolved) {
+              if (opt === q.answer) state = 'gl-correct';
+              else if (opt === ans.selected) state = 'gl-incorrect';
+            }
+            return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + opt + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+              '<span class="gl-listen-opt-mark"></span><span>' + opt + '</span></button>';
+          }).join('') + '</div>';
+        } else if (q.type === 'dictation') {
+          body =
+            '<button type="button" class="gl-listen-evidence-btn" id="glListenPlayClipBtn">🎧 Play sentence</button>' +
+            '<input type="text" class="gl-listen-text-input" id="glListenDictInput" placeholder="Type exactly what you hear…"' +
+            (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
+        } else if (q.type === 'fill-gap') {
+          var displayHtml = _glEscape(q.displayText).replace('______', '<span class="gl-listen-gap-blank">______</span>');
+          body =
+            '<div class="gl-listen-gap-line">' + displayHtml + '</div>' +
+            '<button type="button" class="gl-listen-evidence-btn" id="glListenPlayClipBtn">🎧 Play sentence</button>' +
+            '<input type="text" class="gl-listen-text-input" id="glListenGapInput" placeholder="Type the missing word…"' +
+            (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
+        }
+
+        var checkDisabled = resolved || showingMinimalRetry;
+        if (!checkDisabled) {
+          if (q.type === 'main-idea' || q.type === 'detail' || q.type === 'tf') checkDisabled = !ans._pending;
+          if (q.type === 'dictation' || q.type === 'fill-gap') checkDisabled = false;
+        }
+
+        var taskPanel = lsEl('glListenTaskPanel');
+        taskPanel.innerHTML =
+          '<div class="gl-listen-q-category">' + _glEscape(q.category) + '</div>' +
+          '<div class="gl-listen-q-prompt">' + _glEscape(q.prompt) + '</div>' +
+          body +
+          '<div class="gl-listen-actions">' +
+          (resolved ? '' : '<button type="button" class="gl-listen-hint-btn" id="glListenHintBtn">Give me a hint</button>') +
+          (showingMinimalRetry
+            ? '<button type="button" class="gl-listen-check-btn" id="glListenRetryBtn">Try again</button>'
+            : '<button type="button" class="gl-listen-check-btn" id="glListenCheckBtn"' + (checkDisabled ? ' disabled' : '') + '>' + (resolved ? 'Answered' : 'Check answer →') + '</button>') +
+          '</div>' +
+          '<div class="gl-listen-nav">' +
+          '<button type="button" class="gl-listen-nav-btn" id="glListenPrevQBtn"' + (ls.index === 0 ? ' disabled' : '') + '>← Previous</button>' +
+          '<span class="gl-listen-nav-count">' + (ls.index + 1) + ' / ' + ls.questions.length + '</span>' +
+          '<button type="button" class="gl-listen-nav-btn" id="glListenNextQBtn">' + (ls.index + 1 >= ls.questions.length ? 'Finish' : 'Next →') + '</button>' +
+          '</div>';
+
+        lsRenderSupport(q, ans, resolved, showingMinimalRetry);
+        lsWireWorkspaceEvents(q, ans, resolved, showingMinimalRetry);
+      }
+
+      function lsHintFor(q, level) { return (q.hints && q.hints[level]) || ''; }
+
+      function lsRenderSupport(q, ans, resolved, showingMinimalRetry) {
+        var panel = lsEl('glListenSupportPanel');
+        var html = '<div class="gl-listen-support-title">Listening support</div>';
+
+        if (!resolved) {
+          if (showingMinimalRetry) {
+            html += '<div class="gl-listen-feedback gl-fb-incorrect">' +
+              '<div class="gl-listen-feedback-title">Not quite.</div>' +
+              '<div class="gl-listen-feedback-line">Listen to the relevant part again before trying once more.</div>' +
+              '<button type="button" class="gl-listen-evidence-btn" id="glListenReplayEvidenceBtn">Replay evidence</button>' +
+              '</div>';
+          } else {
+            var level = ls.hintLevel[ls.index] || 0;
+            html += '<div class="gl-listen-feedback-line">Try to work it out from the audio first.</div>' +
+              (level > 0 ? '<div class="gl-listen-hint-box">' + _glEscape(lsHintFor(q, 0)) + '</div>' : '') +
+              (level > 1 ? '<div class="gl-listen-hint-box">' + _glEscape(lsHintFor(q, 1)) + '</div>' : '');
+          }
+          panel.innerHTML = html;
+          return;
+        }
+
+        var isCorrect = ans.finalStatus === 'correct';
+        html += '<div class="gl-listen-feedback ' + (isCorrect ? 'gl-fb-correct' : 'gl-fb-incorrect') + '">' +
+          '<div class="gl-listen-feedback-title">' + (isCorrect ? '✓ Correct' : 'Here’s the answer') + '</div>';
+
+        if (q.type === 'dictation') {
+          var g = ans.grade;
+          html += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(ans.userText || '') + '</strong></div>' +
+            '<div class="gl-listen-feedback-line">Correct:<br><strong>' + _glEscape(lsSeg(q.dictationSegmentId)) + '</strong></div>' +
+            '<div class="gl-listen-score-line">Content: <span class="' + (g.contentOk ? 'ok' : 'warn') + '">' + g.contentCorrect + '/' + g.contentTotal + ' words</span>' +
+            ' · Spelling: <span class="' + (g.spellingOk ? 'ok' : 'warn') + '">' + g.spellingCorrect + '/' + g.contentCorrect + '</span></div>' +
+            (g.issues.length ? '<div class="gl-listen-feedback-why">' + _glEscape(g.issues.join(', ')) + '</div>' : '');
+        } else if (q.type === 'fill-gap') {
+          html += '<div class="gl-listen-feedback-line">Your answer: <strong>' + _glEscape(ans.userText || '') + '</strong> · Correct: <strong>' + _glEscape(q.blankAnswer) + '</strong></div>' +
+            '<div class="gl-listen-feedback-line">' + _glEscape(q.displayText.replace('______', q.blankAnswer)) + '</div>';
+        } else {
+          if (!isCorrect) {
+            html += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(ans.selected || '') + '</strong></div>' +
+              '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(q.answer) + '</strong></div>';
+          }
+          html += '<div class="gl-listen-feedback-line">' + _glEscape(q.explanation || '') + '</div>';
+          if (!isCorrect && q.wrongWhy && q.wrongWhy[ans.selected]) {
+            html += '<div class="gl-listen-feedback-why">Why "' + _glEscape(ans.selected) + '" is wrong: ' + _glEscape(q.wrongWhy[ans.selected]) + '</div>';
+          }
+        }
+
+        if (q.segmentIds && q.segmentIds.length) {
+          html += '<button type="button" class="gl-listen-evidence-btn" id="glListenReplayEvidenceBtn">Replay evidence</button>';
+        }
+        if (q.dictationSegmentId || q.blankSegmentId) {
+          html += '<button type="button" class="gl-listen-evidence-btn" id="glListenReplayEvidenceBtn" data-seg="' + (q.dictationSegmentId || q.blankSegmentId) + '">Replay sentence</button>';
+        }
+        html += '<button type="button" class="gl-listen-transcript-btn" id="glListenTranscriptBtn">Show relevant transcript</button>';
+        html += '</div>';
+
+        if (ls.transcriptRevealed[ls.index] && q.segmentIds && q.segmentIds.length) {
+          var segText = q.segmentIds.map(lsSeg).join(' ');
+          var marked = q.highlight ? _glEscape(segText).replace(_glEscape(q.highlight), '<mark>' + _glEscape(q.highlight) + '</mark>') : _glEscape(segText);
+          html += '<div class="gl-listen-transcript-box">' + marked + '</div>';
+        }
+
+        panel.innerHTML = html;
+      }
+
+      function lsWireWorkspaceEvents(q, ans, resolved, showingMinimalRetry) {
+        var hintBtn = lsEl('glListenHintBtn');
+        if (hintBtn) hintBtn.addEventListener('click', function () {
+          var level = ls.hintLevel[ls.index] || 0;
+          if (level < (q.hints ? q.hints.length : 0)) ls.hintLevel[ls.index] = level + 1;
+          lsRenderSupport(q, ans, resolved, showingMinimalRetry);
+        });
+
+        if (!resolved && !showingMinimalRetry && (q.type === 'main-idea' || q.type === 'detail' || q.type === 'tf')) {
+          document.querySelectorAll('#glListenTaskPanel .gl-listen-option').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              ans._pending = btn.getAttribute('data-opt');
+              document.querySelectorAll('#glListenTaskPanel .gl-listen-option').forEach(function (b) { b.classList.toggle('gl-selected', b === btn); });
+              var checkBtn = lsEl('glListenCheckBtn');
+              if (checkBtn) checkBtn.disabled = false;
+            });
+          });
+        }
+
+        var playClipBtn = lsEl('glListenPlayClipBtn');
+        if (playClipBtn) playClipBtn.addEventListener('click', function () {
+          lsPlayer.replaySegment(q.dictationSegmentId || q.blankSegmentId);
+        });
+
+        var checkBtn = lsEl('glListenCheckBtn');
+        if (checkBtn && !resolved && !showingMinimalRetry) checkBtn.addEventListener('click', function () { lsCheckAnswer(q, ans); });
+
+        var retryBtn = lsEl('glListenRetryBtn');
+        if (retryBtn) retryBtn.addEventListener('click', function () {
+          ans.retrying = true;
+          lsRenderWorkspace();
+        });
+
+        lsWireSupportEvents(q, ans, resolved, showingMinimalRetry);
+
+        var prevQBtn = lsEl('glListenPrevQBtn');
+        if (prevQBtn) prevQBtn.addEventListener('click', function () { lsGoTo(-1); });
+        var nextQBtn = lsEl('glListenNextQBtn');
+        if (nextQBtn) nextQBtn.addEventListener('click', function () { lsGoTo(1); });
+      }
+
+      // Wires the buttons lsRenderSupport draws (replay evidence/sentence,
+      // transcript reveal). Split out from lsWireWorkspaceEvents because
+      // lsRenderSupport can re-render on its own (hint reveal, transcript
+      // reveal) without the task panel re-rendering — those buttons need
+      // re-wiring every time or they go dead after the first re-render.
+      function lsWireSupportEvents(q, ans, resolved, showingMinimalRetry) {
+        var replayEvBtn = lsEl('glListenReplayEvidenceBtn');
+        if (replayEvBtn) replayEvBtn.addEventListener('click', function () {
+          var segId = replayEvBtn.getAttribute('data-seg') || (q.segmentIds && q.segmentIds[0]);
+          if (segId) lsPlayer.replaySegment(segId);
+        });
+
+        var transcriptBtn = lsEl('glListenTranscriptBtn');
+        if (transcriptBtn) transcriptBtn.addEventListener('click', function () {
+          ls.transcriptRevealed[ls.index] = true;
+          lsRenderSupport(q, ans, resolved, showingMinimalRetry);
+          lsWireSupportEvents(q, ans, resolved, showingMinimalRetry);
+        });
+      }
+
+      function lsCheckAnswer(q, ans) {
+        var correct = false;
+        if (q.type === 'main-idea' || q.type === 'detail') {
+          if (!ans._pending) return;
+          ans.selected = ans._pending;
+          correct = ans.selected === q.answer;
+        } else if (q.type === 'tf') {
+          if (!ans._pending) return;
+          ans.selected = ans._pending;
+          correct = ans.selected === q.answer;
+        } else if (q.type === 'dictation') {
+          var dInput = lsEl('glListenDictInput');
+          ans.userText = dInput ? dInput.value.trim() : '';
+          if (!ans.userText) return;
+          ans.grade = lsGradeDictation(lsSeg(q.dictationSegmentId), ans.userText);
+          correct = ans.grade.contentOk;
+        } else if (q.type === 'fill-gap') {
+          var gInput = lsEl('glListenGapInput');
+          ans.userText = gInput ? gInput.value.trim() : '';
+          if (!ans.userText) return;
+          correct = lsGradeFillGap(q.blankAnswer, ans.userText).contentOk;
+        }
+
+        ans.attempts++;
+        ans.retrying = false;
+        if (correct || ans.attempts >= 2) {
+          ans.finalStatus = correct ? 'correct' : 'review';
+        }
+        lsRenderWorkspace();
+      }
+
+      function lsGoTo(delta) {
+        var next = ls.index + delta;
+        if (next < 0) return;
+        if (next >= ls.questions.length) { lsShowEnd(); return; }
+        ls.index = next;
+        lsRenderWorkspace();
+      }
+
+      function lsShowEnd() {
+        ls.done = true;
+        var total = ls.questions.length;
+        var correctCount = 0;
+        var byCat = {};
+        LS_CATEGORIES.forEach(function (c) { byCat[c] = { correct: 0, total: 0 }; });
+        var weakCats = [];
+        ls.questions.forEach(function (q, idx) {
+          var a = ls.answers[idx];
+          if (!byCat[q.category]) byCat[q.category] = { correct: 0, total: 0 };
+          byCat[q.category].total++;
+          if (a && a.finalStatus === 'correct') { correctCount++; byCat[q.category].correct++; }
+        });
+        Object.keys(byCat).forEach(function (cat) {
+          var c = byCat[cat];
+          if (c.total > 0 && c.correct < c.total) weakCats.push(cat);
+        });
+        var pct = total ? Math.round((correctCount / total) * 100) : 0;
+
+        var end = lsEl('glListenEnd');
+        lsEl('glListenPractice').style.display = 'none';
+        end.style.display = '';
+        end.innerHTML =
+          '<h3 class="gl-listen-end-title">Listening complete</h3>' +
+          '<div class="gl-listen-end-score">' + correctCount + ' / ' + total + '</div>' +
+          '<div class="gl-listen-end-pct">' + pct + '%</div>' +
+          '<div class="gl-listen-breakdown">' + Object.keys(byCat).filter(function (c) { return byCat[c].total > 0; }).map(function (cat) {
+            var c = byCat[cat];
+            return '<div class="gl-listen-breakdown-row"><span>' + _glEscape(cat) + '</span><b>' + c.correct + ' / ' + c.total + '</b></div>';
+          }).join('') + '</div>' +
+          (ls.fullTranscriptShown
+            ? '<div class="gl-listen-transcript-box">' + ls.set.segments.map(function (s) { return _glEscape(s.text); }).join(' ') + '</div>'
+            : '<button type="button" class="gl-listen-transcript-btn" id="glListenFullTranscriptBtn">Show full transcript</button>') +
+          '<div class="gl-listen-end-actions">' +
+          (weakCats.length ? '<button type="button" class="gl-listen-end-btn" id="glListenWeakBtn">Practice weak areas</button>' : '') +
+          '<button type="button" class="gl-listen-end-btn gl-listen-end-btn-primary" id="glListenNewBtn">New listening</button>' +
+          '</div>';
+
+        var fullBtn = lsEl('glListenFullTranscriptBtn');
+        if (fullBtn) fullBtn.addEventListener('click', function () { ls.fullTranscriptShown = true; lsShowEnd(); });
+        var weakBtn = lsEl('glListenWeakBtn');
+        if (weakBtn) weakBtn.addEventListener('click', function () { lsStartWeakRetry(weakCats); });
+        var newBtn = lsEl('glListenNewBtn');
+        if (newBtn) newBtn.addEventListener('click', function () { lsNewListening(); });
+      }
+
+      // Ephemeral, session-only retry: no persistent Weak Areas store yet
+      // (deferred), so this just picks a different static set (when more
+      // than one exists) and orders its questions with the categories the
+      // student just missed first.
+      function lsStartWeakRetry(weakCats) {
+        var idx = LISTEN_SETS.length > 1 ? (ls.setIndex + 1) % LISTEN_SETS.length : ls.setIndex;
+        var set = LISTEN_SETS[idx];
+        var ordered = set.questions.slice().sort(function (a, b) {
+          var aw = weakCats.indexOf(a.category) !== -1 ? 0 : 1;
+          var bw = weakCats.indexOf(b.category) !== -1 ? 0 : 1;
+          return aw - bw;
+        });
+        lsLoadSet(idx, ordered);
+        lsEl('glListenPractice').style.display = '';
+        lsEl('glListenEnd').style.display = 'none';
+        lsRenderPlayerChrome();
+        lsRenderWorkspace();
+      }
+
+      function lsNewListening() {
+        var idx = lsPickSetIndex(ls.setIndex);
+        lsLoadSet(idx);
+        lsEl('glListenPractice').style.display = '';
+        lsEl('glListenEnd').style.display = 'none';
+        lsRenderPlayerChrome();
+        lsRenderWorkspace();
+      }
+    })();
 
     // Re-apply hero badge after profile loads (app.js fires this when profile is ready)
     window.addEventListener('ss-profile-updated', _glRefreshHero);
