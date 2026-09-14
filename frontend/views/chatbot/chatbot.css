@@ -6807,7 +6807,7 @@ body.ncb-pdf-workspace-open #drDrawer {
 .ncb-learner-mode .ncb-card > .ncb-context,
 .ncb-learner-mode .ncb-card > .ncb-writing-coach-panel,
 .ncb-learner-mode .ncb-card > .ncb-practice-panel {
-  transition: opacity 110ms ease-out, transform 110ms ease-out;
+  transition: opacity 180ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1);
 }
 .ncb-workspace-leaving .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel),
 .ncb-workspace-entering .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel) {

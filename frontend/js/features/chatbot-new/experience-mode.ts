@@ -78,7 +78,10 @@ export function transitionLearnerWorkspace(
     const fade = (element: HTMLElement | null) => new Promise<void>((resolve) => {
       const done = () => { clearTimeout(timer); element?.removeEventListener('transitionend', end); resolve(); };
       const end = (event: TransitionEvent) => { if (event.target === element && event.propertyName === 'opacity') done(); };
-      const timer = window.setTimeout(done, 180);
+      // Bounded fallback in case transitionend never fires — kept a little
+      // above the CSS transition's own 180ms so a normal completion always
+      // wins via the event, not this timer.
+      const timer = window.setTimeout(done, 230);
       element?.addEventListener('transitionend', end);
     });
     try {
