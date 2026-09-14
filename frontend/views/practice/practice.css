@@ -1148,6 +1148,677 @@
     text-align: right;
   }
 }
+/* ── Lesen (reading comprehension) — dedicated workspace ──
+ * Deliberately does NOT reuse .gl-quiz-shell (white/pink card) — this page
+ * stays in Minallo's dark surfaces so it reads as "read + understand",
+ * not "another quiz generator". Only shown when data-active-skill="reading"
+ * (toggled in practice.js); every other skill keeps the generic template
+ * above untouched. */
+.gl-reading-view {
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-reading-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.gl-reading-title {
+  margin: 0 0 4px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+  line-height: 1.1;
+}
+.gl-reading-sub {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.6);
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+.gl-reading-header-controls {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.gl-reading-select {
+  min-height: 38px;
+  padding: 0 30px 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center,
+    rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 800;
+  font-size: 0.82rem;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.gl-reading-select:focus-visible {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+}
+.gl-reading-tabs {
+  display: inline-flex;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: rgba(10, 12, 22, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+.gl-reading-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s, box-shadow 0.16s;
+}
+.gl-reading-tab:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+.gl-reading-tab.active {
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.28);
+}
+
+/* Two-column workspace: text left ~58%, questions right ~42%. The min-width:0
+ * on both columns (plus overflow handling below) keeps a long unbroken German
+ * word or wide article from forcing the grid — and the global right panel —
+ * off-screen. */
+.gl-reading-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(340px, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+.gl-reading-text-panel,
+.gl-reading-question-panel {
+  min-width: 0;
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+}
+.gl-reading-text-panel {
+  max-height: min(72vh, 680px);
+  overflow-y: auto;
+}
+.gl-reading-question-panel {
+  position: sticky;
+  top: 12px;
+  max-height: min(72vh, 680px);
+  overflow-y: auto;
+}
+.gl-reading-text-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+.gl-reading-text-title {
+  margin: 8px 0 6px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.05rem, 1.8vw, 1.28rem);
+  line-height: 1.3;
+}
+.gl-reading-text-meta {
+  margin: 0 0 16px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.45);
+}
+.gl-reading-text-body {
+  font-size: 1.02rem;
+  line-height: 1.75;
+  color: rgba(226, 232, 240, 0.88);
+  max-width: 62ch;
+}
+.gl-reading-text-body p {
+  margin: 0 0 16px;
+}
+.gl-reading-text-body p:last-child {
+  margin-bottom: 0;
+}
+.gl-reading-sentence {
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+.gl-reading-sentence.gl-evidence-clickable {
+  cursor: pointer;
+}
+.gl-reading-sentence.gl-evidence-clickable:hover {
+  background-color: rgba(56, 189, 248, 0.12);
+}
+.gl-reading-sentence.gl-evidence-flash {
+  background-color: rgba(56, 189, 248, 0.38);
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.14);
+}
+.gl-reading-sentence.gl-evidence-settled {
+  background-color: rgba(56, 189, 248, 0.16);
+  box-shadow: none;
+}
+
+.gl-reading-q-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: rgba(226, 232, 240, 0.68);
+}
+.gl-reading-q-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(226, 232, 240, 0.4);
+}
+.gl-reading-q-state::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.5);
+}
+.gl-reading-q-state.answered::before { background: #60a5fa; }
+.gl-reading-q-state.correct::before { background: #22c55e; }
+.gl-reading-q-state.review::before { background: #f87171; }
+.gl-reading-q-progress-track {
+  height: 4px;
+  margin-bottom: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.gl-reading-q-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  transition: width 0.24s ease;
+}
+.gl-reading-q-category {
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+.gl-reading-q-prompt {
+  margin: 0 0 16px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+.gl-reading-options {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.gl-reading-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.88);
+  font-family: var(--font-main);
+  font-weight: 750;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+}
+.gl-reading-option:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+}
+.gl-reading-option:disabled { cursor: default; }
+.gl-reading-option .gl-reading-opt-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(148, 163, 184, 0.4);
+  font-size: 0.68rem;
+  font-weight: 1000;
+  color: rgba(226, 232, 240, 0.5);
+}
+.gl-reading-option.gl-selected {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.1);
+}
+.gl-reading-option.gl-correct {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+.gl-reading-option.gl-correct .gl-reading-opt-mark {
+  border-color: #22c55e;
+  background: #22c55e;
+  color: #fff;
+}
+.gl-reading-option.gl-incorrect {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+.gl-reading-option.gl-incorrect .gl-reading-opt-mark {
+  border-color: #f87171;
+  background: #f87171;
+  color: #fff;
+}
+.gl-reading-short-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.gl-reading-short-input:focus-visible {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.5);
+}
+.gl-reading-evidence-hint {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  color: rgba(226, 232, 240, 0.55);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.gl-reading-match-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.gl-reading-match-row span {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 900;
+  color: rgba(226, 232, 240, 0.7);
+}
+.gl-reading-match-row select {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.gl-reading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.gl-reading-hint-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.75);
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.gl-reading-hint-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.gl-reading-check-btn {
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.86rem;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
+}
+.gl-reading-check-btn:hover { transform: translateY(-1px); }
+.gl-reading-check-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+.gl-reading-hint-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.5;
+  animation: glFadeIn 0.2s ease both;
+}
+
+.gl-reading-feedback {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-reading-feedback.gl-fb-correct {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+.gl-reading-feedback.gl-fb-incorrect {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+.gl-reading-feedback-title {
+  margin: 0 0 6px;
+  font-family: var(--font-main);
+  font-weight: 1000;
+  font-size: 0.9rem;
+}
+.gl-fb-correct .gl-reading-feedback-title { color: #86efac; }
+.gl-fb-incorrect .gl-reading-feedback-title { color: #fca5a5; }
+.gl-reading-feedback-line {
+  margin: 0 0 6px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.82);
+}
+.gl-reading-feedback-line strong { color: #fff; }
+.gl-reading-feedback-why {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.7);
+}
+.gl-reading-evidence-btn {
+  margin-top: 10px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.gl-reading-evidence-btn:hover { background: rgba(56, 189, 248, 0.18); }
+
+.gl-reading-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.gl-reading-nav-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.78);
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.gl-reading-nav-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.gl-reading-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.gl-reading-nav-count {
+  font-size: 0.8rem;
+  font-weight: 900;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+/* End-of-session summary — replaces the workspace grid entirely. */
+.gl-reading-end {
+  padding: 28px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+  text-align: center;
+  animation: glFadeIn 0.24s ease both;
+}
+.gl-reading-end-title {
+  margin: 0 0 10px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.2rem, 2.4vw, 1.5rem);
+}
+.gl-reading-end-score {
+  font-family: var(--font-main);
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 1000;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gl-reading-end-pct {
+  margin: 2px 0 22px;
+  color: rgba(226, 232, 240, 0.55);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.gl-reading-breakdown {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  margin: 0 auto 22px;
+  text-align: left;
+}
+.gl-reading-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: rgba(226, 232, 240, 0.8);
+}
+.gl-reading-breakdown-row b { color: #fff; }
+.gl-reading-recommend {
+  max-width: 420px;
+  margin: 0 auto 20px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  font-size: 0.84rem;
+  font-weight: 750;
+  color: rgba(226, 232, 240, 0.85);
+  text-align: left;
+}
+.gl-reading-recommend b { color: #7dd3fc; }
+.gl-reading-end-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.gl-reading-end-btn {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.055);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.gl-reading-end-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.gl-reading-end-btn-primary {
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
+}
+
+/* From my files — inline config, no modal */
+.gl-reading-files-inline {
+  margin-bottom: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.5);
+}
+.gl-reading-files-config {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.gl-reading-files-config label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(226, 232, 240, 0.45);
+}
+.gl-reading-files-config select {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 700;
+}
+.gl-reading-start-btn {
+  margin-left: auto;
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.gl-reading-empty {
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  color: rgba(226, 232, 240, 0.5);
+  font-weight: 750;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .gl-reading-workspace {
+    grid-template-columns: 1fr;
+  }
+  .gl-reading-question-panel {
+    position: static;
+    max-height: none;
+  }
+  .gl-reading-text-panel {
+    max-height: min(50vh, 480px);
+  }
+}
+@media (max-width: 600px) {
+  .gl-reading-header {
+    flex-direction: column;
+  }
+  .gl-reading-header-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .gl-reading-select {
+    flex: 1;
+  }
+  .gl-reading-files-config {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .gl-reading-start-btn {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-reading-view *,
+  .gl-reading-view *::before,
+  .gl-reading-view *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gl-study-tools *,
   .gl-study-tools *::before,

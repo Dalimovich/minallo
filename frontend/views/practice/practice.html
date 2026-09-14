@@ -239,6 +239,96 @@
         </div>
         <div id="glAIMessages" class="gl-ai-messages"></div>
       </section>
+
+      <!-- Lesen (reading comprehension) — dedicated workspace, shown only when
+           data-active-skill="reading". Does not reuse the generic quiz/cards
+           template above; see gl-reading-* rules in practice.css. -->
+      <section class="gl-reading-view" id="glReadingView" style="display:none">
+        <div class="gl-reading-header">
+          <div>
+            <h2 class="gl-reading-title">Lesen</h2>
+            <p class="gl-reading-sub">Read real texts and test your understanding.</p>
+          </div>
+          <div class="gl-reading-header-controls">
+            <select id="glReadingTextType" class="gl-reading-select" aria-label="Text type">
+              <option value="Article">Article</option>
+              <option value="News">News</option>
+              <option value="Email">Email</option>
+              <option value="Letter">Letter</option>
+              <option value="University text">University text</option>
+              <option value="Everyday text">Everyday text</option>
+              <option value="Exam-style text">Exam-style text</option>
+            </select>
+            <select id="glReadingLevel" class="gl-reading-select" aria-label="Level">
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
+              <option value="B1">B1</option>
+              <option value="B2" selected>B2</option>
+              <option value="C1">C1</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="gl-reading-tabs" role="tablist" aria-label="Lesen mode">
+          <button type="button" class="gl-reading-tab active" data-reading-tab="practice" role="tab" aria-selected="true">Practice</button>
+          <button type="button" class="gl-reading-tab" data-reading-tab="weak" role="tab" aria-selected="false">Weak areas</button>
+          <button type="button" class="gl-reading-tab" data-reading-tab="files" role="tab" aria-selected="false">From my files</button>
+        </div>
+
+        <div class="gl-reading-files-inline" id="glReadingFilesPanel" style="display:none"></div>
+
+        <div class="gl-reading-workspace" id="glReadingWorkspace">
+          <div class="gl-reading-text-panel" id="glReadingTextPanel"></div>
+          <div class="gl-reading-question-panel" id="glReadingQuestionPanel"></div>
+        </div>
+
+        <div class="gl-reading-end" id="glReadingEnd" style="display:none"></div>
+      </section>
+
+      <!-- Grammatik — interactive sentence-building/correction workspace,
+           dedicated template shown only when data-active-skill="grammar".
+           Deliberately not the generic quiz/cards template above, and
+           deliberately not styled like Lesen — see gl-gram-* rules in
+           practice.css. -->
+      <section class="gl-gram-view" id="glGrammarView" style="display:none">
+        <div class="gl-gram-header">
+          <div>
+            <h2 class="gl-gram-title">Grammatik</h2>
+            <p class="gl-gram-sub">Build correct German sentences and understand the rules.</p>
+          </div>
+          <div class="gl-gram-header-controls">
+            <select id="glGramTopic" class="gl-reading-select" aria-label="Topic"></select>
+            <select id="glGramLevel" class="gl-reading-select" aria-label="Level">
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
+              <option value="B1">B1</option>
+              <option value="B2" selected>B2</option>
+              <option value="C1">C1</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="gl-gram-tabs" role="tablist" aria-label="Grammatik mode">
+          <button type="button" class="gl-gram-tab active" data-gram-tab="practice" role="tab" aria-selected="true">Practice</button>
+          <button type="button" class="gl-gram-tab" data-gram-tab="weak" role="tab" aria-selected="false">Weak areas</button>
+          <button type="button" class="gl-gram-tab" data-gram-tab="files" role="tab" aria-selected="false">From my files</button>
+        </div>
+
+        <div class="gl-gram-practice" id="glGramPractice">
+          <div class="gl-gram-progress">
+            <span class="gl-gram-progress-label" id="glGramProgressLabel">1 / 10</span>
+            <div class="gl-gram-progress-track"><div class="gl-gram-progress-fill" id="glGramProgressFill"></div></div>
+          </div>
+          <div class="gl-gram-workspace" id="glGramWorkspace">
+            <div class="gl-gram-exercise" id="glGramExercise"></div>
+            <div class="gl-gram-feedback" id="glGramFeedback"></div>
+          </div>
+          <div class="gl-gram-end" id="glGramEnd" style="display:none"></div>
+        </div>
+
+        <div class="gl-gram-weak" id="glGramWeak" style="display:none"></div>
+        <div class="gl-gram-files" id="glGramFiles" style="display:none"></div>
+      </section>
     </div>
   </div>
 </div>
