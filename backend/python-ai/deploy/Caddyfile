@@ -1,0 +1,28 @@
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$AI_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	reverse_proxy api:8080 {
+		# Deliver streamed AI tokens immediately.
+		flush_interval -1
+		transport http {
+			response_header_timeout 130s
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

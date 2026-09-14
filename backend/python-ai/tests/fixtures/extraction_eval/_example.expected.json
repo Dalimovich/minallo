@@ -1,0 +1,11 @@
+{
+  "description": "TEMPLATE — copy to <your_pdf_stem>.expected.json. The leading underscore makes the runner ignore this file (it has no matching PDF). Delete any field you don't want asserted.",
+  "document_type": "formula_sheet",
+  "min_pages": 1,
+  "must_contain": ["\\delta_K", "Nachgiebigkeit", "A_{ers}"],
+  "must_not_contain": [],
+  "min_formula_blocks": 8,
+  "must_have_exercises": [],
+  "max_unclear_markers": 1,
+  "expect_ocr_recommended": false
+}

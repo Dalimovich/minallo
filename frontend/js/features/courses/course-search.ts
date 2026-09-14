@@ -1,4 +1,5 @@
 import type { LegacyCourse } from '../../../globals.js';
+import { listSuggestions, submitSuggestion } from '../../services/suggestions-service.js';
 
 interface Subject {
   name: string;
@@ -6,7 +7,34 @@ interface Subject {
   cat?: string;
 }
 
+// Per-major cache of crowd-approved course names. Filled the first time a
+// user with that major opens the search dropdown.
+const _courseSuggestions: Record<string, Subject[]> = {};
+const _courseSuggestionsLoading: Record<string, boolean> = {};
+
+async function _loadCourseSuggestions(major: string): Promise<Subject[]> {
+  const key = major || '*';
+  if (_courseSuggestions[key]) return _courseSuggestions[key];
+  if (_courseSuggestionsLoading[key]) return [];
+  _courseSuggestionsLoading[key] = true;
+  try {
+    const items = await listSuggestions('course', key);
+    _courseSuggestions[key] = items.map((i) => ({
+      name: i.value,
+      short: i.value.slice(0, 8),
+      cat: '_crowd',
+    }));
+  } catch {
+    _courseSuggestions[key] = [];
+  } finally {
+    _courseSuggestionsLoading[key] = false;
+  }
+  return _courseSuggestions[key];
+}
+
 export interface CourseSearchContext {
+  getUserUniversity: () => string;
+  getUserUniversityName: () => string;
   getUserMajor: () => string;
   getUserVertiefung: () => string;
   getSubjectList: () => Subject[];
@@ -59,16 +87,25 @@ export function initCourseSearch(context: CourseSearchContext): void {
     drop!.style.display = 'block';
   }
 
-  inp.addEventListener('input', () => {
+  function _runSearch(): void {
     selectedSubject = null;
-    const q = inp.value.trim().toLowerCase();
+    const q = inp!.value.trim().toLowerCase();
     if (!q) {
-      drop.style.display = 'none';
+      drop!.style.display = 'none';
       return;
     }
     const userMajor = context.getUserMajor();
     const userVertiefung = context.getUserVertiefung();
     const subjectList = context.getSubjectList();
+    // Kick off the crowd-suggestion fetch in the background. When it lands,
+    // re-run the dropdown so newly-loaded entries become visible mid-typing.
+    const crowdReady = !!_courseSuggestions[userMajor || '*'];
+    if (!crowdReady) {
+      void _loadCourseSuggestions(userMajor).then((loaded) => {
+        if (loaded.length && inp!.value.trim().toLowerCase() === q) _runSearch();
+      });
+    }
+    const crowd = _courseSuggestions[userMajor || '*'] || [];
     const isMB = !userMajor || userMajor === 'Maschinenbau';
     const isET = userMajor === 'Elektrotechnik und Informationstechnik';
     let matches: Subject[];
@@ -91,8 +128,15 @@ export function initCourseSearch(context: CourseSearchContext): void {
       );
       matches = primary.concat(secondary);
     }
+    // Append crowd matches that aren't already covered by the static list.
+    const seen = new Set(matches.map((m) => m.name.toLowerCase()));
+    crowd
+      .filter((c) => c.name.toLowerCase().includes(q) && !seen.has(c.name.toLowerCase()))
+      .forEach((c) => matches.push(c));
     showDrop(matches.slice(0, 10));
-  });
+  }
+
+  inp.addEventListener('input', _runSearch);
 
   inp.addEventListener('blur', () => {
     setTimeout(() => {
@@ -104,6 +148,22 @@ export function initCourseSearch(context: CourseSearchContext): void {
     const name = inp!.value.trim();
     if (!name) return;
     const subject: Subject = selectedSubject || { name, short: name.slice(0, 8) };
+    // Crowd-source the dropdown: if the user typed a name that isn't part of
+    // the static subject catalog for their major, submit it. Once ≥ 5 users
+    // submit the same name it auto-approves and shows up for everyone.
+    const userMajor = context.getUserMajor();
+    const subjectList = context.getSubjectList();
+    const inStatic = subjectList.some(
+      (s) => s.name.toLowerCase() === subject.name.toLowerCase()
+    );
+    if (!inStatic) {
+      void submitSuggestion('course', userMajor || '*', subject.name, {
+        university: context.getUserUniversity(),
+        universityName: context.getUserUniversityName(),
+        major: userMajor,
+        vertiefung: context.getUserVertiefung(),
+      });
+    }
     const sems = context.getSems();
     const sem = sems[context.getActiveSemesterId()];
     if (!sem) return;

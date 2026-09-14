@@ -1,0 +1,59 @@
+name: Deploy python-ai to Hetzner
+
+# The Hetzner server (ai.minallo.de) is the only backend deployment target —
+# see docs/CLAUDE.md. Nothing on the server itself pulls new code, so a push
+# to main that changes backend/python-ai previously required someone to SSH
+# in and run deploy/update.sh by hand, which in practice wasn't happening:
+# fixes landed on main but never reached production. This workflow runs that
+# same script over SSH so a push is enough.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/python-ai/**'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-python-ai
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Configure SSH
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_KNOWN_HOSTS: ${{ secrets.HETZNER_KNOWN_HOSTS }}
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "$HETZNER_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$HETZNER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts
+          fi
+          umask 077
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Run deploy/update.sh on the server
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_USER: ${{ secrets.HETZNER_SSH_USER }}
+          HETZNER_SSH_PORT: ${{ secrets.HETZNER_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key \
+              -o BatchMode=yes -o ConnectTimeout=15 \
+              -p "${HETZNER_SSH_PORT:-22}" \
+              "${HETZNER_SSH_USER}@${HETZNER_HOST}" \
+              'cd /opt/minallo/backend/python-ai && ./deploy/update.sh'
+
+      - name: Remove deploy key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

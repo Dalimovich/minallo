@@ -1,7 +1,13 @@
 // POST /api/documents/reindex-course
 // Admin-only. Reindexes every document in a given (userId, courseId).
-// Marks rows as 'uploaded', clears chunks/pages, and kicks the Python
-// indexer per document. Returns counts; does not wait for completion.
+// Kicks the Python indexer per document with force=true; the indexer builds
+// a new candidate index revision and only activates it once the rebuild is
+// verified (see activate_document_index_revision in
+// supabase/migrations/20260723_000004_atomic_index_revisions.sql). The
+// currently-active revision stays readable/searchable the whole time — this
+// endpoint must never delete document_chunks/document_pages itself, since
+// that would destroy a working index before its replacement is proven to
+// work. Returns counts; does not wait for completion.
 
 import { requireEnv } from '../lib/env';
 import { jsonResponse, fail, handleOptions } from '../lib/responses';
@@ -33,7 +39,7 @@ async function kickIndex(
 ): Promise<boolean> {
   if (!pythonAiConfigured()) return false;
   const r = await forwardToPython('index-document', {
-    userId, courseId, documentId, storagePath
+    userId, courseId, documentId, storagePath, force: true
   });
   return r.ok;
 }
@@ -80,12 +86,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   let kicked = 0;
   let failed = 0;
   for (const doc of docs) {
-    await supaRequest('PATCH', 'documents?id=eq.' + doc.id,
-      { processing_status: 'uploaded' }, serviceKey);
-    await supaRequest('DELETE', 'document_chunks?document_id=eq.' + doc.id, null, serviceKey)
-      .catch(() => {});
-    await supaRequest('DELETE', 'document_pages?document_id=eq.' + doc.id, null, serviceKey)
-      .catch(() => {});
     const ok = await kickIndex(doc.id, userId, courseId, doc.storage_path);
     if (ok) kicked++; else failed++;
   }

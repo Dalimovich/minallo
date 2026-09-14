@@ -227,6 +227,11 @@
       if (tb) tb.style.display = has ? '' : 'none';
       var pp = document.getElementById('editorPropsPanel');
       if (pp) pp.style.display = has ? '' : 'none';
+      // Hide pages sidebar + bottom pagination on document home
+      var pages = document.getElementById('editorPagesPanel');
+      if (pages) pages.style.display = has ? '' : 'none';
+      var bottom = document.querySelector('#psec-editor .editor-bottom-bar');
+      if (bottom) bottom.style.display = has ? '' : 'none';
     }
 
     function _edGoHome() {
@@ -1515,6 +1520,9 @@
           var s = document.createElement('script');
           s.src =
             'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+          s.integrity =
+            'sha384-Yv5O+t3uE3hunW8uyrbpPW3iw6/5/Y7HitWJBLgqfMoA36NogMmy+8wWZMpn3HWc';
+          s.crossOrigin = 'anonymous';
           s.onload = build;
           s.onerror = function () {
             reject(new Error('Could not load PDF library — check your connection'));
@@ -1945,6 +1953,12 @@
           if (docOpen) _edGoHome();
           else _edGoToHub();
         });
+      }
+      // Back button on the writer dashboard (My Documents view) — always
+      // returns to the editor hub.
+      var _writerBackBtn = document.getElementById('editorWriterBackBtn');
+      if (_writerBackBtn) {
+        _writerBackBtn.addEventListener('click', _edGoToHub);
       }
       _wire('editorSaveBtn', _edSaveDoc);
       _wire('editorDuplicateBtn', _edDuplicateDoc);

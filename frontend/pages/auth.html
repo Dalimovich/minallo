@@ -94,7 +94,7 @@
             </div>
             <div>
               <h1 class="na-brand-name">Minallo</h1>
-              <p class="na-brand-tagline">Study smarter</p>
+              <p class="na-brand-tagline" data-i18n="auth_brand_tagline">Study smarter</p>
             </div>
           </div>
 
@@ -102,22 +102,22 @@
           <div class="na-hero">
             <div class="na-badge">
               <svg width="14" height="14" aria-hidden="true"><use href="#na-i-sparkles"/></svg>
-              <span class="na-badge-text" data-mode="signin">Welcome back</span>
-              <span class="na-badge-text" data-mode="signup" hidden>Welcome to Minallo</span>
+              <span class="na-badge-text" data-mode="signin" data-i18n="auth_badge_signin">Welcome back</span>
+              <span class="na-badge-text" data-mode="signup" data-i18n="auth_badge_signup" hidden>Welcome to Minallo</span>
             </div>
             <h2 class="na-heading">
-              <span data-mode="signin">Sign in to your study space.</span>
-              <span data-mode="signup" hidden>Create your Minallo account.</span>
+              <span data-mode="signin" data-i18n="auth_heading_signin">Sign in to your study space.</span>
+              <span data-mode="signup" data-i18n="auth_heading_signup" hidden>Create your Minallo account.</span>
             </h2>
             <p class="na-body">
-              <span data-mode="signin">Continue your courses, German practice, PDF work, playlists, games, and focus sessions from one calm dashboard.</span>
-              <span data-mode="signup" hidden>Start organizing your study life with AI help, PDF tools, German practice, focus sessions, playlists, and study games.</span>
+              <span data-mode="signin" data-i18n="auth_body_signin">Continue your courses, German practice, PDF work, playlists, games, and focus sessions from one calm dashboard.</span>
+              <span data-mode="signup" data-i18n="auth_body_signup" hidden>Start organizing your study life with AI help, PDF tools, German practice, focus sessions, playlists, and study games.</span>
             </p>
           </div>
 
           <!-- authTitle: kept for setAuthMode() backwards-compat. Hidden visually but
                present in DOM so the JS can still write to it without throwing. -->
-          <div id="authTitle" class="na-sr-only" aria-hidden="true">Sign in to your account</div>
+          <div id="authTitle" class="na-sr-only" aria-hidden="true" data-i18n="auth_title_signin">Sign in to your account</div>
 
           <!-- Error banner -->
           <div id="authError" class="na-error" role="alert"></div>
@@ -128,7 +128,7 @@
               <span class="na-field-label" data-i18n="auth_email_label">Email</span>
               <span class="na-input-wrap">
                 <svg class="na-input-icon" width="19" height="19" aria-hidden="true"><use href="#na-i-mail"/></svg>
-                <input id="authEmail" type="email" autocomplete="email" placeholder="your@email.com" class="na-input"/>
+                <input id="authEmail" type="email" autocomplete="email" data-i18n-ph="auth_email_ph" placeholder="your@email.com" class="na-input"/>
               </span>
             </label>
 
@@ -138,7 +138,7 @@
               <span class="na-input-wrap">
                 <svg class="na-input-icon" width="19" height="19" aria-hidden="true"><use href="#na-i-lock"/></svg>
                 <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••" class="na-input"/>
-                <button type="button" id="togglePw" class="na-eye-btn" aria-label="Show or hide password" title="Show/hide password">
+                <button type="button" id="togglePw" class="na-eye-btn" data-i18n-aria="auth_pw_toggle_aria" data-i18n-title="auth_pw_toggle_title" aria-label="Show or hide password" title="Show/hide password">
                   <svg width="18" height="18" aria-hidden="true"><use href="#na-i-eye"/></svg>
                 </button>
               </span>
@@ -161,7 +161,7 @@
               <span class="na-input-wrap">
                 <svg class="na-input-icon" width="19" height="19" aria-hidden="true"><use href="#na-i-lock"/></svg>
                 <input id="authConfirm" type="password" autocomplete="new-password" placeholder="••••••••" class="na-input"/>
-                <button type="button" id="toggleConfirm" class="na-eye-btn" aria-label="Show or hide password" title="Show/hide password">
+                <button type="button" id="toggleConfirm" class="na-eye-btn" data-i18n-aria="auth_pw_toggle_aria" data-i18n-title="auth_pw_toggle_title" aria-label="Show or hide password" title="Show/hide password">
                   <svg width="18" height="18" aria-hidden="true"><use href="#na-i-eye"/></svg>
                 </button>
               </span>
@@ -179,14 +179,14 @@
                 </span>
                 <span class="na-stay-text" data-i18n="auth_stay">Stay signed in</span>
               </label>
-              <a href="#forgot" class="na-forgot">Forgot password?</a>
+              <a href="#forgot" id="authForgotLink" class="na-forgot" data-i18n="auth_forgot">Forgot password?</a>
             </div>
 
             <!-- Submit -->
             <button id="authSubmit" type="submit" class="na-submit">
               <span class="na-submit-text">
-                <span data-mode="signin">Sign in</span>
-                <span data-mode="signup" hidden>Create account</span>
+                <span data-mode="signin" data-i18n="auth_submit_signin_short">Sign in</span>
+                <span data-mode="signup" data-i18n="auth_submit_signup_short" hidden>Create account</span>
               </span>
               <svg class="na-submit-arrow" width="18" height="18" aria-hidden="true"><use href="#na-i-arrow-right"/></svg>
             </button>
@@ -195,7 +195,7 @@
           <!-- Divider -->
           <div class="na-divider">
             <span class="na-divider-line"></span>
-            <span class="na-divider-text">or</span>
+            <span class="na-divider-text" data-i18n="auth_or">or</span>
             <span class="na-divider-line"></span>
           </div>
 
@@ -208,15 +208,15 @@
               <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.5l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/>
             </svg>
             <span data-mode="signin" data-i18n="auth_google_btn">Continue with Google</span>
-            <span data-mode="signup" hidden>Sign up with Google</span>
+            <span data-mode="signup" data-i18n="auth_google_signup_btn" hidden>Sign up with Google</span>
           </button>
 
           <!-- Switch link. The existing JS sets textContent on #authSwitch from
                translation keys, which would overwrite any inner [data-mode] split.
                So we keep #authSwitch as a single span and let the JS own its text. -->
           <p class="na-switch-row">
-            <span class="na-switch-prefix" data-mode="signin">Don't have an account?</span>
-            <span class="na-switch-prefix" data-mode="signup" hidden>Already have an account?</span>
+            <span class="na-switch-prefix" data-mode="signin" data-i18n="auth_switch_prefix_signin">Don't have an account?</span>
+            <span class="na-switch-prefix" data-mode="signup" data-i18n="auth_switch_prefix_signup" hidden>Already have an account?</span>
             <span id="authSwitch" class="na-switch-link" role="button" tabindex="0">Sign up</span>
           </p>
         </div>
@@ -229,7 +229,7 @@
 
         <div class="na-buddy-inner">
           <div class="na-buddy-top">
-            <div class="na-buddy-pill">24/7 study companion</div>
+            <div class="na-buddy-pill" data-i18n="auth_buddy_pill">24/7 study companion</div>
             <div class="na-buddy-sparkle">
               <svg width="20" height="20" aria-hidden="true"><use href="#na-i-sparkles"/></svg>
             </div>
@@ -243,30 +243,30 @@
                 <div class="na-owl-emoji">🦉</div>
               </div>
             </div>
-            <h3 class="na-buddy-title">Your Minallo study buddy</h3>
-            <p class="na-buddy-body">Ask questions, organize your work, practice German, and stay focused without switching tools.</p>
+            <h3 class="na-buddy-title" data-i18n="auth_buddy_title">Your Minallo study buddy</h3>
+            <p class="na-buddy-body" data-i18n="auth_buddy_body">Ask questions, organize your work, practice German, and stay focused without switching tools.</p>
           </div>
 
           <div class="na-mini-grid">
             <div class="na-mini-card">
               <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-brain-circuit"/></svg></div>
-              <h4 class="na-mini-title">AI Tutor</h4>
-              <p class="na-mini-text">Course-aware help with citations.</p>
+              <h4 class="na-mini-title" data-i18n="auth_mini_ai_title">AI Tutor</h4>
+              <p class="na-mini-text" data-i18n="auth_mini_ai_desc">Course-aware help with citations.</p>
             </div>
             <div class="na-mini-card">
               <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-file-text"/></svg></div>
-              <h4 class="na-mini-title">PDF Workspace</h4>
-              <p class="na-mini-text">Read, edit, and organize notes.</p>
+              <h4 class="na-mini-title" data-i18n="auth_mini_pdf_title">PDF Workspace</h4>
+              <p class="na-mini-text" data-i18n="auth_mini_pdf_desc">Read, edit, and organize notes.</p>
             </div>
             <div class="na-mini-card">
               <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-timer"/></svg></div>
-              <h4 class="na-mini-title">Focus Mode</h4>
-              <p class="na-mini-text">Pomodoro sessions and streaks.</p>
+              <h4 class="na-mini-title" data-i18n="auth_mini_focus_title">Focus Mode</h4>
+              <p class="na-mini-text" data-i18n="auth_mini_focus_desc">Pomodoro sessions and streaks.</p>
             </div>
             <div class="na-mini-card">
               <div class="na-mini-icon"><svg width="19" height="19" aria-hidden="true"><use href="#na-i-languages"/></svg></div>
-              <h4 class="na-mini-title">German Practice</h4>
-              <p class="na-mini-text">Vocabulary, grammar, and examples.</p>
+              <h4 class="na-mini-title" data-i18n="auth_mini_de_title">German Practice</h4>
+              <p class="na-mini-text" data-i18n="auth_mini_de_desc">Vocabulary, grammar, and examples.</p>
             </div>
           </div>
         </div>

@@ -14,9 +14,8 @@ import logging
 import re
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
+from .openai_client import get_openai_client
 
 log = logging.getLogger(__name__)
 
@@ -116,17 +115,139 @@ def _build_openai_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _has_image(messages: list[dict[str, Any]]) -> bool:
+    """True if any message carries an image part (converted to image_url)."""
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image_url":
+                    return True
+    return False
+
+
+def _last_user_text(messages: list[dict[str, Any]]) -> str:
+    """Extract the last user message's text for diagram-intent detection.
+    Generic /chat uses Anthropic-shaped content blocks; we concat all text
+    parts from the last user turn."""
+    for m in reversed(messages):
+        if m.get("role") != "user":
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    txt = block.get("text")
+                    if isinstance(txt, str):
+                        parts.append(txt)
+            return " ".join(parts)
+        return ""
+    return ""
+
+
 def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     """Run the chat completion and return an Anthropic-shaped response."""
     settings = get_settings()
     messages = _build_openai_messages(payload)
     max_tokens = _normalise_max_tokens(payload.get("max_tokens"))
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
+
+    # Server-side confidentiality guard: the client's system prompt (and its
+    # pre-filter regex) can be bypassed by calling the API directly, so the
+    # internals rule is appended here regardless of what the client sent.
+    from .answer import INTERNAL_CONFIDENTIALITY_RULE  # noqa: WPS433
+    if messages and messages[0].get("role") == "system":
+        if INTERNAL_CONFIDENTIALITY_RULE not in str(messages[0].get("content") or ""):
+            messages[0] = {
+                "role": "system",
+                "content": str(messages[0].get("content") or "") + INTERNAL_CONFIDENTIALITY_RULE,
+            }
+    else:
+        messages = [{"role": "system", "content": INTERNAL_CONFIDENTIALITY_RULE.strip()}] + messages
+
+    # Account workspace awareness: the generic chatbot knows the student's
+    # real course list (names + file counts, server-fetched and cached) so
+    # "which courses do I have" / "where do I ask about X" answer from real
+    # data. Best-effort — a failed lookup never blocks the chat.
+    user_id = str(payload.get("userId") or "")
+    if user_id:
+        try:
+            from .workspace_context import fetch_account_snapshot, format_account_block  # noqa: WPS433
+            account_block = format_account_block(fetch_account_snapshot(user_id))
+        except Exception:
+            log.exception("account workspace block failed (non-fatal)")
+            account_block = ""
+        if account_block:
+            if messages and messages[0].get("role") == "system":
+                messages[0] = {
+                    "role": "system",
+                    "content": (messages[0].get("content") or "") + account_block,
+                }
+            else:
+                messages = [{"role": "system", "content": account_block.strip()}] + messages
+
+    # Diagram-intent detection on the last user turn. When the student
+    # asks for a diagram on the generic /chat path (no course selected),
+    # append the rendering overlay to the system message so the first
+    # call has a chance to emit the fence. If it refuses anyway, the
+    # structured-output fallback below produces it deterministically.
+    from .diagram_overlay import diagram_overlay, wants_diagram, wants_plot  # noqa: WPS433
+    user_text = _last_user_text(messages)
+    plot_wanted = wants_plot(user_text)
+    diagram_wanted = wants_diagram(user_text) or plot_wanted
+    if diagram_wanted:
+        overlay = diagram_overlay(has_context=False)
+        if messages and messages[0].get("role") == "system":
+            messages[0] = {
+                "role": "system",
+                "content": (messages[0].get("content") or "") + overlay,
+            }
+        else:
+            messages = [{"role": "system", "content": overlay}] + messages
+
+    # Cost routing: gpt-4o (~17x mini) is only worth it where it earns its keep —
+    # reading an attached IMAGE (vision) or generating a DIAGRAM/PLOT. Plain-text
+    # general chat goes to the mini model with no meaningful quality loss. Study
+    # answers (answer.py / answer_stream.py) are routed separately and unchanged.
+    needs_strong = _has_image(messages) or diagram_wanted
+    chat_model = "gpt-4o" if needs_strong else settings.openai_generate_model
+
     resp = client.chat.completions.create(
-        model="gpt-4o",
+        model=chat_model,
         max_completion_tokens=max_tokens,
         messages=messages,
     )
+    from .usage_meter import record_usage, usage_from_response  # noqa: WPS433
+    record_usage(feature="chat", model=chat_model, user_id=user_id, **usage_from_response(resp))
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""
+
+    # Same refusal-recovery as answer_stream.py: model often refuses with
+    # "Ich kann keine Bilder zeichnen" — structured outputs can't refuse.
+    log.debug(
+        "[DIAGRAM_DEBUG /chat] wants_diagram=%s wants_plot=%s "
+        "has_diag_fence=%s has_plot_fence=%s text_len=%d",
+        diagram_wanted, plot_wanted,
+        "```minallo-diagram" in text,
+        "```minallo-plot" in text,
+        len(text),
+    )
+    # Plot-shape requests: fire the plot fallback whenever no plot fence is
+    # present — even if a diagram fence slipped through (wrong shape for a
+    # curve). The diagram fence in that case is the model copying the wrong
+    # template; the plot fence is the canonically correct render.
+    if plot_wanted and "```minallo-plot" not in text:
+        from .answer_stream import _force_render_plot  # noqa: WPS433
+        fence = _force_render_plot(client, "gpt-4o", user_text, [], None)
+        if fence:
+            text += fence
+    elif diagram_wanted and "```minallo-diagram" not in text:
+        from .answer_stream import _force_render_diagram  # noqa: WPS433
+        fence = _force_render_diagram(client, "gpt-4o", user_text, [], None)
+        if fence:
+            text += fence
+
     return {"content": [{"type": "text", "text": text}]}
