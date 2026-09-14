@@ -2642,3 +2642,628 @@
     transition: none !important;
   }
 }
+
+/* ── Wortschatz (vocabulary in context) ──────────────────────────────────
+ * Deliberately mirrors Grammatik's visual language/tokens for consistency
+ * across the three dedicated German Practice workspaces — but this is a
+ * distinct, scoped selector family (.gl-vocab-*) so nothing here can bleed
+ * into .gl-gram-* / .gl-reading-* / the chatbot shell / the global sidebar
+ * or right panel. No card-flip/flashcard styles exist in this file. */
+.gl-vocab-view {
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-vocab-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.gl-vocab-title {
+  margin: 0 0 4px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+  line-height: 1.1;
+}
+.gl-vocab-sub {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.6);
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+.gl-vocab-header-controls {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gl-vocab-tabs {
+  display: inline-flex;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: rgba(10, 12, 22, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+.gl-vocab-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s, box-shadow 0.16s;
+}
+.gl-vocab-tab:hover { color: rgba(255, 255, 255, 0.85); }
+.gl-vocab-tab.active {
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(16, 185, 129, 0.28);
+}
+
+.gl-vocab-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gl-vocab-progress-label {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: rgba(226, 232, 240, 0.55);
+}
+.gl-vocab-progress-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.gl-vocab-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #10b981, #14b8a6);
+  transition: width 0.24s ease;
+}
+
+/* Exercise (left, ~60-65%) + focus/feedback (right, ~35-40%). This grid
+ * lives entirely inside the CENTER content column — it does not touch or
+ * push the app's global right-side panel, which sits outside
+ * #glVocabularyView. */
+.gl-vocab-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+.gl-vocab-exercise,
+.gl-vocab-feedback {
+  min-width: 0;
+  overflow: hidden;
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+}
+.gl-vocab-feedback {
+  position: sticky;
+  top: 12px;
+}
+
+.gl-vocab-ex-eyebrow {
+  margin-bottom: 10px;
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #34d399;
+}
+.gl-vocab-ex-instruction {
+  margin: 0 0 14px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.68);
+}
+.gl-vocab-ex-prompt {
+  margin: 0 0 16px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.gl-vocab-blank {
+  padding: 0 4px;
+  color: #6ee7b7;
+  font-weight: 900;
+}
+
+/* Target word (the "use in a sentence" exercise type) */
+.gl-vocab-target-word {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+.gl-vocab-target-meaning {
+  color: rgba(226, 232, 240, 0.55);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* Multiple choice */
+.gl-vocab-options {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.gl-vocab-option {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.88);
+  font-family: var(--font-main);
+  font-weight: 750;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s;
+}
+.gl-vocab-option:hover:not(:disabled) {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.08);
+}
+.gl-vocab-option:disabled { cursor: default; }
+.gl-vocab-opt-selected {
+  border-color: rgba(52, 211, 153, 0.5);
+  background: rgba(52, 211, 153, 0.1);
+}
+.gl-vocab-opt-correct {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+.gl-vocab-opt-incorrect {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+
+/* Free-text inputs */
+.gl-vocab-inline-input {
+  min-width: 120px;
+  padding: 4px 10px;
+  margin: 0 2px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.08);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 800;
+  font-size: 1rem;
+}
+.gl-vocab-inline-input:focus-visible { outline: none; border-color: rgba(52, 211, 153, 0.7); }
+.gl-vocab-textarea {
+  width: 100%;
+  min-height: 76px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.5;
+  resize: vertical;
+}
+.gl-vocab-textarea:focus-visible { outline: none; border-color: rgba(52, 211, 153, 0.5); }
+
+.gl-vocab-ex-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* Shared button language for the Wortschatz workspace */
+.gl-vocab-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.78);
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.16s, transform 0.16s;
+}
+.gl-vocab-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.gl-vocab-btn:disabled { opacity: 0.4; cursor: default; }
+.gl-vocab-btn-primary {
+  border: none;
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.28);
+}
+.gl-vocab-btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+.gl-vocab-btn-primary:disabled { box-shadow: none; transform: none; }
+.gl-vocab-btn-ghost {
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.08);
+  color: #6ee7b7;
+}
+.gl-vocab-btn-ghost:hover { background: rgba(52, 211, 153, 0.16); }
+
+/* Focus/feedback panel — BEFORE an answer */
+.gl-vocab-focus-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #34d399;
+  margin-bottom: 6px;
+}
+.gl-vocab-focus-title {
+  margin: 0 0 12px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+.gl-vocab-focus-think {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.gl-vocab-hint-box {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.5;
+  animation: glFadeIn 0.2s ease both;
+}
+.gl-vocab-hint-btn {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.75);
+  font-family: var(--font-main);
+  font-weight: 850;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.gl-vocab-hint-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.gl-vocab-hint-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Focus/feedback panel — AFTER an answer */
+.gl-vocab-fb {
+  padding: 2px 0 0;
+  animation: glFadeIn 0.22s ease both;
+}
+.gl-vocab-fb-title {
+  margin: 0 0 10px;
+  font-family: var(--font-main);
+  font-weight: 1000;
+  font-size: 1rem;
+}
+.gl-vocab-fb-correct .gl-vocab-fb-title { color: #86efac; }
+.gl-vocab-fb-incorrect .gl-vocab-fb-title { color: #fca5a5; }
+.gl-vocab-fb-line {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.82);
+}
+.gl-vocab-fb-line strong { color: #fff; }
+.gl-vocab-fb-why {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.75);
+}
+.gl-vocab-fb-why strong { color: #fff; }
+.gl-vocab-fb-mainrule {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+.gl-vocab-fb-example {
+  display: block;
+  margin-top: 8px;
+  color: rgba(226, 232, 240, 0.6);
+  font-style: italic;
+}
+.gl-vocab-fb-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+}
+.gl-vocab-fb-actions-secondary { margin-top: 10px; justify-content: flex-start; }
+
+/* End-of-session summary — replaces the workspace grid entirely. */
+.gl-vocab-end-card {
+  padding: 28px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(15, 23, 42, 0.58);
+  color: #e2e8f0;
+  text-align: center;
+  animation: glFadeIn 0.24s ease both;
+}
+.gl-vocab-end-title {
+  margin: 0 0 10px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: clamp(1.2rem, 2.4vw, 1.5rem);
+}
+.gl-vocab-end-score {
+  font-family: var(--font-main);
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 1000;
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gl-vocab-end-pct {
+  margin: 2px 0 20px;
+  color: rgba(226, 232, 240, 0.55);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.gl-vocab-end-row {
+  max-width: 460px;
+  margin: 0 auto 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: rgba(226, 232, 240, 0.8);
+  text-align: left;
+}
+.gl-vocab-end-row b { color: #fff; }
+.gl-vocab-end-recommend {
+  max-width: 460px;
+  margin: 12px auto 20px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  font-size: 0.84rem;
+  font-weight: 750;
+  color: rgba(226, 232, 240, 0.85);
+  text-align: left;
+}
+.gl-vocab-end-recommend b { color: #6ee7b7; }
+.gl-vocab-end-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Weak areas tab */
+.gl-vocab-weak-title {
+  margin: 0 0 14px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+}
+.gl-vocab-weak-list {
+  display: grid;
+  gap: 8px;
+  max-width: 520px;
+  margin-bottom: 22px;
+}
+.gl-vocab-weak-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+.gl-vocab-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.gl-vocab-badge-weak { background: rgba(248, 113, 113, 0.14); color: #fca5a5; }
+.gl-vocab-badge-mid { background: rgba(250, 204, 21, 0.14); color: #fde68a; }
+.gl-vocab-badge-strong { background: rgba(34, 197, 94, 0.14); color: #86efac; }
+.gl-vocab-weak-recommend {
+  max-width: 380px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(52, 211, 153, 0.06);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+.gl-vocab-weak-recommend-title {
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #34d399;
+  margin-bottom: 8px;
+}
+.gl-vocab-weak-recommend-topic {
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.05rem;
+  margin-bottom: 4px;
+}
+.gl-vocab-weak-recommend-meta {
+  color: rgba(226, 232, 240, 0.5);
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+/* From my files tab */
+.gl-vocab-files-title {
+  margin: 0 0 12px;
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 1.02rem;
+}
+.gl-vocab-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 6px;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gl-vocab-files-config {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.gl-vocab-files-config label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(226, 232, 240, 0.45);
+}
+.gl-vocab-files-config select {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  color: #e2e8f0;
+  font-family: var(--font-main);
+  font-weight: 700;
+}
+.gl-vocab-start-btn {
+  margin-left: auto;
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.gl-vocab-start-btn:disabled { opacity: 0.45; cursor: default; }
+.gl-vocab-files-empty {
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  color: rgba(226, 232, 240, 0.5);
+  font-weight: 750;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .gl-vocab-workspace {
+    grid-template-columns: 1fr;
+  }
+  .gl-vocab-feedback {
+    position: static;
+  }
+}
+@media (max-width: 600px) {
+  .gl-vocab-header {
+    flex-direction: column;
+  }
+  .gl-vocab-header-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .gl-vocab-files-config {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .gl-vocab-start-btn {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-vocab-view *,
+  .gl-vocab-view *::before,
+  .gl-vocab-view *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

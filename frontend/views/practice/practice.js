@@ -283,10 +283,11 @@
       }
     });
 
-    // Legacy pieces of #glSkillView that Lesen replaces with its own
-    // dedicated workspace (see _glOpenReadingView below). Toggled per-skill
-    // so Wortschatz/Grammatik/etc. keep the generic quiz/cards template
-    // exactly as before.
+    // Legacy pieces of #glSkillView that Lesen/Grammatik/Wortschatz each
+    // replace with their own dedicated workspace (see _glOpenReadingView /
+    // _glOpenGrammarView / _glOpenVocabularyView below). Toggled per-skill so
+    // any remaining skill without a dedicated workspace yet still falls back
+    // to the generic quiz/cards template unchanged.
     function _glSetGenericSkillPiecesVisible(visible) {
       var hero = document.querySelector('#glSkillView .gl-detail-hero');
       var studyTools = document.querySelector('#glSkillView .gl-study-tools');
@@ -307,6 +308,7 @@
       var detail = document.getElementById('glSkillView');
       var readingView = document.getElementById('glReadingView');
       var grammarView = document.getElementById('glGrammarView');
+      var vocabView = document.getElementById('glVocabularyView');
       if (home) home.style.display = 'none';
       if (detail) {
         detail.style.display = '';
@@ -316,6 +318,7 @@
       if (skill === 'reading') {
         _glSetGenericSkillPiecesVisible(false);
         if (grammarView) grammarView.style.display = 'none';
+        if (vocabView) vocabView.style.display = 'none';
         if (readingView) readingView.style.display = '';
         _glOpenReadingView();
         return;
@@ -329,13 +332,27 @@
       if (skill === 'grammar' && typeof window._glOpenGrammarView === 'function') {
         _glSetGenericSkillPiecesVisible(false);
         if (readingView) readingView.style.display = 'none';
+        if (vocabView) vocabView.style.display = 'none';
         if (grammarView) grammarView.style.display = '';
         window._glOpenGrammarView();
         return;
       }
 
+      // Wortschatz has its own dedicated vocabulary-in-context workspace
+      // (see the Wortschatz IIFE below), same pattern as Lesen/Grammatik —
+      // deliberately not another flashcard/quiz generator.
+      if (skill === 'vocab' && typeof window._glOpenVocabularyView === 'function') {
+        _glSetGenericSkillPiecesVisible(false);
+        if (readingView) readingView.style.display = 'none';
+        if (grammarView) grammarView.style.display = 'none';
+        if (vocabView) vocabView.style.display = '';
+        window._glOpenVocabularyView();
+        return;
+      }
+
       if (readingView) readingView.style.display = 'none';
       if (grammarView) grammarView.style.display = 'none';
+      if (vocabView) vocabView.style.display = 'none';
       _glSetGenericSkillPiecesVisible(true);
 
       var titleEl = document.getElementById('glSkillTitle');
@@ -3087,6 +3104,657 @@
           gmEl('glGramEnd').style.display = 'none';
           gmEl('glGramWorkspace').style.display = '';
           gmRenderExercise();
+        } catch (e) {
+          if (typeof showToast === 'function') showToast('Could not generate exercises', e.message || 'Try a different file.');
+        } finally {
+          if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
+        }
+      }
+    })();
+
+    // ── Wortschatz (vocabulary in context) ────────────────────────────────────
+    // Dedicated workspace, distinct from the generic quiz/cards template and
+    // from Lesen/Grammatik's layouts. Every exercise requires understanding or
+    // actively using a word in context — this is deliberately NOT a flashcard
+    // tool: no card flip, no passive recall, no "Generate Cards". Lives
+    // entirely inside #glVocabularyView (see practice.html) and is only
+    // mounted when _glOpenSkill('vocab') runs.
+    (function () {
+      var VC_TOPICS = [
+        { id: 'everyday', label: 'Alltag & Zuhause' },
+        { id: 'university', label: 'Uni & Studium' },
+        { id: 'work', label: 'Arbeit & Beruf' },
+        { id: 'travel', label: 'Reisen & Verkehr' },
+        { id: 'feelings', label: 'Gefühle & Beziehungen' },
+        { id: 'health', label: 'Gesundheit' }
+      ];
+      var VC_TOPICS_C1 = [
+        { id: 'media', label: 'Medien & Technik' },
+        { id: 'society', label: 'Umwelt & Gesellschaft' }
+      ];
+      var VC_ALL_TOPICS = VC_TOPICS.concat(VC_TOPICS_C1);
+
+      // Every exercise carries a "note" (focus/think/why/mainRule/example),
+      // mirroring Grammatik's "rule" shape, so the feedback/hint rendering
+      // functions below can stay structurally identical to gm's.
+      var VC_BANK = {
+        everyday: [
+          { type: 'context', promptHtml: 'Ich muss noch ein paar Sachen ___, bevor wir losfahren.', accepted: ['erledigen'],
+            note: { focus: '"erledigen" — to take care of / handle', think: 'What do you do to tasks or errands before leaving?', why: '"erledigen" means to complete or take care of a task — it is the natural verb for chores/errands, not "machen".', mainRule: 'etwas erledigen = to get something done', example: 'Ich muss noch Einkäufe erledigen.' },
+            hints: ['Think of "get it done", not just "do it".', 'The verb starts with "er-".'] },
+          { type: 'choice', promptHtml: 'Die ___ für die Wohnung ist diesen Monat gestiegen.', options: ['Miete', 'Mitte', 'Mieter', 'Mühe'], answerIndex: 0,
+            note: { focus: '"die Miete" — rent', think: 'Which word means the monthly payment for an apartment?', why: '"die Miete" is rent; "die Mitte" (middle), "der Mieter" (tenant) and "die Mühe" (effort) all look similar but mean something else.', mainRule: 'die Miete (rent) ≠ der Mieter (tenant)', example: 'Die Miete muss bis zum 3. bezahlt werden.' },
+            hints: ['Not the person who rents — the payment itself.', 'It rhymes with "die Mitte" but means something different.'] }
+        ],
+        university: [
+          { type: 'context', promptHtml: 'Ich muss die Hausarbeit bis Freitag ___.', accepted: ['abgeben'],
+            note: { focus: '"abgeben" — to hand in / submit', think: 'What do you do with an assignment when it is finished?', why: '"abgeben" is the standard verb for submitting coursework, not "geben" alone.', mainRule: 'eine Arbeit abgeben = to submit an assignment', example: 'Wir müssen das Referat nächste Woche abgeben.' },
+            hints: ['It is a separable verb: "ab-" + "geben".', 'Think "hand something in", not just "give".'] },
+          { type: 'use', word: 'die Vorlesung', meaning: 'lecture', promptHtml: 'Write a sentence about your day using "die Vorlesung".',
+            note: { focus: '"die Vorlesung" — lecture', think: 'A "Vorlesung" is a large lecture, not a small seminar.', why: '"Vorlesung" (lecture) is distinct from "Seminar" (seminar) and "Übung" (exercise class) in German university structure.', mainRule: 'die Vorlesung besuchen / in der Vorlesung sein', example: 'Ich habe heute um 10 Uhr eine Vorlesung.' },
+            hints: ['Try a sentence like "Ich habe eine Vorlesung um ..."', 'It is feminine: "die Vorlesung".'] }
+        ],
+        work: [
+          { type: 'choice', promptHtml: 'Ich möchte mich für die Stelle als Ingenieur ___.', options: ['bewerben', 'beweisen', 'bewahren', 'befragen'], answerIndex: 0,
+            note: { focus: '"sich bewerben" — to apply (for a job)', think: 'Which verb means "to apply for a position"?', why: '"sich bewerben (um/für)" is the fixed reflexive verb for job applications.', mainRule: 'sich bewerben für/um + Akkusativ', example: 'Sie bewirbt sich für ein Praktikum.' },
+            hints: ['It is reflexive: "sich ___".', 'Related noun: "die Bewerbung" (application).'] },
+          { type: 'context', promptHtml: 'Mein Chef hat mir mehr ___ für das Projekt gegeben.', accepted: ['verantwortung'],
+            note: { focus: '"die Verantwortung" — responsibility', think: 'What do you gain when your boss trusts you with a bigger project?', why: '"Verantwortung" is the standard noun for professional responsibility.', mainRule: 'Verantwortung übernehmen/geben/tragen', example: 'Sie trägt viel Verantwortung in ihrer neuen Rolle.' },
+            hints: ['It is a long compound-feeling noun ending in "-ung".', 'Related verb: "verantworten".'] }
+        ],
+        travel: [
+          { type: 'context', promptHtml: 'Der Zug hat zwanzig Minuten ___.', accepted: ['verspätung'],
+            note: { focus: '"die Verspätung" — delay', think: 'What is the word for a train arriving late?', why: '"Verspätung haben" is the fixed expression for being delayed.', mainRule: 'Verspätung haben = to be delayed', example: 'Der Flug hatte eine Stunde Verspätung.' },
+            hints: ['The phrase is "... hat ... Verspätung".', 'Related adjective: "verspätet".'] },
+          { type: 'choice', promptHtml: 'Wir müssen am Bahnhof ___, um den Anschlusszug zu bekommen.', options: ['umsteigen', 'aussteigen', 'einsteigen', 'umziehen'], answerIndex: 0,
+            note: { focus: '"umsteigen" — to change trains/transfer', think: 'Which verb means switching from one train to another?', why: '"umsteigen" specifically means transferring between vehicles; "aussteigen" is just getting off, "umziehen" means moving house.', mainRule: 'umsteigen (in + Akkusativ) = to transfer', example: 'Wir steigen in München um.' },
+            hints: ['It is a separable verb: "um-" + "steigen".', 'Not the same as just getting off ("aussteigen").'] }
+        ],
+        feelings: [
+          { type: 'use', word: 'sich freuen auf', meaning: 'to look forward to', promptHtml: 'Write a sentence about something you are looking forward to, using "sich freuen auf".',
+            note: { focus: '"sich freuen auf" — to look forward to', think: '"sich freuen auf" is used for something in the future.', why: '"sich freuen auf + Akkusativ" is for anticipating a future event; "sich freuen über" is for something already happened.', mainRule: 'sich freuen auf + Akkusativ (future) vs. über + Akkusativ (past/present)', example: 'Ich freue mich auf die Ferien.' },
+            hints: ['Try "Ich freue mich auf ..."', 'Use it for something that has not happened yet.'] },
+          { type: 'choice', promptHtml: 'Nach dem Streit war die Stimmung sehr ___.', options: ['angespannt', 'entspannt', 'aufgeregt', 'gelangweilt'], answerIndex: 0,
+            note: { focus: '"angespannt" — tense', think: 'What is the mood like right after an argument?', why: '"angespannt" describes a tense, strained atmosphere; "entspannt" (relaxed) would be the opposite.', mainRule: 'die Stimmung ist angespannt/entspannt', example: 'Die Atmosphäre im Büro war angespannt.' },
+            hints: ['It is the opposite of "entspannt".', 'Related noun: "die Spannung" (tension).'] }
+        ],
+        health: [
+          { type: 'context', promptHtml: 'Ich habe starke Kopfschmerzen und muss einen Termin beim Arzt ___.', accepted: ['vereinbaren'],
+            note: { focus: '"vereinbaren" — to arrange/schedule', think: 'What do you do with a doctor to get an appointment?', why: '"einen Termin vereinbaren" is the fixed collocation for scheduling an appointment.', mainRule: 'einen Termin vereinbaren = to schedule an appointment', example: 'Können wir einen Termin für nächste Woche vereinbaren?' },
+            hints: ['Fixed phrase: "einen Termin ___".', 'It means to agree on/arrange, not just "make".'] },
+          { type: 'choice', promptHtml: 'Der Arzt hat mir ein ___ gegen die Schmerzen verschrieben.', options: ['Medikament', 'Instrument', 'Dokument', 'Experiment'], answerIndex: 0,
+            note: { focus: '"das Medikament" — medication', think: 'What does a doctor prescribe for pain?', why: '"Medikament" is medication; the other options are near-rhyming but unrelated words.', mainRule: 'ein Medikament verschreiben/nehmen/einnehmen', example: 'Sie nimmt jeden Morgen ein Medikament.' },
+            hints: ['It rhymes with "Dokument" but means something you take when sick.', 'Related verb: "verschreiben" (to prescribe).'] }
+        ],
+        media: [
+          { type: 'choice', promptHtml: 'Diese Nachricht hat sich sehr schnell in den sozialen Medien ___.', options: ['verbreitet', 'verbessert', 'verhindert', 'verschwunden'], answerIndex: 0,
+            note: { focus: '"sich verbreiten" — to spread', think: 'What happens to news that goes viral?', why: '"sich verbreiten" means to spread/circulate — the natural verb for news or information spreading.', mainRule: 'sich verbreiten = to spread (news, information)', example: 'Gerüchte verbreiten sich schnell im Internet.' },
+            hints: ['Related to "breit" (wide/broad).', 'Think of information becoming widespread.'] },
+          { type: 'context', promptHtml: 'Viele Jugendliche verbringen zu viel Zeit vor dem ___.', accepted: ['bildschirm'],
+            note: { focus: '"der Bildschirm" — screen', think: 'What device do people stare at too much?', why: '"Bildschirm" is the general word for a screen (phone, computer, TV).', mainRule: 'vor dem Bildschirm sitzen/sein', example: 'Er sitzt den ganzen Tag vor dem Bildschirm.' },
+            hints: ['Compound word: "Bild" (image) + "Schirm" (screen/shield).', 'It is masculine: "der Bildschirm".'] }
+        ],
+        society: [
+          { type: 'use', word: 'nachhaltig', meaning: 'sustainable', promptHtml: 'Write a sentence about protecting the environment using "nachhaltig".',
+            note: { focus: '"nachhaltig" — sustainable', think: '"nachhaltig" describes something that does not harm long-term resources.', why: '"nachhaltig" is the standard adjective for environmental/economic sustainability.', mainRule: 'nachhaltig leben/produzieren/handeln', example: 'Wir sollten nachhaltiger leben.' },
+            hints: ['Try "Wir sollten nachhaltiger ..."', 'It relates to "halten" (to last/hold).'] },
+          { type: 'choice', promptHtml: 'Die Regierung will den CO2-___ deutlich senken.', options: ['Ausstoß', 'Ausflug', 'Ausdruck', 'Ausgang'], answerIndex: 0,
+            note: { focus: '"der Ausstoß" — emissions/output', think: 'What does a government want to reduce for climate reasons?', why: '"CO2-Ausstoß" is the fixed term for carbon emissions.', mainRule: 'der Ausstoß (von + Dativ) = emissions/output of', example: 'Der CO2-Ausstoß der Industrie ist stark gestiegen.' },
+            hints: ['It is a compound with "CO2-".', 'Related verb: "ausstoßen" (to emit).'] }
+        ]
+      };
+
+      var vc = {
+        tab: 'practice', topic: 'everyday', level: 'B2',
+        queue: [], index: 0, score: 0, answers: {}, hintLevel: {}, tries: {}, _lastUser: {}
+      };
+
+      function vcEl(id) { return document.getElementById(id); }
+
+      function vcNormalize(s) {
+        return String(s == null ? '' : s).toLowerCase()
+          .replace(/[.,!?;:"„“]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      function vcWordCount(s) {
+        return vcNormalize(s).split(' ').filter(Boolean).length;
+      }
+
+      // ── per-topic accuracy, tracked locally so "Weak areas" reflects real
+      // practice history instead of a static mock. ────────────────────────
+      function vcStatsLoad() {
+        try { return JSON.parse(localStorage.getItem('ss_gl_vocab_stats') || '{}'); } catch (e) { return {}; }
+      }
+      function vcStatsSave(stats) {
+        try { localStorage.setItem('ss_gl_vocab_stats', JSON.stringify(stats)); } catch (e) { /* ignore */ }
+      }
+      function vcStatsRecord(topic, correct) {
+        var stats = vcStatsLoad();
+        if (!stats[topic]) stats[topic] = { correct: 0, total: 0 };
+        stats[topic].total++;
+        if (correct) stats[topic].correct++;
+        vcStatsSave(stats);
+      }
+
+      function vcBuildTopicSelect() {
+        var sel = vcEl('glVocabTopic');
+        if (!sel) return;
+        var prev = vc.topic;
+        var list = VC_TOPICS.concat(vc.level === 'C1' ? VC_TOPICS_C1 : []);
+        sel.innerHTML = list.map(function (t) {
+          return '<option value="' + t.id + '">' + _glEscape(t.label) + '</option>';
+        }).join('');
+        if (list.some(function (t) { return t.id === prev; })) sel.value = prev;
+        else { sel.value = list[0].id; vc.topic = list[0].id; }
+      }
+
+      function vcPickExercises(topic, count) {
+        var pool = (VC_BANK[topic] || []).slice();
+        if (!pool.length) return [];
+        var out = [];
+        var i = 0;
+        while (out.length < count) { out.push(pool[i % pool.length]); i++; }
+        return out;
+      }
+
+      function vcStartQueue(topic, count) {
+        vc.queue = vcPickExercises(topic, count || 10);
+        vc.index = 0;
+        vc.score = 0;
+        vc.answers = {};
+        vc.hintLevel = {};
+        vc.tries = {};
+        vc._lastUser = {};
+        vcEl('glVocabEnd').style.display = 'none';
+        vcEl('glVocabWorkspace').style.display = '';
+        vcRenderExercise();
+      }
+
+      window._glOpenVocabularyView = function () {
+        console.debug('[GermanPractice] opening dedicated vocabulary view');
+        vc.tab = 'practice';
+        vcBuildTopicSelect();
+        vcRenderTabs();
+        vcSetTabView('practice');
+        vcStartQueue(vc.topic, 10);
+        vcWireHeader();
+      };
+
+      function vcWireHeader() {
+        var tabsWrap = document.querySelector('.gl-vocab-tabs');
+        if (tabsWrap && !tabsWrap._vcWired) {
+          tabsWrap._vcWired = true;
+          tabsWrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('.gl-vocab-tab');
+            if (!btn) return;
+            vcSetTabView(btn.getAttribute('data-vocab-tab'));
+          });
+        }
+        var topicSel = vcEl('glVocabTopic');
+        var levelSel = vcEl('glVocabLevel');
+        if (topicSel && !topicSel._vcWired) {
+          topicSel._vcWired = true;
+          topicSel.addEventListener('change', function () {
+            vc.topic = topicSel.value;
+            if (vc.tab === 'practice') vcStartQueue(vc.topic, 10);
+          });
+        }
+        if (levelSel && !levelSel._vcWired) {
+          levelSel._vcWired = true;
+          levelSel.addEventListener('change', function () {
+            vc.level = levelSel.value;
+            vcBuildTopicSelect();
+            if (vc.tab === 'practice') vcStartQueue(vc.topic, 10);
+          });
+        }
+      }
+
+      function vcRenderTabs() {
+        document.querySelectorAll('.gl-vocab-tab').forEach(function (btn) {
+          var active = btn.getAttribute('data-vocab-tab') === vc.tab;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+      }
+
+      function vcSetTabView(tab) {
+        vc.tab = tab;
+        vcRenderTabs();
+        vcEl('glVocabPractice').style.display = tab === 'practice' ? '' : 'none';
+        vcEl('glVocabWeak').style.display = tab === 'weak' ? '' : 'none';
+        vcEl('glVocabFiles').style.display = tab === 'files' ? '' : 'none';
+        if (tab === 'practice') {
+          if (!vc.queue.length) vcStartQueue(vc.topic, 10);
+        } else if (tab === 'weak') {
+          vcRenderWeak();
+        } else if (tab === 'files') {
+          vcRenderFilesPanel();
+        }
+      }
+
+      function vcCurrentEx() { return vc.queue[vc.index]; }
+
+      function vcProgress() {
+        var total = vc.queue.length;
+        vcEl('glVocabProgressLabel').textContent = (vc.index + 1) + ' / ' + total;
+        var pct = total ? Math.round(((vc.index) / total) * 100) : 0;
+        vcEl('glVocabProgressFill').style.width = pct + '%';
+      }
+
+      function vcRenderExercise() {
+        var ex = vcCurrentEx();
+        if (!ex) return;
+        vcProgress();
+        var answer = vc.answers[vc.index];
+        vcEl('glVocabExercise').innerHTML = vcExerciseHtml(ex, answer);
+        vcWireExercise(ex, answer);
+        vcEl('glVocabFeedback').innerHTML = answer ? vcFeedbackAfterHtml(ex, answer) : vcFeedbackBeforeHtml(ex);
+        vcWireFeedback(ex, answer);
+      }
+
+      function vcExerciseHtml(ex, answer) {
+        var locked = !!answer;
+
+        if (ex.type === 'choice') {
+          var sel = vc.selected && vc.selected[vc.index];
+          return '<div class="gl-vocab-ex-eyebrow">Choose the correct word</div>' +
+            '<p class="gl-vocab-ex-prompt">' + ex.promptHtml.replace('___', '<span class="gl-vocab-blank">___</span>') + '</p>' +
+            '<div class="gl-vocab-options" id="glVocabOptions">' +
+            ex.options.map(function (opt, i) {
+              var cls = 'gl-vocab-option';
+              if (locked) {
+                if (i === ex.answerIndex) cls += ' gl-vocab-opt-correct';
+                else if (i === answer.selectedIndex) cls += ' gl-vocab-opt-incorrect';
+              } else if (sel === i) cls += ' gl-vocab-opt-selected';
+              return '<button type="button" class="' + cls + '" data-i="' + i + '"' + (locked ? ' disabled' : '') + '>' + _glEscape(opt) + '</button>';
+            }).join('') +
+            '</div>' +
+            '<div class="gl-vocab-ex-actions">' +
+            '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabCheckBtn"' + (locked || sel == null ? ' disabled' : '') + '>Check answer →</button>' +
+            '</div>';
+        }
+
+        if (ex.type === 'context') {
+          return '<div class="gl-vocab-ex-eyebrow">Fill the gap in context</div>' +
+            '<p class="gl-vocab-ex-prompt">' +
+            ex.promptHtml.replace('___', '<input type="text" class="gl-vocab-inline-input" id="glVocabFreeInput"' + (locked ? ' disabled value="' + _glEscape(answer.userValue || '') + '"' : '') + '>') +
+            '</p>' +
+            '<div class="gl-vocab-ex-actions">' +
+            '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabCheckBtn"' + (locked ? ' disabled' : '') + '>Check answer →</button>' +
+            '</div>';
+        }
+
+        // 'use' — write your own sentence using the target word.
+        return '<div class="gl-vocab-ex-eyebrow">Use this word in a sentence</div>' +
+          '<div class="gl-vocab-target-word">' + _glEscape(ex.word) + ' <span class="gl-vocab-target-meaning">(' + _glEscape(ex.meaning) + ')</span></div>' +
+          '<p class="gl-vocab-ex-instruction">' + _glEscape(ex.promptHtml) + '</p>' +
+          '<textarea class="gl-vocab-textarea" id="glVocabFreeInput" placeholder="Type your sentence..."' + (locked ? ' disabled' : '') + '>' + (locked ? _glEscape(answer.userValue || '') : '') + '</textarea>' +
+          '<div class="gl-vocab-ex-actions">' +
+          '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabCheckBtn"' + (locked ? ' disabled' : '') + '>Check answer →</button>' +
+          '</div>';
+      }
+
+      function vcWireExercise(ex, answer) {
+        var idx = vc.index;
+        var locked = !!answer;
+        if (ex.type === 'choice' && !locked) {
+          if (!vc.selected) vc.selected = {};
+          var optWrap = vcEl('glVocabOptions');
+          if (optWrap) optWrap.querySelectorAll('.gl-vocab-option').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              vc.selected[idx] = Number(btn.getAttribute('data-i'));
+              vcRenderExercise();
+            });
+          });
+        }
+        var checkBtn = vcEl('glVocabCheckBtn');
+        if (checkBtn && !checkBtn.disabled) checkBtn.addEventListener('click', vcCheck);
+      }
+
+      function vcCheck() {
+        var ex = vcCurrentEx();
+        var idx = vc.index;
+        var correct = false;
+        var userDisplay = '';
+        var selectedIndex = null;
+
+        if (ex.type === 'choice') {
+          selectedIndex = vc.selected && vc.selected[idx];
+          if (selectedIndex == null) return;
+          userDisplay = ex.options[selectedIndex];
+          correct = selectedIndex === ex.answerIndex;
+        } else if (ex.type === 'context') {
+          var gi = vcEl('glVocabFreeInput');
+          userDisplay = gi ? gi.value : '';
+          if (!userDisplay.trim()) return;
+          correct = ex.accepted.indexOf(vcNormalize(userDisplay)) !== -1;
+        } else {
+          // 'use': no server-side grader for free-text correctness — accept
+          // when the target word appears and it reads as a real sentence,
+          // and always surface a model example plus an "Explain this word"
+          // AI hook for deeper feedback rather than overclaiming precision.
+          var fi = vcEl('glVocabFreeInput');
+          userDisplay = fi ? fi.value : '';
+          if (!userDisplay.trim()) return;
+          var targetWord = vcNormalize(ex.word.replace(/^(der|die|das|sich)\s+/i, ''));
+          correct = vcNormalize(userDisplay).indexOf(targetWord) !== -1 && vcWordCount(userDisplay) >= 3;
+        }
+
+        vc._lastUser[idx] = userDisplay;
+
+        if (correct) {
+          vc.answers[idx] = { status: 'correct', userValue: userDisplay, selectedIndex: selectedIndex };
+          vc.score++;
+          vcStatsRecord(vc.topic, true);
+          vcRenderExercise();
+        } else {
+          vc.tries[idx] = (vc.tries[idx] || 0) + 1;
+          vcRenderPendingWrong(ex, userDisplay);
+        }
+      }
+
+      function vcRenderPendingWrong(ex, userDisplay) {
+        var fbWrap = vcEl('glVocabFeedback');
+        fbWrap.innerHTML =
+          '<div class="gl-vocab-fb gl-vocab-fb-incorrect">' +
+          '<div class="gl-vocab-fb-title">Not quite.</div>' +
+          (userDisplay ? '<div class="gl-vocab-fb-line">Your answer:<br><strong>' + _glEscape(userDisplay) + '</strong></div>' : '') +
+          '<div class="gl-vocab-fb-actions">' +
+          '<button type="button" class="gl-vocab-btn" id="glVocabTryAgain">Try again</button>' +
+          '<button type="button" class="gl-vocab-btn" id="glVocabShowSolution">Show solution</button>' +
+          '</div>' +
+          '<div class="gl-vocab-fb-actions gl-vocab-fb-actions-secondary">' +
+          '<button type="button" class="gl-vocab-btn gl-vocab-btn-ghost" id="glVocabExplainBtn">Explain this word</button>' +
+          '</div>' +
+          '</div>';
+        vcEl('glVocabTryAgain').addEventListener('click', vcTryAgain);
+        vcEl('glVocabShowSolution').addEventListener('click', vcShowSolution);
+        vcEl('glVocabExplainBtn').addEventListener('click', function () { vcExplainWord(ex); });
+      }
+
+      function vcTryAgain() {
+        var idx = vc.index;
+        if (vc.selected) vc.selected[idx] = null;
+        vcRenderExercise();
+      }
+
+      function vcShowSolution() {
+        var idx = vc.index;
+        vc.answers[idx] = { status: 'revealed', userValue: (vc._lastUser && vc._lastUser[idx]) || '', selectedIndex: vc.selected && vc.selected[idx] };
+        vcStatsRecord(vc.topic, false);
+        vcRenderExercise();
+      }
+
+      function vcFeedbackBeforeHtml(ex) {
+        var hLevel = vc.hintLevel[vc.index] || 0;
+        var hasHints = ex.hints && ex.hints.length;
+        var hintsHtml = '';
+        for (var i = 0; i < hLevel; i++) hintsHtml += '<div class="gl-vocab-hint-box">' + _glEscape(ex.hints[i]) + '</div>';
+        var hintDisabled = !hasHints || hLevel >= ex.hints.length;
+        var hintLabel = hLevel === 0 ? 'Give me a hint' : (hintDisabled ? 'No more hints' : 'Another hint');
+        return '<div class="gl-vocab-focus">' +
+          '<div class="gl-vocab-focus-eyebrow">Vocabulary focus</div>' +
+          '<div class="gl-vocab-focus-title">' + _glEscape(ex.note.focus) + '</div>' +
+          '<div class="gl-vocab-focus-think">Think about:<br>' + _glEscape(ex.note.think) + '</div>' +
+          hintsHtml +
+          '<button type="button" class="gl-vocab-hint-btn" id="glVocabHintBtn"' + (hintDisabled ? ' disabled' : '') + '>' + hintLabel + '</button>' +
+          '</div>';
+      }
+
+      function vcFeedbackAfterHtml(ex, answer) {
+        var isCorrect = answer.status === 'correct';
+        var title = isCorrect ? '✓ Correct' : 'Not quite.';
+        var cls = isCorrect ? 'gl-vocab-fb-correct' : 'gl-vocab-fb-incorrect';
+        var lines = '';
+
+        if (!isCorrect) {
+          var better = ex.type === 'use' ? ex.note.example
+            : ex.type === 'choice' ? ex.options[ex.answerIndex]
+            : (ex.accepted && ex.accepted[0]);
+          lines += '<div class="gl-vocab-fb-line">Your answer:<br><strong>' + _glEscape(answer.userValue || '(none)') + '</strong></div>' +
+            '<div class="gl-vocab-fb-line">Correct:<br><strong>' + _glEscape(better || '') + '</strong></div>';
+        } else if (ex.type === 'use') {
+          lines += '<div class="gl-vocab-fb-line">Nice — you used the word. Here is a model example too:<br><strong>' + _glEscape(ex.note.example) + '</strong></div>';
+        }
+
+        return '<div class="gl-vocab-fb ' + cls + '">' +
+          '<div class="gl-vocab-fb-title">' + title + '</div>' +
+          lines +
+          '<div class="gl-vocab-fb-why"><strong>Why?</strong><br>' + _glEscape(ex.note.why) +
+          '<br><br><span class="gl-vocab-fb-mainrule">' + _glEscape(ex.note.mainRule) + '</span>' +
+          '<br><span class="gl-vocab-fb-example">' + _glEscape(ex.note.example) + '</span></div>' +
+          '<div class="gl-vocab-fb-actions">' +
+          '<button type="button" class="gl-vocab-btn gl-vocab-btn-ghost" id="glVocabExplainBtn">Explain this word</button>' +
+          '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabNextBtn">Next →</button>' +
+          '</div>' +
+          '</div>';
+      }
+
+      function vcWireFeedback(ex, answer) {
+        if (!answer) {
+          var hb = vcEl('glVocabHintBtn');
+          if (hb) hb.addEventListener('click', function () {
+            vc.hintLevel[vc.index] = (vc.hintLevel[vc.index] || 0) + 1;
+            vcEl('glVocabFeedback').innerHTML = vcFeedbackBeforeHtml(ex);
+            vcWireFeedback(ex, null);
+          });
+          return;
+        }
+        var eb = vcEl('glVocabExplainBtn');
+        if (eb) eb.addEventListener('click', function () { vcExplainWord(ex); });
+        var nb = vcEl('glVocabNextBtn');
+        if (nb) nb.addEventListener('click', vcNext);
+      }
+
+      function vcExplainWord(ex) {
+        var topicLabel = (VC_ALL_TOPICS.filter(function (t) { return t.id === vc.topic; })[0] || {}).label || vc.topic;
+        var prompt = 'Explain this German vocabulary item in a short, clear way for a ' + vc.level + ' learner: "' + ex.note.focus + '". ' +
+          ex.note.why + ' Usage: ' + ex.note.mainRule + '. Example: ' + ex.note.example;
+        window._glAsk(prompt, 'Wortschatz — ' + topicLabel);
+      }
+
+      function vcNext() {
+        vc.index++;
+        if (vc.index >= vc.queue.length) { vcRenderEnd(); return; }
+        vcRenderExercise();
+      }
+
+      function vcRenderEnd() {
+        vcEl('glVocabWorkspace').style.display = 'none';
+        var wrap = vcEl('glVocabEnd');
+        wrap.style.display = '';
+        var total = vc.queue.length;
+        var pct = total ? Math.round((vc.score / total) * 100) : 0;
+        var stats = vcStatsLoad();
+        var rows = Object.keys(stats).map(function (t) {
+          var s = stats[t];
+          var acc = s.total ? s.correct / s.total : 0;
+          var label = (VC_ALL_TOPICS.filter(function (x) { return x.id === t; })[0] || {}).label || t;
+          return { topic: t, label: label, acc: acc, total: s.total };
+        }).filter(function (r) { return r.total >= 2; });
+        var strong = rows.filter(function (r) { return r.acc >= 0.8; }).map(function (r) { return r.label; });
+        var weak = rows.filter(function (r) { return r.acc < 0.6; }).sort(function (a, b) { return a.acc - b.acc; });
+        var recommend = weak[0] || null;
+
+        wrap.innerHTML =
+          '<div class="gl-vocab-end-card">' +
+          '<div class="gl-vocab-end-title">Vocabulary practice complete</div>' +
+          '<div class="gl-vocab-end-score">' + vc.score + ' / ' + total + '</div>' +
+          '<div class="gl-vocab-end-pct">' + pct + '%</div>' +
+          (strong.length ? '<div class="gl-vocab-end-row"><b>Strong:</b> ' + strong.map(_glEscape).join(', ') + '</div>' : '') +
+          (weak.length ? '<div class="gl-vocab-end-row"><b>Needs practice:</b> ' + weak.map(function (r) { return _glEscape(r.label); }).join(', ') + '</div>' : '') +
+          (recommend ? '<div class="gl-vocab-end-recommend">Recommended next: <b>' + _glEscape(recommend.label) + '</b> · 5 min</div>' : '') +
+          '<div class="gl-vocab-end-actions">' +
+          (recommend ? '<button type="button" class="gl-vocab-btn" id="glVocabEndWeak">Practice weak area</button>' : '') +
+          '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabEndNew">New session</button>' +
+          '</div>' +
+          '</div>';
+        var wb = vcEl('glVocabEndWeak');
+        if (wb) wb.addEventListener('click', function () {
+          vc.topic = recommend.topic;
+          var sel = vcEl('glVocabTopic');
+          if (sel) sel.value = recommend.topic;
+          vcStartQueue(vc.topic, 10);
+        });
+        var nsBtn = vcEl('glVocabEndNew');
+        if (nsBtn) nsBtn.addEventListener('click', function () { vcStartQueue(vc.topic, 10); });
+      }
+
+      function vcRenderWeak() {
+        var wrap = vcEl('glVocabWeak');
+        var stats = vcStatsLoad();
+        var rows = VC_ALL_TOPICS.map(function (t) {
+          var s = stats[t.id];
+          var total = s ? s.total : 0;
+          var acc = total ? s.correct / total : null;
+          var status = acc == null ? 'Not started' : acc < 0.6 ? 'Needs practice' : acc < 0.85 ? 'Improving' : 'Strong';
+          return { id: t.id, label: t.label, total: total, acc: acc, status: status };
+        }).filter(function (r) { return r.total > 0; })
+          .sort(function (a, b) { return (a.acc == null ? 0 : a.acc) - (b.acc == null ? 0 : b.acc); });
+
+        if (!rows.length) {
+          wrap.innerHTML = '<div class="gl-vocab-files-empty">Practice a few exercises first — Minallo will track which vocabulary topics need more work.</div>';
+          return;
+        }
+        var recommend = rows.filter(function (r) { return r.status === 'Needs practice'; })[0] || rows[0];
+        wrap.innerHTML =
+          '<div class="gl-vocab-weak-title">Your weak areas</div>' +
+          '<div class="gl-vocab-weak-list">' +
+          rows.map(function (r) {
+            var badgeClass = r.status === 'Needs practice' ? 'gl-vocab-badge-weak' : r.status === 'Improving' ? 'gl-vocab-badge-mid' : 'gl-vocab-badge-strong';
+            return '<div class="gl-vocab-weak-row"><span>' + _glEscape(r.label) + '</span><span class="gl-vocab-badge ' + badgeClass + '">' + r.status + '</span></div>';
+          }).join('') +
+          '</div>' +
+          '<div class="gl-vocab-weak-recommend">' +
+          '<div class="gl-vocab-weak-recommend-title">Recommended practice</div>' +
+          '<div class="gl-vocab-weak-recommend-topic">' + _glEscape(recommend.label) + '</div>' +
+          '<div class="gl-vocab-weak-recommend-meta">10 exercises · ~5 min</div>' +
+          '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabWeakStart">Start practice</button>' +
+          '</div>';
+        var wsBtn = vcEl('glVocabWeakStart');
+        if (wsBtn) wsBtn.addEventListener('click', function () {
+          vc.topic = recommend.id;
+          var sel = vcEl('glVocabTopic');
+          if (sel) sel.value = recommend.id;
+          vcSetTabView('practice');
+          vcStartQueue(recommend.id, 10);
+        });
+      }
+
+      // ── From my files ─────────────────────────────────────────────────────
+      function vcGeneratePrompt(level, count) {
+        return 'Based on this German document, write ' + count + ' vocabulary-in-context practice exercises for a ' + level +
+          ' learner, using words/phrases actually found in the document. Reply with ONLY this JSON array, no other text, no markdown fences: ' +
+          '[{"type":"context","promptHtml":"Sentence with ___ for the gap","accepted":["lowercase accepted answer(s), punctuation-free"],"note":{"focus":"...","think":"...","why":"...","mainRule":"...","example":"..."},"hints":["hint1","hint2"]}]. ' +
+          'Valid "type" values and their extra fields: ' +
+          '"context" needs "promptHtml" (containing ___) and "accepted" (array, lowercase punctuation-free); ' +
+          '"choice" needs "promptHtml" (containing ___), "options" (array of 4 short words/phrases) and "answerIndex" (0-based number); ' +
+          '"use" needs "word" (the target vocabulary item), "meaning" (short English gloss) and "promptHtml" (an instruction asking the learner to write a sentence with it), no "accepted" needed. ' +
+          'Every exercise object needs "type", "note" (with focus/think/why/mainRule/example) and "hints" (array of exactly 2 short strings, omit for "use" if not applicable), formatted as in the example above. ' +
+          'Each exercise must test using or understanding a real word from the document IN CONTEXT — never a plain translation flashcard.';
+      }
+
+      function vcParseGenerated(text) {
+        try {
+          var cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+          var arr = JSON.parse(cleaned);
+          if (!Array.isArray(arr) || !arr.length) return null;
+          return arr.filter(function (ex) { return ex && ex.type && ex.note; });
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function vcRenderFilesPanel() {
+        var wrap = vcEl('glVocabFiles');
+        var uid = _currentUser && (_currentUser.id || _currentUser.sub);
+        wrap.innerHTML = '<div class="gl-vocab-files-empty">Loading your files…</div>';
+        if (!uid) {
+          wrap.innerHTML = '<div class="gl-vocab-files-empty">Sign in to use your uploaded German files.</div>';
+          return;
+        }
+        var course = _glStorageCourse();
+        if (!course.files) course.files = [];
+        try { await _ufMerge(course); } catch (e) { /* ignore */ }
+        var files = course.files || [];
+        if (!files.length) {
+          wrap.innerHTML = '<div class="gl-vocab-files-empty">No German files uploaded yet. Use Upload German file from another skill, then come back here.</div>';
+          return;
+        }
+        wrap.innerHTML =
+          '<div class="gl-vocab-files-title">Choose a file to practice vocabulary from</div>' +
+          '<div id="glVocabFileList">' +
+          files.map(function (f) {
+            var name = f.name || f.file_name || 'German file';
+            return '<label class="gl-vocab-file-row"><input type="radio" name="glVocabFile" value="' + _glEscape(name) + '"><span>' + _glEscape(name) + '</span></label>';
+          }).join('') +
+          '</div>' +
+          '<div class="gl-vocab-files-config">' +
+          '<label>Difficulty<select id="glVocabCfgLevel"><option>A1</option><option>A2</option><option>B1</option><option selected>B2</option><option>C1</option></select></label>' +
+          '<label>Exercises<select id="glVocabCfgCount"><option>5</option><option selected>10</option><option>15</option></select></label>' +
+          '<button type="button" class="gl-vocab-start-btn" id="glVocabFilesStart" disabled>Start practice</button>' +
+          '</div>';
+
+        document.querySelectorAll('input[name="glVocabFile"]').forEach(function (radio) {
+          radio.addEventListener('change', function () {
+            var startBtn = vcEl('glVocabFilesStart');
+            if (startBtn) { startBtn.disabled = false; startBtn.onclick = function () { vcStartFromFile(radio.value); }; }
+          });
+        });
+      }
+
+      async function vcStartFromFile(fname) {
+        var uid = _currentUser && (_currentUser.id || _currentUser.sub);
+        var level = vcEl('glVocabCfgLevel') ? vcEl('glVocabCfgLevel').value : 'B2';
+        var count = vcEl('glVocabCfgCount') ? vcEl('glVocabCfgCount').value : '10';
+        var startBtn = vcEl('glVocabFilesStart');
+        if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
+
+        try {
+          var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+          var ext = (fname.split('.').pop() || '').toLowerCase();
+          var messageContent;
+          if (ext === 'pdf') {
+            var b64 = '';
+            var chunkSize = 8192;
+            for (var i = 0; i < bytes.length; i += chunkSize) b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+            b64 = btoa(b64);
+            messageContent = [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
+              { type: 'text', text: vcGeneratePrompt(level, count) }
+            ];
+          } else if (['txt', 'md'].indexOf(ext) !== -1) {
+            var textContent = new TextDecoder().decode(bytes);
+            messageContent = [{ type: 'text', text: 'DOCUMENT CONTENT:\n' + textContent + '\n\n' + vcGeneratePrompt(level, count) }];
+          } else {
+            if (typeof showToast === 'function') showToast('Unsupported file', 'Only PDF and text files can be turned into vocabulary exercises right now.');
+            if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
+            return;
+          }
+
+          var resp = await _authFetch(BACKEND_URL + '/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 2200,
+              system: 'You are a German vocabulary-in-context exercise generator. Reply with ONLY valid JSON, no markdown fences, no commentary.',
+              messages: [{ role: 'user', content: messageContent }]
+            })
+          });
+          var data = await resp.json();
+          var text = data.content ? data.content.map(function (b) { return b.text || ''; }).join('') : '';
+          var parsed = vcParseGenerated(text);
+          if (!parsed) throw new Error('Could not generate vocabulary exercises from this file.');
+
+          vc.queue = parsed;
+          vc.index = 0; vc.score = 0; vc.answers = {}; vc.hintLevel = {}; vc.tries = {}; vc.selected = {}; vc._lastUser = {};
+          vcSetTabView('practice');
+          vcEl('glVocabEnd').style.display = 'none';
+          vcEl('glVocabWorkspace').style.display = '';
+          vcRenderExercise();
         } catch (e) {
           if (typeof showToast === 'function') showToast('Could not generate exercises', e.message || 'Try a different file.');
         } finally {

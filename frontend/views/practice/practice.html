@@ -329,6 +329,51 @@
         <div class="gl-gram-weak" id="glGramWeak" style="display:none"></div>
         <div class="gl-gram-files" id="glGramFiles" style="display:none"></div>
       </section>
+
+      <!-- Wortschatz — vocabulary-in-context workspace, dedicated template
+           shown only when data-active-skill="vocab". Not the generic
+           quiz/cards template above, and NOT a flashcard tool — every
+           exercise requires understanding/using a word in context, not
+           passive recall. See gl-vocab-* rules in practice.css. -->
+      <section class="gl-vocab-view" id="glVocabularyView" style="display:none">
+        <div class="gl-vocab-header">
+          <div>
+            <h2 class="gl-vocab-title">Wortschatz</h2>
+            <p class="gl-vocab-sub">Learn and use vocabulary in context.</p>
+          </div>
+          <div class="gl-vocab-header-controls">
+            <select id="glVocabTopic" class="gl-reading-select" aria-label="Topic"></select>
+            <select id="glVocabLevel" class="gl-reading-select" aria-label="Level">
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
+              <option value="B1">B1</option>
+              <option value="B2" selected>B2</option>
+              <option value="C1">C1</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="gl-vocab-tabs" role="tablist" aria-label="Wortschatz mode">
+          <button type="button" class="gl-vocab-tab active" data-vocab-tab="practice" role="tab" aria-selected="true">Practice</button>
+          <button type="button" class="gl-vocab-tab" data-vocab-tab="weak" role="tab" aria-selected="false">Weak areas</button>
+          <button type="button" class="gl-vocab-tab" data-vocab-tab="files" role="tab" aria-selected="false">From my files</button>
+        </div>
+
+        <div class="gl-vocab-practice" id="glVocabPractice">
+          <div class="gl-vocab-progress">
+            <span class="gl-vocab-progress-label" id="glVocabProgressLabel">1 / 10</span>
+            <div class="gl-vocab-progress-track"><div class="gl-vocab-progress-fill" id="glVocabProgressFill"></div></div>
+          </div>
+          <div class="gl-vocab-workspace" id="glVocabWorkspace">
+            <div class="gl-vocab-exercise" id="glVocabExercise"></div>
+            <div class="gl-vocab-feedback" id="glVocabFeedback"></div>
+          </div>
+          <div class="gl-vocab-end" id="glVocabEnd" style="display:none"></div>
+        </div>
+
+        <div class="gl-vocab-weak" id="glVocabWeak" style="display:none"></div>
+        <div class="gl-vocab-files" id="glVocabFiles" style="display:none"></div>
+      </section>
     </div>
   </div>
 </div>
