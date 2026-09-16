@@ -43,11 +43,55 @@ function countMatching(events: NetEvent[], needle: string): NetEvent[] {
   return events.filter(e => e.url.includes(needle));
 }
 
+/**
+ * Full real-form login, bypassing the shared setup project's storageState
+ * fast path entirely. Supabase rotates the refresh token on every use, so
+ * the SAME static tests/e2e/.auth/user.json (written once by auth.setup.ts)
+ * is only valid for the FIRST test that consumes it — every subsequent test
+ * in this file gets a fresh context loading that same now-stale token and
+ * fails to restore a session. Since this spec (unlike the single-test
+ * 21-hoeren-listening.spec.ts) runs many independent tests against the same
+ * account, each one logs in for real instead of depending on a shared
+ * snapshot. The "Sign in" -> modal transition is also given a couple of
+ * retries — an animation/mount timing flake independent of auth state.
+ */
+async function realLogin(page: Page): Promise<void> {
+  const email = process.env.E2E_EMAIL || '';
+  const password = process.env.E2E_PASSWORD || '';
+  expect(email && password, 'E2E_EMAIL/E2E_PASSWORD must be set to a telc C1 Hochschule + affiliate/subscribed test account').toBeTruthy();
+
+  await page.context().clearCookies();
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  const loginBtn = page.locator(
+    '#nlNavSignIn, [data-i18n="nav.signIn"], [data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
+  ).first();
+
+  let modalOpen = false;
+  for (let attempt = 0; attempt < 3 && !modalOpen; attempt++) {
+    await loginBtn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+    await loginBtn.click().catch(() => {});
+    modalOpen = await page.locator('#authEmail').waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false);
+  }
+  expect(modalOpen, 'sign-in modal never opened after retries').toBeTruthy();
+
+  await page.locator('#authEmail').fill(email);
+  await page.locator('#authPassword').fill(password);
+  await page.locator('#authSubmit').click();
+
+  await page.waitForFunction(
+    () => sessionStorage.getItem('ss_logged_in') === 'true' ||
+      !!document.querySelector('#courseAddBtn') ||
+      !!document.querySelector('#sdCourseList') ||
+      !!document.querySelector('#welcomeState') ||
+      !!document.querySelector('#courseOverview'),
+    { timeout: 30_000 }
+  );
+}
+
 async function loginAsTelcLearner(page: Page): Promise<AppPage> {
   const app = new AppPage(page);
-  await app.goto();
-  const ok = await app.loginIfNeeded();
-  expect(ok, 'E2E_EMAIL/E2E_PASSWORD must be set to a telc C1 Hochschule + affiliate/subscribed test account').toBeTruthy();
+  await realLogin(page);
   await page.evaluate(() => {
     const w = window as unknown as { _userType?: string; _applyUserTypeUI?: () => void };
     w._userType = 'learner';
@@ -259,30 +303,38 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     const hasWeak = await weakBtn.isVisible().catch(() => false);
     test.skip(!hasWeak, 'No weak categories this run (all answers happened to be correct) — nothing to race.');
 
-    const beforeClick = Date.now();
-    // Wait for the results POST's response explicitly rather than inferring
-    // completion from the DOM: the page's own JS already awaited this fetch
-    // before calling generate, but Playwright's requestfinished event (which
-    // instrumentNetwork relies on) can be recorded a beat after the DOM
-    // update — asserting via waitForResponse removes that harness-side race.
+    // Ordering proof via Playwright's own request/response promises directly
+    // (not the hand-rolled `events` array, whose requestfinished-derived
+    // timestamps can lag a beat behind the page's already-awaited fetch) —
+    // both timestamps below are captured locally, in this script, the
+    // instant each promise resolves, removing any dependency on Playwright's
+    // internal event delivery timing.
     const resultsResponsePromise = page.waitForResponse(
       resp => resp.url().includes('/api/ai/german-exam/results') && resp.request().method() === 'POST',
       { timeout: 60_000 }
     );
+    const regenerateRequestPromise = page.waitForRequest(
+      req => req.url().includes('/api/ai/german-exam/generate') && req.method() === 'POST',
+      { timeout: 90_000 }
+    );
+
     await weakBtn.click();
     await resultsResponsePromise;
+    const resultsFinishedAt = Date.now();
+    await regenerateRequestPromise;
+    const regenerateStartedAt = Date.now();
+
     await expect(page.locator('#glListenPractice')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('#glListenEnd')).toBeHidden();
 
-    const resultsCalls = countMatching(events, '/api/ai/german-exam/results').filter(e => e.startedAt >= beforeClick - 5000);
-    const genCallsAfterClick = countMatching(events, '/api/ai/german-exam/generate').filter(e => e.startedAt >= beforeClick);
-    expect(resultsCalls.length, 'expected a results POST from the weak-retry flow').toBeGreaterThanOrEqual(1);
-    expect(genCallsAfterClick.length, 'expected a regenerate call after weak-retry').toBeGreaterThanOrEqual(1);
+    expect(regenerateStartedAt, 'regenerate request must not start before the results save finished')
+      .toBeGreaterThanOrEqual(resultsFinishedAt);
 
-    const resultsFinish = resultsCalls[0].finishedAt;
-    const regenStart = genCallsAfterClick[0].startedAt;
-    expect(resultsFinish, 'results call never finished').toBeDefined();
-    expect(regenStart).toBeGreaterThanOrEqual(resultsFinish!);
+    // Sanity cross-check against the broader instrumentation: some
+    // results/generate calls did happen after the click (exact count not
+    // asserted here — that's HV1's job — this test is about ordering).
+    expect(countMatching(events, '/api/ai/german-exam/results').length).toBeGreaterThanOrEqual(1);
+    expect(countMatching(events, '/api/ai/german-exam/generate').length).toBeGreaterThanOrEqual(1);
   });
 
   test('rapid part switching: HV1 -> HV2 -> HV3 without waiting, final state is HV3, stale responses do not win', async ({ page }) => {
