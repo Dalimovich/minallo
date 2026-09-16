@@ -147,6 +147,66 @@ Reproduce: `.\.venv\Scripts\python.exe -m scripts.measure_reasoning_effort`
 (reads the existing `german-semantic-release.json`, writes
 `reasoning-effort-comparison.json`, both in the ignored `diag_runs` dir).
 
+## Phase 2.5b — verifier stability (2026-09-16)
+
+**Goal**: quantify the non-determinism flagged in Phase 2.5, at the
+CURRENT production `reasoning_effort="medium"` — no verifier redesign.
+
+**Method** (`scripts/measure_verifier_stability.py`): a fixed labeled
+corpus, each item re-verified 5x with no code change between calls —
+3 `injected_bad` (definitionally defective: the 3 required fixtures), 2
+`real_disputed` (release-run content that passed clean with zero repairs
+on its ORIGINAL first verify, but that Phase 2.5's re-verification later
+flagged with real issues on the identical content), 5 `known_good`
+(release-run content that passed clean on the first verify with zero
+repairs, ever).
+
+**Results**:
+
+| Label | Metric | Result |
+| --- | --- | --- |
+| `injected_bad` | false-negative rate (known-bad passed clean) | **0/15 (0%)** |
+| `real_disputed` | false-negative rate (prior-flagged defect passed clean) | **2/10 (20%)** |
+| `known_good` | false-positive rate (clean content flagged) | **5/25 (20%)** |
+
+Task-type breakdown: hv1 1/3 items show any run-to-run disagreement (and
+that one case never flipped pass/fail — only appended a second, weaker
+code on 1 of 5 runs); hv2 2/3 items disagree; hv3 3/4 items disagree.
+
+**Reading against your acceptance bar** ("known genuine defect must not
+sometimes become clean" — issue-code wording drift alone is not
+concerning): **this bar is not met.** Both `real-disputed-hv2-2` and
+`real-disputed-hv3-0` — presumed-genuine defects because Phase 2.5's
+independent re-verification flagged them with concrete, specific codes on
+content the original pipeline had accepted — passed clean on 1 of their 5
+repeat runs. Symmetrically, 2 of 5 `known_good` items (`known-good-hv2-0`,
+`known-good-hv3-2`) flip between clean and flagged (`IMPLAUSIBLE_DISTRACTOR`
+/ `MULTIPLE_DEFENSIBLE_ANSWERS`) run to run despite never having been
+touched by repair in the original pipeline.
+
+Blatant defects (the 3 required injected fixtures) are caught with 100%
+reliability regardless of this — the release gate's regression coverage is
+sound. The instability is specific to subtler, judgment-heavy calls
+(distractor plausibility, answer-uniqueness), and specific to HV2/HV3 —
+HV1's speaker-matching task showed no verdict flips at all across 15 runs
+(3 items × 5 repeats).
+
+**Conclusion**: this is a real, pre-existing correctness characteristic of
+the shipped verifier, not something Phase 2.5's latency work introduced or
+worsened, and not something prefetch timing would change either way — the
+gap is in judgment reliability, not in when generation happens. Per
+explicit instruction, the verifier itself is NOT redesigned in this pass;
+this section only measures and reports. Candidate mitigations for a future
+pass (not implemented here): majority-vote across 2-3 verification calls
+specifically for hv2/hv3 (hv1 doesn't need it), or a borderline-confidence
+signal that triggers a second opinion only when warranted. Both are scoped
+changes to the verifier's calling convention, not the model or its
+reasoning effort, so they don't reopen the rejected latency lever.
+
+Reproduce: `.\.venv\Scripts\python.exe -m scripts.measure_verifier_stability`
+(writes `verifier-stability.json` to the ignored `diag_runs` dir; makes 50
+real verification calls).
+
 ## Prior failing run (historical, superseded)
 
 An earlier run on the pre-audit-based verifier design (plain freeform
