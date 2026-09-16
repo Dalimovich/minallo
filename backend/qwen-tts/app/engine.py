@@ -94,10 +94,13 @@ class QwenTTSEngine:
                 language=language,
                 voice_clone_prompt=self._voice_prompt,
             )
-            # qwen-tts returns (audio_array, sample_rate) per its docs; encode
-            # to WAV bytes here so the router/storage layer never touches
-            # raw numpy arrays.
-            audio_array, sample_rate = result
+            # generate_voice_clone always returns (List[np.ndarray], int) —
+            # one array per input text, even for a single non-batched call —
+            # so unwrap the single-item list before handing raw samples to
+            # soundfile. encode to WAV bytes here so the router/storage layer
+            # never touches raw numpy arrays.
+            audio_arrays, sample_rate = result
+            audio_array = audio_arrays[0]
             import soundfile as sf  # noqa: PLC0415
 
             buf = io.BytesIO()
