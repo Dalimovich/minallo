@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
 from ..services.german_exam_generator import generate_task
-from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts
+from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exam_profiles import GermanExamProfileError
 
 log = logging.getLogger(__name__)
@@ -37,6 +37,11 @@ class GenerateExamTaskRequest(BaseModel):
     partId: str
     mode: str = "adaptive_practice"
     topic: str | None = None
+    # True for prefetch/speculative generation: the learner may never see
+    # this content, so the chosen topic must not be recorded as "used" here
+    # — see POST /german-exam/consume, called only once the frontend
+    # actually applies the result.
+    speculative: bool = False
 
 
 @router.post("/german-exam/generate")
@@ -49,6 +54,7 @@ def generate_exam_task_endpoint(payload: GenerateExamTaskRequest) -> dict[str, A
             part_id=payload.partId,
             mode=payload.mode,
             topic_override=payload.topic,
+            speculative=payload.speculative,
         )
     except GermanExamProfileError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -124,3 +130,23 @@ class GetWeaknessSnapshotRequest(BaseModel):
 @router.post("/german-exam/weaknesses")
 def get_weakness_snapshot_endpoint(payload: GetWeaknessSnapshotRequest) -> dict[str, Any]:
     return get_weakness_snapshot(payload.userId, payload.profileId, payload.module)
+
+
+class ConsumeGenerationRequest(BaseModel):
+    userId: str
+    profileId: str
+    module: str
+    partId: str
+    topicId: str
+    generationId: str | None = None  # not yet used server-side; reserved for future results idempotency
+
+
+@router.post("/german-exam/consume")
+def consume_generation_endpoint(payload: ConsumeGenerationRequest) -> dict[str, Any]:
+    """Marks a previously-speculative (prefetched) generation's topic as
+    actually used, now that the frontend has applied it to a real session.
+    Called once, only when prefetched content is consumed — never for a
+    normal (non-speculative) generate call, which already records its topic
+    usage immediately inside generate_task()."""
+    record_topic_used(payload.userId, payload.profileId, payload.module, payload.partId, payload.topicId)
+    return {"ok": True}

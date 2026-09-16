@@ -84,6 +84,16 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const partId = body.partId;
   const mode = typeof body.mode === 'string' ? body.mode : 'adaptive_practice';
   const topicRaw = body.topic;
+  // Prefetch/speculative generation: same auth, same subscription gate, same
+  // generation cap and rate limit as a normal call — a prefetch is real
+  // OpenAI usage and must count honestly against the same budget, not a
+  // separate unmetered allowance. What keeps it from silently chewing
+  // through that budget is frontend discipline (one prefetch in flight,
+  // only when no prepared result is already held, no re-trigger on repeated
+  // navigation) — see practice.js's lsPrefetch. Server-side this flag only
+  // controls whether the chosen topic is recorded as "used" immediately
+  // (it isn't, for speculative calls — see POST /german-exam/consume).
+  const speculative = body.speculative === true;
 
   if (typeof profileId !== 'string' || !VALID_PROFILE_IDS.includes(profileId)) {
     return fail(400, 'invalid or unsupported profileId');
@@ -109,12 +119,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     profile_id: profileId,
     module,
     part_id: partId,
-    mode
+    mode,
+    speculative
   });
 
   const upstream = await forwardToPython<GenerateResponseBody>(
     'german-exam/generate',
-    { userId: user.id, profileId, module, partId, mode, topic: topic || null },
+    { userId: user.id, profileId, module, partId, mode, topic: topic || null, speculative },
     GENERATE_UPSTREAM_TIMEOUT_MS
   );
 

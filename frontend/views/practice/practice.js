@@ -191,6 +191,18 @@
       }
     });
 
+    // German Practice has just opened (this HTML-load callback only runs
+    // once per view load — see the retry comment above), so this is a
+    // one-shot, short-idle trigger for the Hören HV1 prefetch: give the
+    // page a moment to settle (avoids firing on a quick pass-through) before
+    // speculatively generating, so the first real Hören open is often
+    // instant. window._glMaybePrefetchHV1 (defined in the Hören section
+    // below) is itself a no-op after the first call, so this single
+    // setTimeout is the only trigger — no re-fire on repeated navigation.
+    setTimeout(function () {
+      if (typeof window._glMaybePrefetchHV1 === 'function') window._glMaybePrefetchHV1();
+    }, 1500);
+
     // Back button. window._glBackToHome is set here, then fully redefined
     // further down (it additionally clears data-active-skill and, now,
     // stops any Hören audio). Bind a thin wrapper that looks the function up
@@ -4414,6 +4426,92 @@
         lsPlayer.setRate(1);
       }
 
+      // ── HV1 prefetch ─────────────────────────────────────────────────────
+      // Speculative generation triggered once, early, from the German
+      // Practice hub (see window._glMaybePrefetchHV1, called from the
+      // #glHome wiring near the top of this file) — so the first Hören open
+      // is often instant instead of waiting out a real generation call.
+      //
+      // Deliberately narrow: HV1 only, exactly one prefetch ever per view
+      // load (state starts 'idle' and only lsPrefetchInvalidate() resets
+      // it), never re-triggered by repeated navigation/render events. A
+      // prefetch call still counts against the same real generation cap and
+      // /hour rate limit as any other call (see ai-german-exam-generate.ts)
+      // — the one-shot trigger IS the protection against silently chewing
+      // through that budget, not a separate unmetered allowance.
+      //
+      // Never fetches TTS — this only ever calls /german-exam/generate
+      // (speculative:true), exactly like a normal generate call; audio is
+      // still requested exactly once, later, by lsPlayer.setSegments()
+      // inside lsLoadGeneratedPart() when the result is actually consumed.
+      var lsPrefetch = { state: 'idle', profileId: null, envelope: null };
+      // Bumped by lsPrefetchInvalidate() so an in-flight ('pending') prefetch
+      // whose response lands AFTER invalidation (e.g. results were just
+      // saved, making its adaptation plan stale) can recognize it's stale
+      // and discard itself instead of resurrecting lsPrefetch.state='ready'
+      // out from under the invalidation.
+      var lsPrefetchEpoch = 0;
+
+      function lsPrefetchInvalidate() {
+        lsPrefetchEpoch++;
+        lsPrefetch.state = 'idle';
+        lsPrefetch.profileId = null;
+        lsPrefetch.envelope = null;
+      }
+
+      window._glMaybePrefetchHV1 = function () {
+        if (lsPrefetch.state !== 'idle') return; // already prefetched/in flight/consumed this view load — never re-trigger
+        var profileId = lsResolveProfileId();
+        if (!profileId) return; // no supported profile — nothing to prefetch
+        var myEpoch = lsPrefetchEpoch;
+        lsPrefetch.state = 'pending';
+        lsPrefetch.profileId = profileId;
+        _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId: profileId, module: 'listening', partId: 'hv1', mode: 'adaptive_practice', speculative: true })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('prefetch_http_' + resp.status);
+          return resp.json();
+        }).then(function (envelope) {
+          if (myEpoch !== lsPrefetchEpoch) return; // invalidated while in flight — discard silently
+          // The resolved profile may have changed while this was in flight
+          // (e.g. onboarding profile edited mid-session) — a stale prefetch
+          // for the wrong profile must never be held for later consumption.
+          if (lsPrefetch.profileId !== lsResolveProfileId()) { lsPrefetchInvalidate(); return; }
+          lsPrefetch.envelope = envelope;
+          lsPrefetch.state = 'ready';
+        }).catch(function (err) {
+          if (myEpoch !== lsPrefetchEpoch) return; // invalidated while in flight
+          // Non-fatal: on-demand generation on actual Hören-open still works
+          // exactly as before: this is purely an optimization.
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] prefetch failed (non-fatal).', err);
+          lsPrefetchInvalidate();
+        });
+      };
+
+      // Marks a consumed prefetch's topic as actually used, now that the
+      // learner has really seen it — never called for a normal (non-
+      // speculative) generation, which already records this itself
+      // server-side. Fire-and-forget: topic history is a soft anti-
+      // repetition signal, not load-bearing (matches record_topic_used()'s
+      // own swallow-and-continue behavior server-side).
+      function lsPrefetchConsume(envelope) {
+        lsPrefetch.state = 'consumed';
+        var exam = envelope.exam || {}, part = envelope.part || {}, topic = envelope.topic || {};
+        if (!topic.topicId) return;
+        _authFetch(BACKEND_URL + '/api/ai/german-exam/consume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profileId: exam.profileId, module: envelope.module || 'listening', partId: part.id || 'hv1',
+            topicId: topic.topicId, generationId: envelope.generationId || null
+          })
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] failed to mark prefetch consumed.', err);
+        });
+      }
+
       // Renders an explicit failure state for a SUPPORTED exam profile whose
       // generation call itself failed (rate limit, verifier exhaustion,
       // backend outage) — deliberately NOT the same as the no-profile case.
@@ -4477,6 +4575,23 @@
         }
         ls.module = moduleName;
         ls.partId = partId;
+
+        // Consume a ready HV1 prefetch instead of making a fresh network
+        // call — only when it's already fully resolved ('ready'); if it's
+        // still 'pending' this falls through to a normal on-demand call
+        // rather than making the caller wait on the in-flight prefetch, to
+        // keep this fast-path simple and avoid adding a second race surface
+        // to an already-guarded flow. A prefetch that finishes after being
+        // skipped this way is simply never consumed (its topic is correctly
+        // never marked "used" either, since that only happens on consume).
+        if (moduleName === 'listening' && partId === 'hv1' && lsPrefetch.state === 'ready' && lsPrefetch.profileId === profileId) {
+          var prefetched = lsPrefetch.envelope;
+          lsPrefetchConsume(prefetched);
+          if (myToken !== ls._genRequestToken) return Promise.resolve();
+          lsLoadGeneratedPart(prefetched);
+          return Promise.resolve();
+        }
+
         var taskPanel = lsEl('glListenTaskPanel');
         if (taskPanel) taskPanel.innerHTML = '<div class="gl-listen-generating">Generating your listening exercise…</div>';
         return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
@@ -4506,6 +4621,12 @@
           ls._resultsSavePromise = Promise.resolve();
           return ls._resultsSavePromise;
         }
+        // A still-held HV1 prefetch reflects an adaptation plan computed
+        // BEFORE these results existed — once real attempts are about to be
+        // recorded, that plan is stale, so drop any unconsumed prefetch
+        // rather than hand it out later as if it still targeted the
+        // learner's current weaknesses. Cheap to regenerate on demand.
+        if (lsPrefetch.state === 'ready' || lsPrefetch.state === 'pending') lsPrefetchInvalidate();
         ls._resultsSavePromise = _authFetch(BACKEND_URL + '/api/ai/german-exam/results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

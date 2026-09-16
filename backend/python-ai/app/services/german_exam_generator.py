@@ -13,6 +13,7 @@ docstring for why.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from .german_exam_adaptation import build_adaptation_plan, compute_weakness, instruction_to_dict
@@ -60,7 +61,13 @@ def generate_task(
     part_id: str,
     mode: str,
     topic_override: str | None = None,
+    speculative: bool = False,
 ) -> dict[str, Any]:
+    """`speculative=True` is for prefetch: the caller has generated content
+    the learner has not necessarily seen yet, so this must NOT mark the
+    chosen topic as used (that only happens once the frontend actually
+    applies the result — see `POST /german-exam/consume`). A topic is still
+    picked normally (still avoids recent repeats), just not recorded here."""
     profile = get_profile(profile_id)
     part = get_part(profile_id, module, part_id)
 
@@ -81,9 +88,11 @@ def generate_task(
     adapter = _dispatch_module(module)
     content, validation_meta = adapter(profile, part, plan, topic)
 
-    record_topic_used(user_id, profile_id, module, part_id, topic["topicId"])
+    if not speculative:
+        record_topic_used(user_id, profile_id, module, part_id, topic["topicId"])
 
-    return _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta)
+    generation_id = uuid.uuid4().hex
+    return _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta, generation_id)
 
 
 def _envelope(
@@ -96,9 +105,11 @@ def _envelope(
     topic: dict[str, str],
     content: dict[str, Any],
     validation_meta: dict[str, Any],
+    generation_id: str,
 ) -> dict[str, Any]:
     return {
         "schemaVersion": "german-exam-v1",
+        "generationId": generation_id,
         "exam": {
             "family": profile.family,
             "variant": profile.variant,
