@@ -68,14 +68,24 @@ def _prompt_hv1(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
         "Every correct written statement must fit exactly one speaker — no ambiguity between two "
         "speakers. Written statements must not reuse the same vocabulary as the spoken text; they "
         "must express the same idea in different words.\n\n"
+        "IMPORTANT — choose skillTags per item, do not copy one tag for every item: think about what "
+        "this specific statement actually requires the listener to do. If it hinges on wording distance "
+        "from the audio, use paraphrase_mapping; if it captures a speaker's stance/attitude, use "
+        "speaker_opinion or attitude_tone; if it requires inferring something not stated outright, use "
+        "implicit_inference; if it is mainly about correctly identifying WHICH speaker said something "
+        "(matching itself), use speaker_matching. Most items should combine 1-2 tags, and across the 10 "
+        "items you should use at least 3 different tags overall, not the same single tag on every item.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
-        "Output JSON shape exactly:\n"
+        "Output JSON shape exactly (the skillTags below are illustrative, not literal — pick tags that "
+        "actually fit each item per the guidance above):\n"
         "{\n"
         '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
         '  "questions": [\n'
-        '    {"questionId": "q1", "prompt": "<written statement>", "skillTags": ["paraphrase_mapping"],\n'
+        '    {"questionId": "q1", "prompt": "<written statement>", "skillTags": ["paraphrase_mapping", "speaker_matching"],\n'
         '     "difficulty": "c1", "matching": {"correctSpeakerId": "speaker_3", "isDistractor": false}},\n'
-        '    {"questionId": "q9", "prompt": "<distractor statement>", "skillTags": ["paraphrase_mapping"],\n'
+        '    {"questionId": "q2", "prompt": "<written statement>", "skillTags": ["speaker_opinion", "attitude_tone"],\n'
+        '     "difficulty": "c1", "matching": {"correctSpeakerId": "speaker_5", "isDistractor": false}},\n'
+        '    {"questionId": "q9", "prompt": "<distractor statement>", "skillTags": ["implicit_inference"],\n'
         '     "difficulty": "c1", "matching": {"correctSpeakerId": null, "isDistractor": true}}\n'
         "  ]\n"
         "}\n"
@@ -99,14 +109,24 @@ def _prompt_hv2(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
         f"Then exactly {item_count} items, each a sentence stem with exactly {option_count} possible "
         "continuations, exactly one of which is correct. Wrong continuations must be plausible: "
         "derived from a nearby fact, a partially true detail, reversed causality, a negation/contrast "
-        "confusion, or something a DIFFERENT speaker said — never arbitrary or unrelated.\n\n"
+        "confusion, or something a DIFFERENT speaker said — never arbitrary, absurd, or unrelated to "
+        "the topic. A distractor a listener could reject purely from general knowledge, without having "
+        "heard the audio, is not acceptable.\n\n"
+        "IMPORTANT — choose skillTags per item, do not copy one tag for every item: pick whichever tags "
+        "from the allowed list actually describe what makes THIS item hard (a specific fact, a "
+        "cause/effect, a negation the learner must parse, something implied rather than stated, "
+        "something requiring elimination of a not-stated option, etc.). Use at least 3 different tags "
+        "across the 10 items.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
-        "Output JSON shape exactly:\n"
+        "Output JSON shape exactly (the skillTags below are illustrative, not literal — pick tags that "
+        "actually fit each item per the guidance above):\n"
         "{\n"
         '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
         '  "questions": [\n'
         '    {"questionId": "q1", "skillTags": ["detail_fact"], "difficulty": "c1",\n'
-        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1}}\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1}},\n'
+        '    {"questionId": "q2", "skillTags": ["causal_relationship", "negation_contrast"], "difficulty": "c1",\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 0}}\n'
         "  ]\n"
         "}\n"
         f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
@@ -123,16 +143,29 @@ def _prompt_hv3(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
 
     system = _base_system_preamble(profile, part) + (
         f"\n\nTask structure (IMMUTABLE): one academic lecture or talk on '{topic['label']}' with "
-        "clear sections, signposting, examples, and arguments. Then a structured outline/handout with "
-        f"exactly {item_count} missing-information fields. Each missing field must be CONCISE "
-        "note-worthy content (a short phrase or key fact), never a single arbitrary word, and no two "
-        "fields may share the same answer.\n\n"
+        f"clear sections, signposting, examples, and arguments. The lecture must contain at least "
+        f"{item_count} genuinely DISTINCT pieces of information — do not write a short lecture and pad "
+        "the fields by restating the same 2-3 points in different words. If a section doesn't naturally "
+        "yield a new fact, expand that section with more real content (an example, a cause, a "
+        "consequence, a number) rather than re-deriving an existing answer. Then a structured "
+        f"outline/handout with exactly {item_count} missing-information fields, each field's "
+        "correctFill drawn from a DIFFERENT point in the lecture — no two fields may share the same "
+        "answer OR be near-paraphrases of each other. Each missing field must be CONCISE note-worthy "
+        "content (a short phrase or key fact), never a single arbitrary word.\n\n"
+        "IMPORTANT — choose skillTags per item, do not copy one tag for every item: use note_taking "
+        "only when the item is genuinely about capturing a key phrase; use academic_structure when it's "
+        "about the lecture's organization/signposting; use detail_fact/numbers_dates/argument_structure/ "
+        "summary_error_detection when those fit better. Use at least 3 different tags across the 10 "
+        "items.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
-        "Output JSON shape exactly:\n"
+        "Output JSON shape exactly (the skillTags below are illustrative, not literal — pick tags that "
+        "actually fit each item per the guidance above):\n"
         "{\n"
         '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
         '  "questions": [\n'
-        '    {"questionId": "q1", "skillTags": ["note_taking"], "difficulty": "c1",\n'
+        '    {"questionId": "q1", "skillTags": ["academic_structure"], "difficulty": "c1",\n'
+        '     "note": {"fieldLabel": "...", "outlineContext": "...", "correctFill": "..."}},\n'
+        '    {"questionId": "q2", "skillTags": ["detail_fact", "numbers_dates"], "difficulty": "c1",\n'
         '     "note": {"fieldLabel": "...", "outlineContext": "...", "correctFill": "..."}}\n'
         "  ]\n"
         "}\n"
