@@ -17,12 +17,14 @@ def _valid_hv1() -> dict:
     for i in range(1, 9):
         questions.append({
             "questionId": f"q{i}", "prompt": f"Statement {i}", "skillTags": ["paraphrase_mapping"],
-            "difficulty": "c1", "matching": {"correctSpeakerId": f"speaker_{i}", "isDistractor": False},
+            "difficulty": "c1",
+            "matching": {"correctSpeakerId": f"speaker_{i}", "isDistractor": False, "evidenceSegmentIds": [f"s{i}"]},
         })
     for i in range(9, 11):
         questions.append({
             "questionId": f"q{i}", "prompt": f"Distractor {i}", "skillTags": ["paraphrase_mapping"],
-            "difficulty": "c1", "matching": {"correctSpeakerId": None, "isDistractor": True},
+            "difficulty": "c1",
+            "matching": {"correctSpeakerId": None, "isDistractor": True, "evidenceSegmentIds": []},
         })
     return {"segments": segments, "questions": questions}
 
@@ -61,7 +63,7 @@ def _valid_hv2() -> dict:
     questions = [
         {
             "questionId": f"q{i}", "skillTags": ["detail_fact"], "difficulty": "c1",
-            "mc3": {"stem": f"Stem {i}", "options": ["A", "B", "C"], "correctIndex": 0},
+            "mc3": {"stem": f"Stem {i}", "options": ["A", "B", "C"], "correctIndex": 0, "evidenceSegmentIds": ["s1"]},
         }
         for i in range(1, 11)
     ]
@@ -99,7 +101,8 @@ def _valid_hv3() -> dict:
     questions = [
         {
             "questionId": f"q{i}", "skillTags": ["note_taking"], "difficulty": "c1",
-            "note": {"fieldLabel": f"Field {i}", "outlineContext": "...", "correctFill": f"unique answer {i}"},
+            "note": {"fieldLabel": f"Field {i}", "outlineContext": "...", "correctFill": f"unique answer {i}",
+                     "evidenceSegmentIds": ["s1"]},
         }
         for i in range(1, 11)
     ]
@@ -137,3 +140,24 @@ def test_unknown_skill_tag_fails() -> None:
     content["questions"][0]["skillTags"] = ["not_a_real_tag"]
     issues = hard_issues(validate_content(HV1, content))
     assert any("unknown skill tag" in i.message for i in issues)
+
+
+def test_hv2_missing_evidence_segment_ids_fails() -> None:
+    content = _valid_hv2()
+    del content["questions"][0]["mc3"]["evidenceSegmentIds"]
+    issues = hard_issues(validate_content(HV2, content))
+    assert any("evidenceSegmentIds" in i.message for i in issues)
+
+
+def test_hv3_unknown_evidence_segment_id_fails() -> None:
+    content = _valid_hv3()
+    content["questions"][0]["note"]["evidenceSegmentIds"] = ["s99"]
+    issues = hard_issues(validate_content(HV3, content))
+    assert any("unknown segment id" in i.message for i in issues)
+
+
+def test_hv1_distractor_may_have_empty_evidence() -> None:
+    # Distractors have no single speaker to point at — empty evidenceSegmentIds is fine.
+    content = _valid_hv1()
+    issues = hard_issues(validate_content(HV1, content))
+    assert issues == []

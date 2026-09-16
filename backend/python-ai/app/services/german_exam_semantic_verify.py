@@ -1,0 +1,424 @@
+"""Shared German Exam Engine — semantic (content-quality) verification.
+
+The deterministic validator (german_exam_validator.py) proves the SHAPE is
+right: exact counts, ids resolve, tags are from the controlled vocabulary.
+It cannot judge whether the CONTENT is defensible — whether the intended
+answer is actually supported by the transcript, whether a distractor is
+merely plausible-looking or genuinely absurd, whether two options are both
+arguably correct. That is this module's job.
+
+This is NOT another generator. It is given already deterministically-valid
+content and judges it, using ONLY the supplied transcript as ground truth —
+never "fixing" an answer with outside/world knowledge (see VERIFY_PROMPT
+preambles). One batched chat_json() call per part (not one per item):
+part-wide judgments (duplicate HV3 fields, HV1 speaker distinctness,
+overall coherence) need cross-item context that per-item calls wouldn't have,
+and it's dramatically cheaper.
+
+Feature-name for usage tracking is derived automatically by chat_json()'s
+_caller_feature() from THIS module's name (see llm_json.py) — so every call
+from here is recorded as feature="german_exam_semantic_verify" without
+threading a label through. Repair calls live in a separate module
+(german_exam_semantic_repair.py) specifically so their usage is tracked
+under a different feature name.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+from ..config import get_settings
+
+from .german_exam_profiles import PartBlueprint
+from .llm_json import chat_json
+
+log = logging.getLogger(__name__)
+
+# Controlled vocabulary — the verifier must never invent a code outside this
+# set. Unrecognized output blocks acceptance.
+SEMANTIC_ISSUE_CODES = frozenset(
+    {
+        "UNSUPPORTED_CORRECT_ANSWER",
+        "MULTIPLE_DEFENSIBLE_ANSWERS",
+        "AMBIGUOUS_MAPPING",
+        "IMPLAUSIBLE_DISTRACTOR",
+        "DISTRACTOR_ACCIDENTALLY_CORRECT",
+        "QUESTION_NOT_ANSWERABLE",
+        "ANSWER_EXPOSED_IN_PROMPT",
+        "PARAPHRASE_TOO_LITERAL",
+        "EVIDENCE_TOO_WEAK",
+        "DUPLICATE_INFORMATION",
+        "TRIVIAL_ITEM",
+        "OFF_LEVEL_CONTENT",
+        "WRONG_REGISTER",
+        "PART_WIDE_INCOHERENCE",
+        # Task-specific addition (section 13): a part-wide "the source
+        # material itself doesn't support 10 items" signal, distinct from
+        # PART_WIDE_INCOHERENCE (which is about the topic hanging together,
+        # not about there being enough of it).
+        "INSUFFICIENT_SOURCE_CONTENT",
+        "VERIFIER_RESPONSE_INVALID",
+    }
+)
+
+# Issues whose fix is "repair this one item" vs "the transcript/part itself
+# is the problem" (see german_exam_listening.py's pipeline: item-level ->
+# targeted repair, part-wide -> full regeneration).
+_PART_WIDE_ONLY_CODES = frozenset({"PART_WIDE_INCOHERENCE", "INSUFFICIENT_SOURCE_CONTENT"})
+
+
+@dataclass
+class SemanticIssue:
+    code: str
+    severity: str  # "error" | "warning" — only "error" blocks acceptance/triggers repair
+    message: str
+    evidence: dict[str, Any] = field(default_factory=dict)  # e.g. {"segmentIds": [...], "optionIndexes": [...]}
+
+
+@dataclass
+class ItemSemanticResult:
+    item_id: str
+    passed: bool
+    issues: list[SemanticIssue] = field(default_factory=list)
+
+
+@dataclass
+class SemanticVerificationResult:
+    passed: bool
+    part_wide_issues: list[SemanticIssue] = field(default_factory=list)
+    items: list[ItemSemanticResult] = field(default_factory=list)
+
+    def item_error_issues(self) -> dict[str, list[SemanticIssue]]:
+        """questionId -> its error-severity issues, for items that failed.
+        Warnings are informational only — they don't block acceptance or
+        trigger repair."""
+        out: dict[str, list[SemanticIssue]] = {}
+        for item in self.items:
+            errors = [i for i in item.issues if i.severity == "error"]
+            if errors:
+                out[item.item_id] = errors
+        return out
+
+    def part_wide_error_issues(self) -> list[SemanticIssue]:
+        return [i for i in self.part_wide_issues if i.severity == "error"]
+
+
+def _base_verifier_preamble(part: PartBlueprint) -> str:
+    return (
+        "You are an INDEPENDENT exam-item verifier for a German listening exercise "
+        f"({part.task_type}). You must NOT improve, rewrite, or complete the exercise. Judge ONLY "
+        "whether each intended answer is uniquely supported by the supplied transcript, and whether "
+        "distractors/wrong options are plausible-but-wrong (not absurd, not accidentally correct). "
+        "Judge answerability STRICTLY from the supplied transcript text — never use outside/world "
+        "knowledge to decide whether an answer is correct; if the transcript doesn't state it, the "
+        "item is unsupported even if the fact happens to be true in reality. Do not request or output "
+        "hidden reasoning/chain-of-thought — give only a concise issue code, one-sentence message, and "
+        "evidence references. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Allowed issue codes — you MUST only use codes from this exact list, never invent new ones: "
+        f"{sorted(SEMANTIC_ISSUE_CODES)}.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "passed": false,\n'
+        '  "partWideIssues": [{"code": "PART_WIDE_INCOHERENCE", "severity": "error", "message": "...", "evidence": {}}],\n'
+        '  "items": [\n'
+        '    {"questionId": "q4", "passed": false, "issues": [\n'
+        '      {"code": "AMBIGUOUS_MAPPING", "severity": "error", "message": "...",\n'
+        '       "evidence": {"segmentIds": ["s3", "s6"]}}\n'
+        "    ]},\n"
+        '    {"questionId": "q1", "passed": true, "issues": []}\n'
+        "  ]\n"
+        "}\n"
+        "Include EVERY item id from the supplied content in the items array, even ones with no issues "
+        '(passed: true, issues: []). severity is "error" (blocks acceptance) or "warning" (informational, '
+        "does not block acceptance). Set an item's passed to true exactly when it has no error issues. "
+        "Set overall passed to true exactly when all items pass and no part-wide error exists. "
+        "A warning alone must not set either passed flag to false."
+    )
+
+
+def _content_payload(content: dict[str, Any]) -> str:
+    # Display summaries can omit or contradict what the listener hears.
+    segments = [{key: segment.get(key) for key in ("id", "speakerId", "spokenText")}
+                for segment in content.get("segments") or []]
+    return json.dumps({"segments": segments, "questions": content.get("questions") or []}, ensure_ascii=False)
+
+
+def _verify_prompt_hv1(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is speaker_statement_matching (telc-style Globalverstehen). For each non-distractor "
+        "item verify: (A) the speaker named in matching.correctSpeakerId genuinely supports the "
+        "statement's meaning; (B) no OTHER speaker supports the statement equally well (if two speakers "
+        "could plausibly match, use AMBIGUOUS_MAPPING with evidence.segmentIds listing both candidate "
+        "speakers' segments). Compare each mapped statement against ALL eight speakers, including "
+        "identical or synonymous viewpoints. Merely sharing a topic is not ambiguity. "
+        "(C) the statement paraphrases the speaker's wording rather than quoting it "
+        "almost verbatim (PARAPHRASE_TOO_LITERAL); (D) the statement captures the speaker's MAIN point, "
+        "not a minor incidental detail (TRIVIAL_ITEM). For the distractor items (isDistractor: true) "
+        "verify: (E) the statement does not actually match any speaker well enough to be a reasonable "
+        "correct answer (DISTRACTOR_ACCIDENTALLY_CORRECT if it does); (F) the statement is still "
+        "plausible/topic-relevant, not absurd or unrelated (IMPLAUSIBLE_DISTRACTOR). A distractor is "
+        "SUPPOSED to be unsupported: do not flag its lack of support or contradiction as an error. "
+        "Part-wide: flag "
+        "PART_WIDE_INCOHERENCE if the 8 speakers don't express genuinely different viewpoints on a "
+        "coherent shared topic, or if the content isn't C1-Hochschule-appropriate in register/complexity."
+    )
+    user = _content_payload(content)
+    return system, user
+
+
+def _verify_prompt_hv2(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is sentence_completion_mc3 (telc-style Detailverstehen). For each item verify: (A) the "
+        "option at mc3.correctIndex is clearly supported by the dialogue (UNSUPPORTED_CORRECT_ANSWER if "
+        "not); (B) exactly one option is defensible as correct — if a second option could also reasonably "
+        "be argued correct, use MULTIPLE_DEFENSIBLE_ANSWERS with evidence.optionIndexes listing both; (C) "
+        "the two wrong options are plausible — each should plausibly arise from a nearby fact, a partially "
+        "true detail, reversed causality, something a DIFFERENT speaker said, or a negation/contrast "
+        "confusion; (D) reject any option that is absurd, unrelated to the dialogue, or rejectable by pure "
+        "general knowledge without having heard the audio at all — use IMPLAUSIBLE_DISTRACTOR (this is "
+        "exactly the class of error the phrase 'abolish all intersections' represents: a wrong option with "
+        "no connection to anything actually said); (E) if a 'wrong' option is actually just as supported "
+        "as the marked correct one, use DISTRACTOR_ACCIDENTALLY_CORRECT; (F) QUESTION_NOT_ANSWERABLE if the "
+        "stem requires information genuinely absent from the transcript. Part-wide: PART_WIDE_INCOHERENCE "
+        "if items don't roughly follow the chronological order of the dialogue, or the dialogue itself "
+        "doesn't hang together as one coherent conversation."
+    )
+    user = _content_payload(content)
+    return system, user
+
+
+def _verify_prompt_hv3(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is structured_note_completion (telc-style Informationstransfer). For each field verify: "
+        "(A) note.correctFill is directly stated/supported by the lecture (UNSUPPORTED_CORRECT_ANSWER if "
+        "not); (B) the requested information is genuinely note-worthy — a real point from the lecture, not "
+        "filler (TRIVIAL_ITEM); (C) the answer is concise enough for a note-completion field, not a full "
+        "sentence; (D) the field is semantically distinct from every OTHER field in this part — if two "
+        "fields ask for the same underlying point in different words, flag BOTH with DUPLICATE_INFORMATION "
+        "and reference each other's questionId in evidence; (E) there isn't another equally valid answer "
+        "the automatic grader (which does a fairly literal string match) would unfairly reject — flag with "
+        "MULTIPLE_DEFENSIBLE_ANSWERS if the correctFill wording is unnecessarily narrow when the lecture "
+        "supports an equally valid alternative phrasing. Part-wide: INSUFFICIENT_SOURCE_CONTENT if the "
+        "lecture genuinely does not contain 10 distinct informational points (i.e. the padding problem — "
+        "some fields exist only because the count had to reach 10, not because the lecture said 10 "
+        "different things); PART_WIDE_INCOHERENCE if the outline doesn't represent the lecture's actual "
+        "structure/hierarchy coherently."
+    )
+    user = _content_payload(content)
+    return system, user
+
+
+_VERIFY_PROMPT_BUILDERS = {
+    "speaker_statement_matching": _verify_prompt_hv1,
+    "sentence_completion_mc3": _verify_prompt_hv2,
+    "structured_note_completion": _verify_prompt_hv3,
+}
+
+
+def _parse_issue(raw: Any) -> SemanticIssue | None:
+    if not isinstance(raw, dict):
+        return SemanticIssue("VERIFIER_RESPONSE_INVALID", "error", "Invalid issue object")
+    code = raw.get("code")
+    if not isinstance(code, str) or code not in SEMANTIC_ISSUE_CODES:
+        log.warning("semantic verifier returned an unknown issue code")
+        return SemanticIssue("VERIFIER_RESPONSE_INVALID", "error", "Unknown issue code")
+    severity = raw.get("severity") if raw.get("severity") in ("error", "warning") else "error"
+    message = str(raw.get("message") or "")[:500]  # concise judgment only, not chain-of-thought
+    supplied = raw.get("evidence") if isinstance(raw.get("evidence"), dict) else {}
+    evidence = {}
+    for key in ("segmentIds", "questionIds", "optionIndexes"):
+        values = supplied.get(key)
+        if isinstance(values, list):
+            if key == "optionIndexes":
+                evidence[key] = [value for value in values[:20] if type(value) is int and 0 <= value < 10]
+            else:
+                evidence[key] = [value[:100] for value in values[:20] if isinstance(value, str)]
+    return SemanticIssue(code=code, severity=severity, message=message, evidence=evidence)
+
+
+def _parse_result(data: Any, expected_item_ids: set[str]) -> SemanticVerificationResult:
+    def invalid() -> SemanticVerificationResult:
+        return SemanticVerificationResult(False, [SemanticIssue(
+            "VERIFIER_RESPONSE_INVALID", "error", "Incomplete or inconsistent verifier response"
+        )])
+
+    if (not isinstance(data, dict) or type(data.get("passed")) is not bool
+            or not isinstance(data.get("partWideIssues"), list)
+            or not isinstance(data.get("items"), list)):
+        return invalid()
+    part_wide = [i for i in (_parse_issue(r) for r in (data.get("partWideIssues") or [])) if i is not None]
+
+    items: list[ItemSemanticResult] = []
+    seen_ids: set[str] = set()
+    for raw_item in data.get("items") or []:
+        if not isinstance(raw_item, dict):
+            return invalid()
+        item_id = raw_item.get("questionId")
+        if (not isinstance(item_id, str) or item_id not in expected_item_ids
+                or item_id in seen_ids or type(raw_item.get("passed")) is not bool
+                or not isinstance(raw_item.get("issues"), list)):
+            return invalid()
+        seen_ids.add(item_id)
+        issues = [i for i in (_parse_issue(r) for r in (raw_item.get("issues") or [])) if i is not None]
+        passed = not any(i.severity == "error" for i in issues)
+        if not raw_item["passed"] and passed:
+            return invalid()
+        part_wide.extend(i for i in issues if is_part_wide_only(i))
+        items.append(ItemSemanticResult(item_id=item_id, passed=passed, issues=issues))
+
+    # Any expected item the model silently omitted is treated as unverified
+    # (fail closed), not as an implicit pass.
+    missing = expected_item_ids - seen_ids
+    for item_id in missing:
+        items.append(ItemSemanticResult(
+            item_id=item_id, passed=False,
+            issues=[SemanticIssue(code="VERIFIER_RESPONSE_INVALID", severity="error", message="semantic verifier omitted this item from its response")],
+        ))
+
+    # A cross-item defect with explicit affected IDs still permits item repair.
+    source_issues = []
+    for issue in part_wide:
+        targets = issue.evidence.get("questionIds", [])
+        if (not is_part_wide_only(issue) and targets
+                and all(target in seen_ids for target in targets)):
+            for item in items:
+                if item.item_id in targets and not any(i.code == issue.code for i in item.issues):
+                    item.issues.append(issue)
+                    item.passed = not any(i.severity == "error" for i in item.issues)
+        else:
+            source_issues.append(issue)
+    part_wide = source_issues
+
+    overall_passed = not any(i.severity == "error" for i in part_wide) and all(item.passed for item in items)
+    if not data["passed"] and overall_passed:
+        return invalid()
+    return SemanticVerificationResult(passed=overall_passed, part_wide_issues=part_wide, items=items)
+
+
+def _object_schema(properties: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
+
+
+def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
+    strings = {"type": "array", "items": {"type": "string"}}
+    issue = _object_schema({
+        "code": {"type": "string", "enum": sorted(SEMANTIC_ISSUE_CODES)},
+        "severity": {"type": "string", "enum": ["error", "warning"]},
+        "message": {"type": "string"},
+        "evidence": _object_schema({"segmentIds": strings, "questionIds": strings,
+                                    "optionIndexes": {"type": "array", "items": {"type": "integer"}}}),
+    })
+    if part.task_type == "speaker_statement_matching":
+        audit = _object_schema({"supportedSpeakerIds": strings, "plausible": {"type": "boolean"}})
+    elif part.task_type == "sentence_completion_mc3":
+        audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
+            "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
+    else:
+        audit = _object_schema({"duplicateItemIds": strings})
+    issues = {"type": "array", "items": issue}
+    item = _object_schema({"questionId": {"type": "string", "enum": [q["questionId"] for q in content["questions"]]},
+                           "audit": audit, "passed": {"type": "boolean"}, "issues": issues})
+    return _object_schema({"passed": {"type": "boolean"}, "partWideIssues": issues,
+                           "items": {"type": "array", "items": item}})
+
+
+def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlueprint, content: dict) -> SemanticVerificationResult:
+    supplied_items = data.get("items")
+    if not isinstance(supplied_items, list):
+        return _parse_result(None, set())
+    raw_items = {item["questionId"]: item for item in supplied_items
+                 if isinstance(item, dict) and isinstance(item.get("questionId"), str)}
+    questions = {q["questionId"]: q for q in content["questions"]}
+    speakers = {s["speakerId"] for s in content["segments"]}
+    for item in result.items:
+        audit = raw_items.get(item.item_id, {}).get("audit", {})
+        if not isinstance(audit, dict):
+            audit = {}
+        question = questions[item.item_id]
+        code = None
+        if part.task_type == "speaker_statement_matching":
+            values = audit.get("supportedSpeakerIds")
+            if not isinstance(values, list) or any(not isinstance(v, str) or v not in speakers for v in values):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif question["matching"].get("isDistractor"):
+                if type(audit.get("plausible")) is not bool:
+                    code = "VERIFIER_RESPONSE_INVALID"
+                elif values:
+                    code = "DISTRACTOR_ACCIDENTALLY_CORRECT"
+                elif not audit["plausible"]:
+                    code = "IMPLAUSIBLE_DISTRACTOR"
+            elif question["matching"]["correctSpeakerId"] not in values:
+                code = "UNSUPPORTED_CORRECT_ANSWER"
+            elif len(set(values)) > 1:
+                code = "AMBIGUOUS_MAPPING"
+        elif part.task_type == "sentence_completion_mc3":
+            values = audit.get("optionVerdicts")
+            if (not isinstance(values, list) or len(values) != 3
+                    or any(v not in ("supported", "plausible_wrong", "implausible_wrong") for v in values)):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif "implausible_wrong" in values:
+                code = "IMPLAUSIBLE_DISTRACTOR"
+            elif values.count("supported") > 1:
+                code = "MULTIPLE_DEFENSIBLE_ANSWERS"
+            elif values[question["mc3"]["correctIndex"]] != "supported":
+                code = "UNSUPPORTED_CORRECT_ANSWER"
+        else:
+            values = audit.get("duplicateItemIds")
+            if not isinstance(values, list) or any(not isinstance(v, str) or v not in questions or v == item.item_id for v in values):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif values:
+                code = "DUPLICATE_INFORMATION"
+        if code and not any(issue.code == code for issue in item.issues):
+            item.issues.append(SemanticIssue(code, "error", "Explicit item audit failed this criterion"))
+        item.passed = not any(issue.severity == "error" for issue in item.issues)
+    result.passed = result.passed and all(item.passed for item in result.items)
+    return result
+
+
+def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVerificationResult:
+    """One batched call for the whole part. Deliberately does NOT receive the
+    adaptation plan or topic-selection rationale — the verifier judges the
+    frozen content on its own merits, not biased by why it was generated."""
+    builder = _VERIFY_PROMPT_BUILDERS.get(part.task_type)
+    if builder is None:
+        return SemanticVerificationResult(
+            passed=False,
+            part_wide_issues=[SemanticIssue(code="PART_WIDE_INCOHERENCE", severity="error", message=f"no semantic verifier for task_type {part.task_type!r}")],
+        )
+    expected_ids = {q.get("questionId") for q in (content.get("questions") or []) if q.get("questionId")}
+    system, user = builder(part, content)
+    system += "\nJudge C1 Hochschule level and academic register. Validate evidenceSegmentIds against spokenText."
+    system += (
+        "\nFor EVERY item fill its audit before its verdict. HV1 supportedSpeakerIds lists EVERY speaker "
+        "whose full statement supports the written proposition (empty for a valid distractor). "
+        "If two speakers express the same supported view, list BOTH IDs even when only one is keyed correct. "
+        "HV1 plausible is true for reasonable topic-related positions, false for absurd straw-man claims "
+        "such as prohibiting every alternative to private cars in a sustainability debate. Being false "
+        "or contradicted by speakers does NOT by itself make a distractor implausible. "
+        "HV2 optionVerdicts classifies EACH of the three options in order: supported, plausible_wrong, "
+        "or implausible_wrong. An absurd option is implausible_wrong even if the correct answer is clear. "
+        "Judge the complete stem-plus-option, including negative stems. Plausible wrong options must "
+        "reflect a concrete nearby detail or a reasonable misinterpretation, not an invented policy "
+        "contrary to the entire premise of the discussion. "
+        "HV3 duplicateItemIds lists ALL other fields requesting the same fact. Check every pair, "
+        "including identical fields. Use the appropriate issue codes for audit failures. "
+        "Return concise judgments only, not explanations of your reasoning process."
+    )
+    user = json.dumps({"blueprint": {"taskType": part.task_type, "constraints": part.constraints}}, ensure_ascii=False) + "\n" + user
+    try:
+        model = get_settings().german_exam_model
+        result = chat_json(system=system, user=user, max_tokens=10000,
+                           model=model, json_schema=_verification_schema(part, content),
+                           reasoning_effort="medium" if model.startswith("gpt-5") else None)
+    except Exception:
+        log.warning("Semantic verifier call failed", exc_info=True)
+        return _parse_result(None, expected_ids)
+    parsed = _parse_result(result.data, expected_ids)
+    return _apply_audits(parsed, result.data, part, content) if isinstance(result.data, dict) else parsed
+
+
+def is_part_wide_only(issue: SemanticIssue) -> bool:
+    return issue.code in _PART_WIDE_ONLY_CODES

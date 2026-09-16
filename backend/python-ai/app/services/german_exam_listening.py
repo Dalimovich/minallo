@@ -15,10 +15,15 @@ from __future__ import annotations
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
 from typing import Any
+
+from ..config import get_settings
 
 from .german_exam_adaptation import AdaptationInstruction
 from .german_exam_profiles import ExamProfile, PartBlueprint
+from .german_exam_semantic_repair import repair_items_semantic
+from .german_exam_semantic_verify import SemanticVerificationResult, verify_semantic
 from .german_exam_validator import ValidationIssue, hard_issues, validate_content
 from .llm_json import chat_json
 
@@ -26,6 +31,7 @@ log = logging.getLogger(__name__)
 
 _MAX_ITEM_REPAIR_ATTEMPTS = 2
 _MAX_FULL_REGENERATIONS = 2
+_MAX_SEMANTIC_REPAIR_ROUNDS = 2
 
 
 class ListeningGenerationError(Exception):
@@ -47,6 +53,10 @@ def _base_system_preamble(profile: ExamProfile, part: PartBlueprint) -> str:
         f"{profile.variant or ''} ({part.title}), matching the official {part.task_type} task format. "
         "You must NOT copy any real exam content — generate entirely new material with the same "
         "structure and difficulty. Reply with ONLY valid JSON, no markdown fences, no commentary."
+        " Wrong options and unused statements must be reasonable alternative positions on the topic. "
+        "Avoid straw-man extremes, universal bans, or obviously self-defeating policies that can be "
+        "eliminated without listening. For MC3 distribute correctIndex across all three positions; "
+        "do not always put the answer first."
     )
 
 
@@ -118,15 +128,18 @@ def _prompt_hv2(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
         "something requiring elimination of a not-stated option, etc.). Use at least 3 different tags "
         "across the 10 items.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
+        "Every item must also include evidenceSegmentIds: the id(s) of the segment(s) in your own "
+        "'segments' array that directly support the correct continuation — this is what the app uses "
+        "for 'Replay evidence' and must point at real segment ids from this same response.\n\n"
         "Output JSON shape exactly (the skillTags below are illustrative, not literal — pick tags that "
         "actually fit each item per the guidance above):\n"
         "{\n"
         '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
         '  "questions": [\n'
         '    {"questionId": "q1", "skillTags": ["detail_fact"], "difficulty": "c1",\n'
-        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1}},\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1, "evidenceSegmentIds": ["s3"]}},\n'
         '    {"questionId": "q2", "skillTags": ["causal_relationship", "negation_contrast"], "difficulty": "c1",\n'
-        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 0}}\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 0, "evidenceSegmentIds": ["s5", "s6"]}}\n'
         "  ]\n"
         "}\n"
         f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
@@ -157,6 +170,9 @@ def _prompt_hv3(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
         "about the lecture's organization/signposting; use detail_fact/numbers_dates/argument_structure/ "
         "summary_error_detection when those fit better. Use at least 3 different tags across the 10 "
         "items.\n\n"
+        "Every item must also include evidenceSegmentIds: the id(s) of the segment(s) in your own "
+        "'segments' array that directly state the correctFill — this is what the app uses for "
+        "'Replay evidence' and must point at real segment ids from this same response.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
         "Output JSON shape exactly (the skillTags below are illustrative, not literal — pick tags that "
         "actually fit each item per the guidance above):\n"
@@ -164,9 +180,9 @@ def _prompt_hv3(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
         '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
         '  "questions": [\n'
         '    {"questionId": "q1", "skillTags": ["academic_structure"], "difficulty": "c1",\n'
-        '     "note": {"fieldLabel": "...", "outlineContext": "...", "correctFill": "..."}},\n'
+        '     "note": {"fieldLabel": "...", "outlineContext": "...", "correctFill": "...", "evidenceSegmentIds": ["s1"]}},\n'
         '    {"questionId": "q2", "skillTags": ["detail_fact", "numbers_dates"], "difficulty": "c1",\n'
-        '     "note": {"fieldLabel": "...", "outlineContext": "...", "correctFill": "..."}}\n'
+        '     "note": {"fieldLabel": "...", "outlineContext": "...", "correctFill": "...", "evidenceSegmentIds": ["s3"]}}\n'
         "  ]\n"
         "}\n"
         f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
@@ -179,6 +195,27 @@ _PROMPT_BUILDERS = {
     "speaker_statement_matching": _prompt_hv1,
     "sentence_completion_mc3": _prompt_hv2,
     "structured_note_completion": _prompt_hv3,
+}
+
+
+def _populate_hv1_evidence(content: dict[str, Any]) -> dict[str, Any]:
+    """HV1's evidence is fully derivable from matching.correctSpeakerId (each
+    speaker maps 1:1 to one segment) — computed here rather than asked of the
+    LLM, since it's guaranteed-correct by construction instead of trusted
+    model output. Distractor items get an empty list (no single speaker to
+    point at)."""
+    segments = content.get("segments") or []
+    speaker_to_segment = {s.get("speakerId"): s.get("id") for s in segments if s.get("speakerId")}
+    for q in content.get("questions") or []:
+        matching = q.get("matching") or {}
+        speaker_id = matching.get("correctSpeakerId")
+        matching["evidenceSegmentIds"] = [speaker_to_segment[speaker_id]] if speaker_id in speaker_to_segment else []
+        q["matching"] = matching
+    return content
+
+
+_EVIDENCE_POSTPROCESSORS = {
+    "speaker_statement_matching": _populate_hv1_evidence,
 }
 
 
@@ -215,7 +252,7 @@ def _repair_items(part: PartBlueprint, content: dict[str, Any], issues: list[Val
         for _attempt in range(_MAX_ITEM_REPAIR_ATTEMPTS):
             try:
                 system, user = _repair_prompt(part, content, issue)
-                result = chat_json(system=system, user=user, max_tokens=800)
+                result = chat_json(system=system, user=user, max_tokens=800, model=get_settings().german_exam_model)
                 fixed = result.data
                 if isinstance(fixed, dict) and fixed.get("questionId") == item_id:
                     return item_id, fixed
@@ -238,23 +275,111 @@ def _repair_items(part: PartBlueprint, content: dict[str, Any], issues: list[Val
     return content
 
 
+def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
+    fn = _EVIDENCE_POSTPROCESSORS.get(part.task_type)
+    try:
+        return fn(content) if fn else content
+    except (TypeError, AttributeError):
+        return content  # The deterministic validator reports malformed payloads.
+
+
+def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Runs semantic verification, and targeted repair for item-level error
+    issues, for up to _MAX_SEMANTIC_REPAIR_ROUNDS rounds. A part-wide error
+    issue can't be fixed at item level — verification stops immediately and
+    the caller decides whether to fall back to a full regeneration. Returns
+    (content, semantic_meta, passed)."""
+    started = perf_counter()
+    verification_count = 0
+    repair_count = 0
+    issues_resolved: list[dict[str, str]] = []
+    issue_counts: dict[str, int] = {}
+
+    def record_findings(result: SemanticVerificationResult) -> None:
+        findings = list(result.part_wide_issues)
+        findings.extend(issue for item in result.items for issue in item.issues)
+        for issue in findings:
+            issue_counts[issue.code] = issue_counts.get(issue.code, 0) + 1
+
+    def check() -> SemanticVerificationResult:
+        nonlocal verification_count
+        for attempt in range(2):
+            result = verify_semantic(part, content)
+            record_findings(result)
+            verification_count += 1
+            findings = list(result.part_wide_issues) + [issue for item in result.items for issue in item.issues]
+            if not any(issue.code == "VERIFIER_RESPONSE_INVALID" for issue in findings):
+                return result
+        return result
+
+    result = check()
+
+    for _round in range(_MAX_SEMANTIC_REPAIR_ROUNDS):
+        part_wide_errors = result.part_wide_error_issues()
+        item_errors = result.item_error_issues()
+        if not part_wide_errors and not item_errors:
+            break
+        if any(issue.code == "VERIFIER_RESPONSE_INVALID" for issues in item_errors.values() for issue in issues):
+            break
+        if part_wide_errors:
+            # Not repairable at item level — stop here; caller falls back to
+            # a full regeneration if budget remains.
+            break
+
+        content, resolved = repair_items_semantic(part, content, item_errors)
+        repair_count += len(item_errors)
+        issues_resolved.extend(resolved)
+        content = _postprocess(part, content)
+
+        # Semantic repair must never move the official structure — if it
+        # somehow did, stop and let the caller fall back to full regeneration
+        # rather than trusting content that's now deterministically invalid.
+        if hard_issues(validate_content(part, content)):
+            log.warning("semantic repair for part %s broke deterministic structure — abandoning item-level repair", part.part_id)
+            break
+
+        result = check()
+
+    passed = result.passed and not hard_issues(validate_content(part, content))
+    meta = {
+        "passed": passed,
+        "verificationCount": verification_count,
+        "repairCount": repair_count,
+        "issuesResolved": issues_resolved if passed else [],
+        "issueCounts": issue_counts,
+        "durationMs": round((perf_counter() - started) * 1000),
+    }
+    return content, meta, passed
+
+
 def generate_listening_part(
     profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Returns (content, validation_meta). content has NO audio fields.
-    Raises ListeningGenerationError if generation cannot be made valid within
-    the bounded repair/regeneration budget."""
+
+    Pipeline: LLM generation -> deterministic validation (+ targeted repair)
+    -> semantic verification (+ targeted repair) -> deterministic
+    re-validation -> semantic re-verification -> accept. A part-wide problem
+    at either stage (structural count wrong, or the transcript itself can't
+    semantically support the part) falls back to a full regeneration, bounded
+    by _MAX_FULL_REGENERATIONS shared across both stages. Raises
+    ListeningGenerationError rather than ever returning known-invalid
+    content once that budget is exhausted."""
     builder = _PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
         raise ListeningGenerationError(f"no prompt builder for task_type {part.task_type!r}")
 
-    total_repair_count = 0
     last_issues: list[ValidationIssue] = []
+    last_semantic: dict[str, Any] | None = None
+    semantic_totals = {"verificationCount": 0, "repairCount": 0, "durationMs": 0}
+    total_det_repairs = 0
+    total_issue_counts: dict[str, int] = {}
 
     for regeneration in range(_MAX_FULL_REGENERATIONS + 1):
         system, user = builder(profile, part, plan, topic)
-        result = chat_json(system=system, user=user, max_tokens=4000)
+        result = chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
         content = result.data if isinstance(result.data, dict) else {}
+        content = _postprocess(part, content)
 
         issues = validate_content(part, content)
         h_issues = hard_issues(issues)
@@ -266,23 +391,49 @@ def generate_listening_part(
             continue
 
         item_level = [i for i in h_issues if i.item_id is not None]
+        det_repair_count = 0
         if item_level:
             content = _repair_items(part, content, item_level)
-            total_repair_count += len(item_level)
+            content = _postprocess(part, content)
+            det_repair_count = len(item_level)
+            total_det_repairs += det_repair_count
             issues = validate_content(part, content)
             h_issues = hard_issues(issues)
 
-        if not h_issues:
-            resolved = [f"{i.item_id}: {i.message}" for i in item_level]
+        if h_issues:
+            last_issues = h_issues
+            if regeneration < _MAX_FULL_REGENERATIONS:
+                continue
+            raise ListeningGenerationError(
+                f"could not produce a deterministically valid {part.task_type} part after "
+                f"{_MAX_FULL_REGENERATIONS} regenerations: "
+                + "; ".join(f"{i.item_id}: {i.message}" for i in last_issues)
+            )
+
+        # Deterministically valid — now judge whether the content is defensible.
+        content, semantic_meta, semantic_ok = _semantic_phase(part, content)
+        for key in semantic_totals:
+            semantic_totals[key] += semantic_meta[key]
+        for code, count in semantic_meta["issueCounts"].items():
+            total_issue_counts[code] = total_issue_counts.get(code, 0) + count
+        log.info("german_exam_semantic part=%s regeneration=%s passed=%s verificationCount=%s repairCount=%s issueCounts=%s",
+                 part.part_id, regeneration, semantic_ok, semantic_meta["verificationCount"], semantic_meta["repairCount"], semantic_meta["issueCounts"])
+        if semantic_ok:
+            semantic_meta.update(semantic_totals)
+            semantic_meta["issueCounts"] = total_issue_counts
+            semantic_meta["regenerationCount"] = regeneration
             return content, {
                 "deterministicPassed": True,
-                "repairCount": total_repair_count,
-                "issuesResolved": resolved,
+                "deterministicRepairCount": total_det_repairs,
+                "semantic": semantic_meta,
             }
 
-        last_issues = h_issues
+        last_semantic = semantic_meta
+        if regeneration < _MAX_FULL_REGENERATIONS:
+            continue
+        raise ListeningGenerationError(
+            f"could not produce semantically valid {part.task_type} content after "
+            f"{_MAX_FULL_REGENERATIONS} regenerations: {last_semantic}"
+        )
 
-    raise ListeningGenerationError(
-        f"could not produce a valid {part.task_type} part after {_MAX_FULL_REGENERATIONS} regenerations: "
-        + "; ".join(f"{i.item_id}: {i.message}" for i in last_issues)
-    )
+    raise ListeningGenerationError(f"unreachable: exhausted regeneration budget for {part.task_type!r}")

@@ -8,10 +8,12 @@ passed. `german_exam_listening.py` (and later module adapters) use this list
 to drive the bounded per-item repair loop; a non-empty list is never
 silently accepted.
 
-Only structural/deterministic checks live here. Semantic checks (e.g. "does
-this distractor actually come from a nearby fact") are logged as soft issues
-(`hard=False`) in Phase 1 — informational only, not blocking — pending the
-optional semantic verifier pass (deferred, see german_exam_generator.py).
+Only structural/deterministic checks live here — "is the shape right, do
+ids resolve, are counts exact." Whether the CONTENT is actually defensible
+(is the correct answer really supported by the transcript, is a distractor
+plausible rather than absurd, are two options both arguably correct) is
+judged by `german_exam_semantic_verify.py`, which always runs AFTER this
+validator passes — see `german_exam_listening.py`'s generation pipeline.
 """
 
 from __future__ import annotations
@@ -41,6 +43,32 @@ def _check_skill_tags(module: str, items: list[dict[str, Any]], id_key: str) -> 
             validate_tags(module, tags)
         except UnknownSkillTagError as exc:
             issues.append(ValidationIssue(item.get(id_key), str(exc)))
+    return issues
+
+
+def _check_evidence_segment_ids(
+    questions: list[dict[str, Any]], segments: list[dict[str, Any]], payload_key: str, *, allow_empty: bool = False
+) -> list[ValidationIssue]:
+    """Every objective item must point at real segment id(s) it's supported
+    by — this is what Replay evidence, transcript highlighting, and the
+    semantic verifier all key off. `allow_empty` is only true for HV1's
+    distractor items, which have no single speaker to point at."""
+    valid_ids = {s.get("id") for s in segments if s.get("id")}
+    issues: list[ValidationIssue] = []
+    for q in questions:
+        payload = q.get(payload_key) or {}
+        ev_ids = payload.get("evidenceSegmentIds")
+        if ev_ids is not None and (not isinstance(ev_ids, list) or any(not isinstance(sid, str) for sid in ev_ids)):
+            issues.append(ValidationIssue(q.get("questionId"), "evidenceSegmentIds must be a list of strings"))
+            continue
+        if not ev_ids:
+            if allow_empty and payload.get("isDistractor"):
+                continue
+            issues.append(ValidationIssue(q.get("questionId"), "evidenceSegmentIds is missing or empty"))
+            continue
+        unknown = [sid for sid in ev_ids if sid not in valid_ids]
+        if unknown:
+            issues.append(ValidationIssue(q.get("questionId"), f"evidenceSegmentIds references unknown segment id(s): {unknown}"))
     return issues
 
 
@@ -88,6 +116,7 @@ def validate_speaker_statement_matching(part: PartBlueprint, content: dict[str, 
         issues.append(ValidationIssue(None, "not every speaker has exactly one correct mapping"))
 
     issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    issues.extend(_check_evidence_segment_ids(questions, segments, "matching", allow_empty=True))
     return issues
 
 
@@ -121,6 +150,7 @@ def validate_sentence_completion_mc3(part: PartBlueprint, content: dict[str, Any
             issues.append(ValidationIssue(q.get("questionId"), "correctIndex missing or out of range"))
 
     issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    issues.extend(_check_evidence_segment_ids(questions, segments, "mc3"))
     return issues
 
 
@@ -152,6 +182,7 @@ def validate_structured_note_completion(part: PartBlueprint, content: dict[str, 
         issues.append(ValidationIssue(None, "duplicate correctFill answers across fields"))
 
     issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    issues.extend(_check_evidence_segment_ids(questions, segments, "note"))
     return issues
 
 
@@ -163,10 +194,22 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    for key, id_key in (("segments", "id"), ("questions", "questionId")):
+        rows = content.get(key)
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            return [ValidationIssue(None, f"{key} must be an array of objects")]
+        ids = [row.get(id_key) for row in rows]
+        if any(not isinstance(value, str) or not value.strip() for value in ids):
+            return [ValidationIssue(None, f"{id_key} must be a nonempty string")]
+        if len(ids) != len(set(ids)):
+            return [ValidationIssue(None, f"duplicate {id_key}")]
     validator = VALIDATORS.get(part.task_type)
     if validator is None:
         return [ValidationIssue(None, f"no validator registered for task_type {part.task_type!r}")]
-    return validator(part, content)
+    try:
+        return validator(part, content)
+    except (TypeError, AttributeError, ValueError):
+        return [ValidationIssue(None, "malformed task payload")]
 
 
 def hard_issues(issues: list[ValidationIssue]) -> list[ValidationIssue]:

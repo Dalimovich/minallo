@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(..., alias="OPENAI_API_KEY")
     openai_generate_model: str = Field("gpt-4o-mini", alias="OPENAI_GENERATE_MODEL")
     openai_generate_model_strong: str = Field("gpt-4o", alias="OPENAI_GENERATE_MODEL_STRONG")
+    german_exam_model: str = Field("gpt-5.4-mini", alias="GERMAN_EXAM_MODEL")
     # Reasoning effort for o-series strong models (low | medium | high).
     # "low" is faster/cheaper; "medium" is the safe default that solves the
     # multi-phase kinematics correctly. Ignored for non-reasoning models.

@@ -167,7 +167,7 @@ def _salvage_string_value(raw: str, key: str) -> str | None:
     return salvaged or None
 
 
-_MAX_COMPLETION_TOKENS_PREFIXES = ("o1", "o3", "o4", "gpt-4.1", "gpt-4.5")
+_MAX_COMPLETION_TOKENS_PREFIXES = ("o1", "o3", "o4", "gpt-4.1", "gpt-4.5", "gpt-5")
 
 
 def _token_limit_param(model: str, limit: int) -> dict:
@@ -203,6 +203,8 @@ def chat_json(
     model: str | None = None,
     max_tokens: int = 2000,
     salvage_key: str | None = None,
+    json_schema: dict[str, Any] | None = None,
+    reasoning_effort: str | None = None,
 ) -> LlmResult:
     settings = get_settings()
     chosen = model or settings.openai_generate_model
@@ -218,7 +220,10 @@ def chat_json(
                 resp = client.chat.completions.create(
                     model=chosen,
                     **token_param,
-                    response_format={"type": "json_object"},
+                    **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
+                    response_format=({"type": "json_schema", "json_schema": {
+                        "name": "structured_result", "strict": True, "schema": json_schema,
+                    }} if json_schema is not None else {"type": "json_object"}),
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user",   "content": user},

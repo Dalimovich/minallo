@@ -1,5 +1,8 @@
-"""Mocks chat_json; exercises the bounded per-item repair loop and confirms
-the generator never returns audio fields (TTS is out of scope for this module)."""
+"""Mocks chat_json (deterministic generation/repair) and verify_semantic
+(semantic phase, mocked as a trivial pass so these tests stay focused on
+deterministic behavior — see test_german_exam_semantic_pipeline.py for
+semantic-phase-specific coverage); confirms the generator never returns
+audio fields (TTS is out of scope for this module)."""
 
 from __future__ import annotations
 
@@ -14,6 +17,13 @@ def _stub_env() -> None:
     os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "stub")
     os.environ.setdefault("OPENAI_API_KEY", "stub")
     os.environ.setdefault("INTERNAL_SECRET", "stub")
+
+
+def _passing_semantic_result(part, content):
+    from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticVerificationResult
+
+    items = [ItemSemanticResult(item_id=q["questionId"], passed=True, issues=[]) for q in content.get("questions") or []]
+    return SemanticVerificationResult(passed=True, part_wide_issues=[], items=items)
 
 
 def _valid_hv1_content() -> dict:
@@ -45,16 +55,21 @@ def test_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> No
     from app.services.german_exam_profiles import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_hv1_content()))
+    monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
 
     profile = get_profile("telc_c1_hochschule")
     part = get_part("telc_c1_hochschule", "listening", "hv1")
     content, meta = mod.generate_listening_part(profile, part, [], {"topicId": "t", "label": "Test topic"})
 
-    assert meta["repairCount"] == 0
+    assert meta["deterministicRepairCount"] == 0
     assert meta["deterministicPassed"] is True
+    assert meta["semantic"]["passed"] is True
     for seg in content["segments"]:
         assert "audioUrl" not in seg
         assert "durationMs" not in seg
+    # HV1 evidence is computed server-side, not requested from the LLM.
+    mapped = [q for q in content["questions"] if not q["matching"]["isDistractor"]]
+    assert all(q["matching"]["evidenceSegmentIds"] for q in mapped)
 
 
 def test_one_bad_item_gets_repaired_without_full_regeneration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,12 +95,13 @@ def test_one_bad_item_gets_repaired_without_full_regeneration(monkeypatch: pytes
         })
 
     monkeypatch.setattr(mod, "chat_json", _fake_chat_json)
+    monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
 
     profile = get_profile("telc_c1_hochschule")
     part = get_part("telc_c1_hochschule", "listening", "hv1")
     content, meta = mod.generate_listening_part(profile, part, [], {"topicId": "t", "label": "Test topic"})
 
-    assert meta["repairCount"] >= 1
+    assert meta["deterministicRepairCount"] >= 1
     fixed_q2 = next(q for q in content["questions"] if q["questionId"] == "q2")
     assert fixed_q2["skillTags"] == ["paraphrase_mapping"]
     # The other 9 items were never touched by the repair call.
