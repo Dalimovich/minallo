@@ -211,6 +211,82 @@ Reproduce: `.\.venv\Scripts\python.exe -m scripts.measure_verifier_stability`
 (writes `verifier-stability.json` to the ignored `diag_runs` dir; makes 50
 real verification calls).
 
+## Phase 2.6 — targeted HV2/HV3 adjudication (2026-09-17)
+
+**Goal**: fix the Phase 2.5b instability (known genuine defects
+occasionally passing clean) without running the same whole-part verifier
+twice and rejecting on either complaint — that was explicitly rejected
+up front, since Phase 2.5b also measured a real false-positive rate, and
+"reject on either complaint" would only make good content get rejected
+more often.
+
+**Design** (`german_exam_semantic_adjudicate.py` + `german_exam_semantic_gate.py`,
+code and architecture, not disputed by this section's results): for HV2/HV3
+only, a second, much narrower call — factual fields only (which options are
+supported, which are implausible, whether a field duplicates another),
+never a free-text issue code — runs for every item, always, regardless of
+what the first pass found. Python derives the issue code from that audit
+and its derivation REPLACES the first pass's per-item verdict. HV1 is
+untouched (measured stable in Phase 2.5b). The derivation logic itself is
+unit-tested (`test_german_exam_semantic_adjudicate.py`,
+`test_german_exam_semantic_gate.py`) and is correct given a correct audit —
+the open question was always whether the model's real judgment on the
+narrower question would actually be more reliable than the holistic one.
+
+**Live result: no, not yet.** Two re-runs of the exact Phase 2.5b stability
+corpus (`scripts/measure_verifier_stability.py`, now calling
+`verify_semantic_full()` — the real production pipeline entry point):
+
+| Run | real_disputed false-negative rate | known_good false-positive rate |
+| --- | ---: | ---: |
+| Phase 2.5b baseline (detector only) | 20% (2/10) | 20% (5/25) |
+| Phase 2.6 v1 (first adjudicator prompt) | **50% (5/10)** | **32% (8/25)** |
+| Phase 2.6 v2 (recalibrated prompt, stricter language) | **90% (9/10)** | 8% (2/25) |
+
+v1 made both metrics worse. Diagnosing v1 as likely under-calibrated (the
+adjudicator prompts were fresh first drafts, missing the hard-won
+calibration language the main verifier's prompt accumulated across earlier
+iterations this session), v2 added explicit strictness language ("judge
+like a real exam grader," concrete criteria for what counts as
+"supported"/"implausible"/"an alternative answer"). That fixed
+false-positives (8%, actually better than baseline) but pushed
+false-negatives to 90% — the adjudicator converged to "everything is fine"
+on `real-disputed-hv2-2` in all 5 runs of both v1 and v2, and mostly missed
+`real-disputed-hv3-0` in v2 (1/5 caught, vs. 5/5 in v1). The two prompt
+attempts moved the SAME dial in opposite directions (more/less willing to
+flag anything) rather than becoming independently more accurate — evidence
+that the fix needs a different approach, not just prompt-tone iteration on
+the current design.
+
+**Action taken**: `german_exam_semantic_gate.py`'s `_ADJUDICATION_ENABLED`
+is `False`. `verify_semantic_full()` returns the detector's own result
+unchanged for every task type, in production, right now — identical
+behavior to pre-Phase-2.6 (Phase 2.5b's measured 20%/20%). The adjudicator
+module, its tests, and the gate's combining logic all stay in the repo
+(verified correct in isolation) as a foundation, but nothing about this
+phase is live until a calibration is found that actually clears the
+corpus. Per the explicit instruction that "a known genuine defect must
+never reach the user because one stochastic verifier run happened to miss
+it," shipping something *measurably worse* at that exact job would be the
+wrong direction — the honest result here is that this phase did not
+succeed yet, not that it succeeded differently than planned.
+
+**Candidate next directions** (not attempted yet): few-shot examples in
+the adjudicator prompt instead of prose-only calibration; majority-vote
+across 2-3 adjudicator calls per part rather than a single second opinion;
+reconsidering whether `MULTIPLE_DEFENSIBLE_ANSWERS`/`alternativeValidAnswers`
+specifically is an inherently harder, more subjective judgment than the
+other codes and needs different handling (it's the code responsible for
+most of both false-positive and false-negative movement across all three
+runs).
+
+Reproduce: `.\.venv\Scripts\python.exe -m scripts.measure_verifier_stability`
+(now runs the real pipeline, `verify_semantic_full()`, not the bare
+detector — pass `PIPELINE=detector-only` as an env var to compare against
+the bare detector directly). Makes up to 100 real calls when adjudication
+is enabled (HV2/HV3 items get a detector call AND an adjudicator call per
+repeat).
+
 ## Prior failing run (historical, superseded)
 
 An earlier run on the pre-audit-based verifier design (plain freeform

@@ -1,6 +1,12 @@
-"""Phase 2.5b: quantify semantic-verifier stability at the CURRENT production
-reasoning_effort ("medium" — not touched here). Does NOT redesign the
-verifier; measurement only.
+"""Phase 2.5b / Phase 2.6 re-run: quantify semantic-verifier stability at
+the CURRENT production reasoning_effort ("medium" — not touched here).
+
+Calls german_exam_semantic_gate.verify_semantic_full() — the real pipeline
+entry point german_exam_listening.py uses — not the raw detector directly,
+so this exercises Phase 2.6's HV2/HV3 targeted adjudication exactly as
+production does. Pass PIPELINE=detector-only as an env var to re-run
+against the bare detector (german_exam_semantic_verify.verify_semantic)
+for an apples-to-apples before/after comparison.
 
 Fixed labeled corpus, all real content (no mocks):
 - 3 injected fixtures (definitionally defective): hv1/AMBIGUOUS_MAPPING,
@@ -28,6 +34,7 @@ Run from backend/python-ai:
     .\.venv\Scripts\python.exe -m scripts.measure_verifier_stability
 """
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -36,12 +43,18 @@ from time import perf_counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests"))
 
-from app.services import german_exam_semantic_verify as verifier
 from app.services.german_exam_profiles import get_part, get_profile
 from german_exam_semantic_fixtures import bad_content
 
+USE_DETECTOR_ONLY = os.environ.get("PIPELINE") == "detector-only"
+if USE_DETECTOR_ONLY:
+    from app.services.german_exam_semantic_verify import verify_semantic as _run_pipeline
+else:
+    from app.services.german_exam_semantic_gate import verify_semantic_full as _run_pipeline
+
 RELEASE_SOURCE = Path("scripts/diag_runs/german-semantic-release.json")
-OUTPUT = Path("scripts/diag_runs/verifier-stability.json")
+OUTPUT = Path("scripts/diag_runs/verifier-stability-detector-only.json" if USE_DETECTOR_ONLY
+              else "scripts/diag_runs/verifier-stability-phase26.json")
 REPEATS = 5
 
 REAL_DISPUTED = [
@@ -95,7 +108,7 @@ def main():
         part = get_part(profile.profile_id, "listening", item["part"])
         for rep in range(REPEATS):
             start = perf_counter()
-            result = verifier.verify_semantic(part, item["content"])
+            result = _run_pipeline(part, item["content"])
             elapsed = perf_counter() - start
             codes = _issue_codes(result)
             run = {
