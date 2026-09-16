@@ -97,42 +97,45 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     const optCount = await options.count();
     expect(optCount).toBe(9);
 
-    // Q1: answer, observe result (don't need to control correctness —
-    // proves the renderer/grader round-trip works either way).
+    // Answer Q1, observe result (don't need to control correctness — proves
+    // the renderer/grader round-trip works either way).
     await options.first().click();
     await page.click('#glListenCheckBtn');
     await expect(page.locator('.gl-listen-feedback-title')).toBeVisible();
 
     // Walk through remaining questions, exercising hint / replay / transcript
     // on different items so results persistence (next test) sees a mix.
-    for (let i = 0; i < 12; i++) {
+    // "Unanswered" is detected via isEnabled(), not isVisible() — a resolved
+    // option button stays VISIBLE (just disabled), so isVisible() alone
+    // would misread an already-answered question as still-open and hang
+    // retrying a click against a disabled element.
+    for (let i = 1; i < 12; i++) {
       const nextBtn = page.locator('#glListenNextQBtn');
-      const stillOnQuestion = await page.locator('#glListenTaskPanel .gl-listen-option').first().isVisible().catch(() => false);
-      if (stillOnQuestion) {
-        // Not yet answered this question — use assistance sometimes.
-        if (i === 1) {
+      if (!(await nextBtn.isVisible().catch(() => false))) break;
+      const label = await nextBtn.innerText();
+      await nextBtn.click();
+
+      const firstOption = page.locator('#glListenTaskPanel .gl-listen-option').first();
+      const unanswered = await firstOption.isEnabled().catch(() => false);
+      if (unanswered) {
+        if (i === 2) {
           await page.click('#glListenHintBtn').catch(() => {});
         }
-        const opts = page.locator('#glListenTaskPanel .gl-listen-option');
-        await opts.first().click();
+        await firstOption.click();
         await page.click('#glListenCheckBtn');
         const retryBtn = page.locator('#glListenRetryBtn');
         if (await retryBtn.isVisible().catch(() => false)) {
-          if (i === 2) {
+          if (i === 3) {
             const replayBtn = page.locator('#glListenReplayEvidenceBtn');
             if (await replayBtn.isVisible().catch(() => false)) await replayBtn.click();
           }
           await retryBtn.click();
-          const opts2 = page.locator('#glListenTaskPanel .gl-listen-option');
-          await opts2.nth(1).click();
+          await page.locator('#glListenTaskPanel .gl-listen-option').nth(1).click();
           await page.click('#glListenCheckBtn');
         }
         const transcriptBtn = page.locator('#glListenTranscriptBtn');
         if (await transcriptBtn.isVisible().catch(() => false)) await transcriptBtn.click();
       }
-      if (!(await nextBtn.isVisible().catch(() => false))) break;
-      const label = await nextBtn.innerText();
-      await nextBtn.click();
       if (label === 'Finish') break;
     }
 
@@ -220,32 +223,54 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 60_000 });
 
     // Race through the session quickly (don't care about correctness here).
+    // Snapshot isVisible() checks are deliberately followed by a short
+    // settle wait — the option/next-button DOM is rebuilt on every render,
+    // and a raw isVisible().catch(()=>false) taken mid-rebuild can read as
+    // "gone" for one frame even though it reappears immediately after.
     for (let i = 0; i < 12; i++) {
       const opts = page.locator('#glListenTaskPanel .gl-listen-option');
-      if (await opts.first().isVisible().catch(() => false)) {
+      if (await opts.first().count() > 0 && await opts.first().isEnabled().catch(() => false)) {
         await opts.first().click();
         await page.click('#glListenCheckBtn');
+        await page.waitForTimeout(150);
         const retryBtn = page.locator('#glListenRetryBtn');
-        if (await retryBtn.isVisible().catch(() => false)) {
+        if (await retryBtn.count() > 0) {
           await retryBtn.click();
+          await page.waitForTimeout(150);
           await page.locator('#glListenTaskPanel .gl-listen-option').nth(1).click();
           await page.click('#glListenCheckBtn');
+          await page.waitForTimeout(150);
         }
       }
       const nextBtn = page.locator('#glListenNextQBtn');
-      if (!(await nextBtn.isVisible().catch(() => false))) break;
+      if (await nextBtn.count() === 0) break;
       const label = await nextBtn.innerText();
       await nextBtn.click();
+      await page.waitForTimeout(150);
       if (label === 'Finish') break;
     }
     await expect(page.locator('#glListenEnd')).toBeVisible({ timeout: 10_000 });
+
+    const preClickDebug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { attemptsBufferLength: number; answeredCount: number } })._glListenDebugState());
+    expect(preClickDebug.answeredCount, `expected all 10 questions answered, got ${preClickDebug.answeredCount}`).toBe(10);
+    expect(preClickDebug.attemptsBufferLength, 'expected one buffered attempt per answered question').toBe(10);
 
     const weakBtn = page.locator('#glListenWeakBtn');
     const hasWeak = await weakBtn.isVisible().catch(() => false);
     test.skip(!hasWeak, 'No weak categories this run (all answers happened to be correct) — nothing to race.');
 
     const beforeClick = Date.now();
+    // Wait for the results POST's response explicitly rather than inferring
+    // completion from the DOM: the page's own JS already awaited this fetch
+    // before calling generate, but Playwright's requestfinished event (which
+    // instrumentNetwork relies on) can be recorded a beat after the DOM
+    // update — asserting via waitForResponse removes that harness-side race.
+    const resultsResponsePromise = page.waitForResponse(
+      resp => resp.url().includes('/api/ai/german-exam/results') && resp.request().method() === 'POST',
+      { timeout: 60_000 }
+    );
     await weakBtn.click();
+    await resultsResponsePromise;
     await expect(page.locator('#glListenPractice')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('#glListenEnd')).toBeHidden();
 

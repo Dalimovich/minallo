@@ -4544,7 +4544,10 @@
           module: ls.module,
           questionCount: ls.questions ? ls.questions.length : 0,
           currentTaskType: q ? q.type : null,
-          genRequestToken: ls._genRequestToken
+          genRequestToken: ls._genRequestToken,
+          currentIndex: ls.index,
+          attemptsBufferLength: ls.attemptsBuffer ? ls.attemptsBuffer.length : 0,
+          answeredCount: ls.answers ? Object.keys(ls.answers).filter(function (k) { return ls.answers[k] && ls.answers[k].finalStatus; }).length : 0
         };
       };
 
