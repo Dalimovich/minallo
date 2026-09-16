@@ -4229,12 +4229,24 @@
         set: null,
         questions: [],
         index: 0,
-        answers: {}, // idx -> { attempts, finalStatus: null|'correct'|'review', selected/userText, retrying }
+        answers: {}, // idx -> { attempts, finalStatus: null|'correct'|'review', selected/userText, retrying, replayCount }
         hintLevel: {},
         transcriptRevealed: {},
         fullTranscriptShown: false,
         done: false,
-        _wired: false
+        _wired: false,
+        // Shared German Exam Engine fields — only meaningful when usingGenerated is true.
+        usingGenerated: false,
+        examFamily: null,
+        examVariant: null,
+        targetLevel: null,
+        profileId: null,
+        profileVersion: null,
+        module: 'listening',
+        partId: 'hv1',
+        attemptsBuffer: [],
+        _resultsSavePromise: null,
+        _speakerOrder: []
       };
 
       function lsEl(id) { return document.getElementById(id); }
@@ -4272,17 +4284,177 @@
         ls.transcriptRevealed = {};
         ls.fullTranscriptShown = false;
         ls.done = false;
+        ls.usingGenerated = false;
         lsPlayer.setSegments(ls.set.segments);
         lsPlayer.setRate(1);
       }
 
+      // ── Shared German Exam Engine integration ───────────────────────────
+      // Hören is the first consumer of POST /api/ai/german-exam/generate — a
+      // shared backend that also serves Lesen/Schreiben/Sprechen/
+      // Sprachbausteine (see backend/python-ai/app/services/german_exam_*.py).
+      // This endpoint returns CONTENT ONLY (no audioUrl/durationMs anywhere)
+      // — it never calls TTS. lsPlayer.setSegments() (unchanged, below) is the
+      // ONLY place /api/ai/tts-batch is ever called from, for both the static
+      // and generated content paths, so audio is never requested twice.
+      //
+      // Phase 1's exam-profile registry has exactly one profile
+      // (telc_c1_hochschule), so resolving it client-side is a simple direct
+      // check rather than a network round trip — mirrors the backend's own
+      // resolve_profile_id() mapping.
+      function lsResolveProfileId() {
+        if (window._germanTest === 'telc' && window._germanLevel === 'C1 Hochschule') return 'telc_c1_hochschule';
+        return null;
+      }
+
+      function lsMapGeneratedQuestion(part, q, speakerToSegment, allSegmentIds) {
+        var base = {
+          questionId: q.questionId, type: part.taskType, category: part.title,
+          skillTags: q.skillTags || [], difficulty: q.difficulty || null, hints: []
+        };
+        if (part.taskType === 'speaker_statement_matching') {
+          base.prompt = q.prompt || '';
+          base.matching = q.matching || {};
+          var spId = base.matching.correctSpeakerId;
+          base.segmentIds = (spId && speakerToSegment[spId]) ? [speakerToSegment[spId]] : [];
+        } else if (part.taskType === 'sentence_completion_mc3') {
+          base.prompt = (q.mc3 && q.mc3.stem) || '';
+          base.mc3 = q.mc3 || {};
+          base.segmentIds = allSegmentIds;
+        } else if (part.taskType === 'structured_note_completion') {
+          base.prompt = (q.note && q.note.fieldLabel) || '';
+          base.note = q.note || {};
+          base.segmentIds = allSegmentIds;
+        } else {
+          base.prompt = q.prompt || '';
+          base.segmentIds = allSegmentIds;
+        }
+        return base;
+      }
+
+      function lsLoadGeneratedPart(envelope) {
+        var part = envelope.part || {};
+        var exam = envelope.exam || {};
+        var content = envelope.content || {};
+        var rawSegments = content.segments || [];
+
+        var speakerToSegment = {};
+        var speakerOrder = [];
+        rawSegments.forEach(function (s) {
+          if (s.speakerId && !(s.speakerId in speakerToSegment)) {
+            speakerToSegment[s.speakerId] = s.id;
+            speakerOrder.push(s.speakerId);
+          }
+        });
+        var allSegmentIds = rawSegments.map(function (s) { return s.id; });
+
+        ls.set = {
+          meta: {
+            title: part.title || '', level: exam.variant || exam.cefrLevel || '',
+            audioType: 'Generated', topic: (envelope.topic && envelope.topic.label) || ''
+          },
+          // displayText here (transcript/evidence UI reads ls.set.segments via lsSeg());
+          // lsPlayer is fed spokenText separately, below.
+          segments: rawSegments.map(function (s) { return { id: s.id, text: s.displayText || s.spokenText || '' }; })
+        };
+        ls.setIndex = 0;
+        ls.questions = (content.questions || []).map(function (q) {
+          return lsMapGeneratedQuestion(part, q, speakerToSegment, allSegmentIds);
+        });
+        ls.index = 0;
+        ls.answers = {};
+        ls.hintLevel = {};
+        ls.transcriptRevealed = {};
+        ls.fullTranscriptShown = false;
+        ls.done = false;
+
+        ls.usingGenerated = true;
+        ls.examFamily = exam.family || null;
+        ls.examVariant = exam.variant || null;
+        ls.targetLevel = exam.cefrLevel || exam.variant || null;
+        ls.profileId = exam.profileId || null;
+        ls.profileVersion = exam.profileVersion || null;
+        ls.module = envelope.module || 'listening';
+        ls.partId = part.id || ls.partId;
+        ls.attemptsBuffer = [];
+        ls._resultsSavePromise = null;
+        ls._speakerOrder = speakerOrder;
+
+        lsPlayer.setSegments(rawSegments.map(function (s) { return { id: s.id, text: s.spokenText || s.displayText || '' }; }));
+        lsPlayer.setRate(1);
+      }
+
+      // Always resolves (never rejects) — on any failure (no matching
+      // profile, network error, non-2xx) it falls back to the static
+      // LISTEN_SETS fixture rather than leaving the view stuck loading.
+      function lsGenerateOrLoadPart(moduleName, partId) {
+        var profileId = lsResolveProfileId();
+        if (!profileId) {
+          lsLoadSet(ls.setIndex % LISTEN_SETS.length);
+          return Promise.resolve();
+        }
+        ls.module = moduleName;
+        ls.partId = partId;
+        var taskPanel = lsEl('glListenTaskPanel');
+        if (taskPanel) taskPanel.innerHTML = '<div class="gl-listen-generating">Generating your listening exercise…</div>';
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId: profileId, module: moduleName, partId: partId, mode: 'adaptive_practice' })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('german_exam_generate_http_' + resp.status);
+          return resp.json();
+        }).then(function (envelope) {
+          lsLoadGeneratedPart(envelope);
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] generation failed, falling back to static content.', err);
+          lsLoadSet(ls.setIndex % LISTEN_SETS.length);
+        });
+      }
+
+      // Batches ls.attemptsBuffer into ONE POST at part completion, memoized
+      // so a later caller (lsStartWeakRetry) can await the SAME in-flight or
+      // already-resolved save instead of assuming it has already landed.
+      function lsEnsureResultsSaved() {
+        if (ls._resultsSavePromise) return ls._resultsSavePromise;
+        if (!ls.usingGenerated || !ls.attemptsBuffer.length) {
+          ls._resultsSavePromise = Promise.resolve();
+          return ls._resultsSavePromise;
+        }
+        ls._resultsSavePromise = _authFetch(BACKEND_URL + '/api/ai/german-exam/results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            examFamily: ls.examFamily, examVariant: ls.examVariant || null, targetLevel: ls.targetLevel,
+            module: ls.module, items: ls.attemptsBuffer
+          })
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] failed to save results.', err);
+        });
+        return ls._resultsSavePromise;
+      }
+
+      function lsRecordAttempt(q, ans, correct) {
+        ls.attemptsBuffer.push({
+          profileId: ls.profileId, profileVersion: ls.profileVersion, module: ls.module, partId: ls.partId,
+          taskType: q.type, itemId: q.questionId, skillTags: q.skillTags || [], difficulty: q.difficulty || null,
+          attemptCount: ans.attempts,
+          firstAttemptCorrect: !!ans._firstAttemptCorrect,
+          finalCorrect: correct,
+          hintLevel: ls.hintLevel[ls.index] || 0,
+          replayCount: ans.replayCount || 0,
+          transcriptRevealed: !!ls.transcriptRevealed[ls.index]
+        });
+      }
+
       window._glOpenListeningView = function () {
         ls.tab = 'practice';
-        lsLoadSet(ls.setIndex % LISTEN_SETS.length);
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
-        lsRenderPlayerChrome();
-        lsRenderWorkspace();
+        lsGenerateOrLoadPart('listening', ls.partId || 'hv1').then(function () {
+          lsRenderPlayerChrome();
+          lsRenderWorkspace();
+        });
         lsWireHeader();
         lsWirePlayerControls();
         lsPlayer.onChange(lsRenderPlayerChrome);
@@ -4358,55 +4530,112 @@
         if (fill) fill.style.width = pct + '%';
       }
 
+      // ── Renderer/grader dispatch (keyed by q.type) ──────────────────────
+      // Covers the original 5 generic exercise types (main-idea/detail/tf/
+      // dictation/fill-gap, used by the static LISTEN_SETS fallback) plus the
+      // 3 exam-specific types the shared German Exam Engine can now generate
+      // for telc C1 Hochschule Hören. Extending with a new exam-specific type
+      // later means adding one entry to each map here, not another if/else
+      // branch across three functions.
+      var LS_OPTION_TYPES = ['main-idea', 'detail', 'tf', 'speaker_statement_matching', 'sentence_completion_mc3'];
+
+      function lsRenderMcqBody(q, ans, resolved, showingMinimalRetry) {
+        var opts = ['A', 'B', 'C', 'D'].filter(function (l) { return q.options[l]; });
+        return '<div class="gl-listen-options">' + opts.map(function (letter) {
+          var state = '';
+          if (resolved) {
+            if (letter === q.answer) state = 'gl-correct';
+            else if (letter === ans.selected) state = 'gl-incorrect';
+          }
+          return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + letter + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+            '<span class="gl-listen-opt-mark">' + letter + '</span><span>' + _glEscape(q.options[letter]) + '</span></button>';
+        }).join('') + '</div>';
+      }
+      function lsRenderTfBody(q, ans, resolved, showingMinimalRetry) {
+        var tfOpts = ['True', 'False', 'Not stated'];
+        return '<div class="gl-listen-options">' + tfOpts.map(function (opt) {
+          var state = '';
+          if (resolved) {
+            if (opt === q.answer) state = 'gl-correct';
+            else if (opt === ans.selected) state = 'gl-incorrect';
+          }
+          return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + opt + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+            '<span class="gl-listen-opt-mark"></span><span>' + opt + '</span></button>';
+        }).join('') + '</div>';
+      }
+      function lsRenderDictationBody(q, ans, resolved, showingMinimalRetry) {
+        return '<button type="button" class="gl-listen-evidence-btn" id="glListenPlayClipBtn">🎧 Play sentence</button>' +
+          '<input type="text" class="gl-listen-text-input" id="glListenDictInput" placeholder="Type exactly what you hear…"' +
+          (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
+      }
+      function lsRenderFillGapBody(q, ans, resolved, showingMinimalRetry) {
+        var displayHtml = _glEscape(q.displayText).replace('______', '<span class="gl-listen-gap-blank">______</span>');
+        return '<div class="gl-listen-gap-line">' + displayHtml + '</div>' +
+          '<button type="button" class="gl-listen-evidence-btn" id="glListenPlayClipBtn">🎧 Play sentence</button>' +
+          '<input type="text" class="gl-listen-text-input" id="glListenGapInput" placeholder="Type the missing word…"' +
+          (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
+      }
+      function lsRenderSpeakerMatchingBody(q, ans, resolved, showingMinimalRetry) {
+        var speakerIds = ls._speakerOrder || [];
+        var correct = (q.matching && q.matching.correctSpeakerId) || 'no_match';
+        var options = speakerIds.concat(['no_match']);
+        return '<div class="gl-listen-options">' + options.map(function (spId, i) {
+          var label = spId === 'no_match' ? 'None of the speakers' : ('Speaker ' + (i + 1));
+          var state = '';
+          if (resolved) {
+            if (spId === correct) state = 'gl-correct';
+            else if (spId === ans.selected) state = 'gl-incorrect';
+          }
+          return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + spId + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+            '<span>' + _glEscape(label) + '</span></button>';
+        }).join('') + '</div>';
+      }
+      function lsRenderMc3Body(q, ans, resolved, showingMinimalRetry) {
+        var options = (q.mc3 && q.mc3.options) || [];
+        var letters = ['A', 'B', 'C'];
+        return '<div class="gl-listen-options">' + options.map(function (text, i) {
+          var letter = letters[i] || String(i);
+          var state = '';
+          if (resolved) {
+            if (i === q.mc3.correctIndex) state = 'gl-correct';
+            else if (String(i) === ans.selected) state = 'gl-incorrect';
+          }
+          return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + i + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+            '<span class="gl-listen-opt-mark">' + letter + '</span><span>' + _glEscape(text) + '</span></button>';
+        }).join('') + '</div>';
+      }
+      function lsRenderNoteCompletionBody(q, ans, resolved, showingMinimalRetry) {
+        var context = (q.note && q.note.outlineContext) || '';
+        return (context ? '<div class="gl-listen-gap-line">' + _glEscape(context) + '</div>' : '') +
+          '<input type="text" class="gl-listen-text-input" id="glListenNoteInput" placeholder="Fill in the missing information…"' +
+          (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
+      }
+
+      var LS_RENDERERS = {
+        'main-idea': lsRenderMcqBody,
+        'detail': lsRenderMcqBody,
+        'tf': lsRenderTfBody,
+        'dictation': lsRenderDictationBody,
+        'fill-gap': lsRenderFillGapBody,
+        'speaker_statement_matching': lsRenderSpeakerMatchingBody,
+        'sentence_completion_mc3': lsRenderMc3Body,
+        'structured_note_completion': lsRenderNoteCompletionBody
+      };
+
       function lsRenderWorkspace() {
         lsQProgress();
         var q = ls.questions[ls.index];
         if (!q) return;
-        var ans = ls.answers[ls.index] || (ls.answers[ls.index] = { attempts: 0, finalStatus: null, selected: null, userText: '' });
+        var ans = ls.answers[ls.index] || (ls.answers[ls.index] = { attempts: 0, finalStatus: null, selected: null, userText: '', replayCount: 0 });
         var resolved = !!ans.finalStatus;
         var showingMinimalRetry = !resolved && ans.attempts >= 1 && !ans.retrying;
 
-        var body = '';
-        if (q.type === 'main-idea' || q.type === 'detail') {
-          var opts = ['A', 'B', 'C', 'D'].filter(function (l) { return q.options[l]; });
-          body = '<div class="gl-listen-options">' + opts.map(function (letter) {
-            var state = '';
-            if (resolved) {
-              if (letter === q.answer) state = 'gl-correct';
-              else if (letter === ans.selected) state = 'gl-incorrect';
-            }
-            return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + letter + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
-              '<span class="gl-listen-opt-mark">' + letter + '</span><span>' + _glEscape(q.options[letter]) + '</span></button>';
-          }).join('') + '</div>';
-        } else if (q.type === 'tf') {
-          var tfOpts = ['True', 'False', 'Not stated'];
-          body = '<div class="gl-listen-options">' + tfOpts.map(function (opt) {
-            var state = '';
-            if (resolved) {
-              if (opt === q.answer) state = 'gl-correct';
-              else if (opt === ans.selected) state = 'gl-incorrect';
-            }
-            return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + opt + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
-              '<span class="gl-listen-opt-mark"></span><span>' + opt + '</span></button>';
-          }).join('') + '</div>';
-        } else if (q.type === 'dictation') {
-          body =
-            '<button type="button" class="gl-listen-evidence-btn" id="glListenPlayClipBtn">🎧 Play sentence</button>' +
-            '<input type="text" class="gl-listen-text-input" id="glListenDictInput" placeholder="Type exactly what you hear…"' +
-            (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
-        } else if (q.type === 'fill-gap') {
-          var displayHtml = _glEscape(q.displayText).replace('______', '<span class="gl-listen-gap-blank">______</span>');
-          body =
-            '<div class="gl-listen-gap-line">' + displayHtml + '</div>' +
-            '<button type="button" class="gl-listen-evidence-btn" id="glListenPlayClipBtn">🎧 Play sentence</button>' +
-            '<input type="text" class="gl-listen-text-input" id="glListenGapInput" placeholder="Type the missing word…"' +
-            (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
-        }
+        var renderer = LS_RENDERERS[q.type];
+        var body = renderer ? renderer(q, ans, resolved, showingMinimalRetry) : '';
 
         var checkDisabled = resolved || showingMinimalRetry;
         if (!checkDisabled) {
-          if (q.type === 'main-idea' || q.type === 'detail' || q.type === 'tf') checkDisabled = !ans._pending;
-          if (q.type === 'dictation' || q.type === 'fill-gap') checkDisabled = false;
+          checkDisabled = LS_OPTION_TYPES.indexOf(q.type) !== -1 ? !ans._pending : false;
         }
 
         var taskPanel = lsEl('glListenTaskPanel');
@@ -4431,6 +4660,64 @@
       }
 
       function lsHintFor(q, level) { return (q.hints && q.hints[level]) || ''; }
+
+      // Resolved-answer feedback body, by type. Kept as one function with a
+      // type switch (rather than a dispatch map like the renderers/graders
+      // above) because the surrounding evidence/transcript-reveal chrome in
+      // lsRenderSupport doesn't vary by type — only this inner block does.
+      function lsRenderSupportBody(q, ans, isCorrect) {
+        if (q.type === 'dictation') {
+          var g = ans.grade;
+          return '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(ans.userText || '') + '</strong></div>' +
+            '<div class="gl-listen-feedback-line">Correct:<br><strong>' + _glEscape(lsSeg(q.dictationSegmentId)) + '</strong></div>' +
+            '<div class="gl-listen-score-line">Content: <span class="' + (g.contentOk ? 'ok' : 'warn') + '">' + g.contentCorrect + '/' + g.contentTotal + ' words</span>' +
+            ' · Spelling: <span class="' + (g.spellingOk ? 'ok' : 'warn') + '">' + g.spellingCorrect + '/' + g.contentCorrect + '</span></div>' +
+            (g.issues.length ? '<div class="gl-listen-feedback-why">' + _glEscape(g.issues.join(', ')) + '</div>' : '');
+        }
+        if (q.type === 'fill-gap') {
+          return '<div class="gl-listen-feedback-line">Your answer: <strong>' + _glEscape(ans.userText || '') + '</strong> · Correct: <strong>' + _glEscape(q.blankAnswer) + '</strong></div>' +
+            '<div class="gl-listen-feedback-line">' + _glEscape(q.displayText.replace('______', q.blankAnswer)) + '</div>';
+        }
+        if (q.type === 'structured_note_completion') {
+          return '<div class="gl-listen-feedback-line">Your answer: <strong>' + _glEscape(ans.userText || '') + '</strong> · Correct: <strong>' + _glEscape((q.note && q.note.correctFill) || '') + '</strong></div>';
+        }
+        if (q.type === 'sentence_completion_mc3') {
+          var mc3Opts = (q.mc3 && q.mc3.options) || [];
+          var mc3Correct = q.mc3 && q.mc3.correctIndex;
+          var mc3Html = '';
+          if (!isCorrect) {
+            mc3Html += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(mc3Opts[ans.selected] || '') + '</strong></div>' +
+              '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(mc3Opts[mc3Correct] || '') + '</strong></div>';
+          }
+          return mc3Html;
+        }
+        if (q.type === 'speaker_statement_matching') {
+          var correctSpId = (q.matching && q.matching.correctSpeakerId) || 'no_match';
+          var speakerOrder = ls._speakerOrder || [];
+          var labelFor = function (spId) {
+            if (spId === 'no_match') return 'None of the speakers';
+            var i = speakerOrder.indexOf(spId);
+            return i === -1 ? (spId || '') : ('Speaker ' + (i + 1));
+          };
+          var matchHtml = '';
+          if (!isCorrect) {
+            matchHtml += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(labelFor(ans.selected)) + '</strong></div>' +
+              '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(labelFor(correctSpId)) + '</strong></div>';
+          }
+          return matchHtml;
+        }
+        // main-idea / detail / tf
+        var html = '';
+        if (!isCorrect) {
+          html += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(ans.selected || '') + '</strong></div>' +
+            '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(q.answer) + '</strong></div>';
+        }
+        html += '<div class="gl-listen-feedback-line">' + _glEscape(q.explanation || '') + '</div>';
+        if (!isCorrect && q.wrongWhy && q.wrongWhy[ans.selected]) {
+          html += '<div class="gl-listen-feedback-why">Why "' + _glEscape(ans.selected) + '" is wrong: ' + _glEscape(q.wrongWhy[ans.selected]) + '</div>';
+        }
+        return html;
+      }
 
       function lsRenderSupport(q, ans, resolved, showingMinimalRetry) {
         var panel = lsEl('glListenSupportPanel');
@@ -4457,26 +4744,7 @@
         html += '<div class="gl-listen-feedback ' + (isCorrect ? 'gl-fb-correct' : 'gl-fb-incorrect') + '">' +
           '<div class="gl-listen-feedback-title">' + (isCorrect ? '✓ Correct' : 'Here’s the answer') + '</div>';
 
-        if (q.type === 'dictation') {
-          var g = ans.grade;
-          html += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(ans.userText || '') + '</strong></div>' +
-            '<div class="gl-listen-feedback-line">Correct:<br><strong>' + _glEscape(lsSeg(q.dictationSegmentId)) + '</strong></div>' +
-            '<div class="gl-listen-score-line">Content: <span class="' + (g.contentOk ? 'ok' : 'warn') + '">' + g.contentCorrect + '/' + g.contentTotal + ' words</span>' +
-            ' · Spelling: <span class="' + (g.spellingOk ? 'ok' : 'warn') + '">' + g.spellingCorrect + '/' + g.contentCorrect + '</span></div>' +
-            (g.issues.length ? '<div class="gl-listen-feedback-why">' + _glEscape(g.issues.join(', ')) + '</div>' : '');
-        } else if (q.type === 'fill-gap') {
-          html += '<div class="gl-listen-feedback-line">Your answer: <strong>' + _glEscape(ans.userText || '') + '</strong> · Correct: <strong>' + _glEscape(q.blankAnswer) + '</strong></div>' +
-            '<div class="gl-listen-feedback-line">' + _glEscape(q.displayText.replace('______', q.blankAnswer)) + '</div>';
-        } else {
-          if (!isCorrect) {
-            html += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(ans.selected || '') + '</strong></div>' +
-              '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(q.answer) + '</strong></div>';
-          }
-          html += '<div class="gl-listen-feedback-line">' + _glEscape(q.explanation || '') + '</div>';
-          if (!isCorrect && q.wrongWhy && q.wrongWhy[ans.selected]) {
-            html += '<div class="gl-listen-feedback-why">Why "' + _glEscape(ans.selected) + '" is wrong: ' + _glEscape(q.wrongWhy[ans.selected]) + '</div>';
-          }
-        }
+        html += lsRenderSupportBody(q, ans, isCorrect);
 
         if (q.segmentIds && q.segmentIds.length) {
           html += '<button type="button" class="gl-listen-evidence-btn" id="glListenReplayEvidenceBtn">Replay evidence</button>';
@@ -4504,7 +4772,7 @@
           lsRenderSupport(q, ans, resolved, showingMinimalRetry);
         });
 
-        if (!resolved && !showingMinimalRetry && (q.type === 'main-idea' || q.type === 'detail' || q.type === 'tf')) {
+        if (!resolved && !showingMinimalRetry && LS_OPTION_TYPES.indexOf(q.type) !== -1) {
           document.querySelectorAll('#glListenTaskPanel .gl-listen-option').forEach(function (btn) {
             btn.addEventListener('click', function () {
               ans._pending = btn.getAttribute('data-opt');
@@ -4517,6 +4785,7 @@
 
         var playClipBtn = lsEl('glListenPlayClipBtn');
         if (playClipBtn) playClipBtn.addEventListener('click', function () {
+          ans.replayCount = (ans.replayCount || 0) + 1;
           lsPlayer.replaySegment(q.dictationSegmentId || q.blankSegmentId);
         });
 
@@ -4546,7 +4815,7 @@
         var replayEvBtn = lsEl('glListenReplayEvidenceBtn');
         if (replayEvBtn) replayEvBtn.addEventListener('click', function () {
           var segId = replayEvBtn.getAttribute('data-seg') || (q.segmentIds && q.segmentIds[0]);
-          if (segId) lsPlayer.replaySegment(segId);
+          if (segId) { ans.replayCount = (ans.replayCount || 0) + 1; lsPlayer.replaySegment(segId); }
         });
 
         var transcriptBtn = lsEl('glListenTranscriptBtn');
@@ -4557,33 +4826,69 @@
         });
       }
 
+      // Each grader returns true/false when it has enough input to grade, or
+      // null when the user hasn't answered yet (mirrors the original early
+      // `return;`s — lsCheckAnswer treats null as "not ready, do nothing").
+      function lsGradeMcqLikeType(q, ans) {
+        if (!ans._pending) return null;
+        ans.selected = ans._pending;
+        return ans.selected === q.answer;
+      }
+      function lsGradeDictationType(q, ans) {
+        var dInput = lsEl('glListenDictInput');
+        ans.userText = dInput ? dInput.value.trim() : '';
+        if (!ans.userText) return null;
+        ans.grade = lsGradeDictation(lsSeg(q.dictationSegmentId), ans.userText);
+        return ans.grade.contentOk;
+      }
+      function lsGradeFillGapType(q, ans) {
+        var gInput = lsEl('glListenGapInput');
+        ans.userText = gInput ? gInput.value.trim() : '';
+        if (!ans.userText) return null;
+        return lsGradeFillGap(q.blankAnswer, ans.userText).contentOk;
+      }
+      function lsGradeSpeakerMatchingType(q, ans) {
+        if (!ans._pending) return null;
+        ans.selected = ans._pending;
+        var correct = (q.matching && q.matching.correctSpeakerId) || 'no_match';
+        return ans.selected === correct;
+      }
+      function lsGradeMc3Type(q, ans) {
+        if (!ans._pending) return null;
+        ans.selected = parseInt(ans._pending, 10);
+        return ans.selected === (q.mc3 && q.mc3.correctIndex);
+      }
+      function lsGradeNoteCompletionType(q, ans) {
+        var input = lsEl('glListenNoteInput');
+        ans.userText = input ? input.value.trim() : '';
+        if (!ans.userText) return null;
+        var correct = ((q.note && q.note.correctFill) || '').trim();
+        return ans.userText.trim().toLowerCase() === correct.toLowerCase();
+      }
+
+      var LS_GRADERS = {
+        'main-idea': lsGradeMcqLikeType,
+        'detail': lsGradeMcqLikeType,
+        'tf': lsGradeMcqLikeType,
+        'dictation': lsGradeDictationType,
+        'fill-gap': lsGradeFillGapType,
+        'speaker_statement_matching': lsGradeSpeakerMatchingType,
+        'sentence_completion_mc3': lsGradeMc3Type,
+        'structured_note_completion': lsGradeNoteCompletionType
+      };
+
       function lsCheckAnswer(q, ans) {
-        var correct = false;
-        if (q.type === 'main-idea' || q.type === 'detail') {
-          if (!ans._pending) return;
-          ans.selected = ans._pending;
-          correct = ans.selected === q.answer;
-        } else if (q.type === 'tf') {
-          if (!ans._pending) return;
-          ans.selected = ans._pending;
-          correct = ans.selected === q.answer;
-        } else if (q.type === 'dictation') {
-          var dInput = lsEl('glListenDictInput');
-          ans.userText = dInput ? dInput.value.trim() : '';
-          if (!ans.userText) return;
-          ans.grade = lsGradeDictation(lsSeg(q.dictationSegmentId), ans.userText);
-          correct = ans.grade.contentOk;
-        } else if (q.type === 'fill-gap') {
-          var gInput = lsEl('glListenGapInput');
-          ans.userText = gInput ? gInput.value.trim() : '';
-          if (!ans.userText) return;
-          correct = lsGradeFillGap(q.blankAnswer, ans.userText).contentOk;
-        }
+        var grader = LS_GRADERS[q.type];
+        var result = grader ? grader(q, ans) : null;
+        if (result === null || result === undefined) return;
+        var correct = !!result;
 
         ans.attempts++;
+        if (ans.attempts === 1) ans._firstAttemptCorrect = correct;
         ans.retrying = false;
         if (correct || ans.attempts >= 2) {
           ans.finalStatus = correct ? 'correct' : 'review';
+          if (ls.usingGenerated) lsRecordAttempt(q, ans, correct);
         }
         lsRenderWorkspace();
       }
@@ -4601,19 +4906,34 @@
         var total = ls.questions.length;
         var correctCount = 0;
         var byCat = {};
-        LS_CATEGORIES.forEach(function (c) { byCat[c] = { correct: 0, total: 0 }; });
+        if (!ls.usingGenerated) LS_CATEGORIES.forEach(function (c) { byCat[c] = { correct: 0, total: 0 }; });
         var weakCats = [];
         ls.questions.forEach(function (q, idx) {
           var a = ls.answers[idx];
-          if (!byCat[q.category]) byCat[q.category] = { correct: 0, total: 0 };
-          byCat[q.category].total++;
-          if (a && a.finalStatus === 'correct') { correctCount++; byCat[q.category].correct++; }
+          // Generated sessions break down by skill tag (what the shared
+          // adaptation engine actually tracks); static sets keep the
+          // original fixed-category breakdown.
+          var keys = ls.usingGenerated
+            ? ((q.skillTags && q.skillTags.length) ? q.skillTags : ['(uncategorized)'])
+            : [q.category];
+          keys.forEach(function (key) {
+            if (!byCat[key]) byCat[key] = { correct: 0, total: 0 };
+            byCat[key].total++;
+            if (a && a.finalStatus === 'correct') byCat[key].correct++;
+          });
+          if (a && a.finalStatus === 'correct') correctCount++;
         });
         Object.keys(byCat).forEach(function (cat) {
           var c = byCat[cat];
           if (c.total > 0 && c.correct < c.total) weakCats.push(cat);
         });
         var pct = total ? Math.round((correctCount / total) * 100) : 0;
+
+        // Batched submit point: ONE POST for the whole part's results, fired
+        // here (fire-and-forget — the UI doesn't need to block on it).
+        // lsStartWeakRetry below awaits the SAME promise before regenerating,
+        // so a fast "Practice weak areas" click can't race ahead of this save.
+        if (ls.usingGenerated) lsEnsureResultsSaved();
 
         var end = lsEl('glListenEnd');
         lsEl('glListenPractice').style.display = 'none';
@@ -4642,11 +4962,26 @@
         if (newBtn) newBtn.addEventListener('click', function () { lsNewListening(); });
       }
 
-      // Ephemeral, session-only retry: no persistent Weak Areas store yet
-      // (deferred), so this just picks a different static set (when more
-      // than one exists) and orders its questions with the categories the
-      // student just missed first.
       function lsStartWeakRetry(weakCats) {
+        if (ls.usingGenerated) {
+          // Real persisted weakness, not a client-side reshuffle: await the
+          // just-triggered results save (lsEnsureResultsSaved in lsShowEnd)
+          // before regenerating, so the backend's weakness computation reads
+          // this session's attempts rather than racing ahead of the write.
+          lsEnsureResultsSaved().then(function () {
+            return lsGenerateOrLoadPart(ls.module, ls.partId);
+          }).then(function () {
+            lsEl('glListenPractice').style.display = '';
+            lsEl('glListenEnd').style.display = 'none';
+            lsRenderPlayerChrome();
+            lsRenderWorkspace();
+          });
+          return;
+        }
+        // Static-set fallback: ephemeral, session-only retry — no persistent
+        // Weak Areas store for this path, so this just picks a different
+        // static set (when more than one exists) and orders its questions
+        // with the categories the student just missed first.
         var idx = LISTEN_SETS.length > 1 ? (ls.setIndex + 1) % LISTEN_SETS.length : ls.setIndex;
         var set = LISTEN_SETS[idx];
         var ordered = set.questions.slice().sort(function (a, b) {
@@ -4662,6 +4997,15 @@
       }
 
       function lsNewListening() {
+        if (lsResolveProfileId()) {
+          lsGenerateOrLoadPart(ls.module || 'listening', ls.partId || 'hv1').then(function () {
+            lsEl('glListenPractice').style.display = '';
+            lsEl('glListenEnd').style.display = 'none';
+            lsRenderPlayerChrome();
+            lsRenderWorkspace();
+          });
+          return;
+        }
         var idx = lsPickSetIndex(ls.setIndex);
         lsLoadSet(idx);
         lsEl('glListenPractice').style.display = '';

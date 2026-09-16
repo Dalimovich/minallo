@@ -36,7 +36,8 @@ const INTERACTIVE_EVENT_TYPES = [
 
 const GENERATION_EVENT_TYPES = [
   'ai_generate',
-  'notes_generate'
+  'notes_generate',
+  'ai_german_exam_generate'
 ] as const;
 
 // Counts recent security_events for a user within a rolling window.

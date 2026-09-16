@@ -1,0 +1,124 @@
+"""Shared German Exam Engine — module-dispatching generation orchestrator.
+
+`generate_task()` is the single entrypoint every module (listening, reading,
+writing, speaking, language_elements) goes through. It resolves the profile
+and part blueprint, computes weakness + adaptation plan, picks a topic, then
+dispatches to the module-specific adapter. Only `listening` has a real
+adapter in Phase 1; the others raise NotImplementedError so a bad request
+fails loudly instead of silently returning generic content.
+
+The generator NEVER calls TTS — see german_exam_listening.py's module
+docstring for why.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .german_exam_adaptation import build_adaptation_plan, compute_weakness, instruction_to_dict
+from .german_exam_listening import generate_listening_part
+from .german_exam_performance import pick_topic, record_topic_used
+from .german_exam_profiles import ExamProfile, GermanExamProfileError, PartBlueprint, get_part, get_profile
+
+# Placeholder topic banks per module — Phase 1 only exercises "listening".
+# Topic is content flavor only; exam structure is untouched by topic choice.
+_TOPIC_BANKS: dict[str, list[dict[str, str]]] = {
+    "listening": [
+        {"topicId": "digitalization_workplace", "label": "Digitalisierung der Arbeitswelt"},
+        {"topicId": "urban_mobility", "label": "Stadtplanung und Mobilität"},
+        {"topicId": "higher_education_policy", "label": "Hochschulpolitik"},
+        {"topicId": "environment_sustainability", "label": "Umwelt und Nachhaltigkeit"},
+        {"topicId": "psychology_learning", "label": "Lernpsychologie"},
+        {"topicId": "research_innovation", "label": "Forschung und Innovation"},
+        {"topicId": "culture_media", "label": "Kultur und Medien"},
+        {"topicId": "economics_labour", "label": "Wirtschaft und Arbeitsmarkt"},
+    ],
+}
+
+
+def _topic_bank(module: str, profile: ExamProfile) -> list[dict[str, str]]:
+    del profile  # reserved for exam-specific topic curation later
+    return _TOPIC_BANKS.get(module, [])
+
+
+def _dispatch_module(module: str):
+    if module == "listening":
+        return _generate_listening
+    if module in {"reading", "writing", "speaking", "language_elements"}:
+        raise NotImplementedError(f"module {module!r} is not implemented in Phase 1")
+    raise GermanExamProfileError(f"unknown module: {module}")
+
+
+def _generate_listening(profile: ExamProfile, part: PartBlueprint, plan, topic: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    return generate_listening_part(profile, part, plan, topic)
+
+
+def generate_task(
+    user_id: str,
+    profile_id: str,
+    module: str,
+    part_id: str,
+    mode: str,
+    topic_override: str | None = None,
+) -> dict[str, Any]:
+    profile = get_profile(profile_id)
+    part = get_part(profile_id, module, part_id)
+
+    if mode == "exam_simulation":
+        # Reserved for a future phase — official blueprint only, no personalization.
+        weakness = None
+        plan = []
+    else:
+        weakness = compute_weakness(user_id, profile_id, module)
+        plan = build_adaptation_plan(part, profile.variant, weakness)
+
+    if topic_override:
+        topic = {"topicId": "custom", "label": topic_override}
+    else:
+        candidates = _topic_bank(module, profile)
+        topic = pick_topic(user_id, profile_id, module, part_id, candidates)
+
+    adapter = _dispatch_module(module)
+    content, validation_meta = adapter(profile, part, plan, topic)
+
+    record_topic_used(user_id, profile_id, module, part_id, topic["topicId"])
+
+    return _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta)
+
+
+def _envelope(
+    profile: ExamProfile,
+    module: str,
+    part: PartBlueprint,
+    mode: str,
+    plan,
+    weakness,
+    topic: dict[str, str],
+    content: dict[str, Any],
+    validation_meta: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": "german-exam-v1",
+        "exam": {
+            "family": profile.family,
+            "variant": profile.variant,
+            "cefrLevel": profile.cefr_level,
+            "profileId": profile.profile_id,
+            "profileVersion": profile.profile_version,
+        },
+        "module": module,
+        "part": {
+            "id": part.part_id,
+            "title": part.title,
+            "taskType": part.task_type,
+            "approxDurationSeconds": part.approx_duration_seconds,
+        },
+        "mode": mode,
+        "topic": topic,
+        "adaptation": {
+            "weaknessConfidence": weakness.overall_confidence if weakness else "cold_start",
+            "instructionsApplied": [instruction_to_dict(i) for i in plan],
+        },
+        "content": content,
+        "validation": validation_meta,
+    }

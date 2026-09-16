@@ -23,6 +23,7 @@ from .routers import corrections as corrections_router
 from .routers import course_visuals as course_visuals_router
 from .routers import email as email_router
 from .routers import generate as generate_router
+from .routers import german_exam as german_exam_router
 from .routers import index as index_router
 from .routers import learning as learning_router
 from .routers import misc as misc_router
@@ -132,6 +133,7 @@ app.include_router(study_planner_router.router)
 app.include_router(suggestions_router.router)
 app.include_router(email_router.router)
 app.include_router(tts_router.router)
+app.include_router(german_exam_router.router)
 
 
 @app.get("/health")
