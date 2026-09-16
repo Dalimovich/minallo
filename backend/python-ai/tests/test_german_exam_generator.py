@@ -25,9 +25,9 @@ def test_speculative_generation_does_not_record_topic_used(monkeypatch):
 def test_normal_generation_records_topic_used(monkeypatch):
     calls = []
     _stub(monkeypatch, calls)
-    gen.generate_task("u1", "telc_c1_hochschule", "listening", "hv1", "adaptive_practice", speculative=False)
+    envelope = gen.generate_task("u1", "telc_c1_hochschule", "listening", "hv1", "adaptive_practice", speculative=False)
     assert len(calls) == 1
-    assert calls[0] == ("u1", "telc_c1_hochschule", "listening", "hv1", "urban_mobility")
+    assert calls[0] == ("u1", "telc_c1_hochschule", "listening", "hv1", "urban_mobility", envelope["generationId"])
 
 
 def test_generation_id_is_unique_per_call(monkeypatch):

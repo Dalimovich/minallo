@@ -4262,6 +4262,7 @@
         profileVersion: null,
         module: 'listening',
         partId: 'hv1',
+        generationId: null,
         attemptsBuffer: [],
         _resultsSavePromise: null,
         _speakerOrder: [],
@@ -4418,6 +4419,9 @@
         ls.profileVersion = exam.profileVersion || null;
         ls.module = envelope.module || 'listening';
         ls.partId = part.id || ls.partId;
+        // Ties every attempt from this session back to the exact generated
+        // task that produced it (server-side: german_exam_attempts.generation_id).
+        ls.generationId = envelope.generationId || null;
         ls.attemptsBuffer = [];
         ls._resultsSavePromise = null;
         ls._speakerOrder = speakerOrder;
@@ -4644,6 +4648,7 @@
         ls.attemptsBuffer.push({
           profileId: ls.profileId, profileVersion: ls.profileVersion, module: ls.module, partId: ls.partId,
           taskType: q.type, itemId: q.questionId, skillTags: q.skillTags || [], difficulty: q.difficulty || null,
+          generationId: ls.generationId,
           attemptCount: ans.attempts,
           firstAttemptCorrect: !!ans._firstAttemptCorrect,
           finalCorrect: correct,

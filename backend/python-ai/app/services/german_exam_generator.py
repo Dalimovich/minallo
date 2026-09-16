@@ -85,13 +85,14 @@ def generate_task(
         candidates = _topic_bank(module, profile)
         topic = pick_topic(user_id, profile_id, module, part_id, candidates)
 
+    generation_id = uuid.uuid4().hex
+
     adapter = _dispatch_module(module)
     content, validation_meta = adapter(profile, part, plan, topic)
 
     if not speculative:
-        record_topic_used(user_id, profile_id, module, part_id, topic["topicId"])
+        record_topic_used(user_id, profile_id, module, part_id, topic["topicId"], generation_id)
 
-    generation_id = uuid.uuid4().hex
     return _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta, generation_id)
 
 

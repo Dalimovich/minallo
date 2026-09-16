@@ -39,6 +39,11 @@ class AttemptItem:
     score_value: float | None
     max_score_value: float | None
     metadata: dict[str, Any]
+    # Ties this attempt back to the exact POST /german-exam/generate call
+    # that produced the item (envelope.generationId) — not independently
+    # derivable/validated server-side (unlike profile/task_type), so it's
+    # recorded as supplied, same trust level as item_id itself.
+    generation_id: str | None = None
 
 
 def _resolve_item(item: AttemptItem) -> tuple[dict[str, Any], str | None]:
@@ -119,6 +124,7 @@ def record_attempts(user_id: str, exam_family: str, exam_variant: str | None, ta
                 "score_value": item.score_value,
                 "max_score_value": item.max_score_value,
                 "metadata": item.metadata or {},
+                "generation_id": item.generation_id,
             }
         )
 
@@ -169,17 +175,30 @@ def pick_topic(user_id: str, profile_id: str, module: str, part_id: str, candida
     return random.choice(pool)
 
 
-def record_topic_used(user_id: str, profile_id: str, module: str, part_id: str, topic_id: str) -> None:
+def record_topic_used(
+    user_id: str, profile_id: str, module: str, part_id: str, topic_id: str, generation_id: str | None = None
+) -> None:
+    """`generation_id`, when supplied, is an idempotency key: a repeated
+    call for the same generation_id must not record the topic as used a
+    second time. This matters specifically for the prefetch consume path
+    (POST /german-exam/consume) — unlike the direct-generation path, which
+    calls this exactly once inside generate_task(), a consume call could
+    plausibly be retried (a flaky network response the frontend re-sends,
+    a duplicate click) without this guarantee."""
+    row = {
+        "user_id": user_id,
+        "profile_id": profile_id,
+        "module": module,
+        "part_id": part_id,
+        "topic_id": topic_id,
+        "generation_id": generation_id,
+    }
     try:
-        get_supabase().table("german_exam_topic_history").insert(
-            {
-                "user_id": user_id,
-                "profile_id": profile_id,
-                "module": module,
-                "part_id": part_id,
-                "topic_id": topic_id,
-            }
-        ).execute()
+        table = get_supabase().table("german_exam_topic_history")
+        if generation_id:
+            table.upsert(row, on_conflict="generation_id", ignore_duplicates=True).execute()
+        else:
+            table.insert(row).execute()
     except Exception:  # noqa: BLE001
         # Topic history is a nice-to-have anti-repetition signal, not
         # load-bearing — never fail generation because this write failed.

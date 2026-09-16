@@ -83,6 +83,7 @@ class ExamResultItem(BaseModel):
     scoreValue: float | None = None
     maxScoreValue: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    generationId: str | None = None
 
 
 class SubmitExamResultsRequest(BaseModel):
@@ -115,6 +116,7 @@ def submit_exam_results_endpoint(payload: SubmitExamResultsRequest) -> dict[str,
             score_value=i.scoreValue,
             max_score_value=i.maxScoreValue,
             metadata=i.metadata,
+            generation_id=i.generationId,
         )
         for i in payload.items
     ]
@@ -138,7 +140,7 @@ class ConsumeGenerationRequest(BaseModel):
     module: str
     partId: str
     topicId: str
-    generationId: str | None = None  # not yet used server-side; reserved for future results idempotency
+    generationId: str | None = None
 
 
 @router.post("/german-exam/consume")
@@ -147,6 +149,8 @@ def consume_generation_endpoint(payload: ConsumeGenerationRequest) -> dict[str, 
     actually used, now that the frontend has applied it to a real session.
     Called once, only when prefetched content is consumed — never for a
     normal (non-speculative) generate call, which already records its topic
-    usage immediately inside generate_task()."""
-    record_topic_used(payload.userId, payload.profileId, payload.module, payload.partId, payload.topicId)
+    usage immediately inside generate_task(). generationId is the
+    idempotency key (see record_topic_used()): a retried/duplicate consume
+    call for the same generation is a no-op, not a second recorded use."""
+    record_topic_used(payload.userId, payload.profileId, payload.module, payload.partId, payload.topicId, payload.generationId)
     return {"ok": True}

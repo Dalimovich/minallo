@@ -1,32 +1,41 @@
 """Results-integrity hardening: record_attempts() must derive every
 exam-structure field (family/variant/CEFR/profile_version/task_type/
 skill_tags-per-part) server-side from profile_id+part_id via the profile
-registry, never trust the client's own copies of them."""
+registry, never trust the client's own copies of them. Also covers Phase
+2.6's generationId traceability + consume idempotency."""
 from app.services import german_exam_performance as perf
-from app.services.german_exam_performance import AttemptItem, record_attempts
+from app.services.german_exam_performance import AttemptItem, record_attempts, record_topic_used
 
 
 class _FakeTable:
-    def __init__(self, sink):
+    def __init__(self, sink, calls):
         self._sink = sink
-        self._rows = None
+        self._calls = calls
+        self._pending = None
 
     def insert(self, rows):
-        self._rows = rows
+        self._pending = ("insert", rows if isinstance(rows, list) else [rows], {})
+        return self
+
+    def upsert(self, rows, **kwargs):
+        self._pending = ("upsert", rows if isinstance(rows, list) else [rows], kwargs)
         return self
 
     def execute(self):
-        self._sink.extend(self._rows or [])
+        op, rows, kwargs = self._pending
+        self._calls.append((op, kwargs))
+        self._sink.extend(rows)
         return None
 
 
 class _FakeSB:
     def __init__(self):
         self.inserted: list[dict] = []
+        self.calls: list[tuple] = []
 
     def table(self, name):
-        assert name == "german_exam_attempts"
-        return _FakeTable(self.inserted)
+        assert name in ("german_exam_attempts", "german_exam_topic_history")
+        return _FakeTable(self.inserted, self.calls)
 
 
 def _item(**overrides):
@@ -102,3 +111,37 @@ def test_valid_hv2_tag_accepted(monkeypatch):
     assert result == {"accepted": 1, "dropped": 0}
     assert sb.inserted[0]["task_type"] == "sentence_completion_mc3"
     assert sb.inserted[0]["skill_tags"] == ["detail_fact"]
+
+
+def test_generation_id_is_stored_on_attempt_rows(monkeypatch):
+    sb = _FakeSB()
+    monkeypatch.setattr(perf, "get_supabase", lambda: sb)
+    record_attempts("u1", "telc", "C1 Hochschule", "C1", [_item(generation_id="gen-abc")])
+    assert sb.inserted[0]["generation_id"] == "gen-abc"
+
+
+def test_record_topic_used_without_generation_id_uses_plain_insert(monkeypatch):
+    sb = _FakeSB()
+    monkeypatch.setattr(perf, "get_supabase", lambda: sb)
+    record_topic_used("u1", "telc_c1_hochschule", "listening", "hv1", "urban_mobility")
+    assert sb.calls == [("insert", {})]
+    assert sb.inserted[0]["generation_id"] is None
+
+
+def test_record_topic_used_with_generation_id_is_idempotent_upsert(monkeypatch):
+    sb = _FakeSB()
+    monkeypatch.setattr(perf, "get_supabase", lambda: sb)
+    record_topic_used("u1", "telc_c1_hochschule", "listening", "hv1", "urban_mobility", "gen-abc")
+    op, kwargs = sb.calls[0]
+    assert op == "upsert"
+    assert kwargs["on_conflict"] == "generation_id"
+    assert kwargs["ignore_duplicates"] is True
+    assert sb.inserted[0]["generation_id"] == "gen-abc"
+
+
+def test_record_topic_used_swallows_errors(monkeypatch):
+    class _Boom:
+        def table(self, name):
+            raise RuntimeError("db unavailable")
+    monkeypatch.setattr(perf, "get_supabase", lambda: _Boom())
+    record_topic_used("u1", "telc_c1_hochschule", "listening", "hv1", "urban_mobility", "gen-abc")  # must not raise
