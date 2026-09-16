@@ -8,11 +8,12 @@ import pytest
 from app.services.german_exam_profiles import GermanExamProfileError, get_part, get_profile, list_parts, resolve_profile_id
 
 
-def test_profile_exists_with_listening_module() -> None:
+def test_profile_exists_with_listening_and_reading_modules() -> None:
     profile = get_profile("telc_c1_hochschule")
     assert profile.family == "telc"
     assert profile.variant == "C1 Hochschule"
-    assert profile.modules["reading"] is None
+    assert profile.modules["listening"] is not None
+    assert profile.modules["reading"] is not None
     assert profile.modules["writing"] is None
     assert profile.modules["speaking"] is None
     assert profile.modules["language_elements"] is None

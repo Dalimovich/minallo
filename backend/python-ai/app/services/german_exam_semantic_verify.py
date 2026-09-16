@@ -61,6 +61,12 @@ SEMANTIC_ISSUE_CODES = frozenset(
         # not about there being enough of it).
         "INSUFFICIENT_SOURCE_CONTENT",
         "VERIFIER_RESPONSE_INVALID",
+        # Reading-only: the generated richtig/falsch/nicht_im_text label (or
+        # the global-heading verdict) doesn't match what the text actually
+        # supports — distinct from UNSUPPORTED_CORRECT_ANSWER, which assumes
+        # a single correct option among distractors rather than a 3-way
+        # ground-truth classification per statement.
+        "TRISTATE_VERDICT_MISMATCH",
     }
 )
 
@@ -211,10 +217,80 @@ def _verify_prompt_hv3(part: PartBlueprint, content: dict[str, Any]) -> tuple[st
     return system, user
 
 
+# ── Lesen (reading) verify prompts ──────────────────────────────────────
+# Reading content has no "segments" — build the payload directly from each
+# task type's own shape instead of reusing _content_payload().
+
+
+def _verify_prompt_lesen1(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is text_reconstruction_sentence_matching (telc-style Lesen Teil 1, Textrekonstruktion). "
+        "You are given the full text with numbered gaps and 8 candidate sentences. For each gap-mapping "
+        "item verify: (A) the candidate named in correctCandidateId genuinely fits the gap grammatically "
+        "AND logically (discourse structure, reference resolution, connectors, logical progression) — "
+        "UNSUPPORTED_CORRECT_ANSWER if not; (B) no OTHER candidate fits that same gap equally well — if a "
+        "second candidate could also plausibly fill it, use AMBIGUOUS_MAPPING with evidence.questionIds "
+        "listing the gap's questionId. Compare each gap against ALL 8 candidates, not just the marked one. "
+        "The two unused candidates are supposed to be unsupported for every gap — do not flag that. "
+        "Part-wide: PART_WIDE_INCOHERENCE if the text doesn't read as one coherent original text once "
+        "correctly reconstructed, or isn't C1-Hochschule-appropriate academic register."
+    )
+    text = content.get("text") or {}
+    payload = {
+        "text": {"title": text.get("title"), "paragraphs": text.get("paragraphs"), "gaps": text.get("gaps")},
+        "candidates": content.get("candidates") or [],
+        "questions": content.get("questions") or [],
+    }
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
+def _verify_prompt_lesen2(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is section_statement_matching (telc-style Lesen Teil 2, Selektives Verstehen). For each "
+        "statement verify: (A) the section named in correctSectionId genuinely supports the statement's "
+        "meaning based on selective information, author intention, paraphrase, inference, or argument "
+        "structure — not superficial keyword overlap — UNSUPPORTED_CORRECT_ANSWER if not; (B) no OTHER "
+        "section supports the statement equally well — if a second section could also plausibly match, use "
+        "AMBIGUOUS_MAPPING with evidence.questionIds listing the statement's questionId. A section may "
+        "legitimately support more than one statement — that alone is not ambiguity; ambiguity is when ONE "
+        "statement is equally supported by TWO OR MORE sections. Part-wide: PART_WIDE_INCOHERENCE if the "
+        "5 sections don't form one coherent text, or the register isn't C1-Hochschule-appropriate."
+    )
+    payload = {"sections": content.get("sections") or [], "questions": content.get("questions") or []}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
+def _verify_prompt_lesen3(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is detail_tristate_with_global_heading (telc-style Lesen Teil 3, Detail- und "
+        "Globalverstehen). Judge STRICTLY from the supplied text only. Each item has a 'kind': "
+        "'detail' items carry a tristate.answer that must be exactly one of richtig (text SUPPORTS the "
+        "statement), falsch (text CONTRADICTS the statement), or nicht_im_text (text neither supports nor "
+        "contradicts it — the statement is simply absent, not proven false). Verify the labeled answer is "
+        "the correct one of these three for each detail item — use TRISTATE_VERDICT_MISMATCH if not. A "
+        "common generation error is labeling a merely-absent statement as falsch instead of nicht_im_text, "
+        "or labeling an actually-contradicted statement as nicht_im_text — check this distinction "
+        "carefully. The single 'global_heading' item names a correctHeadingId among exactly 3 heading "
+        "options: verify that heading is the single BEST summary of the ENTIRE text (not just one section) "
+        "and that no other of the 3 options is an equally good global summary — use "
+        "UNSUPPORTED_CORRECT_ANSWER if the marked heading doesn't fit, or AMBIGUOUS_MAPPING if a second "
+        "heading is equally defensible as a global summary. Part-wide: PART_WIDE_INCOHERENCE if the text "
+        "doesn't hang together as one coherent long text, or isn't C1-Hochschule-appropriate."
+    )
+    payload = {"text": content.get("text") or {}, "questions": content.get("questions") or []}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
 _VERIFY_PROMPT_BUILDERS = {
     "speaker_statement_matching": _verify_prompt_hv1,
     "sentence_completion_mc3": _verify_prompt_hv2,
     "structured_note_completion": _verify_prompt_hv3,
+    "text_reconstruction_sentence_matching": _verify_prompt_lesen1,
+    "section_statement_matching": _verify_prompt_lesen2,
+    "detail_tristate_with_global_heading": _verify_prompt_lesen3,
 }
 
 
@@ -316,6 +392,18 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
     elif part.task_type == "sentence_completion_mc3":
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
             "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
+    elif part.task_type == "structured_note_completion":
+        audit = _object_schema({"duplicateItemIds": strings})
+    elif part.task_type == "text_reconstruction_sentence_matching":
+        audit = _object_schema({"bestCandidateId": {"type": ["string", "null"]}, "tiedCandidateIds": strings})
+    elif part.task_type == "section_statement_matching":
+        audit = _object_schema({"supportingSectionIds": strings})
+    elif part.task_type == "detail_tristate_with_global_heading":
+        audit = _object_schema({
+            "trueVerdict": {"type": ["string", "null"], "enum": ["richtig", "falsch", "nicht_im_text", None]},
+            "bestHeadingId": {"type": ["string", "null"]},
+            "tiedHeadingIds": strings,
+        })
     else:
         audit = _object_schema({"duplicateItemIds": strings})
     issues = {"type": "array", "items": issue}
@@ -332,7 +420,7 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
     raw_items = {item["questionId"]: item for item in supplied_items
                  if isinstance(item, dict) and isinstance(item.get("questionId"), str)}
     questions = {q["questionId"]: q for q in content["questions"]}
-    speakers = {s["speakerId"] for s in content["segments"]}
+    speakers = {s["speakerId"] for s in content.get("segments") or []}
     for item in result.items:
         audit = raw_items.get(item.item_id, {}).get("audit", {})
         if not isinstance(audit, dict):
@@ -365,6 +453,44 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                 code = "MULTIPLE_DEFENSIBLE_ANSWERS"
             elif values[question["mc3"]["correctIndex"]] != "supported":
                 code = "UNSUPPORTED_CORRECT_ANSWER"
+        elif part.task_type == "text_reconstruction_sentence_matching":
+            best = audit.get("bestCandidateId")
+            tied = audit.get("tiedCandidateIds")
+            if not isinstance(tied, list) or any(not isinstance(v, str) for v in tied):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif not isinstance(best, str):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif best != question.get("correctCandidateId"):
+                code = "UNSUPPORTED_CORRECT_ANSWER"
+            elif tied:
+                code = "AMBIGUOUS_MAPPING"
+        elif part.task_type == "section_statement_matching":
+            values = audit.get("supportingSectionIds")
+            if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif question.get("correctSectionId") not in values:
+                code = "UNSUPPORTED_CORRECT_ANSWER"
+            elif len(set(values)) > 1:
+                code = "AMBIGUOUS_MAPPING"
+        elif part.task_type == "detail_tristate_with_global_heading":
+            kind = question.get("kind")
+            if kind == "detail":
+                true_verdict = audit.get("trueVerdict")
+                if true_verdict not in ("richtig", "falsch", "nicht_im_text"):
+                    code = "VERIFIER_RESPONSE_INVALID"
+                elif true_verdict != (question.get("tristate") or {}).get("answer"):
+                    code = "TRISTATE_VERDICT_MISMATCH"
+            elif kind == "global_heading":
+                best = audit.get("bestHeadingId")
+                tied = audit.get("tiedHeadingIds")
+                if not isinstance(best, str) or not isinstance(tied, list) or any(not isinstance(v, str) for v in tied):
+                    code = "VERIFIER_RESPONSE_INVALID"
+                elif best != (question.get("heading") or {}).get("correctHeadingId"):
+                    code = "UNSUPPORTED_CORRECT_ANSWER"
+                elif tied:
+                    code = "AMBIGUOUS_MAPPING"
+            else:
+                code = "VERIFIER_RESPONSE_INVALID"
         else:
             values = audit.get("duplicateItemIds")
             if not isinstance(values, list) or any(not isinstance(v, str) or v not in questions or v == item.item_id for v in values):
@@ -390,23 +516,55 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVer
         )
     expected_ids = {q.get("questionId") for q in (content.get("questions") or []) if q.get("questionId")}
     system, user = builder(part, content)
-    system += "\nJudge C1 Hochschule level and academic register. Validate evidenceSegmentIds against spokenText."
-    system += (
-        "\nFor EVERY item fill its audit before its verdict. HV1 supportedSpeakerIds lists EVERY speaker "
-        "whose full statement supports the written proposition (empty for a valid distractor). "
-        "If two speakers express the same supported view, list BOTH IDs even when only one is keyed correct. "
-        "HV1 plausible is true for reasonable topic-related positions, false for absurd straw-man claims "
-        "such as prohibiting every alternative to private cars in a sustainability debate. Being false "
-        "or contradicted by speakers does NOT by itself make a distractor implausible. "
-        "HV2 optionVerdicts classifies EACH of the three options in order: supported, plausible_wrong, "
-        "or implausible_wrong. An absurd option is implausible_wrong even if the correct answer is clear. "
-        "Judge the complete stem-plus-option, including negative stems. Plausible wrong options must "
-        "reflect a concrete nearby detail or a reasonable misinterpretation, not an invented policy "
-        "contrary to the entire premise of the discussion. "
-        "HV3 duplicateItemIds lists ALL other fields requesting the same fact. Check every pair, "
-        "including identical fields. Use the appropriate issue codes for audit failures. "
-        "Return concise judgments only, not explanations of your reasoning process."
-    )
+    system += "\nJudge C1 Hochschule level and academic register."
+    if part.module == "listening":
+        system += " Validate evidenceSegmentIds against spokenText."
+    system += "\nFor EVERY item fill its audit before its verdict. "
+    if part.task_type == "speaker_statement_matching":
+        system += (
+            "HV1 supportedSpeakerIds lists EVERY speaker whose full statement supports the written "
+            "proposition (empty for a valid distractor). If two speakers express the same supported view, "
+            "list BOTH IDs even when only one is keyed correct. HV1 plausible is true for reasonable "
+            "topic-related positions, false for absurd straw-man claims such as prohibiting every "
+            "alternative to private cars in a sustainability debate. Being false or contradicted by "
+            "speakers does NOT by itself make a distractor implausible. "
+        )
+    elif part.task_type == "sentence_completion_mc3":
+        system += (
+            "HV2 optionVerdicts classifies EACH of the three options in order: supported, plausible_wrong, "
+            "or implausible_wrong. An absurd option is implausible_wrong even if the correct answer is "
+            "clear. Judge the complete stem-plus-option, including negative stems. Plausible wrong options "
+            "must reflect a concrete nearby detail or a reasonable misinterpretation, not an invented "
+            "policy contrary to the entire premise of the discussion. "
+        )
+    elif part.task_type == "structured_note_completion":
+        system += (
+            "HV3 duplicateItemIds lists ALL other fields requesting the same fact. Check every pair, "
+            "including identical fields. "
+        )
+    elif part.task_type == "text_reconstruction_sentence_matching":
+        system += (
+            "bestCandidateId is whichever of the 8 candidates (not just the keyed one) genuinely fits this "
+            "gap best; tiedCandidateIds lists every OTHER candidate that fits equally well (empty if the "
+            "keyed candidate is the unique best fit). Consider grammar, connectors, and logical progression "
+            "with the surrounding paragraphs, not just topical relevance. "
+        )
+    elif part.task_type == "section_statement_matching":
+        system += (
+            "supportingSectionIds lists EVERY section (not just the keyed one) that genuinely supports the "
+            "statement's meaning. A section may legitimately support more than one statement — that alone "
+            "is not ambiguity. "
+        )
+    elif part.task_type == "detail_tristate_with_global_heading":
+        system += (
+            "For a 'detail' item, trueVerdict is your own independent classification of the statement as "
+            "richtig (text supports it), falsch (text contradicts it), or nicht_im_text (text neither "
+            "supports nor contradicts it — merely absent); leave bestHeadingId/tiedHeadingIds null/empty. "
+            "For the 'global_heading' item, bestHeadingId is whichever of the 3 options best summarizes the "
+            "WHOLE text, tiedHeadingIds lists any other option that is an equally good global summary "
+            "(not just a good detail-level description); leave trueVerdict null. "
+        )
+    system += "Use the appropriate issue codes for audit failures. Return concise judgments only, not explanations of your reasoning process."
     user = json.dumps({"blueprint": {"taskType": part.task_type, "constraints": part.constraints}}, ensure_ascii=False) + "\n" + user
     try:
         model = get_settings().german_exam_model

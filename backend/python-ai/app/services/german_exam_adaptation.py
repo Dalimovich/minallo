@@ -154,6 +154,10 @@ _WEAKNESS_DIRECTION: dict[str, str] = {
     "negation_density": "increase",
     "signposting_explicitness": "decrease",
     "hierarchy_depth": "increase",
+    "reference_complexity": "increase",
+    "distractor_similarity": "increase",
+    "argument_complexity": "increase",
+    "author_intention_explicitness": "decrease",  # less explicit intention cues = harder for author_intention weakness
 }
 
 # Which skill tags each adaptation axis is meant to exercise, so the planner
@@ -161,11 +165,15 @@ _WEAKNESS_DIRECTION: dict[str, str] = {
 _AXIS_TARGET_TAGS: dict[str, tuple[str, ...]] = {
     "paraphrase_distance": ("paraphrase_mapping", "speaker_matching"),
     "opinion_explicitness": ("speaker_opinion", "attitude_tone"),
-    "inference_depth": ("implicit_inference",),
+    "inference_depth": ("implicit_inference", "inference"),
     "distractor_proximity": ("detail_fact", "negation_contrast"),
     "negation_density": ("negation_contrast",),
     "signposting_explicitness": ("academic_structure",),
     "hierarchy_depth": ("note_taking", "argument_structure"),
+    "reference_complexity": ("reference_resolution",),
+    "distractor_similarity": ("argument_structure", "text_structure"),
+    "argument_complexity": ("argument_structure",),
+    "author_intention_explicitness": ("author_intention",),
 }
 
 _TOP_WEAK_TAG_LIMIT = 3

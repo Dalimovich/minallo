@@ -191,17 +191,35 @@
       }
     });
 
-    // German Practice has just opened (this HTML-load callback only runs
-    // once per view load — see the retry comment above), so this is a
-    // one-shot, short-idle trigger for the Hören HV1 prefetch: give the
-    // page a moment to settle (avoids firing on a quick pass-through) before
-    // speculatively generating, so the first real Hören open is often
-    // instant. window._glMaybePrefetchHV1 (defined in the Hören section
-    // below) is itself a no-op after the first call, so this single
-    // setTimeout is the only trigger — no re-fire on repeated navigation.
-    setTimeout(function () {
-      if (typeof window._glMaybePrefetchHV1 === 'function') window._glMaybePrefetchHV1();
-    }, 1500);
+    // Hören HV1 prefetch is intent-aware, not "German Practice merely
+    // opened": with Lesen now a real generated exercise too, prefetching
+    // Hören unconditionally would waste a full generation+semantic-
+    // verification call for every learner who came only to read. Fire it
+    // only when there's an actual signal the learner wants Hören:
+    //   (a) their last-used skill (ss_gl_last_skill, written by the skill-
+    //       card click handler below) was listening — after a short idle,
+    //       same as before, to avoid firing on a quick pass-through; or
+    //   (b) genuine pointer/keyboard intent on the Hören card itself
+    //       (hover/focus), which fires immediately regardless of last-used
+    //       skill.
+    // window._glMaybePrefetchHV1 (defined in the Hören section below) is
+    // itself idempotent/one-shot (state !== 'idle' guard) — either trigger
+    // is a safe no-op once the other has already fired.
+    var lastSkillForPrefetch = '';
+    try { lastSkillForPrefetch = localStorage.getItem('ss_gl_last_skill') || ''; } catch (_) {}
+    if (lastSkillForPrefetch === 'listening') {
+      setTimeout(function () {
+        if (typeof window._glMaybePrefetchHV1 === 'function') window._glMaybePrefetchHV1();
+      }, 1500);
+    }
+    var hoerenCard = document.querySelector('.gl-skill-card[data-skill="listening"]');
+    if (hoerenCard) {
+      var _hoerenPrefetchIntent = function () {
+        if (typeof window._glMaybePrefetchHV1 === 'function') window._glMaybePrefetchHV1();
+      };
+      hoerenCard.addEventListener('pointerenter', _hoerenPrefetchIntent);
+      hoerenCard.addEventListener('focus', _hoerenPrefetchIntent);
+    }
 
     // Back button. window._glBackToHome is set here, then fully redefined
     // further down (it additionally clears data-active-skill and, now,
@@ -1554,10 +1572,455 @@
         // generation captures this before its request and checks it hasn't
         // moved before applying results, so a stale response can never
         // clobber a session the user has since navigated away from or reset.
-        genToken: 0
+        genToken: 0,
+
+        // ── German Exam Engine (telc C1 Hochschule Lesen) generated path ──
+        usingGenerated: false,
+        partId: null, // 'lesen_1' | 'lesen_2' | 'lesen_3'
+        examFamily: null, examVariant: null, targetLevel: null,
+        profileId: null, profileVersion: null, generationId: null,
+        content: null, // raw envelope.content for the active part
+        genAnswers: {}, // per-item answer state, shape depends on task_type
+        genChecked: false,
+        _genRequestToken: 0,
+        _lastGenFailed: false
       };
 
       function rdEl(id) { return document.getElementById(id); }
+
+      // Deliberately separate from lsResolveProfileId() (a sibling, private
+      // IIFE) rather than sharing it — duplicating this small lookup avoids
+      // any risk of touching Hören's code path while adding Lesen. Keep the
+      // fallback table in sync with LS_GERMAN_EXAM_PROFILES_FALLBACK (below,
+      // in the Hören section), GERMAN_EXAM_PROFILES_CLIENT in user-data.ts,
+      // and the backend's GERMAN_EXAM_PROFILES registry.
+      var RD_GERMAN_EXAM_PROFILES_FALLBACK = [
+        { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] }
+      ];
+      function rdResolveProfileId() {
+        if (window._germanExamProfileId) return window._germanExamProfileId;
+        var familyNorm = (window._germanTest || '').trim().toLowerCase();
+        var levelNorm = (window._germanLevel || '').trim();
+        if (!familyNorm || !levelNorm) return null;
+        var matches = RD_GERMAN_EXAM_PROFILES_FALLBACK.filter(function (p) {
+          return p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1;
+        });
+        return matches.length === 1 ? matches[0].profileId : null;
+      }
+
+      var RD_PART_LABELS = {
+        lesen_1: 'Teil 1 · Textrekonstruktion',
+        lesen_2: 'Teil 2 · Selektives Verstehen',
+        lesen_3: 'Teil 3 · Detail- & Globalverstehen'
+      };
+
+      function rdShowGenerationError(partId) {
+        var panel = rdEl('glReadingQuestionPanel');
+        var textPanel = rdEl('glReadingTextPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (!panel) return;
+        panel.innerHTML =
+          '<div class="gl-listen-error">' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general reading practice instead.</p>' +
+            '<div class="gl-listen-error-actions">' +
+              '<button type="button" id="glReadingErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
+              '<button type="button" id="glReadingErrorFallback" class="gl-listen-end-btn">Use general reading practice</button>' +
+            '</div>' +
+          '</div>';
+        var retryBtn = rdEl('glReadingErrorRetry');
+        var fallbackBtn = rdEl('glReadingErrorFallback');
+        if (retryBtn) retryBtn.addEventListener('click', function () { rdGenerateOrLoadPart(partId); });
+        if (fallbackBtn) fallbackBtn.addEventListener('click', function () {
+          rd.usingGenerated = false;
+          var tabsWrap = document.querySelector('.gl-reading-tabs');
+          if (tabsWrap) tabsWrap.style.display = '';
+          var switcherBar = rdEl('glReadingPartSwitcher');
+          if (switcherBar) switcherBar.style.display = 'none';
+          rdLoadSet(RD_SETS[rd.setIndex % RD_SETS.length]);
+          rdRenderText();
+          rdRenderQuestion();
+        });
+      }
+
+      // Race-safe like lsGenerateOrLoadPart: captures rd._genRequestToken at
+      // call time and re-checks it before applying either outcome, so a
+      // stale response from a superseded part-switch or retry can never
+      // clobber newer state.
+      function rdGenerateOrLoadPart(partId) {
+        var myToken = ++rd._genRequestToken;
+        rd._lastGenFailed = false;
+        var profileId = rdResolveProfileId();
+        if (!profileId) return Promise.resolve(false);
+        rd.usingGenerated = true;
+        rd.partId = partId;
+        var panel = rdEl('glReadingQuestionPanel');
+        if (panel) panel.innerHTML = '<div class="gl-listen-loading">Generating your verified telc exercise…</div>';
+        var textPanel = rdEl('glReadingTextPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId: profileId, module: 'reading', partId: partId, mode: 'adaptive_practice' })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('generate_http_' + resp.status);
+          return resp.json();
+        }).then(function (envelope) {
+          if (myToken !== rd._genRequestToken) return false;
+          rdLoadGeneratedPart(envelope);
+          rdRenderGeneratedWorkspace();
+          rdUpdateGeneratedPartSwitcher();
+          return true;
+        }).catch(function (err) {
+          if (myToken !== rd._genRequestToken) return false;
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Lesen] generation failed.', err);
+          rd._lastGenFailed = true;
+          rdShowGenerationError(partId);
+          return false;
+        });
+      }
+
+      function rdLoadGeneratedPart(envelope) {
+        var part = envelope.part || {};
+        var exam = envelope.exam || {};
+        rd.content = envelope.content || {};
+        rd.examFamily = exam.family || null;
+        rd.examVariant = exam.variant || null;
+        rd.targetLevel = exam.cefrLevel || exam.variant || null;
+        rd.profileId = exam.profileId || null;
+        rd.profileVersion = exam.profileVersion || null;
+        rd.module = envelope.module || 'reading';
+        rd.partId = part.id || rd.partId;
+        rd.generationId = envelope.generationId || null;
+        rd.genAnswers = {};
+        rd.genChecked = false;
+      }
+
+      function rdGapPlaceholder(text) {
+        // Turns the LLM's inline "{{gapId}}" markers into a real <select>
+        // per gap, populated with all candidates (click-to-assign baseline
+        // per spec — a native <select> is the most accessible form of
+        // "click to assign"; drag/drop is an enhancement, not built here).
+        var candidates = (rd.content && rd.content.candidates) || [];
+        var letters = 'ABCDEFGH';
+        return _glEscape(text).replace(/\{\{(g\d+)\}\}/g, function (_m, gapId) {
+          var selected = rd.genAnswers[gapId] || '';
+          var options = '<option value="">…</option>' + candidates.map(function (c, idx) {
+            var sel = c.candidateId === selected ? ' selected' : '';
+            return '<option value="' + _glEscape(c.candidateId) + '"' + sel + '>' + (letters[idx] || '?') + '</option>';
+          }).join('');
+          return '<select class="gl-reading-gap-select" data-gap-id="' + _glEscape(gapId) + '"' +
+            (rd.genChecked ? ' disabled' : '') + '>' + options + '</select>';
+        });
+      }
+
+      function rdRenderTextReconstruction() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var text = rd.content.text || {};
+        var candidates = rd.content.candidates || [];
+        var letters = 'ABCDEFGH';
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">Lesen · ' + _glEscape(RD_PART_LABELS[rd.partId] || '') + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' +
+          (text.paragraphs || []).map(function (p) { return '<p>' + rdGapPlaceholder(p) + '</p>'; }).join('') +
+          '</div>' +
+          '<div class="gl-reading-candidate-legend"><strong>Candidate sentences:</strong><ul>' +
+          candidates.map(function (c, idx) {
+            return '<li>' + (letters[idx] || '?') + ') ' + _glEscape(c.text) + '</li>';
+          }).join('') + '</ul></div>';
+        qPanel.innerHTML = rdCheckButtonHtml();
+        rdWireGapSelects();
+        rdWireCheckButton();
+      }
+
+      function rdWireGapSelects() {
+        document.querySelectorAll('.gl-reading-gap-select').forEach(function (sel) {
+          if (sel._rdWired) return;
+          sel._rdWired = true;
+          sel.addEventListener('change', function () {
+            rd.genAnswers[sel.getAttribute('data-gap-id')] = sel.value || null;
+          });
+        });
+      }
+
+      function rdRenderSectionMatching() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var sections = rd.content.sections || [];
+        var letters = 'ABCDEFGH';
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">Lesen · ' + _glEscape(RD_PART_LABELS[rd.partId] || '') + '</div>' +
+          sections.map(function (s, idx) {
+            return '<div class="gl-reading-section"><h4>' + (letters[idx] || '?') + '</h4><p>' + _glEscape(s.text) + '</p></div>';
+          }).join('');
+        var options = '<option value="">…</option>' + sections.map(function (s, idx) {
+          return '<option value="' + _glEscape(s.sectionId) + '">' + (letters[idx] || '?') + '</option>';
+        }).join('');
+        qPanel.innerHTML =
+          (rd.content.questions || []).map(function (q, idx) {
+            var selected = rd.genAnswers[q.questionId] || '';
+            return '<div class="gl-reading-statement">' +
+              '<p><strong>' + (idx + 1) + '.</strong> ' + _glEscape(q.statement) + '</p>' +
+              '<select class="gl-reading-section-select" data-question-id="' + _glEscape(q.questionId) + '"' +
+              (rd.genChecked ? ' disabled' : '') + '>' +
+              options.replace('value="' + selected + '"', 'value="' + selected + '" selected') +
+              '</select></div>';
+          }).join('') + rdCheckButtonHtml();
+        document.querySelectorAll('.gl-reading-section-select').forEach(function (sel) {
+          if (sel._rdWired) return;
+          sel._rdWired = true;
+          sel.addEventListener('change', function () {
+            rd.genAnswers[sel.getAttribute('data-question-id')] = sel.value || null;
+          });
+        });
+        rdWireCheckButton();
+      }
+
+      function rdRenderDetailGlobal() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var text = rd.content.text || {};
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">Lesen · ' + _glEscape(RD_PART_LABELS[rd.partId] || '') + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' +
+          (text.paragraphs || []).map(function (p) {
+            return '<p data-paragraph-id="' + _glEscape(p.paragraphId) + '">' + _glEscape(p.text) + '</p>';
+          }).join('') + '</div>';
+        var questions = rd.content.questions || [];
+        var details = questions.filter(function (q) { return q.kind === 'detail'; });
+        var headingQ = questions.filter(function (q) { return q.kind === 'global_heading'; })[0];
+        var tristateLabels = [['richtig', 'Richtig'], ['falsch', 'Falsch'], ['nicht_im_text', 'Nicht im Text']];
+        var html = details.map(function (q, idx) {
+          var selected = rd.genAnswers[q.questionId] || '';
+          return '<div class="gl-reading-statement">' +
+            '<p><strong>' + (idx + 1) + '.</strong> ' + _glEscape(q.statement) + '</p>' +
+            '<div class="gl-reading-tristate" data-question-id="' + _glEscape(q.questionId) + '">' +
+            tristateLabels.map(function (pair) {
+              var checked = selected === pair[0] ? ' checked' : '';
+              return '<label><input type="radio" name="tristate-' + _glEscape(q.questionId) + '" value="' + pair[0] + '"' +
+                checked + (rd.genChecked ? ' disabled' : '') + '> ' + pair[1] + '</label>';
+            }).join('') + '</div></div>';
+        }).join('');
+        if (headingQ) {
+          var heading = headingQ.heading || {};
+          var headingSelected = rd.genAnswers[headingQ.questionId] || '';
+          html += '<div class="gl-reading-statement gl-reading-global-heading">' +
+            '<p><strong>Global heading:</strong> which title best summarizes the whole text?</p>' +
+            (heading.options || []).map(function (o) {
+              var checked = headingSelected === o.headingId ? ' checked' : '';
+              return '<label><input type="radio" name="heading-' + _glEscape(headingQ.questionId) + '" value="' +
+                _glEscape(o.headingId) + '"' + checked + (rd.genChecked ? ' disabled' : '') + '> ' + _glEscape(o.text) + '</label>';
+            }).join('') + '</div>';
+        }
+        qPanel.innerHTML = html + rdCheckButtonHtml();
+        qPanel.querySelectorAll('input[type="radio"]').forEach(function (input) {
+          if (input._rdWired) return;
+          input._rdWired = true;
+          input.addEventListener('change', function () {
+            var group = input.closest('[data-question-id]');
+            var qid = group ? group.getAttribute('data-question-id') : (input.name.indexOf('heading-') === 0 ? headingQ.questionId : null);
+            if (qid) rd.genAnswers[qid] = input.value;
+          });
+        });
+        rdWireCheckButton();
+      }
+
+      function rdCheckButtonHtml() {
+        if (rd.genChecked) {
+          return '<div class="gl-reading-result-summary">' + _glEscape(rd._lastGenScoreLabel || '') + '</div>';
+        }
+        return '<button type="button" id="glReadingCheckGenerated" class="gl-listen-end-btn gl-listen-end-btn-primary">Check answers</button>';
+      }
+
+      function rdWireCheckButton() {
+        var btn = rdEl('glReadingCheckGenerated');
+        if (btn && !btn._rdWired) { btn._rdWired = true; btn.addEventListener('click', rdCheckGeneratedAnswers); }
+      }
+
+      var RD_GENERATED_RENDERERS = {
+        text_reconstruction_sentence_matching: rdRenderTextReconstruction,
+        section_statement_matching: rdRenderSectionMatching,
+        detail_tristate_with_global_heading: rdRenderDetailGlobal
+      };
+
+      function rdRenderGeneratedWorkspace() {
+        var renderer = RD_GENERATED_RENDERERS[rd._activeTaskType];
+        if (renderer) renderer();
+      }
+
+      // ── Grading (one screen per part, checked all at once — matches the
+      // real exam's per-part scoring; no per-item hint/retry loop for v1) ──
+
+      function rdGradeTextReconstruction() {
+        var questions = rd.content.questions || [];
+        var results = {};
+        questions.forEach(function (q) {
+          var given = rd.genAnswers[q.gapId];
+          results[q.questionId] = { correct: given === q.correctCandidateId, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
+      function rdGradeSectionMatching() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          var given = rd.genAnswers[q.questionId];
+          results[q.questionId] = { correct: given === q.correctSectionId, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
+      function rdGradeDetailGlobal() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          var given = rd.genAnswers[q.questionId];
+          var expected = q.kind === 'detail' ? (q.tristate || {}).answer : (q.heading || {}).correctHeadingId;
+          results[q.questionId] = { correct: given === expected, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
+      var RD_GENERATED_GRADERS = {
+        text_reconstruction_sentence_matching: rdGradeTextReconstruction,
+        section_statement_matching: rdGradeSectionMatching,
+        detail_tristate_with_global_heading: rdGradeDetailGlobal
+      };
+
+      function rdCheckGeneratedAnswers() {
+        var grader = RD_GENERATED_GRADERS[rd._activeTaskType];
+        if (!grader) return;
+        var results = grader();
+        var ids = Object.keys(results);
+        var correctCount = ids.filter(function (id) { return results[id].correct; }).length;
+        rd.genChecked = true;
+        rd._lastGenScoreLabel = 'Score: ' + correctCount + ' / ' + ids.length;
+        rdRenderGeneratedWorkspace();
+        rdSaveGeneratedResults(results);
+      }
+
+      // Fire-and-forget, same shape as lsRecordAttempt/lsEnsureResultsSaved:
+      // module='reading', no replay/transcript concept — those fields stay
+      // null. Single-attempt model for v1 (no hint/retry loop yet), so
+      // firstAttemptCorrect === finalCorrect for every item.
+      function rdSaveGeneratedResults(results) {
+        var items = Object.keys(results).map(function (id) {
+          var r = results[id];
+          return {
+            profileId: rd.profileId, profileVersion: rd.profileVersion, module: 'reading', partId: rd.partId,
+            taskType: rd._activeTaskType, itemId: id, skillTags: r.skillTags, difficulty: 'c1',
+            attemptCount: 1, firstAttemptCorrect: r.correct, finalCorrect: r.correct, hintLevel: 0,
+            replayCount: null, transcriptRevealed: null,
+            scoreValue: r.correct ? 2 : 0, maxScoreValue: 2, metadata: { generationId: rd.generationId }
+          };
+        });
+        if (!items.length) return;
+        _authFetch(BACKEND_URL + '/api/ai/german-exam/results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            examFamily: rd.examFamily, examVariant: rd.examVariant, targetLevel: rd.targetLevel,
+            module: 'reading', items: items
+          })
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Lesen] failed to save results.', err);
+        });
+      }
+
+      // ── Part switcher (dynamically injected — no static markup needed in
+      // practice.html, mirrors the spirit of lsWirePartSwitcher/
+      // lsUpdatePartSwitcher without depending on pre-existing buttons) ──
+
+      function rdEnsureGeneratedSwitcher() {
+        var workspace = rdEl('glReadingWorkspace');
+        if (!workspace || rdEl('glReadingPartSwitcher')) return;
+        var bar = document.createElement('div');
+        bar.className = 'gl-listen-part-switcher';
+        bar.id = 'glReadingPartSwitcher';
+        bar.innerHTML = ['lesen_1', 'lesen_2', 'lesen_3'].map(function (partId) {
+          return '<button type="button" class="gl-listen-part-btn" data-part-id="' + partId + '">' +
+            _glEscape(RD_PART_LABELS[partId]) + '</button>';
+        }).join('') + '<button type="button" class="gl-listen-part-btn" data-weak-areas="1">Weak areas</button>';
+        workspace.parentNode.insertBefore(bar, workspace);
+        bar.addEventListener('click', function (e) {
+          if (e.target.closest('[data-weak-areas]')) { rdShowWeakAreas(); return; }
+          var btn = e.target.closest('[data-part-id]');
+          if (!btn) return;
+          var partId = btn.getAttribute('data-part-id');
+          if (rd.usingGenerated && rd.partId === partId) return;
+          rd._activeTaskType = RD_PART_TASK_TYPES[partId];
+          rdGenerateOrLoadPart(partId);
+        });
+      }
+
+      function rdUpdateGeneratedPartSwitcher() {
+        var bar = rdEl('glReadingPartSwitcher');
+        if (!bar) return;
+        bar.querySelectorAll('[data-part-id]').forEach(function (btn) {
+          btn.classList.toggle('active', rd.usingGenerated && rd.partId === btn.getAttribute('data-part-id'));
+        });
+      }
+
+      // Same endpoint/shape as Hören's Weak Areas tab — module='reading'
+      // instead of 'listening'. No separate reading weakness API.
+      function rdShowWeakAreas() {
+        var profileId = rdResolveProfileId();
+        if (!profileId) return;
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-loading">Loading weak areas…</div>';
+        _authFetch(BACKEND_URL + '/api/ai/german-exam/weaknesses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId: profileId, module: 'reading' })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('weaknesses_http_' + resp.status);
+          return resp.json();
+        }).then(function (data) {
+          if (!qPanel) return;
+          var tags = (data && data.tags) || {};
+          var rows = Object.keys(tags).map(function (tag) {
+            var t = tags[tag];
+            return '<li><strong>' + _glEscape(tag) + '</strong>: score ' + Math.round((t.score || 0) * 100) +
+              '% (' + (t.nAttempts || 0) + ' attempts, ' + _glEscape(t.confidence || '') + ' confidence)</li>';
+          }).join('');
+          qPanel.innerHTML = rows
+            ? '<div class="gl-reading-weak-areas"><h4>Weak areas (Lesen)</h4><ul>' + rows + '</ul></div>'
+            : '<div class="gl-reading-weak-areas"><p>Not enough attempts yet to show weak areas.</p></div>';
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Lesen] failed to load weak areas.', err);
+          if (qPanel) qPanel.innerHTML = '<div class="gl-reading-weak-areas"><p>Couldn’t load weak areas right now.</p></div>';
+        });
+      }
+
+      var RD_PART_TASK_TYPES = {
+        lesen_1: 'text_reconstruction_sentence_matching',
+        lesen_2: 'section_statement_matching',
+        lesen_3: 'detail_tristate_with_global_heading'
+      };
+
+      // Entry point for the generated path — called instead of the static
+      // rdLoadSet() flow when a supported exam profile resolves. Never
+      // silently substitutes static content for a supported profile whose
+      // generation failed (matches Hören's explicit-error convention);
+      // static RD_SETS remain the fallback only when no profile resolves.
+      function rdOpenGeneratedView(partId) {
+        rd._activeTaskType = RD_PART_TASK_TYPES[partId];
+        rdEnsureGeneratedSwitcher();
+        var tabsWrap = document.querySelector('.gl-reading-tabs');
+        if (tabsWrap) tabsWrap.style.display = 'none'; // static practice/files/weak tabs don't apply to the generated path
+        rdEl('glReadingWorkspace').style.display = '';
+        rdEl('glReadingEnd').style.display = 'none';
+        var switcherBar = rdEl('glReadingPartSwitcher');
+        if (switcherBar) switcherBar.style.display = '';
+        rdGenerateOrLoadPart(partId);
+      }
 
       function rdLoadSet(set, isSample) {
         rd.genToken++;
@@ -1573,14 +2036,20 @@
 
       window._glOpenReadingView = function () {
         rd.tab = 'practice';
-        rdLoadSet(RD_SETS[rd.setIndex % RD_SETS.length]);
         rdRenderTabs();
         rdRenderFilesPanel(false);
+        rdWireHeader();
+        var profileId = rdResolveProfileId();
+        if (profileId) {
+          rdOpenGeneratedView(rd.partId && RD_PART_TASK_TYPES[rd.partId] ? rd.partId : 'lesen_1');
+          return;
+        }
+        rd.usingGenerated = false;
+        rdLoadSet(RD_SETS[rd.setIndex % RD_SETS.length]);
         rdEl('glReadingWorkspace').style.display = '';
         rdEl('glReadingEnd').style.display = 'none';
         rdRenderText();
         rdRenderQuestion();
-        rdWireHeader();
       };
 
       function rdWireHeader() {

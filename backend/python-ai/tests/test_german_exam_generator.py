@@ -36,3 +36,16 @@ def test_generation_id_is_unique_per_call(monkeypatch):
     e1 = gen.generate_task("u1", "telc_c1_hochschule", "listening", "hv1", "adaptive_practice", speculative=True)
     e2 = gen.generate_task("u1", "telc_c1_hochschule", "listening", "hv1", "adaptive_practice", speculative=True)
     assert e1["generationId"] != e2["generationId"]
+
+
+def test_reading_module_dispatches_to_reading_adapter(monkeypatch):
+    calls = []
+    monkeypatch.setattr(gen, "compute_weakness", lambda *a, **k: None)
+    monkeypatch.setattr(gen, "build_adaptation_plan", lambda *a, **k: [])
+    monkeypatch.setattr(gen, "pick_topic", lambda *a, **k: {"topicId": "academic_writing_skills", "label": "Wissenschaftliches Schreiben"})
+    monkeypatch.setattr(gen, "record_topic_used", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(gen, "_generate_reading", lambda profile, part, plan, topic: ({"text": {}, "candidates": [], "questions": []}, {"deterministicPassed": True}))
+    envelope = gen.generate_task("u1", "telc_c1_hochschule", "reading", "lesen_1", "adaptive_practice", speculative=False)
+    assert envelope["module"] == "reading"
+    assert envelope["part"]["id"] == "lesen_1"
+    assert len(calls) == 1

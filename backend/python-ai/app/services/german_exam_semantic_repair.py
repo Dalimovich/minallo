@@ -37,15 +37,16 @@ _MAX_ITEM_REPAIR_ATTEMPTS = 2
 def _repair_prompt(part: PartBlueprint, content: dict[str, Any], item_id: str, issues: list[SemanticIssue]) -> tuple[str, str]:
     issue_lines = "\n".join(f"- {i.code}: {i.message}; evidence={json.dumps(i.evidence)}" for i in issues)
     system = (
-        f"You are repairing ONE item (questionId={item_id!r}) in a generated German listening exercise "
-        f"({part.task_type}) that failed independent semantic review:\n{issue_lines}\n\n"
+        f"You are repairing ONE item (questionId={item_id!r}) in a generated German exam exercise "
+        f"({part.module}, {part.task_type}) that failed independent semantic review:\n{issue_lines}\n\n"
         "Repair ONLY this item while preserving: its questionId, the task type's field shape, its "
         "skillTags exactly, the correct answer meaning, the "
         "overall intended difficulty, and the exam's official structure (do not add/remove options, "
-        "speakers, or fields). If the issue requires referencing the transcript for evidence, use the "
-        "segments already supplied — do not invent new segments or change existing ones. Return ONLY a "
-        "JSON object for the corrected single item, in the exact same shape as the original item. Reply "
-        "with ONLY valid JSON, no markdown fences, no commentary."
+        "speakers, sections, or fields). If the issue requires referencing the source material for "
+        "evidence, use the source material already supplied in the full part content below (whatever form "
+        "it takes for this task type) — do not invent new source material or change what's already there. "
+        "Return ONLY a JSON object for the corrected single item, in the exact same shape as the original "
+        "item. Reply with ONLY valid JSON, no markdown fences, no commentary."
     )
     user = f"Full part content for context:\n{json.dumps(content, ensure_ascii=False)}\n\nFix item {item_id!r}."
     return system, user

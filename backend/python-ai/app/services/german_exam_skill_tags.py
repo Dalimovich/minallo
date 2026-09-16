@@ -38,6 +38,7 @@ SKILL_TAGS: dict[str, frozenset[str]] = {
         {
             "global_comprehension",
             "detail_comprehension",
+            "selective_information",
             "paraphrase_mapping",
             "inference",
             "text_structure",

@@ -72,3 +72,27 @@ def test_weakest_limits_to_top_n() -> None:
     )
     assert len(report.weakest(3)) == 3
     assert [t.tag for t in report.weakest(3)] == ["a", "b", "c"]
+
+
+LESEN1 = get_part("telc_c1_hochschule", "reading", "lesen_1")
+LESEN3 = get_part("telc_c1_hochschule", "reading", "lesen_3")
+
+
+def test_lesen1_weak_reference_resolution_targets_reference_complexity() -> None:
+    report = WeaknessReport(
+        tags={"reference_resolution": TagWeakness(tag="reference_resolution", score=0.1, n_attempts=5, confidence="medium")},
+        overall_confidence="medium",
+    )
+    plan = build_adaptation_plan(LESEN1, "C1 Hochschule", report)
+    assert plan, "expected at least one instruction for a real reading weakness"
+    for instr in plan:
+        assert instr.axis in LESEN1.allowed_adaptations
+
+
+def test_lesen3_weak_author_intention_targets_explicitness_axis() -> None:
+    report = WeaknessReport(
+        tags={"author_intention": TagWeakness(tag="author_intention", score=0.1, n_attempts=5, confidence="medium")},
+        overall_confidence="medium",
+    )
+    plan = build_adaptation_plan(LESEN3, "C1 Hochschule", report)
+    assert any(instr.axis == "author_intention_explicitness" and instr.direction == "decrease" for instr in plan)

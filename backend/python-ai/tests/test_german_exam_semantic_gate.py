@@ -100,6 +100,17 @@ def test_hv2_part_wide_issues_untouched_by_adjudication(monkeypatch):
     assert all(item.passed for item in result.items)  # adjudicator still corrected the item-level verdict
 
 
+def test_lesen1_result_passes_through_unchanged(monkeypatch):
+    # No adjudicator prompt builder exists for any Lesen task_type — same
+    # opt-out mechanism as HV1 (adjudicate_items returns None), reused as-is.
+    lesen1 = get_part("telc_c1_hochschule", "reading", "lesen_1")
+    monkeypatch.setattr(gate, "_ADJUDICATION_ENABLED", True)
+    monkeypatch.setattr(gate, "verify_semantic", lambda part, content: _clean_result())
+    result = gate.verify_semantic_full(lesen1, _content())
+    assert result.passed
+    assert all(item.passed for item in result.items)
+
+
 def test_detector_already_failed_closed_skips_adjudication(monkeypatch):
     # A malformed detector response (items=[]) is already fail-closed and
     # correct -- adjudicating an incomplete item list would waste a call.

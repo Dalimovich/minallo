@@ -66,7 +66,7 @@ def test_client_supplied_profile_version_and_task_type_are_overridden(monkeypatc
     monkeypatch.setattr(perf, "get_supabase", lambda: sb)
     record_attempts("u1", "telc", "C1 Hochschule", "C1", [_item(profile_version=999, task_type="bogus")])
     row = sb.inserted[0]
-    assert row["profile_version"] == 1
+    assert row["profile_version"] == 2
     assert row["task_type"] == "speaker_statement_matching"
 
 

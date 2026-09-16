@@ -134,6 +134,81 @@ _TELC_C1_HOCHSCHULE_HOEREN: tuple[PartBlueprint, ...] = (
 )
 
 
+# Lesen + Sprachbausteine officially share one 90-minute block; the learner
+# may allocate that time freely across parts. This is UI/prep-guide copy,
+# not an enforced per-part timer — see PartBlueprint.time_limit_seconds'
+# docstring (reserved for future exam-simulation mode).
+LESEN_SPRACHBAUSTEINE_SHARED_MINUTES = 90
+
+_TELC_C1_HOCHSCHULE_LESEN: tuple[PartBlueprint, ...] = (
+    PartBlueprint(
+        part_id="lesen_1",
+        module="reading",
+        title="Textrekonstruktion",
+        task_type="text_reconstruction_sentence_matching",
+        constraints={
+            "gapCount": 6,
+            "candidateCount": 8,
+            "unusedCandidates": 2,
+            "wordCountMin": 400,
+            "wordCountMax": 500,
+        },
+        allowed_skill_tags=(
+            "text_structure",
+            "reference_resolution",
+            "argument_structure",
+            "paraphrase_mapping",
+        ),
+        allowed_adaptations=("reference_complexity", "distractor_similarity"),
+        scoring=ScoringSpec(max_points=12, points_per_correct=2),
+    ),
+    PartBlueprint(
+        part_id="lesen_2",
+        module="reading",
+        title="Selektives Verstehen",
+        task_type="section_statement_matching",
+        constraints={
+            "sectionCount": 5,
+            "statementCount": 6,
+            "wordCountMin": 650,
+            "wordCountMax": 850,
+        },
+        allowed_skill_tags=(
+            "global_comprehension",
+            "selective_information",
+            "author_intention",
+            "paraphrase_mapping",
+            "inference",
+            "argument_structure",
+        ),
+        allowed_adaptations=("paraphrase_distance", "inference_depth"),
+        scoring=ScoringSpec(max_points=12, points_per_correct=2),
+    ),
+    PartBlueprint(
+        part_id="lesen_3",
+        module="reading",
+        title="Detail- und Globalverstehen",
+        task_type="detail_tristate_with_global_heading",
+        constraints={
+            "detailItemCount": 11,
+            "globalHeadingItemCount": 1,  # exactly one heading-question item
+            "globalHeadingOptionCount": 3,  # that item has exactly 3 heading options
+            "wordCountMin": 1000,
+            "wordCountMax": 1200,
+        },
+        allowed_skill_tags=(
+            "detail_comprehension",
+            "global_comprehension",
+            "inference",
+            "text_structure",
+            "argument_structure",
+        ),
+        allowed_adaptations=("inference_depth", "argument_complexity", "author_intention_explicitness"),
+        scoring=ScoringSpec(max_points=24, points_per_correct=2),
+    ),
+)
+
+
 GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {
     "telc_c1_hochschule": ExamProfile(
         profile_id="telc_c1_hochschule",
@@ -145,10 +220,10 @@ GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {
         source_reference="telc GmbH official model-test/handbook material for telc Deutsch C1 Hochschule",
         source_version="verified against current telc.net exam-format description",
         verified_at="2026-09-16",
-        profile_version=1,
+        profile_version=2,
         modules={
             "listening": _TELC_C1_HOCHSCHULE_HOEREN,
-            "reading": None,
+            "reading": _TELC_C1_HOCHSCHULE_LESEN,
             "writing": None,
             "speaking": None,
             "language_elements": None,

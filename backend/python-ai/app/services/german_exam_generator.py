@@ -18,10 +18,11 @@ from typing import Any
 
 from .german_exam_adaptation import build_adaptation_plan, compute_weakness, instruction_to_dict
 from .german_exam_listening import generate_listening_part
+from .german_exam_reading import generate_reading_part
 from .german_exam_performance import pick_topic, record_topic_used
 from .german_exam_profiles import ExamProfile, GermanExamProfileError, PartBlueprint, get_part, get_profile
 
-# Placeholder topic banks per module — Phase 1 only exercises "listening".
+# Placeholder topic banks per module.
 # Topic is content flavor only; exam structure is untouched by topic choice.
 _TOPIC_BANKS: dict[str, list[dict[str, str]]] = {
     "listening": [
@@ -34,6 +35,16 @@ _TOPIC_BANKS: dict[str, list[dict[str, str]]] = {
         {"topicId": "culture_media", "label": "Kultur und Medien"},
         {"topicId": "economics_labour", "label": "Wirtschaft und Arbeitsmarkt"},
     ],
+    "reading": [
+        {"topicId": "academic_writing_skills", "label": "Wissenschaftliches Schreiben"},
+        {"topicId": "university_admission_policy", "label": "Hochschulzulassung"},
+        {"topicId": "research_ethics", "label": "Forschungsethik"},
+        {"topicId": "digital_learning", "label": "Digitales Lernen"},
+        {"topicId": "climate_and_society", "label": "Klimawandel und Gesellschaft"},
+        {"topicId": "labour_market_trends", "label": "Trends auf dem Arbeitsmarkt"},
+        {"topicId": "science_communication", "label": "Wissenschaftskommunikation"},
+        {"topicId": "urban_development", "label": "Stadtentwicklung"},
+    ],
 }
 
 
@@ -45,13 +56,19 @@ def _topic_bank(module: str, profile: ExamProfile) -> list[dict[str, str]]:
 def _dispatch_module(module: str):
     if module == "listening":
         return _generate_listening
-    if module in {"reading", "writing", "speaking", "language_elements"}:
+    if module == "reading":
+        return _generate_reading
+    if module in {"writing", "speaking", "language_elements"}:
         raise NotImplementedError(f"module {module!r} is not implemented in Phase 1")
     raise GermanExamProfileError(f"unknown module: {module}")
 
 
 def _generate_listening(profile: ExamProfile, part: PartBlueprint, plan, topic: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
     return generate_listening_part(profile, part, plan, topic)
+
+
+def _generate_reading(profile: ExamProfile, part: PartBlueprint, plan, topic: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    return generate_reading_part(profile, part, plan, topic)
 
 
 def generate_task(

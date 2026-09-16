@@ -24,8 +24,8 @@ const RESULTS_RATE_LIMIT_WINDOW = parseInt(
 );
 
 const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening'];
-const VALID_PART_IDS = ['hv1', 'hv2', 'hv3'];
+const VALID_MODULES = ['listening', 'reading'];
+const VALID_PART_IDS = ['hv1', 'hv2', 'hv3', 'lesen_1', 'lesen_2', 'lesen_3'];
 const MAX_ITEMS = 50;
 
 interface ResultsResponseBody {

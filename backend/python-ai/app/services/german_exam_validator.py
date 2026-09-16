@@ -186,15 +186,165 @@ def validate_structured_note_completion(part: PartBlueprint, content: dict[str, 
     return issues
 
 
+def validate_text_reconstruction_sentence_matching(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    text = content.get("text") or {}
+    gaps = text.get("gaps") if isinstance(text, dict) else None
+    candidates = content.get("candidates") or []
+    questions = content.get("questions") or []
+
+    gap_count = part.constraints.get("gapCount", 6)
+    candidate_count = part.constraints.get("candidateCount", 8)
+    unused_count = part.constraints.get("unusedCandidates", 2)
+
+    if not isinstance(gaps, list) or len(gaps) != gap_count:
+        issues.append(ValidationIssue(None, f"expected {gap_count} gaps, got {len(gaps) if isinstance(gaps, list) else 0}"))
+        gap_ids: set[str] = set()
+    else:
+        gap_ids = {g.get("gapId") for g in gaps if isinstance(g, dict) and g.get("gapId")}
+        if len(gap_ids) != len(gaps):
+            issues.append(ValidationIssue(None, "duplicate or missing gapId across gaps"))
+
+    if len(candidates) != candidate_count:
+        issues.append(ValidationIssue(None, f"expected {candidate_count} candidates, got {len(candidates)}"))
+    candidate_ids = {c.get("candidateId") for c in candidates if isinstance(c, dict) and c.get("candidateId")}
+    if len(candidate_ids) != len(candidates):
+        issues.append(ValidationIssue(None, "duplicate or missing candidateId across candidates"))
+    candidate_texts = [((c.get("text") or "").strip().lower()) for c in candidates if isinstance(c, dict)]
+    if len({t for t in candidate_texts if t}) != len([t for t in candidate_texts if t]):
+        issues.append(ValidationIssue(None, "duplicate candidate text across candidates"))
+
+    if len(questions) != gap_count:
+        issues.append(ValidationIssue(None, f"expected {gap_count} gap-mapping questions, got {len(questions)}"))
+
+    mapped_gaps: list[str] = []
+    used_candidates: list[str] = []
+    for q in questions:
+        gap_id = q.get("gapId")
+        correct = q.get("correctCandidateId")
+        if not gap_id or gap_ids and gap_id not in gap_ids:
+            issues.append(ValidationIssue(q.get("questionId"), "gapId is missing or does not resolve to a real gap"))
+        else:
+            mapped_gaps.append(gap_id)
+        if not correct or (candidate_ids and correct not in candidate_ids):
+            issues.append(ValidationIssue(q.get("questionId"), "correctCandidateId is missing or unknown"))
+        else:
+            used_candidates.append(correct)
+
+    if len(mapped_gaps) != len(set(mapped_gaps)):
+        issues.append(ValidationIssue(None, "a gap is mapped by more than one question"))
+    if gap_ids and set(mapped_gaps) != gap_ids:
+        issues.append(ValidationIssue(None, "not every gap has exactly one mapping"))
+    if len(used_candidates) != len(set(used_candidates)):
+        issues.append(ValidationIssue(None, "a candidate is used for more than one gap"))
+    unused = candidate_ids - set(used_candidates) if candidate_ids else set()
+    if candidate_ids and len(unused) != unused_count:
+        issues.append(ValidationIssue(None, f"expected {unused_count} unused candidates, got {len(unused)}"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+def validate_section_statement_matching(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    sections = content.get("sections") or []
+    questions = content.get("questions") or []
+
+    section_count = part.constraints.get("sectionCount", 5)
+    statement_count = part.constraints.get("statementCount", 6)
+
+    if len(sections) != section_count:
+        issues.append(ValidationIssue(None, f"expected {section_count} sections, got {len(sections)}"))
+    section_ids = {s.get("sectionId") for s in sections if isinstance(s, dict) and s.get("sectionId")}
+    if len(section_ids) != len(sections):
+        issues.append(ValidationIssue(None, "duplicate or missing sectionId across sections"))
+
+    if len(questions) != statement_count:
+        issues.append(ValidationIssue(None, f"expected {statement_count} statements, got {len(questions)}"))
+
+    for q in questions:
+        correct = q.get("correctSectionId")
+        if not correct or (section_ids and correct not in section_ids):
+            issues.append(ValidationIssue(q.get("questionId"), "correctSectionId is missing or unknown"))
+        if not (q.get("statement") or "").strip():
+            issues.append(ValidationIssue(q.get("questionId"), "statement is empty"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+_TRISTATE_ANSWERS = {"richtig", "falsch", "nicht_im_text"}
+
+
+def validate_detail_tristate_with_global_heading(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    questions = content.get("questions") or []
+
+    detail_count = part.constraints.get("detailItemCount", 11)
+    heading_item_count = part.constraints.get("globalHeadingItemCount", 1)
+    heading_option_count = part.constraints.get("globalHeadingOptionCount", 3)
+
+    details = [q for q in questions if q.get("kind") == "detail"]
+    headings = [q for q in questions if q.get("kind") == "global_heading"]
+    other_kinds = [q for q in questions if q.get("kind") not in ("detail", "global_heading")]
+
+    if other_kinds:
+        issues.append(ValidationIssue(None, f"unknown question kind(s): {[q.get('kind') for q in other_kinds]}"))
+    if len(details) != detail_count:
+        issues.append(ValidationIssue(None, f"expected {detail_count} detail items, got {len(details)}"))
+    if len(headings) != heading_item_count:
+        issues.append(ValidationIssue(None, f"expected {heading_item_count} global-heading item(s), got {len(headings)}"))
+
+    for q in details:
+        tristate = q.get("tristate") or {}
+        answer = tristate.get("answer")
+        if answer not in _TRISTATE_ANSWERS:
+            issues.append(ValidationIssue(q.get("questionId"), f"tristate.answer must be one of {sorted(_TRISTATE_ANSWERS)}"))
+            continue
+        evidence = tristate.get("evidenceParagraphIds")
+        if not isinstance(evidence, list) or any(not isinstance(e, str) for e in evidence):
+            issues.append(ValidationIssue(q.get("questionId"), "tristate.evidenceParagraphIds must be a list of strings"))
+        elif not evidence and answer != "nicht_im_text":
+            issues.append(ValidationIssue(q.get("questionId"), "evidenceParagraphIds is required unless answer is nicht_im_text"))
+
+    for q in headings:
+        heading = q.get("heading") or {}
+        options = heading.get("options") or []
+        if len(options) != heading_option_count:
+            issues.append(ValidationIssue(q.get("questionId"), f"expected {heading_option_count} heading options, got {len(options)}"))
+        option_ids = {o.get("headingId") for o in options if isinstance(o, dict) and o.get("headingId")}
+        if len(option_ids) != len(options):
+            issues.append(ValidationIssue(q.get("questionId"), "duplicate or missing headingId across options"))
+        correct = heading.get("correctHeadingId")
+        if not correct or (option_ids and correct not in option_ids):
+            issues.append(ValidationIssue(q.get("questionId"), "correctHeadingId is missing or unknown"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
 VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationIssue]]] = {
     "speaker_statement_matching": validate_speaker_statement_matching,
     "sentence_completion_mc3": validate_sentence_completion_mc3,
     "structured_note_completion": validate_structured_note_completion,
+    "text_reconstruction_sentence_matching": validate_text_reconstruction_sentence_matching,
+    "section_statement_matching": validate_section_statement_matching,
+    "detail_tristate_with_global_heading": validate_detail_tristate_with_global_heading,
 }
+
+# Reading task types don't carry a top-level "segments" array (they have
+# "text"/"candidates"/"sections" instead) — the generic pre-check below only
+# applies to listening, whose validators all assume "segments" exists.
+_SEGMENTS_REQUIRED_TASK_TYPES = frozenset(
+    {"speaker_statement_matching", "sentence_completion_mc3", "structured_note_completion"}
+)
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
-    for key, id_key in (("segments", "id"), ("questions", "questionId")):
+    generic_keys = [("questions", "questionId")]
+    if part.task_type in _SEGMENTS_REQUIRED_TASK_TYPES:
+        generic_keys.insert(0, ("segments", "id"))
+    for key, id_key in generic_keys:
         rows = content.get(key)
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             return [ValidationIssue(None, f"{key} must be an array of objects")]

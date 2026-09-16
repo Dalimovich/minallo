@@ -35,8 +35,8 @@ const GENERATE_UPSTREAM_TIMEOUT_MS = optionalEnv('AI_GERMAN_EXAM_GENERATE_UPSTRE
 // Phase 1 allowlist — defense in depth even though python-ai itself also
 // validates. Extend this as later phases add profiles/modules/parts.
 const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening'];
-const VALID_PART_IDS = ['hv1', 'hv2', 'hv3'];
+const VALID_MODULES = ['listening', 'reading'];
+const VALID_PART_IDS = ['hv1', 'hv2', 'hv3', 'lesen_1', 'lesen_2', 'lesen_3'];
 const VALID_MODES = ['adaptive_practice'];
 const MAX_TOPIC_LENGTH = 200;
 

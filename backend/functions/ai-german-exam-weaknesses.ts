@@ -21,7 +21,7 @@ const WEAKNESSES_RATE_LIMIT_WINDOW = parseInt(
 );
 
 const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening'];
+const VALID_MODULES = ['listening', 'reading'];
 
 interface WeaknessResponseBody {
   [key: string]: unknown;
