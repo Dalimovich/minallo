@@ -4235,6 +4235,12 @@
         fullTranscriptShown: false,
         done: false,
         _wired: false,
+        // Bumped at the start of every lsGenerateOrLoadPart() call and on
+        // leaving the view; a call only applies its result if this is still
+        // the same token when its promise resolves. Guards against a stale
+        // generate response (HV1 requested, then HV2 requested before HV1
+        // returns) overwriting newer state — see lsGenerateOrLoadPart.
+        _genRequestToken: 0,
         // Shared German Exam Engine fields — only meaningful when usingGenerated is true.
         usingGenerated: false,
         examFamily: null,
@@ -4387,9 +4393,20 @@
       // Always resolves (never rejects) — on any failure (no matching
       // profile, network error, non-2xx) it falls back to the static
       // LISTEN_SETS fixture rather than leaving the view stuck loading.
+      //
+      // Race-safety: captures ls._genRequestToken at call time and re-checks
+      // it before applying either outcome. Whichever call was issued LAST
+      // holds the current token by the time its own .then/.catch runs — an
+      // earlier call's response arriving after a newer one was already
+      // issued is silently dropped instead of overwriting the newer state.
+      // This covers: switching HV1->HV2 before HV1's response lands,
+      // double-clicking "New listening", and leaving the view mid-generation
+      // (window._glCloseListeningView also bumps the token).
       function lsGenerateOrLoadPart(moduleName, partId) {
+        var myToken = ++ls._genRequestToken;
         var profileId = lsResolveProfileId();
         if (!profileId) {
+          if (myToken !== ls._genRequestToken) return Promise.resolve();
           lsLoadSet(ls.setIndex % LISTEN_SETS.length);
           return Promise.resolve();
         }
@@ -4405,8 +4422,10 @@
           if (!resp.ok) throw new Error('german_exam_generate_http_' + resp.status);
           return resp.json();
         }).then(function (envelope) {
+          if (myToken !== ls._genRequestToken) return; // superseded by a newer request — drop silently
           lsLoadGeneratedPart(envelope);
         }).catch(function (err) {
+          if (myToken !== ls._genRequestToken) return; // superseded — don't stomp newer state with a stale failure
           if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] generation failed, falling back to static content.', err);
           lsLoadSet(ls.setIndex % LISTEN_SETS.length);
         });
@@ -4457,6 +4476,7 @@
         });
         lsWireHeader();
         lsWirePlayerControls();
+        lsWirePartSwitcher();
         lsPlayer.onChange(lsRenderPlayerChrome);
       };
 
@@ -4465,6 +4485,10 @@
       // edits below. Must never leave speech playing invisibly elsewhere.
       window._glCloseListeningView = function () {
         lsPlayer.pauseForLeave();
+        // Invalidate any in-flight generate request so a response that
+        // lands after the user has already left can't silently repaint a
+        // workspace they're no longer looking at.
+        ls._genRequestToken++;
       };
 
       function lsWireHeader() {
@@ -4472,6 +4496,38 @@
         var levelSel = lsEl('glListenLevel');
         if (topicSel && !topicSel._lsWired) { topicSel._lsWired = true; topicSel.addEventListener('change', function () { lsNewListening(); }); }
         if (levelSel && !levelSel._lsWired) { levelSel._lsWired = true; levelSel.addEventListener('change', function () { lsNewListening(); }); }
+      }
+
+      // Minimal part switcher for the generated (telc C1 Hochschule) path —
+      // only 3 flat buttons, no full Exam/Level/Part header treatment yet.
+      // Clicking a part that's already active is a no-op (no need to
+      // regenerate the same part); clicking a different part goes through
+      // the same lsGenerateOrLoadPart() race-safety as everything else.
+      function lsWirePartSwitcher() {
+        ['hv1', 'hv2', 'hv3'].forEach(function (partId) {
+          var btn = lsEl('glListenPart' + partId.toUpperCase());
+          if (!btn || btn._lsWired) return;
+          btn._lsWired = true;
+          btn.addEventListener('click', function () {
+            if (ls.usingGenerated && ls.partId === partId) return;
+            lsGenerateOrLoadPart('listening', partId).then(function () {
+              lsEl('glListenPractice').style.display = '';
+              lsEl('glListenEnd').style.display = 'none';
+              lsRenderPlayerChrome();
+              lsRenderWorkspace();
+            });
+          });
+        });
+      }
+
+      function lsUpdatePartSwitcher() {
+        var switcher = lsEl('glListenPartSwitcher');
+        if (!switcher) return;
+        switcher.style.display = ls.usingGenerated ? '' : 'none';
+        ['hv1', 'hv2', 'hv3'].forEach(function (partId) {
+          var btn = lsEl('glListenPart' + partId.toUpperCase());
+          if (btn) btn.classList.toggle('active', ls.usingGenerated && ls.partId === partId);
+        });
       }
 
       function lsWirePlayerControls() {
@@ -4500,6 +4556,7 @@
       }
 
       function lsRenderPlayerChrome() {
+        lsUpdatePartSwitcher();
         var setTitle = lsEl('glListenSetTitle');
         if (setTitle && ls.set) setTitle.textContent = ls.set.meta.title + ' · ' + ls.set.meta.level + ' · ' + ls.set.meta.audioType;
         var count = lsPlayer.getSegCount();

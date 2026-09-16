@@ -3342,6 +3342,32 @@
   cursor: default;
   color: rgba(255, 255, 255, 0.32);
 }
+.gl-listen-part-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.gl-listen-part-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(10, 12, 22, 0.42);
+  color: rgba(255, 255, 255, 0.62);
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s;
+}
+.gl-listen-part-btn:hover {
+  color: rgba(255, 255, 255, 0.88);
+}
+.gl-listen-part-btn.active {
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: #fff;
+  border-color: transparent;
+}
 .gl-listen-soon-badge {
   padding: 1px 6px;
   border-radius: 999px;

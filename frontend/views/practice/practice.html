@@ -429,6 +429,16 @@
           <button type="button" class="gl-listen-tab gl-listen-tab-soon" role="tab" aria-disabled="true" disabled title="Coming soon">From my files <span class="gl-listen-soon-badge">Soon</span></button>
         </div>
 
+        <!-- Minimal exam-part switcher for the generated (telc C1 Hochschule)
+             path only — hidden by lsWirePartSwitcher() whenever the static
+             LISTEN_SETS fallback is active. Intentionally bare-bones; the
+             full Exam/Level/Part header treatment is a later polish pass. -->
+        <div class="gl-listen-part-switcher" id="glListenPartSwitcher" role="tablist" aria-label="Hören part" style="display:none">
+          <button type="button" class="gl-listen-part-btn" id="glListenPartHV1" data-part="hv1" role="tab">Teil 1 · Globalverstehen</button>
+          <button type="button" class="gl-listen-part-btn" id="glListenPartHV2" data-part="hv2" role="tab">Teil 2 · Detailverstehen</button>
+          <button type="button" class="gl-listen-part-btn" id="glListenPartHV3" data-part="hv3" role="tab">Teil 3 · Informationstransfer</button>
+        </div>
+
         <div class="gl-listen-practice" id="glListenPractice">
           <div class="gl-listen-progress">
             <span class="gl-listen-progress-label" id="glListenProgressLabel">Question 1 / 8</span>
