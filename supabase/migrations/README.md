@@ -4,6 +4,18 @@ This folder is the source of record for Minallo database schema, storage, RLS, r
 
 Run migrations in filename order. Do not edit a migration that has already been applied to production. Add a new migration instead.
 
+## After applying a migration to production
+
+Update `.last_applied` in this folder to the filename of the migration you
+just ran, and commit that change (ideally in the same commit/PR as the
+migration itself, once you've confirmed it's live). `deploy-python-ai.yml`
+reads this marker (`scripts/check-migrations-applied.mjs`) and **fails the
+deploy loudly** if a newer migration file exists in the repo than what the
+marker records — this is a deployment gate, not an auto-apply step; nothing
+here runs SQL against production for you. It exists because a real
+production 502 already happened once from backend code shipping ahead of a
+migration nobody had actually run yet.
+
 ## Current Migration Order
 
 ```text

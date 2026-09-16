@@ -1,0 +1,77 @@
+name: E2E German Exam Engine (live, expensive)
+
+# tests/e2e/22-german-exam-engine-live.spec.ts is deliberately real: it makes
+# genuine OpenAI generation + semantic-verification calls and real TTS calls,
+# against the SAME 30/hour ai_german_exam_generate rate limit and generation
+# cap a real learner would hit. Running it on every push/PR (as the generic
+# e2e.yml workflow's default testMatch used to) meant every CI run burned
+# real cost and could exhaust that limit for the shared E2E test account —
+# this already happened once during manual verification this session. It's
+# now excluded from playwright.config.ts's default project (testIgnore) and
+# only runs here: manually, or nightly, never on every push.
+#
+# Uses the same E2E_EMAIL/E2E_PASSWORD test account as the generic E2E suite
+# by default. That account now takes on BOTH the normal E2E login/rate-limit
+# budget AND this suite's generation-cap usage — if that becomes a real
+# constraint, add dedicated E2E_GERMAN_EXAM_EMAIL/E2E_GERMAN_EXAM_PASSWORD
+# secrets (a separate test account) and this workflow will prefer them
+# automatically; nothing else needs to change. The normal per-user rate
+# limit itself is never weakened for this — this workflow just runs less
+# often, it doesn't get a bigger budget.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Optional deployed base URL, for example https://minallo.de'
+        required: false
+        type: string
+  schedule:
+    - cron: '0 3 * * *' # nightly, 03:00 UTC — well outside normal traffic hours
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_BASE_URL: ${{ inputs.base_url || vars.E2E_BASE_URL }}
+      E2E_EMAIL: ${{ secrets.E2E_GERMAN_EXAM_EMAIL || secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_GERMAN_EXAM_PASSWORD || secrets.E2E_PASSWORD }}
+      # Opts this spec back into the Desktop Chrome project — see
+      # playwright.config.ts, which excludes it there by default.
+      E2E_INCLUDE_GERMAN_EXAM_LIVE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run the live German Exam Engine E2E spec
+        run: npx playwright test tests/e2e/22-german-exam-engine-live.spec.ts
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-german-exam-live
+          path: tests/e2e/report
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-german-exam-live
+          path: test-results
+          retention-days: 14

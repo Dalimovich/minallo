@@ -6,6 +6,14 @@ name: Deploy python-ai to Hetzner
 # in and run deploy/update.sh by hand, which in practice wasn't happening:
 # fixes landed on main but never reached production. This workflow runs that
 # same script over SSH so a push is enough.
+#
+# check-migrations below is a deployment gate, not an auto-apply step: this
+# repo's Supabase migrations are still applied by hand (see
+# supabase/migrations/README.md), so the gate compares the newest migration
+# file against supabase/migrations/.last_applied (a human-maintained marker)
+# rather than querying the live database — a real 502 already happened once
+# from code that depended on a migration nobody had actually run. The deploy
+# job below only runs once this gate passes.
 
 on:
   push:
@@ -19,7 +27,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-migrations:
+    name: Check for unapplied Supabase migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail loudly if a migration is pending
+        run: node scripts/check-migrations-applied.mjs
+
   deploy:
+    needs: check-migrations
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
