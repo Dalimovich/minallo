@@ -4657,6 +4657,7 @@
         ls.tab = 'practice';
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
+        lsResetToPracticeTabChrome();
         lsGenerateOrLoadPart('listening', ls.partId || 'hv1').then(function () {
           if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
           lsRenderPlayerChrome();
@@ -4679,11 +4680,98 @@
         ls._genRequestToken++;
       };
 
+      // Called anywhere the workspace re-enters the Practice tab's territory
+      // (opening Hören, switching parts, weak-retry, new listening) so a
+      // learner who was viewing Weak areas doesn't land back on a stale
+      // weak-areas view/tab-highlight after one of those actions.
+      function lsResetToPracticeTabChrome() {
+        var weakPanel = lsEl('glListenWeakPanel');
+        var weakTab = lsEl('glListenWeakTab');
+        var practiceTab = document.querySelector('#glListeningView .gl-listen-tab[data-listen-tab="practice"]');
+        if (weakPanel) weakPanel.style.display = 'none';
+        if (weakTab) { weakTab.classList.remove('active'); weakTab.setAttribute('aria-selected', 'false'); }
+        if (practiceTab) { practiceTab.classList.add('active'); practiceTab.setAttribute('aria-selected', 'true'); }
+      }
+
       function lsWireHeader() {
         var topicSel = lsEl('glListenTopic');
         var levelSel = lsEl('glListenLevel');
         if (topicSel && !topicSel._lsWired) { topicSel._lsWired = true; topicSel.addEventListener('change', function () { lsNewListening(); }); }
         if (levelSel && !levelSel._lsWired) { levelSel._lsWired = true; levelSel.addEventListener('change', function () { lsNewListening(); }); }
+        var practiceTab = document.querySelector('#glListeningView .gl-listen-tab[data-listen-tab="practice"]');
+        var weakTab = lsEl('glListenWeakTab');
+        if (practiceTab && !practiceTab._lsWired) { practiceTab._lsWired = true; practiceTab.addEventListener('click', function () { lsSwitchListenTab('practice'); }); }
+        if (weakTab && !weakTab._lsWired) { weakTab._lsWired = true; weakTab.addEventListener('click', function () { lsSwitchListenTab('weak'); }); }
+      }
+
+      // Fetches the real, persisted weakness snapshot for generated
+      // (exam-profile-backed) sessions from POST /api/ai/german-exam/weaknesses
+      // — the same backend endpoint the adaptation planner itself reads from,
+      // so this shows exactly what's driving future generation, not a
+      // separate client-computed approximation.
+      function lsFetchWeaknesses() {
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/weaknesses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId: ls.profileId, module: ls.module || 'listening' })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('weaknesses_http_' + resp.status);
+          return resp.json();
+        });
+      }
+
+      function lsRenderWeakAreasTab() {
+        var panel = lsEl('glListenWeakPanel');
+        if (!panel) return;
+        if (!ls.usingGenerated || !ls.profileId) {
+          panel.innerHTML = '<p class="gl-listen-weak-empty">Weak areas need a verified telc C1 Hochschule session — switch out of general listening practice to see your breakdown.</p>';
+          return;
+        }
+        panel.innerHTML = '<div class="gl-listen-generating">Loading your weak areas…</div>';
+        lsFetchWeaknesses().then(function (snapshot) {
+          var tags = (snapshot && snapshot.tags) || {};
+          var tagKeys = Object.keys(tags);
+          if (!tagKeys.length) {
+            panel.innerHTML = '<p class="gl-listen-weak-empty">Not enough attempts yet to show weak areas — keep practicing and this will fill in.</p>';
+            return;
+          }
+          var sorted = tagKeys.slice().sort(function (a, b) { return (tags[a].score || 0) - (tags[b].score || 0); });
+          panel.innerHTML =
+            '<p class="gl-listen-weak-confidence">Confidence: <b>' + _glEscape(snapshot.overallConfidence || 'cold_start') + '</b></p>' +
+            '<div class="gl-listen-weak-list">' + sorted.map(function (tag) {
+              var w = tags[tag] || {};
+              var pct = Math.round((w.score || 0) * 100);
+              return '<div class="gl-listen-weak-row">' +
+                '<span class="gl-listen-weak-tag">' + _glEscape(tag.replace(/_/g, ' ')) + '</span>' +
+                '<div class="gl-listen-weak-bar"><div class="gl-listen-weak-bar-fill" style="width:' + pct + '%"></div></div>' +
+                '<span class="gl-listen-weak-pct">' + pct + '% <span class="gl-listen-weak-n">(' + (w.nAttempts || 0) + ' attempts)</span></span>' +
+              '</div>';
+            }).join('') + '</div>';
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] failed to load weak areas.', err);
+          panel.innerHTML = '<p class="gl-listen-weak-empty">Couldn’t load your weak areas right now. Try again shortly.</p>';
+        });
+      }
+
+      // Switches between the Practice tab (the normal listening workspace,
+      // whichever of glListenPractice/glListenEnd matches ls.done) and the
+      // Weak areas tab (glListenWeakPanel). "From my files" stays disabled
+      // — out of scope here.
+      function lsSwitchListenTab(tab) {
+        var practiceTab = document.querySelector('#glListeningView .gl-listen-tab[data-listen-tab="practice"]');
+        var weakTab = lsEl('glListenWeakTab');
+        var practicePanel = lsEl('glListenPractice');
+        var endPanel = lsEl('glListenEnd');
+        var weakPanel = lsEl('glListenWeakPanel');
+        var switcher = lsEl('glListenPartSwitcher');
+        var onWeak = tab === 'weak';
+        if (practiceTab) { practiceTab.classList.toggle('active', !onWeak); practiceTab.setAttribute('aria-selected', String(!onWeak)); }
+        if (weakTab) { weakTab.classList.toggle('active', onWeak); weakTab.setAttribute('aria-selected', String(onWeak)); }
+        if (weakPanel) weakPanel.style.display = onWeak ? '' : 'none';
+        if (practicePanel) practicePanel.style.display = (!onWeak && !ls.done) ? '' : 'none';
+        if (endPanel) endPanel.style.display = (!onWeak && ls.done) ? '' : 'none';
+        if (switcher) switcher.style.display = (!onWeak && ls.usingGenerated) ? '' : 'none';
+        if (onWeak) lsRenderWeakAreasTab();
       }
 
       // Minimal part switcher for the generated (telc C1 Hochschule) path —
@@ -4701,6 +4789,7 @@
             lsGenerateOrLoadPart('listening', partId).then(function () {
               lsEl('glListenPractice').style.display = '';
               lsEl('glListenEnd').style.display = 'none';
+              lsResetToPracticeTabChrome();
               if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
               lsRenderPlayerChrome();
               lsRenderWorkspace();
@@ -4717,6 +4806,36 @@
           var btn = lsEl('glListenPart' + partId.toUpperCase());
           if (btn) btn.classList.toggle('active', ls.usingGenerated && ls.partId === partId);
         });
+      }
+
+      var LS_PART_LABELS = { hv1: 'Teil 1', hv2: 'Teil 2', hv3: 'Teil 3' };
+
+      // Generated (exam-profile-backed) sessions get their real exam
+      // identity in the header — "telc C1 Hochschule · C1 · Hören · Teil 1"
+      // — instead of the generic Topic/Level selectors, which stay for the
+      // static LISTEN_SETS fallback path where there's no real exam profile
+      // to name. The generated topic is shown read-only underneath, since
+      // it's AI-picked, not user-selected, for this path.
+      function lsUpdateHeaderForMode() {
+        var staticControls = lsEl('glListenStaticHeaderControls');
+        var examContext = lsEl('glListenExamContext');
+        if (!staticControls || !examContext) return;
+        if (ls.usingGenerated) {
+          staticControls.style.display = 'none';
+          var parts = [];
+          if (ls.examFamily && ls.examVariant) parts.push(ls.examFamily + ' ' + ls.examVariant);
+          else if (ls.examVariant) parts.push(ls.examVariant);
+          if (ls.targetLevel) parts.push(ls.targetLevel);
+          parts.push('Hören');
+          parts.push(LS_PART_LABELS[ls.partId] || ls.partId);
+          var topicLabel = (ls.set && ls.set.meta && ls.set.meta.topic) || '';
+          examContext.innerHTML = _glEscape(parts.join(' · ')) +
+            (topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(topicLabel) + '</span>' : '');
+          examContext.style.display = '';
+        } else {
+          staticControls.style.display = '';
+          examContext.style.display = 'none';
+        }
       }
 
       // Read-only test-introspection hook — `ls` itself is intentionally
@@ -4767,6 +4886,7 @@
 
       function lsRenderPlayerChrome() {
         lsUpdatePartSwitcher();
+        lsUpdateHeaderForMode();
         var setTitle = lsEl('glListenSetTitle');
         if (setTitle && ls.set) setTitle.textContent = ls.set.meta.title + ' · ' + ls.set.meta.level + ' · ' + ls.set.meta.audioType;
         var count = lsPlayer.getSegCount();
@@ -5240,6 +5360,7 @@
           }).then(function () {
             lsEl('glListenPractice').style.display = '';
             lsEl('glListenEnd').style.display = 'none';
+            lsResetToPracticeTabChrome();
             if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
             lsRenderPlayerChrome();
             lsRenderWorkspace();
@@ -5260,6 +5381,7 @@
         lsLoadSet(idx, ordered);
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
+        lsResetToPracticeTabChrome();
         lsRenderPlayerChrome();
         lsRenderWorkspace();
       }
@@ -5269,6 +5391,7 @@
           lsGenerateOrLoadPart(ls.module || 'listening', ls.partId || 'hv1').then(function () {
             lsEl('glListenPractice').style.display = '';
             lsEl('glListenEnd').style.display = 'none';
+            lsResetToPracticeTabChrome();
             if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
             lsRenderPlayerChrome();
             lsRenderWorkspace();
@@ -5279,6 +5402,7 @@
         lsLoadSet(idx);
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
+        lsResetToPracticeTabChrome();
         lsRenderPlayerChrome();
         lsRenderWorkspace();
       }

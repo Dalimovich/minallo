@@ -399,8 +399,14 @@
           <div>
             <h2 class="gl-listen-title">Hören</h2>
             <p class="gl-listen-sub">Listen to real German and train your comprehension.</p>
+            <!-- Shown only for generated (exam-profile-backed) sessions —
+                 replaces the generic subtitle context with the actual exam
+                 identity, since a learner preparing for a specific exam
+                 needs to see that, not just "Level: B2". Populated by
+                 lsWireHeader()/lsUpdatePartSwitcher(). -->
+            <p class="gl-listen-exam-context" id="glListenExamContext" style="display:none"></p>
           </div>
-          <div class="gl-listen-header-controls">
+          <div class="gl-listen-header-controls" id="glListenStaticHeaderControls">
             <select id="glListenTopic" class="gl-reading-select" aria-label="Topic">
               <option value="Mixed">Mixed</option>
               <option value="Alltag">Alltag</option>
@@ -425,9 +431,16 @@
 
         <div class="gl-listen-tabs" role="tablist" aria-label="Hören mode">
           <button type="button" class="gl-listen-tab active" data-listen-tab="practice" role="tab" aria-selected="true">Practice</button>
-          <button type="button" class="gl-listen-tab gl-listen-tab-soon" role="tab" aria-disabled="true" disabled title="Coming soon">Weak areas <span class="gl-listen-soon-badge">Soon</span></button>
+          <button type="button" class="gl-listen-tab" id="glListenWeakTab" data-listen-tab="weak" role="tab" aria-selected="false">Weak areas</button>
           <button type="button" class="gl-listen-tab gl-listen-tab-soon" role="tab" aria-disabled="true" disabled title="Coming soon">From my files <span class="gl-listen-soon-badge">Soon</span></button>
         </div>
+
+        <!-- Real weakness breakdown for generated (exam-profile-backed)
+             sessions only, from POST /api/ai/german-exam/weaknesses — see
+             lsRenderWeakAreasTab(). Hidden/disabled entirely on the static
+             LISTEN_SETS fallback path, which has no persisted weakness
+             data to show. -->
+        <div class="gl-listen-weak-panel" id="glListenWeakPanel" style="display:none"></div>
 
         <!-- Minimal exam-part switcher for the generated (telc C1 Hochschule)
              path only — hidden by lsWirePartSwitcher() whenever the static

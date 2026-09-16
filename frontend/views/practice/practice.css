@@ -3298,6 +3298,17 @@
   font-weight: 700;
   font-size: 0.86rem;
 }
+.gl-listen-exam-context {
+  margin: 6px 0 0;
+  color: #7dd3fc;
+  font-weight: 900;
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
+}
+.gl-listen-exam-topic {
+  color: rgba(226, 232, 240, 0.6);
+  font-weight: 700;
+}
 .gl-listen-header-controls {
   display: flex;
   gap: 8px;
@@ -3367,6 +3378,73 @@
   background: linear-gradient(135deg, #2563eb, #38bdf8);
   color: #fff;
   border-color: transparent;
+}
+.gl-listen-weak-panel {
+  margin-bottom: 16px;
+}
+.gl-listen-weak-empty {
+  margin: 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(226, 232, 240, 0.65);
+  font-weight: 700;
+  font-size: 0.84rem;
+}
+.gl-listen-weak-confidence {
+  margin: 0 0 12px;
+  color: rgba(226, 232, 240, 0.65);
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-transform: capitalize;
+}
+.gl-listen-weak-confidence b { color: #7dd3fc; }
+.gl-listen-weak-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gl-listen-weak-row {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.gl-listen-weak-tag {
+  color: #e2e8f0;
+  font-weight: 800;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+.gl-listen-weak-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.gl-listen-weak-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+}
+.gl-listen-weak-pct {
+  color: #fff;
+  font-weight: 900;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.gl-listen-weak-n {
+  color: rgba(226, 232, 240, 0.5);
+  font-weight: 650;
+  font-size: 0.72rem;
+}
+@media (max-width: 560px) {
+  .gl-listen-weak-row { grid-template-columns: 1fr; gap: 6px; }
 }
 .gl-listen-soon-badge {
   padding: 1px 6px;
