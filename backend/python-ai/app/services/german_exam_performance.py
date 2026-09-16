@@ -41,50 +41,74 @@ class AttemptItem:
     metadata: dict[str, Any]
 
 
-def _validate_item(user_id: str, item: AttemptItem) -> str | None:
-    """Returns an error string if the item should be dropped, else None."""
+def _resolve_item(item: AttemptItem) -> tuple[dict[str, Any], str | None]:
+    """Derives every exam-structure field the client cannot be trusted to
+    self-report (profile family/variant/CEFR/version, task type, skill-tag
+    membership) from the profile registry via profile_id + part_id, rather
+    than trusting the browser's own copies of them — a client-poisoned
+    submission (stale cache, tampered payload, a future profile-id/level
+    mismatch bug) must not silently corrupt the weakness model with a
+    profile_version, task_type, or skill_tags that don't actually match the
+    server-authoritative part definition. Returns (row_fields, error)."""
     try:
         profile = get_profile(item.profile_id)
-        get_part(item.profile_id, item.module, item.part_id)
+        part = get_part(item.profile_id, item.module, item.part_id)
     except GermanExamProfileError as exc:
-        return str(exc)
-    if item.module not in {"listening", "reading", "writing", "speaking", "language_elements"}:
-        return f"unknown module: {item.module}"
+        return {}, str(exc)
+
+    tags = item.skill_tags or []
     try:
-        validate_tags(item.module, item.skill_tags or [])
+        validate_tags(part.module, tags)
     except UnknownSkillTagError as exc:
-        return str(exc)
-    del user_id, profile  # ownership is enforced upstream (trusted userId from the verified JWT)
-    return None
+        return {}, str(exc)
+    unknown_for_part = sorted(set(tags) - set(part.allowed_skill_tags))
+    if unknown_for_part:
+        return {}, f"skill tags not allowed for part {part.part_id!r}: {unknown_for_part}"
+
+    return {
+        "exam_family": profile.family,
+        "exam_variant": profile.variant,
+        "profile_id": profile.profile_id,
+        "profile_version": profile.profile_version,
+        "target_level": profile.cefr_level,
+        "module": part.module,
+        "part_id": part.part_id,
+        "task_type": part.task_type,
+        "skill_tags": tags,
+    }, None
 
 
 def record_attempts(user_id: str, exam_family: str, exam_variant: str | None, target_level: str, items: list[AttemptItem]) -> dict:
     """Batch-validates and inserts attempt rows. Rejects (drops, with a
-    reported count) any item whose profile/module/part/skill-tag is unknown
-    — never trusts the client's own labeling of its answers."""
+    reported count) any item whose profile/module/part/skill-tag is unknown.
+    `exam_family`/`exam_variant`/`target_level` arguments are accepted for
+    request-shape backward-compat only and are NOT written — every
+    structural field is derived server-side per item from the profile
+    registry (see `_resolve_item`), never trusted from the client."""
+    del exam_family, exam_variant, target_level
     if len(items) > _MAX_ITEMS_PER_SUBMISSION:
         items = items[:_MAX_ITEMS_PER_SUBMISSION]
 
     rows: list[dict[str, Any]] = []
     dropped = 0
     for item in items:
-        err = _validate_item(user_id, item)
+        resolved, err = _resolve_item(item)
         if err:
             dropped += 1
             continue
         rows.append(
             {
                 "user_id": user_id,
-                "exam_family": exam_family,
-                "exam_variant": exam_variant,
-                "profile_id": item.profile_id,
-                "profile_version": item.profile_version,
-                "target_level": target_level,
-                "module": item.module,
-                "part_id": item.part_id,
-                "task_type": item.task_type,
+                "exam_family": resolved["exam_family"],
+                "exam_variant": resolved["exam_variant"],
+                "profile_id": resolved["profile_id"],
+                "profile_version": resolved["profile_version"],
+                "target_level": resolved["target_level"],
+                "module": resolved["module"],
+                "part_id": resolved["part_id"],
+                "task_type": resolved["task_type"],
                 "item_id": item.item_id,
-                "skill_tags": item.skill_tags,
+                "skill_tags": resolved["skill_tags"],
                 "difficulty": item.difficulty,
                 "attempt_count": item.attempt_count,
                 "first_attempt_correct": item.first_attempt_correct,

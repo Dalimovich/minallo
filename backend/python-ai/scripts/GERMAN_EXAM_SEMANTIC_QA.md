@@ -64,13 +64,17 @@ this is the qualitative signal the pass-rate numbers alone can't give.
 
 Semantic verification's own latency is roughly on par with generation's
 (~146s vs ~143s across the run) — **semantic verification is adding
-roughly 1x generation latency, not a small fraction of it**, driven mostly
-by the large prompt (full transcript + questions + schema) rather than
-completion length. Repair is cheap in both time and tokens when it fires.
-This is the real number the "does semantic verification double cost"
-question (spec §15) needed — it does, roughly, for latency; per-token cost
-is dominated by verification's prompt tokens (52k vs 7k generation prompt
-tokens), not its completion tokens. No dollar figure is asserted here
+roughly 1x generation latency, not a small fraction of it**. Repair is
+cheap in both time and tokens when it fires. This is the real number the
+"does semantic verification double cost" question (spec §15) needed — it
+does, roughly, for latency. **Correction (Phase 2.5, see below): prompt
+size does NOT drive latency** — `corr(promptTokens, seconds) = -0.176`
+across the run's verification calls, essentially no relationship.
+Verification's larger prompt (52k vs 7k generation prompt tokens) drives
+its **input token cost**, not its wall time. Latency is instead driven by
+**completion tokens** (`corr(completionTokens, seconds) = 0.986`), i.e. by
+`reasoning_effort` and how much the model reasons before answering, not by
+how much source content it has to read. No dollar figure is asserted here
 without applying the account's actual per-token pricing for
 `GERMAN_EXAM_MODEL`.
 
