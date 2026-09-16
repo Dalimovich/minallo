@@ -4530,6 +4530,24 @@
         });
       }
 
+      // Read-only test-introspection hook — `ls` itself is intentionally
+      // private to this closure. Exposes only what's already implied by the
+      // rendered DOM (part id, task type, generated-vs-static, request
+      // token), so a stale-state bug can be asserted directly rather than
+      // inferred from titles/classes alone, which can visibly say the right
+      // thing while stale data survives underneath.
+      window._glListenDebugState = function () {
+        var q = ls.questions && ls.questions[ls.index];
+        return {
+          usingGenerated: ls.usingGenerated,
+          partId: ls.partId,
+          module: ls.module,
+          questionCount: ls.questions ? ls.questions.length : 0,
+          currentTaskType: q ? q.type : null,
+          genRequestToken: ls._genRequestToken
+        };
+      };
+
       function lsWirePlayerControls() {
         var playBtn = lsEl('glListenPlayBtn');
         if (playBtn && !playBtn._lsWired) {

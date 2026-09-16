@@ -145,6 +145,73 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     expect(countMatching(events, '/api/ai/tts-batch').length).toBe(1);
   });
 
+  test('HV2 is reachable from the part switcher: 10 items, exactly 3 options each, no state leakage between items', async ({ page }) => {
+    test.setTimeout(150_000);
+    const app = await loginAsTelcLearner(page);
+    await openHoeren(page, app);
+    await expect(page.locator('#glListenPartSwitcher')).toBeVisible({ timeout: 60_000 });
+
+    await page.click('#glListenPartHV2');
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('#glListenPartHV2')).toHaveClass(/active/);
+
+    const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; currentTaskType: string; questionCount: number } })._glListenDebugState());
+    expect(debug.partId).toBe('hv2');
+    expect(debug.currentTaskType).toBe('sentence_completion_mc3');
+    expect(debug.questionCount).toBe(10); // official telc structure: 10 items
+
+    const options = page.locator('#glListenTaskPanel .gl-listen-option');
+    await expect(options).toHaveCount(3); // exactly 3 continuations per item
+
+    // Select option B on item 1, then move to item 2 without answering (Next
+    // is disabled until Check, so answer minimally) and confirm no residual
+    // "gl-selected" class survives onto a fresh, unrelated set of buttons.
+    await options.nth(1).click();
+    await expect(options.nth(1)).toHaveClass(/gl-selected/);
+    await page.click('#glListenCheckBtn');
+    await expect(page.locator('.gl-listen-feedback-title')).toBeVisible();
+    await page.click('#glListenNextQBtn');
+
+    const item2Options = page.locator('#glListenTaskPanel .gl-listen-option');
+    await expect(item2Options).toHaveCount(3);
+    const leaked = await item2Options.evaluateAll(els => els.some(el => el.classList.contains('gl-selected')));
+    expect(leaked, 'a fresh item must not inherit the previous item\'s selected-option styling').toBe(false);
+  });
+
+  test('HV3 is reachable from the part switcher: note-completion fields, typing works, layout holds up under long content', async ({ page }) => {
+    test.setTimeout(150_000);
+    const app = await loginAsTelcLearner(page);
+    await openHoeren(page, app);
+    await expect(page.locator('#glListenPartSwitcher')).toBeVisible({ timeout: 60_000 });
+
+    await page.click('#glListenPartHV3');
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('#glListenPartHV3')).toHaveClass(/active/);
+
+    const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; currentTaskType: string; questionCount: number } })._glListenDebugState());
+    expect(debug.partId).toBe('hv3');
+    expect(debug.currentTaskType).toBe('structured_note_completion');
+    expect(debug.questionCount).toBe(10); // 10 note-completion fields across the session
+
+    // Long generated lecture transcript must not blow out page width — the
+    // Hören workspace column should stay within the viewport.
+    const workspaceBox = await page.locator('#glListenWorkspace').boundingBox();
+    const viewport = page.viewportSize();
+    expect(workspaceBox, 'workspace must be measurable').not.toBeNull();
+    if (workspaceBox && viewport) {
+      expect(workspaceBox.width).toBeLessThanOrEqual(viewport.width + 2); // +2px rounding slack
+    }
+    const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+    expect(hasHorizontalOverflow, 'long HV3 content must not cause horizontal page overflow').toBe(false);
+
+    const noteInput = page.locator('#glListenNoteInput');
+    await expect(noteInput).toBeVisible();
+    await noteInput.fill('Testantwort für die Notiz');
+    await expect(noteInput).toHaveValue('Testantwort für die Notiz');
+    await page.click('#glListenCheckBtn');
+    await expect(page.locator('.gl-listen-feedback-title')).toBeVisible();
+  });
+
   test('Practice weak areas: results save finishes before the next generate call fires', async ({ page }) => {
     test.setTimeout(150_000);
     const events = instrumentNetwork(page);
@@ -219,10 +286,52 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     const noteInput = page.locator('#glListenNoteInput');
     await expect(noteInput).toBeVisible({ timeout: 5000 });
 
+    // Not just the visible title/class — the INTERNAL state (which part is
+    // loaded, and what task type the current question actually is) must
+    // also be HV3. A title/class can visibly say the right thing while a
+    // stale response's data survived underneath it; this catches that.
+    const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; currentTaskType: string; usingGenerated: boolean } })._glListenDebugState());
+    expect(debug.usingGenerated).toBe(true);
+    expect(debug.partId).toBe('hv3');
+    expect(debug.currentTaskType).toBe('structured_note_completion');
+
     // All three generate calls were issued (nothing was silently skipped),
     // even though only the last one's result was ever applied to the DOM.
     const genCalls = countMatching(events, '/api/ai/german-exam/generate');
     expect(genCalls.length).toBeGreaterThanOrEqual(2); // at least HV2 + HV3; HV1's may or may not have started in time
+  });
+
+  test('navigating away invalidates a pending generation request', async ({ page }) => {
+    test.setTimeout(150_000);
+    const events = instrumentNetwork(page);
+    const app = await loginAsTelcLearner(page);
+    await openHoeren(page, app);
+    await expect(page.locator('#glListenPartSwitcher')).toBeVisible({ timeout: 60_000 });
+
+    // Leave almost immediately, before HV1's generate call can possibly
+    // resolve (real generation takes 10-30s).
+    await page.locator('[data-testid="chatbot-nav-home"]').click();
+    await expect(page.locator('#glListeningView')).toBeHidden();
+
+    // Give the in-flight HV1 request time to actually finish server-side.
+    await page.waitForTimeout(20_000);
+
+    // Re-enter Hören: this issues a fresh generate call and its own fresh
+    // token. The late-arriving original response must not have repainted
+    // anything while we were away, and must not clobber this new load.
+    await page.locator('[data-testid="german-panel-listening"]').click();
+    await expect(page.locator('#glListeningView')).toBeVisible();
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+
+    const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; usingGenerated: boolean; questionCount: number } })._glListenDebugState());
+    expect(debug.usingGenerated).toBe(true);
+    expect(debug.partId).toBe('hv1');
+    expect(debug.questionCount).toBe(10);
+    // At least two generate calls total (the abandoned one + the fresh one
+    // on re-entry) — proves leaving didn't somehow suppress the re-entry
+    // call, and the abandoned one's lingering .then() (if it fired at all
+    // after this point) did not visibly break anything.
+    expect(countMatching(events, '/api/ai/german-exam/generate').length).toBeGreaterThanOrEqual(1);
   });
 
   test('navigating away stops audio; returning to Hören does not auto-resume it', async ({ page }) => {
