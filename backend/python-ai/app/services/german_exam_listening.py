@@ -22,8 +22,9 @@ from ..config import get_settings
 
 from .german_exam_adaptation import AdaptationInstruction
 from .german_exam_profiles import ExamProfile, PartBlueprint
+from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
-from .german_exam_semantic_verify import SemanticVerificationResult, verify_semantic
+from .german_exam_semantic_verify import SemanticVerificationResult
 from .german_exam_validator import ValidationIssue, hard_issues, validate_content
 from .llm_json import chat_json
 
