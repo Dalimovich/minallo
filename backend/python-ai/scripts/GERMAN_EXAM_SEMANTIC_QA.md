@@ -74,6 +74,79 @@ tokens), not its completion tokens. No dollar figure is asserted here
 without applying the account's actual per-token pricing for
 `GERMAN_EXAM_MODEL`.
 
+## Phase 2.5 — latency investigation (2026-09-16)
+
+**Goal**: reduce the ~146s/run semantic-verification latency without weakening
+the deterministic or semantic quality gates (hard constraint — not
+negotiable).
+
+**Measurement**: correlated per-call `promptTokens`/`completionTokens`
+against `seconds` across the release run's 15 verification calls.
+`corr(completionTokens, seconds) = 0.986`; `corr(promptTokens, seconds) =
+-0.176`. Latency is almost entirely explained by completion-token count
+(dominated by GPT-5-family invisible reasoning tokens at 110–170 tok/s
+across calls), not prompt/schema size. This rules out "smaller verifier
+inputs" as a meaningful latency lever — it would reduce token *cost*
+slightly but not latency.
+
+**Tested lever: `reasoning_effort="medium"` → `"low"`**
+(`scripts/measure_reasoning_effort.py`, re-verifies the same 9 real
+already-generated samples plus the 3 required injected-failure fixtures,
+no new generation calls):
+
+- Latency: `"low"` is ~2.5x faster (8.55s avg → 3.38s avg per call).
+- Required fixture regression: **all 3 still caught at `"low"`**
+  (hv1/`AMBIGUOUS_MAPPING`, hv2/`IMPLAUSIBLE_DISTRACTOR`,
+  hv3/`DUPLICATE_INFORMATION` — `caught=True` for both effort levels).
+  This alone would look like a clean win.
+- **But** on the 9 real, non-injected release samples, `"medium"` found
+  genuine defects on 2 of 9 (`hv2 idx=2`:
+  `UNSUPPORTED_CORRECT_ANSWER`/`IMPLAUSIBLE_DISTRACTOR`; `hv3 idx=0`:
+  `MULTIPLE_DEFENSIBLE_ANSWERS`) that the ORIGINAL release run had also
+  accepted as passing at the time — a separate non-determinism signal
+  (same model, same content, different verdict on repeated calls; noted
+  below). At `"low"`, **all 9 samples came back clean, including those same
+  two** — i.e. `"low"` did not just fail to reproduce the medium-run
+  finding, it failed to catch defects that `"medium"` demonstrably can
+  catch on the same content.
+
+**Conclusion: rejected.** The required fixtures are deliberately blatant
+(an absurd distractor, literally duplicated text) — passing them is a floor
+test, not proof of real-world detection quality. The real signal is the
+miss on subtle, real content. Per the hard constraint, `"low"` is not
+adopted; `GERMAN_EXAM_MODEL` verification keeps `reasoning_effort="medium"`.
+
+**Secondary finding (not yet addressed, flagged for awareness)**: the
+verifier's judgment is not fully stable across repeated calls on identical
+content at `"medium"` either — the two samples above were accepted in the
+original release run and flagged on re-verification. This is a
+pre-existing reliability characteristic of the LLM-judged pass, independent
+of the reasoning-effort question. Not a regression introduced by this
+investigation; worth a future look (e.g. self-consistency voting) but out
+of scope here.
+
+**Levers ruled out or not applicable**, based on the design as built:
+- *Smaller verifier inputs*: ruled out by the correlation data above —
+  prompt size isn't the latency driver.
+- *Caching identical verification work*: not applicable — verification is
+  already exactly one batched call per part (a spec requirement), and
+  generated content varies per user/session/topic, so there is no literal
+  duplicate call within the current flow to cache away.
+- *Smarter repair scope*: repair is already cheap (3.2s total across 3
+  calls in the release run) — not the bottleneck.
+
+**Remaining viable lever**: pre-generation/prefetch — starting HV1
+generation in the background as soon as the user is likely headed into
+Hören (e.g. on opening German Practice), rather than waiting for the
+explicit part-open click. This hides latency behind navigation instead of
+reducing it, and is the only lever identified so far that doesn't trade
+against verification depth. Not yet implemented — flagged as the concrete
+next step if Phase 2.5 continues.
+
+Reproduce: `.\.venv\Scripts\python.exe -m scripts.measure_reasoning_effort`
+(reads the existing `german-semantic-release.json`, writes
+`reasoning-effort-comparison.json`, both in the ignored `diag_runs` dir).
+
 ## Prior failing run (historical, superseded)
 
 An earlier run on the pre-audit-based verifier design (plain freeform
