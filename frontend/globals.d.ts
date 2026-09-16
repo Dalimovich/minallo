@@ -281,6 +281,11 @@ declare global {
     _userType?: string;
     _germanTest?: string;
     _germanLevel?: string;
+    // Canonical German Exam Engine profile id (e.g. "telc_c1_hochschule"),
+    // resolved from profiles.german_exam_profile_id or derived client-side
+    // from (_germanTest, _germanLevel) — see applyProfile() in user-data.ts.
+    // null/undefined means no supported exam profile for this learner.
+    _germanExamProfileId?: string | null;
     MAJOR_LIST?: string[];
 
     // ── pdf controls extras ────────────────────────────────────────────

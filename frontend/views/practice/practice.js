@@ -4252,7 +4252,15 @@
         partId: 'hv1',
         attemptsBuffer: [],
         _resultsSavePromise: null,
-        _speakerOrder: []
+        _speakerOrder: [],
+        // Set true only when a SUPPORTED profile's generation call itself
+        // failed (network/rate-limit/backend error) — never for the
+        // no-supported-profile case, which stays a silent LISTEN_SETS
+        // fallback. Callers of lsGenerateOrLoadPart check this before
+        // re-rendering the workspace, so the explicit error panel
+        // lsShowGenerationError() draws into glListenTaskPanel isn't
+        // immediately stomped by a normal render call.
+        _lastGenFailed: false
       };
 
       function lsEl(id) { return document.getElementById(id); }
@@ -4304,13 +4312,29 @@
       // ONLY place /api/ai/tts-batch is ever called from, for both the static
       // and generated content paths, so audio is never requested twice.
       //
-      // Phase 1's exam-profile registry has exactly one profile
-      // (telc_c1_hochschule), so resolving it client-side is a simple direct
-      // check rather than a network round trip — mirrors the backend's own
-      // resolve_profile_id() mapping.
+      // Canonical resolution: window._germanExamProfileId is set by
+      // applyProfile() (frontend/js/features/auth/user-data.ts) from
+      // profiles.german_exam_profile_id (or derived + persisted there on
+      // first use) — this is the authoritative source now that more than
+      // one profile can eventually exist. The table below is only a
+      // defensive fallback for the narrow window before that global is set
+      // (e.g. Hören opened before user-data finishes loading); it must be
+      // kept in sync with GERMAN_EXAM_PROFILES_CLIENT in user-data.ts and
+      // the backend's GERMAN_EXAM_PROFILES registry — adding a profile
+      // means one entry in each of these three places, not another
+      // if-branch.
+      var LS_GERMAN_EXAM_PROFILES_FALLBACK = [
+        { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] }
+      ];
       function lsResolveProfileId() {
-        if (window._germanTest === 'telc' && window._germanLevel === 'C1 Hochschule') return 'telc_c1_hochschule';
-        return null;
+        if (window._germanExamProfileId) return window._germanExamProfileId;
+        var familyNorm = (window._germanTest || '').trim().toLowerCase();
+        var levelNorm = (window._germanLevel || '').trim();
+        if (!familyNorm || !levelNorm) return null;
+        var matches = LS_GERMAN_EXAM_PROFILES_FALLBACK.filter(function (p) {
+          return p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1;
+        });
+        return matches.length === 1 ? matches[0].profileId : null;
       }
 
       function lsMapGeneratedQuestion(part, q, speakerToSegment, allSegmentIds) {
@@ -4390,9 +4414,49 @@
         lsPlayer.setRate(1);
       }
 
-      // Always resolves (never rejects) — on any failure (no matching
-      // profile, network error, non-2xx) it falls back to the static
-      // LISTEN_SETS fixture rather than leaving the view stuck loading.
+      // Renders an explicit failure state for a SUPPORTED exam profile whose
+      // generation call itself failed (rate limit, verifier exhaustion,
+      // backend outage) — deliberately NOT the same as the no-profile case.
+      // A learner explicitly preparing for telc C1 Hochschule must never
+      // have a real failure silently swapped for generic B1/B2 static
+      // content that looks like valid exam practice; they choose the
+      // fallback themselves via the second button, or retry.
+      function lsShowGenerationError(moduleName, partId) {
+        var taskPanel = lsEl('glListenTaskPanel');
+        if (!taskPanel) return;
+        taskPanel.innerHTML =
+          '<div class="gl-listen-error">' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general listening practice instead.</p>' +
+            '<div class="gl-listen-error-actions">' +
+              '<button type="button" id="glListenErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
+              '<button type="button" id="glListenErrorFallback" class="gl-listen-end-btn">Use general listening practice</button>' +
+            '</div>' +
+          '</div>';
+        var retryBtn = lsEl('glListenErrorRetry');
+        var fallbackBtn = lsEl('glListenErrorFallback');
+        if (retryBtn) retryBtn.addEventListener('click', function () {
+          lsGenerateOrLoadPart(moduleName, partId).then(function () {
+            if (ls._lastGenFailed) return;
+            lsRenderPlayerChrome();
+            lsRenderWorkspace();
+          });
+        });
+        if (fallbackBtn) fallbackBtn.addEventListener('click', function () {
+          // Explicit, user-chosen opt-out — not a silent substitution.
+          lsLoadSet(ls.setIndex % LISTEN_SETS.length);
+          lsRenderPlayerChrome();
+          lsRenderWorkspace();
+        });
+      }
+
+      // Resolves (never rejects) so callers can always .then() without a
+      // .catch. Falls back to static LISTEN_SETS SILENTLY only when no
+      // supported exam profile resolves for this learner — a real failure
+      // for a supported profile instead sets ls._lastGenFailed and renders
+      // an explicit retry/fallback state via lsShowGenerationError(); every
+      // caller must check ls._lastGenFailed before its own re-render so it
+      // doesn't stomp that error panel.
       //
       // Race-safety: captures ls._genRequestToken at call time and re-checks
       // it before applying either outcome. Whichever call was issued LAST
@@ -4404,6 +4468,7 @@
       // (window._glCloseListeningView also bumps the token).
       function lsGenerateOrLoadPart(moduleName, partId) {
         var myToken = ++ls._genRequestToken;
+        ls._lastGenFailed = false;
         var profileId = lsResolveProfileId();
         if (!profileId) {
           if (myToken !== ls._genRequestToken) return Promise.resolve();
@@ -4426,8 +4491,9 @@
           lsLoadGeneratedPart(envelope);
         }).catch(function (err) {
           if (myToken !== ls._genRequestToken) return; // superseded — don't stomp newer state with a stale failure
-          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] generation failed, falling back to static content.', err);
-          lsLoadSet(ls.setIndex % LISTEN_SETS.length);
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] generation failed.', err);
+          ls._lastGenFailed = true;
+          lsShowGenerationError(moduleName, partId);
         });
       }
 
@@ -4471,6 +4537,7 @@
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
         lsGenerateOrLoadPart('listening', ls.partId || 'hv1').then(function () {
+          if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
           lsRenderPlayerChrome();
           lsRenderWorkspace();
         });
@@ -4513,6 +4580,7 @@
             lsGenerateOrLoadPart('listening', partId).then(function () {
               lsEl('glListenPractice').style.display = '';
               lsEl('glListenEnd').style.display = 'none';
+              if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
               lsRenderPlayerChrome();
               lsRenderWorkspace();
             });
@@ -5051,6 +5119,7 @@
           }).then(function () {
             lsEl('glListenPractice').style.display = '';
             lsEl('glListenEnd').style.display = 'none';
+            if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
             lsRenderPlayerChrome();
             lsRenderWorkspace();
           });
@@ -5079,6 +5148,7 @@
           lsGenerateOrLoadPart(ls.module || 'listening', ls.partId || 'hv1').then(function () {
             lsEl('glListenPractice').style.display = '';
             lsEl('glListenEnd').style.display = 'none';
+            if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
             lsRenderPlayerChrome();
             lsRenderWorkspace();
           });

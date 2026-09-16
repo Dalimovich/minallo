@@ -13,7 +13,28 @@ interface ProfileRow {
   user_type?: string;
   german_test?: string;
   german_level?: string;
+  german_exam_profile_id?: string | null;
   [k: string]: unknown;
+}
+
+// German Exam Engine profile registry, client-side mirror of the backend's
+// resolve_profile_id() in backend/python-ai/app/services/german_exam_profiles.py.
+// Table-driven (not a hardcoded if-chain) so adding a profile is one entry
+// here + one entry in the backend registry, not another branch — this
+// matters once TestDaF digital/paper or more telc variants exist and a
+// single (family, level) pair no longer maps unambiguously.
+const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; legacyLevelValues: string[] }> = [
+  { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] },
+];
+
+function resolveGermanExamProfileIdClient(test: string | undefined, level: string | undefined): string | null {
+  const familyNorm = (test || '').trim().toLowerCase();
+  const levelNorm = (level || '').trim();
+  if (!familyNorm || !levelNorm) return null;
+  const matches = GERMAN_EXAM_PROFILES_CLIENT.filter(
+    (p) => p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1
+  );
+  return matches.length === 1 ? matches[0]?.profileId ?? null : null;
 }
 
 interface SettingsRow {
@@ -312,6 +333,27 @@ export function applyProfile(p: ProfileRow | null | undefined): void {
     localStorage.setItem('ss_user_type_' + uid, window._userType);
     localStorage.setItem('ss_german_test_' + uid, window._germanTest);
     localStorage.setItem('ss_german_level_' + uid, window._germanLevel);
+  }
+
+  // Canonical German Exam Engine profile id: prefer the persisted column
+  // (authoritative once written), else derive it client-side and persist it
+  // lazily so future reads (and the backend, which also derives it) agree.
+  // A stale localStorage cache alone is intentionally never trusted here —
+  // only the freshly-fetched profiles row or a fresh derivation are.
+  const persistedProfileId = p.german_exam_profile_id || null;
+  const derivedProfileId = persistedProfileId || resolveGermanExamProfileIdClient(window._germanTest, window._germanLevel);
+  window._germanExamProfileId = derivedProfileId;
+  if (uid) localStorage.setItem('ss_german_exam_profile_id_' + uid, derivedProfileId || '');
+  if (!persistedProfileId && derivedProfileId && window._currentUser) {
+    const sb = window._sb as { from: (t: string) => { update: (v: Record<string, unknown>) => { eq: (k: string, v: unknown) => Promise<{ error?: unknown }> } } } | undefined;
+    if (sb) {
+      sb.from('profiles')
+        .update({ german_exam_profile_id: derivedProfileId })
+        .eq('id', window._currentUser.id)
+        .catch(() => {
+          /* best-effort cache write; resolution still works next load either way */
+        });
+    }
   }
   applyUserTypeUI();
   window.dispatchEvent(new Event('ss-profile-updated'));

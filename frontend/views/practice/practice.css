@@ -3945,6 +3945,33 @@
   color: #fff;
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
 }
+.gl-listen-error {
+  max-width: 460px;
+  margin: 24px auto;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: rgba(248, 113, 113, 0.07);
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  text-align: center;
+}
+.gl-listen-error-title {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: #fca5a5;
+}
+.gl-listen-error-sub {
+  margin: 0 0 16px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: rgba(226, 232, 240, 0.75);
+}
+.gl-listen-error-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 
 @media (max-width: 860px) {
   .gl-listen-workspace {
