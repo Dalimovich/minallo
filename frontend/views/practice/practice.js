@@ -193,6 +193,31 @@
       }
     });
 
+    // Writing Coach's real exam-aware workspace lives inside the chatbot
+    // shell (#ncbRoot), not this #psec-german grid — _glOpenSkill has no
+    // 'writing' branch and would otherwise silently fall through to the
+    // generic quiz/cards template (see _glOpenSkill's fallback branch),
+    // which is exactly the "generic questions instead of the real exam task"
+    // bug for telc learners. Mirrors the sidebar's #psbWritingCoach handler
+    // in router.js so every entry point (this grid's card, a deep link via
+    // _glSetPendingSkill, etc.) reaches the same real workspace.
+    window._glOpenWritingCoachFromPractice = function () {
+      if (typeof setNavActive === 'function') setNavActive('psbAIPage');
+      if (typeof showPortalSection === 'function') showPortalSection('aipage');
+      if (typeof _finalizeNav === 'function') _finalizeNav('aipage');
+      if (typeof _ssAfterFeature === 'function') {
+        _ssAfterFeature('aipage', function () {
+          if (typeof window._ensureWritingCoach === 'function') {
+            window._ensureWritingCoach().then(function () {
+              if (typeof window._wcOpen === 'function') window._wcOpen();
+            }).catch(function () {});
+          } else if (typeof window._wcOpen === 'function') {
+            window._wcOpen();
+          }
+        });
+      }
+    };
+
     // Hören HV1 prefetch is intent-aware, not "German Practice merely
     // opened": with Lesen now a real generated exercise too, prefetching
     // Hören unconditionally would waste a full generation+semantic-
@@ -354,6 +379,17 @@
       if (detail) {
         detail.style.display = '';
         detail.setAttribute('data-active-skill', skill);
+      }
+
+      // Schreiben (exam Writing) never has a dedicated view inside this
+      // #psec-german grid — redirect to the real workspace instead of
+      // falling through to the generic quiz/cards template below (see
+      // window._glOpenWritingCoachFromPractice for why).
+      if (skill === 'writing' && typeof window._glOpenWritingCoachFromPractice === 'function') {
+        if (home) home.style.display = '';
+        if (detail) detail.style.display = 'none';
+        window._glOpenWritingCoachFromPractice();
+        return;
       }
 
       if (skill === 'reading') {
@@ -3002,6 +3038,10 @@
           return resp.json();
         }).then(function (envelope) {
           if (myToken !== sb._genRequestToken) return false;
+          // Defensive: a malformed envelope (unexpected shape from a
+          // half-broken generation) must surface as the same explicit
+          // error+Retry state as a network/HTTP failure, never a blank
+          // panel — see sbShowGenerationError()'s callers.
           sbLoadGeneratedPart(envelope);
           sbRenderWorkspace();
           return true;
@@ -3204,24 +3244,34 @@
       };
 
       window._glOpenSprachbausteineView = function () {
-        sb.tab = 'practice';
-        sbSetTab('practice');
-        sbWireHeader();
-        var profileId = sbResolveProfileId();
-        if (profileId) {
+        // Defensive wrapper: this view must always end in exactly one of
+        // loading / generated exercise / unsupported-profile / generation-
+        // error — never a blank panel, even on an unexpected exception in
+        // profile resolution or tab wiring (see sbGenerateOrLoadPart's own
+        // catch for exceptions during/after the network call).
+        try {
+          sb.tab = 'practice';
+          sbSetTab('practice');
+          sbWireHeader();
+          var profileId = sbResolveProfileId();
+          if (profileId) {
+            sb._awaitingProfile = false;
+            sbGenerateOrLoadPart();
+            return;
+          }
+          if (!window._germanProfileLoaded) {
+            // Profile hasn't resolved yet — this is NOT the same as a
+            // definitively unsupported profile. Show a loading state and let
+            // the ss-profile-updated listener below retry once it resolves.
+            sbShowWaitingForProfile();
+            return;
+          }
           sb._awaitingProfile = false;
-          sbGenerateOrLoadPart();
-          return;
+          sbShowUnsupportedProfile();
+        } catch (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Sprachbausteine] failed to open view.', err);
+          sbShowGenerationError();
         }
-        if (!window._germanProfileLoaded) {
-          // Profile hasn't resolved yet — this is NOT the same as a
-          // definitively unsupported profile. Show a loading state and let
-          // the ss-profile-updated listener below retry once it resolves.
-          sbShowWaitingForProfile();
-          return;
-        }
-        sb._awaitingProfile = false;
-        sbShowUnsupportedProfile();
       };
 
       // Retries opening Sprachbausteine once the profile finishes loading,
