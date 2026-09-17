@@ -72,6 +72,9 @@ secrets.txt
 # Personal prompt templates (not shared)
 .claude/prompts/
 
+# Claude Code scheduled-task lock — per-session PID/runtime state, not product config
+.claude/scheduled_tasks.lock
+
 # Empty auto-generated lockfile (backend has no deps)
 backend/package-lock.json
 
