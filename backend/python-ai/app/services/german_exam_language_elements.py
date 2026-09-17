@@ -188,7 +188,12 @@ def _prompt_stage_a(
 
 
 def _call_stage_a(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=3500, model=get_settings().german_exam_model)
+    # gpt-5.4-mini bills hidden reasoning tokens against max_completion_tokens
+    # (see llm_json._token_limit_param) — a live run truncated at 13/22
+    # placeholders under 3500. Match this codebase's established budget for
+    # comparably-sized structured generation (german_exam_reading.py /
+    # german_exam_listening.py's main generation calls both use 6000).
+    return chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
 
 
 def _passage_word_count(content: dict[str, Any]) -> int:
@@ -255,7 +260,7 @@ def _prompt_passage_repair(
 
 
 def _call_passage_repair(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=2500, model=get_settings().german_exam_model)
+    return chat_json(system=system, user=user, max_tokens=4000, model=get_settings().german_exam_model)
 
 
 def _repair_passage_word_count(
@@ -351,7 +356,7 @@ def _prompt_stage_b(
 
 
 def _call_stage_b(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=3000, model=get_settings().german_exam_model)
+    return chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
 
 
 def _stage_b_issues(payload: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str]:
@@ -391,7 +396,7 @@ def _prompt_item_repair(gap_spec: dict[str, str], correct_answer: str) -> tuple[
 
 
 def _call_item_repair(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=300, model=get_settings().german_exam_model)
+    return chat_json(system=system, user=user, max_tokens=800, model=get_settings().german_exam_model)
 
 
 def _repair_stage_b_items(
