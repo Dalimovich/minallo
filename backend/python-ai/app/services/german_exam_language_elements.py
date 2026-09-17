@@ -59,7 +59,13 @@ log = logging.getLogger(__name__)
 
 # Full-generation retries are now the LAST resort, not the primary repair
 # mechanism — each stage below has its own, much cheaper repair path first.
-_MAX_STAGE_A_REGENERATIONS = 2
+# Stage A regenerations cost ~1000-1300 completion tokens each (vs. ~6000+
+# for the old monolithic call), so a somewhat larger budget here is cheap
+# insurance, not a repeat of "just retry the expensive thing more" — live
+# testing measured roughly 60-65% of individual Stage A attempts coming back
+# fully clean (missing at most 1-2 of 22 placeholders otherwise), so 3 gives
+# a real reliability gain at low added cost.
+_MAX_STAGE_A_REGENERATIONS = 3
 _MAX_PASSAGE_REPAIR_ATTEMPTS = 2
 _MAX_STAGE_B_REGENERATIONS = 2
 _MAX_ITEM_REPAIR_ATTEMPTS = 2

@@ -212,13 +212,13 @@ def test_repaired_passage_preserves_all_gaps_in_order(monkeypatch: pytest.Monkey
 
 def test_zero_gap_stage_a_is_rejected_before_stage_b_is_ever_called(monkeypatch: pytest.MonkeyPatch) -> None:
     broken = {"text": {"title": "x", "paragraphs": ["kein einziger Platzhalter hier"]}, "answers": []}
-    mod, counters = _setup(monkeypatch, stage_a_calls=[broken, broken, broken])
+    mod, counters = _setup(monkeypatch, stage_a_calls=[broken, broken, broken, broken])
     profile, part = _profile_and_part()
 
     with pytest.raises(mod.LanguageElementsGenerationError):
         mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
 
-    assert counters["stage_a"] == 3  # exhausted the regeneration budget on structural failure
+    assert counters["stage_a"] == 4  # exhausted the regeneration budget on structural failure
     assert counters["stage_b"] == 0, "Stage B must never be called with an invalid Stage A passage"
 
 
