@@ -67,6 +67,12 @@ log = logging.getLogger(__name__)
 # a real reliability gain at low added cost.
 _MAX_STAGE_A_REGENERATIONS = 3
 _MAX_PASSAGE_REPAIR_ATTEMPTS = 2
+_MAX_MISSING_GAP_REPAIR_ATTEMPTS = 2
+# Above this many missing placeholders, the passage is too broken for a
+# targeted insertion repair to be worth it (and cheaper than) a full Stage A
+# regeneration — observed live misses were 1-2 gaps; this stays well clear
+# of that while still excluding a near-total failure (e.g. 15+ missing).
+_MAX_MISSING_GAPS_FOR_REPAIR = 5
 _MAX_STAGE_B_REGENERATIONS = 2
 _MAX_ITEM_REPAIR_ATTEMPTS = 2
 _MAX_SEMANTIC_REPAIR_ROUNDS = 2
@@ -234,12 +240,12 @@ def _prompt_stage_a(
 
 
 def _call_stage_a(*, system: str, user: str) -> LlmResult:
-    # gpt-5.4-mini bills hidden reasoning tokens against max_completion_tokens
-    # (see llm_json._token_limit_param) — a live run truncated at 13/22
-    # placeholders under 3500. Match this codebase's established budget for
-    # comparably-sized structured generation (german_exam_reading.py /
-    # german_exam_listening.py's main generation calls both use 6000).
-    return chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
+    # Deliberately NOT get_settings().german_exam_model (gpt-5.4-mini) — see
+    # german_exam_model_stage_a's docstring in config.py. Only Stage A uses
+    # the stronger model; Stage B (distractors) and everything else in the
+    # German Exam Engine stay on the mini tier, per the evidence that only
+    # placeholder placement was unreliable there.
+    return chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model_stage_a)
 
 
 def _passage_word_count(content: dict[str, Any]) -> int:
@@ -288,6 +294,108 @@ def _stage_a_structural_issues(content: dict[str, Any], gap_specs: list[dict[str
     return issues
 
 
+def _missing_gap_ids(content: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str] | None:
+    """Returns the missing gapIds (in expected order) if the passage's ONLY
+    placeholder problem is that some are missing — i.e. every placeholder
+    that IS present is a real, distinct, correctly-ordered gap. Returns None
+    for any other kind of malformation (duplicates, extras, out-of-order),
+    which isn't safe to patch by insertion alone and must fall back to a
+    full Stage A regeneration."""
+    text = content.get("text") if isinstance(content, dict) else None
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
+        return None
+    joined = "\n".join(str(p) for p in paragraphs)
+    found_ids = _GAP_PLACEHOLDER_RE.findall(joined)
+    expected_ids = [g["gapId"] for g in gap_specs]
+    if len(found_ids) != len(set(found_ids)):
+        return None  # a duplicate — not a simple "missing" case
+    expected_set = set(expected_ids)
+    if any(gid not in expected_set for gid in found_ids):
+        return None  # an unknown placeholder — not a simple "missing" case
+    # found_ids must also preserve relative reading order among themselves
+    if [gid for gid in expected_ids if gid in found_ids] != found_ids:
+        return None
+    missing = [gid for gid in expected_ids if gid not in set(found_ids)]
+    return missing or None
+
+
+def _prompt_missing_gap_repair(
+    gap_specs_by_id: dict[str, dict[str, str]], text: dict[str, Any], missing_ids: list[str]
+) -> tuple[str, str]:
+    lines = "\n".join(
+        f'  {{"gapId": "{gid}", "category": "{gap_specs_by_id[gid]["category"]}"}}' for gid in missing_ids
+    )
+    system = (
+        "You are fixing a German Sprachbausteine passage that is missing some of its required gap "
+        f"placeholders. Insert EXACTLY these {len(missing_ids)} missing placeholders somewhere natural in "
+        "the existing text, each at a point where removing one word or short phrase and replacing it with "
+        "the placeholder tests the given category. Do NOT remove, move, or renumber any placeholder that is "
+        "already present, and do not otherwise reword the passage beyond what's needed to fit each new gap "
+        "in naturally:\n"
+        f"{lines}\n\n"
+        "targetCategory meanings: grammar = a verb form/case ending/connector/preposition/word-order choice; "
+        "lexicon = a collocation/word choice/word-formation choice; orthography = a spelling/capitalization/"
+        "punctuation-sensitive choice.\n\n"
+        "For each newly inserted gap, report the correct word/phrase you removed (exactly as it must be "
+        "reinserted) and 1-2 fitting skillTags. Reply with ONLY valid JSON, no markdown fences, no "
+        'commentary, shape exactly:\n'
+        '{"text": {"title": "...", "paragraphs": [...]}, "newAnswers": '
+        '[{"gapId": "...", "answer": "...", "skillTags": ["..."]}]}'
+    )
+    user = f"Passage to fix (missing {missing_ids}):\n{json.dumps(text, ensure_ascii=False)}"
+    return system, user
+
+
+def _call_missing_gap_repair(*, system: str, user: str) -> LlmResult:
+    # Same stronger tier as _call_stage_a — this patches a Stage A passage
+    # and needs the same "keep every existing placeholder exactly where it
+    # is" reliability that motivated the switch in the first place.
+    return chat_json(system=system, user=user, max_tokens=2000, model=get_settings().german_exam_model_stage_a)
+
+
+def _repair_missing_gaps(
+    content: dict[str, Any], gap_specs: list[dict[str, str]], missing_ids: list[str]
+) -> dict[str, Any] | None:
+    """Inserts only the missing placeholders into an otherwise-good passage,
+    reusing the rest of the (expensive) Stage A output instead of discarding
+    it for a full regeneration — mirrors the same "repair narrowly" idea as
+    _repair_passage_word_count and Stage B's per-item repair. Returns the
+    merged, re-validated content, or None if the repair attempt didn't fully
+    fix it (caller falls back to full Stage A regeneration)."""
+    gap_specs_by_id = {g["gapId"]: g for g in gap_specs}
+    system, user = _prompt_missing_gap_repair(gap_specs_by_id, content["text"], missing_ids)
+    try:
+        result = _call_missing_gap_repair(system=system, user=user)
+        data = result.data if isinstance(result.data, dict) else None
+    except Exception:  # noqa: BLE001
+        log.warning("Sprachbausteine missing-gap repair attempt failed", exc_info=True)
+        return None
+    if not isinstance(data, dict):
+        return None
+    fixed_text = data.get("text")
+    new_answers = data.get("newAnswers")
+    if not isinstance(fixed_text, dict) or not isinstance(new_answers, list):
+        return None
+
+    candidate = dict(content)
+    candidate["text"] = fixed_text
+    # Keep only answers for gaps that genuinely still appear as a
+    # placeholder in the (possibly re-touched) text, then add the repair's
+    # new ones — discards any fabricated answer entries for gaps that were
+    # never actually placed in the original passage.
+    joined = "\n".join(str(p) for p in fixed_text.get("paragraphs") or [])
+    present_ids = set(_GAP_PLACEHOLDER_RE.findall(joined))
+    kept = [a for a in (content.get("answers") or []) if isinstance(a, dict) and a.get("gapId") in present_ids]
+    kept_ids = {a["gapId"] for a in kept}
+    added = [a for a in new_answers if isinstance(a, dict) and a.get("gapId") in present_ids and a.get("gapId") not in kept_ids]
+    candidate["answers"] = kept + added
+
+    if _stage_a_structural_issues(candidate, gap_specs):
+        return None
+    return candidate
+
+
 def _prompt_passage_repair(
     gap_specs: list[dict[str, str]], text: dict[str, Any], word_min: int, word_max: int, current_count: int
 ) -> tuple[str, str]:
@@ -315,7 +423,8 @@ def _prompt_passage_repair(
 
 
 def _call_passage_repair(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=4000, model=get_settings().german_exam_model)
+    # Same stronger tier as _call_stage_a — see that function's comment.
+    return chat_json(system=system, user=user, max_tokens=4000, model=get_settings().german_exam_model_stage_a)
 
 
 def _repair_passage_word_count(
@@ -356,6 +465,17 @@ def _run_stage_a(
         content = result.data if isinstance(result.data, dict) else {}
 
         structural_issues = _stage_a_structural_issues(content, gap_specs)
+        if structural_issues:
+            missing_ids = _missing_gap_ids(content, gap_specs)
+            if missing_ids and len(missing_ids) <= _MAX_MISSING_GAPS_FOR_REPAIR:
+                for _repair_attempt in range(_MAX_MISSING_GAP_REPAIR_ATTEMPTS):
+                    repaired = _repair_missing_gaps(content, gap_specs, missing_ids)
+                    if repaired is not None:
+                        content = repaired
+                        structural_issues = []
+                        break
+                    missing_ids = _missing_gap_ids(content, gap_specs) or missing_ids
+
         if not structural_issues:
             content = _repair_passage_word_count(content, gap_specs, word_min, word_max)
             word_count = _passage_word_count(content)

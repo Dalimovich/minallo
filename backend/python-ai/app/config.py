@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     openai_generate_model: str = Field("gpt-4o-mini", alias="OPENAI_GENERATE_MODEL")
     openai_generate_model_strong: str = Field("gpt-4o", alias="OPENAI_GENERATE_MODEL_STRONG")
     german_exam_model: str = Field("gpt-5.4-mini", alias="GERMAN_EXAM_MODEL")
+    # Sprachbausteine Stage A only (see german_exam_language_elements.py):
+    # live testing found gpt-5.4-mini unreliably following "insert exactly
+    # these placeholders at these positions" (missing 1-3 of 22 gaps on
+    # ~35-40% of attempts, even after a bounded targeted-repair pass), while
+    # gpt-4o got all 22 placeholders right on 5/5 trials — reuses the
+    # existing generic "strong" tier rather than inventing a new one.
+    german_exam_model_stage_a: str = Field("gpt-4o", alias="GERMAN_EXAM_MODEL_STAGE_A")
     # Reasoning effort for o-series strong models (low | medium | high).
     # "low" is faster/cheaper; "medium" is the safe default that solves the
     # multi-phase kinematics correctly. Ignored for non-reasoning models.

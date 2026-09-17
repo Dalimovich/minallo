@@ -81,10 +81,13 @@ def _stage_b_payload(gap_specs, bad_gap_id: str | None = None) -> dict:
     return {"items": items}
 
 
-def _setup(monkeypatch: pytest.MonkeyPatch, *, stage_a_calls, stage_b_calls=None, passage_repair=None, item_repair=None):
+def _setup(
+    monkeypatch: pytest.MonkeyPatch, *, stage_a_calls, stage_b_calls=None, passage_repair=None, item_repair=None,
+    missing_gap_repair=None
+):
     import app.services.german_exam_language_elements as mod
 
-    counters = {"stage_a": 0, "stage_b": 0, "passage_repair": 0, "item_repair": 0}
+    counters = {"stage_a": 0, "stage_b": 0, "passage_repair": 0, "item_repair": 0, "missing_gap_repair": 0}
 
     def _stage_a(**kwargs):
         i = counters["stage_a"]
@@ -109,10 +112,17 @@ def _setup(monkeypatch: pytest.MonkeyPatch, *, stage_a_calls, stage_b_calls=None
             raise AssertionError("item repair was not expected to be called")
         return _FakeResult(item_repair[min(counters["item_repair"] - 1, len(item_repair) - 1)])
 
+    def _missing_gap(**kwargs):
+        counters["missing_gap_repair"] += 1
+        if missing_gap_repair is None:
+            raise AssertionError("missing-gap repair was not expected to be called")
+        return _FakeResult(missing_gap_repair[min(counters["missing_gap_repair"] - 1, len(missing_gap_repair) - 1)])
+
     monkeypatch.setattr(mod, "_call_stage_a", _stage_a)
     monkeypatch.setattr(mod, "_call_stage_b", _stage_b)
     monkeypatch.setattr(mod, "_call_passage_repair", _repair)
     monkeypatch.setattr(mod, "_call_item_repair", _item)
+    monkeypatch.setattr(mod, "_call_missing_gap_repair", _missing_gap)
     monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
     return mod, counters
 
@@ -383,3 +393,59 @@ def test_persistently_invalid_stage_a_raises_after_regeneration_budget(monkeypat
     with pytest.raises(mod.LanguageElementsGenerationError):
         mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
     assert counters["stage_b"] == 0
+
+
+# ── Missing-gap repair: fix a near-complete passage, don't discard it ────
+
+def test_a_small_number_of_missing_gaps_is_repaired_not_fully_regenerated(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    complete = _stage_a_content(specs)
+    missing_two = dict(complete)
+    missing_two["text"] = dict(complete["text"])
+    missing_two["text"]["paragraphs"] = [
+        p.replace("{{g5}}", "wenig").replace("{{g12}}", "sehr") for p in complete["text"]["paragraphs"]
+    ]
+
+    mod, counters = _setup(
+        monkeypatch,
+        stage_a_calls=[missing_two],
+        stage_b_calls=[_stage_b_payload(specs)],
+        missing_gap_repair=[{
+            "text": complete["text"],  # the "fixed" passage has all 22 placeholders again
+            "newAnswers": [
+                {"gapId": "g5", "answer": "antwort_g5", "skillTags": ["grammar"]},
+                {"gapId": "g12", "answer": "antwort_g12", "skillTags": ["word_formation"]},
+            ],
+        }],
+    )
+    profile, part = _profile_and_part()
+
+    content, meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+
+    assert counters["stage_a"] == 1, "2 missing gaps must be repaired in place, not trigger a full regeneration"
+    assert counters["missing_gap_repair"] == 1
+    assert len(content["text"]["gaps"]) == 22
+    assert meta["deterministicPassed"] is True
+
+
+def test_too_many_missing_gaps_skips_repair_and_regenerates(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    complete = _stage_a_content(specs)
+    # Strip more placeholders than _MAX_MISSING_GAPS_FOR_REPAIR — too broken
+    # for a targeted insertion repair to be the right tool.
+    from app.services.german_exam_language_elements import _MAX_MISSING_GAPS_FOR_REPAIR
+    too_broken = dict(complete)
+    too_broken["text"] = dict(complete["text"])
+    paragraphs = complete["text"]["paragraphs"]
+    for gid in [f"g{i}" for i in range(1, _MAX_MISSING_GAPS_FOR_REPAIR + 3)]:
+        paragraphs = [p.replace("{{" + gid + "}}", "Wort") for p in paragraphs]
+    too_broken["text"]["paragraphs"] = paragraphs
+
+    mod, counters = _setup(monkeypatch, stage_a_calls=[too_broken, complete], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+
+    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+
+    assert counters["missing_gap_repair"] == 0, "too many missing gaps must skip the targeted repair"
+    assert counters["stage_a"] == 2, "must fall back to a full Stage A regeneration instead"
+    assert len(content["text"]["gaps"]) == 22
