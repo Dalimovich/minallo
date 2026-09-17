@@ -100,6 +100,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const selectedTopic = body.selectedTopic as Record<string, unknown> | undefined;
   if (!selectedTopic || typeof selectedTopic !== 'object' || Array.isArray(selectedTopic) ||
       selectedTopic.questionId !== topicId ||
+      !Array.isArray(selectedTopic.statements) || selectedTopic.statements.length !== 2 ||
+      !selectedTopic.statements.every(s => typeof s === 'string' && s.trim() && s.length <= 2000) ||
       !['title', 'communicativeSituation', 'taskInstructions'].every(key =>
         typeof selectedTopic[key] === 'string' && (selectedTopic[key] as string).trim().length > 0 &&
         (selectedTopic[key] as string).length <= 6000)) {

@@ -7,7 +7,7 @@ import ts from 'typescript';
 const task = {
   generationId: 'gen-writing', exam: { profileId: 'telc_c1_hochschule', family: 'telc', variant: 'C1 Hochschule', cefrLevel: 'C1', profileVersion: 4 },
   part: { id: 'schreiben_1' }, content: { questions: ['a', 'b'].map(questionId => ({
-    questionId, title: `Topic ${questionId}`, communicativeSituation: 'Universität', taskInstructions: 'Begründen Sie Ihre Position.', writingCoachTaskType: 'argumentation'
+    statements: ["Position A", "Position B"], questionId, title: `Topic ${questionId}`, communicativeSituation: 'Universität', taskInstructions: 'Begründen Sie Ihre Position.', writingCoachTaskType: 'argumentation'
   })) }
 };
 const analysis = { score: {}, scoreExplanation: '', estimatedLevel: 'C1', strengths: ['Good structure'], feedbackItems: [],

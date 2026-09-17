@@ -22,6 +22,7 @@ from .german_exam_language_elements import generate_language_elements_part
 from .german_exam_listening import generate_listening_part
 from .german_exam_reading import generate_reading_part
 from .german_exam_writing import generate_writing_part
+from .german_exam_speaking import generate_speaking_part
 from .german_exam_performance import pick_topic, record_topic_used
 from .german_exam_profiles import ExamProfile, GermanExamProfileError, PartBlueprint, get_part, get_profile
 
@@ -73,7 +74,7 @@ _TOPIC_BANKS: dict[str, list[dict[str, str]]] = {
 
 def _topic_bank(module: str, profile: ExamProfile) -> list[dict[str, str]]:
     del profile  # reserved for exam-specific topic curation later
-    return _TOPIC_BANKS.get(module, [])
+    return _TOPIC_BANKS.get("writing" if module == "speaking" else module, [])
 
 
 def _dispatch_module(module: str):
@@ -86,7 +87,7 @@ def _dispatch_module(module: str):
     if module == "writing":
         return _generate_writing
     if module == "speaking":
-        raise NotImplementedError(f"module {module!r} is not implemented yet")
+        return generate_speaking_part
     raise GermanExamProfileError(f"unknown module: {module}")
 
 

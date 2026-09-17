@@ -366,12 +366,38 @@ def _verify_prompt_schreiben(part: PartBlueprint, content: dict[str, Any]) -> tu
         "error issues. Set overall passed to true exactly when all items pass and no part-wide error "
         "exists. A warning alone must not set either passed flag to false."
     )
+    system += (" Both supplied statements MUST represent distinguishable, contrasting, reasonably "
+               "discussable positions, not paraphrases. Instructions MUST require engagement with BOTH "
+               "positions; flag QUESTION_NOT_ANSWERABLE otherwise. Neither needs specialist knowledge. "
+               "Set audit.contrastingStatements and audit.engagesBothStatements explicitly; false blocks acceptance.")
     payload = {"topics": content.get("questions") or []}
     user = json.dumps(payload, ensure_ascii=False)
     return system, user
 
 
+def _verify_prompt_speaking(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = (
+        "Review GENERATED telc C1 Hochschule speaking TASKS only, never grade learner speech. "
+        "Return the prescribed JSON verdict with every questionId and audit.duplicateItemIds. "
+        "There is no correct answer. Flag QUESTION_NOT_ANSWERABLE for specialist knowledge or unclear instructions; "
+        "OFF_LEVEL_CONTENT for unsuitable C1 content; ANSWER_EXPOSED_IN_PROMPT for model solutions. "
+        "Presentation: two genuinely distinct university/study/general-academic topics, answerable without "
+        "specialist knowledge in approximately three minutes, with introduction, structure and conclusion. "
+        "Discussion: an understandable, genuinely debatable generated statement with no single correct answer; "
+        "guiding points support interpretation, stance, reasons/examples and response to partner arguments. "
+        "Do not accept fabricated attribution to a real person. Duplicate presentation choices must list the "
+        "other questionId in duplicateItemIds. All deficiencies are errors that block acceptance. "
+        f"Allowed issue codes: {sorted(SEMANTIC_ISSUE_CODES)}. "
+        'Return {"passed":boolean,"partWideIssues":[],"items":[{"questionId":"...",'
+        '"audit":{"duplicateItemIds":[]},"passed":boolean,"issues":[]}]}. '
+        "Each issue has code, severity, message and evidence."
+    )
+    return system, json.dumps(content, ensure_ascii=False)
+
+
 _VERIFY_PROMPT_BUILDERS = {
+    "presentation_summary_followup": _verify_prompt_speaking,
+    "quote_guided_discussion": _verify_prompt_speaking,
     "speaker_statement_matching": _verify_prompt_hv1,
     "sentence_completion_mc3": _verify_prompt_hv2,
     "structured_note_completion": _verify_prompt_hv3,
@@ -476,7 +502,9 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
         "evidence": _object_schema({"segmentIds": strings, "questionIds": strings,
                                     "optionIndexes": {"type": "array", "items": {"type": "integer"}}}),
     })
-    if part.task_type == "speaker_statement_matching":
+    if part.task_type == "choice_long_form_writing":
+        audit = _object_schema({"duplicateItemIds": strings, "contrastingStatements": {"type": "boolean"}, "engagesBothStatements": {"type": "boolean"}})
+    elif part.task_type == "speaker_statement_matching":
         audit = _object_schema({"supportedSpeakerIds": strings, "plausible": {"type": "boolean"}})
     elif part.task_type == "sentence_completion_mc3":
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
@@ -519,6 +547,10 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
             audit = {}
         question = questions[item.item_id]
         code = None
+        if part.task_type == "choice_long_form_writing":
+            for criterion in ("contrastingStatements", "engagesBothStatements"):
+                if audit.get(criterion) is not True:
+                    item.issues.append(SemanticIssue("QUESTION_NOT_ANSWERABLE", "error", f"Writing input failed {criterion}"))
         if part.task_type == "speaker_statement_matching":
             values = audit.get("supportedSpeakerIds")
             if not isinstance(values, list) or any(not isinstance(v, str) or v not in speakers for v in values):
@@ -611,6 +643,8 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVer
     """One batched call for the whole part. Deliberately does NOT receive the
     adaptation plan or topic-selection rationale — the verifier judges the
     frozen content on its own merits, not biased by why it was generated."""
+    if part.task_type == "quote_guided_discussion":
+        content = {"questions": [{"questionId": "discussion", **content}]}
     builder = _VERIFY_PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
         return SemanticVerificationResult(

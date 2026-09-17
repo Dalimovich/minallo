@@ -71,7 +71,7 @@ def _prompt_schreiben1(
     profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
 ) -> tuple[str, str]:
     topic_count = part.constraints.get("topicChoiceCount", 2)
-    target_words = part.constraints.get("targetWordCount", 350)
+    target_words = part.constraints["wordCountMin"]
 
     system = (
         f"You generate ORIGINAL German writing-exam TASK PROMPTS (not a written response) for "
@@ -86,20 +86,24 @@ def _prompt_schreiben1(
         f"study-related and answerable by a C1 Hochschule candidate using general knowledge — target "
         f"response length is at least {target_words} words, but that is guidance for the CANDIDATE's answer, "
         "not a constraint on your own output. Each topic needs: a short title; a clear communicative "
-        "situation (who is writing to whom, in what context, and why); precise task instructions listing "
+        "situation (who is writing to whom, in what context, and why); exactly TWO contrasting, "
+        "nonduplicate statements representing debatable positions on that topic; precise task instructions listing "
         "the concrete content the response must cover; and a writingCoachTaskType classifying how the "
         f"topic is framed, exactly one of {sorted(TELC_SCHREIBEN_TASK_TYPES)} — use 'stellungnahme' for a "
         "take-a-position-on-an-issue framing, 'argumentation' for a build-a-case/weigh-arguments framing, "
         "'freier_text' only if neither fits. Do not require any niche specialist/professional knowledge — "
-        "general academic/study-life familiarity must be enough to answer either topic.\n\n"
+        "general academic/study-life familiarity must be enough to answer either topic. "
+        "Require engagement with BOTH supplied positions. Each topic's statements combined with its "
+        "communicativeSituation and taskInstructions must total 45–55 whitespace-delimited words "
+        "(exclude the short title). This is the INPUT length, not the learner's minimum 350 words.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
         "Output JSON shape exactly:\n"
         "{\n"
         '  "questions": [\n'
         '    {"questionId": "a", "title": "...", "communicativeSituation": "...",\n'
-        '     "taskInstructions": "...", "writingCoachTaskType": "stellungnahme"},\n'
+        '     "statements": ["position one", "contrasting position"], "taskInstructions": "...", "writingCoachTaskType": "stellungnahme"},\n'
         '    {"questionId": "b", "title": "...", "communicativeSituation": "...",\n'
-        '     "taskInstructions": "...", "writingCoachTaskType": "argumentation"}\n'
+        '     "statements": ["position one", "contrasting position"], "taskInstructions": "...", "writingCoachTaskType": "argumentation"}\n'
         f"  ] // exactly {topic_count} entries\n"
         "}"
     )

@@ -66,6 +66,7 @@ const ROUTES = [
   ['ai/german-exam/weaknesses',       'ai-german-exam-weaknesses'],
   ['ai/german-exam/consume',          'ai-german-exam-consume'],
   ['ai/german-exam/grade-writing',    'ai-german-exam-grade-writing'],
+  ['ai/german-exam/speaking',         'ai-german-exam-speaking'],
   ['notes/generate',                  'notes-generate'],
   ['notes',                           'notes-crud'],
   ['chat-saved-replies',              'chat-saved-replies'],

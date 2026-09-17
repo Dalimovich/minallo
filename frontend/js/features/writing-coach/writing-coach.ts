@@ -238,7 +238,7 @@ function _renderTopics(): void {
   root.innerHTML = `<h3>telc C1 Hochschule · C1 · Schreiben</h3><p>Wählen Sie ein Thema. Schreiben Sie mindestens 350 Wörter. Bearbeitungszeit: 70 Minuten.</p>` +
     _session.task.content.questions.map((topic, index) => `<section class="wc-result-section">
       <label><input type="radio" name="wcTopic" value="${_escape(topic.questionId)}" ${_grade || _activeAbort ? 'disabled' : ''} ${_selectedTopic === topic.questionId ? 'checked' : ''}> <strong>Thema ${index === 0 ? 'A' : 'B'}: ${_escape(topic.title)}</strong></label>
-      <p>${_escape(topic.communicativeSituation)}</p><p style="white-space:pre-line">${_escape(topic.taskInstructions)}</p></section>`).join('');
+      <p>${_escape(topic.communicativeSituation)}</p><blockquote>${_escape(topic.statements[0])}</blockquote><blockquote>${_escape(topic.statements[1])}</blockquote><p style="white-space:pre-line">${_escape(topic.taskInstructions)}</p></section>`).join('');
   root.querySelectorAll<HTMLInputElement>('input[name="wcTopic"]').forEach(input => {
     input.addEventListener('change', () => { _selectedTopic = input.value; _updateAnalyzeEnabled(); });
   });

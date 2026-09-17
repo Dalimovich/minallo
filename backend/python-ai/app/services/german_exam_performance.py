@@ -117,8 +117,8 @@ def record_attempts(user_id: str, exam_family: str, exam_variant: str | None, ta
                 "skill_tags": resolved["skill_tags"],
                 "difficulty": item.difficulty,
                 "attempt_count": item.attempt_count,
-                "first_attempt_correct": None if resolved["module"] == "writing" else item.first_attempt_correct,
-                "final_correct": None if resolved["module"] == "writing" else item.final_correct,
+                "first_attempt_correct": None if resolved["module"] in {"writing", "speaking"} else item.first_attempt_correct,
+                "final_correct": None if resolved["module"] in {"writing", "speaking"} else item.final_correct,
                 "hint_level": item.hint_level,
                 "replay_count": item.replay_count,
                 "transcript_revealed": item.transcript_revealed,
@@ -132,12 +132,12 @@ def record_attempts(user_id: str, exam_family: str, exam_variant: str | None, ta
     if rows:
         # One scored submission per generated writing task. A lost HTTP response
         # followed by Save retry must not double-count the rubric in Weak Areas.
-        writing_rows = [row for row in rows if row["module"] == "writing" and row["generation_id"]]
+        writing_rows = [row for row in rows if row["module"] in {"writing", "speaking"} and row["generation_id"]]
         other_rows = [row for row in rows if row not in writing_rows]
         sb = get_supabase()
         for row in writing_rows:
             row["id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
-                f"minallo:writing:{user_id}:{row['profile_id']}:{row['generation_id']}:{row['item_id']}"))
+                f"minallo:{row['module']}:{user_id}:{row['profile_id']}:{row['generation_id']}:{row['item_id']}"))
         if writing_rows:
             sb.table("german_exam_attempts").upsert(writing_rows, on_conflict="id", ignore_duplicates=True).execute()
         if other_rows:

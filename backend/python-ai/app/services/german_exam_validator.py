@@ -446,12 +446,22 @@ def validate_choice_long_form_writing(part: PartBlueprint, content: dict[str, An
     seen_titles: list[str] = []
     seen_instructions: list[str] = []
     for q in questions:
-        if set(q) - {"questionId", "title", "communicativeSituation", "taskInstructions", "writingCoachTaskType"}:
+        if set(q) - {"questionId", "title", "statements", "communicativeSituation", "taskInstructions", "writingCoachTaskType"}:
             issues.append(ValidationIssue(q.get("questionId"), "unexpected topic fields: no answer key or model solution is allowed"))
         title = (q.get("title") or "").strip()
         situation = (q.get("communicativeSituation") or "").strip()
         instructions = (q.get("taskInstructions") or "").strip()
         task_type = q.get("writingCoachTaskType")
+        statements = q.get("statements")
+        if (not isinstance(statements, list) or len(statements) != 2 or
+                any(not isinstance(s, str) or not s.strip() for s in statements)):
+            issues.append(ValidationIssue(q.get("questionId"), "exactly 2 nonempty statements are required"))
+        else:
+            if len({" ".join(s.casefold().split()).strip(".!? ") for s in statements}) != 2:
+                issues.append(ValidationIssue(q.get("questionId"), "duplicate statements"))
+            words = len(" ".join([*statements, situation, instructions]).split())
+            if not part.constraints["inputWordCountMin"] <= words <= part.constraints["inputWordCountMax"]:
+                issues.append(ValidationIssue(q.get("questionId"), f"topic input must have 45–55 words, got {words}"))
 
         if not title:
             issues.append(ValidationIssue(q.get("questionId"), "title is missing or empty"))
@@ -475,7 +485,37 @@ def validate_choice_long_form_writing(part: PartBlueprint, content: dict[str, An
     return issues
 
 
+def validate_speaking(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    issues = []
+    def nonempty(value):
+        return isinstance(value, str) and bool(value.strip()) and len(value) <= 2000
+    if part.task_type == "presentation_summary_followup":
+        topics = content.get("questions")
+        if not isinstance(topics, list) or len(topics) != 2:
+            return [ValidationIssue(None, "exactly two presentation topics required")]
+        for q in topics:
+            if (not isinstance(q, dict) or set(q) != {"questionId", "title", "taskInstructions"}
+                    or not all(nonempty(q.get(k)) for k in ("questionId", "title", "taskInstructions"))):
+                issues.append(ValidationIssue(None, "malformed presentation topic"))
+        if not issues and (len({q["title"].strip().casefold() for q in topics}) != 2 or
+                           len({q["taskInstructions"].strip().casefold() for q in topics}) != 2):
+            issues.append(ValidationIssue(None, "presentation choices must be distinct"))
+        if set(content) != {"questions"}:
+            issues.append(ValidationIssue(None, "unexpected presentation fields; no solutions allowed"))
+    else:
+        if set(content) != {"quote", "sourceLabel", "guidingPoints"}:
+            issues.append(ValidationIssue(None, "discussion requires quote, sourceLabel and guidingPoints only"))
+        if not nonempty(content.get("quote")) or content.get("sourceLabel") != "Generiertes Übungszitat (keine reale Quelle)":
+            issues.append(ValidationIssue(None, "quote must be explicitly labelled generated practice material"))
+        from .german_exam_speaking import DISCUSSION_GUIDING_POINTS
+        if content.get("guidingPoints") != DISCUSSION_GUIDING_POINTS:
+            issues.append(ValidationIssue(None, "use the standardized four discussion guiding points"))
+    return issues
+
+
 VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationIssue]]] = {
+    "presentation_summary_followup": validate_speaking,
+    "quote_guided_discussion": validate_speaking,
     "speaker_statement_matching": validate_speaker_statement_matching,
     "sentence_completion_mc3": validate_sentence_completion_mc3,
     "structured_note_completion": validate_structured_note_completion,
@@ -495,6 +535,8 @@ _SEGMENTS_REQUIRED_TASK_TYPES = frozenset(
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    if part.task_type == "quote_guided_discussion":
+        return validate_speaking(part, content)
     generic_keys = [("questions", "questionId")]
     if part.task_type in _SEGMENTS_REQUIRED_TASK_TYPES:
         generic_keys.insert(0, ("segments", "id"))

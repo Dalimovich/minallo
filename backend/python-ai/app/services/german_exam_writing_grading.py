@@ -82,7 +82,7 @@ def grade_writing_submission(
             "targetLevel": profile_level,
             "selectedTopic": selected_topic,
             "gradingDimensions": list(part.grading_dimensions or ()),
-            "targetWordCount": part.constraints.get("targetWordCount", 350),
+            "wordCountMin": part.constraints["wordCountMin"],
         },
     )
 

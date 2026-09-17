@@ -255,7 +255,10 @@ _TELC_C1_HOCHSCHULE_SCHREIBEN: tuple[PartBlueprint, ...] = (
         task_type="choice_long_form_writing",
         constraints={
             "topicChoiceCount": 2,
-            "targetWordCount": 350,
+            "wordCountMin": 350,
+            "statementCount": 2,
+            "inputWordCountMin": 45,
+            "inputWordCountMax": 55,
         },
         # Full "writing" skill-tag vocabulary (see german_exam_skill_tags.py)
         # — these are the tags a GRADED SUBMISSION's rubric-dimension attempt
@@ -293,6 +296,32 @@ _TELC_C1_HOCHSCHULE_SCHREIBEN: tuple[PartBlueprint, ...] = (
 )
 
 
+SPEAKING_TASK_MAXIMA = {"presentation": 6, "summary_followup": 4, "discussion": 6}
+SPEAKING_LANGUAGE_MAXIMA = {"fluency": 8, "repertoire": 8, "grammatical_correctness": 8, "pronunciation_intonation": 8}
+_SPEAKING_TAGS = ("task_fulfilment", "fluency", "interaction", "argumentation", "coherence",
+                  "grammar_accuracy", "vocabulary_range", "pronunciation", "register", "response_to_partner")
+_SPEAKING_ADAPTATIONS = ("argument_complexity", "required_spontaneity", "counterargument_pressure", "register_challenge", "followup_complexity")
+_TELC_C1_HOCHSCHULE_SPRECHEN = (
+    PartBlueprint(
+        part_id="sprechen_1", module="speaking", title="Präsentation, Zusammenfassung und Anschlussfragen",
+        task_type="presentation_summary_followup",
+        constraints={"topicChoiceCount": 2, "presentationSeconds": 180, "summaryFollowupSeconds": 120,
+                     "subtasks": ["1A", "1B"], "taskMaxima": {"presentation": 6, "summary_followup": 4}},
+        allowed_skill_tags=_SPEAKING_TAGS, allowed_adaptations=_SPEAKING_ADAPTATIONS,
+        scoring=ScoringSpec(max_points=10, points_per_correct=None),
+        grading_dimensions=("presentation", "summary_followup"), time_limit_seconds=300,
+    ),
+    PartBlueprint(
+        part_id="sprechen_2", module="speaking", title="Diskussion", task_type="quote_guided_discussion",
+        constraints={"discussionTopicCount": 1, "examinerTopicPoolCount": 3, "discussionSeconds": 360,
+                     "taskMaxima": {"discussion": 6}},
+        allowed_skill_tags=_SPEAKING_TAGS, allowed_adaptations=_SPEAKING_ADAPTATIONS,
+        scoring=ScoringSpec(max_points=6, points_per_correct=None),
+        grading_dimensions=("discussion",), time_limit_seconds=360,
+    ),
+)
+
+
 GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {
     "telc_c1_hochschule": ExamProfile(
         profile_id="telc_c1_hochschule",
@@ -304,12 +333,12 @@ GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {
         source_reference="telc GmbH official model-test/handbook material for telc Deutsch C1 Hochschule",
         source_version="verified against current telc.net exam-format description",
         verified_at="2026-09-17",
-        profile_version=4,
+        profile_version=5,
         modules={
             "listening": _TELC_C1_HOCHSCHULE_HOEREN,
             "reading": _TELC_C1_HOCHSCHULE_LESEN,
             "writing": _TELC_C1_HOCHSCHULE_SCHREIBEN,
-            "speaking": None,
+            "speaking": _TELC_C1_HOCHSCHULE_SPRECHEN,
             "language_elements": _TELC_C1_HOCHSCHULE_SPRACHBAUSTEINE,
         },
     ),

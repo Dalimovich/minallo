@@ -63,8 +63,5 @@ def test_writing_module_dispatches_to_writing_adapter(monkeypatch):
     assert len(calls) == 1
 
 
-def test_dispatch_module_still_raises_not_implemented_for_speaking():
-    import pytest as _pytest
-
-    with _pytest.raises(NotImplementedError):
-        gen._dispatch_module("speaking")
+def test_dispatch_module_has_speaking_adapter():
+    assert gen._dispatch_module("speaking") is gen.generate_speaking_part

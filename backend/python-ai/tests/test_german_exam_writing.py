@@ -40,14 +40,16 @@ def _valid_schreiben_content() -> dict:
             {
                 "questionId": "a",
                 "title": "Digitalisierung im Studium",
-                "communicativeSituation": "Beitrag für das Studierendenmagazin.",
+                "statements": ["Digitale Lehrveranstaltungen erm?glichen allen Studierenden flexibles Lernen unabh?ngig vom Wohnort und pers?nlichen Verpflichtungen.", "Pr?senzunterricht bleibt unverzichtbar, weil pers?nlicher Austausch das gemeinsame Lernen und soziale Beziehungen entscheidend st?rkt."],
+                "communicativeSituation": "Sie schreiben einen Beitrag für das Studierendenmagazin Ihrer Hochschule.",
                 "taskInstructions": "Beschreiben Sie Vor- und Nachteile digitaler Lehrformate und nehmen Sie klar Stellung.",
                 "writingCoachTaskType": "stellungnahme",
             },
             {
                 "questionId": "b",
                 "title": "Nachhaltigkeit am Campus",
-                "communicativeSituation": "Diskussionsbeitrag für ein Hochschulforum.",
+                "statements": ["Hochschulen sollten verbindliche ?kologische Regeln einf?hren und dadurch gesellschaftliche Verantwortung im Alltag sichtbar ?bernehmen.", "Freiwillige Initiativen ?berzeugen Studierende langfristig besser als zus?tzliche Vorschriften, die pers?nliche Entscheidungen unn?tig einschr?nken."],
+                "communicativeSituation": "Sie schreiben einen Diskussionsbeitrag für ein Hochschulforum.",
                 "taskInstructions": "Erörtern Sie, welche Maßnahmen Hochschulen ergreifen sollten, um nachhaltiger zu werden.",
                 "writingCoachTaskType": "argumentation",
             },

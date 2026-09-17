@@ -4,6 +4,7 @@ import type { TaskType, WritingAnalysis } from './writing-coach-ai.js';
 export interface WritingTopic {
   questionId: string;
   title: string;
+  statements: [string, string];
   communicativeSituation: string;
   taskInstructions: string;
   writingCoachTaskType: TaskType;

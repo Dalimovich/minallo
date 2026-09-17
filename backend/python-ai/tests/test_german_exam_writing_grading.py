@@ -61,13 +61,14 @@ def test_grades_via_the_existing_writing_coach_evaluator_not_a_second_engine(mon
     result = mod.grade_writing_submission(
         user_id="u1", profile=profile, part=part, generation_id="gen-1",
         writing_coach_task_type="stellungnahme", text="Ein ausführlicher Text über Nachhaltigkeit ..." * 5,
-        selected_topic={"questionId": "b", "title": "Nachhaltigkeit", "taskInstructions": "Begründen Sie Ihre Position."},
+        selected_topic={"questionId": "b", "title": "Nachhaltigkeit", "statements": ["Regeln helfen.", "Freiwilligkeit hilft mehr."], "taskInstructions": "Begründen Sie Ihre Position."},
     )
 
     assert calls["n"] == 1  # exactly one call to the shared evaluator, not two grading paths
     assert calls["kwargs"]["profile_level"] == "C1 Hochschule"
     assert calls["kwargs"]["task_type"] == "stellungnahme"
     assert calls["kwargs"]["exam_context"]["selectedTopic"]["questionId"] == "b"
+    assert len(calls["kwargs"]["exam_context"]["selectedTopic"]["statements"]) == 2
     assert calls["kwargs"]["exam_context"]["targetLevel"] == "C1 Hochschule"
     assert result["analysis"]["score"]["overall"] == 75
 

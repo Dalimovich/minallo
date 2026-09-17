@@ -15,6 +15,8 @@ not extend that shared proxy to support other HTTP methods for one endpoint.
 from __future__ import annotations
 
 import logging
+import json
+from typing import Literal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,6 +27,8 @@ from ..services.german_exam_generator import generate_task
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exam_profiles import GermanExamProfileError, get_part, get_profile
 from ..services.german_exam_writing_grading import grade_writing_submission
+from ..services import german_exam_speaking_practice as speaking_practice
+from ..services.german_exam_validator import hard_issues, validate_content
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +142,7 @@ def get_weakness_snapshot_endpoint(payload: GetWeaknessSnapshotRequest) -> dict[
 class WritingTopic(BaseModel):
     questionId: str = Field(min_length=1, max_length=80)
     title: str = Field(min_length=1, max_length=500)
+    statements: list[str] = Field(min_length=2, max_length=2)
     communicativeSituation: str = Field(min_length=1, max_length=4000)
     taskInstructions: str = Field(min_length=1, max_length=6000)
 
@@ -207,3 +212,51 @@ def consume_generation_endpoint(payload: ConsumeGenerationRequest) -> dict[str, 
     call for the same generation is a no-op, not a second recorded use."""
     record_topic_used(payload.userId, payload.profileId, payload.module, payload.partId, payload.topicId, payload.generationId)
     return {"ok": True}
+
+
+class SpeakingTurn(BaseModel):
+    role: Literal["learner", "partner"]
+    stage: str = Field(max_length=40)
+    text: str = Field(min_length=1, max_length=10000)
+    evidence: str = Field(min_length=64, max_length=64)
+
+
+class SpeakingPracticeRequest(BaseModel):
+    userId: str
+    profileId: Literal["telc_c1_hochschule"]
+    sessionId: str = Field(min_length=16, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    action: Literal["transcribe", "partner", "grade"]
+    stage: str = Field(default="", max_length=40)
+    audioBase64: str = Field(default="", max_length=8 * 1024 * 1024)
+    mimeType: str = Field(default="audio/webm", max_length=100)
+    tasks: dict[str, Any] = Field(default_factory=dict)
+    selectedTopicId: str = Field(default="", max_length=80)
+    turns: list[SpeakingTurn] = Field(default_factory=list, max_length=40)
+
+
+@router.post("/german-exam/speaking")
+def speaking_practice_endpoint(payload: SpeakingPracticeRequest) -> dict[str, Any]:
+    try:
+        if payload.action == "transcribe":
+            return speaking_practice.transcribe(payload.userId, payload.sessionId, payload.stage, payload.audioBase64, payload.mimeType)
+        if len(json.dumps(payload.tasks)) > 20000 or sum(len(t.text) for t in payload.turns) > 80000:
+            raise ValueError("Speaking session is too large")
+        required_parts = ["sprechen_1", "sprechen_2"] if payload.action == "grade" else ["sprechen_2" if payload.stage == "discussion" else "sprechen_1"]
+        for part_id in required_parts:
+            part = get_part(payload.profileId, "speaking", part_id)
+            content = payload.tasks.get(part_id)
+            if not isinstance(content, dict) or hard_issues(validate_content(part, content)):
+                raise ValueError("Missing or malformed speaking task")
+        if "sprechen_1" in required_parts and payload.selectedTopicId not in {
+            q["questionId"] for q in payload.tasks["sprechen_1"]["questions"]
+        }:
+            raise ValueError("Choose one presentation topic")
+        turns = [t.model_dump() for t in payload.turns]
+        if payload.action == "partner":
+            return speaking_practice.partner_turn(payload.userId, payload.sessionId, payload.stage, payload.tasks, payload.selectedTopicId, turns)
+        return speaking_practice.grade_speaking(payload.userId, payload.sessionId, payload.tasks, payload.selectedTopicId, turns)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("Speaking practice failed")
+        raise HTTPException(status_code=502, detail="Speaking request failed. Please retry.") from exc

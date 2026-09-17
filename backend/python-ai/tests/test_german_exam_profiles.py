@@ -16,14 +16,14 @@ def test_profile_exists_with_listening_reading_language_elements_and_writing_mod
     assert profile.modules["reading"] is not None
     assert profile.modules["language_elements"] is not None
     assert profile.modules["writing"] is not None
-    assert profile.modules["speaking"] is None
+    assert profile.modules["speaking"] is not None
 
 
 def test_schreiben_constraints_locked() -> None:
     part = get_part("telc_c1_hochschule", "writing", "schreiben_1")
     assert part.task_type == "choice_long_form_writing"
     assert part.constraints["topicChoiceCount"] == 2
-    assert part.constraints["targetWordCount"] == 350
+    assert part.constraints["wordCountMin"] == 350
     assert part.time_limit_seconds == 70 * 60
     assert part.scoring is not None
     assert part.scoring.max_points == 48
@@ -76,9 +76,9 @@ def test_list_parts_returns_all_three() -> None:
     assert [p.part_id for p in parts] == ["hv1", "hv2", "hv3"]
 
 
-def test_unimplemented_module_raises() -> None:
+def test_unknown_module_raises() -> None:
     with pytest.raises(GermanExamProfileError):
-        list_parts("telc_c1_hochschule", "speaking")
+        list_parts("telc_c1_hochschule", "not_a_real_module")
 
 
 def test_unknown_profile_raises() -> None:

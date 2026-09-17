@@ -189,6 +189,9 @@ _WEAKNESS_DIRECTION: dict[str, str] = {
     "register_challenge": "increase",
     "cohesion_demand": "increase",
     "task_fulfilment_complexity": "increase",
+    "required_spontaneity": "increase",
+    "counterargument_pressure": "increase",
+    "followup_complexity": "increase",
 }
 
 # Which skill tags each adaptation axis is meant to exercise, so the planner
@@ -203,13 +206,16 @@ _AXIS_TARGET_TAGS: dict[str, tuple[str, ...]] = {
     "hierarchy_depth": ("note_taking", "argument_structure"),
     "reference_complexity": ("reference_resolution",),
     "distractor_similarity": ("argument_structure", "text_structure"),
-    "argument_complexity": ("argument_structure",),
+    "argument_complexity": ("argument_structure", "argumentation"),
     "author_intention_explicitness": ("author_intention",),
     "lexical_specificity": ("collocation", "lexical_choice", "word_formation"),
     "grammar_complexity": ("grammar", "syntax", "prepositions", "connectors"),
     "register_challenge": ("register",),
     "cohesion_demand": ("cohesion", "coherence"),
     "task_fulfilment_complexity": ("task_fulfilment",),
+    "required_spontaneity": ("fluency", "interaction"),
+    "counterargument_pressure": ("response_to_partner", "argumentation"),
+    "followup_complexity": ("interaction", "response_to_partner", "task_fulfilment"),
 }
 
 _TOP_WEAK_TAG_LIMIT = 3

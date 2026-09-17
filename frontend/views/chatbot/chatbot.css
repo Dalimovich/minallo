@@ -6820,6 +6820,14 @@ body.ncb-pdf-workspace-open #drDrawer {
 .ncb-root.ncb-view-practice .ncb-center,
 .ncb-root.ncb-view-practice .ncb-context { display: none; }
 .ncb-practice-panel { flex: 1; min-width: 0; overflow-y: auto; padding: 32px 40px; }
+.ncb-speaking-panel { flex: 1; min-width: 0; overflow-y: auto; padding: 32px 40px; line-height: 1.6; }
+.ncb-root.ncb-view-speaking .ncb-context { display: none !important; }
+.sp-topic, .sp-turn, .sp-feedback { border: 1px solid rgba(148,163,184,.24); border-radius: 12px; padding: 16px; margin-block: 12px; overflow-wrap: anywhere; }
+.sp-topic:has(input:checked) { border-color: #60a5fa; }
+.sp-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.sp-conversation { max-height: 45vh; overflow-y: auto; }
+.sp-feedback dt { font-weight: 600; margin-top: 8px; }
+@media (max-width: 768px) { .ncb-speaking-panel { padding: 20px 16px; } }
 .ncb-practice-panel[hidden] { display: none; }
 .ncb-practice-panel .gl-skill-view { animation: none; }
 .ncb-learner-mode .ncb-card > .ncb-center,

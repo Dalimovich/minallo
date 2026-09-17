@@ -18,6 +18,7 @@ def _valid_content() -> dict:
             {
                 "questionId": "a",
                 "title": "Digitalisierung im Studium",
+                "statements": ["Digitale Lehrveranstaltungen erm?glichen allen Studierenden flexibles Lernen unabh?ngig vom Wohnort und pers?nlichen Verpflichtungen.", "Pr?senzunterricht bleibt unverzichtbar, weil pers?nlicher Austausch das gemeinsame Lernen und soziale Beziehungen entscheidend st?rkt."],
                 "communicativeSituation": "Sie schreiben einen Beitrag für das Studierendenmagazin Ihrer Hochschule.",
                 "taskInstructions": "Beschreiben Sie Vor- und Nachteile digitaler Lehrformate und nehmen Sie klar Stellung.",
                 "writingCoachTaskType": "stellungnahme",
@@ -25,6 +26,7 @@ def _valid_content() -> dict:
             {
                 "questionId": "b",
                 "title": "Nachhaltigkeit am Campus",
+                "statements": ["Hochschulen sollten verbindliche ?kologische Regeln einf?hren und dadurch gesellschaftliche Verantwortung im Alltag sichtbar ?bernehmen.", "Freiwillige Initiativen ?berzeugen Studierende langfristig besser als zus?tzliche Vorschriften, die pers?nliche Entscheidungen unn?tig einschr?nken."],
                 "communicativeSituation": "Sie schreiben einen Diskussionsbeitrag für ein Hochschulforum.",
                 "taskInstructions": "Erörtern Sie, welche Maßnahmen Hochschulen ergreifen sollten, um nachhaltiger zu werden.",
                 "writingCoachTaskType": "argumentation",
@@ -112,6 +114,26 @@ def test_malformed_field_and_duplicate_ids_are_rejected():
     content = _valid_content()
     content["questions"][0]["title"] = ["not a string"]
     assert hard_issues(validate_content(SCHREIBEN, content))
+
+
+def test_statement_count_duplicates_and_input_length():
+    for statements in ([], ["one"], ["one", "two", "three"], ["", "two"], ["same", "SAME"]):
+        content = _valid_content()
+        content["questions"][0]["statements"] = statements
+        assert hard_issues(validate_content(SCHREIBEN, content))
+    content = _valid_content()
+    content["questions"][0]["statements"][0] = "word " * 56
+    assert hard_issues(validate_content(SCHREIBEN, content))
+
+
+def test_noncontrasting_positions_fail_even_when_verifier_claims_pass():
+    from app.services.german_exam_semantic_verify import _parse_result, _apply_audits
+    content = _valid_content()
+    raw = {"passed": True, "partWideIssues": [], "items": [
+        {"questionId": q["questionId"], "passed": True, "issues": [], "audit": {
+            "duplicateItemIds": [], "contrastingStatements": False, "engagesBothStatements": True}}
+        for q in content["questions"]]}
+    assert not _apply_audits(_parse_result(raw, {"a", "b"}), raw, SCHREIBEN, content).passed
     content = _valid_content()
     content["questions"][1]["questionId"] = "a"
     assert hard_issues(validate_content(SCHREIBEN, content))
