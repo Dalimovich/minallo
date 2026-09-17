@@ -1,18 +1,46 @@
 """Shared German Exam Engine — Sprachbausteine (language elements) module adapter.
 
-Mirrors german_exam_reading.py's pipeline shape exactly (LLM generation ->
-deterministic validation+repair -> semantic verification+repair ->
-re-validation -> accept, bounded regeneration). Content has no audio/segments
-concept, same as reading — one continuous cloze text with per-gap four-option
-items, no shared-candidate-pool bijection to reason about (unlike Lesen 1),
-so item-level semantic repair is always safe here (a defect lives entirely
-inside one `questions` entry: its own options/correctIndex/category).
+Constraint-decomposed pipeline (2026-09-17 rework). The original design asked
+one LLM call to simultaneously satisfy every hard constraint of the part at
+once: a 320-350 word passage, exactly 22 gap placeholders, exactly 22 MCQ
+items with 4 distinct options and a correctIndex each, and an exact
+grammar/lexicon/orthography split summing to 22. A production smoke run
+found gpt-5.4-mini reliably missing at least one of those simultaneously
+(444/524/804-word passages, a run with zero gaps, wrong category splits) even
+across several full regenerations — the model was being asked to count and
+enforce a dozen things a computer does exactly and for free, and every
+failure threw away the whole (expensive) generation.
+
+This version has the backend own everything deterministic and only asks the
+LLM for the two things a computer can't do: writing natural German prose, and
+writing plausible wrong answers.
+
+  1. The backend picks the category for all 22 gaps up front (_CATEGORY_PLAN,
+     interleaved by _build_gap_specs so it doesn't read as "all grammar, then
+     all lexicon").
+  2. Stage A asks the LLM for ONLY the passage + the correct answer per gap
+     (no distractors, no correctIndex, no category counting). A word-count
+     miss gets a cheap in-place passage rewrite instead of a full
+     regeneration; only a structurally broken passage (wrong/missing/
+     duplicate placeholders, missing answers) triggers a full Stage A retry.
+  3. Stage B asks the LLM for ONLY three wrong options per gap, given the
+     already-correct passage and answers. The backend inserts the correct
+     answer, shuffles, and computes correctIndex itself — the model never
+     manages an index. A bad gap's distractors get repaired individually
+     (mirrors german_exam_reading.py's item-level repair), never forcing a
+     full Stage A or Stage B redo for one bad item.
+  4. The existing deterministic validator (german_exam_validator.py) and
+     semantic verifier still run, unchanged, as the final authority over the
+     assembled content — this file only changed how content gets built, not
+     what "valid" means or the content shape the frontend receives.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import random
+import re
 from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
 from typing import Any
@@ -24,164 +52,445 @@ from .german_exam_profiles import ExamProfile, PartBlueprint
 from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
 from .german_exam_semantic_verify import SemanticVerificationResult
-from .german_exam_validator import ValidationIssue, hard_issues, validate_content
-from .llm_json import chat_json
+from .german_exam_validator import hard_issues, validate_content
+from .llm_json import LlmResult, chat_json
 
 log = logging.getLogger(__name__)
 
+# Full-generation retries are now the LAST resort, not the primary repair
+# mechanism — each stage below has its own, much cheaper repair path first.
+_MAX_STAGE_A_REGENERATIONS = 2
+_MAX_PASSAGE_REPAIR_ATTEMPTS = 2
+_MAX_STAGE_B_REGENERATIONS = 2
 _MAX_ITEM_REPAIR_ATTEMPTS = 2
-# A 2026-09-17 production smoke run found gpt-5.4-mini reliably missing this
-# part's simultaneous constraints (word-count window + an exact 3-way
-# grammar/lexicon/orthography split summing to itemCount) on the first two
-# tries, so a real learner got a 502 after both full regenerations were
-# exhausted. One extra regeneration is the cheapest possible headroom (worst
-# case: one more mini-model call) short of reworking the pipeline.
-_MAX_FULL_REGENERATIONS = 3
 _MAX_SEMANTIC_REPAIR_ROUNDS = 2
+
+_GAP_PLACEHOLDER_RE = re.compile(r"\{\{(g\d+)\}\}")
 
 
 class LanguageElementsGenerationError(Exception):
     pass
 
 
+# Backend-owned category allocation — one fixed, exam-representative split,
+# safely inside telc_c1_hochschule's sprachbausteine_1 blueprint ranges
+# (grammar 12-16, lexicon 4-8, orthography 1-4, summing to itemCount=22).
+# The LLM is never asked to choose or count these.
+_CATEGORY_PLAN: tuple[tuple[str, int], ...] = (("grammar", 14), ("lexicon", 6), ("orthography", 2))
+
+# Every part.allowed_skill_tags value is assigned to exactly one category,
+# matching the categories' own definitions (grammar: verb forms/cases/
+# connectors/prepositions/syntax; lexicon: collocations/word choice/word
+# formation; orthography: spelling/capitalization/punctuation — the only
+# tag left for it in the controlled vocabulary is "register").
+_CATEGORY_SKILL_TAGS: dict[str, tuple[str, ...]] = {
+    "grammar": ("grammar", "connectors", "prepositions", "syntax"),
+    "lexicon": ("word_formation", "collocation", "lexical_choice"),
+    "orthography": ("register",),
+}
+
+
+def _validate_category_plan(part: PartBlueprint) -> None:
+    item_count = part.constraints.get("itemCount", 22)
+    total = sum(n for _, n in _CATEGORY_PLAN)
+    if total != item_count:
+        raise LanguageElementsGenerationError(f"category plan totals {total}, expected itemCount {item_count}")
+    bounds = {
+        "grammar": (part.constraints.get("grammarCountMin", 12), part.constraints.get("grammarCountMax", 16)),
+        "lexicon": (part.constraints.get("lexicalCountMin", 4), part.constraints.get("lexicalCountMax", 8)),
+        "orthography": (part.constraints.get("orthographyCountMin", 1), part.constraints.get("orthographyCountMax", 4)),
+    }
+    for category, count in _CATEGORY_PLAN:
+        lo, hi = bounds[category]
+        if not (lo <= count <= hi):
+            raise LanguageElementsGenerationError(
+                f"category plan {category}={count} falls outside blueprint range {lo}-{hi}"
+            )
+
+
+def _build_gap_specs(item_count: int) -> list[dict[str, str]]:
+    """Interleaves _CATEGORY_PLAN's categories across item_count gap
+    positions (each category's slots spread evenly across the full range via
+    midpoint placement) so the passage doesn't read as one block per
+    category. Returns specs in reading order g1..g{item_count}."""
+    total = sum(n for _, n in _CATEGORY_PLAN)
+    if total != item_count:
+        raise LanguageElementsGenerationError(f"category plan totals {total}, expected {item_count}")
+    positioned: list[tuple[float, str]] = []
+    for category, count in _CATEGORY_PLAN:
+        for i in range(count):
+            positioned.append(((i + 0.5) * item_count / count, category))
+    positioned.sort(key=lambda pair: pair[0])
+    return [
+        {"gapId": f"g{i + 1}", "questionId": f"q{i + 1}", "category": category}
+        for i, (_, category) in enumerate(positioned)
+    ]
+
+
+def _norm(value: str) -> str:
+    return " ".join(value.strip().casefold().split())
+
+
 def _adaptation_guidance(instructions: list[AdaptationInstruction]) -> str:
     if not instructions:
-        return "No specific weakness data yet — generate a balanced, exam-representative item mix covering the part's normal range of grammar/lexicon/orthography skills."
-    lines = ["Content-difficulty guidance (do NOT change item count, option count, category ranges, or any structural rule):"]
+        return "No specific weakness data yet — write balanced, exam-representative C1 content."
+    lines = ["Content-difficulty guidance (do NOT change gap count, word count, or any structural rule):"]
     for instr in instructions:
         lines.append(f"- {instr.direction} {instr.axis.replace('_', ' ')} for content touching: {', '.join(instr.target_tags)}.")
     return "\n".join(lines)
 
 
-def _prompt_sprachbausteine(
-    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
-) -> tuple[str, str]:
-    item_count = part.constraints.get("itemCount", 22)
-    option_count = part.constraints.get("optionCount", 4)
-    word_min = part.constraints.get("wordCountMin", 320)
-    word_max = part.constraints.get("wordCountMax", 350)
-    grammar_min = part.constraints.get("grammarCountMin", 12)
-    grammar_max = part.constraints.get("grammarCountMax", 16)
-    lexical_min = part.constraints.get("lexicalCountMin", 4)
-    lexical_max = part.constraints.get("lexicalCountMax", 8)
-    ortho_min = part.constraints.get("orthographyCountMin", 1)
-    ortho_max = part.constraints.get("orthographyCountMax", 4)
+# ── Stage A: passage + correct answers only ─────────────────────────────────
 
+def _prompt_stage_a(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    gap_specs: list[dict[str, str]], word_min: int, word_max: int
+) -> tuple[str, str]:
+    item_count = len(gap_specs)
+    gap_lines = "\n".join(f'  {{"gapId": "{g["gapId"]}", "targetCategory": "{g["category"]}"}}' for g in gap_specs)
     system = (
-        f"You generate ORIGINAL German language-elements (Sprachbausteine) exam practice content for "
-        f"{profile.family} {profile.variant or ''}, matching the official cloze_mc4_language_elements task "
-        "format. You must NOT copy any real exam content — generate an entirely new, coherent factual, "
-        "popular-academic, or study-related text with the same structure and difficulty. Reply with ONLY "
-        "valid JSON, no markdown fences, no commentary.\n\n"
-        f"Task structure (IMMUTABLE): one continuous {word_min}-{word_max} word text on the topic "
-        f"'{topic['label']}', split into paragraphs, with exactly {item_count} gaps marked inline in the "
-        'paragraph text as the literal placeholder "{{gapId}}" (e.g. "{{g1}}") at the point a word or short '
-        f"phrase was removed, numbered in reading order g1..g{item_count}. Then exactly {item_count} items, "
-        f"one per gap, each with exactly {option_count} answer options (plain strings, not lettered) and "
-        "exactly one correctIndex (0-based) into that item's own options array — options are per-item, NOT "
-        "a shared pool (unlike a sentence-reconstruction task).\n\n"
-        f"Each item has a category, exactly one of \"grammar\", \"lexicon\", or \"orthography\". Across all "
-        f"{item_count} items: {grammar_min}-{grammar_max} must be category \"grammar\" (verb forms, cases, "
-        f"connectors, prepositions, syntax), {lexical_min}-{lexical_max} must be \"lexicon\" (collocations, "
-        f"word choice, word formation), and {ortho_min}-{ortho_max} must be \"orthography\" (spelling, "
-        "capitalization, punctuation conventions). The three counts must sum to exactly "
-        f"{item_count}. The three wrong options per item must be genuinely plausible for a C1 learner — "
-        "real near-misses (a wrong case ending, a confusable preposition, a near-synonym with a different "
-        "register or collocation, a plausible misspelling) — never trivial, absurd, or obviously wrong on "
-        "sight; avoid options that differ only in an unrelated word so the gap tests genuine C1 competence, "
-        "not elimination by pattern-matching.\n\n"
-        "IMPORTANT — choose skillTags per item, do not copy one tag for every item: use grammar for verb/case "
-        "issues, connectors for logical-connector choices, prepositions for preposition choices, "
-        "word_formation for derivation/compounding, collocation or lexical_choice for lexicon items, "
-        "register when formality level is being tested, syntax for word-order/clause-structure items. Use "
-        f"at least 4 different tags across the {item_count} items.\n\n"
-        "BEFORE YOU OUTPUT, silently self-check and fix any violation (these are hard requirements, not "
-        "targets — content outside them is rejected):\n"
-        f"1. Count the running text's words (excluding the {{{{gapId}}}} placeholders): must be "
-        f"{word_min}-{word_max}. If over {word_max}, cut a clause or sentence; if under {word_min}, add one. "
-        "Do not just estimate — count.\n"
-        f"2. Count how many items you gave each category: grammar must be {grammar_min}-{grammar_max}, "
-        f"lexicon must be {lexical_min}-{lexical_max}, orthography must be {ortho_min}-{ortho_max}, and the "
-        f"three counts must sum to exactly {item_count}. If any count is outside its range (most often "
-        "orthography ending up at 0, or grammar/lexicon drifting to equal counts instead of grammar being "
-        "the larger share), reclassify enough items to fix it — do not add or remove items to compensate.\n"
-        "3. Within each item's own options array, make sure all "
-        f"{option_count} strings are distinct from one another — no two options identical.\n\n"
+        f"You write ORIGINAL German exam-practice passages for {profile.family} {profile.variant or ''}, "
+        "matching the official telc Sprachbausteine (cloze) reading-passage style. Do NOT copy real exam "
+        "content — write an entirely new, coherent factual, popular-academic, or study-related text. Reply "
+        "with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Write one continuous {word_min}-{word_max} word German text (each placeholder token below, e.g. "
+        f"\"{{{{g1}}}}\", counts as ONE word toward that total, same as any other word — so your actual "
+        f"prose should be about {item_count} words SHORTER than the {word_min}-{word_max} target) on the "
+        f"topic '{topic['label']}', split into natural paragraphs. At exactly the {item_count} "
+        "positions listed below, remove one word or short phrase from the running text and replace it "
+        'inline with the literal placeholder "{{gapId}}" (e.g. "{{g1}}"), in this exact reading order:\n'
+        f"{gap_lines}\n\n"
+        "targetCategory tells you what kind of gap to create at that position (informational only, you do "
+        "not repeat it in your output):\n"
+        "- grammar: a verb form, case ending, connector, preposition, or word-order choice\n"
+        "- lexicon: a collocation, word choice, or word-formation choice\n"
+        "- orthography: a spelling, capitalization, or punctuation-sensitive choice\n\n"
+        "For each gap, report the single correct word/phrase you removed (exactly as it must be reinserted "
+        "to make the sentence correct) and 1-2 skillTags describing why that gap tests what it tests: "
+        "grammar/connectors/prepositions/syntax for grammar gaps, word_formation/collocation/lexical_choice "
+        "for lexicon gaps, register for orthography gaps.\n\n"
+        "Do NOT invent multiple-choice distractors, do not assign a correctIndex, and do not decide category "
+        "counts — those are fixed separately and are not your job.\n\n"
+        "BEFORE YOU OUTPUT, count every word INCLUDING each placeholder token as one word, and confirm the "
+        f"total is {word_min}-{word_max}; if not, cut or add a clause and recount.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
-        "Output JSON shape exactly (the skillTags/category below are illustrative, not literal — pick "
-        "values that actually fit each item per the guidance above):\n"
+        "Output JSON shape exactly:\n"
         "{\n"
-        '  "text": {\n'
-        '    "title": "...",\n'
-        '    "paragraphs": ["Erster Absatz ... {{g1}} ... weiter {{g2}} ...", "Zweiter Absatz ... {{g3}} ..."],\n'
-        f'    "gaps": [{{"gapId": "g1"}}, {{"gapId": "g2"}}, ...] // exactly {item_count} entries\n'
-        "  },\n"
-        '  "questions": [\n'
-        '    {"questionId": "q1", "gapId": "g1", "options": ["...", "...", "...", "..."], "correctIndex": 2,\n'
-        '     "category": "grammar", "skillTags": ["grammar"], "difficulty": "c1"},\n'
-        '    ...\n'
+        '  "text": {"title": "...", "paragraphs": ["Erster Absatz ... {{g1}} ...", "Zweiter Absatz ... {{g2}} ..."]},\n'
+        '  "answers": [\n'
+        '    {"gapId": "g1", "answer": "...", "skillTags": ["..."]},\n'
+        "    ...\n"
         f'  ] // exactly {item_count} entries, one per gap, in gap order\n'
+        "}\n"
+    )
+    user = f"Generate the passage now. Topic: {topic['label']}."
+    return system, user
+
+
+def _call_stage_a(*, system: str, user: str) -> LlmResult:
+    return chat_json(system=system, user=user, max_tokens=3500, model=get_settings().german_exam_model)
+
+
+def _passage_word_count(content: dict[str, Any]) -> int:
+    """Deliberately mirrors german_exam_validator.py's
+    validate_cloze_mc4_language_elements exactly (sum of str(p).split() over
+    paragraphs, NOT stripping "{{gapId}}" placeholders first) — that
+    validator is the final authority this pipeline must satisfy, and each
+    placeholder token counts as one word there. Counting differently here
+    would silently target a different word-count window than what actually
+    gets checked at the end."""
+    text = content.get("text") if isinstance(content, dict) else None
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list):
+        return 0
+    return sum(len(str(p).split()) for p in paragraphs)
+
+
+def _stage_a_structural_issues(content: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str]:
+    """Structural checks ONLY (placeholder bijection/order, answer coverage)
+    — deliberately excludes word count, which gets its own cheap repair path
+    instead of forcing a full regeneration."""
+    issues: list[str] = []
+    expected_ids = [g["gapId"] for g in gap_specs]
+    text = content.get("text") if isinstance(content, dict) else None
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
+        issues.append("text.paragraphs must be a non-empty list of strings")
+        paragraphs = []
+    joined = "\n".join(str(p) for p in paragraphs)
+    found_ids = _GAP_PLACEHOLDER_RE.findall(joined)
+    if found_ids != expected_ids:
+        if sorted(found_ids) != sorted(expected_ids) or len(found_ids) != len(set(found_ids)):
+            issues.append(f"expected placeholders {expected_ids}, found {found_ids}")
+        else:
+            issues.append(f"placeholders present but out of reading order: found {found_ids}")
+
+    answers = content.get("answers") if isinstance(content, dict) else None
+    if not isinstance(answers, list) or len(answers) != len(gap_specs):
+        issues.append(f"expected {len(gap_specs)} answers, got {len(answers) if isinstance(answers, list) else 0}")
+    else:
+        answer_gap_ids = [a.get("gapId") for a in answers if isinstance(a, dict)]
+        if set(answer_gap_ids) != set(expected_ids) or len(answer_gap_ids) != len(set(answer_gap_ids)):
+            issues.append("answers must cover every gap exactly once")
+        if not all(isinstance(a, dict) and isinstance(a.get("answer"), str) and a.get("answer", "").strip() for a in answers):
+            issues.append("every answer must be a non-empty string")
+    return issues
+
+
+def _prompt_passage_repair(
+    gap_specs: list[dict[str, str]], text: dict[str, Any], word_min: int, word_max: int, current_count: int
+) -> tuple[str, str]:
+    system = (
+        "You are rewriting a German Sprachbausteine passage that is structurally valid but has the wrong "
+        "word count. Rewrite it to fall within the target word count while preserving: the title and topic, "
+        f"all {len(gap_specs)} placeholders \"{{{{gapId}}}}\" exactly once each in the same reading order, "
+        "the meaning and grammatical fit immediately around every gap (the existing correct answers must "
+        "remain correct), and natural paragraph breaks. Reply with ONLY valid JSON, no markdown fences, no "
+        'commentary, in the exact same {"text": {"title", "paragraphs"}} shape as the input. Each '
+        "placeholder token counts as one word toward the target, same as any other word.\n\n"
+        f"Current word count (placeholders included): {current_count}. Target: {word_min}-{word_max} words."
+    )
+    user = f"Passage to rewrite:\n{json.dumps(text, ensure_ascii=False)}"
+    return system, user
+
+
+def _call_passage_repair(*, system: str, user: str) -> LlmResult:
+    return chat_json(system=system, user=user, max_tokens=2500, model=get_settings().german_exam_model)
+
+
+def _repair_passage_word_count(
+    content: dict[str, Any], gap_specs: list[dict[str, str]], word_min: int, word_max: int
+) -> dict[str, Any]:
+    """Only called on a structurally sound passage whose word count is out
+    of range — never discards the (already-valid) answers, only rewrites
+    text.paragraphs, and only accepts a rewrite that stays structurally
+    sound (same placeholders, same order)."""
+    current = content
+    for _attempt in range(_MAX_PASSAGE_REPAIR_ATTEMPTS):
+        word_count = _passage_word_count(current)
+        if word_min <= word_count <= word_max:
+            return current
+        system, user = _prompt_passage_repair(gap_specs, current["text"], word_min, word_max, word_count)
+        try:
+            result = _call_passage_repair(system=system, user=user)
+            fixed_text = result.data.get("text") if isinstance(result.data, dict) else None
+        except Exception:  # noqa: BLE001
+            log.warning("Sprachbausteine passage word-count repair attempt failed", exc_info=True)
+            fixed_text = None
+        if isinstance(fixed_text, dict):
+            candidate = dict(current)
+            candidate["text"] = fixed_text
+            if not _stage_a_structural_issues(candidate, gap_specs):
+                current = candidate
+    return current
+
+
+def _run_stage_a(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    gap_specs: list[dict[str, str]], word_min: int, word_max: int
+) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
+    last_issues: list[str] = []
+    for regeneration in range(_MAX_STAGE_A_REGENERATIONS + 1):
+        system, user = _prompt_stage_a(profile, part, plan, topic, gap_specs, word_min, word_max)
+        result = _call_stage_a(system=system, user=user)
+        content = result.data if isinstance(result.data, dict) else {}
+
+        structural_issues = _stage_a_structural_issues(content, gap_specs)
+        if not structural_issues:
+            content = _repair_passage_word_count(content, gap_specs, word_min, word_max)
+            word_count = _passage_word_count(content)
+            if word_min <= word_count <= word_max:
+                answers_by_gap = {a["gapId"]: a["answer"] for a in content["answers"]}
+                return content["text"], answers_by_gap, {"regenerationCount": regeneration}
+            structural_issues = [f"word count still {word_count} after repair, expected {word_min}-{word_max}"]
+
+        last_issues = structural_issues
+        if regeneration < _MAX_STAGE_A_REGENERATIONS:
+            continue
+        raise LanguageElementsGenerationError(
+            f"could not produce a valid Sprachbausteine passage after {_MAX_STAGE_A_REGENERATIONS} "
+            "regenerations: " + "; ".join(last_issues)
+        )
+    raise LanguageElementsGenerationError("unreachable: exhausted Stage A regeneration budget")
+
+
+# ── Stage B: distractors only, backend owns correctIndex/category ──────────
+
+def _prompt_stage_b(
+    profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str]
+) -> tuple[str, str]:
+    item_count = len(gap_specs)
+    lines = [
+        f'  {{"gapId": "{g["gapId"]}", "questionId": "{g["questionId"]}", "category": "{g["category"]}", '
+        f'"correctAnswer": {json.dumps(answers_by_gap[g["gapId"]], ensure_ascii=False)}}}'
+        for g in gap_specs
+    ]
+    gap_block = "\n".join(lines)
+    system = (
+        f"You write multiple-choice distractors for a German Sprachbausteine (cloze) exercise, "
+        f"{profile.family} {profile.variant or ''}, C1 level. For each gap below you are given the CORRECT "
+        "answer already placed in the passage — do not change it. Provide exactly THREE wrong options "
+        "(distractors) per gap: genuinely plausible for a C1 learner — real near-misses (a wrong case "
+        "ending, a confusable preposition, a near-synonym with a different register or collocation, a "
+        "plausible misspelling for orthography gaps) — never trivial, absurd, or obviously wrong on sight; "
+        "avoid options that differ only in an unrelated word. Each wrong option must differ from the correct "
+        "answer and from each other. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        "Gaps (category tells you what kind of distractor to write):\n"
+        f"{gap_block}\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "items": [\n'
+        '    {"questionId": "q1", "gapId": "g1", "wrongOptions": ["...", "...", "..."], "skillTags": ["..."]},\n'
+        "    ...\n"
+        f'  ] // exactly {item_count} entries, one per gap, any order\n'
         "}\n"
         f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
     )
-    user = f"Generate the content now. Topic: {topic['label']}."
+    user = "Generate the distractors now."
     return system, user
 
 
-_PROMPT_BUILDERS = {
-    "cloze_mc4_language_elements": _prompt_sprachbausteine,
-}
+def _call_stage_b(*, system: str, user: str) -> LlmResult:
+    return chat_json(system=system, user=user, max_tokens=3000, model=get_settings().german_exam_model)
 
 
-def _repair_prompt(part: PartBlueprint, content: dict[str, Any], issue: ValidationIssue) -> tuple[str, str]:
+def _stage_b_issues(payload: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str]:
+    items = payload.get("items") if isinstance(payload, dict) else None
+    expected_ids = {g["gapId"] for g in gap_specs}
+    if not isinstance(items, list) or len(items) != len(gap_specs):
+        return [f"expected {len(gap_specs)} distractor sets, got {len(items) if isinstance(items, list) else 0}"]
+    found_ids = {it.get("gapId") for it in items if isinstance(it, dict)}
+    if found_ids != expected_ids or len(items) != len(found_ids):
+        return ["distractor sets must cover every gap exactly once"]
+    return []
+
+
+def _wrong_options_valid(item: dict[str, Any], correct_answer: str) -> bool:
+    wrong = item.get("wrongOptions") if isinstance(item, dict) else None
+    if not isinstance(wrong, list) or len(wrong) != 3:
+        return False
+    if not all(isinstance(w, str) and w.strip() for w in wrong):
+        return False
+    normalized = {_norm(w) for w in wrong}
+    normalized.add(_norm(correct_answer))
+    return len(normalized) == 4  # 3 distinct wrong options + the correct answer, all different
+
+
+def _prompt_item_repair(gap_spec: dict[str, str], correct_answer: str) -> tuple[str, str]:
     system = (
-        f"You are repairing ONE invalid item in a generated German Sprachbausteine exercise "
-        f"({part.task_type}). The item with questionId={issue.item_id!r} failed validation: "
-        f"{issue.message}. Return ONLY a JSON object for the corrected single question item, in the "
-        "exact same shape as the other items in the 'questions' array of the original content. Do not "
-        "change its questionId or gapId. Reply with ONLY valid JSON, no markdown fences, no commentary."
+        "You are fixing ONE gap's multiple-choice distractors in a German Sprachbausteine exercise. The "
+        f"correct answer for this gap is already fixed ({correct_answer!r}) — do not change it. Provide "
+        "exactly THREE wrong options (distractors), each different from the correct answer and from each "
+        "other, genuinely plausible for a C1 learner (a wrong case ending, a confusable preposition, a "
+        "near-synonym with a different register or collocation, a plausible misspelling), never trivial or "
+        "absurd. Reply with ONLY a JSON object, no markdown fences, no commentary, shape exactly: "
+        '{"wrongOptions": ["...", "...", "..."], "skillTags": ["..."]}.'
     )
-    user = f"Original content for context:\n{json.dumps(content, ensure_ascii=False)}\n\nFix item {issue.item_id!r}."
+    user = f"Gap category: {gap_spec['category']}. Fix the distractors now."
     return system, user
 
 
-def _repair_items(part: PartBlueprint, content: dict[str, Any], issues: list[ValidationIssue]) -> dict[str, Any]:
-    """Deterministic, structural per-item repair — identical shape to
-    german_exam_reading.py's version (already task_type/module agnostic)."""
-    by_item: dict[str, ValidationIssue] = {}
-    for issue in issues:
-        if issue.item_id and issue.hard:
-            by_item[issue.item_id] = issue
+def _call_item_repair(*, system: str, user: str) -> LlmResult:
+    return chat_json(system=system, user=user, max_tokens=300, model=get_settings().german_exam_model)
 
-    if not by_item:
-        return content
 
-    questions_by_id = {q.get("questionId"): q for q in content.get("questions") or []}
+def _repair_stage_b_items(
+    gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str], items_by_gap: dict[str, dict[str, Any]]
+) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
+    """Deterministic, per-item repair — mirrors german_exam_reading.py's
+    _repair_items shape. Never touches the passage or any other item.
+    Returns (items_by_gap, repaired_count, unresolved_gap_ids)."""
+    spec_by_gap = {g["gapId"]: g for g in gap_specs}
+    bad_gap_ids = [
+        gid for gid, item in items_by_gap.items()
+        if not _wrong_options_valid(item, answers_by_gap[gid])
+    ]
+    if not bad_gap_ids:
+        return items_by_gap, 0, []
 
-    def _fix_one(item_id: str, issue: ValidationIssue) -> tuple[str, dict[str, Any] | None]:
+    def _fix_one(gap_id: str) -> tuple[str, dict[str, Any] | None]:
         for _attempt in range(_MAX_ITEM_REPAIR_ATTEMPTS):
             try:
-                system, user = _repair_prompt(part, content, issue)
-                result = chat_json(system=system, user=user, max_tokens=500, model=get_settings().german_exam_model)
+                system, user = _prompt_item_repair(spec_by_gap[gap_id], answers_by_gap[gap_id])
+                result = _call_item_repair(system=system, user=user)
                 fixed = result.data
-                if isinstance(fixed, dict) and fixed.get("questionId") == item_id:
-                    return item_id, fixed
+                if isinstance(fixed, dict) and _wrong_options_valid(fixed, answers_by_gap[gap_id]):
+                    return gap_id, fixed
             except Exception:  # noqa: BLE001
-                log.warning("repair attempt failed for item %s", item_id, exc_info=True)
-        return item_id, None
+                log.warning("Sprachbausteine item repair failed for gap %s", gap_id, exc_info=True)
+        return gap_id, None
 
-    with ThreadPoolExecutor(max_workers=min(4, len(by_item))) as pool:
-        results = list(pool.map(lambda kv: _fix_one(kv[0], kv[1]), by_item.items()))
+    with ThreadPoolExecutor(max_workers=min(4, len(bad_gap_ids))) as pool:
+        results = list(pool.map(_fix_one, bad_gap_ids))
 
-    for item_id, fixed in results:
+    unresolved: list[str] = []
+    repaired = 0
+    for gap_id, fixed in results:
         if fixed is not None:
-            questions_by_id[item_id] = fixed
+            items_by_gap[gap_id] = fixed
+            repaired += 1
+        else:
+            unresolved.append(gap_id)
+    return items_by_gap, repaired, unresolved
 
-    content = dict(content)
-    content["questions"] = [
-        questions_by_id.get(q.get("questionId"), q) for q in content.get("questions") or []
-    ]
-    return content
+
+def _run_stage_b(
+    profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str]
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    last_issues: list[str] = []
+    item_repair_total = 0
+    for regeneration in range(_MAX_STAGE_B_REGENERATIONS + 1):
+        system, user = _prompt_stage_b(profile, part, gap_specs, answers_by_gap)
+        result = _call_stage_b(system=system, user=user)
+        payload = result.data if isinstance(result.data, dict) else {}
+
+        issues = _stage_b_issues(payload, gap_specs)
+        if not issues:
+            items_by_gap = {it["gapId"]: it for it in payload["items"]}
+            items_by_gap, repaired, unresolved = _repair_stage_b_items(gap_specs, answers_by_gap, items_by_gap)
+            item_repair_total += repaired
+            if not unresolved:
+                return items_by_gap, {"regenerationCount": regeneration, "itemRepairCount": item_repair_total}
+            issues = [f"gap {gid} distractors still invalid after item-level repair" for gid in unresolved]
+
+        last_issues = issues
+        if regeneration < _MAX_STAGE_B_REGENERATIONS:
+            continue
+        raise LanguageElementsGenerationError(
+            f"could not produce valid Sprachbausteine distractors after {_MAX_STAGE_B_REGENERATIONS} "
+            "regenerations: " + "; ".join(last_issues)
+        )
+    raise LanguageElementsGenerationError("unreachable: exhausted Stage B regeneration budget")
+
+
+# ── Assembly: backend computes correctIndex, injects category, shuffles ────
+
+def _assemble_content(
+    gap_specs: list[dict[str, str]], text: dict[str, Any], answers_by_gap: dict[str, str],
+    items_by_gap: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    gaps = [{"gapId": g["gapId"]} for g in gap_specs]
+    questions: list[dict[str, Any]] = []
+    for g in gap_specs:
+        gap_id = g["gapId"]
+        category = g["category"]
+        correct = answers_by_gap[gap_id]
+        item = items_by_gap[gap_id]
+        options = list(item["wrongOptions"]) + [correct]
+        random.shuffle(options)
+        correct_index = options.index(correct)
+        eligible = _CATEGORY_SKILL_TAGS[category]
+        tags = [t for t in (item.get("skillTags") or []) if t in eligible]
+        if not tags:
+            tags = [eligible[0]]
+        questions.append({
+            "questionId": g["questionId"], "gapId": gap_id, "options": options, "correctIndex": correct_index,
+            "category": category, "skillTags": tags, "difficulty": "c1",
+        })
+    return {
+        "text": {"title": text.get("title", ""), "paragraphs": text.get("paragraphs"), "gaps": gaps},
+        "questions": questions,
+    }
 
 
 def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
@@ -189,10 +498,10 @@ def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]
 
 
 def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], bool]:
-    """Same shape as german_exam_reading.py's _semantic_phase — but every
-    item-level semantic error here IS eligible for targeted repair (no
-    task_type is excluded), since a Sprachbausteine defect always lives
-    entirely inside one item's own options/correctIndex/category."""
+    """Unchanged from the monolithic version — every item-level semantic
+    error here IS eligible for targeted repair (no task_type is excluded),
+    since a Sprachbausteine defect always lives entirely inside one item's
+    own options/correctIndex/category."""
     started = perf_counter()
     verification_count = 0
     repair_count = 0
@@ -256,79 +565,55 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
 def generate_language_elements_part(
     profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Returns (content, validation_meta). Pipeline identical in shape to
-    generate_reading_part(): LLM generation -> deterministic validation (+
-    targeted repair) -> semantic verification (+ targeted repair) ->
-    deterministic re-validation -> semantic re-verification -> accept. Raises
-    LanguageElementsGenerationError rather than ever returning known-invalid
-    content once the regeneration budget is exhausted."""
-    builder = _PROMPT_BUILDERS.get(part.task_type)
-    if builder is None:
-        raise LanguageElementsGenerationError(f"no prompt builder for task_type {part.task_type!r}")
+    """Returns (content, validation_meta). Constraint-decomposed pipeline:
+    backend builds the gap/category plan -> Stage A (passage + answers, with
+    cheap in-place word-count repair) -> Stage B (distractors only, with
+    per-item repair) -> backend assembly (correctIndex/category/shuffle) ->
+    existing deterministic validator (final authority, unchanged) -> existing
+    semantic verifier (unchanged). Raises LanguageElementsGenerationError
+    rather than ever returning known-invalid content once a stage's bounded
+    retry budget is exhausted."""
+    if part.task_type != "cloze_mc4_language_elements":
+        raise LanguageElementsGenerationError(f"no pipeline for task_type {part.task_type!r}")
 
-    last_issues: list[ValidationIssue] = []
-    last_semantic: dict[str, Any] | None = None
-    semantic_totals = {"verificationCount": 0, "repairCount": 0, "durationMs": 0}
-    total_det_repairs = 0
-    total_issue_counts: dict[str, int] = {}
+    _validate_category_plan(part)
+    item_count = part.constraints.get("itemCount", 22)
+    word_min = part.constraints.get("wordCountMin", 320)
+    word_max = part.constraints.get("wordCountMax", 350)
+    gap_specs = _build_gap_specs(item_count)
 
-    for regeneration in range(_MAX_FULL_REGENERATIONS + 1):
-        system, user = builder(profile, part, plan, topic)
-        result = chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
-        content = result.data if isinstance(result.data, dict) else {}
-        content = _postprocess(part, content)
+    text, answers_by_gap, stage_a_meta = _run_stage_a(profile, part, plan, topic, gap_specs, word_min, word_max)
+    items_by_gap, stage_b_meta = _run_stage_b(profile, part, gap_specs, answers_by_gap)
 
-        issues = validate_content(part, content)
-        h_issues = hard_issues(issues)
+    content = _assemble_content(gap_specs, text, answers_by_gap, items_by_gap)
+    content = _postprocess(part, content)
 
-        part_level = [i for i in h_issues if i.item_id is None]
-        if part_level and regeneration < _MAX_FULL_REGENERATIONS:
-            last_issues = h_issues
-            continue
-
-        item_level = [i for i in h_issues if i.item_id is not None]
-        det_repair_count = 0
-        if item_level:
-            content = _repair_items(part, content, item_level)
-            content = _postprocess(part, content)
-            det_repair_count = len(item_level)
-            total_det_repairs += det_repair_count
-            issues = validate_content(part, content)
-            h_issues = hard_issues(issues)
-
-        if h_issues:
-            last_issues = h_issues
-            if regeneration < _MAX_FULL_REGENERATIONS:
-                continue
-            raise LanguageElementsGenerationError(
-                f"could not produce a deterministically valid {part.task_type} part after "
-                f"{_MAX_FULL_REGENERATIONS} regenerations: "
-                + "; ".join(f"{i.item_id}: {i.message}" for i in last_issues)
-            )
-
-        content, semantic_meta, semantic_ok = _semantic_phase(part, content)
-        for key in semantic_totals:
-            semantic_totals[key] += semantic_meta[key]
-        for code, count in semantic_meta["issueCounts"].items():
-            total_issue_counts[code] = total_issue_counts.get(code, 0) + count
-        log.info("german_exam_semantic part=%s regeneration=%s passed=%s verificationCount=%s repairCount=%s issueCounts=%s",
-                 part.part_id, regeneration, semantic_ok, semantic_meta["verificationCount"], semantic_meta["repairCount"], semantic_meta["issueCounts"])
-        if semantic_ok:
-            semantic_meta.update(semantic_totals)
-            semantic_meta["issueCounts"] = total_issue_counts
-            semantic_meta["regenerationCount"] = regeneration
-            return content, {
-                "deterministicPassed": True,
-                "deterministicRepairCount": total_det_repairs,
-                "semantic": semantic_meta,
-            }
-
-        last_semantic = semantic_meta
-        if regeneration < _MAX_FULL_REGENERATIONS:
-            continue
+    issues = validate_content(part, content)
+    h_issues = hard_issues(issues)
+    if h_issues:
+        # Should be rare-to-never given the backend now owns every structural
+        # constraint — but content assembled from valid parts is still never
+        # trusted blindly. Surface loudly rather than silently accept it.
         raise LanguageElementsGenerationError(
-            f"could not produce semantically valid {part.task_type} content after "
-            f"{_MAX_FULL_REGENERATIONS} regenerations: {last_semantic}"
+            "assembled content failed final validation despite constraint-decomposed generation: "
+            + "; ".join(f"{i.item_id}: {i.message}" for i in h_issues)
         )
 
-    raise LanguageElementsGenerationError(f"unreachable: exhausted regeneration budget for {part.task_type!r}")
+    content, semantic_meta, semantic_ok = _semantic_phase(part, content)
+    semantic_meta["stageA"] = stage_a_meta
+    semantic_meta["stageB"] = stage_b_meta
+    log.info(
+        "german_exam_semantic part=%s stageA=%s stageB=%s passed=%s verificationCount=%s repairCount=%s issueCounts=%s",
+        part.part_id, stage_a_meta, stage_b_meta, semantic_ok, semantic_meta["verificationCount"],
+        semantic_meta["repairCount"], semantic_meta["issueCounts"]
+    )
+    if not semantic_ok:
+        raise LanguageElementsGenerationError(
+            f"could not produce semantically valid {part.task_type} content: {semantic_meta}"
+        )
+
+    return content, {
+        "deterministicPassed": True,
+        "deterministicRepairCount": stage_b_meta.get("itemRepairCount", 0),
+        "semantic": semantic_meta,
+    }
