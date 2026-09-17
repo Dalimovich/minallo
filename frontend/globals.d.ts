@@ -155,7 +155,10 @@ declare global {
     _authMode?: string;
     updateAuthIndicator?: (user: unknown) => void;
     loadUserData?: (uid: string) => unknown;
-    applyProfile?: (profile: Record<string, unknown> | null | undefined) => unknown;
+    applyProfile?: (
+      profile: Record<string, unknown> | null | undefined,
+      opts?: { authoritative?: boolean }
+    ) => unknown;
     _applyUserTypeUI?: () => void;
     _adminShowIfEligible?: (user: { id?: string } | null) => void;
     _showOnboarding?: (email?: string) => void;
@@ -286,12 +289,18 @@ declare global {
     // from (_germanTest, _germanLevel) — see applyProfile() in user-data.ts.
     // null/undefined means no supported exam profile for this learner.
     _germanExamProfileId?: string | null;
-    // True once applyProfile() has run at least once for the current user —
-    // distinguishes "profile still loading" (undefined) from "profile
-    // loaded and this learner genuinely has no supported exam profile"
-    // (true, with _germanExamProfileId still null). Consumers that decide
-    // whether to show generated vs. static content must check this before
-    // treating a null profile id as "unsupported".
+    // True once applyProfile() has run at least once WITH AUTHORITATIVE data
+    // for the current user (a fresh profiles-row fetch or a just-saved
+    // profile write) — distinguishes "profile still loading" (undefined)
+    // from "profile loaded and this learner genuinely has no supported exam
+    // profile" (true, with _germanExamProfileId still null). Deliberately
+    // NOT set by the boot-time cached-profile applyProfile() call (see
+    // applyProfile()'s `authoritative` param in user-data.ts) — that cache
+    // can be stale/incomplete (e.g. predates german_test/german_level being
+    // set) and must never be mistaken for a definitive "no exam profile"
+    // verdict. Consumers that decide whether to show generated vs. static
+    // content must check this before treating a null profile id as
+    // "unsupported".
     _germanProfileLoaded?: boolean;
     MAJOR_LIST?: string[];
 

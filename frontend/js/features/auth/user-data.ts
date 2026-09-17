@@ -124,7 +124,7 @@ export async function loadUserData(uid: string): Promise<void> {
       const cached = localStorage.getItem('profile_cache_' + uid);
       if (cached) {
         const cp = JSON.parse(cached) as ProfileRow;
-        if (cp && window.applyProfile) window.applyProfile(cp);
+        if (cp && window.applyProfile) window.applyProfile(cp, { authoritative: false });
         if (cp && cp.courses) scheduleUserCoursesLoad(cp.courses);
       }
     } catch {
@@ -277,8 +277,12 @@ function applyAffiliateAccess(p: ProfileRow | null | undefined): void {
   }
 }
 
-export function applyProfile(p: ProfileRow | null | undefined): void {
+export function applyProfile(
+  p: ProfileRow | null | undefined,
+  opts: { authoritative?: boolean } = {}
+): void {
   if (!p) return;
+  const authoritative = opts.authoritative !== false;
   applyAffiliateAccess(p);
   const n = document.getElementById('profileName') as HTMLInputElement | null;
   const e = document.getElementById('profileEmail') as HTMLInputElement | null;
@@ -356,7 +360,16 @@ export function applyProfile(p: ProfileRow | null | undefined): void {
     }
   }
   applyUserTypeUI();
-  window._germanProfileLoaded = true;
+  // Only an authoritative apply (a fresh profiles-row fetch, or a just-saved
+  // write) may promote this to true. A cache-sourced apply (boot-time
+  // profile_cache_<uid>, see app.ts/loadUserData) can be stale or predate
+  // german_test/german_level being set — treating THAT as "the profile has
+  // definitively loaded" was the real bug behind Sprachbausteine/Lesen/
+  // Hören/Writing Coach showing an "unsupported profile" state for a
+  // learner whose real profile does resolve, just not yet fetched. Never
+  // regress an already-true flag back to false on a later non-authoritative
+  // call (there shouldn't be one, but this keeps the invariant monotonic).
+  if (authoritative) window._germanProfileLoaded = true;
   window.dispatchEvent(new Event('ss-profile-updated'));
 }
 

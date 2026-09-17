@@ -25,6 +25,7 @@ const AUTH_MODAL = read('frontend/js/features/auth/auth-modal.ts');
 const ONBOARDING_TS = read('frontend/js/features/auth/onboarding.ts');
 const SETTINGS_VIEW_JS = read('frontend/views/settings/settings.js');
 const USER_DATA_TS = read('frontend/js/features/auth/user-data.ts');
+const APP_TS = read('frontend/js/app.ts');
 const LOADER_TS = read('frontend/js/loader.ts');
 const CHATBOT_DISPATCHER = read('frontend/views/chatbot/chatbot.js');
 
@@ -263,4 +264,60 @@ test('settings logout calls sb.auth.signOut and does not re-implement cleanup', 
     inlineUserType.test(SETTINGS_VIEW_JS), false,
     'settings.js should not duplicate the ss_user_type cleanup that lives in signOut'
   );
+});
+
+// ── _germanProfileLoaded must only be promoted by an AUTHORITATIVE apply ───
+// Regression coverage for the Sprachbausteine/Lesen/Hören/Writing-Coach
+// "unsupported profile" bug: applyProfile() used to set
+// window._germanProfileLoaded = true unconditionally, including from the
+// boot-time cached profile_cache_<uid> apply. If that cache predated
+// german_test/german_level being set (or was otherwise stale), every exam
+// module treated the resulting null profile id as a DEFINITIVE
+// "unsupported" verdict instead of waiting for the real network fetch —
+// even though the account's actual profile (telc + C1 Hochschule) resolves
+// correctly once the fresh row arrives.
+test('applyProfile() only sets window._germanProfileLoaded=true when authoritative', () => {
+  const fnStart = USER_DATA_TS.indexOf('export function applyProfile(');
+  assert.ok(fnStart >= 0, 'applyProfile() not found in user-data.ts');
+  const fnEnd = USER_DATA_TS.indexOf('\nexport function applyUserTypeUI', fnStart);
+  assert.ok(fnEnd > fnStart, 'could not locate the end of applyProfile()');
+  const fnBody = USER_DATA_TS.slice(fnStart, fnEnd);
+
+  assert.match(
+    fnBody,
+    /const authoritative = opts\.authoritative !== false;/,
+    'applyProfile must derive an `authoritative` flag, defaulting to true'
+  );
+  assert.match(
+    fnBody,
+    /if \(authoritative\)\s*window\._germanProfileLoaded = true;/,
+    'window._germanProfileLoaded must only be set true inside an `if (authoritative)` guard'
+  );
+  // The bare, unconditional assignment (the historical bug) must be gone.
+  assert.doesNotMatch(
+    fnBody,
+    /(?<!if \(authoritative\)\s*)window\._germanProfileLoaded = true;\s*\n\s*window\.dispatchEvent/,
+    'window._germanProfileLoaded must not be set unconditionally right before the ss-profile-updated dispatch'
+  );
+});
+
+test('every cache-sourced applyProfile() call site marks itself non-authoritative', () => {
+  // loadUserData()'s cached-profile branch, before the real network fetch.
+  assert.match(
+    USER_DATA_TS,
+    /if \(cp && window\.applyProfile\) window\.applyProfile\(cp, \{ authoritative: false \}\);/,
+    'loadUserData() must pass { authoritative: false } for the profile_cache_<uid> apply'
+  );
+  // app.ts's two boot-time cache applies (initial paint + profile section
+  // HTML re-apply) — both read the exact same profile_cache_<uid> key.
+  const bootCacheCalls = [...APP_TS.matchAll(/applyProfile\(([^)]+)\)/g)]
+    .filter((call) => !call[1].startsWith('p: unknown'));
+  assert.ok(bootCacheCalls.length >= 2, 'expected at least 2 applyProfile() calls in app.ts');
+  for (const call of bootCacheCalls) {
+    assert.match(
+      call[1],
+      /\{\s*authoritative:\s*false\s*\}/,
+      `app.ts applyProfile(${call[1]}) reads from profile_cache_<uid> and must pass { authoritative: false }`
+    );
+  }
 });

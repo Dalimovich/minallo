@@ -82,7 +82,7 @@ declare const _currentUser: { id?: string; sub?: string; email?: string } | null
 declare function _verifyAndEnter(token: string): unknown;
 declare function _enterApp(user: unknown): unknown;
 declare function _resetActivityTimer(): void;
-declare function applyProfile(p: unknown): void;
+declare function applyProfile(p: unknown, opts?: { authoritative?: boolean }): void;
 declare function _loadUserCourses(data: unknown): void;
 declare const _stRunning: boolean | undefined;
 declare function showToast(title: string, sub?: string): void;
@@ -981,7 +981,10 @@ try {
   if (lastUid) {
     _cpCached = JSON.parse(localStorage.getItem('profile_cache_' + lastUid) || 'null');
     if (_cpCached && typeof applyProfile === 'function') {
-      applyProfile(_cpCached);
+      // Boot-time cache can be stale/incomplete — must never flip
+      // window._germanProfileLoaded true on its own (see applyProfile()'s
+      // `authoritative` param in user-data.ts).
+      applyProfile(_cpCached, { authoritative: false });
     }
   }
 } catch { /* corrupted cache — ignore */ }
@@ -1006,7 +1009,7 @@ try {
             unknown
           > | null)
         : null;
-      if (cp && typeof applyProfile === 'function') applyProfile(cp);
+      if (cp && typeof applyProfile === 'function') applyProfile(cp, { authoritative: false });
     } catch {
       /* corrupted cache — ignore */
     }
