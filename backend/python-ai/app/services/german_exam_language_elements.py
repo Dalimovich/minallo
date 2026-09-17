@@ -131,6 +131,32 @@ def _norm(value: str) -> str:
     return " ".join(value.strip().casefold().split())
 
 
+_STAGE_A_PARAGRAPH_COUNT = 6
+
+
+def _build_paragraph_plan(
+    gap_specs: list[dict[str, str]], paragraph_count: int = _STAGE_A_PARAGRAPH_COUNT
+) -> list[list[dict[str, str]]]:
+    """Splits gap_specs (already in reading order) into paragraph_count
+    roughly-even chunks. A live run found the model reliably WRITES a
+    normal-length, coherent passage but only sprinkles as many gaps as felt
+    natural (7 of 22) when just handed one flat list of 22 target positions
+    — then fabricated the remaining answers with no matching placeholder in
+    the text at all. Requiring a small, concrete checklist per paragraph
+    ("this specific paragraph must contain exactly these 3-4 gaps") is a
+    far more tractable constraint than "scatter 22 markers somewhere across
+    the whole passage and don't lose count"."""
+    n = len(gap_specs)
+    base, extra = divmod(n, paragraph_count)
+    chunks: list[list[dict[str, str]]] = []
+    start = 0
+    for i in range(paragraph_count):
+        size = base + (1 if i < extra else 0)
+        chunks.append(gap_specs[start:start + size])
+        start += size
+    return chunks
+
+
 def _adaptation_guidance(instructions: list[AdaptationInstruction]) -> str:
     if not instructions:
         return "No specific weakness data yet — write balanced, exam-representative C1 content."
@@ -147,36 +173,50 @@ def _prompt_stage_a(
     gap_specs: list[dict[str, str]], word_min: int, word_max: int
 ) -> tuple[str, str]:
     item_count = len(gap_specs)
-    gap_lines = "\n".join(f'  {{"gapId": "{g["gapId"]}", "targetCategory": "{g["category"]}"}}' for g in gap_specs)
+    paragraph_plan = _build_paragraph_plan(gap_specs)
+    per_para_min = max(1, word_min // len(paragraph_plan))
+    per_para_max = -(-word_max // len(paragraph_plan))  # ceil
+    category_hint = {
+        "grammar": "grammar (a verb form, case ending, connector, preposition, or word-order choice)",
+        "lexicon": "lexicon (a collocation, word choice, or word-formation choice)",
+        "orthography": "orthography (a spelling, capitalization, or punctuation-sensitive choice)",
+    }
+    paragraph_lines = []
+    for i, chunk in enumerate(paragraph_plan, start=1):
+        gap_list = ", ".join(f'"{{{{{g["gapId"]}}}}}"' for g in chunk)
+        cat_list = "; ".join(f'{g["gapId"]}: {category_hint[g["category"]]}' for g in chunk)
+        paragraph_lines.append(
+            f"Paragraph {i} (~{per_para_min}-{per_para_max} words): must contain ALL of these placeholders, "
+            f"in this exact order, and NONE of any other paragraph's: {gap_list}.\n    {cat_list}"
+        )
+    paragraph_block = "\n\n  ".join(paragraph_lines)
     system = (
         f"You write ORIGINAL German exam-practice passages for {profile.family} {profile.variant or ''}, "
         "matching the official telc Sprachbausteine (cloze) reading-passage style. Do NOT copy real exam "
         "content — write an entirely new, coherent factual, popular-academic, or study-related text. Reply "
         "with ONLY valid JSON, no markdown fences, no commentary.\n\n"
-        f"Write one continuous {word_min}-{word_max} word German text (each placeholder token below, e.g. "
-        f"\"{{{{g1}}}}\", counts as ONE word toward that total, same as any other word — so your actual "
-        f"prose should be about {item_count} words SHORTER than the {word_min}-{word_max} target) on the "
-        f"topic '{topic['label']}', split into natural paragraphs. At exactly the {item_count} "
-        "positions listed below, remove one word or short phrase from the running text and replace it "
-        'inline with the literal placeholder "{{gapId}}" (e.g. "{{g1}}"), in this exact reading order:\n'
-        f"{gap_lines}\n\n"
-        "targetCategory tells you what kind of gap to create at that position (informational only, you do "
-        "not repeat it in your output):\n"
-        "- grammar: a verb form, case ending, connector, preposition, or word-order choice\n"
-        "- lexicon: a collocation, word choice, or word-formation choice\n"
-        "- orthography: a spelling, capitalization, or punctuation-sensitive choice\n\n"
+        f"Write EXACTLY {len(paragraph_plan)} paragraphs on the topic '{topic['label']}', totalling "
+        f"{word_min}-{word_max} words (each placeholder token, e.g. \"{{{{g1}}}}\", counts as ONE word "
+        "toward that total, same as any other word). Each paragraph below MUST contain every placeholder "
+        "listed for it — this is the single most important rule: a paragraph missing even one of its "
+        "required placeholders, or containing a placeholder meant for a different paragraph, makes the "
+        "whole response unusable. Remove one word or short phrase from the running text at each position "
+        'and replace it inline with the literal placeholder "{{gapId}}":\n\n'
+        f"  {paragraph_block}\n\n"
         "For each gap, report the single correct word/phrase you removed (exactly as it must be reinserted "
         "to make the sentence correct) and 1-2 skillTags describing why that gap tests what it tests: "
         "grammar/connectors/prepositions/syntax for grammar gaps, word_formation/collocation/lexical_choice "
         "for lexicon gaps, register for orthography gaps.\n\n"
         "Do NOT invent multiple-choice distractors, do not assign a correctIndex, and do not decide category "
         "counts — those are fixed separately and are not your job.\n\n"
-        "BEFORE YOU OUTPUT, count every word INCLUDING each placeholder token as one word, and confirm the "
-        f"total is {word_min}-{word_max}; if not, cut or add a clause and recount.\n\n"
+        f"BEFORE YOU OUTPUT: go paragraph by paragraph and check off each of its required placeholders is "
+        f"literally present (search for each \"{{{{gapId}}}}\" string) — {item_count} placeholders total, "
+        f"none missing, none duplicated, none in the wrong paragraph. Then count every word INCLUDING each "
+        f"placeholder token as one word and confirm the total is {word_min}-{word_max}.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
         "Output JSON shape exactly:\n"
         "{\n"
-        '  "text": {"title": "...", "paragraphs": ["Erster Absatz ... {{g1}} ...", "Zweiter Absatz ... {{g2}} ..."]},\n'
+        '  "text": {"title": "...", "paragraphs": ["Erster Absatz ... {{g1}} ...", "Zweiter Absatz ... {{g5}} ..."]},\n'
         '  "answers": [\n'
         '    {"gapId": "g1", "answer": "...", "skillTags": ["..."]},\n'
         "    ...\n"
@@ -245,15 +285,24 @@ def _stage_a_structural_issues(content: dict[str, Any], gap_specs: list[dict[str
 def _prompt_passage_repair(
     gap_specs: list[dict[str, str]], text: dict[str, Any], word_min: int, word_max: int, current_count: int
 ) -> tuple[str, str]:
+    target = (word_min + word_max) // 2
+    delta = current_count - target
+    direction = (
+        f"CUT roughly {delta} words (remove whole clauses/sentences, not just trim a word here and there — "
+        "a small nip-and-tuck is not enough)" if delta > 0 else
+        f"ADD roughly {-delta} words (a new sentence or clause, not just padding individual words)"
+    )
     system = (
         "You are rewriting a German Sprachbausteine passage that is structurally valid but has the wrong "
-        "word count. Rewrite it to fall within the target word count while preserving: the title and topic, "
+        f"word count. It is currently {current_count} words; the target is {word_min}-{word_max} (aim for "
+        f"about {target}), so you must {direction}. Preserve: the title and topic, "
         f"all {len(gap_specs)} placeholders \"{{{{gapId}}}}\" exactly once each in the same reading order, "
         "the meaning and grammatical fit immediately around every gap (the existing correct answers must "
         "remain correct), and natural paragraph breaks. Reply with ONLY valid JSON, no markdown fences, no "
         'commentary, in the exact same {"text": {"title", "paragraphs"}} shape as the input. Each '
         "placeholder token counts as one word toward the target, same as any other word.\n\n"
-        f"Current word count (placeholders included): {current_count}. Target: {word_min}-{word_max} words."
+        "BEFORE YOU OUTPUT, count the new total (placeholders included) and confirm it is within "
+        f"{word_min}-{word_max}; if not, cut or add more and recount."
     )
     user = f"Passage to rewrite:\n{json.dumps(text, ensure_ascii=False)}"
     return system, user
