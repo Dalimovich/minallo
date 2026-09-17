@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Deploy retrigger, 2026-09-17: the last push touching backend/python-ai/**
+# (41bc6de, the Lesen implementation) ran the deploy-python-ai.yml
+# migration gate before supabase/migrations/.last_applied was updated to
+# 20260917_000001_german_exam_generation_id.sql, so that run's gate step
+# failed and the deploy job never ran. The marker is now correct (commit
+# b2559cc) — this comment-only touch exists solely to get a fresh push-
+# triggered run of the workflow on current main, with no CLI/API access
+# available to invoke workflow_dispatch directly. No behavior change.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 COMPOSE=(docker compose --project-directory . --env-file .env)
