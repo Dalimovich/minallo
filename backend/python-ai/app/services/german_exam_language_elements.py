@@ -190,14 +190,16 @@ def _prompt_stage_a(
 ) -> tuple[str, str]:
     item_count = len(gap_specs)
     paragraph_plan = _build_paragraph_plan(gap_specs)
-    # Live testing found the model consistently overshoots its stated
-    # per-paragraph target rather than undershooting (403/425/447-word
-    # passages against a 320-350 target) — aim the per-paragraph instruction
-    # noticeably below the true midpoint so the model's own overshoot lands
-    # nearer the real target instead of compounding across all paragraphs.
-    target_total = word_min + (word_max - word_min) * 2 // 5  # ~40% into the range, not the midpoint
-    per_para_min = max(1, (target_total - 20) // len(paragraph_plan))
-    per_para_max = max(per_para_min + 1, (target_total + 5) // len(paragraph_plan))
+    # Live testing: asking for a per-paragraph WORD count/range (even one
+    # deliberately aimed below the true target) produced wildly inconsistent
+    # totals (139-447 words against a 320-350 target, in both directions).
+    # Asking for a per-paragraph SENTENCE count instead was far more
+    # reliably followed and landed in a much tighter, more predictable band
+    # (roughly 280-320 words at 4 sentences/paragraph) — models apparently
+    # track discrete sentence counts more reliably than a running word tally.
+    # 4 lands slightly low rather than high, since an under-320 result is a
+    # cheaper/easier ADD repair than cutting an over-350 one.
+    _SENTENCES_PER_PARAGRAPH = 4
     category_hint = {
         "grammar": "grammar (a verb form, case ending, connector, preposition, or word-order choice)",
         "lexicon": "lexicon (a collocation, word choice, or word-formation choice)",
@@ -208,8 +210,9 @@ def _prompt_stage_a(
         gap_list = ", ".join(f'"{{{{{g["gapId"]}}}}}"' for g in chunk)
         cat_list = "; ".join(f'{g["gapId"]}: {category_hint[g["category"]]}' for g in chunk)
         paragraph_lines.append(
-            f"Paragraph {i} (~{per_para_min}-{per_para_max} words): must contain ALL of these placeholders, "
-            f"in this exact order, and NONE of any other paragraph's: {gap_list}.\n    {cat_list}"
+            f"Paragraph {i}: EXACTLY {_SENTENCES_PER_PARAGRAPH} sentences — no more, no fewer. Must contain "
+            f"ALL of these placeholders, in this exact order, and NONE of any other paragraph's: {gap_list}."
+            f"\n    {cat_list}"
         )
     paragraph_block = "\n\n  ".join(paragraph_lines)
     system = (
@@ -217,13 +220,16 @@ def _prompt_stage_a(
         "matching the official telc Sprachbausteine (cloze) reading-passage style. Do NOT copy real exam "
         "content — write an entirely new, coherent factual, popular-academic, or study-related text. Reply "
         "with ONLY valid JSON, no markdown fences, no commentary.\n\n"
-        f"Write EXACTLY {len(paragraph_plan)} paragraphs on the topic '{topic['label']}', totalling "
+        f"Write EXACTLY {len(paragraph_plan)} paragraphs on the topic '{topic['label']}'. Sentence count per "
+        "paragraph is the PRIMARY constraint below — follow it exactly, even if that means being more "
+        "concise or more detailed than you otherwise would. The total should land near "
         f"{word_min}-{word_max} words (each placeholder token, e.g. \"{{{{g1}}}}\", counts as ONE word "
-        "toward that total, same as any other word). Each paragraph below MUST contain every placeholder "
-        "listed for it — this is the single most important rule: a paragraph missing even one of its "
-        "required placeholders, or containing a placeholder meant for a different paragraph, makes the "
-        "whole response unusable. Remove one word or short phrase from the running text at each position "
-        'and replace it inline with the literal placeholder "{{gapId}}":\n\n'
+        "toward that total), but getting the sentence count exactly right matters more than hitting the "
+        "word count precisely — a later pass will adjust length if needed. Each paragraph below MUST "
+        "contain every placeholder listed for it — this is the single most important rule: a paragraph "
+        "missing even one of its required placeholders, or containing a placeholder meant for a different "
+        "paragraph, makes the whole response unusable. Remove one word or short phrase from the running "
+        'text at each position and replace it inline with the literal placeholder "{{gapId}}":\n\n'
         f"  {paragraph_block}\n\n"
         "For each gap, report the single correct word/phrase you removed (exactly as it must be reinserted "
         "to make the sentence correct) and 1-2 skillTags describing why that gap tests what it tests: "
@@ -412,21 +418,24 @@ def _prompt_passage_repair(
     target = (word_min + word_max) // 2
     delta = current_count - target
     direction = (
-        f"CUT roughly {delta} words (remove whole clauses/sentences, not just trim a word here and there — "
-        "a small nip-and-tuck is not enough)" if delta > 0 else
-        f"ADD roughly {-delta} words (a new sentence or clause, not just padding individual words)"
+        f"CUT roughly {delta} words, no more (remove a clause or short sentence, not just trim a word here "
+        f"and there — but stop once you're within {word_min}-{word_max}, do not keep cutting past it)"
+        if delta > 0 else
+        f"ADD roughly {-delta} words, no more (a short sentence or clause, not just padding individual "
+        f"words — but stop once you're within {word_min}-{word_max}, do not keep adding past it)"
     )
     system = (
         "You are rewriting a German Sprachbausteine passage that is structurally valid but has the wrong "
         f"word count. It is currently {current_count} words; the target is {word_min}-{word_max} (aim for "
-        f"about {target}), so you must {direction}. Preserve: the title and topic, "
+        f"about {target}), so you must {direction}. Overshooting past the target range in the opposite "
+        "direction is just as wrong as not fixing it at all. Preserve: the title and topic, "
         f"all {len(gap_specs)} placeholders \"{{{{gapId}}}}\" exactly once each in the same reading order, "
         "the meaning and grammatical fit immediately around every gap (the existing correct answers must "
         "remain correct), and natural paragraph breaks. Reply with ONLY valid JSON, no markdown fences, no "
         'commentary, in the exact same {"text": {"title", "paragraphs"}} shape as the input. Each '
         "placeholder token counts as one word toward the target, same as any other word.\n\n"
         "BEFORE YOU OUTPUT, count the new total (placeholders included) and confirm it is within "
-        f"{word_min}-{word_max}; if not, cut or add more and recount."
+        f"{word_min}-{word_max}; if not, adjust again and recount."
     )
     user = f"Passage to rewrite:\n{json.dumps(text, ensure_ascii=False)}"
     return system, user
