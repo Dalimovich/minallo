@@ -44,4 +44,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # from PDF rasterization on the 2 GB box. Set high so a recycle rarely lands on
 # a long generation/stream; graceful-timeout lets in-flight requests finish, and
 # Phase-2a recovery re-queues any indexing a recycle interrupts.
-CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8080", "--timeout", "120", "--graceful-timeout", "30", "--max-requests", "2000", "--max-requests-jitter", "200", "--no-control-socket"]
+#
+# --timeout 200: a 2026-09-17 production smoke run measured a real German
+# Exam Engine generate call (Lesen, with a semantic-verification repair pass)
+# taking 99s, and a later one got killed around 120s — gunicorn's SIGKILL on
+# worker timeout, not a clean error. ai-german-exam-generate.ts's own
+# upstream proxy timeout was raised to 180s to match; this must stay above
+# that so gunicorn never kills the worker before the proxy gives up on its
+# own.
+CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8080", "--timeout", "200", "--graceful-timeout", "30", "--max-requests", "2000", "--max-requests-jitter", "200", "--no-control-socket"]

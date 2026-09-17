@@ -118,7 +118,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
 
     const switcher = page.locator('#glReadingPartSwitcher');
     await expect(switcher).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
 
     const debug = await readDebug(page);
     expect(debug.usingGenerated).toBe(true);
@@ -151,7 +151,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
     await expect(page.locator('#glReadingPartSwitcher')).toBeVisible({ timeout: 60_000 });
 
     await page.click('[data-part-id="lesen_2"]');
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
 
     const debug = await readDebug(page);
     expect(debug.partId).toBe('lesen_2');
@@ -181,7 +181,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
     await expect(page.locator('#glReadingPartSwitcher')).toBeVisible({ timeout: 60_000 });
 
     await page.click('[data-part-id="lesen_3"]');
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
 
     const debug = await readDebug(page);
     expect(debug.partId).toBe('lesen_3');
@@ -225,7 +225,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
     await page.click('[data-part-id="lesen_2"]');
     await page.click('[data-part-id="lesen_3"]');
 
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
     await page.waitForTimeout(1000);
 
     await expect(page.locator('[data-part-id="lesen_3"]')).toHaveClass(/active/);
@@ -255,7 +255,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
 
     await page.locator('[data-testid="german-panel-reading"]').click();
     await expect(page.locator('#glReadingView')).toBeVisible();
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
 
     const debug = await readDebug(page);
     expect(debug.usingGenerated).toBe(true);
@@ -268,7 +268,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
     await loginAsTelcLearner(page);
     await openLesen(page);
     await expect(page.locator('#glReadingPartSwitcher')).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
 
     // Answer whatever the active part is (lesen_1 from a fresh view) and check.
     const gapSelects = page.locator('.gl-reading-gap-select');
@@ -286,7 +286,7 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
 
     const regenerateRequestPromise = page.waitForRequest(
       req => req.url().includes('/api/ai/german-exam/generate') && req.method() === 'POST',
-      { timeout: 90_000 }
+      { timeout: 130_000 }
     );
 
     await page.click('[data-weak-areas="1"]');
@@ -301,16 +301,16 @@ test.describe('German Exam Engine — Lesen, real generated content (live)', () 
     if (resultsResp) {
       expect(regenerateReq.timing().startTime).toBeGreaterThanOrEqual(0); // request resolved at all
     }
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
   });
 
   test('Weak Areas loads for module=reading', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(170_000);
     const events = instrumentNetwork(page);
     await loginAsTelcLearner(page);
     await openLesen(page);
     await expect(page.locator('#glReadingPartSwitcher')).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0, { timeout: 130_000 });
 
     await page.click('[data-weak-areas="1"]');
     await expect(page.locator('.gl-reading-weak-areas')).toBeVisible({ timeout: 30_000 });

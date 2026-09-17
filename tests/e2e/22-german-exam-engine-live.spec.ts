@@ -199,7 +199,7 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     await expect(page.locator('#glListenPartSwitcher')).toBeVisible({ timeout: 60_000 });
 
     await page.click('#glListenPartHV2');
-    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 130_000 });
     await expect(page.locator('#glListenPartHV2')).toHaveClass(/active/);
 
     const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; currentTaskType: string; questionCount: number } })._glListenDebugState());
@@ -232,7 +232,7 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     await expect(page.locator('#glListenPartSwitcher')).toBeVisible({ timeout: 60_000 });
 
     await page.click('#glListenPartHV3');
-    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 130_000 });
     await expect(page.locator('#glListenPartHV3')).toHaveClass(/active/);
 
     const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; currentTaskType: string; questionCount: number } })._glListenDebugState());
@@ -315,7 +315,7 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     );
     const regenerateRequestPromise = page.waitForRequest(
       req => req.url().includes('/api/ai/german-exam/generate') && req.method() === 'POST',
-      { timeout: 90_000 }
+      { timeout: 130_000 }
     );
 
     await weakBtn.click();
@@ -351,7 +351,7 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     await page.click('#glListenPartHV3');
 
     // Let all three in-flight requests settle.
-    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 130_000 });
     await page.waitForTimeout(1000); // let any last-arriving stale response's .then() run, if it were going to
 
     // Final visible state must be HV3: the part switcher shows HV3 active,
@@ -398,7 +398,7 @@ test.describe('German Exam Engine — Hören, real generated content (live)', ()
     // anything while we were away, and must not clobber this new load.
     await page.locator('[data-testid="german-panel-listening"]').click();
     await expect(page.locator('#glListeningView')).toBeVisible();
-    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 90_000 });
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 130_000 });
 
     const debug = await page.evaluate(() => (window as unknown as { _glListenDebugState: () => { partId: string; usingGenerated: boolean; questionCount: number } })._glListenDebugState());
     expect(debug.usingGenerated).toBe(true);
