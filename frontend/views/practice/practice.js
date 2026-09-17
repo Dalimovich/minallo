@@ -1583,10 +1583,28 @@
         genAnswers: {}, // per-item answer state, shape depends on task_type
         genChecked: false,
         _genRequestToken: 0,
-        _lastGenFailed: false
+        _lastGenFailed: false,
+        // True while Lesen is open and waiting on the profile fetch to
+        // resolve (window._germanProfileLoaded still false) — distinct from
+        // "loaded and genuinely unsupported". Cleared as soon as generation
+        // starts or a definitive unsupported state is reached. See the
+        // ss-profile-updated listener below rdOpenGeneratedView.
+        _awaitingProfile: false
       };
 
       function rdEl(id) { return document.getElementById(id); }
+
+      // Toggles the static-mode-only chrome: the Practice/Weak areas/From my
+      // files tabs AND the B2/Mixed text-type + level selects (sibling of
+      // .gl-reading-tabs inside .gl-reading-header, not a descendant of it —
+      // hiding .gl-reading-tabs alone leaves these visible). Neither applies
+      // to the generated (real exam profile) path.
+      function rdSetStaticHeaderControlsVisible(visible) {
+        var tabsWrap = document.querySelector('.gl-reading-tabs');
+        if (tabsWrap) tabsWrap.style.display = visible ? '' : 'none';
+        var headerControls = document.querySelector('.gl-reading-header-controls');
+        if (headerControls) headerControls.style.display = visible ? '' : 'none';
+      }
 
       // Deliberately separate from lsResolveProfileId() (a sibling, private
       // IIFE) rather than sharing it — duplicating this small lookup avoids
@@ -1614,6 +1632,16 @@
         lesen_3: 'Teil 3 · Detail- & Globalverstehen'
       };
 
+      // Canonical generated-mode header: "telc C1 Hochschule · C1 · Lesen · Teil N"
+      // — built from the envelope's own exam fields (never hardcoded), with
+      // the part switcher's more descriptive label (e.g. "Textrekonstruktion")
+      // shown separately, not folded into this line.
+      function rdGeneratedHeader() {
+        var teil = (RD_PART_LABELS[rd.partId] || '').split(' · ')[0] || rd.partId || '';
+        var examLabel = [rd.examFamily, rd.examVariant].filter(Boolean).join(' ');
+        return [examLabel, rd.targetLevel, 'Lesen', teil].filter(Boolean).join(' · ');
+      }
+
       function rdShowGenerationError(partId) {
         var panel = rdEl('glReadingQuestionPanel');
         var textPanel = rdEl('glReadingTextPanel');
@@ -1633,8 +1661,7 @@
         if (retryBtn) retryBtn.addEventListener('click', function () { rdGenerateOrLoadPart(partId); });
         if (fallbackBtn) fallbackBtn.addEventListener('click', function () {
           rd.usingGenerated = false;
-          var tabsWrap = document.querySelector('.gl-reading-tabs');
-          if (tabsWrap) tabsWrap.style.display = '';
+          rdSetStaticHeaderControlsVisible(true);
           var switcherBar = rdEl('glReadingPartSwitcher');
           if (switcherBar) switcherBar.style.display = 'none';
           rdLoadSet(RD_SETS[rd.setIndex % RD_SETS.length]);
@@ -1658,11 +1685,18 @@
         if (panel) panel.innerHTML = '<div class="gl-listen-loading">Generating your verified telc exercise…</div>';
         var textPanel = rdEl('glReadingTextPanel');
         if (textPanel) textPanel.innerHTML = '';
-        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profileId: profileId, module: 'reading', partId: partId, mode: 'adaptive_practice' })
+        // Never let this race ahead of a just-checked part's results save —
+        // weakness computation (which drives adaptive generation) reads from
+        // the same table that save writes to.
+        return rdEnsureResultsSaved().then(function () {
+          if (myToken !== rd._genRequestToken) return null;
+          return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileId: profileId, module: 'reading', partId: partId, mode: 'adaptive_practice' })
+          });
         }).then(function (resp) {
+          if (resp === null) return false;
           if (!resp.ok) throw new Error('generate_http_' + resp.status);
           return resp.json();
         }).then(function (envelope) {
@@ -1692,6 +1726,7 @@
         rd.module = envelope.module || 'reading';
         rd.partId = part.id || rd.partId;
         rd.generationId = envelope.generationId || null;
+        rd.topicLabel = (envelope.topic && envelope.topic.label) || '';
         rd.genAnswers = {};
         rd.genChecked = false;
       }
@@ -1722,7 +1757,8 @@
         var candidates = rd.content.candidates || [];
         var letters = 'ABCDEFGH';
         textPanel.innerHTML =
-          '<div class="gl-reading-text-eyebrow">Lesen · ' + _glEscape(RD_PART_LABELS[rd.partId] || '') + '</div>' +
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
           '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
           '<div class="gl-reading-text-body">' +
           (text.paragraphs || []).map(function (p) { return '<p>' + rdGapPlaceholder(p) + '</p>'; }).join('') +
@@ -1753,7 +1789,8 @@
         var sections = rd.content.sections || [];
         var letters = 'ABCDEFGH';
         textPanel.innerHTML =
-          '<div class="gl-reading-text-eyebrow">Lesen · ' + _glEscape(RD_PART_LABELS[rd.partId] || '') + '</div>' +
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
           sections.map(function (s, idx) {
             return '<div class="gl-reading-section"><h4>' + (letters[idx] || '?') + '</h4><p>' + _glEscape(s.text) + '</p></div>';
           }).join('');
@@ -1786,7 +1823,8 @@
         if (!textPanel || !qPanel) return;
         var text = rd.content.text || {};
         textPanel.innerHTML =
-          '<div class="gl-reading-text-eyebrow">Lesen · ' + _glEscape(RD_PART_LABELS[rd.partId] || '') + '</div>' +
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
           '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
           '<div class="gl-reading-text-body">' +
           (text.paragraphs || []).map(function (p) {
@@ -1904,7 +1942,11 @@
         rdSaveGeneratedResults(results);
       }
 
-      // Fire-and-forget, same shape as lsRecordAttempt/lsEnsureResultsSaved:
+      // Tracked on rd._resultsSavePromise (mirrors ls._resultsSavePromise/
+      // lsEnsureResultsSaved) rather than pure fire-and-forget: a learner
+      // who checks answers and immediately switches part/weak-areas must
+      // never have that generate/weaknesses call race ahead of this save —
+      // weakness computation reads from the same table this POST writes to.
       // module='reading', no replay/transcript concept — those fields stay
       // null. Single-attempt model for v1 (no hint/retry loop yet), so
       // firstAttemptCorrect === finalCorrect for every item.
@@ -1919,8 +1961,8 @@
             scoreValue: r.correct ? 2 : 0, maxScoreValue: 2, metadata: { generationId: rd.generationId }
           };
         });
-        if (!items.length) return;
-        _authFetch(BACKEND_URL + '/api/ai/german-exam/results', {
+        if (!items.length) return Promise.resolve();
+        rd._resultsSavePromise = _authFetch(BACKEND_URL + '/api/ai/german-exam/results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1929,7 +1971,15 @@
           })
         }).catch(function (err) {
           if (typeof console !== 'undefined' && console.warn) console.warn('[Lesen] failed to save results.', err);
-        });
+        }).then(function () { rd._resultsSavePromise = null; });
+        return rd._resultsSavePromise;
+      }
+
+      // Awaited by rdGenerateOrLoadPart/rdShowWeakAreas before firing their
+      // own request, so a just-checked part's results are always committed
+      // before the next adaptive generation or weakness read can race ahead.
+      function rdEnsureResultsSaved() {
+        return rd._resultsSavePromise || Promise.resolve();
       }
 
       // ── Part switcher (dynamically injected — no static markup needed in
@@ -1975,10 +2025,12 @@
         var qPanel = rdEl('glReadingQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
         if (qPanel) qPanel.innerHTML = '<div class="gl-listen-loading">Loading weak areas…</div>';
-        _authFetch(BACKEND_URL + '/api/ai/german-exam/weaknesses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profileId: profileId, module: 'reading' })
+        rdEnsureResultsSaved().then(function () {
+          return _authFetch(BACKEND_URL + '/api/ai/german-exam/weaknesses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileId: profileId, module: 'reading' })
+          });
         }).then(function (resp) {
           if (!resp.ok) throw new Error('weaknesses_http_' + resp.status);
           return resp.json();
@@ -2010,11 +2062,24 @@
       // silently substitutes static content for a supported profile whose
       // generation failed (matches Hören's explicit-error convention);
       // static RD_SETS remain the fallback only when no profile resolves.
+      window._glReadingDebugState = function () {
+        var questions = (rd.content && rd.content.questions) || [];
+        return {
+          usingGenerated: rd.usingGenerated,
+          partId: rd.partId,
+          module: rd.module,
+          taskType: rd._activeTaskType,
+          questionCount: questions.length,
+          genRequestToken: rd._genRequestToken,
+          genChecked: rd.genChecked,
+          generationId: rd.generationId
+        };
+      };
+
       function rdOpenGeneratedView(partId) {
         rd._activeTaskType = RD_PART_TASK_TYPES[partId];
         rdEnsureGeneratedSwitcher();
-        var tabsWrap = document.querySelector('.gl-reading-tabs');
-        if (tabsWrap) tabsWrap.style.display = 'none'; // static practice/files/weak tabs don't apply to the generated path
+        rdSetStaticHeaderControlsVisible(false); // static tabs + B2/Mixed selects don't apply to the generated path
         rdEl('glReadingWorkspace').style.display = '';
         rdEl('glReadingEnd').style.display = 'none';
         var switcherBar = rdEl('glReadingPartSwitcher');
@@ -2034,6 +2099,24 @@
         rd.isSample = isSample !== false;
       }
 
+      // Shown instead of static RD_SETS while the profile fetch is still in
+      // flight — never silently falls back to static content just because
+      // applyProfile() hasn't run yet. Cleared by rdOpenGeneratedView (once
+      // a supported profile resolves) or by the definitive-unsupported path
+      // in window._glOpenReadingView.
+      function rdShowWaitingForProfile() {
+        rd._awaitingProfile = true;
+        rdSetStaticHeaderControlsVisible(false);
+        var switcherBar = rdEl('glReadingPartSwitcher');
+        if (switcherBar) switcherBar.style.display = 'none';
+        rdEl('glReadingWorkspace').style.display = '';
+        rdEl('glReadingEnd').style.display = 'none';
+        var textPanel = rdEl('glReadingTextPanel');
+        var panel = rdEl('glReadingQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (panel) panel.innerHTML = '<div class="gl-listen-loading">Loading your exam profile…</div>';
+      }
+
       window._glOpenReadingView = function () {
         rd.tab = 'practice';
         rdRenderTabs();
@@ -2041,16 +2124,40 @@
         rdWireHeader();
         var profileId = rdResolveProfileId();
         if (profileId) {
+          rd._awaitingProfile = false;
           rdOpenGeneratedView(rd.partId && RD_PART_TASK_TYPES[rd.partId] ? rd.partId : 'lesen_1');
           return;
         }
+        if (!window._germanProfileLoaded) {
+          // Profile hasn't resolved yet — this is NOT the same as a
+          // definitively unsupported profile. Show a loading state and let
+          // the ss-profile-updated listener below retry once it resolves.
+          rdShowWaitingForProfile();
+          return;
+        }
+        rd._awaitingProfile = false;
         rd.usingGenerated = false;
+        rdSetStaticHeaderControlsVisible(true);
+        var staleSwitcher = rdEl('glReadingPartSwitcher');
+        if (staleSwitcher) staleSwitcher.style.display = 'none';
         rdLoadSet(RD_SETS[rd.setIndex % RD_SETS.length]);
         rdEl('glReadingWorkspace').style.display = '';
         rdEl('glReadingEnd').style.display = 'none';
         rdRenderText();
         rdRenderQuestion();
       };
+
+      // Retries opening Lesen once the profile finishes loading, but only if
+      // Lesen is still the open skill and was actually left waiting (never
+      // fires for a view that already resolved profileId or already fell
+      // back to a definitively-unsupported static state) — so this can
+      // never itself trigger a duplicate generation request.
+      window.addEventListener('ss-profile-updated', function () {
+        if (!rd._awaitingProfile) return;
+        rd._awaitingProfile = false;
+        if (_glActiveSkill !== 'reading') return;
+        window._glOpenReadingView();
+      });
 
       function rdWireHeader() {
         var tabsWrap = document.querySelector('.gl-reading-tabs');
@@ -4742,7 +4849,11 @@
         // re-rendering the workspace, so the explicit error panel
         // lsShowGenerationError() draws into glListenTaskPanel isn't
         // immediately stomped by a normal render call.
-        _lastGenFailed: false
+        _lastGenFailed: false,
+        // Mirrors rd._awaitingProfile (Lesen) — true while Hören is open and
+        // waiting on the profile fetch (window._germanProfileLoaded still
+        // false), not yet a definitive "no supported profile" verdict.
+        _awaitingProfile: false
       };
 
       function lsEl(id) { return document.getElementById(id); }
@@ -5037,15 +5148,35 @@
       // This covers: switching HV1->HV2 before HV1's response lands,
       // double-clicking "New listening", and leaving the view mid-generation
       // (window._glCloseListeningView also bumps the token).
+      // Shown in glListenTaskPanel while the profile fetch is still in
+      // flight — mirrors rdShowWaitingForProfile (Lesen). Never a
+      // substitute for the definitive-unsupported LISTEN_SETS fallback.
+      function lsShowWaitingForProfile() {
+        var taskPanel = lsEl('glListenTaskPanel');
+        if (taskPanel) taskPanel.innerHTML = '<div class="gl-listen-generating">Loading your exam profile…</div>';
+      }
+
       function lsGenerateOrLoadPart(moduleName, partId) {
         var myToken = ++ls._genRequestToken;
         ls._lastGenFailed = false;
         var profileId = lsResolveProfileId();
         if (!profileId) {
           if (myToken !== ls._genRequestToken) return Promise.resolve();
+          if (!window._germanProfileLoaded) {
+            // Profile hasn't resolved yet — this is NOT the same as a
+            // definitively unsupported profile. Wait for ss-profile-updated
+            // to retry instead of silently loading static LISTEN_SETS.
+            ls._awaitingProfile = true;
+            ls.module = moduleName;
+            ls.partId = partId;
+            lsShowWaitingForProfile();
+            return Promise.resolve();
+          }
+          ls._awaitingProfile = false;
           lsLoadSet(ls.setIndex % LISTEN_SETS.length);
           return Promise.resolve();
         }
+        ls._awaitingProfile = false;
         ls.module = moduleName;
         ls.partId = partId;
 
@@ -5134,6 +5265,7 @@
         lsResetToPracticeTabChrome();
         lsGenerateOrLoadPart('listening', ls.partId || 'hv1').then(function () {
           if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
+          if (ls._awaitingProfile) return; // lsShowWaitingForProfile() already drew the loading panel
           lsRenderPlayerChrome();
           lsRenderWorkspace();
         });
@@ -5142,6 +5274,17 @@
         lsWirePartSwitcher();
         lsPlayer.onChange(lsRenderPlayerChrome);
       };
+
+      // Retries opening Hören once the profile finishes loading, mirroring
+      // Lesen's ss-profile-updated listener. Guarded the same way: only
+      // fires if Hören was actually left waiting and is still the open
+      // skill, so it can never cause a duplicate generate/tts-batch call.
+      window.addEventListener('ss-profile-updated', function () {
+        if (!ls._awaitingProfile) return;
+        ls._awaitingProfile = false;
+        if (_glActiveSkill !== 'listening') return;
+        window._glOpenListeningView();
+      });
 
       // Called whenever the user leaves Hören (switching skill or going back
       // to the German Practice home) — see the _glOpenSkill/_glBackToHome

@@ -356,6 +356,7 @@ export function applyProfile(p: ProfileRow | null | undefined): void {
     }
   }
   applyUserTypeUI();
+  window._germanProfileLoaded = true;
   window.dispatchEvent(new Event('ss-profile-updated'));
 }
 

@@ -286,6 +286,13 @@ declare global {
     // from (_germanTest, _germanLevel) — see applyProfile() in user-data.ts.
     // null/undefined means no supported exam profile for this learner.
     _germanExamProfileId?: string | null;
+    // True once applyProfile() has run at least once for the current user —
+    // distinguishes "profile still loading" (undefined) from "profile
+    // loaded and this learner genuinely has no supported exam profile"
+    // (true, with _germanExamProfileId still null). Consumers that decide
+    // whether to show generated vs. static content must check this before
+    // treating a null profile id as "unsupported".
+    _germanProfileLoaded?: boolean;
     MAJOR_LIST?: string[];
 
     // ── pdf controls extras ────────────────────────────────────────────

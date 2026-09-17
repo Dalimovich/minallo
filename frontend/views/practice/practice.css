@@ -1867,6 +1867,126 @@
   }
 }
 
+/* ── Lesen — telc C1 Hochschule generated path (lesen_1/2/3) ──────────────
+ * Reuses .gl-reading-text-panel/.gl-reading-text-body/.gl-reading-question-
+ * panel for layout+overflow protection (max-width: 62ch, overflow-wrap:
+ * anywhere, max-height+overflow-y:auto) — only the new interactive controls
+ * below need their own rules. */
+.gl-reading-candidate-legend {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.86rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+.gl-reading-candidate-legend ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.gl-reading-candidate-legend li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+.gl-reading-gap-select {
+  margin: 0 2px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.12);
+  color: #fff;
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 0.9rem;
+  max-width: 100%;
+}
+.gl-reading-section {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.gl-reading-section:last-child {
+  border-bottom: none;
+}
+.gl-reading-section h4 {
+  margin: 0 0 6px;
+  color: #60a5fa;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.gl-reading-statement {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.gl-reading-statement:last-child {
+  border-bottom: none;
+}
+.gl-reading-statement p {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.88);
+}
+.gl-reading-section-select {
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 12, 22, 0.5);
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 0.84rem;
+}
+.gl-reading-tristate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.gl-reading-tristate label,
+.gl-reading-global-heading label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: rgba(226, 232, 240, 0.8);
+  cursor: pointer;
+}
+.gl-reading-global-heading {
+  margin-top: 16px;
+}
+.gl-reading-global-heading label {
+  display: flex;
+  margin-bottom: 8px;
+}
+.gl-reading-result-summary {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.gl-reading-weak-areas ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.gl-reading-weak-areas li {
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+  color: rgba(226, 232, 240, 0.8);
+  line-height: 1.5;
+}
+@media (max-width: 640px) {
+  .gl-reading-tristate {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gl-study-tools *,
   .gl-study-tools *::before,
