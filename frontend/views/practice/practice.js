@@ -361,6 +361,39 @@
       if (aiPanel && !visible) aiPanel.style.display = 'none';
     }
 
+    // Shared "never blank" fallback for exam-only skills whose dedicated
+    // workspace controller or view markup failed to load/mount (e.g. a
+    // stale cached practice.html missing newer markup, or a controller
+    // script that failed to execute). Renders a visible error+Retry inside
+    // #glSkillView instead of leaving it empty. Retry reloads the page
+    // since a missing controller/markup can't be recovered in-place.
+    function _glShowSkillMountError(skillLabel) {
+      var detail = document.getElementById('glSkillView');
+      if (!detail) return;
+      _glSetGenericSkillPiecesVisible(false);
+      ['glReadingView', 'glGrammarView', 'glVocabularyView', 'glListeningView', 'glSprachbausteineView'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+      var host = document.getElementById('glSkillMountError');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'glSkillMountError';
+        detail.appendChild(host);
+      }
+      host.style.display = '';
+      host.innerHTML =
+        '<div class="gl-listen-error">' +
+          '<p class="gl-listen-error-title">' + _glEscape(skillLabel) + ' could not load.</p>' +
+          '<p class="gl-listen-error-sub">Please retry.</p>' +
+          '<div class="gl-listen-error-actions">' +
+            '<button type="button" id="glSkillMountErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
+          '</div>' +
+        '</div>';
+      var retryBtn = document.getElementById('glSkillMountErrorRetry');
+      if (retryBtn) retryBtn.addEventListener('click', function () { window.location.reload(); });
+    }
+
     window._glOpenSkill = function (skill) {
       // Leaving Hören (or never having opened it) is a cheap no-op; this
       // guarantees speech never keeps playing invisibly once another skill
@@ -380,12 +413,18 @@
         detail.style.display = '';
         detail.setAttribute('data-active-skill', skill);
       }
+      var mountErrorEl = document.getElementById('glSkillMountError');
+      if (mountErrorEl) mountErrorEl.style.display = 'none';
 
       // Schreiben (exam Writing) never has a dedicated view inside this
       // #psec-german grid — redirect to the real workspace instead of
       // falling through to the generic quiz/cards template below (see
       // window._glOpenWritingCoachFromPractice for why).
-      if (skill === 'writing' && typeof window._glOpenWritingCoachFromPractice === 'function') {
+      if (skill === 'writing') {
+        if (typeof window._glOpenWritingCoachFromPractice !== 'function') {
+          _glShowSkillMountError('Writing Coach');
+          return;
+        }
         if (home) home.style.display = '';
         if (detail) detail.style.display = 'none';
         window._glOpenWritingCoachFromPractice();
@@ -393,6 +432,10 @@
       }
 
       if (skill === 'reading') {
+        if (!readingView || typeof window._glOpenReadingView !== 'function') {
+          _glShowSkillMountError('Lesen');
+          return;
+        }
         _glSetGenericSkillPiecesVisible(false);
         if (grammarView) grammarView.style.display = 'none';
         if (vocabView) vocabView.style.display = 'none';
@@ -407,7 +450,11 @@
       // Sprachbausteine IIFE below), same pattern as Lesen/Hören —
       // deliberately not the generic quiz/cards template, and no static
       // fallback content exists for it (see window._glOpenSprachbausteineView).
-      if (skill === 'sprachbausteine' && typeof window._glOpenSprachbausteineView === 'function') {
+      if (skill === 'sprachbausteine') {
+        if (!sprachbausteineView || typeof window._glOpenSprachbausteineView !== 'function') {
+          _glShowSkillMountError('Sprachbausteine');
+          return;
+        }
         _glSetGenericSkillPiecesVisible(false);
         if (readingView) readingView.style.display = 'none';
         if (grammarView) grammarView.style.display = 'none';
@@ -452,7 +499,11 @@
       // Hören IIFE below), same pattern as Lesen/Grammatik/Wortschatz —
       // deliberately not the generic quiz/cards template, and never
       // flashcards.
-      if (skill === 'listening' && typeof window._glOpenListeningView === 'function') {
+      if (skill === 'listening') {
+        if (!listenView || typeof window._glOpenListeningView !== 'function') {
+          _glShowSkillMountError('Hören');
+          return;
+        }
         _glSetGenericSkillPiecesVisible(false);
         if (readingView) readingView.style.display = 'none';
         if (grammarView) grammarView.style.display = 'none';
@@ -460,6 +511,15 @@
         if (sprachbausteineView) sprachbausteineView.style.display = 'none';
         if (listenView) listenView.style.display = '';
         window._glOpenListeningView();
+        return;
+      }
+
+      // Exam-only skills must never reach the generic quiz/cards template
+      // below, even if some future change adds a stray call path that skips
+      // all the branches above (e.g. a typo'd skill string). General
+      // practice tools (vocab/grammar/sentences/games) are unaffected.
+      if (['reading', 'listening', 'sprachbausteine', 'writing'].indexOf(skill) !== -1) {
+        _glShowSkillMountError(_glSkillNames[skill] || skill);
         return;
       }
 
@@ -2054,16 +2114,41 @@
         bar.innerHTML = ['lesen_1', 'lesen_2', 'lesen_3'].map(function (partId) {
           return '<button type="button" class="gl-listen-part-btn" data-part-id="' + partId + '">' +
             _glEscape(RD_PART_LABELS[partId]) + '</button>';
-        }).join('') + '<button type="button" class="gl-listen-part-btn" data-weak-areas="1">Weak areas</button>';
+        }).join('') + '<button type="button" class="gl-listen-part-btn" data-weak-areas="1">Weak areas</button>' +
+          '<button type="button" class="gl-listen-part-btn" data-new-test="1">New Test</button>';
         workspace.parentNode.insertBefore(bar, workspace);
         bar.addEventListener('click', function (e) {
           if (e.target.closest('[data-weak-areas]')) { rdShowWeakAreas(); return; }
+          if (e.target.closest('[data-new-test]')) { rdStartNewTest(); return; }
           var btn = e.target.closest('[data-part-id]');
           if (!btn) return;
           var partId = btn.getAttribute('data-part-id');
           if (rd.usingGenerated && rd.partId === partId) return;
           rd._activeTaskType = RD_PART_TASK_TYPES[partId];
           rdGenerateOrLoadPart(partId);
+        });
+      }
+
+      // New Test: discards the current part's envelope/answers/grading
+      // state and forces a completely fresh lesen_1 generation, always
+      // resetting back to lesen_1 regardless of which part was active —
+      // never a re-render of the part that's already loaded.
+      // rdGenerateOrLoadPart() already bumps rd._genRequestToken
+      // (invalidating any in-flight request) and always calls the backend,
+      // which mints a new generationId per call.
+      function rdStartNewTest() {
+        var oldGenerationId = rd.generationId;
+        rd.content = null;
+        rd.genAnswers = {};
+        rd.genChecked = false;
+        rd._lastGenScoreLabel = null;
+        rd.generationId = null;
+        rd._activeTaskType = RD_PART_TASK_TYPES.lesen_1;
+        rdGenerateOrLoadPart('lesen_1').then(function () {
+          if (!rd._lastGenFailed && typeof console !== 'undefined' && console.assert) {
+            console.assert(rd.generationId !== oldGenerationId, '[Lesen] New Test did not produce a new generationId');
+          }
+          rdUpdateGeneratedPartSwitcher();
         });
       }
 
@@ -3230,6 +3315,33 @@
             sbSetTab(btn.getAttribute('data-sb-tab'));
           });
         }
+        var newTestBtn = sbEl('glSprachbausteineNewTest');
+        if (newTestBtn && !newTestBtn._sbWired) {
+          newTestBtn._sbWired = true;
+          newTestBtn.addEventListener('click', sbStartNewTest);
+        }
+      }
+
+      // New Test: discards the current envelope/answers/grading state and
+      // forces a completely fresh sprachbausteine_1 generation — never a
+      // re-render of what's already loaded. sbGenerateOrLoadPart() already
+      // bumps sb._genRequestToken (invalidating any in-flight request) and
+      // always calls the backend, which mints a new generationId per call;
+      // this just guarantees no stale local state (old answers/checked
+      // score) survives to be shown alongside the new content.
+      function sbStartNewTest() {
+        var oldGenerationId = sb.generationId;
+        sb.content = null;
+        sb.genAnswers = {};
+        sb.genChecked = false;
+        sb._lastGenScoreLabel = null;
+        sb.generationId = null;
+        sbSetTab('practice');
+        sbGenerateOrLoadPart().then(function (ok) {
+          if (ok && typeof console !== 'undefined' && console.assert) {
+            console.assert(sb.generationId !== oldGenerationId, '[Sprachbausteine] New Test did not produce a new generationId');
+          }
+        });
       }
 
       window._glSprachbausteineDebugState = function () {
@@ -5843,6 +5955,44 @@
             });
           });
         });
+        var newTestBtn = lsEl('glListenNewTestBtn');
+        if (newTestBtn && !newTestBtn._lsWired) {
+          newTestBtn._lsWired = true;
+          newTestBtn.addEventListener('click', lsStartNewTest);
+        }
+      }
+
+      // New Test: discards HV1/HV2/HV3 generated state, answers/results, and
+      // any prepared HV1 prefetch, then always resets to a fresh HV1 — never
+      // a re-render of the currently loaded part. Audio is stopped first so
+      // nothing keeps playing from the discarded test; TTS for the fresh
+      // content is only requested later, inside lsLoadGeneratedPart (via
+      // lsPlayer.setSegments), and only once that new generation succeeds.
+      function lsStartNewTest() {
+        var oldGenerationId = ls.generationId;
+        lsPlayer.pauseForLeave();
+        ls._genRequestToken++; // invalidate any in-flight/prepared response immediately
+        lsPrefetchInvalidate(); // a stale prepared HV1 must never be served as "new"
+        ls.answers = {};
+        ls.hintLevel = {};
+        ls.transcriptRevealed = {};
+        ls.fullTranscriptShown = false;
+        ls.done = false;
+        ls.attemptsBuffer = [];
+        ls._resultsSavePromise = null;
+        ls.generationId = null;
+        lsEl('glListenPractice').style.display = '';
+        lsEl('glListenEnd').style.display = 'none';
+        lsResetToPracticeTabChrome();
+        lsGenerateOrLoadPart('listening', 'hv1').then(function () {
+          if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
+          if (typeof console !== 'undefined' && console.assert) {
+            console.assert(ls.generationId !== oldGenerationId, '[Hören] New Test did not produce a new generationId');
+          }
+          lsRenderPlayerChrome();
+          lsRenderWorkspace();
+          lsUpdatePartSwitcher();
+        });
       }
 
       function lsUpdatePartSwitcher() {
@@ -6435,14 +6585,10 @@
 
       function lsNewListening() {
         if (lsResolveProfileId()) {
-          lsGenerateOrLoadPart(ls.module || 'listening', ls.partId || 'hv1').then(function () {
-            lsEl('glListenPractice').style.display = '';
-            lsEl('glListenEnd').style.display = 'none';
-            lsResetToPracticeTabChrome();
-            if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
-            lsRenderPlayerChrome();
-            lsRenderWorkspace();
-          });
+          // Same "always fresh, always HV1" guarantee as the in-practice New
+          // Test button — a learner who just finished HV3 clicking "New
+          // listening" must not silently resume on HV3.
+          lsStartNewTest();
           return;
         }
         var idx = lsPickSetIndex(ls.setIndex);

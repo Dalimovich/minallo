@@ -78,6 +78,28 @@ export function transitionLearnerWorkspace(
       if (!document.getElementById('glSkillView') || !window._glOpenSkill) {
         throw new Error('Practice could not load. Please try again.');
       }
+      // Defensive parity with practice.js's own _glShowSkillMountError: a
+      // skill's dedicated view markup can be missing even when #glSkillView
+      // itself loaded (stale cached practice.html, partial script failure).
+      // _glOpenSkill(skill) below already renders a visible error+Retry in
+      // that case, so this check only needs to confirm we're not about to
+      // call it against a skill whose view id we know and is absent —
+      // letting _glOpenSkill itself decide the exact UI, never throwing
+      // here (a thrown error here would surface as a bare window.alert via
+      // the caller in this file, which is a worse "never blank" outcome
+      // than _glOpenSkill's own error panel).
+      const skillViewIds: Partial<Record<GermanSkill, string>> = {
+        reading: 'glReadingView',
+        listening: 'glListeningView',
+        sprachbausteine: 'glSprachbausteineView',
+        grammar: 'glGrammarView',
+        vocab: 'glVocabularyView',
+      };
+      const requiredViewId = options.skill ? skillViewIds[options.skill] : undefined;
+      if (requiredViewId && !document.getElementById(requiredViewId)) {
+        // eslint-disable-next-line no-console
+        console.warn(`[Practice] ${options.skill} view markup (#${requiredViewId}) missing at open time — _glOpenSkill will show its own mount-error panel.`);
+      }
     }
     if (currentUserType() !== 'learner') return;
     if (_workspaceView === view && (view !== 'practice' || activeSkill === options.skill)) return;
@@ -256,6 +278,13 @@ export function initChatbotExperienceMode(root: HTMLElement): void {
     const viewTarget = target.closest<HTMLElement>('button[data-workspace-view]');
     if (viewTarget) {
       ev.preventDefault();
+      // Sprechen is cost-disabled (GERMAN_SPEAKING_ENABLED=false server-side,
+      // see backend/functions/ai-german-exam-generate.ts and
+      // ai-german-exam-speaking.ts) — chatbot.html's Sprechen button no
+      // longer carries data-workspace-view="speaking" so this branch is
+      // unreachable from normal navigation. Left in place (not deleted) so
+      // re-enabling later is just restoring that one attribute; the dynamic
+      // import itself only ever fires if this branch is reached.
       if (viewTarget.dataset.workspaceView === 'speaking') {
         void import('../speaking/speaking-workspace.js').then(module => module.openSpeakingWorkspace()).catch(error => window.alert(error.message));
         return;

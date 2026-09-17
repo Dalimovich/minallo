@@ -6,12 +6,18 @@ import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit, enforceGenerationCap } from '../lib/rate-limit';
 import { requireActiveSubscription } from '../lib/subscription-gate';
+import { isGermanSpeakingEnabled } from '../lib/feature-flags';
 import { logSecurityEvent } from '../lib/logger';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();
   if (event.httpMethod !== 'POST') return fail(405, 'Method not allowed');
+  // Every request to this endpoint IS a speaking request (transcribe/
+  // partner/grade — there is no other action) — reject before touching auth
+  // or any paid-usage accounting so a disabled feature can never create
+  // billable usage (transcription, AI partner turns, grading, TTS).
+  if (!isGermanSpeakingEnabled()) return fail(403, 'Speaking practice is temporarily unavailable.');
   const token = extractBearerToken(event.headers);
   if (!token) return fail(401, 'Missing authorization token');
   const user = await verifySupabaseToken(token);

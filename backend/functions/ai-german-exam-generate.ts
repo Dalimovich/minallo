@@ -17,6 +17,7 @@ import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit, enforceGenerationCap } from '../lib/rate-limit';
 import { requireActiveSubscription } from '../lib/subscription-gate';
+import { isGermanSpeakingEnabled } from '../lib/feature-flags';
 import { logSecurityEvent } from '../lib/logger';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
@@ -60,6 +61,22 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!pythonAiConfigured()) return fail(503, 'AI service not configured');
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
 
+  // Cheap feature-disabled rejection for Sprechen, BEFORE any paid-usage
+  // accounting (subscription gate, generation cap, rate limit) or upstream
+  // forwarding — a disabled feature must never create billable usage. Body
+  // is parsed once here for this check; the full parse+validation below is
+  // unconditional and re-parses it for every other module, so this early
+  // exit only short-circuits the speaking case.
+  let earlyBody: Record<string, unknown> = {};
+  try {
+    earlyBody = JSON.parse(event.body || '{}') as Record<string, unknown>;
+  } catch {
+    return fail(400, 'Invalid JSON');
+  }
+  if (earlyBody.module === 'speaking' && !isGermanSpeakingEnabled()) {
+    return fail(403, 'Speaking practice is temporarily unavailable.');
+  }
+
   const subBlocked = await requireActiveSubscription(serviceKey, user.id, 'ai_german_exam_generate');
   if (subBlocked) return subBlocked;
 
@@ -76,12 +93,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   );
   if (limited) return limited;
 
-  let body: Record<string, unknown>;
-  try {
-    body = JSON.parse(event.body || '{}') as Record<string, unknown>;
-  } catch {
-    return fail(400, 'Invalid JSON');
-  }
+  const body: Record<string, unknown> = earlyBody;
 
   const profileId = body.profileId;
   const module = body.module;
