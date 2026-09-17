@@ -1,14 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// 22-german-exam-engine-live.spec.ts makes real OpenAI + TTS calls against
-// the same 30/hour ai_german_exam_generate rate limit a real learner would
-// hit, so it must NOT run on every push/PR the way the rest of this
-// project's Desktop Chrome tests do (that already exhausted the shared E2E
-// account's limit once during manual verification). It's excluded from the
-// default project below unless this env var opts it back in — set only by
-// the dedicated e2e-german-exam-live.yml workflow (manual/nightly), which
-// also filters the run to just that one file via its CLI invocation.
+// 22-german-exam-engine-live.spec.ts and 23-lesen-reading-live.spec.ts make
+// real OpenAI (+ TTS, for Hören) calls against the same 30/hour
+// ai_german_exam_generate rate limit a real learner would hit, so neither
+// must run on every push/PR the way the rest of this project's Desktop
+// Chrome tests do (that already exhausted the shared E2E account's limit
+// once during manual verification). Both are excluded from the default
+// project below unless this env var opts them back in — set only by the
+// dedicated e2e-german-exam-live.yml workflow (manual/nightly), which also
+// filters the run to just those files via its CLI invocation.
 const INCLUDE_LIVE_GERMAN_EXAM_E2E = process.env.E2E_INCLUDE_GERMAN_EXAM_LIVE === '1';
+const LIVE_GERMAN_EXAM_SPECS = ['**/22-german-exam-engine-live.spec.ts', '**/23-lesen-reading-live.spec.ts'];
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -34,7 +36,7 @@ export default defineConfig({
     { name: 'setup', testMatch: '**/auth.setup.ts' },
     {
       name: 'Desktop Chrome',
-      testIgnore: INCLUDE_LIVE_GERMAN_EXAM_E2E ? undefined : '**/22-german-exam-engine-live.spec.ts',
+      testIgnore: INCLUDE_LIVE_GERMAN_EXAM_E2E ? undefined : LIVE_GERMAN_EXAM_SPECS,
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'tests/e2e/.auth/user.json',

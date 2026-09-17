@@ -57,8 +57,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
-      - name: Run the live German Exam Engine E2E spec
-        run: npx playwright test tests/e2e/22-german-exam-engine-live.spec.ts
+      - name: Run the live German Exam Engine E2E specs
+        run: npx playwright test tests/e2e/22-german-exam-engine-live.spec.ts tests/e2e/23-lesen-reading-live.spec.ts
 
       - name: Upload Playwright report
         if: always()
