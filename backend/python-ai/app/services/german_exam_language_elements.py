@@ -59,23 +59,27 @@ log = logging.getLogger(__name__)
 
 # Full-generation retries are now the LAST resort, not the primary repair
 # mechanism — each stage below has its own, much cheaper repair path first.
-# Stage A regenerations cost ~1000-1300 completion tokens each (vs. ~6000+
-# for the old monolithic call), so a somewhat larger budget here is cheap
-# insurance, not a repeat of "just retry the expensive thing more" — live
-# testing measured roughly 60-65% of individual Stage A attempts coming back
-# fully clean (missing at most 1-2 of 22 placeholders otherwise), so 3 gives
-# a real reliability gain at low added cost.
-_MAX_STAGE_A_REGENERATIONS = 3
-_MAX_PASSAGE_REPAIR_ATTEMPTS = 3
-_MAX_MISSING_GAP_REPAIR_ATTEMPTS = 2
+#
+# A live acceptance run hit HTTP 524 at 125s: Cloudflare's OWN edge timeout
+# (~100-125s) sits in front of this app and is separate from — and shorter
+# than — AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS (180s). A backend retry
+# sequence that would eventually succeed can still get cut off by Cloudflare
+# first if it runs long, so these budgets are sized for worst-case wall time
+# under that ceiling, not just per-call cost. Trimmed down from an earlier,
+# more generous pass once this ceiling was discovered — a typical "needs one
+# retry" case still gets a retry; a pathological case that would need all of
+# regeneration+repair+item-repair to fully exhaust would have 524'd anyway.
+_MAX_STAGE_A_REGENERATIONS = 1
+_MAX_PASSAGE_REPAIR_ATTEMPTS = 2
+_MAX_MISSING_GAP_REPAIR_ATTEMPTS = 1
 # Above this many missing placeholders, the passage is too broken for a
 # targeted insertion repair to be worth it (and cheaper than) a full Stage A
 # regeneration — observed live misses were 1-2 gaps; this stays well clear
 # of that while still excluding a near-total failure (e.g. 15+ missing).
 _MAX_MISSING_GAPS_FOR_REPAIR = 5
-_MAX_STAGE_B_REGENERATIONS = 2
-_MAX_ITEM_REPAIR_ATTEMPTS = 2
-_MAX_SEMANTIC_REPAIR_ROUNDS = 2
+_MAX_STAGE_B_REGENERATIONS = 1
+_MAX_ITEM_REPAIR_ATTEMPTS = 1
+_MAX_SEMANTIC_REPAIR_ROUNDS = 1
 
 _GAP_PLACEHOLDER_RE = re.compile(r"\{\{(g\d+)\}\}")
 
