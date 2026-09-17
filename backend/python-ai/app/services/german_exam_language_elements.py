@@ -30,7 +30,13 @@ from .llm_json import chat_json
 log = logging.getLogger(__name__)
 
 _MAX_ITEM_REPAIR_ATTEMPTS = 2
-_MAX_FULL_REGENERATIONS = 2
+# A 2026-09-17 production smoke run found gpt-5.4-mini reliably missing this
+# part's simultaneous constraints (word-count window + an exact 3-way
+# grammar/lexicon/orthography split summing to itemCount) on the first two
+# tries, so a real learner got a 502 after both full regenerations were
+# exhausted. One extra regeneration is the cheapest possible headroom (worst
+# case: one more mini-model call) short of reworking the pipeline.
+_MAX_FULL_REGENERATIONS = 3
 _MAX_SEMANTIC_REPAIR_ROUNDS = 2
 
 
@@ -89,6 +95,18 @@ def _prompt_sprachbausteine(
         "word_formation for derivation/compounding, collocation or lexical_choice for lexicon items, "
         "register when formality level is being tested, syntax for word-order/clause-structure items. Use "
         f"at least 4 different tags across the {item_count} items.\n\n"
+        "BEFORE YOU OUTPUT, silently self-check and fix any violation (these are hard requirements, not "
+        "targets — content outside them is rejected):\n"
+        f"1. Count the running text's words (excluding the {{{{gapId}}}} placeholders): must be "
+        f"{word_min}-{word_max}. If over {word_max}, cut a clause or sentence; if under {word_min}, add one. "
+        "Do not just estimate — count.\n"
+        f"2. Count how many items you gave each category: grammar must be {grammar_min}-{grammar_max}, "
+        f"lexicon must be {lexical_min}-{lexical_max}, orthography must be {ortho_min}-{ortho_max}, and the "
+        f"three counts must sum to exactly {item_count}. If any count is outside its range (most often "
+        "orthography ending up at 0, or grammar/lexicon drifting to equal counts instead of grammar being "
+        "the larger share), reclassify enough items to fix it — do not add or remove items to compensate.\n"
+        "3. Within each item's own options array, make sure all "
+        f"{option_count} strings are distinct from one another — no two options identical.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
         "Output JSON shape exactly (the skillTags/category below are illustrative, not literal — pick "
         "values that actually fit each item per the guidance above):\n"
