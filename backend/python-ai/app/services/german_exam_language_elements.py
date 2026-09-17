@@ -66,7 +66,7 @@ log = logging.getLogger(__name__)
 # fully clean (missing at most 1-2 of 22 placeholders otherwise), so 3 gives
 # a real reliability gain at low added cost.
 _MAX_STAGE_A_REGENERATIONS = 3
-_MAX_PASSAGE_REPAIR_ATTEMPTS = 2
+_MAX_PASSAGE_REPAIR_ATTEMPTS = 3
 _MAX_MISSING_GAP_REPAIR_ATTEMPTS = 2
 # Above this many missing placeholders, the passage is too broken for a
 # targeted insertion repair to be worth it (and cheaper than) a full Stage A
@@ -186,8 +186,14 @@ def _prompt_stage_a(
 ) -> tuple[str, str]:
     item_count = len(gap_specs)
     paragraph_plan = _build_paragraph_plan(gap_specs)
-    per_para_min = max(1, word_min // len(paragraph_plan))
-    per_para_max = -(-word_max // len(paragraph_plan))  # ceil
+    # Live testing found the model consistently overshoots its stated
+    # per-paragraph target rather than undershooting (403/425/447-word
+    # passages against a 320-350 target) — aim the per-paragraph instruction
+    # noticeably below the true midpoint so the model's own overshoot lands
+    # nearer the real target instead of compounding across all paragraphs.
+    target_total = word_min + (word_max - word_min) * 2 // 5  # ~40% into the range, not the midpoint
+    per_para_min = max(1, (target_total - 20) // len(paragraph_plan))
+    per_para_max = max(per_para_min + 1, (target_total + 5) // len(paragraph_plan))
     category_hint = {
         "grammar": "grammar (a verb form, case ending, connector, preposition, or word-order choice)",
         "lexicon": "lexicon (a collocation, word choice, or word-formation choice)",
