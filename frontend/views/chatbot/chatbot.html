@@ -396,7 +396,12 @@
             </div>
 
             <div id="wcWriter" class="ncb-wc-card">
-              <div class="ncb-wc-row">
+              <div class="ncb-wc-actions">
+                <button type="button" id="wcExamMode" class="ncb-wc-btn-secondary">telc Schreiben</button>
+                <button type="button" id="wcGenericMode" class="ncb-wc-btn-secondary">Freies Schreiben</button>
+              </div>
+              <section id="wcExamTask" aria-live="polite" hidden></section>
+              <div class="ncb-wc-row" id="wcGenericControls">
                 <div class="ncb-wc-level" data-i18n-title="wc_level_title" title="Edit your level in Profile">
                   <span data-i18n="wc_level_source">Imported from Profile</span>
                   <strong id="wcLevelValue">&ndash;</strong>
@@ -414,8 +419,9 @@
                   </select>
                 </div>
               </div>
-              <textarea id="wcInput" class="ncb-wc-textarea" rows="10" data-testid="writing-coach-input"
+              <textarea id="wcInput" class="ncb-wc-textarea" rows="10" maxlength="8000" aria-label="Ihr deutscher Text" data-testid="writing-coach-input"
                         data-i18n-ph="wc_input_ph" placeholder="Write your German paragraph here&hellip;"></textarea>
+              <p id="wcWordCount" aria-live="polite">0 Wörter</p>
               <div class="ncb-wc-actions">
                 <button type="button" id="wcAnalyze" class="ncb-wc-btn-primary" data-testid="writing-coach-analyze" disabled data-i18n="wc_analyze">Analyze with AI</button>
               </div>
@@ -493,6 +499,9 @@
                   </button>
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-listening" data-workspace-skill="listening">
                     <span data-i18n="cb_german_link_listening">H&ouml;ren</span>
+                  </button>
+                  <button type="button" class="ncb-german-panel-link" data-testid="german-panel-sprachbausteine" data-workspace-skill="sprachbausteine">
+                    <span data-i18n="cb_german_link_sprachbausteine">Sprachbausteine</span>
                   </button>
                   <button type="button" class="ncb-german-panel-link" data-testid="german-panel-writing" data-workspace-view="writing-coach">
                     <span data-i18n="nav_writing_coach">Writing Coach</span>

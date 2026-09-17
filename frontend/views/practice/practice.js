@@ -54,6 +54,7 @@
     var _glSkillNames = {
       reading: 'Leseverstehen',
       listening: 'Hörverstehen',
+      sprachbausteine: 'Sprachbausteine',
       writing: 'Schreiben',
       speaking: 'Sprechen',
       vocab: 'Wortschatz',
@@ -64,6 +65,7 @@
     var _glSkillSubs = {
       reading: 'Short texts, comprehension questions, and useful phrases',
       listening: 'Transcript-based listening practice',
+      sprachbausteine: 'Cloze text with four-option grammar, lexicon, and orthography items',
       writing: 'Writing tasks with structure help',
       speaking: 'Speaking prompts and answer structure',
       vocab: 'Flip cards with article, translation, and example sentence',
@@ -347,6 +349,7 @@
       var grammarView = document.getElementById('glGrammarView');
       var vocabView = document.getElementById('glVocabularyView');
       var listenView = document.getElementById('glListeningView');
+      var sprachbausteineView = document.getElementById('glSprachbausteineView');
       if (home) home.style.display = 'none';
       if (detail) {
         detail.style.display = '';
@@ -358,8 +361,24 @@
         if (grammarView) grammarView.style.display = 'none';
         if (vocabView) vocabView.style.display = 'none';
         if (listenView) listenView.style.display = 'none';
+        if (sprachbausteineView) sprachbausteineView.style.display = 'none';
         if (readingView) readingView.style.display = '';
         _glOpenReadingView();
+        return;
+      }
+
+      // Sprachbausteine has its own dedicated cloze workspace (see the
+      // Sprachbausteine IIFE below), same pattern as Lesen/Hören —
+      // deliberately not the generic quiz/cards template, and no static
+      // fallback content exists for it (see window._glOpenSprachbausteineView).
+      if (skill === 'sprachbausteine' && typeof window._glOpenSprachbausteineView === 'function') {
+        _glSetGenericSkillPiecesVisible(false);
+        if (readingView) readingView.style.display = 'none';
+        if (grammarView) grammarView.style.display = 'none';
+        if (vocabView) vocabView.style.display = 'none';
+        if (listenView) listenView.style.display = 'none';
+        if (sprachbausteineView) sprachbausteineView.style.display = '';
+        window._glOpenSprachbausteineView();
         return;
       }
 
@@ -373,6 +392,7 @@
         if (readingView) readingView.style.display = 'none';
         if (vocabView) vocabView.style.display = 'none';
         if (listenView) listenView.style.display = 'none';
+        if (sprachbausteineView) sprachbausteineView.style.display = 'none';
         if (grammarView) grammarView.style.display = '';
         window._glOpenGrammarView();
         return;
@@ -386,6 +406,7 @@
         if (readingView) readingView.style.display = 'none';
         if (grammarView) grammarView.style.display = 'none';
         if (listenView) listenView.style.display = 'none';
+        if (sprachbausteineView) sprachbausteineView.style.display = 'none';
         if (vocabView) vocabView.style.display = '';
         window._glOpenVocabularyView();
         return;
@@ -400,6 +421,7 @@
         if (readingView) readingView.style.display = 'none';
         if (grammarView) grammarView.style.display = 'none';
         if (vocabView) vocabView.style.display = 'none';
+        if (sprachbausteineView) sprachbausteineView.style.display = 'none';
         if (listenView) listenView.style.display = '';
         window._glOpenListeningView();
         return;
@@ -409,6 +431,7 @@
       if (grammarView) grammarView.style.display = 'none';
       if (vocabView) vocabView.style.display = 'none';
       if (listenView) listenView.style.display = 'none';
+      if (sprachbausteineView) sprachbausteineView.style.display = 'none';
       _glSetGenericSkillPiecesVisible(true);
 
       var titleEl = document.getElementById('glSkillTitle');
@@ -2854,6 +2877,363 @@
           return null;
         }
       }
+    })();
+
+    // ── Sprachbausteine (telc C1 Hochschule cloze) ────────────────────────────
+    // Dedicated workspace, same shared-German-Exam-Engine pattern as Lesen/
+    // Hören (generate -> deterministic+semantic verified content -> render ->
+    // check -> save results), but simpler: exactly one part
+    // (sprachbausteine_1), one continuous text with inline four-option gap
+    // selects (visually identical to Lesen Teil 1's gap-select cloze, reusing
+    // its gl-reading-* CSS classes). There is NO static/sample fallback
+    // content for this module — a genuinely unsupported profile shows an
+    // explicit message instead of silently substituting something else.
+    // Lives entirely inside #glSprachbausteineView (see practice.html) and is
+    // only mounted when _glOpenSkill('sprachbausteine') runs.
+    (function () {
+      var sb = {
+        tab: 'practice',
+        usingGenerated: false,
+        partId: 'sprachbausteine_1',
+        examFamily: null, examVariant: null, targetLevel: null,
+        profileId: null, profileVersion: null, generationId: null,
+        content: null, // raw envelope.content
+        genAnswers: {}, // gapId -> chosen option index (int) or null
+        genChecked: false,
+        _genRequestToken: 0,
+        _lastGenFailed: false,
+        // Mirrors rd._awaitingProfile/ls._awaitingProfile — true while this
+        // view is open and waiting on the profile fetch (window.
+        // _germanProfileLoaded still false), not yet a definitive
+        // "no supported profile" verdict.
+        _awaitingProfile: false,
+        _resultsSavePromise: null,
+        _lastGenScoreLabel: null
+      };
+
+      function sbEl(id) { return document.getElementById(id); }
+
+      // Deliberately separate from rdResolveProfileId()/lsResolveProfileId()
+      // (siblings, private IIFEs) rather than sharing them — same rationale
+      // as Lesen's copy: isolates any risk of touching another module's code
+      // path. Keep this fallback table in sync with the other two, with
+      // GERMAN_EXAM_PROFILES_CLIENT in user-data.ts, and with the backend's
+      // GERMAN_EXAM_PROFILES registry.
+      var SB_GERMAN_EXAM_PROFILES_FALLBACK = [
+        { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] }
+      ];
+      function sbResolveProfileId() {
+        if (window._germanExamProfileId) return window._germanExamProfileId;
+        var familyNorm = (window._germanTest || '').trim().toLowerCase();
+        var levelNorm = (window._germanLevel || '').trim();
+        if (!familyNorm || !levelNorm) return null;
+        var matches = SB_GERMAN_EXAM_PROFILES_FALLBACK.filter(function (p) {
+          return p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1;
+        });
+        return matches.length === 1 ? matches[0].profileId : null;
+      }
+
+      function sbGeneratedHeader() {
+        return 'telc C1 Hochschule · C1 · Sprachbausteine';
+      }
+
+      function sbShowWaitingForProfile() {
+        sb._awaitingProfile = true;
+        var tabs = sbEl('glSprachbausteineTabs');
+        if (tabs) tabs.style.display = 'none';
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-loading">Loading your exam profile…</div>';
+      }
+
+      // Shown only once the profile has DEFINITIVELY loaded (window.
+      // _germanProfileLoaded is true) and is genuinely unsupported — there is
+      // no static Sprachbausteine content to fall back to, unlike Lesen/Hören.
+      function sbShowUnsupportedProfile() {
+        var tabs = sbEl('glSprachbausteineTabs');
+        if (tabs) tabs.style.display = 'none';
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (qPanel) {
+          qPanel.innerHTML = '<div class="gl-listen-weak-empty">Sprachbausteine practice is currently available for the ' +
+            'telc C1 Hochschule exam profile.</div>';
+        }
+      }
+
+      function sbShowGenerationError() {
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (!qPanel) return;
+        qPanel.innerHTML =
+          '<div class="gl-listen-error">' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry.</p>' +
+            '<div class="gl-listen-error-actions">' +
+              '<button type="button" id="glSprachbausteineErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
+            '</div>' +
+          '</div>';
+        var retryBtn = sbEl('glSprachbausteineErrorRetry');
+        if (retryBtn) retryBtn.addEventListener('click', function () { sbGenerateOrLoadPart(); });
+      }
+
+      // Race-safe like rdGenerateOrLoadPart/lsGenerateOrLoadPart: captures
+      // sb._genRequestToken at call time and re-checks it before applying
+      // either outcome, so a stale response from a superseded retry/leave
+      // can never clobber newer state.
+      function sbGenerateOrLoadPart() {
+        var myToken = ++sb._genRequestToken;
+        sb._lastGenFailed = false;
+        var profileId = sbResolveProfileId();
+        if (!profileId) return Promise.resolve(false);
+        sb.usingGenerated = true;
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified telc exercise…</div>';
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId: profileId, module: 'language_elements', partId: sb.partId, mode: 'adaptive_practice' })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('generate_http_' + resp.status);
+          return resp.json();
+        }).then(function (envelope) {
+          if (myToken !== sb._genRequestToken) return false;
+          sbLoadGeneratedPart(envelope);
+          sbRenderWorkspace();
+          return true;
+        }).catch(function (err) {
+          if (myToken !== sb._genRequestToken) return false;
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Sprachbausteine] generation failed.', err);
+          sb._lastGenFailed = true;
+          sbShowGenerationError();
+          return false;
+        });
+      }
+
+      function sbLoadGeneratedPart(envelope) {
+        var exam = envelope.exam || {};
+        sb.content = envelope.content || {};
+        sb.examFamily = exam.family || null;
+        sb.examVariant = exam.variant || null;
+        sb.targetLevel = exam.cefrLevel || exam.variant || null;
+        sb.profileId = exam.profileId || null;
+        sb.profileVersion = exam.profileVersion || null;
+        sb.generationId = envelope.generationId || null;
+        sb.genAnswers = {};
+        sb.genChecked = false;
+      }
+
+      function sbGapPlaceholder(text) {
+        var questionsByGap = {};
+        (sb.content.questions || []).forEach(function (q) { questionsByGap[q.gapId] = q; });
+        var letters = 'ABCD';
+        return _glEscape(text).replace(/\{\{(g\d+)\}\}/g, function (_m, gapId) {
+          var q = questionsByGap[gapId];
+          if (!q) return _m;
+          var selected = sb.genAnswers[gapId];
+          var options = '<option value="">…</option>' + (q.options || []).map(function (opt, idx) {
+            var sel = selected === idx ? ' selected' : '';
+            return '<option value="' + idx + '"' + sel + '>' + (letters[idx] || '?') + ') ' + _glEscape(opt) + '</option>';
+          }).join('');
+          return '<select class="gl-reading-gap-select" data-gap-id="' + _glEscape(gapId) + '"' +
+            (sb.genChecked ? ' disabled' : '') + '>' + options + '</select>';
+        });
+      }
+
+      function sbCheckButtonHtml() {
+        if (sb.genChecked) {
+          return '<div class="gl-reading-result-summary">' + _glEscape(sb._lastGenScoreLabel || '') + '</div>';
+        }
+        return '<button type="button" id="glSprachbausteineCheck" class="gl-listen-end-btn gl-listen-end-btn-primary">Check answers</button>';
+      }
+
+      function sbWireCheckButton() {
+        var btn = sbEl('glSprachbausteineCheck');
+        if (btn && !btn._sbWired) { btn._sbWired = true; btn.addEventListener('click', sbCheckGeneratedAnswers); }
+      }
+
+      function sbWireGapSelects() {
+        document.querySelectorAll('#glSprachbausteineTextPanel .gl-reading-gap-select').forEach(function (sel) {
+          if (sel._sbWired) return;
+          sel._sbWired = true;
+          sel.addEventListener('change', function () {
+            var v = sel.value;
+            sb.genAnswers[sel.getAttribute('data-gap-id')] = v === '' ? null : parseInt(v, 10);
+          });
+        });
+      }
+
+      function sbRenderWorkspace() {
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        if (!textPanel || !qPanel || !sb.content) return;
+        var text = sb.content.text || {};
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(sbGeneratedHeader()) + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' +
+          (text.paragraphs || []).map(function (p) { return '<p>' + sbGapPlaceholder(p) + '</p>'; }).join('') +
+          '</div>';
+        qPanel.innerHTML = sbCheckButtonHtml();
+        sbWireGapSelects();
+        sbWireCheckButton();
+      }
+
+      function sbCheckGeneratedAnswers() {
+        var questions = sb.content.questions || [];
+        var results = {};
+        questions.forEach(function (q) {
+          var given = sb.genAnswers[q.gapId];
+          results[q.questionId] = { correct: given === q.correctIndex, skillTags: q.skillTags || [] };
+        });
+        var ids = Object.keys(results);
+        var correctCount = ids.filter(function (id) { return results[id].correct; }).length;
+        sb.genChecked = true;
+        sb._lastGenScoreLabel = 'Score: ' + correctCount + ' / ' + ids.length;
+        sbRenderWorkspace();
+        sbSaveGeneratedResults(results);
+      }
+
+      // Tracked on sb._resultsSavePromise (mirrors rd/ls's own pattern)
+      // rather than fire-and-forget: a learner who checks and immediately
+      // switches to Weak areas must never have that weaknesses read race
+      // ahead of this save. Single-attempt model (no hint/retry loop), so
+      // firstAttemptCorrect === finalCorrect for every item.
+      function sbSaveGeneratedResults(results) {
+        var items = Object.keys(results).map(function (id) {
+          var r = results[id];
+          return {
+            profileId: sb.profileId, profileVersion: sb.profileVersion, module: 'language_elements', partId: sb.partId,
+            taskType: 'cloze_mc4_language_elements', itemId: id, skillTags: r.skillTags, difficulty: 'c1',
+            attemptCount: 1, firstAttemptCorrect: r.correct, finalCorrect: r.correct, hintLevel: 0,
+            replayCount: null, transcriptRevealed: null,
+            scoreValue: r.correct ? 1 : 0, maxScoreValue: 1, metadata: { generationId: sb.generationId }
+          };
+        });
+        if (!items.length) return Promise.resolve();
+        sb._resultsSavePromise = _authFetch(BACKEND_URL + '/api/ai/german-exam/results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            examFamily: sb.examFamily, examVariant: sb.examVariant, targetLevel: sb.targetLevel,
+            module: 'language_elements', items: items
+          })
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Sprachbausteine] failed to save results.', err);
+        }).then(function () { sb._resultsSavePromise = null; });
+        return sb._resultsSavePromise;
+      }
+
+      function sbEnsureResultsSaved() {
+        return sb._resultsSavePromise || Promise.resolve();
+      }
+
+      function sbFetchWeaknesses() {
+        var panel = sbEl('glSprachbausteineWeakPanel');
+        if (panel) panel.innerHTML = '<div class="gl-listen-generating">Loading your weak areas…</div>';
+        return sbEnsureResultsSaved().then(function () {
+          return _authFetch(BACKEND_URL + '/api/ai/german-exam/weaknesses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileId: sb.profileId, module: 'language_elements' })
+          });
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('weaknesses_http_' + resp.status);
+          return resp.json();
+        }).then(function (data) {
+          if (!panel) return;
+          var tags = (data && data.tags) || {};
+          var rows = Object.keys(tags).map(function (tag) {
+            var t = tags[tag];
+            return '<li><strong>' + _glEscape(tag) + '</strong>: score ' + Math.round((t.score || 0) * 100) +
+              '% (' + (t.nAttempts || 0) + ' attempts, ' + _glEscape(t.confidence || '') + ' confidence)</li>';
+          }).join('');
+          panel.innerHTML = rows
+            ? '<div class="gl-reading-weak-areas"><h4>Weak areas (Sprachbausteine)</h4><ul>' + rows + '</ul></div>'
+            : '<div class="gl-reading-weak-areas"><p>Not enough attempts yet to show weak areas.</p></div>';
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Sprachbausteine] failed to load weak areas.', err);
+          if (panel) panel.innerHTML = '<div class="gl-reading-weak-areas"><p>Couldn’t load weak areas right now.</p></div>';
+        });
+      }
+
+      function sbSetTab(tab) {
+        sb.tab = tab;
+        document.querySelectorAll('#glSprachbausteineTabs .gl-reading-tab').forEach(function (btn) {
+          var active = btn.getAttribute('data-sb-tab') === tab;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        var workspace = sbEl('glSprachbausteineWorkspace');
+        var weakPanel = sbEl('glSprachbausteineWeakPanel');
+        if (tab === 'weak') {
+          if (workspace) workspace.style.display = 'none';
+          if (weakPanel) weakPanel.style.display = '';
+          sbFetchWeaknesses();
+        } else {
+          if (weakPanel) weakPanel.style.display = 'none';
+          if (workspace) workspace.style.display = '';
+        }
+      }
+
+      function sbWireHeader() {
+        var tabsWrap = sbEl('glSprachbausteineTabs');
+        if (tabsWrap && !tabsWrap._sbWired) {
+          tabsWrap._sbWired = true;
+          tabsWrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('.gl-reading-tab');
+            if (!btn) return;
+            sbSetTab(btn.getAttribute('data-sb-tab'));
+          });
+        }
+      }
+
+      window._glSprachbausteineDebugState = function () {
+        var questions = (sb.content && sb.content.questions) || [];
+        return {
+          usingGenerated: sb.usingGenerated,
+          questionCount: questions.length,
+          genRequestToken: sb._genRequestToken,
+          genChecked: sb.genChecked,
+          generationId: sb.generationId
+        };
+      };
+
+      window._glOpenSprachbausteineView = function () {
+        sb.tab = 'practice';
+        sbSetTab('practice');
+        sbWireHeader();
+        var profileId = sbResolveProfileId();
+        if (profileId) {
+          sb._awaitingProfile = false;
+          sbGenerateOrLoadPart();
+          return;
+        }
+        if (!window._germanProfileLoaded) {
+          // Profile hasn't resolved yet — this is NOT the same as a
+          // definitively unsupported profile. Show a loading state and let
+          // the ss-profile-updated listener below retry once it resolves.
+          sbShowWaitingForProfile();
+          return;
+        }
+        sb._awaitingProfile = false;
+        sbShowUnsupportedProfile();
+      };
+
+      // Retries opening Sprachbausteine once the profile finishes loading,
+      // mirroring Lesen's/Hören's ss-profile-updated listeners. Guarded the
+      // same way: only fires if this view was actually left waiting and is
+      // still the open skill, so it can never cause a duplicate generate call.
+      window.addEventListener('ss-profile-updated', function () {
+        if (!sb._awaitingProfile) return;
+        sb._awaitingProfile = false;
+        if (_glActiveSkill !== 'sprachbausteine') return;
+        window._glOpenSprachbausteineView();
+      });
     })();
 
     // ── Grammatik (interactive sentence-building/correction) ─────────────────

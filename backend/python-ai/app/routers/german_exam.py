@@ -23,7 +23,8 @@ from pydantic import BaseModel, Field
 from ..auth import require_internal_token
 from ..services.german_exam_generator import generate_task
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
-from ..services.german_exam_profiles import GermanExamProfileError
+from ..services.german_exam_profiles import GermanExamProfileError, get_part, get_profile
+from ..services.german_exam_writing_grading import grade_writing_submission
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +133,58 @@ class GetWeaknessSnapshotRequest(BaseModel):
 @router.post("/german-exam/weaknesses")
 def get_weakness_snapshot_endpoint(payload: GetWeaknessSnapshotRequest) -> dict[str, Any]:
     return get_weakness_snapshot(payload.userId, payload.profileId, payload.module)
+
+
+class WritingTopic(BaseModel):
+    questionId: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=500)
+    communicativeSituation: str = Field(min_length=1, max_length=4000)
+    taskInstructions: str = Field(min_length=1, max_length=6000)
+
+
+class GradeWritingRequest(BaseModel):
+    userId: str
+    profileId: str
+    partId: str
+    topicId: str
+    generationId: str | None = None
+    writingCoachTaskType: str = "freier_text"
+    selectedTopic: WritingTopic
+    text: str = Field(min_length=1, max_length=8000)
+
+
+@router.post("/german-exam/grade-writing")
+def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
+    """Grades a Schreiben submission via the shared Writing Coach evaluator
+    (see german_exam_writing_grading.py) and returns a ready-to-submit
+    examResultItems array — this endpoint never writes attempts itself, the
+    frontend forwards that array to POST /german-exam/results exactly like
+    every other module does after computing its own results client-side."""
+    try:
+        profile = get_profile(payload.profileId)
+        part = get_part(payload.profileId, "writing", payload.partId)
+    except GermanExamProfileError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    text = (payload.text or "").strip()
+    if payload.selectedTopic.questionId != payload.topicId:
+        raise HTTPException(status_code=400, detail="selected topic does not match topicId")
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="text is required")
+
+    try:
+        return grade_writing_submission(
+            user_id=payload.userId,
+            profile=profile,
+            part=part,
+            generation_id=payload.generationId,
+            writing_coach_task_type=payload.writingCoachTaskType,
+            text=text,
+            selected_topic=payload.selectedTopic.model_dump(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.exception("german-exam writing grading failed")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Grading failed") from exc
 
 
 class ConsumeGenerationRequest(BaseModel):

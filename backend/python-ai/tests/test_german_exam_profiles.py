@@ -8,15 +8,42 @@ import pytest
 from app.services.german_exam_profiles import GermanExamProfileError, get_part, get_profile, list_parts, resolve_profile_id
 
 
-def test_profile_exists_with_listening_and_reading_modules() -> None:
+def test_profile_exists_with_listening_reading_language_elements_and_writing_modules() -> None:
     profile = get_profile("telc_c1_hochschule")
     assert profile.family == "telc"
     assert profile.variant == "C1 Hochschule"
     assert profile.modules["listening"] is not None
     assert profile.modules["reading"] is not None
-    assert profile.modules["writing"] is None
+    assert profile.modules["language_elements"] is not None
+    assert profile.modules["writing"] is not None
     assert profile.modules["speaking"] is None
-    assert profile.modules["language_elements"] is None
+
+
+def test_schreiben_constraints_locked() -> None:
+    part = get_part("telc_c1_hochschule", "writing", "schreiben_1")
+    assert part.task_type == "choice_long_form_writing"
+    assert part.constraints["topicChoiceCount"] == 2
+    assert part.constraints["targetWordCount"] == 350
+    assert part.time_limit_seconds == 70 * 60
+    assert part.scoring is not None
+    assert part.scoring.max_points == 48
+    assert part.scoring.points_per_correct is None
+    assert part.grading_dimensions == ("task_fulfilment", "correctness", "repertoire", "communicative_design")
+
+
+def test_sprachbausteine_constraints_locked() -> None:
+    part = get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")
+    assert part.task_type == "cloze_mc4_language_elements"
+    assert part.constraints["itemCount"] == 22
+    assert part.constraints["optionCount"] == 4
+    assert part.constraints["grammarCountMin"] == 12
+    assert part.constraints["grammarCountMax"] == 16
+    assert part.constraints["lexicalCountMin"] == 4
+    assert part.constraints["lexicalCountMax"] == 8
+    assert part.constraints["orthographyCountMin"] == 1
+    assert part.constraints["orthographyCountMax"] == 4
+    assert part.scoring is not None
+    assert part.scoring.max_points == 22
 
 
 def test_hv1_constraints_locked() -> None:
@@ -51,7 +78,7 @@ def test_list_parts_returns_all_three() -> None:
 
 def test_unimplemented_module_raises() -> None:
     with pytest.raises(GermanExamProfileError):
-        list_parts("telc_c1_hochschule", "writing")
+        list_parts("telc_c1_hochschule", "speaking")
 
 
 def test_unknown_profile_raises() -> None:

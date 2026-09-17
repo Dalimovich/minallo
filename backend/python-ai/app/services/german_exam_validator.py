@@ -323,6 +323,158 @@ def validate_detail_tristate_with_global_heading(part: PartBlueprint, content: d
     return issues
 
 
+_LANGUAGE_ELEMENT_CATEGORIES = {"grammar", "lexicon", "orthography"}
+
+
+def validate_cloze_mc4_language_elements(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """telc-style Sprachbausteine: one continuous text with N numbered gaps
+    (marked inline as the literal placeholder "{{gapId}}", same convention as
+    text_reconstruction_sentence_matching), each gap answered by exactly one
+    four-option MC item. Unlike Lesen 1, options are plain per-item strings
+    (like sentence_completion_mc3), not a shared candidates pool — there is
+    no bijection to enforce across items, only per-item option validity plus
+    the official grammar/lexicon/orthography category-range split."""
+    issues: list[ValidationIssue] = []
+    text = content.get("text") or {}
+    gaps = text.get("gaps") if isinstance(text, dict) else None
+    questions = content.get("questions") or []
+
+    item_count = part.constraints.get("itemCount", 22)
+    option_count = part.constraints.get("optionCount", 4)
+    word_min = part.constraints.get("wordCountMin", 320)
+    word_max = part.constraints.get("wordCountMax", 350)
+
+    if not isinstance(gaps, list) or len(gaps) != item_count:
+        issues.append(ValidationIssue(None, f"expected {item_count} gaps, got {len(gaps) if isinstance(gaps, list) else 0}"))
+        gap_ids: set[str] = set()
+    else:
+        gap_ids = {g.get("gapId") for g in gaps if isinstance(g, dict) and g.get("gapId")}
+        if len(gap_ids) != len(gaps):
+            issues.append(ValidationIssue(None, "duplicate or missing gapId across gaps"))
+
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if isinstance(paragraphs, list):
+        word_count = sum(len(str(p).split()) for p in paragraphs)
+        if not (word_min <= word_count <= word_max):
+            issues.append(ValidationIssue(None, f"expected {word_min}-{word_max} words, got {word_count}"))
+    else:
+        issues.append(ValidationIssue(None, "text.paragraphs must be a list"))
+
+    if len(questions) != item_count:
+        issues.append(ValidationIssue(None, f"expected {item_count} items, got {len(questions)}"))
+
+    mapped_gaps: list[str] = []
+    category_counts: dict[str, int] = {}
+    for q in questions:
+        gap_id = q.get("gapId")
+        if not gap_id or (gap_ids and gap_id not in gap_ids):
+            issues.append(ValidationIssue(q.get("questionId"), "gapId is missing or does not resolve to a real gap"))
+        else:
+            mapped_gaps.append(gap_id)
+
+        options = q.get("options") or []
+        if len(options) != option_count:
+            issues.append(ValidationIssue(q.get("questionId"), f"expected {option_count} options, got {len(options)}"))
+        if len({o.strip().lower() for o in options if isinstance(o, str)}) != len(options):
+            issues.append(ValidationIssue(q.get("questionId"), "duplicate options within one item"))
+        correct_index = q.get("correctIndex")
+        if not isinstance(correct_index, int) or not (0 <= correct_index < max(1, option_count)):
+            issues.append(ValidationIssue(q.get("questionId"), "correctIndex missing or out of range"))
+
+        category = q.get("category")
+        if category not in _LANGUAGE_ELEMENT_CATEGORIES:
+            issues.append(ValidationIssue(q.get("questionId"), f"category must be one of {sorted(_LANGUAGE_ELEMENT_CATEGORIES)}"))
+        else:
+            category_counts[category] = category_counts.get(category, 0) + 1
+
+    if len(mapped_gaps) != len(set(mapped_gaps)):
+        issues.append(ValidationIssue(None, "a gap is answered by more than one item"))
+    if gap_ids and set(mapped_gaps) != gap_ids:
+        issues.append(ValidationIssue(None, "not every gap has exactly one item"))
+
+    grammar_min = part.constraints.get("grammarCountMin", 12)
+    grammar_max = part.constraints.get("grammarCountMax", 16)
+    lexical_min = part.constraints.get("lexicalCountMin", 4)
+    lexical_max = part.constraints.get("lexicalCountMax", 8)
+    ortho_min = part.constraints.get("orthographyCountMin", 1)
+    ortho_max = part.constraints.get("orthographyCountMax", 4)
+    grammar_n = category_counts.get("grammar", 0)
+    lexical_n = category_counts.get("lexicon", 0)
+    ortho_n = category_counts.get("orthography", 0)
+    if not (grammar_min <= grammar_n <= grammar_max):
+        issues.append(ValidationIssue(None, f"expected {grammar_min}-{grammar_max} grammar items, got {grammar_n}"))
+    if not (lexical_min <= lexical_n <= lexical_max):
+        issues.append(ValidationIssue(None, f"expected {lexical_min}-{lexical_max} lexicon items, got {lexical_n}"))
+    if not (ortho_min <= ortho_n <= ortho_max):
+        issues.append(ValidationIssue(None, f"expected {ortho_min}-{ortho_max} orthography items, got {ortho_n}"))
+    if grammar_n + lexical_n + ortho_n != item_count:
+        issues.append(ValidationIssue(None, f"category counts must sum to {item_count}"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+# telc C1 Hochschule Schreiben topics realistically frame as one of these —
+# mirrors (a controlled subset of) writing_coach.ALLOWED_TASK_TYPES so a
+# generated topic's writingCoachTaskType is guaranteed valid input to
+# analyse_writing() at grading time (see german_exam_writing_grading.py).
+# Deliberately narrower than the full Writing Coach vocabulary: "email" /
+# "zusammenfassung" / "bericht" / "motivationsschreiben" aren't realistic
+# framings for this exam's academic/study-related Schreiben topics.
+TELC_SCHREIBEN_TASK_TYPES = frozenset({"stellungnahme", "argumentation", "freier_text"})
+_MIN_TASK_INSTRUCTION_CHARS = 40
+
+
+def validate_choice_long_form_writing(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """telc-style Schreiben: exactly 2 generated topics (as `questions`, the
+    generic per-part item array every task type uses), no answer key —
+    grading happens separately, on the learner's own submitted text (see
+    german_exam_writing_grading.py), never against this generated content.
+    Only structural well-formedness and a HARD (identical-text) duplicate
+    guard live here; genuine near-duplicate/answerability/register judgment
+    is german_exam_semantic_verify.py's job, run against this same content
+    after this validator passes."""
+    issues: list[ValidationIssue] = []
+    questions = content.get("questions") or []
+    topic_count = part.constraints.get("topicChoiceCount", 2)
+
+    if len(questions) != topic_count:
+        issues.append(ValidationIssue(None, f"expected {topic_count} topics, got {len(questions)}"))
+
+    if set(content) - {"questions"}:
+        issues.append(ValidationIssue(None, "writing content must contain only topics, never an answer key or model solution"))
+    seen_titles: list[str] = []
+    seen_instructions: list[str] = []
+    for q in questions:
+        if set(q) - {"questionId", "title", "communicativeSituation", "taskInstructions", "writingCoachTaskType"}:
+            issues.append(ValidationIssue(q.get("questionId"), "unexpected topic fields: no answer key or model solution is allowed"))
+        title = (q.get("title") or "").strip()
+        situation = (q.get("communicativeSituation") or "").strip()
+        instructions = (q.get("taskInstructions") or "").strip()
+        task_type = q.get("writingCoachTaskType")
+
+        if not title:
+            issues.append(ValidationIssue(q.get("questionId"), "title is missing or empty"))
+        if not situation:
+            issues.append(ValidationIssue(q.get("questionId"), "communicativeSituation is missing or empty"))
+        if len(instructions) < _MIN_TASK_INSTRUCTION_CHARS:
+            issues.append(ValidationIssue(q.get("questionId"), f"taskInstructions is missing or too short (min {_MIN_TASK_INSTRUCTION_CHARS} chars)"))
+        if task_type not in TELC_SCHREIBEN_TASK_TYPES:
+            issues.append(ValidationIssue(q.get("questionId"), f"writingCoachTaskType must be one of {sorted(TELC_SCHREIBEN_TASK_TYPES)}"))
+
+        if title:
+            seen_titles.append(title.lower())
+        if instructions:
+            seen_instructions.append(instructions.lower())
+
+    if len(seen_titles) != len(set(seen_titles)):
+        issues.append(ValidationIssue(None, "two topics have identical titles — they must be genuinely distinct"))
+    if len(seen_instructions) != len(set(seen_instructions)):
+        issues.append(ValidationIssue(None, "two topics have identical taskInstructions — they must be genuinely distinct"))
+
+    return issues
+
+
 VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationIssue]]] = {
     "speaker_statement_matching": validate_speaker_statement_matching,
     "sentence_completion_mc3": validate_sentence_completion_mc3,
@@ -330,6 +482,8 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
     "text_reconstruction_sentence_matching": validate_text_reconstruction_sentence_matching,
     "section_statement_matching": validate_section_statement_matching,
     "detail_tristate_with_global_heading": validate_detail_tristate_with_global_heading,
+    "cloze_mc4_language_elements": validate_cloze_mc4_language_elements,
+    "choice_long_form_writing": validate_choice_long_form_writing,
 }
 
 # Reading task types don't carry a top-level "segments" array (they have

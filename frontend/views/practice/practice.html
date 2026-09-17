@@ -298,6 +298,33 @@
         <div class="gl-reading-end" id="glReadingEnd" style="display:none"></div>
       </section>
 
+      <!-- Sprachbausteine (cloze, telc C1 Hochschule) — dedicated workspace,
+           shown only when data-active-skill="sprachbausteine". Reuses the
+           gl-reading-* / gl-listen-* classes (same visual pattern as Lesen
+           Teil 1's inline gap-select cloze) rather than introducing new CSS;
+           there is no static/sample fallback content for this module — see
+           window._glOpenSprachbausteineView. -->
+      <section class="gl-reading-view" id="glSprachbausteineView" style="display:none">
+        <div class="gl-reading-header">
+          <div>
+            <h2 class="gl-reading-title">Sprachbausteine</h2>
+            <p class="gl-reading-sub">Fill each gap with the option that fits grammar, meaning, and register.</p>
+          </div>
+        </div>
+
+        <div class="gl-reading-tabs" role="tablist" aria-label="Sprachbausteine mode" id="glSprachbausteineTabs">
+          <button type="button" class="gl-reading-tab active" data-sb-tab="practice" role="tab" aria-selected="true">Practice</button>
+          <button type="button" class="gl-reading-tab" data-sb-tab="weak" role="tab" aria-selected="false">Weak areas</button>
+        </div>
+
+        <div class="gl-reading-workspace" id="glSprachbausteineWorkspace">
+          <div class="gl-reading-text-panel" id="glSprachbausteineTextPanel"></div>
+          <div class="gl-reading-question-panel" id="glSprachbausteineQuestionPanel"></div>
+        </div>
+
+        <div class="gl-reading-question-panel" id="glSprachbausteineWeakPanel" style="display:none"></div>
+      </section>
+
       <!-- Grammatik — interactive sentence-building/correction workspace,
            dedicated template shown only when data-active-skill="grammar".
            Deliberately not the generic quiz/cards template above, and

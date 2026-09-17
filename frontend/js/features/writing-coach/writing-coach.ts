@@ -21,6 +21,7 @@ import {
 } from './writing-coach-ai.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { transitionLearnerWorkspace } from '../chatbot-new/experience-mode.js';
+import { WritingExamSession, writingExamRequest, writingProfileReady, type WritingGrade } from './writing-exam.js';
 
 const DRAFT_KEY = 'ss_writing_coach_draft';
 const TASK_KEY = 'ss_writing_coach_task';
@@ -51,6 +52,15 @@ function _activeTaskType(): TaskType {
 
 let _wired = false;
 let _activeAbort: AbortController | null = null;
+let _examMode = true;
+let _opened = false;
+let _session = new WritingExamSession();
+let _selectedTopic = '';
+let _examDraft = '';
+let _grade: WritingGrade | null = null;
+let _saving = false;
+let _saved = false;
+let _generating = false;
 
 export function initWritingCoach(): void {
   if (document.readyState === 'loading') {
@@ -59,6 +69,9 @@ export function initWritingCoach(): void {
     _tryWire();
   }
   (window as unknown as { _wcOpen: typeof openWritingCoach })._wcOpen = openWritingCoach;
+  window.addEventListener('ss-profile-updated', () => {
+    if (_opened) void _prepareMode();
+  });
 }
 
 /** Public entry point — called both by router.js's legacy portal sidebar
@@ -78,8 +91,9 @@ export function openWritingCoach(attempt = 0): void {
       document.getElementById('wcInput')?.focus();
     }
   });
-  _renderProfileLevel();
-  _updateAnalyzeEnabled();
+  _tryWire();
+  _opened = true;
+  void _prepareMode();
 
 }
 
@@ -95,6 +109,8 @@ function _tryWire(attempt = 0): void {
 }
 
 function _wire(): void {
+  document.getElementById('wcExamMode')?.addEventListener('click', () => _switchMode(true));
+  document.getElementById('wcGenericMode')?.addEventListener('click', () => _switchMode(false));
   // Level is no longer user-selected here; it comes from the profile.
   // Wire the "Go to Profile" button in the empty state.
   const goProfile = document.getElementById('wcGoProfile');
@@ -105,13 +121,10 @@ function _wire(): void {
 
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
   if (ta) {
-    ta.value = localStorage.getItem(DRAFT_KEY) || '';
-    let saveTimer: number | null = null;
+    ta.value = _examMode ? _examDraft : localStorage.getItem(DRAFT_KEY) || '';
     ta.addEventListener('input', () => {
-      if (saveTimer !== null) window.clearTimeout(saveTimer);
-      saveTimer = window.setTimeout(() => {
-        localStorage.setItem(DRAFT_KEY, ta.value);
-      }, 500);
+      if (_examMode) _examDraft = ta.value;
+      else localStorage.setItem(DRAFT_KEY, ta.value);
       _updateAnalyzeEnabled();
     });
   }
@@ -155,10 +168,167 @@ function _updateAnalyzeEnabled(): void {
   const btn = document.getElementById('wcAnalyze') as HTMLButtonElement | null;
   if (!ta || !btn) return;
   // Also requires a profile level to grade against.
-  btn.disabled = ta.value.trim().length < MIN_CHARS || !_profileLevel();
+  btn.disabled = !!_activeAbort || _saving || ta.value.trim().length < MIN_CHARS ||
+    (_examMode ? !_selectedTopic || !_session.task || !!_grade : !_profileLevel());
+  const count = document.getElementById('wcWordCount');
+  if (count) count.textContent = `${ta.value.trim().split(/\s+/).filter(Boolean).length} Wörter${_examMode ? ' · Ziel: mindestens 350' : ''}`;
+}
+
+function _switchMode(exam: boolean): void {
+  if (_activeAbort || _saving || _examMode === exam) return;
+  const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
+  if (ta) {
+    if (_examMode) _examDraft = ta.value;
+    else localStorage.setItem(DRAFT_KEY, ta.value);
+    ta.value = exam ? _examDraft : localStorage.getItem(DRAFT_KEY) || '';
+    ta.readOnly = exam && !!_grade;
+  }
+  _examMode = exam;
+  const results = document.getElementById('wcResults');
+  if (results) results.hidden = true;
+  void _prepareMode();
+  if (exam && _grade) _renderExamGrade();
+}
+
+async function _prepareMode(): Promise<void> {
+  if (_examMode && window._germanProfileLoaded && !writingProfileReady()) {
+    _switchMode(false);
+    return;
+  }
+  const generic = document.getElementById('wcGenericControls');
+  const taskRoot = document.getElementById('wcExamTask');
+  const examButton = document.getElementById('wcExamMode') as HTMLButtonElement | null;
+  if (generic) generic.hidden = _examMode;
+  if (taskRoot) taskRoot.hidden = !_examMode;
+  if (examButton) examButton.disabled = !!window._germanProfileLoaded && !writingProfileReady();
+  const btn = document.getElementById('wcAnalyze');
+  if (btn) {
+    btn.removeAttribute('data-i18n');
+    btn.textContent = _examMode ? 'Bewerten' : 'Analyze with AI';
+  }
+  if (!_examMode) { _renderProfileLevel(); _updateAnalyzeEnabled(); return; }
+  const writer = document.getElementById('wcWriter');
+  const noLevel = document.getElementById('wcNoLevel');
+  if (writer) writer.hidden = false;
+  if (noLevel) noLevel.hidden = true;
+  _updateAnalyzeEnabled();
+  if (!taskRoot || _session.task || _generating) return;
+  if (!writingProfileReady()) {
+    taskRoot.textContent = 'Prüfungsprofil wird geladen …';
+    return;
+  }
+  _generating = true;
+  taskRoot.textContent = 'Zwei Schreibthemen werden erstellt …';
+  const session = _session;
+  try {
+    await session.generate();
+    if (_session === session) _renderTopics();
+  } catch (error) {
+    taskRoot.innerHTML = `<p class="wc-error">${_escape(friendlyAiErrorMessage(error))}</p><button type="button" id="wcGenerateRetry" class="ncb-wc-btn-secondary">Erneut versuchen</button>`;
+    document.getElementById('wcGenerateRetry')?.addEventListener('click', () => { void _prepareMode(); });
+  } finally {
+    _generating = false;
+    _updateAnalyzeEnabled();
+  }
+}
+
+function _renderTopics(): void {
+  const root = document.getElementById('wcExamTask');
+  if (!root || !_session.task) return;
+  root.innerHTML = `<h3>telc C1 Hochschule · C1 · Schreiben</h3><p>Wählen Sie ein Thema. Schreiben Sie mindestens 350 Wörter. Bearbeitungszeit: 70 Minuten.</p>` +
+    _session.task.content.questions.map((topic, index) => `<section class="wc-result-section">
+      <label><input type="radio" name="wcTopic" value="${_escape(topic.questionId)}" ${_grade || _activeAbort ? 'disabled' : ''} ${_selectedTopic === topic.questionId ? 'checked' : ''}> <strong>Thema ${index === 0 ? 'A' : 'B'}: ${_escape(topic.title)}</strong></label>
+      <p>${_escape(topic.communicativeSituation)}</p><p style="white-space:pre-line">${_escape(topic.taskInstructions)}</p></section>`).join('');
+  root.querySelectorAll<HTMLInputElement>('input[name="wcTopic"]').forEach(input => {
+    input.addEventListener('change', () => { _selectedTopic = input.value; _updateAnalyzeEnabled(); });
+  });
+}
+
+async function _gradeExam(): Promise<void> {
+  const task = _session.task;
+  const topic = task?.content.questions.find(t => t.questionId === _selectedTopic);
+  const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
+  if (!task || !topic || !ta || _activeAbort || _grade || ta.value.trim().length < MIN_CHARS) return;
+  const loading = document.getElementById('wcLoading');
+  const results = document.getElementById('wcResults');
+  _activeAbort = new AbortController();
+  ta.readOnly = true;
+  _renderTopics();
+  if (loading) loading.hidden = false;
+  _updateAnalyzeEnabled();
+  try {
+    _grade = await writingExamRequest<WritingGrade>('grade-writing', {
+      profileId: task.exam.profileId, partId: task.part.id, generationId: task.generationId,
+      topicId: topic.questionId, selectedTopic: topic, writingCoachTaskType: topic.writingCoachTaskType,
+      text: ta.value.trim()
+    }, _activeAbort.signal);
+    _renderTopics();
+    _renderExamGrade();
+    await _saveExamGrade();
+  } catch (error) {
+    if (results) {
+      results.hidden = false;
+      results.innerHTML = `<p class="wc-error">${_escape(friendlyAiErrorMessage(error))}</p>`;
+    }
+  } finally {
+    _activeAbort = null;
+    if (loading) loading.hidden = true;
+    ta.readOnly = !!_grade;
+    _renderTopics();
+    _updateAnalyzeEnabled();
+  }
+}
+
+function _renderExamGrade(): void {
+  if (!_grade) return;
+  _renderResults(_grade.analysis);
+  const root = document.getElementById('wcResults');
+  if (!root) return;
+  const dimensions: [string, string][] = [['taskFulfilment', 'Aufgabengerechtheit'], ['correctness', 'Korrektheit'], ['repertoire', 'Repertoire'], ['communicativeDesign', 'Kommunikative Gestaltung']];
+  root.insertAdjacentHTML('afterbegin', `<section class="wc-result-section"><h3>Schreiben: ${_grade.scoreValue ?? '–'} / ${_grade.maxScoreValue}</h3><p>KI-Übungseinschätzung anhand der vier telc-Dimensionen.</p><dl>${dimensions.map(([key, label]) => `<dt>${label}</dt><dd>${_grade!.rubric[key] ?? '–'} / 100</dd>`).join('')}</dl></section>`);
+  root.insertAdjacentHTML('beforeend', '<p id="wcSaveStatus" role="status"></p><div id="wcWeakAreas"></div>');
+  if (_saved) void _loadWritingWeaknesses();
+}
+
+async function _saveExamGrade(): Promise<void> {
+  if (!_grade || !_session.task || _saving || _saved) return;
+  const status = document.getElementById('wcSaveStatus');
+  if (!_grade.examResultItems.length) {
+    if (status) status.textContent = 'Noch keine zuverlässige Bewertung. Ergänzen Sie Ihren Text.';
+    return;
+  }
+  _saving = true;
+  if (status) status.textContent = 'Bewertung wird gespeichert …';
+  try {
+    const saved = await writingExamRequest<{ accepted: number; dropped: number }>('results', {
+      examFamily: _session.task.exam.family, examVariant: _session.task.exam.variant,
+      targetLevel: _session.task.exam.cefrLevel, module: 'writing', items: _grade.examResultItems
+    });
+    if (saved.accepted !== _grade.examResultItems.length || saved.dropped) throw new Error('Die Bewertung konnte nicht vollständig gespeichert werden.');
+    _saved = true;
+    if (status) status.textContent = 'Bewertung gespeichert.';
+    await _loadWritingWeaknesses();
+  } catch {
+    if (status) {
+      status.innerHTML = 'Speichern fehlgeschlagen. Ihr Text und Ihre Bewertung bleiben erhalten. <button type="button" id="wcSaveRetry" class="ncb-wc-btn-secondary">Speichern erneut versuchen</button>';
+      document.getElementById('wcSaveRetry')?.addEventListener('click', () => { void _saveExamGrade(); });
+    }
+  } finally { _saving = false; _updateAnalyzeEnabled(); }
+}
+
+async function _loadWritingWeaknesses(): Promise<void> {
+  const root = document.getElementById('wcWeakAreas');
+  if (!root) return;
+  try {
+    const snapshot = await writingExamRequest<{ tags: Record<string, { score: number; nAttempts: number; confidence: string }> }>('weaknesses', { profileId: 'telc_c1_hochschule', module: 'writing' });
+    const tags = Object.entries(snapshot.tags).filter(([, value]) => value.confidence !== 'cold_start').sort((a, b) => a[1].score - b[1].score);
+    root.innerHTML = '<h3>Weak Areas · Schreiben</h3>' + (tags.length ? `<ul>${tags.map(([tag, value]) => `<li>${_escape(tag.replace(/_/g, ' '))}: ${Math.round(value.score * 100)}% (${value.nAttempts} Bewertungen)</li>`).join('')}</ul>` : '<p>Nach drei bewerteten Texten werden Ihre Übungsschwerpunkte sichtbar.</p>');
+  } catch { root.textContent = 'Übungsschwerpunkte konnten nicht geladen werden.'; }
 }
 
 async function _analyze(): Promise<void> {
+  if (_examMode) { await _gradeExam(); return; }
+  if (_activeAbort) return;
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
   const btn = document.getElementById('wcAnalyze') as HTMLButtonElement | null;
   const loading = document.getElementById('wcLoading');
@@ -169,7 +339,6 @@ async function _analyze(): Promise<void> {
   const level = _profileLevel();
   if (text.length < MIN_CHARS || !level) return;
 
-  if (_activeAbort) _activeAbort.abort();
   _activeAbort = new AbortController();
 
   btn.disabled = true;
@@ -220,7 +389,7 @@ function _renderResults(a: WritingAnalysis): void {
   }
 
   const sections: string[] = [];
-  sections.push(_renderScore(a.score, a.scoreExplanation, a.estimatedLevel));
+  if (!_examMode) sections.push(_renderScore(a.score, a.scoreExplanation, a.estimatedLevel));
   if (a.strengths.length) sections.push(_renderStrengths(a.strengths));
 
   const mistakes = a.feedbackItems.filter((i) => i.type === 'grammar' || i.type === 'pattern' && i.isActualError);
@@ -231,7 +400,7 @@ function _renderResults(a: WritingAnalysis): void {
   sections.push(_renderItemSection('Vocabulary Improvements', vocab, 'No vocabulary suggestions.'));
   sections.push(_renderItemSection('Style / Register Improvements', style, 'No style suggestions.'));
 
-  sections.push(`
+  sections.push(`${_examMode ? '<details><summary>Überarbeitete Fassungen ansehen</summary>' : ''}
     <section class="wc-result-section">
       <h3 class="wc-result-title">Corrected Version</h3>
       <p class="wc-result-subtitle">Same idea, same voice — language errors removed.</p>
@@ -243,10 +412,10 @@ function _renderResults(a: WritingAnalysis): void {
       <div class="wc-ai-warning">This improved version is a model answer. Do not copy it blindly — reuse the structure and vocabulary in your own words.</div>
       <p class="wc-improved">${_escape(a.improvedText)}</p>
     </section>
-  `);
+  ${_examMode ? '</details>' : ''}`);
 
   if (a.structureFeedback) sections.push(_renderStructure(a.structureFeedback));
-  if (a.examReadiness) sections.push(_renderExam(a.examReadiness));
+  if (a.examReadiness && !_examMode) sections.push(_renderExam(a.examReadiness));
 
   if (a.practiceRecommendations.length) {
     const tips = a.practiceRecommendations.map((t) => `<li>${_escape(t)}</li>`).join('');
@@ -406,10 +575,33 @@ function _renderFeedbackList(items: FeedbackItem[]): string {
 
 function _wireAgain(): void {
   const again = document.getElementById('wcAgain');
+  if (again && _examMode) again.textContent = _grade?.analysis.insufficientContext ? 'Text ergänzen' : 'Neue Schreibaufgabe';
   again?.addEventListener('click', _resetForm);
 }
 
 function _resetForm(): void {
+  if (_examMode) {
+    if (_saving || _activeAbort) return;
+    if (_grade?.examResultItems.length && !_saved) { void _saveExamGrade(); return; }
+    const insufficient = !!_grade?.analysis.insufficientContext;
+    _grade = null;
+    _saved = false;
+    const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
+    if (ta) {
+      ta.readOnly = false;
+      if (!insufficient) ta.value = '';
+      ta.focus();
+    }
+    if (!insufficient) {
+      _session = new WritingExamSession();
+      _selectedTopic = '';
+      _examDraft = '';
+    } else _renderTopics();
+    const results = document.getElementById('wcResults');
+    if (results) results.hidden = true;
+    void _prepareMode();
+    return;
+  }
   const ta = document.getElementById('wcInput') as HTMLTextAreaElement | null;
   const results = document.getElementById('wcResults');
   if (ta) {

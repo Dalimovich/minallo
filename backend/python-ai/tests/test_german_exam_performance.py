@@ -5,6 +5,7 @@ registry, never trust the client's own copies of them. Also covers Phase
 2.6's generationId traceability + consume idempotency."""
 from app.services import german_exam_performance as perf
 from app.services.german_exam_performance import AttemptItem, record_attempts, record_topic_used
+from app.services.german_exam_profiles import get_profile
 
 
 class _FakeTable:
@@ -66,7 +67,7 @@ def test_client_supplied_profile_version_and_task_type_are_overridden(monkeypatc
     monkeypatch.setattr(perf, "get_supabase", lambda: sb)
     record_attempts("u1", "telc", "C1 Hochschule", "C1", [_item(profile_version=999, task_type="bogus")])
     row = sb.inserted[0]
-    assert row["profile_version"] == 2
+    assert row["profile_version"] == get_profile("telc_c1_hochschule").profile_version
     assert row["task_type"] == "speaker_statement_matching"
 
 
@@ -145,3 +146,33 @@ def test_record_topic_used_swallows_errors(monkeypatch):
             raise RuntimeError("db unavailable")
     monkeypatch.setattr(perf, "get_supabase", lambda: _Boom())
     record_topic_used("u1", "telc_c1_hochschule", "listening", "hv1", "urban_mobility", "gen-abc")  # must not raise
+
+
+def test_writing_persists_rubric_and_overrides_correctness_booleans(monkeypatch):
+    sb = _FakeSB()
+    monkeypatch.setattr(perf, "get_supabase", lambda: sb)
+    rubric = {"taskFulfilment": 75, "examScoreValue": 36, "examMaxScoreValue": 48}
+    result = record_attempts("u1", "telc", "C1 Hochschule", "C1", [_item(
+        module="writing", part_id="schreiben_1", item_id="rubric_task_fulfilment",
+        skill_tags=["task_fulfilment"], first_attempt_correct=True, final_correct=True,
+        score_value=75, max_score_value=100, metadata={"rubric": rubric}, generation_id="writing-gen",
+    )])
+    assert result == {"accepted": 1, "dropped": 0}
+    row = sb.inserted[0]
+    assert row["first_attempt_correct"] is None
+    assert row["final_correct"] is None
+    assert row["score_value"] == 75
+    assert row["max_score_value"] == 100
+    assert row["metadata"]["rubric"] == rubric
+    assert row["generation_id"] == "writing-gen"
+
+
+def test_writing_save_retries_use_stable_ids_scoped_to_user_and_generation(monkeypatch):
+    sb = _FakeSB()
+    monkeypatch.setattr(perf, "get_supabase", lambda: sb)
+    item = _item(module="writing", part_id="schreiben_1", skill_tags=["task_fulfilment"], generation_id="gen")
+    for user in ["u1", "u1", "u2"]:
+        record_attempts(user, "telc", "C1 Hochschule", "C1", [item])
+    assert sb.inserted[0]["id"] == sb.inserted[1]["id"]
+    assert sb.inserted[0]["id"] != sb.inserted[2]["id"]
+    assert all(call == ("upsert", {"on_conflict": "id", "ignore_duplicates": True}) for call in sb.calls)

@@ -48,3 +48,23 @@ def test_reading_module_dispatches_to_reading_adapter(monkeypatch):
     assert envelope["module"] == "reading"
     assert envelope["part"]["id"] == "lesen_1"
     assert len(calls) == 1
+
+
+def test_writing_module_dispatches_to_writing_adapter(monkeypatch):
+    calls = []
+    monkeypatch.setattr(gen, "compute_weakness", lambda *a, **k: None)
+    monkeypatch.setattr(gen, "build_adaptation_plan", lambda *a, **k: [])
+    monkeypatch.setattr(gen, "pick_topic", lambda *a, **k: {"topicId": "student_life_balance", "label": "Studium und Freizeit"})
+    monkeypatch.setattr(gen, "record_topic_used", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(gen, "_generate_writing", lambda profile, part, plan, topic: ({"questions": []}, {"deterministicPassed": True}))
+    envelope = gen.generate_task("u1", "telc_c1_hochschule", "writing", "schreiben_1", "adaptive_practice", speculative=False)
+    assert envelope["module"] == "writing"
+    assert envelope["part"]["id"] == "schreiben_1"
+    assert len(calls) == 1
+
+
+def test_dispatch_module_still_raises_not_implemented_for_speaking():
+    import pytest as _pytest
+
+    with _pytest.raises(NotImplementedError):
+        gen._dispatch_module("speaking")

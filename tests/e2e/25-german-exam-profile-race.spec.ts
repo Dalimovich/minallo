@@ -92,6 +92,60 @@ function mockReadingGenerate(page: Page) {
   };
 }
 
+function mockSprachbausteineGenerate(page: Page) {
+  const requests: string[] = [];
+  const CATEGORY_PLAN = [
+    ...Array(14).fill('grammar'),
+    ...Array(6).fill('lexicon'),
+    ...Array(2).fill('orthography'),
+  ];
+  return {
+    requests,
+    install: () =>
+      page.route('**/api/ai/german-exam/generate', (route: Route) => {
+        requests.push(route.request().url());
+        const paragraphs: string[] = [];
+        let gapN = 1;
+        for (let p = 0; p < 8; p++) {
+          const words = Array(40).fill('Wort');
+          const gapsHere = p < 6 ? 3 : 2;
+          for (let g = 0; g < gapsHere && gapN <= 22; g++) {
+            words.push(`{{g${gapN}}}`);
+            gapN++;
+          }
+          paragraphs.push(words.join(' '));
+        }
+        const gaps = Array.from({ length: 22 }, (_, i) => ({ gapId: `g${i + 1}` }));
+        const questions = Array.from({ length: 22 }, (_, i) => ({
+          questionId: `q${i + 1}`,
+          gapId: `g${i + 1}`,
+          options: [`opt${i + 1}a`, `opt${i + 1}b`, `opt${i + 1}c`, `opt${i + 1}d`],
+          correctIndex: 0,
+          category: CATEGORY_PLAN[i],
+          skillTags: ['grammar'],
+          difficulty: 'c1',
+        }));
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            generationId: 'race-test-gen-3',
+            module: 'language_elements',
+            part: { id: 'sprachbausteine_1' },
+            exam: {
+              family: 'telc',
+              variant: 'C1 Hochschule',
+              cefrLevel: 'C1',
+              profileId: 'telc_c1_hochschule',
+              profileVersion: 1,
+            },
+            content: { text: { title: 'Race test cloze', paragraphs, gaps }, questions },
+          }),
+        });
+      }),
+  };
+}
+
 function mockListeningEndpoints(page: Page) {
   const generateRequests: string[] = [];
   const ttsRequests: string[] = [];
@@ -179,6 +233,51 @@ test.describe('German Practice — profile-load race (Lesen/Hören)', () => {
     expect(gen.requests.length).toBe(1);
   });
 
+  test('Sprachbausteine: opened before the profile resolves shows a loading state, then generates exactly once, and scoring works after answering all 22 gaps', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await installProfileGate(page);
+    const gen = mockSprachbausteineGenerate(page);
+    await gen.install();
+
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+    await switchToLearner(page);
+    await app.navigateTo('chatbot');
+
+    await page.locator('[data-testid="german-panel-sprachbausteine"]').click();
+    await expect(page.locator('#glSprachbausteineView')).toBeVisible();
+
+    // Profile is still gated — must show the waiting state, never a generate call.
+    await expect(page.locator('.gl-listen-loading')).toBeVisible();
+    expect(gen.requests.length).toBe(0);
+    let debug = await page.evaluate(
+      () => (window as unknown as { _glSprachbausteineDebugState: () => { usingGenerated: boolean; questionCount: number } })._glSprachbausteineDebugState()
+    );
+    expect(debug.usingGenerated).toBe(false);
+
+    await releaseProfileGate(page);
+
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 15_000 });
+    debug = await page.evaluate(
+      () => (window as unknown as { _glSprachbausteineDebugState: () => { usingGenerated: boolean; questionCount: number } })._glSprachbausteineDebugState()
+    );
+    expect(debug.usingGenerated).toBe(true);
+    expect(debug.questionCount).toBe(22);
+    expect(gen.requests.length).toBe(1);
+
+    const gapSelects = page.locator('#glSprachbausteineTextPanel .gl-reading-gap-select');
+    await expect(gapSelects).toHaveCount(22);
+    const count = await gapSelects.count();
+    for (let i = 0; i < count; i++) {
+      await gapSelects.nth(i).selectOption({ index: 1 }); // index 0 in each item's options == correctIndex
+    }
+    await page.click('#glSprachbausteineCheck');
+    await expect(page.locator('.gl-reading-result-summary')).toHaveText('Score: 22 / 22');
+  });
+
   test('Hören: opened before the profile resolves shows a loading state, then generates exactly once, fetches TTS exactly once, and never shows static LISTEN_SETS', async ({
     page,
   }) => {
@@ -215,7 +314,7 @@ test.describe('German Practice — profile-load race (Lesen/Hören)', () => {
     expect(mocks.ttsRequests.length).toBe(1);
   });
 
-  test('a profile that has definitively loaded and is genuinely unsupported still gets the static fallback, with no generate call, in both Lesen and Hören', async ({
+  test('a profile that has definitively loaded and is genuinely unsupported still gets the static fallback (Lesen/Hören) or an explicit unsupported message (Sprachbausteine, which has no static content), with no generate call', async ({
     page,
   }) => {
     test.setTimeout(60_000);
@@ -224,6 +323,8 @@ test.describe('German Practice — profile-load race (Lesen/Hören)', () => {
     await readingGen.install();
     const listeningMocks = mockListeningEndpoints(page);
     await listeningMocks.install();
+    const sprachbausteineGen = mockSprachbausteineGenerate(page);
+    await sprachbausteineGen.install();
 
     const app = new AppPage(page);
     await app.goto();
@@ -260,5 +361,15 @@ test.describe('German Practice — profile-load race (Lesen/Hören)', () => {
     expect(listenDebug.usingGenerated).toBe(false);
     expect(listeningMocks.generateRequests.length).toBe(0);
     expect(listeningMocks.ttsRequests.length).toBe(1); // static LISTEN_SETS still goes through lsPlayer.setSegments()
+
+    await page.locator('[data-testid="german-panel-sprachbausteine"]').click();
+    await expect(page.locator('#glSprachbausteineView')).toBeVisible();
+    await expect(page.locator('.gl-listen-loading')).toHaveCount(0);
+    await expect(page.locator('.gl-listen-weak-empty')).toBeVisible();
+    const sbDebug = await page.evaluate(
+      () => (window as unknown as { _glSprachbausteineDebugState: () => { usingGenerated: boolean } })._glSprachbausteineDebugState()
+    );
+    expect(sbDebug.usingGenerated).toBe(false);
+    expect(sprachbausteineGen.requests.length).toBe(0);
   });
 });

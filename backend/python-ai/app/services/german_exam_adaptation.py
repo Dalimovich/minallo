@@ -10,13 +10,23 @@ Two pure concerns, kept separate:
                              it can never ask for a different item count,
                              task type, or option count.
 
-Correctness signal is three-way, not a flat is_correct boolean:
+Correctness signal is three-way, not a flat is_correct boolean, for
+OBJECTIVE (right/wrong) items:
   - unaided-first-try correct  (first_attempt_correct, hint_level=0,
     not transcript_revealed)         -> strongest positive signal
   - correct after assistance   (final_correct but hints/transcript/retries
     were used)                        -> partial credit
   - still incorrect after retry (not final_correct)  -> weakest signal
 `replay_count` is a softer secondary signal layered on top.
+
+PRODUCTIVE-skill items (writing/speaking) have no correctness at all —
+first_attempt_correct and final_correct are always None for them (see
+german_exam_writing_grading.py). For those rows, _attempt_score() falls back
+to the rubric-derived score_value/max_score_value ratio instead of treating
+"no boolean" as automatically wrong — this is the ONLY path by which a
+productive-skill attempt feeds the same per-skill-tag weighted average an
+objective item does, so weakness computation and build_adaptation_plan()
+need no separate productive-skill code path at all.
 """
 
 from __future__ import annotations
@@ -57,7 +67,20 @@ class AdaptationInstruction:
 
 
 def _attempt_score(row: dict) -> float:
-    """Per-attempt correctness score in [0, 1], richer than a boolean."""
+    """Per-attempt correctness score in [0, 1], richer than a boolean.
+
+    A row with BOTH correctness fields null is a productive-skill (writing/
+    speaking) attempt — score comes from its rubric-derived score_value/
+    max_score_value ratio instead. A row with null correctness but no score
+    info either (shouldn't happen once german_exam_writing_grading.py only
+    ever submits items it has a real dimension score for) falls back to 0.0,
+    the same conservative default an objective wrong answer gets."""
+    if row.get("first_attempt_correct") is None and row.get("final_correct") is None:
+        score_value = row.get("score_value")
+        max_score_value = row.get("max_score_value")
+        if isinstance(score_value, (int, float)) and isinstance(max_score_value, (int, float)) and max_score_value > 0:
+            return max(0.0, min(1.0, score_value / max_score_value))
+        return 0.0
     if row.get("first_attempt_correct") and row.get("hint_level", 0) == 0 and not row.get("transcript_revealed"):
         return 1.0
     if row.get("final_correct"):
@@ -90,7 +113,10 @@ def compute_weakness(user_id: str, profile_id: str, module: str) -> WeaknessRepo
     sb = get_supabase()
     resp = (
         sb.table("german_exam_attempts")
-        .select("skill_tags, first_attempt_correct, final_correct, hint_level, replay_count, transcript_revealed, attempted_at")
+        .select(
+            "skill_tags, first_attempt_correct, final_correct, hint_level, replay_count, "
+            "transcript_revealed, attempted_at, score_value, max_score_value"
+        )
         .eq("user_id", user_id)
         .eq("profile_id", profile_id)
         .eq("module", module)
@@ -158,6 +184,11 @@ _WEAKNESS_DIRECTION: dict[str, str] = {
     "distractor_similarity": "increase",
     "argument_complexity": "increase",
     "author_intention_explicitness": "decrease",  # less explicit intention cues = harder for author_intention weakness
+    "lexical_specificity": "increase",
+    "grammar_complexity": "increase",
+    "register_challenge": "increase",
+    "cohesion_demand": "increase",
+    "task_fulfilment_complexity": "increase",
 }
 
 # Which skill tags each adaptation axis is meant to exercise, so the planner
@@ -174,6 +205,11 @@ _AXIS_TARGET_TAGS: dict[str, tuple[str, ...]] = {
     "distractor_similarity": ("argument_structure", "text_structure"),
     "argument_complexity": ("argument_structure",),
     "author_intention_explicitness": ("author_intention",),
+    "lexical_specificity": ("collocation", "lexical_choice", "word_formation"),
+    "grammar_complexity": ("grammar", "syntax", "prepositions", "connectors"),
+    "register_challenge": ("register",),
+    "cohesion_demand": ("cohesion", "coherence"),
+    "task_fulfilment_complexity": ("task_fulfilment",),
 }
 
 _TOP_WEAK_TAG_LIMIT = 3

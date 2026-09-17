@@ -13,10 +13,11 @@ a minimum/range (e.g. telc C1 Hochschule Hören Teil 2's "zwei oder mehr
 Menschen"), the constraint key says so explicitly (`speakerCountMin`, not
 `speakerCount`) so the validator never enforces an invented exact count.
 
-Phase 1 populates exactly one profile (`telc_c1_hochschule`) with exactly one
-module (`listening`, all 3 parts). `reading`/`writing`/`speaking`/
-`language_elements` are present as `None` — not implemented yet, not
-invented placeholders.
+Phase 1 populated exactly one profile (`telc_c1_hochschule`) with exactly one
+module (`listening`, all 3 parts); `reading`, `language_elements`
+(Sprachbausteine), and `writing` (Schreiben) have since been added.
+`speaking` is still present as `None` — not implemented yet, not an
+invented placeholder.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ScoringSpec:
     max_points: int
-    points_per_correct: int  # generic; task-specific grading may override at scoring time
+    points_per_correct: int | None  # None for productive skills
 
 
 @dataclass(frozen=True)
@@ -209,6 +210,89 @@ _TELC_C1_HOCHSCHULE_LESEN: tuple[PartBlueprint, ...] = (
 )
 
 
+_TELC_C1_HOCHSCHULE_SPRACHBAUSTEINE: tuple[PartBlueprint, ...] = (
+    PartBlueprint(
+        part_id="sprachbausteine_1",
+        module="language_elements",
+        title="Sprachbausteine",
+        task_type="cloze_mc4_language_elements",
+        constraints={
+            "itemCount": 22,
+            "optionCount": 4,
+            "wordCountMin": 320,
+            "wordCountMax": 350,
+            "grammarCountMin": 12,
+            "grammarCountMax": 16,
+            "lexicalCountMin": 4,
+            "lexicalCountMax": 8,
+            "orthographyCountMin": 1,
+            "orthographyCountMax": 4,
+        },
+        allowed_skill_tags=(
+            "grammar",
+            "collocation",
+            "connectors",
+            "prepositions",
+            "word_formation",
+            "register",
+            "syntax",
+            "lexical_choice",
+        ),
+        allowed_adaptations=("lexical_specificity", "grammar_complexity"),
+        scoring=ScoringSpec(max_points=22, points_per_correct=1),
+    ),
+)
+
+
+# telc official duration for Schreiben: 70 minutes.
+SCHREIBEN_MINUTES = 70
+
+_TELC_C1_HOCHSCHULE_SCHREIBEN: tuple[PartBlueprint, ...] = (
+    PartBlueprint(
+        part_id="schreiben_1",
+        module="writing",
+        title="Schreiben",
+        task_type="choice_long_form_writing",
+        constraints={
+            "topicChoiceCount": 2,
+            "targetWordCount": 350,
+        },
+        # Full "writing" skill-tag vocabulary (see german_exam_skill_tags.py)
+        # — these are the tags a GRADED SUBMISSION's rubric-dimension attempt
+        # rows may carry (see german_exam_writing_grading.py), not tags on
+        # the generated task itself, which has no skill-tagged items.
+        allowed_skill_tags=(
+            "task_fulfilment",
+            "argument_structure",
+            "coherence",
+            "cohesion",
+            "grammar_accuracy",
+            "vocabulary_range",
+            "register",
+            "sentence_variety",
+            "orthography",
+        ),
+        allowed_adaptations=(
+            "argument_complexity",
+            "register_challenge",
+            "cohesion_demand",
+            "task_fulfilment_complexity",
+        ),
+        # Writing has no fixed per-item point value — the 48-point max is an
+        # overall exam-mode score derived from the rubric (see
+        # german_exam_writing_grading.py), not itemCount * points_per_correct.
+        scoring=ScoringSpec(max_points=48, points_per_correct=None),
+        grading_dimensions=(
+            "task_fulfilment",
+            "correctness",
+            "repertoire",
+            "communicative_design",
+        ),
+        time_limit_seconds=SCHREIBEN_MINUTES * 60,
+    ),
+)
+
+
 GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {
     "telc_c1_hochschule": ExamProfile(
         profile_id="telc_c1_hochschule",
@@ -219,14 +303,14 @@ GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {
         source_name="telc Deutsch C1 Hochschule – Handbuch",
         source_reference="telc GmbH official model-test/handbook material for telc Deutsch C1 Hochschule",
         source_version="verified against current telc.net exam-format description",
-        verified_at="2026-09-16",
-        profile_version=2,
+        verified_at="2026-09-17",
+        profile_version=4,
         modules={
             "listening": _TELC_C1_HOCHSCHULE_HOEREN,
             "reading": _TELC_C1_HOCHSCHULE_LESEN,
-            "writing": None,
+            "writing": _TELC_C1_HOCHSCHULE_SCHREIBEN,
             "speaking": None,
-            "language_elements": None,
+            "language_elements": _TELC_C1_HOCHSCHULE_SPRACHBAUSTEINE,
         },
     ),
 }

@@ -284,6 +284,93 @@ def _verify_prompt_lesen3(part: PartBlueprint, content: dict[str, Any]) -> tuple
     return system, user
 
 
+def _verify_prompt_sprachbausteine(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is cloze_mc4_language_elements (telc-style Sprachbausteine). You are given the full text "
+        "with numbered gaps and, per item, that item's own 4 options (options are per-item, not a shared "
+        "pool). For each item verify: (A) the option at correctIndex genuinely fits the gap grammatically "
+        "AND semantically in context — UNSUPPORTED_CORRECT_ANSWER if not; (B) no OTHER option among that "
+        "item's own 4 also fits the gap equally well — if a second option could also plausibly fill it, use "
+        "MULTIPLE_DEFENSIBLE_ANSWERS with evidence.optionIndexes listing both; (C) the three wrong options "
+        "are genuinely plausible C1-level near-misses (a wrong case/ending, a confusable preposition, a "
+        "near-synonym with a register/collocation problem, a plausible misspelling) rather than absurd or "
+        "trivially eliminable — IMPLAUSIBLE_DISTRACTOR if an option is nonsensical or unrelated to the "
+        "sentence; (D) reject an item that is answerable by pattern-matching alone without real C1 grammar/"
+        "lexical/orthography knowledge — TRIVIAL_ITEM. Do not flag a mislabeled category (grammar/lexicon/"
+        "orthography) by itself as an error unless it also makes the item too easy for C1 (in which case use "
+        "TRIVIAL_ITEM) — a pure category-tag mismatch with a genuinely sound answer/distractors is not "
+        "grounds for rejection. Part-wide: flag "
+        "PART_WIDE_INCOHERENCE if the text doesn't read as one coherent original text, or isn't "
+        "C1-Hochschule-appropriate academic/study-relevant register once the gaps are correctly filled."
+    )
+    text = content.get("text") or {}
+    payload = {
+        "text": {"title": text.get("title"), "paragraphs": text.get("paragraphs"), "gaps": text.get("gaps")},
+        "questions": content.get("questions") or [],
+    }
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
+# ── Schreiben (writing) verify prompt ────────────────────────────────────
+# Deliberately does NOT reuse _base_verifier_preamble() — that preamble's
+# framing ("each intended answer is uniquely supported by the supplied
+# transcript", "distractors/wrong options") describes OBJECTIVE-answer exam
+# items and is simply false for a writing task, which has no correct answer,
+# transcript, or distractors at all. This verifies task QUALITY only (is it
+# answerable, clear, distinct, C1-appropriate, free of a leaked model
+# answer) — it is NEVER run against a learner's own submitted essay, which
+# german_exam_writing_grading.py sends to the existing Writing Coach
+# evaluator instead. Reuses the same controlled issue-code vocabulary, JSON
+# response shape, and generic duplicate-detection audit as every other task
+# type, just with accurate instructions for what's actually being judged.
+def _verify_prompt_schreiben(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = (
+        "You are an INDEPENDENT quality reviewer for a GENERATED German writing-exam TASK "
+        f"({part.task_type}, telc-style Schreiben). You are given exactly 2 generated topics the learner "
+        "will choose between — there is NO correct answer, model solution, transcript, or distractor to "
+        "judge; you are reviewing the TASK PROMPT itself, never a learner's response (that is graded "
+        "separately, by a different system, against the learner's own submitted text). You must NOT "
+        "improve, rewrite, or complete either topic. Do not request or output hidden reasoning/"
+        "chain-of-thought — give only a concise issue code, one-sentence message, and evidence references. "
+        "Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Allowed issue codes — you MUST only use codes from this exact list, never invent new ones: "
+        f"{sorted(SEMANTIC_ISSUE_CODES)}.\n\n"
+        "For each topic verify: (A) it is answerable by a C1 Hochschule candidate using general academic/"
+        "study-related knowledge only, with clear, internally consistent, non-contradictory instructions "
+        "about what to produce — use QUESTION_NOT_ANSWERABLE if it requires niche specialist/professional "
+        "knowledge most candidates wouldn't have, or if the instructions are ambiguous or contradict "
+        "themselves; (B) the register and subject matter fit C1 Hochschule academic/study-relevant writing "
+        "— use OFF_LEVEL_CONTENT if it reads as a lower-level or non-academic everyday-life topic; (C) "
+        "nothing in the prompt is or resembles a model answer, example response, or content a candidate "
+        "could copy instead of writing their own text — use ANSWER_EXPOSED_IN_PROMPT if so. Also fill "
+        "audit.duplicateItemIds with the OTHER topic's questionId if the two topics are not genuinely "
+        "distinct (near-identical framing, the same underlying question restated, or one trivially "
+        "subsumed by the other) — this uses DUPLICATE_INFORMATION, exactly like a duplicate detection "
+        "elsewhere in this system. Part-wide: use PART_WIDE_INCOHERENCE if NEITHER topic is genuinely "
+        "suitable for a ~350-word C1 Hochschule Schreiben response.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "passed": false,\n'
+        '  "partWideIssues": [{"code": "PART_WIDE_INCOHERENCE", "severity": "error", "message": "...", "evidence": {}}],\n'
+        '  "items": [\n'
+        '    {"questionId": "a", "audit": {"duplicateItemIds": []}, "passed": true, "issues": []},\n'
+        '    {"questionId": "b", "audit": {"duplicateItemIds": ["a"]}, "passed": false, "issues": [\n'
+        '      {"code": "DUPLICATE_INFORMATION", "severity": "error", "message": "...", "evidence": {}}\n'
+        "    ]}\n"
+        "  ]\n"
+        "}\n"
+        "Include EVERY topic's questionId from the supplied content in the items array, even ones with no "
+        'issues (passed: true, issues: []). severity is "error" (blocks acceptance) or "warning" '
+        "(informational, does not block acceptance). Set an item's passed to true exactly when it has no "
+        "error issues. Set overall passed to true exactly when all items pass and no part-wide error "
+        "exists. A warning alone must not set either passed flag to false."
+    )
+    payload = {"topics": content.get("questions") or []}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
 _VERIFY_PROMPT_BUILDERS = {
     "speaker_statement_matching": _verify_prompt_hv1,
     "sentence_completion_mc3": _verify_prompt_hv2,
@@ -291,6 +378,8 @@ _VERIFY_PROMPT_BUILDERS = {
     "text_reconstruction_sentence_matching": _verify_prompt_lesen1,
     "section_statement_matching": _verify_prompt_lesen2,
     "detail_tristate_with_global_heading": _verify_prompt_lesen3,
+    "cloze_mc4_language_elements": _verify_prompt_sprachbausteine,
+    "choice_long_form_writing": _verify_prompt_schreiben,
 }
 
 
@@ -404,6 +493,9 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
             "bestHeadingId": {"type": ["string", "null"]},
             "tiedHeadingIds": strings,
         })
+    elif part.task_type == "cloze_mc4_language_elements":
+        audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
+            "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
     else:
         audit = _object_schema({"duplicateItemIds": strings})
     issues = {"type": "array", "items": issue}
@@ -452,6 +544,17 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
             elif values.count("supported") > 1:
                 code = "MULTIPLE_DEFENSIBLE_ANSWERS"
             elif values[question["mc3"]["correctIndex"]] != "supported":
+                code = "UNSUPPORTED_CORRECT_ANSWER"
+        elif part.task_type == "cloze_mc4_language_elements":
+            values = audit.get("optionVerdicts")
+            if (not isinstance(values, list) or len(values) != 4
+                    or any(v not in ("supported", "plausible_wrong", "implausible_wrong") for v in values)):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif "implausible_wrong" in values:
+                code = "IMPLAUSIBLE_DISTRACTOR"
+            elif values.count("supported") > 1:
+                code = "MULTIPLE_DEFENSIBLE_ANSWERS"
+            elif values[question["correctIndex"]] != "supported":
                 code = "UNSUPPORTED_CORRECT_ANSWER"
         elif part.task_type == "text_reconstruction_sentence_matching":
             best = audit.get("bestCandidateId")
@@ -563,6 +666,21 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVer
             "For the 'global_heading' item, bestHeadingId is whichever of the 3 options best summarizes the "
             "WHOLE text, tiedHeadingIds lists any other option that is an equally good global summary "
             "(not just a good detail-level description); leave trueVerdict null. "
+        )
+    elif part.task_type == "cloze_mc4_language_elements":
+        system += (
+            "Sprachbausteine optionVerdicts classifies EACH of the item's own 4 options in order: supported, "
+            "plausible_wrong, or implausible_wrong. A wrong option is implausible_wrong only if it is "
+            "nonsensical/unrelated in context, not merely wrong — a real C1-level near-miss (wrong case, "
+            "confusable preposition, near-synonym with a collocation/register problem, plausible misspelling) "
+            "is plausible_wrong, not implausible_wrong. "
+        )
+    elif part.task_type == "choice_long_form_writing":
+        system += (
+            "Schreiben duplicateItemIds lists the OTHER topic's questionId if the two topics are not "
+            "genuinely distinct (near-identical framing, the same underlying question restated, or one "
+            "trivially subsumed by the other) — empty otherwise. There is no correct answer to verify for "
+            "this task type; do not use UNSUPPORTED_CORRECT_ANSWER or AMBIGUOUS_MAPPING here. "
         )
     system += "Use the appropriate issue codes for audit failures. Return concise judgments only, not explanations of your reasoning process."
     user = json.dumps({"blueprint": {"taskType": part.task_type, "constraints": part.constraints}}, ensure_ascii=False) + "\n" + user

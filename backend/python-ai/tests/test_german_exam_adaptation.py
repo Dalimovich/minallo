@@ -5,6 +5,8 @@ type/option count), and cold start must yield an empty plan."""
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.german_exam_adaptation import (
     AdaptationInstruction,
     TagWeakness,
@@ -96,3 +98,117 @@ def test_lesen3_weak_author_intention_targets_explicitness_axis() -> None:
     )
     plan = build_adaptation_plan(LESEN3, "C1 Hochschule", report)
     assert any(instr.axis == "author_intention_explicitness" and instr.direction == "decrease" for instr in plan)
+
+
+SCHREIBEN = get_part("telc_c1_hochschule", "writing", "schreiben_1")
+
+
+def test_schreiben_weak_task_fulfilment_targets_complexity_axis_within_allowed_adaptations() -> None:
+    report = WeaknessReport(
+        tags={"task_fulfilment": TagWeakness(tag="task_fulfilment", score=0.2, n_attempts=5, confidence="medium")},
+        overall_confidence="medium",
+    )
+    plan = build_adaptation_plan(SCHREIBEN, "C1 Hochschule", report)
+    assert any(instr.axis == "task_fulfilment_complexity" for instr in plan)
+    for instr in plan:
+        assert instr.axis in SCHREIBEN.allowed_adaptations
+
+
+def test_schreiben_weak_cohesion_targets_cohesion_demand_axis() -> None:
+    report = WeaknessReport(
+        tags={"cohesion": TagWeakness(tag="cohesion", score=0.15, n_attempts=6, confidence="medium")},
+        overall_confidence="medium",
+    )
+    plan = build_adaptation_plan(SCHREIBEN, "C1 Hochschule", report)
+    assert any(instr.axis == "cohesion_demand" and instr.direction == "increase" for instr in plan)
+
+
+# ── _attempt_score: productive-skill (writing/speaking) fallback ───────────
+# These rows never have first_attempt_correct/final_correct populated (see
+# german_exam_writing_grading.py) — _attempt_score() must derive the score
+# from score_value/max_score_value instead of treating "no boolean" as wrong.
+
+
+def test_attempt_score_uses_rubric_ratio_when_correctness_is_null() -> None:
+    from app.services.german_exam_adaptation import _attempt_score
+
+    row = {"first_attempt_correct": None, "final_correct": None, "score_value": 80, "max_score_value": 100}
+    assert _attempt_score(row) == pytest.approx(0.8)
+
+
+def test_attempt_score_clamps_rubric_ratio_to_unit_range() -> None:
+    from app.services.german_exam_adaptation import _attempt_score
+
+    over = {"first_attempt_correct": None, "final_correct": None, "score_value": 120, "max_score_value": 100}
+    assert _attempt_score(over) == 1.0
+    under = {"first_attempt_correct": None, "final_correct": None, "score_value": -10, "max_score_value": 100}
+    assert _attempt_score(under) == 0.0
+
+
+def test_attempt_score_falls_back_to_zero_with_no_score_signal_at_all() -> None:
+    from app.services.german_exam_adaptation import _attempt_score
+
+    row = {"first_attempt_correct": None, "final_correct": None, "score_value": None, "max_score_value": None}
+    assert _attempt_score(row) == 0.0
+
+
+def test_attempt_score_still_uses_boolean_path_for_objective_items() -> None:
+    from app.services.german_exam_adaptation import _attempt_score
+
+    row = {"first_attempt_correct": True, "final_correct": True, "hint_level": 0, "transcript_revealed": False}
+    assert _attempt_score(row) == 1.0
+
+
+# ── compute_weakness: writing rubric dimensions feed the same per-tag
+# weighted average an objective item does ──────────────────────────────────
+
+
+class _FakeQuery:
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    def select(self, *_a, **_k):
+        return self
+
+    def eq(self, *_a, **_k):
+        return self
+
+    def order(self, *_a, **_k):
+        return self
+
+    def limit(self, *_a, **_k):
+        return self
+
+    def execute(self):
+        class _Resp:
+            def __init__(self, data):
+                self.data = data
+        return _Resp(self._rows)
+
+
+class _FakeSB:
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    def table(self, _name):
+        return _FakeQuery(self._rows)
+
+
+def test_compute_weakness_consumes_writing_rubric_dimension_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import german_exam_adaptation as mod
+
+    rows = [
+        {
+            "skill_tags": ["task_fulfilment"], "first_attempt_correct": None, "final_correct": None,
+            "hint_level": None, "replay_count": None, "transcript_revealed": None, "attempted_at": None,
+            "score_value": 40, "max_score_value": 100,
+        }
+        for _ in range(5)
+    ]
+    monkeypatch.setattr(mod, "get_supabase", lambda: _FakeSB(rows))
+
+    report = mod.compute_weakness("u1", "telc_c1_hochschule", "writing")
+    assert "task_fulfilment" in report.tags
+    tag = report.tags["task_fulfilment"]
+    assert tag.score == pytest.approx(0.4)
+    assert tag.confidence in ("low", "medium", "high")
