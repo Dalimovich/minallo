@@ -3,7 +3,6 @@ must not record the chosen topic as used (that only happens once the
 frontend actually consumes it, via POST /german-exam/consume), and every
 generation gets a unique generationId in its envelope."""
 from app.services import german_exam_generator as gen
-from app.services.german_exam_profiles import get_part, get_profile
 
 
 def _stub(monkeypatch, record_calls):

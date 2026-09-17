@@ -309,6 +309,7 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
 
     def check() -> SemanticVerificationResult:
         nonlocal verification_count
+        result: SemanticVerificationResult | None = None
         for attempt in range(2):
             result = verify_semantic(part, content)
             record_findings(result)
@@ -316,6 +317,7 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
             findings = list(result.part_wide_issues) + [issue for item in result.items for issue in item.issues]
             if not any(issue.code == "VERIFIER_RESPONSE_INVALID" for issue in findings):
                 return result
+        assert result is not None
         return result
 
     result = check()

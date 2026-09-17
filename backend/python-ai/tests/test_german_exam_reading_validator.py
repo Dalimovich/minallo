@@ -3,7 +3,6 @@ per telc_c1_hochschule Lesen part."""
 
 from __future__ import annotations
 
-import copy
 
 from app.services.german_exam_profiles import get_part
 from app.services.german_exam_validator import hard_issues, validate_content
