@@ -540,7 +540,7 @@
       _glLoadSampleTools(skill);
       _glRenderStudyTools();
 
-      // Seed activeCourseId/activeCourseRef if not yet set, then load DB tools.
+      // Saved practice tools use an internal learner storage key.
       var _glCourseForSkill = _glEnsurePracticeCourse();
       if (_glCourseForSkill) {
         _glLoadDbTools(_glCourseForSkill.id);
@@ -719,49 +719,22 @@
         .catch(function () { return []; });
     }
 
-    // Used for FILE OPERATIONS (upload/download/delete) — always returns a valid object.
-    // Falls back to german-<skill> which is the learner's personal practice storage bucket.
-    function _glStorageCourse() {
-      var sk = _glActiveSkill || 'general';
-      var id = window.activeCourseId ||
-        (window.activeCourseRef && window.activeCourseRef.id) ||
-        ('german-' + sk);
-      return {
-        id: id,
-        short: id,
-        name: (window.activeCourseRef && window.activeCourseRef.name) ||
-          'German ' + (_glSkillNames[sk] || sk)
-      };
+    function _glLearnerFiles() {
+      return import('/js/features/german/learner-files.js');
     }
 
-    // Used for RAG GENERATION — returns null when no real course is loaded.
-    // Prevents sending fake german-* IDs to the AI pipeline.
+    // Saved quiz/card keys retain compatibility without changing university course state.
     function _glCourse() {
-      var realId = window.activeCourseId ||
-        (window.activeCourseRef && window.activeCourseRef.id) ||
-        null;
-      if (!realId) return null;
       var sk = _glActiveSkill || 'general';
       return {
-        id: realId,
-        short: realId,
-        name: (window.activeCourseRef && window.activeCourseRef.name) ||
-          'German ' + (_glSkillNames[sk] || sk)
+        id: 'german-' + sk,
+        short: 'german-' + sk,
+        name: 'German ' + (_glSkillNames[sk] || sk)
       };
     }
 
-    // Ensures activeCourseId / activeCourseRef are set before generation or DB load.
-    // If a real course is already active, returns it unchanged.
-    // Otherwise seeds globals from the storage course (german-<skill>) so that
-    // learners who upload files under german-* can generate from them immediately.
     function _glEnsurePracticeCourse() {
-      if (window.activeCourseId || (window.activeCourseRef && window.activeCourseRef.id)) {
-        return _glCourse();
-      }
-      var sc = _glStorageCourse();
-      window.activeCourseId = sc.id;
-      window.activeCourseRef = sc;
-      return _glCourse(); // will now return sc
+      return _glCourse();
     }
 
     // Render inline KaTeX ($...$) and display KaTeX ($$...$$) if window.katex is available.
@@ -1171,27 +1144,22 @@
     }
 
     async function _glPickSourcesThenGenerate(tool) {
-      var course = _glCourse() || _glEnsurePracticeCourse();
-      if (!course || !course.id) {
-        if (typeof showToast === 'function')
-          showToast('No course selected', 'Open a real course first, then generate quizzes or flashcards from its uploaded files.');
-        return;
-      }
       try {
-        var r = await _authFetch(BACKEND_URL + '/api/documents/list?courseId=' + encodeURIComponent(course.id), {});
-        var data = r.ok ? await r.json() : {};
-        var docs = (data.documents || []).filter(function (d) { return d.processing_status === 'ready'; });
+        var library = await _glLearnerFiles();
+        var files = await library.listLearnerFiles();
+        var docs = files.filter(function (f) { return f._document && f._document.processing_status === 'ready'; })
+          .map(function (f) { return f._document; });
         if (!docs.length) {
-          _glRunGenerate(tool, null);
+          showToast('No indexed files', 'Upload a document in Files and wait for indexing to finish.');
           return;
         }
-        _glShowSourcePicker(docs, function (selectedIds) { _glRunGenerate(tool, selectedIds); });
+        _glShowSourcePicker(docs, function (selectedIds) { _glRunGenerate(tool, selectedIds, files); });
       } catch (e) {
-        _glRunGenerate(tool, null);
+        showToast('Could not load files', e.message || String(e));
       }
     }
 
-    async function _glRunGenerate(tool, documentIds) {
+    async function _glRunGenerate(tool, documentIds, sourceFiles) {
       var course = _glCourse();
       if (!course || !course.id) return;
 
@@ -1206,22 +1174,26 @@
       var count = tool === 'quiz' ? 5 : 8;
 
       try {
-        var payload = {
-          courseId: course.id,
-          tool: tool,
-          count: count,
-          difficulty: difficulty,
-          topic: topic,
-          seenItems: _glSeenItems()
-        };
-        if (documentIds && documentIds.length) payload.documentIds = documentIds;
-
-        var resp = await _authFetch(BACKEND_URL + '/api/ai/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        var groups = {};
+        (sourceFiles || []).forEach(function (file) {
+          if (documentIds.indexOf(file.documentId) === -1) return;
+          (groups[file.learnerFileScope] || (groups[file.learnerFileScope] = [])).push(file.documentId);
         });
-        var data = await resp.json();
+        var scopes = Object.keys(groups);
+        if (!scopes.length) throw new Error('Choose a learner file first.');
+        var data = { items: [] };
+        // The legacy RAG endpoint requires one storage scope per request.
+        for (var scope of scopes) {
+          var resp = await _authFetch(BACKEND_URL + '/api/ai/generate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ courseId: scope, documentIds: groups[scope], tool: tool,
+              count: Math.max(1, Math.ceil(count / scopes.length)), difficulty: difficulty,
+              topic: topic, seenItems: _glSeenItems() })
+          });
+          if (!resp.ok) throw new Error('Generation failed (' + resp.status + ')');
+          var generated = await resp.json();
+          data.items = data.items.concat(generated.items || []);
+        }
 
         if (data && data.items && data.items.length) {
           var meta = {
@@ -1282,14 +1254,13 @@
         if (empty) empty.style.display = '';
         return;
       }
-      var course = _glStorageCourse();
-      if (!course.files) course.files = [];
+      var files;
       try {
-        await _ufMerge(course);
+        files = await (await _glLearnerFiles()).listLearnerFiles();
       } catch (e) {
-        console.warn('glRenderPracticeFileList merge error:', e);
+        list.textContent = 'Could not load your files. Reopen Files to retry.';
+        return;
       }
-      var files = course.files || [];
       if (empty) empty.style.display = files.length ? 'none' : '';
       files.forEach(function (file) {
         var name = file.name || file.file_name || 'German file';
@@ -1298,7 +1269,7 @@
         row.innerHTML =
           '<span class="gl-file-icon">' + _glFileIcon(name) + '</span>' +
           '<span class="gl-file-name">' + _glEscape(name) + '</span>' +
-          '<span class="gl-file-size">' + (file.size ? _glFmtSize(file.size) : '') + '</span>' +
+          '<span class="gl-file-size">' + _glEscape(file.size || '') + '</span>' +
           '<button type="button" class="gl-file-open">Open</button>' +
           '<button type="button" class="gl-file-quiz">Quiz</button>' +
           '<button type="button" class="gl-file-explain">Explain</button>' +
@@ -1307,57 +1278,29 @@
         var quiz = row.querySelector('.gl-file-quiz');
         var explain = row.querySelector('.gl-file-explain');
         var del = row.querySelector('.gl-file-del');
-        if (open) open.addEventListener('click', function () { _glOpenFile(uid, name); });
-        if (quiz) quiz.addEventListener('click', function () { _glAskAboutFile(uid, name, 'quiz'); });
-        if (explain) explain.addEventListener('click', function () { _glAskAboutFile(uid, name, 'explain'); });
-        if (del) del.addEventListener('click', function () { _glDeleteFile(uid, name, row); });
+        if (open) open.addEventListener('click', function () { _glOpenFile(uid, file); });
+        if (quiz) quiz.addEventListener('click', function () { _glAskAboutFile(uid, file, 'quiz'); });
+        if (explain) explain.addEventListener('click', function () { _glAskAboutFile(uid, file, 'explain'); });
+        if (del) del.addEventListener('click', function () { _glDeleteFile(uid, file, row); });
         list.appendChild(row);
       });
     }
 
     async function _glLoadFiles() {
-      var uid = _currentUser && (_currentUser.id || _currentUser.sub);
-      if (!uid) return;
-      var course = _glStorageCourse();
-      if (!course.files) course.files = [];
-      try {
-        await _ufMerge(course);
-      } catch (e) {
-        console.warn('glLoadFiles merge error:', e);
-      }
-      activeCourseId = course.id;
-      activeCourseRef = course;
-      _showFilesView();
-      var crumb = document.getElementById('breadcrumb');
-      if (crumb) crumb.innerHTML = '<b>' + (course.name || course.id) + '</b>';
-      showCourseSection(course, 'files');
+      await _glRenderPracticeFileList();
     }
 
-    function _glOpenFile(uid, fname) {
-      var ext = (fname.split('.').pop() || '').toLowerCase();
-      if (ext === 'pdf') {
-        var course = _glStorageCourse();
-        activeCourseId = course.id;
-        var fakeFile = { name: fname, _uploaded: true, _course: course };
-        _showFilesView();
-        openFile(fakeFile, course);
-      } else {
-        _ufFetchBytes(uid, _glStorageCourse(), fname)
-          .then(function (bytes) {
-            var blob = new Blob([bytes], { type: 'application/octet-stream' });
-            window.open(URL.createObjectURL(blob), '_blank');
-          })
-          .catch(function (e) {
-            showToast('Could not open file', e.message || String(e));
-          });
-      }
+    async function _glOpenFile(uid, file) {
+      try { await (await _glLearnerFiles()).openLearnerFile(file); }
+      catch (e) { showToast('Could not open file', e.message || String(e)); }
     }
     window._glOpenFile = _glOpenFile;
 
-    async function _glDeleteFile(uid, fname, rowEl) {
+    async function _glDeleteFile(uid, file, rowEl) {
+      var fname = file.documentName;
       if (!confirm('Delete "' + fname + '"?')) return;
       try {
-        await _ufDeleteRemote(uid, _glStorageCourse(), fname);
+        await (await _glLearnerFiles()).deleteLearnerFile(file);
         rowEl.remove();
         var list = document.getElementById('glFileList');
         if (list && !list.querySelector('.gl-file-row')) {
@@ -1371,7 +1314,8 @@
     }
     window._glDeleteFile = _glDeleteFile;
 
-    async function _glAskAboutFile(uid, fname, mode) {
+    async function _glAskAboutFile(uid, file, mode) {
+      var fname = file.documentName;
       var panel = document.getElementById('glAIPanel');
       var msgs = document.getElementById('glAIMessages');
       var ptitle = document.getElementById('glAIPanelTitle');
@@ -1384,7 +1328,7 @@
       var loadMsg = _glAppendMsg('Loading file…', 'bot');
       var bytes;
       try {
-        bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+        bytes = await (await _glLearnerFiles()).readLearnerFile(file);
       } catch (e) {
         loadMsg.textContent = '⚠️ Could not load file: ' + (e.message || String(e));
         return;
@@ -1480,20 +1424,19 @@
       if (label) label.style.pointerEvents = 'none';
 
       var arr = Array.from(files);
+      var saved = 0;
       for (var i = 0; i < arr.length; i++) {
         var f = arr[i];
         if (status)
           status.textContent = 'Uploading ' + f.name + ' (' + (i + 1) + '/' + arr.length + ')…';
         try {
-          await _ufUpload(
-            uid,
-            _glStorageCourse(),
-            f,
-            function (pct) {
-              if (bar) bar.style.width = pct + '%';
-            },
-            folder || null
-          );
+          var library = await _glLearnerFiles();
+          var uploaded = await library.uploadLearnerFile(f, function (pct) {
+            if (bar) bar.style.width = pct + '%';
+          });
+          saved++;
+          try { if (/\.pdf$/i.test(uploaded.name)) await library.indexLearnerFile(uploaded, true); }
+          catch (e) { showToast('Indexing needs attention', 'Open Files to retry indexing ' + f.name); }
         } catch (e) {
           showToast('Upload failed', f.name + ': ' + (e.message || String(e)));
         }
@@ -1504,28 +1447,15 @@
       if (label) label.style.pointerEvents = '';
       var inp = document.getElementById('glFileInput');
       if (inp) inp.value = '';
-      showToast('Upload complete', arr.length + ' file' + (arr.length > 1 ? 's' : '') + ' saved');
+      showToast('Upload complete', saved + ' file' + (saved !== 1 ? 's' : '') + ' saved');
       await _glRenderPracticeFileList();
     };
 
     window._glUploadClick = function () {
       var inp = document.getElementById('glFileInput');
       if (!inp) return;
-      var course = _glStorageCourse();
-      var ref = activeCourseRef && activeCourseRef.id === course.id ? activeCourseRef : course;
-      var folders = (ref.userFolders || []).map(function (fd) {
-        return fd.name;
-      });
-      var btn = document.getElementById('glUploadLabel');
-      if (folders.length === 0) {
-        inp._glFolder = null;
-        inp.click();
-      } else {
-        _showFolderPickerPopup(btn || document.body, folders, function (chosen) {
-          inp._glFolder = chosen;
-          inp.click();
-        });
-      }
+      inp._glFolder = null;
+      inp.click();
     };
 
     window._glUploadFromInput = function (inputEl) {
@@ -2839,19 +2769,18 @@
           wrap.innerHTML = '<div class="gl-reading-empty">Sign in to use your uploaded German files.</div>';
           return;
         }
-        var course = _glStorageCourse();
-        if (!course.files) course.files = [];
-        try { await _ufMerge(course); } catch (e) { /* ignore */ }
-        var files = course.files || [];
+        var files;
+        try { files = await (await _glLearnerFiles()).listLearnerFiles(); }
+        catch (e) { wrap.textContent = 'Could not load your files. Reopen this tab to retry.'; return; }
 
         var listHtml = files.length
           ? files.map(function (f) {
               return '<label class="gl-rd-file-row" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);margin-bottom:6px">' +
-                '<input type="radio" name="glReadingFile" value="' + _glEscape(f.name || f.file_name) + '">' +
+                '<input type="radio" name="glReadingFile" value="' + _glEscape(f.id) + '">' +
                 '<span style="flex:1;font-size:.82rem;font-weight:700;color:rgba(255,255,255,.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _glEscape(f.name || f.file_name || 'German file') + '</span>' +
                 '</label>';
             }).join('')
-          : '<div class="gl-reading-empty">No German files uploaded yet. Use Upload German file from another skill, or upload one below.</div>';
+          : '<div class="gl-reading-empty">No German files uploaded yet. Upload a document in Files.</div>';
 
         wrap.innerHTML =
           '<h3 class="widget-title" style="margin:0 0 10px">Choose a file to turn into a reading exercise</h3>' +
@@ -2874,7 +2803,9 @@
           return;
         }
         var uid = _currentUser && (_currentUser.id || _currentUser.sub);
-        var fname = chosen.value;
+        var file = files.find(function (item) { return item.id === chosen.value; });
+        if (!file) return;
+        var fname = file.documentName;
         var level = rdEl('glReadingCfgLevel') ? rdEl('glReadingCfgLevel').value : 'B2';
         var count = rdEl('glReadingCfgCount') ? rdEl('glReadingCfgCount').value : '5';
         var startBtn = rdEl('glReadingStartBtn');
@@ -2890,7 +2821,7 @@
         if (configRow && configRow.parentNode) configRow.parentNode.appendChild(loadingEl);
 
         try {
-          var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+          var bytes = await (await _glLearnerFiles()).readLearnerFile(file);
           var ext = (fname.split('.').pop() || '').toLowerCase();
           var messageContent;
           if (ext === 'pdf') {
@@ -4180,12 +4111,11 @@
           wrap.innerHTML = '<div class="gl-gram-files-empty">Sign in to use your uploaded German files.</div>';
           return;
         }
-        var course = _glStorageCourse();
-        if (!course.files) course.files = [];
-        try { await _ufMerge(course); } catch (e) { /* ignore */ }
-        var files = course.files || [];
+        var files;
+        try { files = await (await _glLearnerFiles()).listLearnerFiles(); }
+        catch (e) { wrap.textContent = 'Could not load your files. Reopen this tab to retry.'; return; }
         if (!files.length) {
-          wrap.innerHTML = '<div class="gl-gram-files-empty">No German files uploaded yet. Use Upload German file from another skill, then come back here.</div>';
+          wrap.innerHTML = '<div class="gl-gram-files-empty">No German files uploaded yet. Upload a document in Files.</div>';
           return;
         }
         wrap.innerHTML =
@@ -4193,7 +4123,7 @@
           '<div id="glGramFileList">' +
           files.map(function (f) {
             var name = f.name || f.file_name || 'German file';
-            return '<label class="gl-gram-file-row"><input type="radio" name="glGramFile" value="' + _glEscape(name) + '"><span>' + _glEscape(name) + '</span></label>';
+            return '<label class="gl-gram-file-row"><input type="radio" name="glGramFile" value="' + _glEscape(f.id) + '"><span>' + _glEscape(name) + '</span></label>';
           }).join('') +
           '</div>' +
           '<div class="gl-gram-files-detect" id="glGramDetect" style="display:none"></div>' +
@@ -4204,11 +4134,15 @@
           '</div>';
 
         document.querySelectorAll('input[name="glGramFile"]').forEach(function (radio) {
-          radio.addEventListener('change', function () { gmOnFileChosen(radio.value); });
+          radio.addEventListener('change', function () {
+            var file = files.find(function (item) { return item.id === radio.value; });
+            if (file) gmOnFileChosen(file);
+          });
         });
       }
 
-      async function gmOnFileChosen(fname) {
+      async function gmOnFileChosen(file) {
+        var fname = file.documentName;
         var detectWrap = gmEl('glGramDetect');
         var startBtn = gmEl('glGramFilesStart');
         gmChosenTopics = [];
@@ -4220,10 +4154,12 @@
         if (['txt', 'md'].indexOf(ext) !== -1) {
           try {
             var uid = _currentUser && (_currentUser.id || _currentUser.sub);
-            var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+            var bytes = await (await _glLearnerFiles()).readLearnerFile(file);
             detected = gmDetectTopics(new TextDecoder().decode(bytes));
           } catch (e) { /* fall through to default topics */ }
         }
+        var selectedFile = document.querySelector('input[name="glGramFile"]:checked');
+        if (!selectedFile || selectedFile.value !== file.id) return;
         if (!detected.length) detected = ['verbPosition', 'cases', 'connectors'];
         gmChosenTopics = detected.slice();
         detectWrap.innerHTML =
@@ -4246,7 +4182,7 @@
         });
         if (startBtn) {
           startBtn.disabled = !gmChosenTopics.length;
-          startBtn.onclick = function () { gmStartFromFile(fname); };
+          startBtn.onclick = function () { gmStartFromFile(file); };
         }
       }
 
@@ -4276,7 +4212,8 @@
         }
       }
 
-      async function gmStartFromFile(fname) {
+      async function gmStartFromFile(file) {
+        var fname = file.documentName;
         var uid = _currentUser && (_currentUser.id || _currentUser.sub);
         var level = gmEl('glGramCfgLevel') ? gmEl('glGramCfgLevel').value : 'B2';
         var count = gmEl('glGramCfgCount') ? gmEl('glGramCfgCount').value : '10';
@@ -4284,7 +4221,7 @@
         if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
 
         try {
-          var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+          var bytes = await (await _glLearnerFiles()).readLearnerFile(file);
           var ext = (fname.split('.').pop() || '').toLowerCase();
           var messageContent;
           if (ext === 'pdf') {
@@ -4897,12 +4834,11 @@
           wrap.innerHTML = '<div class="gl-vocab-files-empty">Sign in to use your uploaded German files.</div>';
           return;
         }
-        var course = _glStorageCourse();
-        if (!course.files) course.files = [];
-        try { await _ufMerge(course); } catch (e) { /* ignore */ }
-        var files = course.files || [];
+        var files;
+        try { files = await (await _glLearnerFiles()).listLearnerFiles(); }
+        catch (e) { wrap.textContent = 'Could not load your files. Reopen this tab to retry.'; return; }
         if (!files.length) {
-          wrap.innerHTML = '<div class="gl-vocab-files-empty">No German files uploaded yet. Use Upload German file from another skill, then come back here.</div>';
+          wrap.innerHTML = '<div class="gl-vocab-files-empty">No German files uploaded yet. Upload a document in Files.</div>';
           return;
         }
         wrap.innerHTML =
@@ -4910,7 +4846,7 @@
           '<div id="glVocabFileList">' +
           files.map(function (f) {
             var name = f.name || f.file_name || 'German file';
-            return '<label class="gl-vocab-file-row"><input type="radio" name="glVocabFile" value="' + _glEscape(name) + '"><span>' + _glEscape(name) + '</span></label>';
+            return '<label class="gl-vocab-file-row"><input type="radio" name="glVocabFile" value="' + _glEscape(f.id) + '"><span>' + _glEscape(name) + '</span></label>';
           }).join('') +
           '</div>' +
           '<div class="gl-vocab-files-config">' +
@@ -4922,12 +4858,14 @@
         document.querySelectorAll('input[name="glVocabFile"]').forEach(function (radio) {
           radio.addEventListener('change', function () {
             var startBtn = vcEl('glVocabFilesStart');
-            if (startBtn) { startBtn.disabled = false; startBtn.onclick = function () { vcStartFromFile(radio.value); }; }
+            var file = files.find(function (item) { return item.id === radio.value; });
+            if (startBtn && file) { startBtn.disabled = false; startBtn.onclick = function () { vcStartFromFile(file); }; }
           });
         });
       }
 
-      async function vcStartFromFile(fname) {
+      async function vcStartFromFile(file) {
+        var fname = file.documentName;
         var uid = _currentUser && (_currentUser.id || _currentUser.sub);
         var level = vcEl('glVocabCfgLevel') ? vcEl('glVocabCfgLevel').value : 'B2';
         var count = vcEl('glVocabCfgCount') ? vcEl('glVocabCfgCount').value : '10';
@@ -4935,7 +4873,7 @@
         if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
 
         try {
-          var bytes = await _ufFetchBytes(uid, _glStorageCourse(), fname);
+          var bytes = await (await _glLearnerFiles()).readLearnerFile(file);
           var ext = (fname.split('.').pop() || '').toLowerCase();
           var messageContent;
           if (ext === 'pdf') {

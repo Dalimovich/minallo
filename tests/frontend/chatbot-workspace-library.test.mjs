@@ -89,11 +89,10 @@ test('Courses is student-only again, Files is learner-only, positioned before Pr
 
 test('learner Files: getLearnerFileScope never touches courses()/SEMS, uploads target the canonical bucket', () => {
   assert.match(moduleSource, /export function getLearnerFileScope\(\): LibraryCourse/);
-  assert.match(moduleSource, /LEARNER_FILES_CANONICAL_BUCKET_ID = 'german-files'/);
-  assert.match(moduleSource, /LEARNER_FILES_LEGACY_BUCKET_IDS = \[/);
-  assert.match(moduleSource, /'german-general', 'german-reading', 'german-listening', 'german-sprachbausteine'/);
-  assert.match(moduleSource, /uploadIntoCourse\(panel, detail, canonical, Array\.from\(input\.files/);
-  assert.match(moduleSource, /uploadIntoCourse\(panel, detail, canonical, Array\.from\(event\.dataTransfer\?\.files/);
+  assert.match(moduleSource, /return getLearnerFileStorageScope\(\)/);
+  assert.doesNotMatch(moduleSource, /LEARNER_FILES_LEGACY_BUCKET_IDS/);
+  assert.match(moduleSource, /handleLearnerFilesUpload\(detail, Array\.from\(input\.files/);
+  assert.match(moduleSource, /handleLearnerFilesUpload\(detail, Array\.from\(event\.dataTransfer\?\.files/);
   // renderLearnerFiles must never call renderCourses/courses() itself —
   // that's the exact af5bcb2-style mistake this module corrects.
   const learnerFilesSection = moduleSource.slice(
@@ -118,7 +117,7 @@ test('learner Files: upload button and drag-drop zone render immediately, not ga
   const uploadMarkupIdx = learnerFilesSection.indexOf('ncb-course-upload');
   const dropZoneIdx = learnerFilesSection.indexOf('ncb-root-drop');
   const dragEnterWiringIdx = learnerFilesSection.indexOf("addEventListener('dragenter'");
-  const hydrationCallIdx = learnerFilesSection.indexOf('await loadLearnerFiles(');
+  const hydrationCallIdx = learnerFilesSection.indexOf('await listLearnerFiles(');
   assert.ok(uploadMarkupIdx > -1 && uploadMarkupIdx < hydrationCallIdx,
     'the Upload button markup must be written before awaiting loadLearnerFiles()');
   assert.ok(dropZoneIdx > -1 && dropZoneIdx < hydrationCallIdx,
@@ -127,6 +126,11 @@ test('learner Files: upload button and drag-drop zone render immediately, not ga
     'drag-and-drop listeners must be bound before awaiting loadLearnerFiles()');
   assert.match(learnerFilesSection, /Drop files here to upload/);
   assert.match(learnerFilesSection, /No German files yet\. Upload a PDF or document/);
+  // .ncb-drop-hint defaults to display:none everywhere else (course folder
+  // drop zones only show it during an active drag) — the Files panel needs
+  // it visible at rest, since it's the learner's primary upload surface,
+  // not a secondary folder-drop affordance.
+  assert.match(css, /\.ncb-library-panel\[data-library-panel="files"\] \.ncb-drop-hint\s*\{[^}]*display:\s*grid/);
 });
 
 test('course library has glass cards and persists a larger most-recent course', () => {

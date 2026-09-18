@@ -52,7 +52,7 @@ test('practice.js routes flashcard/quiz persistence and AI generation through th
   assert.match(practice, /mod\.authenticatedFetch\(url, init, \{ safeToRetry: true \}\)/);
   assert.match(practice, /_authSupaFetch\(_supaUrl\(\) \+ '\/rest\/v1\/quiz_runs'/);
   assert.match(practice, /_authSupaFetch\(_supaUrl\(\) \+ '\/rest\/v1\/flashcard_decks'/);
-  assert.match(practice, /_authFetch\(BACKEND_URL \+ '\/api\/documents\/list/);
+  assert.match(practice, /_glLearnerFiles\(\)\)\.listLearnerFiles\(\)/);
   assert.match(practice, /_authFetch\(BACKEND_URL \+ '\/api\/ai\/generate'/);
   assert.match(practice, /_authFetch\(BACKEND_URL \+ '\/api\/ai'/);
 });

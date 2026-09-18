@@ -6002,6 +6002,11 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 .ncb-root-drop.is-drag-target .ncb-drop-hint { display: grid; }
 .ncb-folder.is-drag-target summary > b { display: block; }
 
+/* Learner uploads remain discoverable before a drag starts. */
+.ncb-library-panel[data-library-panel="files"] .ncb-drop-hint { display: grid; min-height: 96px; }
+.ncb-library-panel[data-library-panel="files"] .ncb-root-drop { min-height: 200px; }
+.ncb-library-panel[data-library-panel="files"] .ncb-file-row strong { overflow-wrap: anywhere; }
+
 .ncb-file-row {
   min-height: 62px;
   margin-bottom: 8px;

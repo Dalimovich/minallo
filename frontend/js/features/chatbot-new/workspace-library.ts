@@ -16,6 +16,10 @@ import { correctionSelectHtml, wireCorrectionSelectors } from '../courses/docume
 import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 import { parsePersistedChats, type PersistedChat, type SavedRepliesChangedDetail } from './chat-store-format.js';
 import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
+import {
+  listLearnerFiles, getLearnerFileStorageScope, uploadLearnerFile, indexLearnerFile,
+  refreshLearnerFile, deleteLearnerFile, openLearnerFile, type LearnerFile,
+} from '../german/learner-files.js';
 
 export type CourseFile = {
   name: string;
@@ -953,64 +957,128 @@ function bindSubjectAdd(panel: HTMLElement): void {
 // render courses()/SEMS data (see the module docstring on why af5bcb2's
 // "share the Courses tab with learners" was wrong).
 //
-// practice.js's _glStorageCourse() already gives every German-practice
-// skill its own synthetic storage bucket (german-<skill> — e.g.
-// german-reading, german-grammar) when no real university course is
-// active, purely so file upload/RAG has SOME storage scope to write to.
-// That fragmentation is awkward for a single flat Files panel, so new
-// uploads from THIS panel go to one canonical bucket instead, while
-// existing files already sitting in the legacy per-skill buckets are still
-// aggregated in for display/open/delete (no destructive migration).
-const LEARNER_FILES_CANONICAL_BUCKET_ID = 'german-files';
-const LEARNER_FILES_LEGACY_BUCKET_IDS = [
-  'german-general', 'german-reading', 'german-listening', 'german-sprachbausteine',
-  'german-writing', 'german-speaking', 'german-vocab', 'german-grammar',
-  'german-sentences', 'german-games',
-];
-
-function learnerFileBucket(id: string): LibraryCourse {
-  return { id, short: id, name: 'German Files' } as LibraryCourse;
-}
-
-/** The learner's own personal German-practice file scope — this is a
- * storage/RAG key ONLY, never a university course, and must never be
- * displayed to the learner as one (no course card, no "Add subject", no
- * course registry entry). Exported for other learner-only features that
- * need a file-grounded scope without pretending it's a real enrolled
- * course — mirrors _glStorageCourse()'s docstring in practice.js on the
- * frontend-library side. */
+/** Compatibility export for callers that need the internal storage key. */
 export function getLearnerFileScope(): LibraryCourse {
-  return learnerFileBucket(LEARNER_FILES_CANONICAL_BUCKET_ID);
+  return getLearnerFileStorageScope() as LibraryCourse;
 }
 
-type LearnerFileEntry = { bucket: LibraryCourse; file: CourseFile };
+function learnerFileRow(file: LearnerFile): HTMLElement {
+  const scope = { id: file.learnerFileScope, name: 'German Files' } as LibraryCourse;
+  const template = document.createElement('template');
+  template.innerHTML = fileButton(file, scope, file._folder);
+  const row = template.content.firstElementChild as HTMLElement;
+  const indexable = file.name.toLowerCase().endsWith('.pdf');
+  const status = row.querySelector('.study-file-card__meta small');
+  if (status && (file._document?.processing_status === 'ready' || !indexable)) {
+    status.textContent = `${file.size || 'German Files'} \u00b7 ${indexable ? 'Indexed' : 'Uploaded'}`;
+  }
+  row.dataset.learnerFileKey = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
+  row.querySelector('[data-library-file]')?.addEventListener('click', () => {
+    void openLearnerFile(file).catch((error: Error) => window.showToast?.('Could not open file', error.message));
+  });
+  row.querySelector<HTMLButtonElement>('[data-delete-file]')?.addEventListener('click', async (event) => {
+    if (!confirm(`Permanently delete "${file.name}"? This cannot be undone.`)) return;
+    const button = event.currentTarget as HTMLButtonElement;
+    button.disabled = true;
+    try { await deleteLearnerFile(file); row.remove(); }
+    catch (error) { button.disabled = false; window.showToast?.('Delete failed', String(error)); }
+  });
+  row.querySelector<HTMLButtonElement>('[data-retry-index]')?.addEventListener('click', () => {
+    void indexLearnerRow(row, file, true);
+  });
+  if (!file._document && indexable) learnerRowRetry(row, 'Retry indexing', () => void indexLearnerRow(row, file));
+  wireCorrectionSelectors(row);
+  if (file._document && !['ready', 'failed'].includes(file._document.processing_status || '')) {
+    window.setTimeout(() => void monitorLearnerIndex(row, file), 2000);
+  }
+  return row;
+}
 
-async function loadLearnerFiles(force = false): Promise<LearnerFileEntry[]> {
-  const buckets = [LEARNER_FILES_CANONICAL_BUCKET_ID, ...LEARNER_FILES_LEGACY_BUCKET_IDS].map(learnerFileBucket);
-  await Promise.all(buckets.map((bucket) => ensureCourseHydrated(bucket, force).catch(() => {})));
-  const seen = new Set<string>();
-  const out: LearnerFileEntry[] = [];
-  for (const bucket of buckets) {
-    for (const file of (bucket.files || []) as CourseFile[]) {
-      // Prefer the indexed document's own id (stable across buckets); fall
-      // back to bucket+filename only for a not-yet-indexed upload.
-      const key = file._document?.id || `${bucket.id}:${file.name.toLowerCase()}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ bucket, file });
+function learnerRowRetry(row: HTMLElement, label: string, retry: () => void): void {
+  row.querySelector('[data-learner-retry]')?.remove();
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ncb-course-action';
+  button.dataset.learnerRetry = '';
+  button.textContent = 'Retry';
+  button.title = label;
+  button.addEventListener('click', () => { button.remove(); retry(); });
+  row.appendChild(button);
+}
+
+function setLearnerRowState(row: HTMLElement, state: 'indexing' | 'error' | 'unknown', label: string): void {
+  setPendingFileState(row, state, label);
+  const meta = row.querySelector('.study-file-card__meta small');
+  if (meta) meta.textContent = label;
+}
+
+async function monitorLearnerIndex(row: HTMLElement, file: LearnerFile, attempt = 0): Promise<void> {
+  if (!row.isConnected) return;
+  try {
+    const updated = await refreshLearnerFile(file);
+    if (!row.isConnected) return;
+    if (updated._document?.processing_status === 'ready') {
+      row.replaceWith(learnerFileRow(updated));
+      return;
+    }
+    if (updated._document?.processing_status === 'failed') {
+      setLearnerRowState(row, 'error', 'Indexing failed');
+      learnerRowRetry(row, 'Retry indexing', () => void indexLearnerRow(row, updated, true));
+      return;
+    }
+    if (attempt >= 60) throw new Error('Indexing status unavailable');
+    window.setTimeout(() => void monitorLearnerIndex(row, updated, attempt + 1), 2000);
+  } catch (error) {
+    setLearnerRowState(row, 'unknown', String(error));
+    learnerRowRetry(row, 'Retry indexing', () => void indexLearnerRow(row, file, true));
+  }
+}
+
+async function indexLearnerRow(row: HTMLElement, file: LearnerFile, force = false): Promise<void> {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    row.replaceWith(learnerFileRow(file));
+    return;
+  }
+  row.querySelector('[data-retry-index]')?.remove();
+  setLearnerRowState(row, 'indexing', 'Indexing');
+  try {
+    const updated = await indexLearnerFile(file, force);
+    await monitorLearnerIndex(row, updated);
+  } catch (error) {
+    setLearnerRowState(row, 'error', 'Indexing failed');
+    learnerRowRetry(row, String(error), () => void indexLearnerRow(row, file, true));
+  }
+}
+
+/** Both picker and drop events use this bounded queue and the existing upload backend. */
+async function handleLearnerFilesUpload(detail: HTMLElement, files: File[]): Promise<void> {
+  const { valid, rejected } = filterOversizedFiles(files);
+  warnRejected(rejected, !valid.length);
+  const jobs = valid.map((file) => ({ file, row: appendPendingFileRow(detail, file, null)! }));
+  async function upload(job: typeof jobs[number]): Promise<void> {
+    setPendingFileState(job.row, 'indexing', 'Uploading');
+    try {
+      const file = await uploadLearnerFile(job.file);
+      job.row.dataset.learnerFileKey = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
+      detail.querySelectorAll<HTMLElement>('[data-learner-file-key]').forEach((row) => {
+        if (row !== job.row && row.dataset.learnerFileKey === job.row.dataset.learnerFileKey) row.remove();
+      });
+      await indexLearnerRow(job.row, file, true);
+    } catch (error) {
+      setPendingFileState(job.row, 'error', 'Upload failed');
+      const status = job.row.querySelector('.ncb-index-state em');
+      if (status) status.textContent = 'Upload failed';
+      learnerRowRetry(job.row, String(error), () => void upload(job));
     }
   }
-  return out;
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, async () => {
+    while (next < jobs.length) await upload(jobs[next++]!);
+  }));
 }
 
-/** Paints the learner's flat personal Files list — deliberately NOT
- * renderCourses()/renderCourseDetail(): no course cards, no semesters, no
- * subject picker, no "Add subject", no course delete. Reuses the lower-level
- * file-row primitives (fileButton/bindSingleFileRow/uploadIntoCourse) that
- * are already course-id-agnostic, just pointed at the synthetic learner
- * bucket(s) instead of a real SEMS course. */
+/** Learner Files is a flat document workspace independent of the course registry. */
 export async function renderLearnerFiles(panel: HTMLElement, force = false): Promise<void> {
-  const canonical = getLearnerFileScope();
 
   // Upload/drag-drop must be usable IMMEDIATELY — hydrating every legacy
   // german-<skill> bucket (11 buckets x 2 sequential calls each, only
@@ -1028,7 +1096,7 @@ export async function renderLearnerFiles(panel: HTMLElement, force = false): Pro
     '<div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>' +
     '<div class="ncb-library-group ncb-root-drop" data-drop-folder="">' +
     '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
-    '<div class="ncb-library-status">Loading your files&hellip;</div>' +
+    '<div class="ncb-learner-file-list"><div class="ncb-library-status">Loading your files&hellip;</div></div>' +
     '</div>' +
     '</div>';
 
@@ -1038,7 +1106,7 @@ export async function renderLearnerFiles(panel: HTMLElement, force = false): Pro
   const dropTarget = detail.querySelector<HTMLElement>('.ncb-root-drop')!;
   uploadBtn?.addEventListener('click', () => input?.click());
   input?.addEventListener('change', () => {
-    void uploadIntoCourse(panel, detail, canonical, Array.from(input.files || []), null);
+    void handleLearnerFilesUpload(detail, Array.from(input.files || []));
     input.value = '';
   });
 
@@ -1059,37 +1127,34 @@ export async function renderLearnerFiles(panel: HTMLElement, force = false): Pro
     event.preventDefault();
     dragDepth = 0;
     dropTarget.classList.remove('is-drag-target');
-    void uploadIntoCourse(panel, detail, canonical, Array.from(event.dataTransfer?.files || []), null);
+    void handleLearnerFilesUpload(detail, Array.from(event.dataTransfer?.files || []));
   });
 
-  let entries: LearnerFileEntry[];
-  try {
-    entries = await loadLearnerFiles(force);
-  } catch {
-    if (!dropTarget.isConnected) return; // panel was re-rendered/torn down while loading
-    dropTarget.innerHTML =
-      '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
-      '<div class="ncb-library-status">Couldn’t load your files. <button type="button" class="ncb-library-retry">Retry</button></div>';
-    dropTarget.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void renderLearnerFiles(panel, true); });
-    return;
+  const list = dropTarget.querySelector<HTMLElement>('.ncb-learner-file-list')!;
+  async function loadList(force: boolean): Promise<void> {
+    let entries: LearnerFile[];
+    try {
+      entries = await listLearnerFiles({ force });
+    } catch {
+      if (!dropTarget.isConnected) return;
+      list.innerHTML =
+        '<div class="ncb-library-status">Couldn’t load your files. <button type="button" class="ncb-library-retry">Retry</button></div>';
+      list.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void loadList(true); });
+      return;
+    }
+    if (!dropTarget.isConnected) return;
+    list.replaceChildren();
+    const pendingKeys = new Set(Array.from(dropTarget.querySelectorAll<HTMLElement>('[data-learner-file-key]'))
+      .map((row) => row.dataset.learnerFileKey));
+    entries.forEach((file) => {
+      const key = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
+      if (!pendingKeys.has(key)) list.appendChild(learnerFileRow(file));
+    });
+    if (!dropTarget.querySelector('.ncb-file-row')) {
+      list.innerHTML = '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>';
+    }
   }
-  if (!dropTarget.isConnected) return; // learner switched tabs/roles while hydration was in flight
-
-  const rowsHtml = entries.map(({ bucket, file }) => fileButton(file, bucket, null)).join('');
-  dropTarget.innerHTML =
-    '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
-    (rowsHtml || '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>');
-
-  // Each row is bound to the bucket it actually belongs to (canonical or a
-  // legacy german-<skill> bucket), not always `canonical` — Open/Delete must
-  // act on the file's real storage scope, aggregation is a display-only
-  // convenience.
-  const rows = Array.from(dropTarget.querySelectorAll<HTMLElement>('.ncb-file-row'));
-  entries.forEach(({ bucket }, index) => {
-    const row = rows[index];
-    if (row) bindSingleFileRow(panel, detail, bucket, row);
-  });
-  wireCorrectionSelectors(detail);
+  await loadList(force);
 }
 
 // Exported so course-files-workspace.ts (the "Files" study-tool popup opened
