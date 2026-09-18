@@ -123,6 +123,13 @@ async function loginAndOpenChatbot(page: Page): Promise<AppPage> {
 }
 
 async function openSprachbausteine(page: Page): Promise<void> {
+  // The German panel defaults to its "Courses" tab; the practice links
+  // (vocab/grammar/.../sprachbausteine) live under the "Practice" tab and
+  // stay hidden until it's selected.
+  const practiceTab = page.locator('[data-library-tab="german"]');
+  await expect(practiceTab).toBeVisible({ timeout: 20_000 });
+  await practiceTab.click();
+
   const link = page.locator('[data-testid="german-panel-sprachbausteine"]');
   await expect(link).toBeVisible({ timeout: 20_000 });
   await link.click();
