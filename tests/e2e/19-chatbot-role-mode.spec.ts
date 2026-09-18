@@ -444,4 +444,59 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await expect(coursesPanel.getByText(LEARNER_FILE_NAME)).toHaveCount(0);
     await expect(page.locator('[data-library-tab="files"]')).toBeHidden();
   });
+
+  /**
+   * Regression: 7ba4f90 added the role-resolution status UI (Loading
+   * workspace… / Couldn't load your account) but left its visibility to CSS
+   * selectors alone. If chatbot.css is stale (e.g. served from the
+   * `/*.css` immutable cache under an unchanged ?v= — see the asset-version
+   * bump alongside this test), both the loading text AND the error text
+   * render as plain unstyled text at once. applyChatbotExperienceMode() now
+   * sets `hidden` on these nodes explicitly in JS, so the status must be
+   * fully consistent regardless of what chatbot.css actually contains.
+   */
+  test('role-resolution status UI: loading shows only "Loading…", error shows only Retry, ready hides both', async ({
+    page,
+  }) => {
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+    await app.navigateTo('chatbot');
+
+    const status = page.locator('[data-testid="chatbot-role-loading"]');
+    const loadingText = page.locator('[data-testid="chatbot-role-loading-text"]');
+    const errorText = page.locator('[data-testid="chatbot-role-error"]');
+    const root = page.locator(chatbotSelectors.root);
+
+    // Force back to an unresolved state (fresh mount without a profile yet).
+    await page.evaluate(() => {
+      window._profileResolutionState = 'loading';
+      window.dispatchEvent(new Event('ss-profile-updated'));
+    });
+    await expect(status).toBeVisible();
+    await expect(loadingText).toBeVisible();
+    await expect(errorText).toBeHidden();
+    await expect(root).toHaveAttribute('data-role-resolved', 'false');
+
+    // Error state: only the Retry message, never alongside "Loading…".
+    await page.evaluate(() => {
+      window._profileResolutionState = 'error';
+      window.dispatchEvent(new Event('ss-profile-updated'));
+    });
+    await expect(status).toBeVisible();
+    await expect(errorText).toBeVisible();
+    await expect(loadingText).toBeHidden();
+    await expect(root).toHaveAttribute('data-role-resolution-state', 'error');
+
+    // Retry succeeds -> ready: the whole status block disappears, no
+    // leftover "Loading…" or "Couldn't load your account" anywhere.
+    await applyProfile(page, { user_type: 'learner', german_level: 'B1' });
+    await expect(status).toBeHidden();
+    await expect(page.getByText('Loading your workspace')).toHaveCount(0);
+    await expect(page.getByText("Couldn't load your account")).toHaveCount(0);
+    await expect(root).toHaveAttribute('data-role-resolved', 'true');
+    await expect(root).toHaveAttribute('data-role-resolution-state', 'ready');
+
+    await applyProfile(page, { user_type: 'enrolled' });
+  });
 });

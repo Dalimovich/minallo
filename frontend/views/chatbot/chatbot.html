@@ -35,11 +35,19 @@
     <!-- Neutral, role-agnostic loading state — the only thing visible until
          #ncbRoot carries data-role-resolved="true" (see chatbot.css and
          applyChatbotExperienceMode() in experience-mode.ts). Never assume
-         student while role is unresolved. -->
+         student while role is unresolved.
+         Visibility here is also driven explicitly in JS (not just CSS
+         selectors): applyChatbotExperienceMode() sets `hidden` directly on
+         this element and its two child states, so a stale/missing
+         stylesheet can't leave both "Loading…" and "Couldn't load your
+         account" visible as raw text at once. The `.ncb-root [hidden]`
+         rule (chatbot.css) is the long-standing fallback that makes the
+         `hidden` attribute itself work even if everything else here is
+         stale. -->
     <div class="ncb-role-loading" data-testid="chatbot-role-loading" aria-live="polite">
-      <div class="ncb-role-loading-spinner" aria-hidden="true"></div>
-      <p data-i18n="cb_loading_workspace">Loading your workspace…</p>
-      <p class="ncb-role-loading-retry" data-i18n="cb_loading_workspace_error">Couldn’t load your account. <button type="button" id="ncbRoleResolutionRetry" data-testid="chatbot-role-retry">Retry</button></p>
+      <div class="ncb-role-loading-spinner" data-testid="chatbot-role-spinner" aria-hidden="true"></div>
+      <p data-testid="chatbot-role-loading-text" data-i18n="cb_loading_workspace">Loading your workspace…</p>
+      <p class="ncb-role-loading-retry" data-testid="chatbot-role-error" hidden data-i18n="cb_loading_workspace_error">Couldn’t load your account. <button type="button" id="ncbRoleResolutionRetry" data-testid="chatbot-role-retry">Retry</button></p>
     </div>
 
     <main class="ncb-main">

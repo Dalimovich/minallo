@@ -198,8 +198,33 @@ export function applyChatbotExperienceMode(): void {
   const resolved = isProfileResolved();
   const isLearner = resolved && currentUserType() === 'learner';
   const isStudent = resolved && !isLearner;
+  const resolutionState = (window as unknown as { _profileResolutionState?: string })._profileResolutionState || 'loading';
   root.dataset.roleResolved = resolved ? 'true' : 'false';
-  root.dataset.roleResolutionState = (window as unknown as { _profileResolutionState?: string })._profileResolutionState || 'loading';
+  root.dataset.roleResolutionState = resolutionState;
+
+  // Explicit JS control of the role-resolution status UI — not left to CSS
+  // selectors alone. A stale/missing stylesheet (e.g. an old immutably-
+  // cached chatbot.css) must not be able to leave "Loading your
+  // workspace…" and "Couldn't load your account" both visible as raw text.
+  // The `hidden` attribute is the actual visibility mechanism here; CSS
+  // only styles what's already shown.
+  const statusEl = root.querySelector<HTMLElement>('[data-testid="chatbot-role-loading"]');
+  if (statusEl) {
+    if (resolved) {
+      statusEl.hidden = true;
+      statusEl.setAttribute('aria-hidden', 'true');
+    } else {
+      statusEl.hidden = false;
+      statusEl.removeAttribute('aria-hidden');
+      const isError = resolutionState === 'error';
+      const spinnerEl = statusEl.querySelector<HTMLElement>('[data-testid="chatbot-role-spinner"]');
+      const loadingTextEl = statusEl.querySelector<HTMLElement>('[data-testid="chatbot-role-loading-text"]');
+      const errorEl = statusEl.querySelector<HTMLElement>('[data-testid="chatbot-role-error"]');
+      if (spinnerEl) spinnerEl.hidden = isError;
+      if (loadingTextEl) loadingTextEl.hidden = isError;
+      if (errorEl) errorEl.hidden = !isError;
+    }
+  }
   // Workspace-view mode only ever applies to learners; a student (or a
   // learner who hasn't opened Writing Coach) is always effectively 'chat'.
   const inPracticeView = isLearner && _workspaceView === 'practice';
