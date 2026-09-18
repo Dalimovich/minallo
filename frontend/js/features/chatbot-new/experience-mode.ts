@@ -242,19 +242,24 @@ export function applyChatbotExperienceMode(): void {
     if (ariaKey) textarea.setAttribute('aria-label', translate(ariaKey, textarea.getAttribute('aria-label') || ''));
   }
 
-  // Courses is shared by both roles (see chatbot.html — it's no longer
-  // .ncb-student-only), so a role transition must never move the user off
-  // an already-valid tab they're looking at. The only tab that becomes
-  // genuinely invalid on a transition is German/Practice when the account
-  // turns out NOT to be a learner (it's .ncb-learner-only and about to be
-  // hidden) — that direction still needs an explicit fallback. The reverse
-  // (learner arrives while Courses is active) used to force-click German,
-  // which is exactly what silently swapped the panel out from under the
-  // user in the reported video; Courses staying selected is correct.
+  // Courses (university course registry) and Files (the learner's own
+  // uploaded documents — see workspace-library.ts's getLearnerFileScope())
+  // are separate products with separate data sources and must never share
+  // a tab. Courses is .ncb-student-only again; Files is .ncb-learner-only.
+  // A role transition must always move the user OFF a tab that's now
+  // invalid for their role: Courses becomes invalid when the account turns
+  // out to be a learner (Files is the learner equivalent of the student's
+  // main content library, so that's the landing tab — never Practice,
+  // which is an additional tab, not a replacement for the file library).
+  // German/Practice becomes invalid the other direction, when the account
+  // turns out NOT to be a learner.
   const coursesTab = root.querySelector<HTMLButtonElement>('[data-library-tab="courses"]');
+  const filesTab = root.querySelector<HTMLButtonElement>('[data-library-tab="files"]');
   const germanTab = root.querySelector<HTMLButtonElement>('[data-library-tab="german"]');
   const activeTab = root.querySelector<HTMLButtonElement>('.ncb-library-tab--active');
-  if (!isLearner && coursesTab && activeTab === germanTab) {
+  if (isLearner && filesTab && (activeTab === coursesTab || !activeTab)) {
+    filesTab.click();
+  } else if (!isLearner && coursesTab && (activeTab === germanTab || activeTab === filesTab)) {
     coursesTab.click();
   }
 }

@@ -487,6 +487,7 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
 
   const coursePanel = context.querySelector<HTMLElement>('[data-library-panel="courses"]');
   const savedPanel = context.querySelector<HTMLElement>('[data-library-panel="saved"]');
+  const filesPanel = context.querySelector<HTMLElement>('[data-library-panel="files"]');
   // Generic panel list so extra tabs (e.g. the learner "german" panel) get
   // hidden/shown correctly without this function needing to know about them.
   const panels = Array.from(context.querySelectorAll<HTMLElement>('[data-library-panel]'));
@@ -516,6 +517,7 @@ export function initWorkspaceLibrary(root: HTMLElement): void {
       // Saved is a meaningful moment to reattempt anything still pending.
       document.dispatchEvent(new CustomEvent('minallo:saved-panel-opened'));
     }
+    if (selected === 'files' && filesPanel) void renderLearnerFiles(filesPanel);
   };
   tabs.forEach((tab) => tab.addEventListener('click', () => {
     selectTab(tab.dataset.libraryTab || 'courses');
@@ -940,6 +942,138 @@ function bindSubjectAdd(panel: HTMLElement): void {
     if (event.key === 'Enter') add();
     if (event.key === 'Escape') close();
   });
+}
+
+// ── Learner Files (German learners' own uploaded documents) ────────────────
+//
+// Courses (above) and Files are separate products: Courses is the
+// university course registry (SEMS — semesters/subjects/course folders),
+// Files is a German learner's own personal document library, with no
+// semesters, subjects, or course registry. A learner account must never
+// render courses()/SEMS data (see the module docstring on why af5bcb2's
+// "share the Courses tab with learners" was wrong).
+//
+// practice.js's _glStorageCourse() already gives every German-practice
+// skill its own synthetic storage bucket (german-<skill> — e.g.
+// german-reading, german-grammar) when no real university course is
+// active, purely so file upload/RAG has SOME storage scope to write to.
+// That fragmentation is awkward for a single flat Files panel, so new
+// uploads from THIS panel go to one canonical bucket instead, while
+// existing files already sitting in the legacy per-skill buckets are still
+// aggregated in for display/open/delete (no destructive migration).
+const LEARNER_FILES_CANONICAL_BUCKET_ID = 'german-files';
+const LEARNER_FILES_LEGACY_BUCKET_IDS = [
+  'german-general', 'german-reading', 'german-listening', 'german-sprachbausteine',
+  'german-writing', 'german-speaking', 'german-vocab', 'german-grammar',
+  'german-sentences', 'german-games',
+];
+
+function learnerFileBucket(id: string): LibraryCourse {
+  return { id, short: id, name: 'German Files' } as LibraryCourse;
+}
+
+/** The learner's own personal German-practice file scope — this is a
+ * storage/RAG key ONLY, never a university course, and must never be
+ * displayed to the learner as one (no course card, no "Add subject", no
+ * course registry entry). Exported for other learner-only features that
+ * need a file-grounded scope without pretending it's a real enrolled
+ * course — mirrors _glStorageCourse()'s docstring in practice.js on the
+ * frontend-library side. */
+export function getLearnerFileScope(): LibraryCourse {
+  return learnerFileBucket(LEARNER_FILES_CANONICAL_BUCKET_ID);
+}
+
+type LearnerFileEntry = { bucket: LibraryCourse; file: CourseFile };
+
+async function loadLearnerFiles(force = false): Promise<LearnerFileEntry[]> {
+  const buckets = [LEARNER_FILES_CANONICAL_BUCKET_ID, ...LEARNER_FILES_LEGACY_BUCKET_IDS].map(learnerFileBucket);
+  await Promise.all(buckets.map((bucket) => ensureCourseHydrated(bucket, force).catch(() => {})));
+  const seen = new Set<string>();
+  const out: LearnerFileEntry[] = [];
+  for (const bucket of buckets) {
+    for (const file of (bucket.files || []) as CourseFile[]) {
+      // Prefer the indexed document's own id (stable across buckets); fall
+      // back to bucket+filename only for a not-yet-indexed upload.
+      const key = file._document?.id || `${bucket.id}:${file.name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ bucket, file });
+    }
+  }
+  return out;
+}
+
+/** Paints the learner's flat personal Files list — deliberately NOT
+ * renderCourses()/renderCourseDetail(): no course cards, no semesters, no
+ * subject picker, no "Add subject", no course delete. Reuses the lower-level
+ * file-row primitives (fileButton/bindSingleFileRow/uploadIntoCourse) that
+ * are already course-id-agnostic, just pointed at the synthetic learner
+ * bucket(s) instead of a real SEMS course. */
+export async function renderLearnerFiles(panel: HTMLElement, force = false): Promise<void> {
+  panel.innerHTML = '<div class="ncb-library-status">Loading your files&hellip;</div>';
+  let entries: LearnerFileEntry[];
+  try {
+    entries = await loadLearnerFiles(force);
+  } catch {
+    panel.innerHTML = '<div class="ncb-library-status">Couldn’t load your files. <button type="button" class="ncb-library-retry">Retry</button></div>';
+    panel.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void renderLearnerFiles(panel, true); });
+    return;
+  }
+  const canonical = getLearnerFileScope();
+  const rowsHtml = entries.map(({ bucket, file }) => fileButton(file, bucket, null)).join('');
+  panel.innerHTML =
+    '<div class="ncb-library-section-head"><div><strong>Files</strong><span>Upload material you want to use for German practice.</span></div></div>' +
+    '<div class="ncb-course-detail">' +
+    '<div class="ncb-course-detail-actions">' +
+    '<input class="ncb-course-upload-input" type="file" accept=".pdf,.txt,.docx,.png,.jpg,.jpeg" multiple hidden>' +
+    '<button type="button" class="ncb-course-action ncb-course-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Upload file</span></button>' +
+    '</div>' +
+    '<div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>' +
+    `<div class="ncb-library-group ncb-root-drop" data-drop-folder="">${rowsHtml || '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>'}</div>` +
+    '</div>';
+
+  const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
+  const input = detail.querySelector<HTMLInputElement>('.ncb-course-upload-input');
+  const uploadBtn = detail.querySelector<HTMLButtonElement>('.ncb-course-upload');
+  uploadBtn?.addEventListener('click', () => input?.click());
+  input?.addEventListener('change', () => {
+    void uploadIntoCourse(panel, detail, canonical, Array.from(input.files || []), null);
+    input.value = '';
+  });
+
+  const dropTarget = detail.querySelector<HTMLElement>('.ncb-root-drop');
+  if (dropTarget) {
+    let depth = 0;
+    dropTarget.addEventListener('dragenter', (event) => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      event.preventDefault();
+      depth++;
+      dropTarget.classList.add('is-drag-target');
+    });
+    dropTarget.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+    dropTarget.addEventListener('dragleave', () => { depth--; if (depth <= 0) dropTarget.classList.remove('is-drag-target'); });
+    dropTarget.addEventListener('drop', (event) => {
+      event.preventDefault();
+      depth = 0;
+      dropTarget.classList.remove('is-drag-target');
+      void uploadIntoCourse(panel, detail, canonical, Array.from(event.dataTransfer?.files || []), null);
+    });
+  }
+
+  // Each row is bound to the bucket it actually belongs to (canonical or a
+  // legacy german-<skill> bucket), not always `canonical` — Open/Delete must
+  // act on the file's real storage scope, aggregation is a display-only
+  // convenience.
+  const rows = Array.from(detail.querySelectorAll<HTMLElement>('.ncb-file-row'));
+  entries.forEach(({ bucket }, index) => {
+    const row = rows[index];
+    if (row) bindSingleFileRow(panel, detail, bucket, row);
+  });
+  wireCorrectionSelectors(detail);
 }
 
 // Exported so course-files-workspace.ts (the "Files" study-tool popup opened

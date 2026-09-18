@@ -44,10 +44,17 @@ test.describe('Chatbot learner shell — Saved tab survives refresh without merg
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_level: 'B1' });
 
-    // Initial learner load resolves to Practice (the invalid-role correction:
-    // learner + Courses active -> Practice) with exactly one panel visible.
-    await expect(page.locator('[data-library-tab="german"]')).toHaveClass(/ncb-library-tab--active/);
+    // Initial learner load resolves to Files (the invalid-role correction:
+    // learner + Courses active -> Files, the learner's own file library —
+    // never Practice, which is an additional tab, not the landing one) with
+    // exactly one panel visible.
+    await expect(page.locator('[data-library-tab="files"]')).toHaveClass(/ncb-library-tab--active/);
     expect(await visiblePanelCount(page)).toBe(1);
+    await expect(page.locator('.ncb-library-panel[data-library-panel="files"]')).toBeVisible();
+
+    // Move into Practice first — this test is about Saved vs. Practice
+    // exclusivity, not the landing tab.
+    await page.locator('[data-library-tab="german"]').click();
     await expect(page.locator('.ncb-library-panel[data-library-panel="german"]')).toBeVisible();
 
     // Click Saved.
@@ -89,7 +96,8 @@ test.describe('Chatbot learner shell — Saved tab survives refresh without merg
     // ss-profile-updated dispatch) must not touch which tab is showing —
     // this is the core regression: applyChatbotExperienceMode() must never
     // change the active library tab except the intentional invalid-role
-    // correction (learner+Courses -> Practice / student+Practice -> Courses).
+    // correction (learner+Courses -> Files / student+Practice or Files ->
+    // Courses).
     await applyProfile(page, { user_type: 'learner', german_level: 'B1' });
     await expect(page.locator('[data-library-tab="saved"]')).toHaveClass(/ncb-library-tab--active/);
     await expect(page.locator('.ncb-library-panel[data-library-panel="saved"]')).toBeVisible();
