@@ -125,6 +125,50 @@ def test_cloze_repair_leaves_non_cloze_items_on_the_mc3_path():
     assert fixed["mc3"]["correctIndex"] == 0
 
 
+def test_verifier_scales_max_tokens_for_high_item_count_parts(monkeypatch):
+    """A live acceptance run hit VERIFIER_RESPONSE_INVALID (truncated JSON)
+    specifically on Sprachbausteine's 22-item cloze part — german_exam_model
+    is a gpt-5-class reasoning model whose hidden reasoning tokens share the
+    same completion-token budget as the visible JSON (see llm_json.py's
+    _token_limit_param), and a flat max_tokens=10000 wasn't enough headroom
+    for the largest per-item judgment payload (4 optionVerdicts x 22 items).
+    verify_semantic must scale the budget up for a part this size, while
+    leaving a small part (like HV1's 2 items here) at the original floor."""
+    from app.services import german_exam_semantic_verify as verify_mod
+
+    captured: dict = {}
+
+    def fake_chat_json(**kwargs):
+        captured['max_tokens'] = kwargs['max_tokens']
+        return _FakeResult({"passed": True, "partWideIssues": [], "items": [
+            {"questionId": qid, "audit": {}, "passed": True, "issues": []}
+            for qid in captured['expected_ids']
+        ]})
+
+    monkeypatch.setattr(verify_mod, "chat_json", fake_chat_json)
+
+    hv1_part = get_part("telc_c1_hochschule", "listening", "hv1")
+    hv1_content = listening._postprocess(hv1_part, _valid_hv1_content())
+    captured['expected_ids'] = [q["questionId"] for q in hv1_content["questions"]]
+    verify_mod.verify_semantic(hv1_part, hv1_content)
+    assert captured['max_tokens'] == 10000, "a small (2-item) part must stay at the original floor"
+
+    sb_part = get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")
+    sb_questions = [
+        {"questionId": f"q{i}", "gapId": f"g{i}", "options": ["a", "b", "c", "d"], "correctIndex": 0,
+         "category": "grammar", "skillTags": ["grammar"], "difficulty": "c1"}
+        for i in range(1, 23)
+    ]
+    sb_content = {
+        "text": {"title": "Titel", "paragraphs": ["Ein Satz."], "gaps": [{"gapId": f"g{i}"} for i in range(1, 23)]},
+        "questions": sb_questions,
+    }
+    captured['expected_ids'] = [q["questionId"] for q in sb_questions]
+    verify_mod.verify_semantic(sb_part, sb_content)
+    assert captured['max_tokens'] == 6000 + 22 * 400, "a 22-item part must get a scaled-up budget"
+    assert captured['max_tokens'] > 10000
+
+
 def test_targeted_repair_reverified(monkeypatch):
     part = get_part("telc_c1_hochschule", "listening", "hv1")
     content = listening._postprocess(part, _valid_hv1_content())

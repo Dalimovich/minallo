@@ -720,7 +720,18 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVer
     user = json.dumps({"blueprint": {"taskType": part.task_type, "constraints": part.constraints}}, ensure_ascii=False) + "\n" + user
     try:
         model = get_settings().german_exam_model
-        result = chat_json(system=system, user=user, max_tokens=10000,
+        # german_exam_model defaults to a gpt-5-class reasoning model, whose
+        # hidden reasoning tokens are drawn from the SAME max_completion_tokens
+        # budget as the visible JSON (see llm_json._token_limit_param). A flat
+        # 10000 was sized for smaller item counts; Sprachbausteine's 22-item
+        # cloze verification asks for 4 optionVerdicts per item (88 total, the
+        # largest judgment payload of any task type here) and was observed
+        # live truncating mid-JSON (VERIFIER_RESPONSE_INVALID) under that same
+        # fixed budget. Scale by item count instead of raising it globally —
+        # unchanged (10000 floor) for every task type with <=15 items.
+        item_count = len(content.get("questions") or [])
+        verify_max_tokens = max(10000, 6000 + item_count * 400)
+        result = chat_json(system=system, user=user, max_tokens=verify_max_tokens,
                            model=model, json_schema=_verification_schema(part, content),
                            reasoning_effort="medium" if model.startswith("gpt-5") else None)
     except Exception:
