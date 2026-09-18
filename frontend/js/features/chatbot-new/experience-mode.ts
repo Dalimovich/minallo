@@ -35,8 +35,16 @@ const NAV_TARGET_IDS: Record<string, string> = {
   'writing-coach': 'psbWritingCoach',
 };
 
-function currentUserType(): string {
-  return (window as unknown as { _userType?: string })._userType || 'enrolled';
+// Unknown role must never render as 'enrolled' — see
+// window._profileResolutionState in globals.d.ts / user-data.ts. Only
+// isProfileResolved() === true makes a role value meaningful; callers that
+// need to distinguish "unresolved" from "resolved student" must check both.
+function currentUserType(): string | null {
+  return (window as unknown as { _userType?: string })._userType || null;
+}
+
+function isProfileResolved(): boolean {
+  return (window as unknown as { _profileResolutionState?: string })._profileResolutionState === 'ready';
 }
 
 function currentGermanLevel(): string {
@@ -183,7 +191,15 @@ export function applyChatbotExperienceMode(): void {
   const root = document.getElementById('ncbRoot');
   if (!root) return;
 
-  const isLearner = currentUserType() === 'learner';
+  // Role is only meaningful once profile resolution has actually settled —
+  // see isProfileResolved(). Until then isLearner/isStudent are both false,
+  // which (combined with the ncb-role-hidden toggles below) hides BOTH
+  // role-specific surfaces instead of defaulting to the student shell.
+  const resolved = isProfileResolved();
+  const isLearner = resolved && currentUserType() === 'learner';
+  const isStudent = resolved && !isLearner;
+  root.dataset.roleResolved = resolved ? 'true' : 'false';
+  root.dataset.roleResolutionState = (window as unknown as { _profileResolutionState?: string })._profileResolutionState || 'loading';
   // Workspace-view mode only ever applies to learners; a student (or a
   // learner who hasn't opened Writing Coach) is always effectively 'chat'.
   const inPracticeView = isLearner && _workspaceView === 'practice';
@@ -206,7 +222,7 @@ export function applyChatbotExperienceMode(): void {
   // into #psec-aipage), not nested inside it, so this must be document-scoped
   // — a root-scoped query silently misses it and anything else outside root.
   document.querySelectorAll<HTMLElement>('.ncb-student-only').forEach((el) => {
-    el.classList.toggle('ncb-role-hidden', isLearner);
+    el.classList.toggle('ncb-role-hidden', !isStudent);
   });
   document.querySelectorAll<HTMLElement>('.ncb-learner-only').forEach((el) => {
     el.classList.toggle('ncb-role-hidden', !isLearner);
@@ -259,7 +275,7 @@ export function applyChatbotExperienceMode(): void {
   const activeTab = root.querySelector<HTMLButtonElement>('.ncb-library-tab--active');
   if (isLearner && filesTab && (activeTab === coursesTab || !activeTab)) {
     filesTab.click();
-  } else if (!isLearner && coursesTab && (activeTab === germanTab || activeTab === filesTab)) {
+  } else if (isStudent && coursesTab && (activeTab === germanTab || activeTab === filesTab)) {
     coursesTab.click();
   }
 }
@@ -277,6 +293,13 @@ export function initChatbotExperienceMode(root: HTMLElement): void {
 
   root.addEventListener('click', (ev) => {
     const target = ev.target as HTMLElement;
+
+    if (target.closest('#ncbRoleResolutionRetry')) {
+      ev.preventDefault();
+      const ensure = (window as unknown as { _ensureUserProfile?: (opts?: { force?: boolean }) => Promise<void> })._ensureUserProfile;
+      if (typeof ensure === 'function') void ensure({ force: true });
+      return;
+    }
 
     const skillTarget = target.closest<HTMLElement>('[data-workspace-skill]');
     if (skillTarget) {

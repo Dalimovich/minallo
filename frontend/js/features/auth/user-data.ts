@@ -64,6 +64,95 @@ let _lastLoadUid: string | null = null;
 let _lastLoadAt = 0;
 const _LOAD_DEDUP_MS = 30000;
 
+// ── Profile resolution state machine ─────────────────────────────────────
+// See window._profileResolutionState in globals.d.ts. A failed/timed-out
+// profiles fetch must become 'error', never a silent 'ready' — that silent
+// promotion (the old applyProfile({}, {authoritative:true}) fallback) was
+// what let a transient network blip make a real learner account render as
+// an unresolved-role fallback that every consumer then read as "student".
+let _resolvedProfileUid: string | null = null;
+let _profileRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let _profileRetryAttempt = 0;
+const PROFILE_RETRY_DELAYS_MS = [500, 1500, 4000];
+
+function resetRuntimeProfileState(): void {
+  window._userType = undefined;
+  window._germanTest = undefined;
+  window._germanLevel = undefined;
+  window._germanExamProfileId = null;
+  window._germanProfileLoaded = false;
+  _resolvedProfileUid = null;
+  _profileRetryAttempt = 0;
+  if (_profileRetryTimer) {
+    clearTimeout(_profileRetryTimer);
+    _profileRetryTimer = null;
+  }
+}
+
+// Called synchronously at app-entry, BEFORE any role-specific UI (the
+// chatbot shell, sidebar) mounts, so those consumers see 'loading' — never
+// a stale role from a previous account, never an inferred default — for the
+// entire window until the authoritative fetch below actually settles.
+export function beginProfileResolution(uid: string): void {
+  if (!uid) return;
+  if (window._currentProfileUid && window._currentProfileUid !== uid) {
+    resetRuntimeProfileState();
+  }
+  window._currentProfileUid = uid;
+  if (_resolvedProfileUid === uid && window._profileResolutionState === 'ready') return;
+  window._profileResolutionState = 'loading';
+  window.dispatchEvent(new Event('ss-profile-updated'));
+}
+
+// Sign-out / account switch: drop every runtime role global synchronously so
+// no stale student/learner surface can flash before the next account's
+// profile resolves (see beginProfileResolution, called right after sign-in).
+export function resetProfileResolution(): void {
+  resetRuntimeProfileState();
+  window._currentProfileUid = null;
+  window._profileResolutionState = 'loading';
+  window.dispatchEvent(new Event('ss-profile-updated'));
+}
+
+function scheduleProfileRetry(uid: string): void {
+  if (_profileRetryTimer) return; // one retry chain in flight at a time
+  if (_profileRetryAttempt >= PROFILE_RETRY_DELAYS_MS.length) return; // bounded — ensureUserProfile({force:true}) can still be called explicitly
+  const delay = PROFILE_RETRY_DELAYS_MS[_profileRetryAttempt];
+  _profileRetryAttempt += 1;
+  _profileRetryTimer = setTimeout(() => {
+    _profileRetryTimer = null;
+    if (window._currentProfileUid !== uid) return; // account changed under us — stale
+    if (window._profileResolutionState === 'ready') return;
+    // The 30s de-dup guard exists to stop redundant re-entrant loadUserData
+    // calls from _enterApp, not to suppress a bounded retry after a genuine
+    // failure — bypass it for this one attempt.
+    _lastLoadUid = null;
+    void loadUserData(uid);
+  }, delay);
+}
+
+// Single shared entry point for "make sure the profile is resolved" callers
+// outside the auth-boot path (e.g. Sprachbausteine's profile-error Retry
+// button) — coalesces with any in-flight/bounded-retry resolution instead of
+// firing a parallel fetch.
+export function ensureUserProfile(opts: { force?: boolean } = {}): Promise<void> {
+  const uid = window._currentProfileUid || window._currentUser?.id || '';
+  if (!uid) return Promise.resolve();
+  if (opts.force) {
+    _profileRetryAttempt = 0;
+    if (_profileRetryTimer) {
+      clearTimeout(_profileRetryTimer);
+      _profileRetryTimer = null;
+    }
+    _lastLoadUid = null;
+    window._profileResolutionState = 'loading';
+    window.dispatchEvent(new Event('ss-profile-updated'));
+  } else if (window._profileResolutionState === 'ready' || window._profileResolutionState === 'loading') {
+    return Promise.resolve();
+  }
+  return loadUserData(uid);
+}
+
 function stopPresenceHeartbeat(): void {
   if (_presenceTimer) clearInterval(_presenceTimer);
   _presenceTimer = null;
@@ -112,6 +201,12 @@ export function startPresenceHeartbeat(uid: string): void {
 }
 
 export async function loadUserData(uid: string): Promise<void> {
+  // Idempotent: no-ops if this uid is already 'ready', otherwise (re)marks
+  // resolution as 'loading' so any UI mounting concurrently with this call
+  // (e.g. a bounded retry firing while the chatbot shell is (re)rendering)
+  // stays gated. Normally already called earlier, synchronously, by
+  // _enterApp before this async function is even invoked.
+  beginProfileResolution(uid);
   // De-dup redundant runs from rapid repeated _enterApp / SIGNED_IN events.
   // The first run applies profile/settings/subscription and starts the
   // heartbeat; re-running within the window only re-spams the network.
@@ -199,26 +294,40 @@ export async function loadUserData(uid: string): Promise<void> {
     // that hadn't filled in a display name, e.g. a learner mid-onboarding.
     // applyProfile() already falls back to email/'You' when full_name is
     // missing, so there's nothing unsafe about applying a nameless row.
-    if (profile) {
-      try {
-        localStorage.setItem('profile_cache_' + uid, JSON.stringify(profile));
-      } catch {
-        /* quota */
+    if (window._currentProfileUid === uid) {
+      if (profile) {
+        try {
+          localStorage.setItem('profile_cache_' + uid, JSON.stringify(profile));
+        } catch {
+          /* quota */
+        }
+        // Order matters: flip resolution state to 'ready' BEFORE calling
+        // applyProfile(), which dispatches 'ss-profile-updated' synchronously
+        // at its end — listeners (chatbot shell, Sprachbausteine/Lesen/Hören)
+        // must see the authoritative state, not 'loading', when that event
+        // fires.
+        _resolvedProfileUid = uid;
+        window._profileResolutionState = 'ready';
+        _profileRetryAttempt = 0;
+        if (_profileRetryTimer) {
+          clearTimeout(_profileRetryTimer);
+          _profileRetryTimer = null;
+        }
+        if (window.applyProfile) window.applyProfile(profile);
+      } else {
+        // The authoritative profiles fetch didn't return a row — timed out,
+        // errored, or PostgREST rejected the .single() (0 rows). None of
+        // these is proof the account has no profile, so this must NEVER be
+        // promoted to 'ready'/a resolved role. That silent promotion (the
+        // old applyProfile({}, {authoritative:true}) call here) is exactly
+        // what let one transient 503 render a learner as an unresolved
+        // "enrolled" fallback. Surface it as an explicit, retryable error
+        // state instead — bounded automatic retries below, plus
+        // ensureUserProfile({force:true}) for an explicit user retry.
+        window._profileResolutionState = 'error';
+        window.dispatchEvent(new Event('ss-profile-updated'));
+        scheduleProfileRetry(uid);
       }
-      if (window.applyProfile) window.applyProfile(profile);
-    } else if (window.applyProfile) {
-      // The authoritative profiles fetch didn't return a row (timed out,
-      // errored, or a genuine DB miss) — every module gating on
-      // _germanProfileLoaded (Sprachbausteine/Lesen/Hören/Writing Coach)
-      // has no other signal to stop waiting on, so leaving it unset here
-      // means an indefinite loading spinner instead of either the
-      // resolved cached profile or an honest "unsupported" state. Promote
-      // whatever's already known (from the cache-path apply earlier in
-      // this function, or localStorage) as final: applyProfile({}, ...)
-      // carries no keys of its own, so the hasOwnProperty guards in
-      // applyProfile() make this a no-op for every field except flipping
-      // _germanProfileLoaded to true.
-      window.applyProfile({}, { authoritative: true });
     }
     if (profile && profile.courses) {
       scheduleUserCoursesLoad(profile.courses);
@@ -301,11 +410,15 @@ export async function loadUserData(uid: string): Promise<void> {
   } catch (e: unknown) {
     console.warn('loadUserData error:', e);
     // Same reasoning as the null-profile branch above: an unexpected throw
-    // anywhere in this function must not leave _germanProfileLoaded unset
-    // forever. This is now a secondary safety net (withTimeout no longer
-    // lets a query rejection propagate this far), covering anything else
-    // that could throw before the profile apply runs.
-    if (window.applyProfile) window.applyProfile({}, { authoritative: true });
+    // anywhere in this function must surface as an explicit error state, not
+    // a silent "resolved" promotion. This is now a secondary safety net
+    // (withTimeout no longer lets a query rejection propagate this far),
+    // covering anything else that could throw before the profile apply runs.
+    if (window._currentProfileUid === uid && window._profileResolutionState !== 'ready') {
+      window._profileResolutionState = 'error';
+      window.dispatchEvent(new Event('ss-profile-updated'));
+      scheduleProfileRetry(uid);
+    }
   }
 }
 
@@ -439,29 +552,42 @@ export function applyProfile(
 }
 
 export function applyUserTypeUI(): void {
-  const userType = window._userType || 'enrolled';
+  // 'ready' is the only state that may render role-specific UI. Anything
+  // else — 'loading', 'error', or not-yet-set at all — is "role unknown",
+  // and unknown must never be treated as (i.e. rendered like) 'enrolled'.
+  // See _profileResolutionState in globals.d.ts / user-data.ts.
+  const resolved = window._profileResolutionState === 'ready';
+  const userType = resolved ? window._userType || 'enrolled' : window._userType;
   const germanTest = window._germanTest || '';
   const germanLevel = window._germanLevel || '';
   const isLearner = userType === 'learner';
+  const isStudent = resolved && !isLearner;
 
   const sub = document.getElementById('sbUserSub');
   if (sub) {
     const tFn = window._t;
     const germanTestLabel = tFn ? tFn('profile_german_test') : 'German Test';
     const uni = window._userUniversity || localStorage.getItem('ss_university') || '';
-    sub.textContent = isLearner
-      ? (germanTest || germanTestLabel) + (germanLevel ? ' · ' + germanLevel : '')
-      : uni;
+    sub.textContent = resolved
+      ? isLearner
+        ? (germanTest || germanTestLabel) + (germanLevel ? ' · ' + germanLevel : '')
+        : uni
+      : '';
   }
   // Sidebar items/dividers/section-labels opt into role-gating via
   // data-roles="student" / "learner" (comma-separated for both); everything
-  // else is unaffected, so student nav stays pixel-identical.
+  // else is unaffected, so student nav stays pixel-identical. While role is
+  // unresolved, BOTH sets stay hidden — never default to showing student nav.
   document.querySelectorAll<HTMLElement>('[data-roles]').forEach((el) => {
+    if (!resolved) {
+      el.style.display = 'none';
+      return;
+    }
     const roles = (el.getAttribute('data-roles') || '').split(',').map((r) => r.trim());
     el.style.display = roles.includes(isLearner ? 'learner' : 'student') ? '' : 'none';
   });
   const problemRailBtn = document.querySelector<HTMLElement>('.dr-rail-btn[data-dr-mode="problem"]');
-  if (problemRailBtn) problemRailBtn.style.display = isLearner ? 'none' : '';
+  if (problemRailBtn) problemRailBtn.style.display = !resolved || isLearner ? 'none' : '';
 
   const glSub = document.getElementById('glTestBadge');
   const glChip = document.getElementById('glLevelChip');
@@ -474,10 +600,10 @@ export function applyUserTypeUI(): void {
   if (glChip) glChip.textContent = germanLevel || '–';
 
   document.querySelectorAll<HTMLElement>('.pf-enrolled-field').forEach((el) => {
-    el.style.display = isLearner ? 'none' : '';
+    el.style.display = isStudent ? '' : 'none';
   });
   document.querySelectorAll<HTMLElement>('.pf-learner-field').forEach((el) => {
-    el.style.display = isLearner ? '' : 'none';
+    el.style.display = resolved && isLearner ? '' : 'none';
   });
   const gt = document.getElementById('profileGermanTest') as HTMLInputElement | null;
   const gl = document.getElementById('profileGermanLevel') as HTMLInputElement | null;

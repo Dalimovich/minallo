@@ -23,6 +23,42 @@
    query. */
 .ncb-role-hidden { display: none !important; }
 
+/* First-paint role gate: until experience-mode.ts has resolved an
+   authoritative role and stamped data-role-resolved="true" on #ncbRoot
+   (see applyChatbotExperienceMode()), BOTH role-specific surfaces stay
+   hidden — never default to showing the student shell. Attribute-selector
+   default (no attribute at all, e.g. before any JS has run) is covered by
+   :not([data-role-resolved="true"]), so this holds even before hydration. */
+#ncbRoot:not([data-role-resolved="true"]) .ncb-student-only,
+#ncbRoot:not([data-role-resolved="true"]) .ncb-learner-only {
+  display: none !important;
+}
+.ncb-role-loading { display: none; }
+#ncbRoot:not([data-role-resolved="true"]) .ncb-role-loading {
+  display: flex;
+}
+.ncb-role-loading {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 24px;
+  text-align: center;
+  color: var(--ncb-muted, #8a8f98);
+}
+.ncb-role-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.6;
+  animation: ncb-role-loading-spin 0.8s linear infinite;
+}
+#ncbRoot[data-role-resolution-state="error"] .ncb-role-loading-spinner { display: none; }
+#ncbRoot:not([data-role-resolution-state="error"]) .ncb-role-loading-retry { display: none; }
+@keyframes ncb-role-loading-spin { to { transform: rotate(360deg); } }
+
 /* Fullbleed mode (active when #psec-aipage is visible AND the flag is on).
    Hides the portal topbar with the legacy "Chatbot" h1 and expands the
    section so the new shell fills the viewport. The portal sidebar (left

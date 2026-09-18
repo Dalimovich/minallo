@@ -302,6 +302,21 @@ declare global {
     // content must check this before treating a null profile id as
     // "unsupported".
     _germanProfileLoaded?: boolean;
+    // Canonical profile-boot lifecycle state, independent of _userType/
+    // _germanProfileLoaded. 'loading' until the authoritative profiles fetch
+    // settles; 'ready' only after a genuine successful row (or explicit
+    // "no row" answer) was applied; 'error' after a failed/timed-out fetch
+    // that could NOT be distinguished from a real answer. UI role-gating
+    // (chatbot shell, sidebar) must treat anything other than 'ready' as
+    // unresolved and must never infer a role from it. See user-data.ts.
+    _profileResolutionState?: 'loading' | 'ready' | 'error';
+    // uid the current _profileResolutionState/_userType/_german* globals
+    // belong to — lets a stale async response (fetch resolves after the
+    // account already changed) be detected and ignored.
+    _currentProfileUid?: string | null;
+    _beginProfileResolution?: (uid: string) => void;
+    _resetProfileResolution?: () => void;
+    _ensureUserProfile?: (opts?: { force?: boolean }) => Promise<void>;
     MAJOR_LIST?: string[];
 
     // ── pdf controls extras ────────────────────────────────────────────

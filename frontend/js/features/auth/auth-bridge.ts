@@ -4,6 +4,9 @@ import {
   loadUserData,
   applyProfile,
   applyUserTypeUI,
+  beginProfileResolution,
+  resetProfileResolution,
+  ensureUserProfile,
 } from './user-data.js';
 
 export interface AuthBridgeOptions {
@@ -93,6 +96,9 @@ export function initAuthBridge(options: AuthBridgeOptions): AuthBridge {
   window.loadUserData = loadUserData;
   window.applyProfile = applyProfile;
   window._applyUserTypeUI = applyUserTypeUiBridge;
+  window._beginProfileResolution = beginProfileResolution;
+  window._resetProfileResolution = resetProfileResolution;
+  window._ensureUserProfile = ensureUserProfile;
 
   return {
     showAuthModal: (mode) => authModal.showAuthModal(mode),

@@ -616,6 +616,16 @@ function _maybeSendWelcomeEmail(user) {
 // Global auth helpers
 function _enterApp(user) {
   _currentUser = user;
+  // Mark profile resolution 'loading' for this uid synchronously, BEFORE any
+  // role-specific UI (the chatbot shell, sidebar) mounts below. loadUserData()
+  // — called near the end of this function, after the shell has already
+  // mounted — used to be the only place this was tracked, which left a
+  // window where the shell read window._userType before it was ever set and
+  // silently treated that as "enrolled" (student). See
+  // beginProfileResolution() in user-data.ts.
+  if (user && user.id && typeof window._beginProfileResolution === 'function') {
+    window._beginProfileResolution(user.id);
+  }
   _ssAuth('entering', { source: 'enterApp', user: user });
   if (user && user.email) sessionStorage.removeItem('pendingConfirm');
   if (user && user.id) {
@@ -843,6 +853,13 @@ function _showModal() {
   _sbToken = null;
   window._sbToken = null;
   _currentUser = null;
+  // Drop every runtime role global synchronously so a subsequent sign-in as
+  // a different account can never briefly render with the previous
+  // account's student/learner surface. See resetProfileResolution() in
+  // user-data.ts.
+  if (typeof window._resetProfileResolution === 'function') {
+    window._resetProfileResolution();
+  }
   _ssAuth('signed-out', { source: 'showModal' });
 
   _sbClearStoredSession();

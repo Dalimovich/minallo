@@ -3024,6 +3024,39 @@
         }
       }
 
+      // Distinct from sbShowUnsupportedProfile(): this fires when the
+      // profiles fetch itself failed/timed out (window._profileResolutionState
+      // === 'error'), which is not proof the account has no supported exam
+      // profile — see user-data.ts's beginProfileResolution/loadUserData.
+      // Retry re-triggers the shared profile resolver, not generation.
+      function sbShowProfileError() {
+        sb.uiState = 'profile_error';
+        var tabs = sbEl('glSprachbausteineTabs');
+        if (tabs) tabs.style.display = 'none';
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        if (textPanel) textPanel.innerHTML = '';
+        if (!qPanel) return;
+        qPanel.innerHTML =
+          '<div class="gl-listen-error">' +
+            '<p class="gl-listen-error-title">Couldn’t load your exam profile.</p>' +
+            '<p class="gl-listen-error-sub">We couldn’t confirm your exam profile this time. Nothing was recorded — you can retry.</p>' +
+            '<div class="gl-listen-error-actions">' +
+              '<button type="button" id="glSprachbausteineProfileRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
+            '</div>' +
+          '</div>';
+        var retryBtn = sbEl('glSprachbausteineProfileRetry');
+        if (retryBtn) {
+          retryBtn.addEventListener('click', function () {
+            sb._awaitingProfile = true;
+            sbShowWaitingForProfile();
+            if (typeof window._ensureUserProfile === 'function') {
+              window._ensureUserProfile({ force: true });
+            }
+          });
+        }
+      }
+
       function sbShowGenerationError() {
         sb.uiState = 'error';
         var textPanel = sbEl('glSprachbausteineTextPanel');
@@ -3368,7 +3401,16 @@
             sbGenerateOrLoadPart();
             return;
           }
-          if (!window._germanProfileLoaded) {
+          var resolutionState = window._profileResolutionState;
+          if (resolutionState === 'error') {
+            // The profiles fetch itself failed — this is NOT a verdict about
+            // whether the account has a supported exam profile. Never show
+            // "unsupported" here; show a retryable profile-load error.
+            sb._awaitingProfile = false;
+            sbShowProfileError();
+            return;
+          }
+          if (resolutionState !== 'ready') {
             // Profile hasn't resolved yet — this is NOT the same as a
             // definitively unsupported profile. Show a loading state and let
             // the ss-profile-updated listener below retry once it resolves.
