@@ -52,7 +52,7 @@ def _repair_prompt(part: PartBlueprint, content: dict[str, Any], item_id: str, i
     return system, user
 
 
-def _constrain_repair(original: dict, fixed: dict, issues: list[SemanticIssue]) -> dict:
+def _constrain_repair(original: dict, fixed: dict, issues: list[SemanticIssue], part: PartBlueprint | None = None) -> dict:
     candidate = deepcopy(original)
     for key, value in fixed.items():
         if key not in original:
@@ -68,6 +68,22 @@ def _constrain_repair(original: dict, fixed: dict, issues: list[SemanticIssue]) 
     if "matching" in original:
         for key in ("correctSpeakerId", "isDistractor"):
             fixed.setdefault("matching", {})[key] = original["matching"].get(key)
+    # Sprachbausteine: the correct answer/correctIndex came from Stage A
+    # (the passage was written around it) — semantic repair, triggered by a
+    # distractor-quality finding, must never be able to silently turn a
+    # wrong option into a new "correct" one or otherwise touch which option
+    # is correct. Applied unconditionally for this task type (not gated by
+    # issue code, unlike the mc3 case below) — Stage B repair owns
+    # distractors only, always.
+    if part is not None and part.task_type == "cloze_mc4_language_elements" and "options" in original and "correctIndex" in original:
+        result = deepcopy(original)
+        fixed_options = fixed.get("options")
+        idx = original.get("correctIndex")
+        if isinstance(fixed_options, list) and len(fixed_options) == len(original["options"]) and isinstance(idx, int):
+            for n in range(len(fixed_options)):
+                if n != idx:
+                    result["options"][n] = fixed_options[n]
+        return result
     if "mc3" in original and all(i.code in {
         "IMPLAUSIBLE_DISTRACTOR", "DISTRACTOR_ACCIDENTALLY_CORRECT"
     } for i in issues):
@@ -103,7 +119,7 @@ def repair_items_semantic(
                 result = chat_json(system=system, user=user, max_tokens=1200, model=get_settings().german_exam_model)
                 fixed = result.data
                 if isinstance(fixed, dict) and fixed.get("questionId") == item_id:
-                    return item_id, _constrain_repair(questions_by_id[item_id], fixed, issues)
+                    return item_id, _constrain_repair(questions_by_id[item_id], fixed, issues, part)
             except Exception:  # noqa: BLE001
                 log.warning("semantic repair attempt failed for item %s", item_id, exc_info=True)
         return item_id, None

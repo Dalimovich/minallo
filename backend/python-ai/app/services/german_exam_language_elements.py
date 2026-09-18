@@ -546,6 +546,55 @@ def _repair_passage_word_count(
     return current
 
 
+def _build_gap_context(
+    text: dict[str, Any], gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str]
+) -> dict[str, dict[str, Any]]:
+    """Builds a local-context window per gap from the FINAL (word-count-
+    repaired) Stage A passage: the exact sentence containing the gap, that
+    same sentence with the correct answer inserted, its immediate neighbors,
+    and the paragraph index. Stage B and item repair use this so distractors
+    are written against the real sentence they'll be judged in, instead of
+    blind (category + correct answer alone) — see this module's docstring
+    on why that mismatch was producing semantic-verifier rejections
+    (IMPLAUSIBLE_DISTRACTOR, UNSUPPORTED_CORRECT_ANSWER,
+    MULTIPLE_DEFENSIBLE_ANSWERS) that then had to be caught downstream by
+    the much more expensive full-passage semantic repair pass."""
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    paragraphs = paragraphs if isinstance(paragraphs, list) else []
+    context_by_gap: dict[str, dict[str, Any]] = {}
+    for pi, paragraph in enumerate(paragraphs):
+        sentences = _split_sentences(str(paragraph))
+        for si, sentence in enumerate(sentences):
+            for match in _GAP_PLACEHOLDER_RE.finditer(sentence):
+                gap_id = match.group(1)
+                if gap_id not in answers_by_gap:
+                    continue
+                with_answer = _GAP_PLACEHOLDER_RE.sub(
+                    lambda m: answers_by_gap.get(m.group(1), m.group(0)), sentence
+                )
+                context_by_gap[gap_id] = {
+                    "gapId": gap_id,
+                    "paragraphIndex": pi,
+                    "sentenceWithGap": sentence,
+                    "sentenceWithCorrectAnswer": with_answer,
+                    "previousSentence": sentences[si - 1] if si > 0 else None,
+                    "nextSentence": sentences[si + 1] if si + 1 < len(sentences) else None,
+                }
+    # Fallback for any gap whose sentence-split placement failed to match
+    # (should not happen post structural-validation, but Stage B must never
+    # receive a gap with no context at all).
+    for g in gap_specs:
+        gap_id = g["gapId"]
+        if gap_id not in context_by_gap:
+            context_by_gap[gap_id] = {
+                "gapId": gap_id, "paragraphIndex": None,
+                "sentenceWithGap": f"{{{{{gap_id}}}}}",
+                "sentenceWithCorrectAnswer": answers_by_gap.get(gap_id, ""),
+                "previousSentence": None, "nextSentence": None,
+            }
+    return context_by_gap
+
+
 def _run_stage_a(
     profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
     gap_specs: list[dict[str, str]], word_min: int, word_max: int
@@ -588,26 +637,59 @@ def _run_stage_a(
 
 # ── Stage B: distractors only, backend owns correctIndex/category ──────────
 
+_CATEGORY_DISTRACTOR_RULES = {
+    "grammar": (
+        "wrong case/ending, wrong verb form, a plausible-but-wrong preposition, wrong connector, or a "
+        "locally plausible but incorrect syntax form. Avoid random unrelated words."
+    ),
+    "lexicon": (
+        "a near-synonym that does not collocate here, a word in the wrong register, a semantically nearby "
+        "word used incorrectly, or a wrong word-formation choice."
+    ),
+    "orthography": (
+        "a realistic spelling variant, a capitalization error, or a punctuation-sensitive variant where "
+        "applicable."
+    ),
+}
+
+
 def _prompt_stage_b(
-    profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str]
+    profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str],
+    gap_context_by_id: dict[str, dict[str, Any]]
 ) -> tuple[str, str]:
     item_count = len(gap_specs)
-    lines = [
-        f'  {{"gapId": "{g["gapId"]}", "questionId": "{g["questionId"]}", "category": "{g["category"]}", '
-        f'"correctAnswer": {json.dumps(answers_by_gap[g["gapId"]], ensure_ascii=False)}}}'
-        for g in gap_specs
-    ]
+    lines = []
+    for g in gap_specs:
+        gap_id = g["gapId"]
+        ctx = gap_context_by_id[gap_id]
+        sentence_parts = []
+        if ctx.get("previousSentence"):
+            sentence_parts.append(ctx["previousSentence"])
+        sentence_parts.append(ctx["sentenceWithCorrectAnswer"])
+        if ctx.get("nextSentence"):
+            sentence_parts.append(ctx["nextSentence"])
+        local_window = " ".join(sentence_parts)
+        lines.append(
+            f'  {{"gapId": "{gap_id}", "questionId": "{g["questionId"]}", "category": "{g["category"]}", '
+            f'"correctAnswer": {json.dumps(answers_by_gap[gap_id], ensure_ascii=False)}, '
+            f'"context": {json.dumps(local_window, ensure_ascii=False)}}}'
+        )
     gap_block = "\n".join(lines)
+    category_rules = "\n".join(f"- {cat}: prefer {rule}" for cat, rule in _CATEGORY_DISTRACTOR_RULES.items())
     system = (
         f"You write multiple-choice distractors for a German Sprachbausteine (cloze) exercise, "
-        f"{profile.family} {profile.variant or ''}, C1 level. For each gap below you are given the CORRECT "
-        "answer already placed in the passage — do not change it. Provide exactly THREE wrong options "
-        "(distractors) per gap: genuinely plausible for a C1 learner — real near-misses (a wrong case "
-        "ending, a confusable preposition, a near-synonym with a different register or collocation, a "
-        "plausible misspelling for orthography gaps) — never trivial, absurd, or obviously wrong on sight; "
-        "avoid options that differ only in an unrelated word. Each wrong option must differ from the correct "
-        "answer and from each other. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
-        "Gaps (category tells you what kind of distractor to write):\n"
+        f"{profile.family} {profile.variant or ''}, C1 level. For each gap below, \"context\" is the exact "
+        "local sentence (plus its immediate neighbors) with the correct answer already inserted — the "
+        "correct answer is fixed and came from the passage itself; do not change it, and do not invent "
+        "distractors from the correct answer alone. Read the context and write THREE wrong options that "
+        "look locally plausible enough to tempt a C1 learner IN THAT EXACT CONTEXT, but each must fail for "
+        "ONE identifiable grammatical, lexical, collocational, register, or orthographic reason in that "
+        "context — never trivial, absurd, or obviously wrong on sight, and never differing from the correct "
+        "answer only in an unrelated word. Each wrong option must differ from the correct answer and from "
+        "each other. Category-specific guidance:\n"
+        f"{category_rules}\n\n"
+        "Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        "Gaps:\n"
         f"{gap_block}\n\n"
         "Output JSON shape exactly:\n"
         "{\n"
@@ -648,14 +730,33 @@ def _wrong_options_valid(item: dict[str, Any], correct_answer: str) -> bool:
     return len(normalized) == 4  # 3 distinct wrong options + the correct answer, all different
 
 
-def _prompt_item_repair(gap_spec: dict[str, str], correct_answer: str) -> tuple[str, str]:
+def _prompt_item_repair(
+    gap_spec: dict[str, str], correct_answer: str, context: dict[str, Any],
+    prior_wrong_options: list[str] | None, reason: str | None
+) -> tuple[str, str]:
+    sentence_parts = []
+    if context.get("previousSentence"):
+        sentence_parts.append(context["previousSentence"])
+    sentence_parts.append(context["sentenceWithCorrectAnswer"])
+    if context.get("nextSentence"):
+        sentence_parts.append(context["nextSentence"])
+    local_window = " ".join(sentence_parts)
+    rule = _CATEGORY_DISTRACTOR_RULES.get(gap_spec["category"], "")
+    prior_line = (
+        f"\n\nThe previous attempt {json.dumps(prior_wrong_options, ensure_ascii=False)} was rejected"
+        f"{f' ({reason})' if reason else ''} — do not repeat it."
+        if prior_wrong_options else ""
+    )
     system = (
         "You are fixing ONE gap's multiple-choice distractors in a German Sprachbausteine exercise. The "
-        f"correct answer for this gap is already fixed ({correct_answer!r}) — do not change it. Provide "
-        "exactly THREE wrong options (distractors), each different from the correct answer and from each "
-        "other, genuinely plausible for a C1 learner (a wrong case ending, a confusable preposition, a "
-        "near-synonym with a different register or collocation, a plausible misspelling), never trivial or "
-        "absurd. Reply with ONLY a JSON object, no markdown fences, no commentary, shape exactly: "
+        f"correct answer for this gap is already fixed ({correct_answer!r}) and came from the passage "
+        "itself — do not change it, and do not invent distractors from the correct answer alone. Here is "
+        f"the exact local sentence (plus neighbors) with the correct answer inserted: {local_window!r}. "
+        "Provide exactly THREE wrong options (distractors), each different from the correct answer and from "
+        f"each other, that look locally plausible enough to tempt a C1 learner IN THAT EXACT CONTEXT but "
+        f"each fail for one identifiable reason there. Category guidance: prefer {rule}"
+        f"{prior_line}\n\n"
+        "Reply with ONLY a JSON object, no markdown fences, no commentary, shape exactly: "
         '{"wrongOptions": ["...", "...", "..."], "skillTags": ["..."]}.'
     )
     user = f"Gap category: {gap_spec['category']}. Fix the distractors now."
@@ -667,7 +768,8 @@ def _call_item_repair(*, system: str, user: str) -> LlmResult:
 
 
 def _repair_stage_b_items(
-    gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str], items_by_gap: dict[str, dict[str, Any]]
+    gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str], items_by_gap: dict[str, dict[str, Any]],
+    gap_context_by_id: dict[str, dict[str, Any]]
 ) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
     """Deterministic, per-item repair — mirrors german_exam_reading.py's
     _repair_items shape. Never touches the passage or any other item.
@@ -681,9 +783,15 @@ def _repair_stage_b_items(
         return items_by_gap, 0, []
 
     def _fix_one(gap_id: str) -> tuple[str, dict[str, Any] | None]:
+        prior_item = items_by_gap.get(gap_id)
+        prior_wrong = prior_item.get("wrongOptions") if isinstance(prior_item, dict) else None
+        prior_wrong = prior_wrong if isinstance(prior_wrong, list) else None
+        reason = "wrong option count or duplicate/empty option" if prior_wrong else None
         for _attempt in range(_MAX_ITEM_REPAIR_ATTEMPTS):
             try:
-                system, user = _prompt_item_repair(spec_by_gap[gap_id], answers_by_gap[gap_id])
+                system, user = _prompt_item_repair(
+                    spec_by_gap[gap_id], answers_by_gap[gap_id], gap_context_by_id[gap_id], prior_wrong, reason
+                )
                 result = _call_item_repair(system=system, user=user)
                 fixed = result.data
                 if isinstance(fixed, dict) and _wrong_options_valid(fixed, answers_by_gap[gap_id]):
@@ -707,19 +815,22 @@ def _repair_stage_b_items(
 
 
 def _run_stage_b(
-    profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str]
+    profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str],
+    gap_context_by_id: dict[str, dict[str, Any]]
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     last_issues: list[str] = []
     item_repair_total = 0
     for regeneration in range(_MAX_STAGE_B_REGENERATIONS + 1):
-        system, user = _prompt_stage_b(profile, part, gap_specs, answers_by_gap)
+        system, user = _prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id)
         result = _call_stage_b(system=system, user=user)
         payload = result.data if isinstance(result.data, dict) else {}
 
         issues = _stage_b_issues(payload, gap_specs)
         if not issues:
             items_by_gap = {it["gapId"]: it for it in payload["items"]}
-            items_by_gap, repaired, unresolved = _repair_stage_b_items(gap_specs, answers_by_gap, items_by_gap)
+            items_by_gap, repaired, unresolved = _repair_stage_b_items(
+                gap_specs, answers_by_gap, items_by_gap, gap_context_by_id
+            )
             item_repair_total += repaired
             if not unresolved:
                 return items_by_gap, {"regenerationCount": regeneration, "itemRepairCount": item_repair_total}
@@ -769,11 +880,33 @@ def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]
     return content
 
 
+def _unsupported_correct_answer_only(part: PartBlueprint, item_errors: dict[str, list[Any]]) -> dict[str, list[Any]]:
+    """For Sprachbausteine, splits out items whose ONLY finding is
+    UNSUPPORTED_CORRECT_ANSWER. That correct answer came from Stage A — the
+    passage was written around it — and _constrain_repair now freezes it
+    unconditionally, so sending these to repair_items_semantic can never
+    actually resolve the issue (Stage B repair owns distractors only, never
+    the correct answer). Excluding them here means one fewer doomed
+    repair+reverify round-trip: they surface as a hard failure (the caller
+    raises, the frontend shows Retry, a fresh Stage A runs) instead of
+    silently burning the single repair-round budget on something it
+    structurally cannot fix — directly targets the "Stage B -> verifier ->
+    repair -> verifier -> 524" latency spiral."""
+    if part.task_type != "cloze_mc4_language_elements":
+        return item_errors
+    return {
+        item_id: issues for item_id, issues in item_errors.items()
+        if not (issues and all(i.code == "UNSUPPORTED_CORRECT_ANSWER" for i in issues))
+    }
+
+
 def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], bool]:
     """Unchanged from the monolithic version — every item-level semantic
     error here IS eligible for targeted repair (no task_type is excluded),
     since a Sprachbausteine defect always lives entirely inside one item's
-    own options/correctIndex/category."""
+    own options/correctIndex/category. The one exception is
+    UNSUPPORTED_CORRECT_ANSWER for Sprachbausteine — see
+    _unsupported_correct_answer_only()."""
     started = perf_counter()
     verification_count = 0
     repair_count = 0
@@ -811,8 +944,12 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
         if part_wide_errors:
             break
 
-        content, resolved = repair_items_semantic(part, content, item_errors)
-        repair_count += len(item_errors)
+        repairable_errors = _unsupported_correct_answer_only(part, item_errors)
+        if not repairable_errors:
+            break
+
+        content, resolved = repair_items_semantic(part, content, repairable_errors)
+        repair_count += len(repairable_errors)
         issues_resolved.extend(resolved)
         content = _postprocess(part, content)
 
@@ -855,7 +992,8 @@ def generate_language_elements_part(
     gap_specs = _build_gap_specs(item_count)
 
     text, answers_by_gap, stage_a_meta = _run_stage_a(profile, part, plan, topic, gap_specs, word_min, word_max)
-    items_by_gap, stage_b_meta = _run_stage_b(profile, part, gap_specs, answers_by_gap)
+    gap_context_by_id = _build_gap_context(text, gap_specs, answers_by_gap)
+    items_by_gap, stage_b_meta = _run_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id)
 
     content = _assemble_content(gap_specs, text, answers_by_gap, items_by_gap)
     content = _postprocess(part, content)

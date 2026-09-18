@@ -310,9 +310,9 @@ def test_stage_b_only_receives_an_already_valid_stage_a_passage(monkeypatch: pyt
 
     real_prompt_stage_b = mod._prompt_stage_b
 
-    def _spy_prompt_stage_b(profile, part, gap_specs, answers_by_gap):
+    def _spy_prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id):
         seen_answers["value"] = dict(answers_by_gap)
-        return real_prompt_stage_b(profile, part, gap_specs, answers_by_gap)
+        return real_prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id)
 
     monkeypatch.setattr(mod, "_prompt_stage_b", _spy_prompt_stage_b)
     _mod, counters = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
@@ -380,6 +380,105 @@ def test_one_malformed_distractor_set_repairs_only_that_item(monkeypatch: pytest
     assert set(o.lower() for o in other_q["options"]) == {*[w.lower() for w in other["wrongOptions"]], "antwort_g1"}
 
 
+def test_stage_a_prompt_is_unaffected_by_the_stage_b_context_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stage A must stay completely untouched by the Stage B context work —
+    same prompt builder, same signature, still never sees categories'
+    distractor rules or gap context."""
+    import inspect
+    import app.services.german_exam_language_elements as mod
+
+    sig = inspect.signature(mod._prompt_stage_a)
+    assert list(sig.parameters) == ["profile", "part", "plan", "topic", "gap_specs", "word_min", "word_max"]
+
+
+def test_stage_b_receives_local_sentence_context_for_every_gap(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    seen_contexts: dict[str, dict] = {}
+    import app.services.german_exam_language_elements as mod
+
+    real_prompt_stage_b = mod._prompt_stage_b
+
+    def _spy_prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id):
+        seen_contexts["value"] = gap_context_by_id
+        return real_prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id)
+
+    monkeypatch.setattr(mod, "_prompt_stage_b", _spy_prompt_stage_b)
+    mod, counters = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+
+    mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+
+    contexts = seen_contexts["value"]
+    assert set(contexts) == {s["gapId"] for s in specs}, "every gap must get a context, none skipped"
+    for gap_id, ctx in contexts.items():
+        assert f"{{{{{gap_id}}}}}" in ctx["sentenceWithGap"], f"{gap_id}: sentenceWithGap must contain the literal placeholder"
+        expected_answer = f"antwort_{gap_id}"
+        assert expected_answer in ctx["sentenceWithCorrectAnswer"], f"{gap_id}: sentenceWithCorrectAnswer must insert the Stage A answer"
+        assert f"{{{{{gap_id}}}}}" not in ctx["sentenceWithCorrectAnswer"], f"{gap_id}: placeholder must be replaced, not left literal"
+
+
+def test_stage_b_prompt_text_carries_each_gaps_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    mod, _counters = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+    gap_context = mod._build_gap_context(_stage_a_content(specs)["text"], specs, {s["gapId"]: f"antwort_{s['gapId']}" for s in specs})
+    answers = {s["gapId"]: f"antwort_{s['gapId']}" for s in specs}
+
+    system, _user = mod._prompt_stage_b(profile, part, specs, answers, gap_context)
+
+    for s in specs:
+        assert gap_context[s["gapId"]]["sentenceWithCorrectAnswer"] in system, f"{s['gapId']}'s local sentence must reach the Stage B prompt"
+
+
+def test_item_repair_receives_context_and_prior_rejected_options_and_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    bad_gap = "g5"
+    payload_with_one_bad_item = _stage_b_payload(specs, bad_gap_id=bad_gap)
+    fixed_item = {"wrongOptions": ["reparatur1", "reparatur2", "reparatur3"], "skillTags": ["grammar"]}
+    seen_prompts: dict[str, tuple[str, str]] = {}
+    import app.services.german_exam_language_elements as mod
+
+    real_prompt_item_repair = mod._prompt_item_repair
+
+    def _spy_prompt_item_repair(gap_spec, correct_answer, context, prior_wrong_options, reason):
+        seen_prompts["value"] = real_prompt_item_repair(gap_spec, correct_answer, context, prior_wrong_options, reason)
+        assert prior_wrong_options == ["falsch", "falsch", "falsch"]
+        assert reason is not None
+        assert context["sentenceWithCorrectAnswer"]
+        return seen_prompts["value"]
+
+    monkeypatch.setattr(mod, "_prompt_item_repair", _spy_prompt_item_repair)
+    mod, _counters = _setup(
+        monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[payload_with_one_bad_item],
+        item_repair=[fixed_item],
+    )
+    profile, part = _profile_and_part()
+
+    mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+
+    assert "value" in seen_prompts, "item repair prompt must have been built with context"
+    system, _user = seen_prompts["value"]
+    assert "falsch" in system, "the rejected prior options must be surfaced to the repair prompt"
+
+
+def test_stage_b_never_receives_a_gap_without_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_build_gap_context's fallback path (used only if a gap's sentence
+    somehow can't be located) must still produce a usable, non-empty entry
+    for every gap — never a missing key."""
+    import app.services.german_exam_language_elements as mod
+
+    specs = _gap_specs()
+    answers = {s["gapId"]: f"antwort_{s['gapId']}" for s in specs}
+    # A passage that mentions none of the gap placeholders at all.
+    broken_text = {"title": "Titel", "paragraphs": ["Ein Satz ohne jede Lücke."]}
+
+    contexts = mod._build_gap_context(broken_text, specs, answers)
+
+    assert set(contexts) == {s["gapId"] for s in specs}
+    for gap_id, ctx in contexts.items():
+        assert ctx["sentenceWithCorrectAnswer"]
+
+
 def test_stage_b_regenerates_only_when_item_repair_cannot_fix_it(monkeypatch: pytest.MonkeyPatch) -> None:
     specs = _gap_specs()
     bad_gap = "g5"
@@ -400,6 +499,37 @@ def test_stage_b_regenerates_only_when_item_repair_cannot_fix_it(monkeypatch: py
 
     assert counters["stage_b"] == 2
     assert len(content["questions"]) == 22
+
+
+def test_unsupported_correct_answer_skips_repair_and_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UNSUPPORTED_CORRECT_ANSWER means the Stage A answer itself is being
+    challenged — repair_items_semantic can never fix that (Stage B repair
+    is distractor-only, and _constrain_repair now freezes the correct
+    option unconditionally for this task type), so it must never be sent
+    there. Must fail the whole generation (surfacing Retry to the user, and
+    a fresh Stage A on the next attempt) rather than spend the single
+    repair-round budget on something structurally unfixable."""
+    from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
+
+    specs = _gap_specs()
+    mod, _counters = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+
+    def _always_unsupported(part, content):
+        issue = SemanticIssue("UNSUPPORTED_CORRECT_ANSWER", "error", "doesn't fit")
+        items = [ItemSemanticResult(item_id=q["questionId"], passed=(q["gapId"] != "g5"), issues=([issue] if q["gapId"] == "g5" else []))
+                 for q in content.get("questions") or []]
+        return SemanticVerificationResult(passed=False, part_wide_issues=[], items=items)
+
+    monkeypatch.setattr(mod, "verify_semantic", _always_unsupported)
+
+    def _repair_should_not_be_called(part, content, item_issues):
+        raise AssertionError("repair_items_semantic must never be called for an UNSUPPORTED_CORRECT_ANSWER-only item")
+
+    monkeypatch.setattr(mod, "repair_items_semantic", _repair_should_not_be_called)
+
+    with pytest.raises(mod.LanguageElementsGenerationError):
+        mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
 
 
 # ── Final assembly stays the existing, unchanged contract ───────────────

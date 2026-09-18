@@ -73,6 +73,58 @@ def test_distractor_repair_preserves_everything_else():
     assert fixed == expected
 
 
+def _sprachbausteine_part():
+    return get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")
+
+
+def test_cloze_repair_freezes_correct_index_and_correct_option():
+    part = _sprachbausteine_part()
+    original = {
+        "questionId": "q1", "gapId": "g1", "category": "grammar", "skillTags": ["grammar"],
+        "difficulty": "c1", "options": ["falsch1", "falsch2", "richtig", "falsch3"], "correctIndex": 2,
+    }
+    changed = deepcopy(original)
+    # A verifier-flagged repair attempt that (wrongly) tries to also change
+    # the correct option's text and move correctIndex.
+    changed.update(options=["besser1", "besser2", "NEU_RICHTIG", "besser3"], correctIndex=1)
+    fixed = _constrain_repair(original, changed, [SemanticIssue("IMPLAUSIBLE_DISTRACTOR", "error", "weak")], part)
+    assert fixed["correctIndex"] == 2
+    assert fixed["options"][2] == "richtig"
+    assert fixed["options"][0] == "besser1" and fixed["options"][1] == "besser2" and fixed["options"][3] == "besser3"
+
+
+def test_cloze_repair_freezes_correct_answer_even_for_unsupported_correct_answer_issue():
+    """UNSUPPORTED_CORRECT_ANSWER means the verifier thinks the marked
+    answer doesn't fit — but that answer came from Stage A, and Stage B
+    repair must never be the thing that silently overwrites Stage A truth
+    (see generate_language_elements_part's module docstring / point 6)."""
+    part = _sprachbausteine_part()
+    original = {
+        "questionId": "q5", "gapId": "g5", "category": "lexicon", "skillTags": ["lexical_choice"],
+        "difficulty": "c1", "options": ["a", "b", "richtig", "d"], "correctIndex": 2,
+    }
+    changed = deepcopy(original)
+    changed.update(options=["a", "b", "ANDERE_ANTWORT", "d"])
+    fixed = _constrain_repair(
+        original, changed, [SemanticIssue("UNSUPPORTED_CORRECT_ANSWER", "error", "doesn't fit")], part
+    )
+    assert fixed["options"][2] == "richtig"
+    assert fixed["correctIndex"] == 2
+
+
+def test_cloze_repair_leaves_non_cloze_items_on_the_mc3_path():
+    """part=None (the default) must behave exactly as before this change —
+    no regression for listening/reading's own repair path."""
+    original = {"questionId": "q1", "skillTags": ["detail_fact"], "mc3": {
+        "stem": "Original", "options": ["correct", "bad", "wrong"],
+        "correctIndex": 0, "evidenceSegmentIds": ["s1"]}}
+    changed = deepcopy(original)
+    changed["mc3"].update(options=["changed", "plausible", "wrong"], correctIndex=1)
+    fixed = _constrain_repair(original, changed, [SemanticIssue("IMPLAUSIBLE_DISTRACTOR", "error", "absurd")])
+    assert fixed["mc3"]["options"][1] == "plausible"
+    assert fixed["mc3"]["correctIndex"] == 0
+
+
 def test_targeted_repair_reverified(monkeypatch):
     part = get_part("telc_c1_hochschule", "listening", "hv1")
     content = listening._postprocess(part, _valid_hv1_content())
