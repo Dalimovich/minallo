@@ -446,14 +446,82 @@ def _call_passage_repair(*, system: str, user: str) -> LlmResult:
     return chat_json(system=system, user=user, max_tokens=4000, model=get_settings().german_exam_model_stage_a)
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_sentences(paragraph: str) -> list[str]:
+    return [s for s in _SENTENCE_SPLIT_RE.split(paragraph.strip()) if s]
+
+
+def _trim_passage_deterministic(
+    content: dict[str, Any], gap_specs: list[dict[str, str]], word_min: int, word_max: int
+) -> dict[str, Any] | None:
+    """Brings an over-length passage back into range by dropping whole
+    sentences that contain no placeholder — no LLM call, so it's free and
+    instant, and it's tried before spending another paid repair attempt.
+    Never touches a sentence containing a "{{gapId}}" (that would risk
+    losing a gap or its surrounding grammatical fit). Returns None if
+    there isn't enough removable, non-gap text to reach word_max without
+    dropping below word_min — caller falls back to the LLM-based repair in
+    that case."""
+    text = content.get("text") if isinstance(content, dict) else None
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
+        return None
+
+    total = sum(len(p.split()) for p in paragraphs)
+    if total <= word_max:
+        return content
+
+    split_paragraphs = [_split_sentences(p) for p in paragraphs]
+    removable: list[tuple[int, int, int]] = []  # (paragraph idx, sentence idx, word count)
+    for pi, sentences in enumerate(split_paragraphs):
+        for si, sentence in enumerate(sentences):
+            if not _GAP_PLACEHOLDER_RE.search(sentence):
+                removable.append((pi, si, len(sentence.split())))
+    removable.sort(key=lambda item: item[2], reverse=True)
+
+    removed: set[tuple[int, int]] = set()
+    for pi, si, word_count in removable:
+        if total <= word_max:
+            break
+        if total - word_count < word_min:
+            continue
+        removed.add((pi, si))
+        total -= word_count
+
+    if total > word_max or total < word_min:
+        return None
+
+    new_paragraphs = [
+        " ".join(s for si, s in enumerate(sentences) if (pi, si) not in removed)
+        for pi, sentences in enumerate(split_paragraphs)
+    ]
+    new_paragraphs = [p for p in new_paragraphs if p.strip()]
+
+    candidate = dict(content)
+    candidate["text"] = dict(text)
+    candidate["text"]["paragraphs"] = new_paragraphs
+    if _stage_a_structural_issues(candidate, gap_specs):
+        return None
+    return candidate
+
+
 def _repair_passage_word_count(
     content: dict[str, Any], gap_specs: list[dict[str, str]], word_min: int, word_max: int
 ) -> dict[str, Any]:
     """Only called on a structurally sound passage whose word count is out
     of range — never discards the (already-valid) answers, only rewrites
     text.paragraphs, and only accepts a rewrite that stays structurally
-    sound (same placeholders, same order)."""
+    sound (same placeholders, same order). Tries the free deterministic
+    sentence-trim first (both up front and after each LLM rewrite, since an
+    LLM rewrite can itself overshoot) before spending a paid repair call."""
     current = content
+    word_count = _passage_word_count(current)
+    if word_count > word_max:
+        trimmed = _trim_passage_deterministic(current, gap_specs, word_min, word_max)
+        if trimmed is not None:
+            return trimmed
     for _attempt in range(_MAX_PASSAGE_REPAIR_ATTEMPTS):
         word_count = _passage_word_count(current)
         if word_min <= word_count <= word_max:
@@ -470,6 +538,11 @@ def _repair_passage_word_count(
             candidate["text"] = fixed_text
             if not _stage_a_structural_issues(candidate, gap_specs):
                 current = candidate
+                word_count = _passage_word_count(current)
+                if word_count > word_max:
+                    trimmed = _trim_passage_deterministic(current, gap_specs, word_min, word_max)
+                    if trimmed is not None:
+                        return trimmed
     return current
 
 

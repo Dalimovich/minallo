@@ -220,6 +220,75 @@ def test_repaired_passage_preserves_all_gaps_in_order(monkeypatch: pytest.Monkey
     assert question_gap_ids == sorted(gap_ids)
 
 
+def test_deterministic_trim_removes_only_non_gap_sentences() -> None:
+    """The free, LLM-free trim must drop whole filler sentences to reach
+    range while never touching a sentence containing a placeholder."""
+    from app.services.german_exam_language_elements import _trim_passage_deterministic, _passage_word_count
+
+    specs = _gap_specs()[:2]
+    gap_sentence_1 = "Der Student braucht {{g1}} fuer sein Studium."
+    gap_sentence_2 = "Am Ende sagt er {{g2}} klar und deutlich."
+    filler_1 = "Dies ist ein zusaetzlicher Fuellsatz der ruhig entfernt werden kann heute."
+    filler_2 = "Noch ein weiterer langer Fuellsatz der problemlos komplett gestrichen werden darf."
+    content = {
+        "text": {"title": "t", "paragraphs": [f"{gap_sentence_1} {filler_1} {gap_sentence_2} {filler_2}"]},
+        "answers": [
+            {"gapId": "g1", "answer": "a", "skillTags": ["grammar"]},
+            {"gapId": "g2", "answer": "b", "skillTags": ["grammar"]},
+        ],
+    }
+
+    trimmed = _trim_passage_deterministic(content, specs, word_min=10, word_max=20)
+
+    assert trimmed is not None
+    joined = " ".join(trimmed["text"]["paragraphs"])
+    assert "{{g1}}" in joined
+    assert "{{g2}}" in joined
+    assert 10 <= _passage_word_count(trimmed) <= 20
+
+
+def test_deterministic_trim_returns_none_when_nothing_removable() -> None:
+    """A passage with no non-gap sentence to drop (or not enough removable
+    text to reach word_min without going under) must signal failure so the
+    caller falls back to the LLM-based repair, not silently overshoot."""
+    from app.services.german_exam_language_elements import _trim_passage_deterministic
+
+    specs = _gap_specs()[:1]
+    content = {
+        "text": {"title": "t", "paragraphs": ["Ein einziger Satz mit {{g1}} und sonst nichts drin."]},
+        "answers": [{"gapId": "g1", "answer": "a", "skillTags": ["grammar"]}],
+    }
+
+    assert _trim_passage_deterministic(content, specs, word_min=5, word_max=3) is None
+
+
+def test_deterministic_trim_avoids_any_llm_repair_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When enough removable filler sentences exist to reach the target
+    range on their own, no paid passage-repair LLM call should happen at
+    all — the deterministic trim must handle it for free."""
+    specs = _gap_specs()
+    from app.services.german_exam_language_elements import _CATEGORY_SKILL_TAGS
+
+    gap_sentences = " ".join(f"Punkt {g['gapId']} betrifft {{{{{g['gapId']}}}}} klar." for g in specs)
+    filler_sentence = "Dies ist ein zusaetzlicher Fuellsatz der ruhig komplett entfernt werden kann heute noch."
+    paragraph = gap_sentences + " " + (filler_sentence + " ") * 40
+    answers = [
+        {"gapId": g["gapId"], "answer": f"antwort_{g['gapId']}", "skillTags": [_CATEGORY_SKILL_TAGS[g["category"]][0]]}
+        for g in specs
+    ]
+    too_long = {"text": {"title": "Titel", "paragraphs": [paragraph]}, "answers": answers}
+
+    mod, counters = _setup(monkeypatch, stage_a_calls=[too_long], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+
+    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+
+    assert counters["stage_a"] == 1
+    assert counters["passage_repair"] == 0, "deterministic sentence-trim should have handled this without an LLM call"
+    gap_ids = [g["gapId"] for g in content["text"]["gaps"]]
+    assert gap_ids == [f"g{i}" for i in range(1, 23)]
+
+
 def test_zero_gap_stage_a_is_rejected_before_stage_b_is_ever_called(monkeypatch: pytest.MonkeyPatch) -> None:
     broken = {"text": {"title": "x", "paragraphs": ["kein einziger Platzhalter hier"]}, "answers": []}
     mod, counters = _setup(monkeypatch, stage_a_calls=[broken, broken])
