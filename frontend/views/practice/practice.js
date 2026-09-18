@@ -3029,7 +3029,14 @@
         // "no supported profile" verdict.
         _awaitingProfile: false,
         _resultsSavePromise: null,
-        _lastGenScoreLabel: null
+        _lastGenScoreLabel: null,
+        // Explicit UI state, set by every function that writes into
+        // #glSprachbausteineTextPanel/#glSprachbausteineQuestionPanel — see
+        // sbWatchdogCheck(), which uses this (and the actual DOM) to catch
+        // any code path that leaves the workspace open with neither a
+        // loading message, generated content, nor an error/unsupported
+        // card: 'profile_loading' | 'generating' | 'ready' | 'unsupported' | 'error'.
+        uiState: null
       };
 
       function sbEl(id) { return document.getElementById(id); }
@@ -3059,6 +3066,7 @@
       }
 
       function sbShowWaitingForProfile() {
+        sb.uiState = 'profile_loading';
         sb._awaitingProfile = true;
         var tabs = sbEl('glSprachbausteineTabs');
         if (tabs) tabs.style.display = 'none';
@@ -3066,12 +3074,14 @@
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
         if (qPanel) qPanel.innerHTML = '<div class="gl-listen-loading">Loading your exam profile…</div>';
+        sbArmWatchdog();
       }
 
       // Shown only once the profile has DEFINITIVELY loaded (window.
       // _germanProfileLoaded is true) and is genuinely unsupported — there is
       // no static Sprachbausteine content to fall back to, unlike Lesen/Hören.
       function sbShowUnsupportedProfile() {
+        sb.uiState = 'unsupported';
         var tabs = sbEl('glSprachbausteineTabs');
         if (tabs) tabs.style.display = 'none';
         var textPanel = sbEl('glSprachbausteineTextPanel');
@@ -3084,6 +3094,7 @@
       }
 
       function sbShowGenerationError() {
+        sb.uiState = 'error';
         var textPanel = sbEl('glSprachbausteineTextPanel');
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
@@ -3100,6 +3111,46 @@
         if (retryBtn) retryBtn.addEventListener('click', function () { sbGenerateOrLoadPart(); });
       }
 
+      // Watches for the one illegal state: the workspace visible with
+      // NEITHER a loading message, generated content, NOR an error/
+      // unsupported card — i.e. neither of sbShowWaitingForProfile/
+      // sbGenerateOrLoadPart's "Generating…"/sbRenderWorkspace/
+      // sbShowUnsupportedProfile/sbShowGenerationError actually landed
+      // anything visible. This is defense-in-depth for whatever code path
+      // produces that (a future bug, an unhandled edge case) — the user
+      // must never be left staring at a blank workspace with no way
+      // forward. Re-armed on every profile_loading/generating transition;
+      // a state that already shows content is self-evidently not blank so
+      // nothing re-arms after 'ready'/'unsupported'/'error'.
+      var SB_WATCHDOG_DELAY_MS = 2200;
+      var sbWatchdogTimer = null;
+      function sbArmWatchdog() {
+        if (sbWatchdogTimer) clearTimeout(sbWatchdogTimer);
+        sbWatchdogTimer = setTimeout(sbWatchdogCheck, SB_WATCHDOG_DELAY_MS);
+      }
+      function sbWatchdogCheck() {
+        sbWatchdogTimer = null;
+        if (_glActiveSkill !== 'sprachbausteine') return;
+        var view = sbEl('glSprachbausteineView');
+        if (!view || view.style.display === 'none') return;
+        var textPanel = sbEl('glSprachbausteineTextPanel');
+        var qPanel = sbEl('glSprachbausteineQuestionPanel');
+        var combinedHtml = ((textPanel && textPanel.innerHTML) || '') + ((qPanel && qPanel.innerHTML) || '');
+        var hasLegalContent = /gl-listen-loading|gl-listen-generating|gl-listen-weak-empty|gl-listen-error|gl-reading-text-title/.test(combinedHtml);
+        if (hasLegalContent) return;
+        if (typeof console !== 'undefined' && console.error) {
+          console.error('[Sprachbausteine] illegal blank state detected', {
+            uiState: sb.uiState,
+            profileLoaded: window._germanProfileLoaded,
+            profileId: window._germanExamProfileId,
+            germanTest: window._germanTest,
+            germanLevel: window._germanLevel,
+            genRequestToken: sb._genRequestToken
+          });
+        }
+        sbShowGenerationError();
+      }
+
       // Race-safe like rdGenerateOrLoadPart/lsGenerateOrLoadPart: captures
       // sb._genRequestToken at call time and re-checks it before applying
       // either outcome, so a stale response from a superseded retry/leave
@@ -3110,10 +3161,12 @@
         var profileId = sbResolveProfileId();
         if (!profileId) return Promise.resolve(false);
         sb.usingGenerated = true;
+        sb.uiState = 'generating';
         var textPanel = sbEl('glSprachbausteineTextPanel');
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
         if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified telc exercise…</div>';
+        sbArmWatchdog();
         return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3126,9 +3179,12 @@
           // Defensive: a malformed envelope (unexpected shape from a
           // half-broken generation) must surface as the same explicit
           // error+Retry state as a network/HTTP failure, never a blank
-          // panel — see sbShowGenerationError()'s callers.
+          // panel — sbRenderWorkspace() now throws instead of silently
+          // returning on missing prerequisites, and that throw is caught
+          // below by the same .catch that handles network/HTTP failures.
           sbLoadGeneratedPart(envelope);
           sbRenderWorkspace();
+          sb.uiState = 'ready';
           return true;
         }).catch(function (err) {
           if (myToken !== sb._genRequestToken) return false;
@@ -3195,7 +3251,17 @@
       function sbRenderWorkspace() {
         var textPanel = sbEl('glSprachbausteineTextPanel');
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
-        if (!textPanel || !qPanel || !sb.content) return;
+        // A silent `return` here used to be able to leave the workspace
+        // exactly as the caller found it — including mid-"Generating…" or
+        // even blank — with nothing to signal that render never happened.
+        // Throwing routes this through sbGenerateOrLoadPart's existing
+        // .catch, which always lands on the explicit Retry/error state.
+        if (!textPanel || !qPanel || !sb.content) {
+          throw new Error(
+            '[Sprachbausteine] render prerequisites missing: textPanel=' + !!textPanel +
+            ' qPanel=' + !!qPanel + ' content=' + !!sb.content
+          );
+        }
         var text = sb.content.text || {};
         textPanel.innerHTML =
           '<div class="gl-reading-text-eyebrow">' + _glEscape(sbGeneratedHeader()) + '</div>' +

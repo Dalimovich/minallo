@@ -12,11 +12,17 @@ import { AppPage } from './pages/AppPage';
  * Sprachbausteine. Before the fix, a stale/empty localStorage read in that
  * delayed init could clobber the already-resolved German profile globals,
  * so this waits deliberately instead of opening immediately — opening right
- * after login would never have reproduced the race. Only checks that the
- * unsupported-profile message does not appear and that the generate request
- * fires with the right params; does not wait for generation to finish (that
- * pipeline's own correctness is covered by the acceptance run in
- * 27-sprachbausteine-live.spec.ts).
+ * after login would never have reproduced the race.
+ *
+ * IMPORTANT: this test used to stop at "/generate fired with the right
+ * body", which is NOT sufficient — a live rerun (2026-09-18) showed the
+ * request can fire correctly and the profile race can be fixed, while the
+ * learner-visible workspace still ends up stuck/blank because of a
+ * SEPARATE bug (loadUserData's Promise.all aborting on a query rejection,
+ * see 6723c8c's follow-up fix). So this now also asserts the actual DOM
+ * the learner sees: the generated passage title, all 22 inline gap
+ * selects, and the Check-answers button. A test that only checks the
+ * network request can pass while the screen is blank — this one can't.
  */
 
 async function realLogin(page: Page): Promise<void> {
@@ -55,7 +61,7 @@ async function realLogin(page: Page): Promise<void> {
 
 test.describe('Sprachbausteine profile-state race — live acceptance', () => {
   test('unsupported-profile message does not appear after a 30s delayed-module wait', async ({ page }) => {
-    test.setTimeout(3 * 60_000);
+    test.setTimeout(5 * 60_000);
     const app = new AppPage(page);
     await realLogin(page);
     await page.evaluate(() => {
@@ -104,5 +110,30 @@ test.describe('Sprachbausteine profile-state race — live acceptance', () => {
     expect((generateRequestBody as Record<string, unknown> | null)?.['profileId']).toBe('telc_c1_hochschule');
     expect((generateRequestBody as Record<string, unknown> | null)?.['module']).toBe('language_elements');
     expect((generateRequestBody as Record<string, unknown> | null)?.['partId']).toBe('sprachbausteine_1');
+
+    // The blind spot: a passing request does not prove the learner sees
+    // anything. Wait for generation to actually finish, then assert the
+    // real DOM — the "Generating…" placeholder must be gone and either the
+    // rendered exercise or an explicit error/Retry card must be present.
+    // A page that's just blank (loading text gone, nothing rendered)
+    // fails this even if every network call above was perfect.
+    await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 120_000 });
+
+    const errorCard = page.locator('.gl-listen-error');
+    const isErrorShown = await errorCard.isVisible().catch(() => false);
+    if (isErrorShown) {
+      const errorText = await errorCard.innerText().catch(() => '');
+      throw new Error('Sprachbausteine landed on the error/Retry card instead of a rendered exercise: ' + errorText);
+    }
+
+    await expect(page.locator('#glSprachbausteineTextPanel .gl-reading-text-title')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#glSprachbausteineTextPanel .gl-reading-gap-select')).toHaveCount(22, { timeout: 10_000 });
+    await expect(page.locator('#glSprachbausteineCheck')).toBeVisible({ timeout: 10_000 });
+
+    const textPanelEmpty = (await page.locator('#glSprachbausteineTextPanel').innerHTML()).trim().length === 0;
+    const questionPanelEmpty = (await page.locator('#glSprachbausteineQuestionPanel').innerHTML()).trim().length === 0;
+    expect(textPanelEmpty && questionPanelEmpty, 'text and question panels must never both be empty once generation has settled').toBe(false);
+
+    await page.screenshot({ path: 'tests/e2e/report/sprachbausteine-profile-race-rendered.png', fullPage: true }).catch(() => {});
   });
 });

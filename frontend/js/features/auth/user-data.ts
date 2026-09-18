@@ -148,9 +148,23 @@ export async function loadUserData(uid: string): Promise<void> {
     // paywall decision must only ever act on a POSITIVE answer — a timed-out
     // subscriptions query is not proof the user has no subscription.
     const timedOut: Record<string, boolean> = {};
+    // A rejection (network error, non-2xx from PostgREST, etc.) used to
+    // propagate straight through Promise.race and then Promise.all below,
+    // aborting the ENTIRE loadUserData call — including the other two
+    // queries that may have succeeded — and, critically, skipping the
+    // profile apply below entirely. That left _germanProfileLoaded unset
+    // for the rest of the session with no retry, which is exactly what
+    // stranded Sprachbausteine (and Lesen/Hören/Writing Coach, which read
+    // the same flag) on "Loading your exam profile…" forever after a
+    // transient 503/403 during boot. Resolve null on error too, same as a
+    // timeout — the caller already treats null as "couldn't get this".
     const withTimeout = <T,>(p: Promise<T>, label: string): Promise<T | null> =>
       Promise.race<T | null>([
-        p,
+        p.catch((err: unknown) => {
+          console.warn('[loadUserData] ' + label + ' failed', err);
+          timedOut[label] = true;
+          return null;
+        }),
         new Promise<null>((resolve) =>
           setTimeout(() => {
             console.warn('[loadUserData] ' + label + ' timed out');
@@ -192,6 +206,19 @@ export async function loadUserData(uid: string): Promise<void> {
         /* quota */
       }
       if (window.applyProfile) window.applyProfile(profile);
+    } else if (window.applyProfile) {
+      // The authoritative profiles fetch didn't return a row (timed out,
+      // errored, or a genuine DB miss) — every module gating on
+      // _germanProfileLoaded (Sprachbausteine/Lesen/Hören/Writing Coach)
+      // has no other signal to stop waiting on, so leaving it unset here
+      // means an indefinite loading spinner instead of either the
+      // resolved cached profile or an honest "unsupported" state. Promote
+      // whatever's already known (from the cache-path apply earlier in
+      // this function, or localStorage) as final: applyProfile({}, ...)
+      // carries no keys of its own, so the hasOwnProperty guards in
+      // applyProfile() make this a no-op for every field except flipping
+      // _germanProfileLoaded to true.
+      window.applyProfile({}, { authoritative: true });
     }
     if (profile && profile.courses) {
       scheduleUserCoursesLoad(profile.courses);
@@ -273,6 +300,12 @@ export async function loadUserData(uid: string): Promise<void> {
     }
   } catch (e: unknown) {
     console.warn('loadUserData error:', e);
+    // Same reasoning as the null-profile branch above: an unexpected throw
+    // anywhere in this function must not leave _germanProfileLoaded unset
+    // forever. This is now a secondary safety net (withTimeout no longer
+    // lets a query rejection propagate this far), covering anything else
+    // that could throw before the profile apply runs.
+    if (window.applyProfile) window.applyProfile({}, { authoritative: true });
   }
 }
 
