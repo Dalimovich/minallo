@@ -2,16 +2,22 @@ import { test, expect, Page } from '@playwright/test';
 import { AppPage } from './pages/AppPage';
 
 /**
- * Manual live acceptance run for Sprachbausteine (real OpenAI, real
- * Supabase, real Hetzner backend at 82fb9ed+) — NOT part of the default
- * suite, run explicitly via:
- *   E2E_BASE_URL=https://minallo.de E2E_EMAIL=... E2E_PASSWORD=... \
- *     npx playwright test tests/e2e/27-sprachbausteine-live.spec.ts --project="Desktop Chrome"
+ * Manual live validation for Sprachbausteine (real OpenAI, real Supabase,
+ * real Hetzner backend) — NOT part of the default suite. Two independently
+ * runnable tests, per the staged validation plan (canary before the paid
+ * 5-run acceptance batch):
+ *
+ *   Canary (1 generation):
+ *     E2E_BASE_URL=https://minallo.de E2E_EMAIL=... E2E_PASSWORD=... \
+ *       npx playwright test tests/e2e/27-sprachbausteine-live.spec.ts \
+ *       --project="Desktop Chrome" --grep "canary"
+ *
+ *   Full acceptance (5 generations + New Test x2, only after canaries pass):
+ *     ... --grep "5-run acceptance"
  *
  * Confirms the c699bd0 profile-loading fix (real /generate call, not the
- * "only available for telc C1 Hochschule" unsupported-profile message),
- * then runs 5 fresh generations + 2 New Test clicks, recording the fields
- * from the user's acceptance checklist that are actually observable from
+ * "only available for telc C1 Hochschule" unsupported-profile message) and
+ * records the fields from the acceptance checklist that are observable from
  * the browser: success/no-5xx, gap count, category split (grammar/lexicon/
  * orthography via skillTags), word count, 4-distinct-options, wall time,
  * and generationId uniqueness across New Test clicks.
@@ -88,107 +94,126 @@ function wordCount(paragraphs: string[]): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
-test.describe('Sprachbausteine — live acceptance run', () => {
+async function loginAndOpenChatbot(page: Page): Promise<AppPage> {
+  const app = new AppPage(page);
+  await ensureLoggedIn(page);
+  await page.evaluate(() => {
+    const w = window as unknown as { _userType?: string; _applyUserTypeUI?: () => void };
+    w._userType = 'learner';
+    if (typeof w._applyUserTypeUI === 'function') w._applyUserTypeUI();
+  });
+  await app.navigateTo('chatbot');
+  return app;
+}
+
+async function openSprachbausteine(page: Page): Promise<void> {
+  const link = page.locator('[data-testid="german-panel-sprachbausteine"]');
+  await expect(link).toBeVisible({ timeout: 20_000 });
+  await link.click();
+  await expect(page.locator('#glSprachbausteineView')).toBeVisible();
+}
+
+function trackGenerateRequestStart(page: Page): { get: () => number } {
+  let pendingStart = 0;
+  page.on('request', req => {
+    if (req.url().includes('/api/ai/german-exam/generate')) pendingStart = Date.now();
+  });
+  return { get: () => pendingStart };
+}
+
+async function waitForGenerateResponse(page: Page, getStart: () => number): Promise<GenerateCall> {
+  const resp = await page.waitForResponse(
+    r => r.url().includes('/api/ai/german-exam/generate') && r.request().method() === 'POST',
+    { timeout: 120_000 }
+  );
+  const wallMs = Date.now() - getStart();
+  const status = resp.status();
+  if (status !== 200) {
+    return { status, wallMs, gapCount: 0, categoryCounts: {}, wordCount: 0, optionsDistinctCount: [], generationId: null };
+  }
+  const envelope = await resp.json();
+  const questions = (envelope?.content?.questions || []) as Array<{ options: string[]; skillTags: string[] }>;
+  const paragraphs = (envelope?.content?.text?.paragraphs || []) as string[];
+  const categoryCounts: Record<string, number> = {};
+  for (const q of questions) {
+    const c = categorize(q.skillTags || []);
+    categoryCounts[c] = (categoryCounts[c] || 0) + 1;
+  }
+  return {
+    status,
+    wallMs,
+    gapCount: questions.length,
+    categoryCounts,
+    wordCount: wordCount(paragraphs),
+    optionsDistinctCount: questions.map(q => new Set(q.options || []).size),
+    generationId: envelope?.generationId || null,
+  };
+}
+
+function acceptanceFailuresFor(c: GenerateCall, label: string): string[] {
+  const failures: string[] = [];
+  if (c.status !== 200) failures.push(`${label}: HTTP ${c.status}`);
+  if (c.gapCount !== 22) failures.push(`${label}: gapCount=${c.gapCount} (expected 22)`);
+  const grammar = c.categoryCounts.grammar || 0;
+  const lexicon = c.categoryCounts.lexicon || 0;
+  const orthography = c.categoryCounts.orthography || 0;
+  if (grammar !== 14 || lexicon !== 6 || orthography !== 2) {
+    failures.push(`${label}: categories grammar=${grammar} lexicon=${lexicon} orthography=${orthography} (expected 14/6/2)`);
+  }
+  if (c.wordCount < 320 || c.wordCount > 350) failures.push(`${label}: wordCount=${c.wordCount} (expected 320-350)`);
+  const badOptionCounts = c.optionsDistinctCount.filter(n2 => n2 !== 4);
+  if (badOptionCounts.length) failures.push(`${label}: ${badOptionCounts.length} gaps did not have 4 distinct options`);
+  return failures;
+}
+
+test.describe('Sprachbausteine — live validation', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('confirmation + 5-run acceptance + New Test x2', async ({ page }) => {
-    test.setTimeout(20 * 60_000);
-    const app = new AppPage(page);
-    await ensureLoggedIn(page);
-    await page.evaluate(() => {
-      const w = window as unknown as { _userType?: string; _applyUserTypeUI?: () => void };
-      w._userType = 'learner';
-      if (typeof w._applyUserTypeUI === 'function') w._applyUserTypeUI();
-    });
+  test('canary: one generation, records timing and acceptance fields', async ({ page }) => {
+    test.setTimeout(3 * 60_000);
+    await loginAndOpenChatbot(page);
+    const tracker = trackGenerateRequestStart(page);
 
-    await app.navigateTo('chatbot');
-
-    const calls: GenerateCall[] = [];
-    let pendingStart = 0;
-    page.on('request', req => {
-      if (req.url().includes('/api/ai/german-exam/generate')) pendingStart = Date.now();
-    });
-
-    const openSprachbausteine = async () => {
-      const link = page.locator('[data-testid="german-panel-sprachbausteine"]');
-      await expect(link).toBeVisible({ timeout: 20_000 });
-      await link.click();
-      await expect(page.locator('#glSprachbausteineView')).toBeVisible();
-    };
-
-    const waitForGenerateResponse = async (): Promise<GenerateCall> => {
-      const resp = await page.waitForResponse(
-        r => r.url().includes('/api/ai/german-exam/generate') && r.request().method() === 'POST',
-        { timeout: 120_000 }
-      );
-      const wallMs = Date.now() - pendingStart;
-      const status = resp.status();
-      if (status !== 200) {
-        return { status, wallMs, gapCount: 0, categoryCounts: {}, wordCount: 0, optionsDistinctCount: [], generationId: null };
-      }
-      const envelope = await resp.json();
-      const questions = (envelope?.content?.questions || []) as Array<{ options: string[]; skillTags: string[] }>;
-      const paragraphs = (envelope?.content?.text?.paragraphs || []) as string[];
-      const categoryCounts: Record<string, number> = {};
-      for (const q of questions) {
-        const c = categorize(q.skillTags || []);
-        categoryCounts[c] = (categoryCounts[c] || 0) + 1;
-      }
-      return {
-        status,
-        wallMs,
-        gapCount: questions.length,
-        categoryCounts,
-        wordCount: wordCount(paragraphs),
-        optionsDistinctCount: questions.map(q => new Set(q.options || []).size),
-        generationId: envelope?.generationId || null,
-      };
-    };
-
-    // --- Step 1: confirmation attempt (proves c699bd0 fix: no unsupported-profile message) ---
-    await openSprachbausteine();
+    await openSprachbausteine(page);
     const unsupported = page.getByText('Sprachbausteine practice is currently available for the');
     const isUnsupportedShown = await unsupported.isVisible().catch(() => false);
     expect(isUnsupportedShown, 'unsupported-profile message must NOT show for telc C1 Hochschule').toBe(false);
 
-    const firstCall = await waitForGenerateResponse();
+    const call = await waitForGenerateResponse(page, tracker.get);
     await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 120_000 });
-    console.log('CONFIRMATION_RUN', JSON.stringify(firstCall));
-    expect(firstCall.status, 'confirmation run must be HTTP 200').toBe(200);
-    calls.push(firstCall);
+    console.log('CANARY_RUN', JSON.stringify(call));
 
-    // --- Step 2: 4 more fresh generations via full page reload (5 total) ---
-    for (let i = 2; i <= 5; i++) {
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.evaluate(() => {
-        const w = window as unknown as { _userType?: string; _applyUserTypeUI?: () => void };
-        w._userType = 'learner';
-        if (typeof w._applyUserTypeUI === 'function') w._applyUserTypeUI();
-      });
-      await app.navigateTo('chatbot');
-      await openSprachbausteine();
-      const call = await waitForGenerateResponse();
+    const failures = acceptanceFailuresFor(call, 'canary');
+    console.log('CANARY_FAILURES', JSON.stringify(failures));
+    expect(call.status, `canary run must be HTTP 200 (got ${call.status})`).toBe(200);
+    expect(failures, `Canary acceptance failures:\n${failures.join('\n')}`).toEqual([]);
+  });
+
+  test('5-run acceptance + New Test x2', async ({ page }) => {
+    test.setTimeout(20 * 60_000);
+    const app = await loginAndOpenChatbot(page);
+    const tracker = trackGenerateRequestStart(page);
+    const calls: GenerateCall[] = [];
+
+    for (let i = 1; i <= 5; i++) {
+      if (i > 1) {
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.evaluate(() => {
+          const w = window as unknown as { _userType?: string; _applyUserTypeUI?: () => void };
+          w._userType = 'learner';
+          if (typeof w._applyUserTypeUI === 'function') w._applyUserTypeUI();
+        });
+        await app.navigateTo('chatbot');
+      }
+      await openSprachbausteine(page);
+      const call = await waitForGenerateResponse(page, tracker.get);
       await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 120_000 });
       console.log(`RUN_${i}`, JSON.stringify(call));
       calls.push(call);
     }
 
-    // --- Acceptance rule checks across all 5 runs ---
     const failures: string[] = [];
-    calls.forEach((c, idx) => {
-      const n = idx + 1;
-      if (c.status !== 200) failures.push(`run ${n}: HTTP ${c.status}`);
-      if (c.gapCount !== 22) failures.push(`run ${n}: gapCount=${c.gapCount} (expected 22)`);
-      const grammar = c.categoryCounts.grammar || 0;
-      const lexicon = c.categoryCounts.lexicon || 0;
-      const orthography = c.categoryCounts.orthography || 0;
-      if (grammar !== 14 || lexicon !== 6 || orthography !== 2) {
-        failures.push(`run ${n}: categories grammar=${grammar} lexicon=${lexicon} orthography=${orthography} (expected 14/6/2)`);
-      }
-      if (c.wordCount < 320 || c.wordCount > 350) failures.push(`run ${n}: wordCount=${c.wordCount} (expected 320-350)`);
-      const badOptionCounts = c.optionsDistinctCount.filter(n2 => n2 !== 4);
-      if (badOptionCounts.length) failures.push(`run ${n}: ${badOptionCounts.length} gaps did not have 4 distinct options`);
-    });
+    calls.forEach((c, idx) => failures.push(...acceptanceFailuresFor(c, `run ${idx + 1}`)));
 
     console.log('ALL_RUNS_SUMMARY', JSON.stringify(calls, null, 2));
     console.log('ACCEPTANCE_FAILURES', JSON.stringify(failures, null, 2));
@@ -200,7 +225,7 @@ test.describe('Sprachbausteine — live acceptance run', () => {
       const newTestBtn = page.locator('#glSprachbausteineNewTest');
       await expect(newTestBtn).toBeVisible({ timeout: 20_000 });
       await newTestBtn.click();
-      const call = await waitForGenerateResponse();
+      const call = await waitForGenerateResponse(page, tracker.get);
       await expect(page.locator('.gl-listen-generating')).toHaveCount(0, { timeout: 120_000 });
       console.log(`NEW_TEST_${i + 1}`, JSON.stringify(call));
       newTestGenIds.push(call.generationId);
