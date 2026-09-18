@@ -72,6 +72,63 @@ test('chatbot right drawer exposes Courses and Saved as primary tabs', () => {
   assert.match(html, /data-library-panel="saved"/);
 });
 
+test('Courses is student-only again, Files is learner-only, positioned before Practice', () => {
+  const courses = html.match(/<button[^>]*data-library-tab="courses"[\s\S]{0,40}/)?.[0] || '';
+  assert.match(courses, /ncb-student-only/);
+  const filesTabIdx = html.indexOf('data-library-tab="files"');
+  const germanTabIdx = html.indexOf('data-library-tab="german"');
+  assert.ok(filesTabIdx > -1 && germanTabIdx > -1 && filesTabIdx < germanTabIdx,
+    'Files tab must come before the Practice ("german") tab in DOM order');
+  const filesTabTag = html.slice(html.lastIndexOf('<button', filesTabIdx), filesTabIdx + 60);
+  assert.match(filesTabTag, /ncb-learner-only/);
+  const coursesPanel = html.match(/<section[^>]*data-library-panel="courses"[^>]*>/)?.[0] || '';
+  assert.match(coursesPanel, /ncb-student-only/);
+  const filesPanel = html.match(/<section[^>]*data-library-panel="files"[^>]*>/)?.[0] || '';
+  assert.match(filesPanel, /ncb-learner-only/);
+});
+
+test('learner Files: getLearnerFileScope never touches courses()/SEMS, uploads target the canonical bucket', () => {
+  assert.match(moduleSource, /export function getLearnerFileScope\(\): LibraryCourse/);
+  assert.match(moduleSource, /LEARNER_FILES_CANONICAL_BUCKET_ID = 'german-files'/);
+  assert.match(moduleSource, /LEARNER_FILES_LEGACY_BUCKET_IDS = \[/);
+  assert.match(moduleSource, /'german-general', 'german-reading', 'german-listening', 'german-sprachbausteine'/);
+  assert.match(moduleSource, /uploadIntoCourse\(panel, detail, canonical, Array\.from\(input\.files/);
+  assert.match(moduleSource, /uploadIntoCourse\(panel, detail, canonical, Array\.from\(event\.dataTransfer\?\.files/);
+  // renderLearnerFiles must never call renderCourses/courses() itself —
+  // that's the exact af5bcb2-style mistake this module corrects.
+  const learnerFilesSection = moduleSource.slice(
+    moduleSource.indexOf('Learner Files (German learners'),
+    moduleSource.indexOf('Exported so course-files-workspace.ts')
+  );
+  // Strip comments first — this module's own docs mention "renderCourses()"
+  // by name (as the thing deliberately NOT reused); only real invocations
+  // in actual code should fail this check.
+  const codeOnly = learnerFilesSection
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(codeOnly, /\brenderCourses\(/);
+  assert.doesNotMatch(codeOnly, /\bcourses\(\)/);
+});
+
+test('learner Files: upload button and drag-drop zone render immediately, not gated behind hydration', () => {
+  const learnerFilesSection = moduleSource.slice(
+    moduleSource.indexOf('export async function renderLearnerFiles'),
+    moduleSource.indexOf('Exported so course-files-workspace.ts')
+  );
+  const uploadMarkupIdx = learnerFilesSection.indexOf('ncb-course-upload');
+  const dropZoneIdx = learnerFilesSection.indexOf('ncb-root-drop');
+  const dragEnterWiringIdx = learnerFilesSection.indexOf("addEventListener('dragenter'");
+  const hydrationCallIdx = learnerFilesSection.indexOf('await loadLearnerFiles(');
+  assert.ok(uploadMarkupIdx > -1 && uploadMarkupIdx < hydrationCallIdx,
+    'the Upload button markup must be written before awaiting loadLearnerFiles()');
+  assert.ok(dropZoneIdx > -1 && dropZoneIdx < hydrationCallIdx,
+    'the drop zone markup must be written before awaiting loadLearnerFiles()');
+  assert.ok(dragEnterWiringIdx > -1 && dragEnterWiringIdx < hydrationCallIdx,
+    'drag-and-drop listeners must be bound before awaiting loadLearnerFiles()');
+  assert.match(learnerFilesSection, /Drop files here to upload/);
+  assert.match(learnerFilesSection, /No German files yet\. Upload a PDF or document/);
+});
+
 test('course library has glass cards and persists a larger most-recent course', () => {
   assert.match(moduleSource, /const RECENT_COURSE_KEY = 'minallo:chatbot-recent-course'/);
   assert.match(moduleSource, /localStorage\.setItem\(RECENT_COURSE_KEY, course\.id\)/);

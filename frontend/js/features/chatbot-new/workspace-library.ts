@@ -1010,17 +1010,14 @@ async function loadLearnerFiles(force = false): Promise<LearnerFileEntry[]> {
  * are already course-id-agnostic, just pointed at the synthetic learner
  * bucket(s) instead of a real SEMS course. */
 export async function renderLearnerFiles(panel: HTMLElement, force = false): Promise<void> {
-  panel.innerHTML = '<div class="ncb-library-status">Loading your files&hellip;</div>';
-  let entries: LearnerFileEntry[];
-  try {
-    entries = await loadLearnerFiles(force);
-  } catch {
-    panel.innerHTML = '<div class="ncb-library-status">Couldn’t load your files. <button type="button" class="ncb-library-retry">Retry</button></div>';
-    panel.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void renderLearnerFiles(panel, true); });
-    return;
-  }
   const canonical = getLearnerFileScope();
-  const rowsHtml = entries.map(({ bucket, file }) => fileButton(file, bucket, null)).join('');
+
+  // Upload/drag-drop must be usable IMMEDIATELY — hydrating every legacy
+  // german-<skill> bucket (11 buckets x 2 sequential calls each, only
+  // partly parallelizable behind the browser's per-host connection cap)
+  // was observed live taking 15-19s. Gating the whole panel (including the
+  // Upload button) behind that made the panel look broken/empty rather
+  // than just slow. Only the file LIST waits on hydration now.
   panel.innerHTML =
     '<div class="ncb-library-section-head"><div><strong>Files</strong><span>Upload material you want to use for German practice.</span></div></div>' +
     '<div class="ncb-course-detail">' +
@@ -1029,46 +1026,65 @@ export async function renderLearnerFiles(panel: HTMLElement, force = false): Pro
     '<button type="button" class="ncb-course-action ncb-course-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Upload file</span></button>' +
     '</div>' +
     '<div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>' +
-    `<div class="ncb-library-group ncb-root-drop" data-drop-folder="">${rowsHtml || '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>'}</div>` +
+    '<div class="ncb-library-group ncb-root-drop" data-drop-folder="">' +
+    '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
+    '<div class="ncb-library-status">Loading your files&hellip;</div>' +
+    '</div>' +
     '</div>';
 
   const detail = panel.querySelector<HTMLElement>('.ncb-course-detail')!;
   const input = detail.querySelector<HTMLInputElement>('.ncb-course-upload-input');
   const uploadBtn = detail.querySelector<HTMLButtonElement>('.ncb-course-upload');
+  const dropTarget = detail.querySelector<HTMLElement>('.ncb-root-drop')!;
   uploadBtn?.addEventListener('click', () => input?.click());
   input?.addEventListener('change', () => {
     void uploadIntoCourse(panel, detail, canonical, Array.from(input.files || []), null);
     input.value = '';
   });
 
-  const dropTarget = detail.querySelector<HTMLElement>('.ncb-root-drop');
-  if (dropTarget) {
-    let depth = 0;
-    dropTarget.addEventListener('dragenter', (event) => {
-      if (!event.dataTransfer?.types.includes('Files')) return;
-      event.preventDefault();
-      depth++;
-      dropTarget.classList.add('is-drag-target');
-    });
-    dropTarget.addEventListener('dragover', (event) => {
-      if (!event.dataTransfer?.types.includes('Files')) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'copy';
-    });
-    dropTarget.addEventListener('dragleave', () => { depth--; if (depth <= 0) dropTarget.classList.remove('is-drag-target'); });
-    dropTarget.addEventListener('drop', (event) => {
-      event.preventDefault();
-      depth = 0;
-      dropTarget.classList.remove('is-drag-target');
-      void uploadIntoCourse(panel, detail, canonical, Array.from(event.dataTransfer?.files || []), null);
-    });
+  let dragDepth = 0;
+  dropTarget.addEventListener('dragenter', (event) => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    dragDepth++;
+    dropTarget.classList.add('is-drag-target');
+  });
+  dropTarget.addEventListener('dragover', (event) => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  });
+  dropTarget.addEventListener('dragleave', () => { dragDepth--; if (dragDepth <= 0) dropTarget.classList.remove('is-drag-target'); });
+  dropTarget.addEventListener('drop', (event) => {
+    event.preventDefault();
+    dragDepth = 0;
+    dropTarget.classList.remove('is-drag-target');
+    void uploadIntoCourse(panel, detail, canonical, Array.from(event.dataTransfer?.files || []), null);
+  });
+
+  let entries: LearnerFileEntry[];
+  try {
+    entries = await loadLearnerFiles(force);
+  } catch {
+    if (!dropTarget.isConnected) return; // panel was re-rendered/torn down while loading
+    dropTarget.innerHTML =
+      '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
+      '<div class="ncb-library-status">Couldn’t load your files. <button type="button" class="ncb-library-retry">Retry</button></div>';
+    dropTarget.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void renderLearnerFiles(panel, true); });
+    return;
   }
+  if (!dropTarget.isConnected) return; // learner switched tabs/roles while hydration was in flight
+
+  const rowsHtml = entries.map(({ bucket, file }) => fileButton(file, bucket, null)).join('');
+  dropTarget.innerHTML =
+    '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
+    (rowsHtml || '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>');
 
   // Each row is bound to the bucket it actually belongs to (canonical or a
   // legacy german-<skill> bucket), not always `canonical` — Open/Delete must
   // act on the file's real storage scope, aggregation is a display-only
   // convenience.
-  const rows = Array.from(detail.querySelectorAll<HTMLElement>('.ncb-file-row'));
+  const rows = Array.from(dropTarget.querySelectorAll<HTMLElement>('.ncb-file-row'));
   entries.forEach(({ bucket }, index) => {
     const row = rows[index];
     if (row) bindSingleFileRow(panel, detail, bucket, row);
