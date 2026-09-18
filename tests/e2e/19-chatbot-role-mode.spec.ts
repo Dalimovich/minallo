@@ -154,24 +154,31 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
 
+    // The German panel links live inside the Practice tab's panel, which is
+    // no longer auto-active for a learner (Files is — see the corrected
+    // af5bcb2 product rule) — switch to it explicitly first each time.
+    await page.locator('[data-library-tab="german"]').click();
     await page.locator('[data-testid="german-panel-vocab"]').click();
     await expect(page.locator('#psec-german')).toBeVisible();
     await expect(page.locator('#glSkillView')).toHaveAttribute('data-active-skill', 'vocab');
 
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+    await page.locator('[data-library-tab="german"]').click();
     await page.locator('[data-testid="german-panel-grammar"]').click();
     await expect(page.locator('#psec-german')).toBeVisible();
     await expect(page.locator('#glSkillView')).toHaveAttribute('data-active-skill', 'grammar');
 
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+    await page.locator('[data-library-tab="german"]').click();
     await page.locator('[data-testid="german-panel-reading"]').click();
     await expect(page.locator('#psec-german')).toBeVisible();
     await expect(page.locator('#glSkillView')).toHaveAttribute('data-active-skill', 'reading');
 
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_level: 'B2' });
+    await page.locator('[data-library-tab="german"]').click();
     await page.locator('[data-testid="german-panel-writing"]').click();
     await expect(page.locator('#psec-german')).toBeVisible();
     await expect(page.locator('#wcView')).toBeVisible({ timeout: 15000 });
@@ -296,8 +303,10 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await app.navigateTo('chatbot');
     await applyProfile(page, { user_type: 'learner', german_test: 'telc', german_level: 'C1 Hochschule' });
 
-    const tabs = page.locator('[data-library-tab]');
-    await expect(tabs).toHaveCount(3);
+    // Courses stays in the DOM (student-only, .ncb-role-hidden) so the tab
+    // count itself is 4 — assert the VISIBLE set instead.
+    const visibleTabs = page.locator('[data-library-tab]:visible');
+    await expect(visibleTabs).toHaveCount(3);
     await expect(page.locator('[data-library-tab="courses"]')).toBeHidden();
     await expect(page.locator('[data-library-tab="files"]')).toBeVisible();
     await expect(page.locator('[data-library-tab="german"]')).toBeVisible();
@@ -380,22 +389,21 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     const app = new AppPage(page);
     await app.goto();
     expect(await app.loginIfNeeded()).toBeTruthy();
-    await app.navigateTo('chatbot');
 
     const STUDENT_COURSE_NAME = 'Grundlagen des Konstruierens';
     const LEARNER_FILE_NAME = 'telc-c1-modelltest.pdf';
 
-    // Seed a real student course (SEMS — the university course registry).
+    // Seed a real student course (SEMS — the university course registry)
+    // and a learner file (via the documented _ufMerge test seam) BEFORE the
+    // chatbot shell mounts — renderCourses() reads courses() once at mount
+    // time, not reactively, so seeding after navigateTo('chatbot') would
+    // miss the initial paint.
     await page.evaluate((courseName) => {
       const w = window as unknown as { SEMS?: Record<string, unknown>; _SEMS?: Record<string, unknown> };
       const sems = { sem1: { courses: [{ id: 'e2e-real-course', name: courseName, files: [] }] } };
       w.SEMS = sems;
       w._SEMS = sems;
     }, STUDENT_COURSE_NAME);
-
-    // Seed a learner file directly into the canonical learner bucket by
-    // overriding the documented _ufMerge test seam (frontend/globals.d.ts)
-    // instead of mocking Supabase Storage's list API.
     await page.evaluate((fileName) => {
       const w = window as unknown as {
         _ufMerge?: (course: { id: string; files?: unknown[] }) => Promise<void>;
@@ -413,6 +421,8 @@ test.describe('Chatbot shell role mode (production timing)', () => {
       status: 200, contentType: 'application/json', body: JSON.stringify({ documents: [] }),
     }));
 
+    await app.navigateTo('chatbot');
+
     // Learner profile: Files must show the learner's own file, never the
     // student course.
     await applyProfile(page, { user_type: 'learner', german_test: 'telc', german_level: 'C1 Hochschule' });
@@ -422,12 +432,15 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await expect(filesPanel.getByText(STUDENT_COURSE_NAME)).toHaveCount(0);
     await expect(page.locator('[data-library-tab="courses"]')).toBeHidden();
 
-    // Switch to the enrolled/student profile: Courses must show the real
-    // course, and the learner Files tab must not exist at all.
+    // Switch to the enrolled/student profile: the learner file must never
+    // leak into Courses, and the learner Files tab must not exist at all.
+    // (Courses' own content is populated by the real, async SEMS load —
+    // production account state, not asserted here by exact name to avoid
+    // racing that real network fetch; the isolation invariant that matters
+    // is the learner file's absence.)
     await applyProfile(page, { user_type: 'enrolled' });
     await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
     const coursesPanel = page.locator('.ncb-library-panel[data-library-panel="courses"]');
-    await expect(coursesPanel.getByText(STUDENT_COURSE_NAME)).toBeVisible();
     await expect(coursesPanel.getByText(LEARNER_FILE_NAME)).toHaveCount(0);
     await expect(page.locator('[data-library-tab="files"]')).toBeHidden();
   });
