@@ -242,12 +242,19 @@ export function applyChatbotExperienceMode(): void {
     if (ariaKey) textarea.setAttribute('aria-label', translate(ariaKey, textarea.getAttribute('aria-label') || ''));
   }
 
+  // Courses is shared by both roles (see chatbot.html — it's no longer
+  // .ncb-student-only), so a role transition must never move the user off
+  // an already-valid tab they're looking at. The only tab that becomes
+  // genuinely invalid on a transition is German/Practice when the account
+  // turns out NOT to be a learner (it's .ncb-learner-only and about to be
+  // hidden) — that direction still needs an explicit fallback. The reverse
+  // (learner arrives while Courses is active) used to force-click German,
+  // which is exactly what silently swapped the panel out from under the
+  // user in the reported video; Courses staying selected is correct.
   const coursesTab = root.querySelector<HTMLButtonElement>('[data-library-tab="courses"]');
   const germanTab = root.querySelector<HTMLButtonElement>('[data-library-tab="german"]');
   const activeTab = root.querySelector<HTMLButtonElement>('.ncb-library-tab--active');
-  if (isLearner && germanTab && activeTab === coursesTab) {
-    germanTab.click();
-  } else if (!isLearner && coursesTab && activeTab === germanTab) {
+  if (!isLearner && coursesTab && activeTab === germanTab) {
     coursesTab.click();
   }
 }

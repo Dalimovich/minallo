@@ -58,19 +58,40 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await applyProfile(page, { user_type: 'learner', german_test: 'TestDaF', german_level: 'B1' });
 
     // No reload anywhere in this test — the mounted shell must react live.
+    // Courses is shared functionality (not .ncb-student-only) and the
+    // learner arriving must NEVER move the user off a tab they're already
+    // looking at — that's the exact production bug from the video, where
+    // Courses silently swapped to Practice underneath the user. Courses
+    // stays visible AND active; German/Practice becomes an ADDITIONAL tab
+    // alongside it, not a replacement.
     await expect(page.locator('.ncb-safe-card')).toHaveCount(0);
-    await expect(page.locator('[data-library-tab="courses"]')).toBeHidden();
-    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeHidden();
+    await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="courses"]')).toHaveClass(/ncb-library-tab--active/);
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeVisible();
     await expect(page.locator('.ncb-actions.ncb-student-only')).toBeHidden();
 
     await expect(page.locator('[data-library-tab="german"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="saved"]')).toBeVisible();
+    await expect(page.locator('.ncb-empty-title.ncb-learner-only')).toBeVisible();
+    await expect(page.locator('.ncb-empty-title.ncb-learner-only')).toContainText(/practice/i);
+
+    // Switching to the Practice tab still works exactly as before — this is
+    // a normal tab click now, not an automatic redirect.
+    await page.locator('[data-library-tab="german"]').click();
     await expect(page.locator('[data-library-tab="german"]')).toHaveClass(/ncb-library-tab--active/);
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeHidden();
     await expect(page.locator('.ncb-german-panel')).toBeVisible();
     await expect(page.locator('#ncbGermanLevelValue')).toHaveText('B1');
     await expect(page.locator('[data-testid="quick-german-practice"]')).toBeVisible();
     await expect(page.locator('[data-testid="quick-writing-coach"]')).toBeVisible();
-    await expect(page.locator('.ncb-empty-title.ncb-learner-only')).toBeVisible();
-    await expect(page.locator('.ncb-empty-title.ncb-learner-only')).toContainText(/practice/i);
+
+    // And switching back to Courses returns the actual course list, not a
+    // remount or a second course tree.
+    await page.locator('[data-library-tab="courses"]').click();
+    await expect(page.locator('[data-library-tab="courses"]')).toHaveClass(/ncb-library-tab--active/);
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeVisible();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="german"]')).toBeHidden();
+    await expect(page.locator('[data-library-panel="courses"]')).toHaveCount(1);
 
     // Import-from-Course / course-context pill / course-specific placeholder
     // must be gone, not merely relabeled — #ncbImportModal's own trigger is
@@ -258,5 +279,83 @@ test.describe('Chatbot shell role mode (production timing)', () => {
     await expect(page.locator('[data-source-mode="course_files"]')).toBeVisible();
     await expect(page.locator('[data-source-mode="course_plus_general"]')).toBeVisible();
     await page.keyboard.press('Escape');
+  });
+
+  test('learner sees exactly Courses/Practice/Saved and switching between them never remounts or reloads', async ({
+    page,
+  }) => {
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+    await app.navigateTo('chatbot');
+    await applyProfile(page, { user_type: 'learner', german_test: 'telc', german_level: 'C1 Hochschule' });
+
+    const tabs = page.locator('[data-library-tab]');
+    await expect(tabs).toHaveCount(3);
+    await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="german"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="saved"]')).toBeVisible();
+
+    const root = page.locator(chatbotSelectors.root);
+    const boundBefore = await root.getAttribute('data-ncb-experience-bound');
+
+    await page.locator('[data-library-tab="german"]').click();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="german"]')).toBeVisible();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeHidden();
+
+    await page.locator('[data-library-tab="courses"]').click();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeVisible();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="german"]')).toBeHidden();
+
+    await page.locator('[data-library-tab="saved"]').click();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="saved"]')).toBeVisible();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeHidden();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="german"]')).toBeHidden();
+
+    // Back to Courses — the real course list, not a blank/re-fetched shell.
+    await page.locator('[data-library-tab="courses"]').click();
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeVisible();
+    await expect(page.locator('[data-library-panel="courses"]')).toHaveCount(1);
+
+    const boundAfter = await root.getAttribute('data-ncb-experience-bound');
+    expect(boundAfter).toBe(boundBefore);
+    expect(boundAfter).toBe('1');
+
+    await applyProfile(page, { user_type: 'enrolled' });
+  });
+
+  test('video regression: Courses stays visible through the enrolled→learner transition, even after delayed modules settle', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    const app = new AppPage(page);
+    await app.goto();
+    expect(await app.loginIfNeeded()).toBeTruthy();
+
+    // Shell mounts while the account is still the "enrolled" default —
+    // this is the real boot race from the video, not a manual override.
+    await applyProfile(page, { user_type: 'enrolled' });
+    await app.navigateTo('chatbot');
+    await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="courses"]')).toHaveClass(/ncb-library-tab--active/);
+
+    // The authoritative learner profile arrives asynchronously, exactly like
+    // loadUserData()'s real fetch completing after the shell already mounted.
+    await applyProfile(page, { user_type: 'learner', german_test: 'telc', german_level: 'C1 Hochschule' });
+
+    // Give every ss-profile-updated listener (this module, music-services.ts,
+    // etc.) a full delayed-module window to run — the video's bug only
+    // showed up once boot had fully settled, not immediately on arrival.
+    await page.waitForTimeout(30_000);
+
+    await expect(page.locator('[data-library-tab="courses"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="courses"]')).toHaveClass(/ncb-library-tab--active/);
+    await expect(page.locator('.ncb-library-panel[data-library-panel="courses"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="german"]')).toBeVisible();
+    await expect(page.locator('[data-library-tab="saved"]')).toBeVisible();
+
+    await page.screenshot({ path: 'tests/e2e/report/chatbot-role-mode-video-regression.png', fullPage: true }).catch(() => {});
+
+    await applyProfile(page, { user_type: 'enrolled' });
   });
 });

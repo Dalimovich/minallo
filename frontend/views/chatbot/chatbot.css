@@ -4970,6 +4970,14 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
   background: rgba(5, 13, 26, 0.42);
 }
 
+/* German learners get a third tab (Courses | Practice | Saved) — Courses
+ * is shared with the student experience, Practice is the learner-only
+ * addition. Scoped to .ncb-learner-mode (set by applyChatbotExperienceMode)
+ * so the plain student layout stays two columns. */
+.ncb-learner-mode .ncb-library-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .ncb-library-tab {
   min-height: 38px;
   display: inline-flex;
