@@ -82,4 +82,54 @@ test.describe('Authentication', () => {
 
     await expect(page.locator('#authEmail')).toBeVisible();
   });
+
+  test('Google Identity Services script loads from index.html, independent of the landing fetch', async ({
+    page,
+  }) => {
+    // Regression guard: gsi/client used to be injected by loader.ts only after
+    // the landing partial finished rendering, so Google auth depended on
+    // landing-fetch succeeding. It must now be a static <script> tag.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const gsiTags = page.locator('script[src*="accounts.google.com/gsi/client"]');
+    await expect(gsiTags).toHaveCount(1);
+    const src = await gsiTags.first().getAttribute('src');
+    expect(src).toBe('https://accounts.google.com/gsi/client');
+  });
+
+  test('manual Google sign-in stays usable when GIS is blocked (network failure, extension, etc.)', async ({
+    page,
+  }) => {
+    await page.route('**/accounts.google.com/gsi/client**', (route) => route.abort());
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(
+      () =>
+        !!document.querySelector('#landingLoginBtn') ||
+        sessionStorage.getItem('ss_logged_in') === 'true',
+      { timeout: 30000 }
+    );
+
+    const alreadyAuthenticated = await page
+      .evaluate(() => sessionStorage.getItem('ss_logged_in') === 'true')
+      .catch(() => false);
+    if (alreadyAuthenticated) {
+      test.skip(true, 'Already authenticated — skip GIS-blocked fallback test');
+      return;
+    }
+
+    await page.locator('#landingLoginBtn').click();
+    await page.waitForSelector('#googleSignIn', { timeout: 15000 });
+
+    // Custom fallback button must remain visible/usable — GIS never loaded,
+    // so renderGoogleSignInButton() never had a chance to hide it.
+    await expect(page.locator('#googleSignIn')).toBeVisible();
+
+    const [navRequest] = await Promise.all([
+      page.waitForRequest((req) => req.url().includes('/auth/v1/authorize?provider=google'), {
+        timeout: 10000,
+      }),
+      page.locator('#googleSignIn').click(),
+    ]);
+    expect(navRequest.url()).toContain('provider=google');
+  });
 });

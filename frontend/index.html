@@ -94,10 +94,13 @@
   <link rel="preload" as="font" type="font/woff2" crossorigin
         href="https://fonts.bunny.net/manrope/files/manrope-latin-700-normal.woff2" />
 
-  <!-- Google Sign-In client moved out of index.html — loader.js injects it
-       after the landing partial renders so it no longer blocks first paint.
-       auth-bootstrap.js polls for `google.accounts` so the deferred load
-       is transparent to OneTap init. -->
+  <!-- Google Identity Services must load independently of the landing
+       renderer — auth is infrastructure, not a landing-page feature.
+       Previously this was injected by loader.js only after the landing
+       partial finished loading, which made Google sign-in depend on
+       landing-fetch succeeding. async+defer keeps it off the critical
+       render path without gating it on anything else. -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- Keep the logged-out first paint lean. typography.css + new-landing.css
        are the only render-blocking stylesheets here. auth.css is dynamically
@@ -170,13 +173,13 @@
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
     <script src="js/runtime-config.js" defer></script>
-    <script src="js/config.js?v=20260913-saved-reply-decouple-v1" defer></script>
+    <script src="js/config.js?v=20260918-google-auth-fix-1" defer></script>
     <!-- AI chat typing config — only read inside the dashboard chat
          features, never on the public landing. `async` removes it from
          the critical-request chain so it loads in parallel without
          sequencing against loader.js. -->
     <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=5"></script>
-    <script src="js/auth-bootstrap.js?v=9" defer></script>
+    <script src="js/auth-bootstrap.js?v=10" defer></script>
     <script src="js/supabase.js?v=7" defer></script>
     <script type="module" src="js/loader.js?v=62"></script>
   </body>

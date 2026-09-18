@@ -386,6 +386,8 @@ declare global {
     _ssImageRenderPagesOrig?: (() => void) | null;
     updatePageInfo?: () => void;
     _googleAuth?: () => void;
+    _oauthFallback?: () => void;
+    renderGoogleSignInButton?: () => boolean;
     _toggleLandingLang?: () => void;
     _ssIsLoggedIn?: boolean;
 

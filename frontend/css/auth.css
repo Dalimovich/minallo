@@ -514,6 +514,19 @@ body.minallo-app-active #authModal {
   background: rgba(255, 255, 255, 0.09);
 }
 
+/* Google Identity Services-rendered button host. Google controls the
+   iframe's own internal styling (theme/size/shape set on renderButton) —
+   this just centers and sizes the host to match the form. */
+.na-google-gsi {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+}
+.na-google-gsi[hidden] {
+  display: none;
+}
+
 /* Switch row */
 
 .na-switch-row {

@@ -382,9 +382,14 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
     authConfirm.type = authConfirm.type === 'password' ? 'text' : 'password';
     toggleConfirm.textContent = authConfirm.type === 'password' ? '\u{1F441}' : '\u{1F648}';
   });
+  // The official GIS-rendered button (#googleSignInGsi) is the primary path
+  // when Google Identity Services loads; this custom button is the fallback
+  // shown when GIS fails to load, so it goes straight to the Supabase OAuth
+  // redirect rather than attempting GIS again.
   googleSignIn?.addEventListener('click', () => {
-    if (typeof window._googleAuth === 'function') window._googleAuth();
+    if (typeof window._oauthFallback === 'function') window._oauthFallback();
   });
+  window.dispatchEvent(new Event('auth-modal-mounted'));
 
   // ── Password recovery ──────────────────────────────────────────────────
   // Clicking "Forgot password?" prompts for the email (prefilled from the

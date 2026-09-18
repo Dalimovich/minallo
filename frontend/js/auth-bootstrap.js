@@ -321,7 +321,10 @@ function _handleGoogleCredential(response) {
     body: JSON.stringify(body)
   })
     .then(function (r) {
-      return r.json();
+      return r.json().then(function (d) {
+        d._httpStatus = r.status;
+        return d;
+      });
     })
     .then(function (d) {
       if (d && d.access_token) {
@@ -344,7 +347,14 @@ function _handleGoogleCredential(response) {
         if (!alreadyIn) window._onLoginSuccess();
       } else {
         if (window.Minallo) window.Minallo.setAuth('failed', { source: 'google-one-tap' });
-        console.warn('[Auth] id_token exchange failed:', d && (d.error || d.msg));
+        // Diagnostics only: HTTP status + Supabase's own error code/message.
+        // Never log id_token/nonce/access/refresh tokens.
+        console.warn(
+          '[Auth] id_token exchange failed:',
+          'status=' + (d && d._httpStatus),
+          'error_code=' + (d && (d.error_code || d.error)),
+          'msg=' + (d && (d.msg || d.error_description))
+        );
         _oauthFallback();
       }
     })
@@ -374,91 +384,112 @@ function _initOneTap() {
       cancel_on_tap_outside: false,
       auto_select: false,
       itp_support: true,
-      // Required since Chrome's FedCM rollout (Oct 2024). Without this flag
-      // Chrome silently suppresses the One Tap prompt — the callback fires
-      // with isNotDisplayed() === true and a browser-policy suppression
-      // reason. That's why no popup appeared on the landing.
-      use_fedcm_for_prompt: true,
+      // use_fedcm_for_prompt is deprecated/ignored by Google — FedCM for the
+      // One Tap prompt is now the only supported behavior and needs no flag.
+      // use_fedcm_for_button is what the *rendered button* (renderButton())
+      // needs, so it's set here since initialize() config is shared by both.
+      use_fedcm_for_button: true,
       nonce: hashedNonce,
       prompt_parent_id: 'ss-one-tap-parent'
     });
 
+    _gsiReady = true;
+    _tryRenderGsiButton();
+
     if (!window._ssIsLoggedIn) {
+      // One Tap is a convenience, not a gate: the browser is free to
+      // suppress it (FedCM policy, dismissal history, account state) and
+      // that is a normal outcome, not an application error. Log it for
+      // diagnostics only — never disable or redirect manual sign-in because
+      // of what happens here.
       google.accounts.id.prompt(function (notification) {
-        if (notification.isNotDisplayed()) {
-          console.warn('[OneTap] not displayed:', notification.getNotDisplayedReason());
-          window._oneTapBlocked = true;
-        } else if (notification.isSkippedMoment()) {
-          console.log('[OneTap] skipped:', notification.getSkippedReason());
-          window._oneTapBlocked = true;
-        } else if (notification.isDismissedMoment()) {
-          var reason = notification.getDismissedReason();
-          console.log('[OneTap] dismissed:', reason);
-          if (reason !== 'credential_returned') window._oneTapBlocked = true;
-        }
+        try {
+          if (notification.isNotDisplayed()) {
+            console.log('[OneTap] not displayed:', notification.getNotDisplayedReason());
+          } else if (notification.isSkippedMoment()) {
+            console.log('[OneTap] skipped:', notification.getSkippedReason());
+          } else if (notification.isDismissedMoment()) {
+            console.log('[OneTap] dismissed:', notification.getDismissedReason());
+          }
+        } catch (e) {}
       });
     }
   });
 }
 
+// Renders the official GIS "Continue with Google" button into #googleSignInGsi
+// once both GIS is initialized and the host element exists. auth.html is
+// injected dynamically and may mount before or after GIS finishes loading,
+// so this is mount-safe and idempotent from either direction: _initOneTap
+// calls it once GIS is ready, and the MutationObserver below calls it if the
+// host mounts afterward.
+var _gsiReady = false;
+var _gsiButtonRendered = false;
+function renderGoogleSignInButton() {
+  if (_gsiButtonRendered) return true;
+  if (!_gsiReady || typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+    return false;
+  }
+  var host = document.getElementById('googleSignInGsi');
+  if (!host) return false;
+  try {
+    google.accounts.id.renderButton(host, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      logo_alignment: 'left',
+      width: 320
+    });
+  } catch (e) {
+    console.warn('[Auth] renderButton failed:', e);
+    return false;
+  }
+  _gsiButtonRendered = true;
+  host.hidden = false;
+  var fallback = document.getElementById('googleSignIn');
+  if (fallback) fallback.hidden = true;
+  return true;
+}
+window.renderGoogleSignInButton = renderGoogleSignInButton;
+function _tryRenderGsiButton() {
+  return renderGoogleSignInButton();
+}
+
+(function () {
+  if (typeof MutationObserver === 'undefined') return;
+  var mo = new MutationObserver(function () {
+    if (_tryRenderGsiButton()) mo.disconnect();
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+})();
+window.addEventListener('auth-modal-mounted', _tryRenderGsiButton);
+
+// Landing "Sign in" / CTA buttons: open the normal Minallo auth modal.
+// This used to try Google One Tap first and only fall back to the modal
+// when the prompt was skipped/dismissed/not-displayed — mixing an
+// automatic, browser-controlled prompt with an explicit user click, and
+// reloading the page whenever the browser suppressed One Tap. One Tap now
+// runs on its own (see _initOneTap) and never gates this button.
 window._googleAuth = function () {
   if (window.Minallo)
     window.Minallo.emit('auth:google-start', {
       inAppShell: !!document.getElementById('authModal')
     });
 
-  if (document.getElementById('authModal')) {
-    _oauthFallback();
+  if (typeof window.landShowAuth === 'function') {
+    window.landShowAuth();
     return;
   }
 
-  if (window._oneTapBlocked) {
-    try {
-      sessionStorage.setItem('ss_force_app', 'true');
-      sessionStorage.setItem('ss_show_auth', 'true');
-    } catch (e) {}
-    window.location.reload();
-    return;
-  }
-
-  var showAuthModal = function () {
-    try {
-      sessionStorage.setItem('ss_force_app', 'true');
-      sessionStorage.setItem('ss_show_auth', 'true');
-    } catch (e) {}
-    window.location.reload();
-  };
-
-  var tryOneTap = function () {
-    google.accounts.id.prompt(function (notification) {
-      if (
-        notification.isNotDisplayed() ||
-        notification.isSkippedMoment() ||
-        (notification.isDismissedMoment() &&
-          notification.getDismissedReason() !== 'credential_returned')
-      ) {
-        window._oneTapBlocked = true;
-        showAuthModal();
-      }
-    });
-  };
-
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    tryOneTap();
-    return;
-  }
-
-  var attempts = 0;
-  var wait = setInterval(function () {
-    attempts++;
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-      clearInterval(wait);
-      tryOneTap();
-    } else if (attempts >= 30) {
-      clearInterval(wait);
-      showAuthModal();
-    }
-  }, 100);
+  // Full app shell (auth modal + landShowAuth) isn't loaded yet — lazily
+  // load it, same as clicking sign-in normally does pre-hydration.
+  try {
+    sessionStorage.setItem('ss_force_app', 'true');
+    sessionStorage.setItem('ss_show_auth', 'true');
+  } catch (e) {}
+  window.location.reload();
 };
 
 var _gsiTimer = setInterval(function () {

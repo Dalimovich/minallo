@@ -259,22 +259,10 @@
                 script.defer = true;
                 document.body.appendChild(script);
             })();
-            // Inject the Google Sign-In client (gsi/client) AFTER the landing
-            // partial is in the DOM. Previously this lived as a render-blocking
-            // <script async defer> in index.html — Lighthouse flagged it as 95KiB
-            // of which ~72KiB is unused on the landing, and it competed for
-            // bandwidth with the LCP fonts. auth-bootstrap.js polls for
-            // `google.accounts` every 100ms, so delaying the script load by a
-            // few hundred ms is transparent to OneTap init.
-            (function injectGsiClient() {
-                if (document.querySelector('script[src*="accounts.google.com/gsi/client"]'))
-                    return;
-                const gsi = document.createElement('script');
-                gsi.src = 'https://accounts.google.com/gsi/client';
-                gsi.async = true;
-                gsi.defer = true;
-                document.head.appendChild(gsi);
-            })();
+            // Google Identity Services loads from index.html directly (auth is
+            // infrastructure, not a landing-page feature) — do not inject it
+            // here too. Two owners of that script tag caused Google auth to
+            // depend on landing-fetch succeeding.
             if (SS)
                 SS.markReady('landing', { file: 'pages/new_landing.html' });
             window.dispatchEvent(new Event('ss-ready'));
