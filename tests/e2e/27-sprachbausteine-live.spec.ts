@@ -85,6 +85,17 @@ async function ensureLoggedIn(page: Page): Promise<void> {
     undefined,
     { timeout: 30_000 }
   );
+
+  // The auth modal has no direct close call on a successful sign-in (only
+  // signup and the browser-back path close it) — closing it appears to be
+  // tied to a page reload elsewhere in the real user flow. The account is
+  // already confirmed authenticated by the wait above (real course-UI
+  // markers present), so force-hide it here purely to unblock this script's
+  // subsequent clicks, rather than depend on unrelated app navigation.
+  await page.evaluate(() => {
+    const modal = document.getElementById('authModal');
+    if (modal) modal.style.display = 'none';
+  });
 }
 
 function categorize(skillTags: string[]): string {
