@@ -59,7 +59,22 @@ async function saveProfile() {
       }
     }
     try {
-      localStorage.setItem('profile_cache_' + _currentUser.id, JSON.stringify(data));
+      // `data` only carries the fields this form edits (full_name, email,
+      // university, ...) — it never had german_test, german_exam_profile_id,
+      // user_type, courses, chat_username, etc. Overwriting profile_cache_
+      // with it directly used to replace the FULL cached profile with this
+      // partial one, so the next page load's boot-time cache-path apply
+      // (loadUserData's `{authoritative: false}` call, which runs before the
+      // real profiles fetch completes) would see those fields as absent.
+      // Merge onto the existing full cache instead, so a save only updates
+      // what it actually knows about.
+      var existingCache = {};
+      try {
+        var rawCache = localStorage.getItem('profile_cache_' + _currentUser.id);
+        if (rawCache) existingCache = JSON.parse(rawCache) || {};
+      } catch (e) {}
+      var mergedCache = Object.assign({}, existingCache, data);
+      localStorage.setItem('profile_cache_' + _currentUser.id, JSON.stringify(mergedCache));
     } catch (e) {}
     // Refresh the in-memory German level + its localStorage cache so the
     // Schreibtrainer (and anything else reading window._germanLevel) picks
@@ -83,7 +98,11 @@ async function saveProfile() {
     // Refresh the sidebar (incl. the university sub-label #sbUserSub) and the
     // in-memory _userUniversity / ss_university cache so the new uni shows up
     // immediately instead of only after a reload.
-    if (typeof window.applyProfile === 'function') window.applyProfile(data);
+    // Pass the merged (full) cache, not the partial `data` this form knows
+    // about — applyProfile() now guards partial objects from downgrading
+    // fields they never carried, but passing the full merged object keeps
+    // this call fully authoritative instead of relying on that guard alone.
+    if (typeof window.applyProfile === 'function') window.applyProfile(mergedCache);
   } catch (e) {
     showToast(_t('toast_save_failed'), String(e));
   }

@@ -117,8 +117,6 @@ export async function loadUserData(uid: string): Promise<void> {
   // heartbeat; re-running within the window only re-spams the network.
   const _now = Date.now();
   if (uid && uid === _lastLoadUid && _now - _lastLoadAt < _LOAD_DEDUP_MS) return;
-  _lastLoadUid = uid;
-  _lastLoadAt = _now;
   try {
     try {
       const cached = localStorage.getItem('profile_cache_' + uid);
@@ -132,7 +130,16 @@ export async function loadUserData(uid: string): Promise<void> {
     }
 
     const sb = window._sb;
+    // Commit the dedup window only once the authoritative fetch is actually
+    // about to fire, not at function entry — a call that returns here
+    // because window._sb isn't ready yet never really "loaded" anything, so
+    // it must not block the next call for the full 30s window. That gap
+    // used to leave the browser with only the (possibly stale/partial)
+    // cached profile applied, for up to 30s, with no authoritative fetch
+    // in flight to correct it.
     if (!sb) return;
+    _lastLoadUid = uid;
+    _lastLoadAt = Date.now();
     // 2s timeout per query (was 5s): on a healthy network these typically
     // return in <300ms, so 2s is plenty of slack but cuts the worst-case
     // fallback wait by 60%. Resolving null on timeout lets downstream code
@@ -330,9 +337,29 @@ export function applyProfile(
   if (dcAv) dcAv.textContent = initial;
   if (dcNm) dcNm.textContent = displayName;
   const uid = (window._currentUser && window._currentUser.id) || '';
-  window._userType = p.user_type || localStorage.getItem('ss_user_type_' + uid) || 'enrolled';
-  window._germanTest = p.german_test || localStorage.getItem('ss_german_test_' + uid) || '';
-  window._germanLevel = p.german_level || localStorage.getItem('ss_german_level_' + uid) || '';
+  // A full profiles row (select('*')) always carries these keys, even as
+  // null when unset, so hasOwnProperty is true and behavior below is
+  // unchanged for a real fetch. A partial object — e.g. profile.js's
+  // saveProfile(), which only sends the fields the edit form actually
+  // touched — omits keys it never read, and MUST NOT be treated as "this
+  // field is now empty": that previously downgraded an already-resolved
+  // German exam profile back to unsupported on every profile save. Only a
+  // key that's genuinely present (present-but-falsy is a real "cleared"
+  // value) may override the current in-memory state; an absent key falls
+  // back to whatever's already there.
+  const hasUserType = Object.prototype.hasOwnProperty.call(p, 'user_type');
+  const hasGermanTest = Object.prototype.hasOwnProperty.call(p, 'german_test');
+  const hasGermanLevel = Object.prototype.hasOwnProperty.call(p, 'german_level');
+  const hasGermanExamProfileId = Object.prototype.hasOwnProperty.call(p, 'german_exam_profile_id');
+  window._userType = hasUserType
+    ? p.user_type || localStorage.getItem('ss_user_type_' + uid) || 'enrolled'
+    : window._userType || localStorage.getItem('ss_user_type_' + uid) || 'enrolled';
+  window._germanTest = hasGermanTest
+    ? p.german_test || localStorage.getItem('ss_german_test_' + uid) || ''
+    : window._germanTest || localStorage.getItem('ss_german_test_' + uid) || '';
+  window._germanLevel = hasGermanLevel
+    ? p.german_level || localStorage.getItem('ss_german_level_' + uid) || ''
+    : window._germanLevel || localStorage.getItem('ss_german_level_' + uid) || '';
   if (uid) {
     localStorage.setItem('ss_user_type_' + uid, window._userType);
     localStorage.setItem('ss_german_test_' + uid, window._germanTest);
@@ -343,8 +370,13 @@ export function applyProfile(
   // (authoritative once written), else derive it client-side and persist it
   // lazily so future reads (and the backend, which also derives it) agree.
   // A stale localStorage cache alone is intentionally never trusted here —
-  // only the freshly-fetched profiles row or a fresh derivation are.
-  const persistedProfileId = p.german_exam_profile_id || null;
+  // only the freshly-fetched profiles row or a fresh derivation are. A
+  // partial object that never carried this column falls back to the
+  // already-resolved in-memory id instead of being treated as "cleared",
+  // for the same reason as german_test/german_level above.
+  const persistedProfileId = hasGermanExamProfileId
+    ? p.german_exam_profile_id || null
+    : window._germanExamProfileId || null;
   const derivedProfileId = persistedProfileId || resolveGermanExamProfileIdClient(window._germanTest, window._germanLevel);
   window._germanExamProfileId = derivedProfileId;
   if (uid) localStorage.setItem('ss_german_exam_profile_id_' + uid, derivedProfileId || '');

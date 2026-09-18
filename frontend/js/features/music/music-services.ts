@@ -257,17 +257,19 @@ export function initMusicServices(options: InitMusicServicesOptions): void {
   // would attach this handler too late and it would never fire — leaving the
   // YouTube add button unwired. So run immediately if boot
   // already finished; otherwise wait for ss-ready (same guard as app.ts).
+  // Music Services has no ownership over auth/profile state — window._userType,
+  // _germanTest, _germanLevel (and _germanExamProfileId/_germanProfileLoaded,
+  // which this module never touched) belong solely to auth/user-data.ts's
+  // applyProfile(). This used to re-hydrate _userType/_germanTest/_germanLevel
+  // from localStorage here too, which meant a stale or not-yet-written cache
+  // read ~20s into boot could clobber values applyProfile had already set
+  // authoritatively moments earlier — a real race behind the Sprachbausteine
+  // "unsupported profile" false negative. Just read the current values; if
+  // the profile hasn't loaded yet, applyUserTypeUI() re-runs correctly once
+  // applyProfile() fires its ss-profile-updated event (see other features'
+  // listeners for that pattern) — this module doesn't need its own listener
+  // since applyUserTypeUI() itself is cheap and re-render-safe.
   const _musicInitOnReady = (): void => {
-    const currentUser = getCurrentUser();
-    const earlyUid = (currentUser && currentUser.id) || '';
-    if (earlyUid) {
-      const earlyType = localStorage.getItem('ss_user_type_' + earlyUid);
-      if (earlyType) {
-        window._userType = earlyType;
-        window._germanTest = localStorage.getItem('ss_german_test_' + earlyUid) || '';
-        window._germanLevel = localStorage.getItem('ss_german_level_' + earlyUid) || '';
-      }
-    }
     applyUserTypeUI();
 
     ytRenderList();
