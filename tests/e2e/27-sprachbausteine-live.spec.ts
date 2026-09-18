@@ -34,40 +34,44 @@ type GenerateCall = {
 };
 
 /**
- * The "Desktop Chrome" project already loads a valid session for this same
- * E2E_EMAIL/PASSWORD from tests/e2e/.auth/user.json (written by
- * auth.setup.ts, which runs first as a project dependency). Supabase's
- * session lives in localStorage, not cookies, so page.goto('/') here
- * lands already-authenticated underneath any storageState. Forcing a
- * fresh form login on top of that (clearCookies + click "Sign in") opened
- * a stuck auth modal that never closed and blocked every click for the
- * rest of the run — mirrors auth.setup.ts's own already-authenticated
- * check instead of fighting it.
+ * Always does a full real-form login, bypassing the "Desktop Chrome"
+ * project's storageState entirely — mirrors 22-german-exam-engine-live.spec.ts's
+ * realLogin(), which this codebase already relies on for the same reason:
+ * Supabase rotates the refresh token on every use, so the SAME static
+ * tests/e2e/.auth/user.json (written once by auth.setup.ts) is only valid
+ * for the FIRST consumer of it — any later test loading that same
+ * storageState gets an already-stale token and never reaches an
+ * authenticated UI state.
+ *
+ * An earlier version of this function tried to detect "already logged in"
+ * via page.waitForFunction(fn, {timeout}) — a real bug: waitForFunction's
+ * signature is (pageFunction, arg, options), so a 2-argument call puts
+ * {timeout} into the `arg` slot (silently ignored, since the predicate
+ * takes no parameter) and leaves `options` empty, i.e. NO timeout is ever
+ * actually applied. Combined with the stale-token problem above (the
+ * predicate never became true), that call hung for the full remainder of
+ * the test's own timeout, every single time.
  */
 async function ensureLoggedIn(page: Page): Promise<void> {
   const email = process.env.E2E_EMAIL || '';
   const password = process.env.E2E_PASSWORD || '';
   expect(email && password, 'E2E_EMAIL/E2E_PASSWORD must be set').toBeTruthy();
 
+  await page.context().clearCookies();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-
-  const isLoggedIn = await page.waitForFunction(
-    () => sessionStorage.getItem('ss_logged_in') === 'true' ||
-      !!document.querySelector('#courseAddBtn') ||
-      !!document.querySelector('#sdCourseList') ||
-      !!document.querySelector('#welcomeState') ||
-      !!document.querySelector('#courseOverview'),
-    { timeout: 15_000 }
-  ).then(() => true).catch(() => false);
-
-  if (isLoggedIn) return;
 
   const loginBtn = page.locator(
     '#nlNavSignIn, [data-i18n="nav.signIn"], [data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
   ).first();
-  await loginBtn.waitFor({ state: 'visible', timeout: 10_000 });
-  await loginBtn.click();
-  await page.locator('#authEmail').waitFor({ state: 'visible', timeout: 8_000 });
+
+  let modalOpen = false;
+  for (let attempt = 0; attempt < 3 && !modalOpen; attempt++) {
+    await loginBtn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+    await loginBtn.click().catch(() => {});
+    modalOpen = await page.locator('#authEmail').waitFor({ state: 'visible', timeout: 8_000 }).then(() => true).catch(() => false);
+  }
+  expect(modalOpen, 'sign-in modal never opened after retries').toBeTruthy();
+
   await page.locator('#authEmail').fill(email);
   await page.locator('#authPassword').fill(password);
   await page.locator('#authSubmit').click();
@@ -78,6 +82,7 @@ async function ensureLoggedIn(page: Page): Promise<void> {
       !!document.querySelector('#sdCourseList') ||
       !!document.querySelector('#welcomeState') ||
       !!document.querySelector('#courseOverview'),
+    undefined,
     { timeout: 30_000 }
   );
 }
@@ -170,7 +175,7 @@ test.describe('Sprachbausteine — live validation', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('canary: one generation, records timing and acceptance fields', async ({ page }) => {
-    test.setTimeout(3 * 60_000);
+    test.setTimeout(5 * 60_000);
     await loginAndOpenChatbot(page);
     const tracker = trackGenerateRequestStart(page);
 
