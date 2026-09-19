@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .concurrency import fanout_stats
+from .model_pricing import estimate_cost_usd
 
 log = logging.getLogger("minallo.gen_timing")
 
@@ -62,11 +63,16 @@ class GenTimer:
         return self.remaining_s() <= 0
 
     def record_call(self, *, caller: str, model: str, effort: str | None, slot_wait_ms: float,
-                    provider_ms: float, ok: bool) -> None:
+                    provider_ms: float, ok: bool, prompt_tokens: int = 0, cached_tokens: int = 0,
+                    completion_tokens: int = 0, reasoning_tokens: int = 0) -> None:
+        cost = estimate_cost_usd(model, prompt_tokens, cached_tokens, completion_tokens) if ok else 0.0
         with self._lock:
             self.calls.append({
                 "caller": caller, "model": model, "effort": effort,
                 "slotWaitMs": round(slot_wait_ms), "providerMs": round(provider_ms), "ok": ok,
+                "promptTokens": int(prompt_tokens), "cachedTokens": int(cached_tokens),
+                "completionTokens": int(completion_tokens), "reasoningTokens": int(reasoning_tokens),
+                "estimatedCostUsd": cost,  # None = model has no price entry
             })
 
     def add_stage(self, name: str, ms: float) -> None:
@@ -75,15 +81,24 @@ class GenTimer:
 
     def summary(self, outcome: str) -> dict[str, Any]:
         total_ms = round((time.perf_counter() - self.started) * 1000)
-        by_caller: dict[str, dict[str, int]] = {}
+        by_caller: dict[str, dict[str, Any]] = {}
         with self._lock:
             calls = list(self.calls)
             stages = {k: round(v) for k, v in self.stages.items()}
         for c in calls:
-            agg = by_caller.setdefault(c["caller"], {"calls": 0, "providerMs": 0, "slotWaitMs": 0})
+            agg = by_caller.setdefault(c["caller"], {
+                "calls": 0, "providerMs": 0, "slotWaitMs": 0, "promptTokens": 0, "cachedTokens": 0,
+                "completionTokens": 0, "reasoningTokens": 0, "estimatedCostUsd": 0.0,
+            })
             agg["calls"] += 1
             agg["providerMs"] += c["providerMs"]
             agg["slotWaitMs"] += c["slotWaitMs"]
+            for k in ("promptTokens", "cachedTokens", "completionTokens", "reasoningTokens"):
+                agg[k] += c[k]
+            agg["estimatedCostUsd"] += c["estimatedCostUsd"] or 0.0
+        for agg in by_caller.values():
+            agg["estimatedCostUsd"] = round(agg["estimatedCostUsd"], 6)
+        unpriced = sorted({c["model"] for c in calls if c["ok"] and c["estimatedCostUsd"] is None})
         return {
             "requestId": self.request_id,
             "module": self.module,
@@ -95,7 +110,17 @@ class GenTimer:
             "providerMsSum": sum(c["providerMs"] for c in calls),
             "slotWaitMsSum": sum(c["slotWaitMs"] for c in calls),
             "longestCallMs": max((c["providerMs"] for c in calls), default=0),
+            "promptTokens": sum(c["promptTokens"] for c in calls),
+            "cachedTokens": sum(c["cachedTokens"] for c in calls),
+            "completionTokens": sum(c["completionTokens"] for c in calls),
+            "reasoningTokens": sum(c["reasoningTokens"] for c in calls),
+            "estimatedCostUsd": round(sum(c["estimatedCostUsd"] or 0.0 for c in calls), 6),
+            "unpricedModels": unpriced,
             "byCaller": by_caller,
+            # Per-call detail: counts and timings only, no prompts, completions or user data.
+            "calls": [{k: c[k] for k in ("caller", "model", "effort", "providerMs", "slotWaitMs", "ok",
+                                         "promptTokens", "cachedTokens", "completionTokens",
+                                         "reasoningTokens", "estimatedCostUsd")} for c in calls],
             "models": sorted({f"{c['model']}:{c['effort'] or 'default'}" for c in calls}),
             "stagesMs": stages,
             "fanoutAtStart": self.fanout_at_start,

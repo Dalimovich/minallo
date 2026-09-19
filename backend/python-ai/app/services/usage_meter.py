@@ -111,4 +111,11 @@ def _worker() -> None:
             log.exception("usage meter insert failed — %d event(s) dropped", len(batch))
 
 
-__all__ = ("record_usage", "usage_from_response")
+def reasoning_tokens_from_response(resp: Any) -> int:
+    """Reasoning tokens (already included in completion_tokens), when exposed."""
+    u = getattr(resp, "usage", None)
+    details = getattr(u, "completion_tokens_details", None) if u else None
+    return int(getattr(details, "reasoning_tokens", 0) or 0)
+
+
+__all__ = ("record_usage", "usage_from_response", "reasoning_tokens_from_response")

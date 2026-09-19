@@ -252,6 +252,7 @@ export interface UserUsage {
 export interface ModelPrice { input: number; cached: number; output: number }
 export const MODEL_PRICES_CENTS_PER_M: Array<{ prefix: string; price: ModelPrice }> = [
   // Order matters: longer/more specific prefixes first.
+  { prefix: 'gpt-5.4-mini',           price: { input: 75,  cached: 7.5,  output: 450 } },
   { prefix: 'gpt-4o-mini',            price: { input: 15,  cached: 7.5,  output: 60 } },
   { prefix: 'gpt-4o',                 price: { input: 250, cached: 125,  output: 1000 } },
   { prefix: 'gpt-4.1-mini',           price: { input: 40,  cached: 10,   output: 160 } },

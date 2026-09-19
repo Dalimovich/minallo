@@ -213,6 +213,9 @@ test('computeFinanceSeries computes revenue/cost/profit per month', () => {
 test('modelPrice prefix-matches and falls back to config rates', async () => {
   const { modelPrice } = await import('../../backend/lib/admin-stats.ts');
   assert.equal(modelPrice('gpt-4o-mini-2024-07-18', CFG).input, 15);
+  // gpt-5.4-mini is measured on the German generators: it must have its own entry, not the config fallback.
+  assert.deepEqual(modelPrice('gpt-5.4-mini', CFG), { input: 75, cached: 7.5, output: 450 });
+  assert.deepEqual(modelPrice('gpt-5.4-mini-2026-03-01', CFG), { input: 75, cached: 7.5, output: 450 });
   assert.equal(modelPrice('gpt-4o-2024-08-06', CFG).input, 250);
   assert.equal(modelPrice('o4-mini-2025-04-16', CFG).output, 440);
   // Unknown model -> config rates, never 0.

@@ -20,7 +20,7 @@ from ..config import get_settings
 from .concurrency import llm_fanout_slot
 from . import gen_timing
 from .openai_client import get_openai_client
-from .usage_meter import record_usage, usage_from_response
+from .usage_meter import reasoning_tokens_from_response, record_usage, usage_from_response
 
 
 log = logging.getLogger(__name__)
@@ -197,6 +197,23 @@ def _caller_feature() -> str:
         return "llm_json"
 
 
+def _usage_kwargs(resp: Any) -> dict[str, int]:
+    """Token counts for the per-request timer (counts only, never content).
+
+    Diagnostics must never break a generation, so anything unexpected yields {}.
+    """
+    try:
+        u = usage_from_response(resp) or {}
+        return {
+            "prompt_tokens": int(u.get("prompt_tokens", 0) or 0),
+            "cached_tokens": int(u.get("cached_tokens", 0) or 0),
+            "completion_tokens": int(u.get("completion_tokens", 0) or 0),
+            "reasoning_tokens": reasoning_tokens_from_response(resp),
+        }
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def chat_json(
     *,
     system: str,
@@ -225,6 +242,7 @@ def chat_json(
             with llm_fanout_slot():
                 t_call = time.perf_counter()
                 call_ok = False
+                call_resp = None
                 extra_timeout: dict[str, Any] = {}
                 if timer is not None:
                     remaining = timer.remaining_s()
@@ -246,6 +264,7 @@ def chat_json(
                             {"role": "user",   "content": user},
                         ],
                     )
+                    call_resp = resp
                     call_ok = True
                 finally:
                     if timer is not None:
@@ -253,6 +272,7 @@ def chat_json(
                             caller=caller, model=chosen, effort=reasoning_effort,
                             slot_wait_ms=(t_call - t_wait) * 1000,
                             provider_ms=(time.perf_counter() - t_call) * 1000, ok=call_ok,
+                            **(_usage_kwargs(call_resp) if call_ok else {}),
                         )
             break
         except Exception as exc:
