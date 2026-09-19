@@ -117,10 +117,10 @@ test.describe('Writing Coach workspace mode', () => {
     await expect(page.locator('[data-testid="chatbot-nav-home"]')).toBeVisible();
 
     // Writing Coach workspace visible; center chat column and right
-    // Practice/Saved panel hidden.
+    // Only the chat column is hidden; the Learning panel persists.
     await expect(page.locator('[data-testid="writing-coach-workspace"]')).toBeVisible();
     await expect(page.locator('.ncb-center')).toBeHidden();
-    await expect(page.locator('.ncb-context')).toBeHidden();
+    await expect(page.locator('.ncb-context')).toBeVisible();
 
     // Account controls remain.
     await expect(page.locator('[data-testid="chatbot-account-menu"]')).toBeVisible();

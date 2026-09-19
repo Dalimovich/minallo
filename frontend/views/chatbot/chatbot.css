@@ -5068,12 +5068,11 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 /* ── Writing Coach workspace mode ──────────────────────────────────────────
  * Writing Coach lives inside #ncbRoot as a sibling of .ncb-center/.ncb-context
  * rather than a separate #psec-german page (see experience-mode.ts's
- * setLearnerWorkspaceView). While active, the chat column and the right
- * Practice/Saved panel are hidden and this panel takes the freed width —
+ * setLearnerWorkspaceView). While active, only the chat column is hidden and this panel takes its width —
+ * the right Learning panel is an independent axis (user-owned open/closed) and stays.
  * the sidebar container itself never changes size/position, only its
  * content (.ncb-chat-view-only / .ncb-writing-coach-view-only below). */
-.ncb-root.ncb-view-writing-coach .ncb-center,
-.ncb-root.ncb-view-writing-coach .ncb-context {
+.ncb-root.ncb-view-writing-coach .ncb-center {
   display: none;
 }
 .ncb-writing-coach-panel {
@@ -6856,11 +6855,9 @@ body.ncb-pdf-workspace-open #drDrawer {
 }
 
 /* The sidebar persists while the learner's workspace changes. */
-.ncb-root.ncb-view-practice .ncb-center,
-.ncb-root.ncb-view-practice .ncb-context { display: none; }
+.ncb-root.ncb-view-practice .ncb-center { display: none; }
 .ncb-practice-panel { flex: 1; min-width: 0; overflow-y: auto; padding: 32px 40px; }
 .ncb-speaking-panel { flex: 1; min-width: 0; overflow-y: auto; padding: 32px 40px; line-height: 1.6; }
-.ncb-root.ncb-view-speaking .ncb-context { display: none !important; }
 .sp-topic, .sp-turn, .sp-feedback { border: 1px solid rgba(148,163,184,.24); border-radius: 12px; padding: 16px; margin-block: 12px; overflow-wrap: anywhere; }
 .sp-topic:has(input:checked) { border-color: #60a5fa; }
 .sp-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -6870,18 +6867,17 @@ body.ncb-pdf-workspace-open #drDrawer {
 .ncb-practice-panel[hidden] { display: none; }
 .ncb-practice-panel .gl-skill-view { animation: none; }
 .ncb-learner-mode .ncb-card > .ncb-center,
-.ncb-learner-mode .ncb-card > .ncb-context,
 .ncb-learner-mode .ncb-card > .ncb-writing-coach-panel,
 .ncb-learner-mode .ncb-card > .ncb-practice-panel {
   transition: opacity 180ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1);
 }
-.ncb-workspace-leaving .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel),
-.ncb-workspace-entering .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel) {
+.ncb-workspace-leaving .ncb-card > :is(.ncb-center, .ncb-writing-coach-panel, .ncb-practice-panel),
+.ncb-workspace-entering .ncb-card > :is(.ncb-center, .ncb-writing-coach-panel, .ncb-practice-panel) {
   opacity: 0; transform: translateY(6px);
 }
 @media (max-width: 768px) { .ncb-practice-panel { padding: 20px 16px; } }
 @media (prefers-reduced-motion: reduce) {
-  .ncb-learner-mode .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel) { transition: none; }
+  .ncb-learner-mode .ncb-card > :is(.ncb-center, .ncb-writing-coach-panel, .ncb-practice-panel) { transition: none; }
 }
 
 /* Learner Files: obvious loading state + skeleton, shown under the drop zone. */
@@ -6932,4 +6928,37 @@ body.ncb-pdf-workspace-open #drDrawer {
 @keyframes ncb-files-pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) {
   .ncb-files-spinner, .ncb-file-skeleton b, .ncb-file-skeleton i { animation: none; }
+}
+
+/* ── Learner shell: the right Learning panel is independent of the workspace ──
+ * Workspace (chat / practice skills / Writing Coach) and panel (open/closed,
+ * data-context-open) are two separate axes. The panel is never hidden or
+ * reopened by a workspace change; only the user's close/open buttons do that.
+ * While a workspace has hidden the chat header (where the normal open button
+ * lives), .ncb-context-reopen provides the way back in. */
+.ncb-learner-mode .ncb-card { position: relative; }
+.ncb-context-reopen { display: none; }
+.ncb-root:is(.ncb-view-practice, .ncb-view-writing-coach, .ncb-view-speaking)
+  .ncb-card[data-context-open="false"] .ncb-context-reopen {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  width: 40px;
+  height: 40px;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+.ncb-root:is(.ncb-view-practice, .ncb-view-writing-coach, .ncb-view-speaking) .ncb-context-reopen:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+.ncb-german-panel-link.is-active {
+  color: #eff6ff;
+  background: rgba(37, 99, 235, 0.22);
+  box-shadow: inset 2px 0 0 #60a5fa;
 }

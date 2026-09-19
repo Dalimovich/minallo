@@ -236,6 +236,17 @@ export function applyChatbotExperienceMode(): void {
     el.hidden = !inWritingCoachView;
   });
 
+  // Active item in the right Learning panel (workspace axis only — the panel's
+  // open/closed state is never touched here).
+  root.querySelectorAll<HTMLElement>('.ncb-german-panel-link').forEach((link) => {
+    const skill = link.dataset.workspaceSkill;
+    const active = isLearner && (
+      (!!skill && inPracticeView && activeSkill === skill) ||
+      (link.dataset.workspaceView === 'writing-coach' && inWritingCoachView)
+    );
+    link.classList.toggle('is-active', active);
+    if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+  });
   root.querySelectorAll<HTMLElement>('.ncb-practice-view-only').forEach(el => { el.hidden = !inPracticeView; });
   root.querySelectorAll<HTMLElement>('.ncb-speaking-view-only').forEach(el => { el.hidden = !isLearner || _workspaceView !== 'speaking'; });
   const home = root.querySelector<HTMLElement>('[data-testid="chatbot-nav-home"]');
@@ -323,6 +334,8 @@ export function initChatbotExperienceMode(root: HTMLElement): void {
         return;
       }
       const view = viewTarget.dataset.workspaceView === 'writing-coach' ? 'writing-coach' : 'chat';
+      // Clicking the workspace that is already open is a no-op (navigation != reset).
+      if (view === 'writing-coach' && _workspaceView === 'writing-coach') return;
       if (view === 'writing-coach') {
         // Writing Coach is still a lazily-loaded module (main.ts's
         // ensureWritingCoach()) — await the same load promise the router

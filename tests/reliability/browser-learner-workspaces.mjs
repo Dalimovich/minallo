@@ -55,7 +55,7 @@ try {
    await expect(page.locator('#glCardsTab')).toHaveAttribute('aria-selected','true');
    await expect(page.locator('#glStudyToolBody')).not.toBeEmpty();
    await sidebar();
-   await expect(page.locator('.ncb-context')).toBeHidden();
+   await expect(page.locator('.ncb-context')).toBeVisible();
    await page.locator('[data-chat-id="known-chat"] .ncb-chat-title').click();
    await expect(root).toHaveAttribute('data-workspace-view','chat');
    await expect(page.locator('.ncb-msgs')).toContainText('My saved German question');

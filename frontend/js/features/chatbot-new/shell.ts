@@ -9428,6 +9428,17 @@ function initContextCollapse(root: HTMLElement): void {
 
   closeBtn.addEventListener('click', () => apply(false));
   openBtn.addEventListener('click', () => apply(true));
+  // Learner workspaces hide the chat header that holds openBtn; this second
+  // open control (shown by CSS only in those workspaces while closed) keeps
+  // the panel reopenable everywhere. It only toggles the same user-owned state.
+  const reopen = document.createElement('button');
+  reopen.type = 'button';
+  reopen.className = 'ncb-context-reopen';
+  reopen.setAttribute('aria-label', 'Open learning panel');
+  reopen.dataset.testid = 'context-reopen';
+  reopen.innerHTML = openBtn.innerHTML;
+  reopen.addEventListener('click', () => apply(true));
+  card.appendChild(reopen);
 
   function apply(isOpen: boolean): void {
     card!.dataset.contextOpen = isOpen ? 'true' : 'false';
