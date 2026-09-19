@@ -4,11 +4,15 @@ import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { optionalEnv, requireEnv } from '../lib/env';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
-import { enforceEventRateLimit } from '../lib/rate-limit';
+import { enforceEventRateLimit, enforceInteractiveCap } from '../lib/rate-limit';
+import { requireActiveSubscription } from '../lib/subscription-gate';
 import { logSecurityEvent } from '../lib/logger';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
-const AI_ASK_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_ASK_RATE_LIMIT_MAX', '60'), 10);
+// Dropped from 60 → 30/hour. Matches the /ask-stream Python limit so the two
+// surfaces share one budget. 30/hr × 24 ≈ 720/day, well below abusive but
+// still ample for legitimate study use.
+const AI_ASK_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_ASK_RATE_LIMIT_MAX', '30'), 10);
 const AI_ASK_RATE_LIMIT_WINDOW = parseInt(optionalEnv('AI_ASK_RATE_LIMIT_WINDOW_MS', String(60 * 60 * 1000)), 10);
 const MAX_QUESTION_LENGTH = 8000;
 const MAX_DOCUMENT_IDS = 25;
@@ -18,20 +22,49 @@ interface GroundedSource {
   pageStart?: number | null;
   pageEnd?: number | null;
   sectionTitle?: string | null;
+  title?: string | null;
+  url?: string | null;
+  snippet?: string | null;
+}
+
+interface VerificationBody {
+  status?: string;            // verified | partially_verified | missing_context
+  reasons?: string[];
+  details?: Record<string, unknown>;
 }
 
 interface AskResponseBody {
   answer?: string;
   retrievalMode?: string;
+  tutorMode?: string | null;
+  verification?: VerificationBody | null;  // Phase 10 — supplied by Python /ask
   groundedSources?: GroundedSource[];
   cacheHit?: boolean;
   model?: string | null;
+  selectedSourceMode?: string | null;
+  sourceScope?: string | null;
+  courseFileScope?: string | null;
+  sourceLabel?: string | null;
+}
+
+function _confidenceFromVerification(v?: VerificationBody | null, retrievalMode?: string): string {
+  // Verification is authoritative when Python returned it (Phase 10). Falls
+  // back to the legacy retrieval-mode mapping only when verification is
+  // missing entirely (e.g. an older cached response).
+  const status = v && v.status;
+  if (status === 'verified') return 'high';
+  if (status === 'partially_verified') return 'medium';
+  if (status === 'missing_context') return 'low';
+  return retrievalMode === 'strong' ? 'high' : 'low';
 }
 
 interface MappedSource {
   file_name: string;
   pages: string | null;
   section?: string | null;
+  title?: string | null;
+  url?: string | null;
+  snippet?: string | null;
 }
 
 function _mapSources(groundedSources: GroundedSource[] | undefined): MappedSource[] {
@@ -41,7 +74,14 @@ function _mapSources(groundedSources: GroundedSource[] | undefined): MappedSourc
     let pages: string | null = null;
     if (ps && pe) pages = ps === pe ? String(ps) : `${ps}-${pe}`;
     else if (ps) pages = String(ps);
-    return { file_name: s.fileName || 'Unknown', pages, section: s.sectionTitle ?? null };
+    return {
+      file_name: s.fileName || s.title || s.url || 'Unknown',
+      pages,
+      section: s.sectionTitle ?? null,
+      title: s.title ?? null,
+      url: s.url ?? null,
+      snippet: s.snippet ?? null
+    };
   });
 }
 
@@ -55,6 +95,10 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!user) return fail(401, 'Invalid or expired token');
   if (!pythonAiConfigured()) return fail(503, 'AI service not configured');
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const subBlocked = await requireActiveSubscription(serviceKey, user.id, 'ai_ask');
+  if (subBlocked) return subBlocked;
+  const monthlyCapped = await enforceInteractiveCap(serviceKey, user.id);
+  if (monthlyCapped) return monthlyCapped;
   const limited = await enforceEventRateLimit(
     serviceKey,
     user.id,
@@ -75,20 +119,61 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!question || typeof question !== 'string') return fail(400, 'question is required');
   if (question.length > MAX_QUESTION_LENGTH) return fail(400, 'question is too long');
 
+  // Tutor-mode overlay: explain | solve | quiz. The Python layer normalises
+  // and falls back to default; we still validate here so a bad client value
+  // doesn't trigger the upstream call at all.
+  const ALLOWED_TUTOR_MODES = ['explain', 'solve', 'quiz'] as const;
+  const tutorMode: string | null =
+    typeof body.tutorMode === 'string' &&
+    (ALLOWED_TUTOR_MODES as readonly string[]).includes(body.tutorMode)
+      ? body.tutorMode
+      : null;
+
   const documentIds: string[] | null = Array.isArray(body.documentIds)
     ? (body.documentIds as string[]).slice(0, MAX_DOCUMENT_IDS)
-    : typeof body.documentId === 'string' ? [body.documentId] : null;
+    : null;
+  // activeDocumentId is a ranking hint (the PDF the user is reading), NOT a
+  // hard filter. Falls back to body.documentId for legacy callers that sent
+  // the open file as a single-doc filter — we now treat it as a hint so the
+  // model can still pull in lecture/exercise/formula sheets from the course.
+  const activeDocumentId: string | null =
+    typeof body.activeDocumentId === 'string' && body.activeDocumentId
+      ? body.activeDocumentId
+      : typeof body.documentId === 'string' && body.documentId
+        ? body.documentId
+        : null;
+  const activeFileName = typeof body.activeFileName === 'string' ? body.activeFileName : null;
+  const openFileContext = typeof body.openFileContext === 'string' ? body.openFileContext.slice(0, 20000) : null;
+  const sourceMode =
+    typeof body.sourceMode === 'string' && ['auto', 'course_files', 'internet'].includes(body.sourceMode)
+      ? body.sourceMode
+      : 'auto';
+  const courseFileScope =
+    typeof body.courseFileScope === 'string' && ['all_course_files', 'specific_files'].includes(body.courseFileScope)
+      ? body.courseFileScope
+      : 'all_course_files';
   await logSecurityEvent(serviceKey, user.id, 'ai_ask', {
     course_id: courseId,
-    document_count: documentIds ? documentIds.length : 0
+    document_count: documentIds ? documentIds.length : 0,
+    active_document: activeDocumentId ? 1 : 0,
   });
 
   const upstream = await forwardToPython<AskResponseBody>('ask', {
     userId: user.id,
     courseId,
     documentIds,
+    activeDocumentId,
     question,
-    bypassCache: Boolean(body.bypassCache)
+    tutorMode,
+    sourceMode,
+    courseFileScope,
+    activeFileName,
+    openFileContext,
+    // bypassCache is intentionally NOT forwarded from the client — the answer
+    // cache is our biggest cost mitigation, so the public API is not allowed
+    // to defeat it. Cache invalidation happens automatically via
+    // document_version_hash when documents change.
+    bypassCache: false
   });
 
   if (!upstream.ok) return jsonResponse(upstream.status, upstream.body);
@@ -96,10 +181,20 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   return jsonResponse(200, {
     answer: py.answer || '',
     retrievalMode: py.retrievalMode || 'strong',
-    confidence: py.retrievalMode === 'strong' ? 'high' : 'low',
+    tutorMode: py.tutorMode ?? null,
+    // Confidence is derived from Phase-10 deterministic verification when
+    // available — NOT from retrievalMode alone. The previous mapping showed a
+    // green 'high' badge on answers the verifier had flagged missing_context
+    // (e.g. no [Source N] anchor, fabricated filename refs).
+    confidence: _confidenceFromVerification(py.verification, py.retrievalMode),
+    verification: py.verification ?? null,
     unsupported: py.retrievalMode !== 'strong',
     sources: _mapSources(py.groundedSources),
     cacheHit: Boolean(py.cacheHit),
-    model: py.model ?? null
+    model: py.model ?? null,
+    selectedSourceMode: py.selectedSourceMode ?? sourceMode,
+    sourceScope: py.sourceScope ?? null,
+    courseFileScope: py.courseFileScope ?? courseFileScope,
+    sourceLabel: py.sourceLabel ?? null
   });
 };

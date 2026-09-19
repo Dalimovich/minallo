@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minallo Admin Dashboard Preview</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg-2: #0d1828;
+      --surface: rgba(20, 33, 52, 0.86);
+      --surface-2: rgba(26, 41, 63, 0.92);
+      --surface-3: rgba(33, 51, 76, 0.78);
+      --line: rgba(148, 163, 184, 0.16);
+      --line-strong: rgba(148, 163, 184, 0.26);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --muted-2: #6f819b;
+      --blue: #38bdf8;
+      --blue-2: #0ea5e9;
+      --green: #6ee7b7;
+      --green-2: #10b981;
+      --yellow: #facc15;
+      --red: #fb7185;
+      --purple: #a78bfa;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+      --radius: 22px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 30% -10%, rgba(56, 189, 248, 0.16), transparent 32%),
+        radial-gradient(circle at 85% 5%, rgba(110, 231, 183, 0.12), transparent 30%),
+        linear-gradient(135deg, #07111f 0%, #0a1322 45%, #08101c 100%);
+    }
+
+    .admin-layout {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 18px 14px;
+      border-right: 1px solid var(--line);
+      background: rgba(8, 17, 31, 0.78);
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(110, 231, 183, 0.16));
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      box-shadow: inset 0 0 22px rgba(56, 189, 248, 0.12);
+      font-weight: 900;
+      letter-spacing: -0.06em;
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .nav button {
+      width: 100%;
+      height: 52px;
+      border: 1px solid transparent;
+      border-radius: 18px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 20px;
+      cursor: default;
+    }
+
+    .nav button.active,
+    .nav button:hover {
+      color: var(--text);
+      background: rgba(56, 189, 248, 0.13);
+      border-color: rgba(56, 189, 248, 0.32);
+    }
+
+    main {
+      padding: 26px 30px 40px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(26px, 3vw, 42px);
+      line-height: 1.03;
+      letter-spacing: -0.055em;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 720px;
+      line-height: 1.55;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill, select {
+      border: 1px solid var(--line-strong);
+      color: var(--text);
+      background: rgba(17, 29, 48, 0.82);
+      border-radius: 999px;
+      min-height: 42px;
+      padding: 0 14px;
+      font-weight: 800;
+      outline: none;
+    }
+
+    .primary-btn {
+      border: 0;
+      color: #042033;
+      background: linear-gradient(135deg, var(--blue), var(--green));
+      border-radius: 999px;
+      min-height: 42px;
+      padding: 0 16px;
+      font-weight: 900;
+      box-shadow: 0 14px 34px rgba(56, 189, 248, 0.18);
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(30, 45, 68, 0.82), rgba(15, 26, 43, 0.86));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.055), transparent 42%);
+      pointer-events: none;
+    }
+
+    .kpi {
+      min-height: 134px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .kpi .label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .kpi .value {
+      font-size: 30px;
+      font-weight: 950;
+      letter-spacing: -0.06em;
+    }
+
+    .kpi .delta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: max-content;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 900;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.24);
+      border-radius: 999px;
+      padding: 5px 8px;
+    }
+
+    .kpi.warn .delta { color: var(--yellow); background: rgba(250, 204, 21, 0.11); border-color: rgba(250, 204, 21, 0.23); }
+    .kpi.loss .delta { color: var(--red); background: rgba(251, 113, 133, 0.11); border-color: rgba(251, 113, 133, 0.25); }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stack { display: grid; gap: 18px; }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 22px 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.035em;
+    }
+
+    .card-desc {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .segmented {
+      display: inline-flex;
+      padding: 4px;
+      gap: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(10, 19, 34, 0.72);
+    }
+
+    .segmented button {
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 8px 11px;
+      font-weight: 900;
+      font-size: 12px;
+    }
+
+    .segmented button.active {
+      color: #041725;
+      background: linear-gradient(135deg, var(--blue), var(--green));
+    }
+
+    .chart-wrap {
+      position: relative;
+      padding: 14px 18px 20px 18px;
+      z-index: 1;
+    }
+
+    .chart {
+      width: 100%;
+      height: 330px;
+      display: block;
+      overflow: visible;
+    }
+
+    .axis-label { fill: #93a4bd; font-size: 11px; font-weight: 700; }
+    .grid-line { stroke: rgba(148,163,184,0.14); stroke-width: 1; }
+    .axis-line { stroke: rgba(148,163,184,0.25); stroke-width: 1; }
+    .bar { fill: url(#barGradient); rx: 8; }
+    .bar-ghost { fill: rgba(148,163,184,0.13); rx: 8; }
+    .line-profit { fill: none; stroke: #6ee7b7; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    .line-revenue { fill: none; stroke: #38bdf8; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    .line-cost { fill: none; stroke: #fb7185; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7 7; }
+    .area-profit { fill: url(#areaGradient); opacity: 0.62; }
+    .dot { stroke: #07111f; stroke-width: 3; }
+
+    .chart-tooltip {
+      position: absolute;
+      pointer-events: none;
+      padding: 10px 12px;
+      min-width: 142px;
+      border-radius: 14px;
+      background: rgba(5, 12, 23, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      transform: translate(-50%, -112%);
+      transition: opacity 0.12s ease;
+      z-index: 5;
+    }
+
+    .chart-tooltip strong { display: block; font-size: 13px; margin-bottom: 6px; }
+    .chart-tooltip span { display: block; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+    .legend {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      padding: 0 22px 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .legend i {
+      width: 10px;
+      height: 10px;
+      border-radius: 99px;
+      display: inline-block;
+      margin-right: 7px;
+    }
+
+    .finance-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      padding: 18px 22px 22px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .money-box {
+      border: 1px solid var(--line);
+      background: rgba(8, 17, 31, 0.42);
+      border-radius: 18px;
+      padding: 15px;
+    }
+
+    .money-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .money-row:last-child { border-bottom: 0; }
+    .money-row b { color: var(--text); }
+    .money-row .good { color: var(--green); }
+    .money-row .bad { color: var(--red); }
+
+    .profit-meter {
+      margin-top: 14px;
+      height: 13px;
+      border-radius: 999px;
+      background: rgba(148,163,184,0.14);
+      overflow: hidden;
+      border: 1px solid rgba(148,163,184,0.1);
+    }
+
+    .profit-meter span {
+      display: block;
+      height: 100%;
+      width: 71.5%;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+      border-radius: inherit;
+    }
+
+    .small-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 18px 22px 22px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .mini-stat {
+      border: 1px solid var(--line);
+      background: rgba(8, 17, 31, 0.38);
+      border-radius: 18px;
+      padding: 15px;
+    }
+
+    .mini-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 7px;
+    }
+
+    .mini-stat b {
+      display: block;
+      font-size: 24px;
+      letter-spacing: -0.045em;
+    }
+
+    .bar-list {
+      display: grid;
+      gap: 14px;
+      padding: 18px 22px 22px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 115px 1fr 58px;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 850;
+    }
+
+    .track {
+      height: 10px;
+      background: rgba(148,163,184,0.13);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .track span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+    }
+
+    table {
+      width: calc(100% - 44px);
+      margin: 18px 22px 22px;
+      border-collapse: collapse;
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+      border-radius: 18px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 13px 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(8, 17, 31, 0.32);
+    }
+
+    td { color: #dbeafe; }
+    tr:last-child td { border-bottom: 0; }
+    .tag {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: 900;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--blue);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .tag.green { color: var(--green); background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.22); }
+    .tag.red { color: var(--red); background: rgba(251,113,133,0.1); border-color: rgba(251,113,133,0.22); }
+
+    .notice {
+      margin: 0 22px 22px;
+      padding: 14px 16px;
+      border: 1px solid rgba(250, 204, 21, 0.25);
+      background: rgba(250, 204, 21, 0.08);
+      color: #fde68a;
+      border-radius: 18px;
+      font-size: 13px;
+      line-height: 1.5;
+      position: relative;
+      z-index: 1;
+    }
+
+    @media (max-width: 1180px) {
+      .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .admin-layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      main { padding: 18px 14px 28px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .controls { justify-content: flex-start; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .finance-split, .small-grid { grid-template-columns: 1fr; }
+      .bar-row { grid-template-columns: 95px 1fr 48px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" aria-label="Admin navigation">
+      <div class="logo">M</div>
+      <nav class="nav">
+        <button title="Overview">⌂</button>
+        <button title="Users">👥</button>
+        <button title="Subscriptions">💳</button>
+        <button title="Analytics" class="active">📊</button>
+        <button title="AI costs">🤖</button>
+        <button title="Settings">⚙️</button>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Minallo admin</div>
+          <h1>Business Control Center</h1>
+          <p>Clean overview of users, subscriptions, revenue, AI costs and real net profit. This mockup uses sample numbers from your current dashboard style.</p>
+        </div>
+        <div class="controls">
+          <span class="pill">03 Jun 2026</span>
+          <select id="rangeSelect" aria-label="Date range">
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">This year</option>
+          </select>
+          <button class="primary-btn">Export report</button>
+        </div>
+      </header>
+
+      <section class="kpi-grid" aria-label="Main KPIs">
+        <article class="card kpi">
+          <div class="label">MRR</div>
+          <div class="value">€251.79</div>
+          <div class="delta">↗ 21 paid users</div>
+        </article>
+        <article class="card kpi">
+          <div class="label">Revenue this month</div>
+          <div class="value">€251.79</div>
+          <div class="delta">↗ 100% conversion</div>
+        </article>
+        <article class="card kpi">
+          <div class="label">Net profit</div>
+          <div class="value">€179.95</div>
+          <div class="delta">↗ 71.5% margin</div>
+        </article>
+        <article class="card kpi warn">
+          <div class="label">AI API costs</div>
+          <div class="value">€38.42</div>
+          <div class="delta">15.3% of revenue</div>
+        </article>
+        <article class="card kpi">
+          <div class="label">Active paid</div>
+          <div class="value">21</div>
+          <div class="delta">↗ +4 this month</div>
+        </article>
+        <article class="card kpi loss">
+          <div class="label">Cancelled</div>
+          <div class="value">0</div>
+          <div class="delta">0% churn</div>
+        </article>
+      </section>
+
+      <div class="dashboard-grid">
+        <div class="stack">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Revenue, costs and profit</h2>
+                <p class="card-desc">Clearer than the old chart: labeled axes, readable trend lines, legend, hover values and a visible profit area.</p>
+              </div>
+              <div class="segmented" aria-label="Metric tabs">
+                <button class="active" data-metric="money">Money</button>
+                <button data-metric="users">Users</button>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <svg id="financeChart" class="chart" viewBox="0 0 920 330" role="img" aria-label="Revenue costs and profit chart"></svg>
+              <div id="financeTooltip" class="chart-tooltip"></div>
+            </div>
+            <div class="legend">
+              <span><i style="background:#38bdf8"></i>Revenue</span>
+              <span><i style="background:#fb7185"></i>Costs</span>
+              <span><i style="background:#6ee7b7"></i>Net profit</span>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Daily signups</h2>
+                <p class="card-desc">A cleaner growth chart with baseline, grid, day labels and peak marker.</p>
+              </div>
+              <span class="pill">Peak: 4/day</span>
+            </div>
+            <div class="chart-wrap">
+              <svg id="growthChart" class="chart" viewBox="0 0 920 330" role="img" aria-label="Daily signup growth chart"></svg>
+              <div id="growthTooltip" class="chart-tooltip"></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">User profitability</h2>
+                <p class="card-desc">This table tells you which users are healthy and which users cost more than they pay.</p>
+              </div>
+              <span class="pill">Top API consumers</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Plan revenue</th>
+                  <th>AI cost</th>
+                  <th>Profit</th>
+                  <th>Requests</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>student01@email.com</td>
+                  <td>€11.99</td>
+                  <td>€1.14</td>
+                  <td>€10.35</td>
+                  <td>84</td>
+                  <td><span class="tag green">Healthy</span></td>
+                </tr>
+                <tr>
+                  <td>student02@email.com</td>
+                  <td>€11.99</td>
+                  <td>€4.80</td>
+                  <td>€6.69</td>
+                  <td>232</td>
+                  <td><span class="tag">Watch</span></td>
+                </tr>
+                <tr>
+                  <td>student03@email.com</td>
+                  <td>€11.99</td>
+                  <td>€12.60</td>
+                  <td>-€1.11</td>
+                  <td>611</td>
+                  <td><span class="tag red">Too costly</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+
+        <aside class="stack">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Profit breakdown</h2>
+                <p class="card-desc">Real result after subtracting AI, payment and hosting costs.</p>
+              </div>
+            </div>
+            <div class="finance-split">
+              <div class="money-box">
+                <div class="money-row"><span>Subscription revenue</span><b class="good">€251.79</b></div>
+                <div class="money-row"><span>Refunds</span><b>€0.00</b></div>
+                <div class="money-row"><span>Net revenue</span><b>€251.79</b></div>
+              </div>
+              <div class="money-box">
+                <div class="money-row"><span>OpenAI/API</span><b class="bad">-€38.42</b></div>
+                <div class="money-row"><span>Stripe/PayPal fees</span><b class="bad">-€9.12</b></div>
+                <div class="money-row"><span>Hosting/storage</span><b class="bad">-€24.30</b></div>
+              </div>
+            </div>
+            <div class="notice"><strong>Net profit:</strong> €179.95 after costs. Your break-even point is about 6 paid users at the current cost level.</div>
+            <div style="padding:0 22px 22px; position:relative; z-index:1;">
+              <div style="display:flex; justify-content:space-between; color:var(--muted); font-size:13px; font-weight:850;">
+                <span>Profit margin</span><span>71.5%</span>
+              </div>
+              <div class="profit-meter"><span></span></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Subscription funnel</h2>
+                <p class="card-desc">Shows exactly where students drop off.</p>
+              </div>
+            </div>
+            <div class="bar-list">
+              <div class="bar-row"><span>Visitors</span><div class="track"><span style="width:100%"></span></div><b>1,240</b></div>
+              <div class="bar-row"><span>Signups</span><div class="track"><span style="width:42%"></span></div><b>21</b></div>
+              <div class="bar-row"><span>Trials</span><div class="track"><span style="width:28%"></span></div><b>4</b></div>
+              <div class="bar-row"><span>Converted</span><div class="track"><span style="width:28%"></span></div><b>4</b></div>
+              <div class="bar-row"><span>Cancelled</span><div class="track"><span style="width:0%"></span></div><b>0</b></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">AI usage by feature</h2>
+                <p class="card-desc">Helps you see what costs money and what students actually use.</p>
+              </div>
+            </div>
+            <div class="bar-list">
+              <div class="bar-row"><span>AI Explainer</span><div class="track"><span style="width:88%"></span></div><b>812</b></div>
+              <div class="bar-row"><span>Summaries</span><div class="track"><span style="width:62%"></span></div><b>430</b></div>
+              <div class="bar-row"><span>Quizzes</span><div class="track"><span style="width:45%"></span></div><b>268</b></div>
+              <div class="bar-row"><span>Flashcards</span><div class="track"><span style="width:38%"></span></div><b>214</b></div>
+              <div class="bar-row"><span>PDF tools</span><div class="track"><span style="width:22%"></span></div><b>96</b></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Quick actions</h2>
+                <p class="card-desc">Useful admin controls to add later.</p>
+              </div>
+            </div>
+            <div class="small-grid">
+              <div class="mini-stat"><span>Flag expensive users</span><b>3</b></div>
+              <div class="mini-stat"><span>Failed AI requests</span><b>7</b></div>
+              <div class="mini-stat"><span>Pending trials</span><b>0</b></div>
+              <div class="mini-stat"><span>Support tickets</span><b>2</b></div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const moneyData = [
+      { label: 'Jan', revenue: 0, costs: 18, profit: -18 },
+      { label: 'Feb', revenue: 24, costs: 22, profit: 2 },
+      { label: 'Mar', revenue: 60, costs: 28, profit: 32 },
+      { label: 'Apr', revenue: 108, costs: 43, profit: 65 },
+      { label: 'May', revenue: 168, costs: 55, profit: 113 },
+      { label: 'Jun', revenue: 252, costs: 72, profit: 180 }
+    ];
+
+    const userData = [
+      { label: 'Jan', revenue: 0, costs: 0, profit: 0 },
+      { label: 'Feb', revenue: 2, costs: 1, profit: 1 },
+      { label: 'Mar', revenue: 5, costs: 2, profit: 3 },
+      { label: 'Apr', revenue: 9, costs: 4, profit: 5 },
+      { label: 'May', revenue: 14, costs: 6, profit: 8 },
+      { label: 'Jun', revenue: 21, costs: 8, profit: 13 }
+    ];
+
+    const growthData = [
+      ['05/05',0], ['06/05',0], ['07/05',0], ['08/05',0], ['09/05',0], ['10/05',0],
+      ['11/05',2], ['12/05',0], ['13/05',0], ['14/05',0], ['15/05',0], ['16/05',0],
+      ['17/05',0], ['18/05',1], ['19/05',1], ['20/05',0], ['21/05',1], ['22/05',0],
+      ['23/05',1], ['24/05',4], ['25/05',0], ['26/05',0], ['27/05',0], ['28/05',0],
+      ['29/05',1], ['30/05',0], ['31/05',0], ['01/06',0], ['02/06',0], ['03/06',0]
+    ].map(([label, value]) => ({ label, value }));
+
+    function money(v) {
+      return '€' + Number(v).toFixed(0);
+    }
+
+    function linePath(points) {
+      return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    }
+
+    function areaPath(points, bottomY) {
+      if (!points.length) return '';
+      return `M ${points[0].x} ${bottomY} L ` + points.map(p => `${p.x} ${p.y}`).join(' L ') + ` L ${points[points.length - 1].x} ${bottomY} Z`;
+    }
+
+    function drawFinanceChart(mode = 'money') {
+      const svg = document.getElementById('financeChart');
+      const tooltip = document.getElementById('financeTooltip');
+      const data = mode === 'money' ? moneyData : userData;
+      const W = 920, H = 330;
+      const m = { top: 24, right: 34, bottom: 44, left: 62 };
+      const iw = W - m.left - m.right;
+      const ih = H - m.top - m.bottom;
+      const values = data.flatMap(d => [d.revenue, d.costs, d.profit]);
+      const min = Math.min(0, Math.min(...values));
+      const max = Math.max(...values) * 1.18;
+      const y = v => m.top + (max - v) / (max - min) * ih;
+      const x = i => m.left + (i / (data.length - 1)) * iw;
+      const revenuePts = data.map((d, i) => ({ x: x(i), y: y(d.revenue), d }));
+      const costPts = data.map((d, i) => ({ x: x(i), y: y(d.costs), d }));
+      const profitPts = data.map((d, i) => ({ x: x(i), y: y(d.profit), d }));
+      const tickCount = 5;
+      const fmt = mode === 'money' ? money : v => String(Math.round(v));
+
+      let html = `
+        <defs>
+          <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#6ee7b7" stop-opacity="0.30" />
+            <stop offset="1" stop-color="#6ee7b7" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+      `;
+
+      for (let i = 0; i <= tickCount; i++) {
+        const value = min + ((max - min) / tickCount) * i;
+        const yy = y(value);
+        html += `<line class="grid-line" x1="${m.left}" x2="${W - m.right}" y1="${yy}" y2="${yy}" />`;
+        html += `<text class="axis-label" x="${m.left - 12}" y="${yy + 4}" text-anchor="end">${fmt(value)}</text>`;
+      }
+
+      html += `<line class="axis-line" x1="${m.left}" x2="${W - m.right}" y1="${H - m.bottom}" y2="${H - m.bottom}" />`;
+      data.forEach((d, i) => {
+        html += `<text class="axis-label" x="${x(i)}" y="${H - 15}" text-anchor="middle">${d.label}</text>`;
+      });
+
+      html += `<path class="area-profit" d="${areaPath(profitPts, y(0))}" />`;
+      html += `<path class="line-revenue" d="${linePath(revenuePts)}" />`;
+      html += `<path class="line-cost" d="${linePath(costPts)}" />`;
+      html += `<path class="line-profit" d="${linePath(profitPts)}" />`;
+      profitPts.forEach(p => {
+        html += `<circle class="dot" cx="${p.x}" cy="${p.y}" r="5" fill="#6ee7b7" />`;
+      });
+      revenuePts.forEach(p => {
+        html += `<circle class="dot" cx="${p.x}" cy="${p.y}" r="4" fill="#38bdf8" />`;
+      });
+
+      data.forEach((d, i) => {
+        html += `<rect data-index="${i}" x="${x(i) - 42}" y="${m.top}" width="84" height="${ih}" fill="transparent"></rect>`;
+      });
+
+      svg.innerHTML = html;
+      svg.querySelectorAll('rect[data-index]').forEach(rect => {
+        rect.addEventListener('mousemove', (e) => {
+          const d = data[Number(rect.dataset.index)];
+          const box = svg.getBoundingClientRect();
+          tooltip.innerHTML = `<strong>${d.label}</strong><span>Revenue: ${fmt(d.revenue)}</span><span>Costs: ${fmt(d.costs)}</span><span>Profit: ${fmt(d.profit)}</span>`;
+          tooltip.style.left = (e.clientX - box.left) + 'px';
+          tooltip.style.top = (e.clientY - box.top) + 'px';
+          tooltip.style.opacity = '1';
+        });
+        rect.addEventListener('mouseleave', () => tooltip.style.opacity = '0');
+      });
+    }
+
+    function drawGrowthChart() {
+      const svg = document.getElementById('growthChart');
+      const tooltip = document.getElementById('growthTooltip');
+      const W = 920, H = 330;
+      const m = { top: 26, right: 34, bottom: 48, left: 54 };
+      const iw = W - m.left - m.right;
+      const ih = H - m.top - m.bottom;
+      const max = Math.max(...growthData.map(d => d.value), 4);
+      const xBand = iw / growthData.length;
+      const barW = Math.max(8, xBand * 0.56);
+      const y = v => m.top + (max - v) / max * ih;
+
+      let html = `
+        <defs>
+          <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#38bdf8" />
+            <stop offset="1" stop-color="#0284c7" />
+          </linearGradient>
+        </defs>
+      `;
+
+      for (let i = 0; i <= max; i++) {
+        const yy = y(i);
+        html += `<line class="grid-line" x1="${m.left}" x2="${W - m.right}" y1="${yy}" y2="${yy}" />`;
+        html += `<text class="axis-label" x="${m.left - 12}" y="${yy + 4}" text-anchor="end">${i}</text>`;
+      }
+      html += `<line class="axis-line" x1="${m.left}" x2="${W - m.right}" y1="${H - m.bottom}" y2="${H - m.bottom}" />`;
+
+      growthData.forEach((d, i) => {
+        const x = m.left + i * xBand + (xBand - barW) / 2;
+        const h = H - m.bottom - y(d.value);
+        const cls = d.value > 0 ? 'bar' : 'bar-ghost';
+        html += `<rect class="${cls}" data-index="${i}" x="${x}" y="${y(d.value)}" width="${barW}" height="${Math.max(2, h)}"></rect>`;
+        if (i % 5 === 0 || i === growthData.length - 1) {
+          html += `<text class="axis-label" x="${x + barW / 2}" y="${H - 15}" text-anchor="middle">${d.label}</text>`;
+        }
+        if (d.value === max) {
+          html += `<text x="${x + barW / 2}" y="${y(d.value) - 10}" text-anchor="middle" fill="#6ee7b7" font-size="12" font-weight="900">Peak</text>`;
+        }
+      });
+
+      svg.innerHTML = html;
+      svg.querySelectorAll('rect[data-index]').forEach(rect => {
+        rect.addEventListener('mousemove', (e) => {
+          const d = growthData[Number(rect.dataset.index)];
+          const box = svg.getBoundingClientRect();
+          tooltip.innerHTML = `<strong>${d.label}</strong><span>${d.value} new signup${d.value === 1 ? '' : 's'}</span>`;
+          tooltip.style.left = (e.clientX - box.left) + 'px';
+          tooltip.style.top = (e.clientY - box.top) + 'px';
+          tooltip.style.opacity = '1';
+        });
+        rect.addEventListener('mouseleave', () => tooltip.style.opacity = '0');
+      });
+    }
+
+    document.querySelectorAll('[data-metric]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-metric]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        drawFinanceChart(btn.dataset.metric);
+      });
+    });
+
+    drawFinanceChart('money');
+    drawGrowthChart();
+  </script>
+</body>
+</html>

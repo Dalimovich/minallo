@@ -1,0 +1,56 @@
+# Error contract inventory
+
+Static literal emission inventory, with real frontend classifier execution for each code. Location identifies subsystem; it is not an injected failure. Dynamic codes and legacy text exceptions require separate execution. Retryable/action defaults below can be overridden by backend payload.
+
+| Backend code | Emission location / stage | Frontend title | Message | Retryable | Action | Partial preserved | Mapping |
+|---|---|---|---|---|---|---|---|
+| ACCESS_TOKEN_EXPIRED | backend/python-ai/app/jwt_auth.py:76 | Session expired | Please sign in again, then retry. | false | sign_in | false | Typed alias |
+| DOCUMENT_INDEX_CORRUPT | backend/python-ai/app/routers/ask.py:229 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| FULL_DOCUMENT_COVERAGE_INCOMPLETE | backend/python-ai/app/routers/stream.py:2079 | Document processing incomplete | Some requested pages or the final synthesis could not be completed. Retry with the same documents. | true | retry | true | Typed alias |
+| FULL_DOCUMENT_PROCESSING_FAILED | backend/python-ai/app/routers/stream.py:2058 | Document processing interrupted | The full-document response could not be completed. Your original document selection is preserved. | true | retry | true | Typed alias |
+| FULL_DOCUMENT_SCOPE_REQUIRED | backend/python-ai/app/routers/stream.py:1814 | Select documents | Choose the documents to process completely, then send your question again. | false | none | false | Typed alias |
+| GROUNDING_REVISION_UNAVAILABLE | backend/python-ai/app/routers/stream.py:1843 | Document changed | Reopen the latest document revision before starting this request again. | false | read_current_page | false | Typed alias |
+| STALE_GENERATION | backend/python-ai/app/routers/stream.py:3033 | Response replaced | This answer was replaced by your newer question. | false | none | false | Typed alias |
+| active_pdf_state_incomplete | backend/python-ai/app/routers/stream.py:1549 | Page could not be read | Reopen the visible PDF page and retry. | true | read_current_page | false | Typed alias |
+| ai_monthly_cap | backend/python-ai/app/services/access_control.py:180 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| ambiguous_document_name | backend/python-ai/app/routers/stream.py:1770 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| automatic_resume_exhausted | backend/python-ai/app/routers/stream.py:1239 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| conversation_creation_failed | backend/python-ai/app/routers/stream.py:4129 | Chat could not be saved | Minallo could not create this conversation. | true | retry | false | Typed |
+| conversation_not_found | backend/python-ai/app/routers/stream.py:3020 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| conversation_validation_failed | backend/python-ai/app/routers/stream.py:3013 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| critical_numerical_mismatch | backend/python-ai/app/routers/stream.py:6184 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| document_access_revoked | backend/python-ai/app/routers/stream.py:6271 | Document access changed | Reopen the document before trying again. | false | read_current_page | false | Typed |
+| empty_completed_response | backend/python-ai/app/routers/stream.py:1656 | Empty answer | The tutor finished without returning an answer. | true | retry | false | Typed |
+| exam_validation_failed | backend/python-ai/app/services/answer_stream.py:2446 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| generation_timeout | backend/python-ai/app/routers/stream.py:2679 | The response took too long | Your grounded context is preserved and the answer can be retried. | true | retry | true | Typed |
+| grounded_context_inconsistent | backend/python-ai/app/routers/stream.py:5559 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| incomplete_durable_turn_identity | backend/python-ai/app/routers/stream.py:1493 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| incomplete_durable_tutor_turn | backend/python-ai/app/routers/stream.py:996 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| internal_error | backend/python-ai/app/services/answer_stream.py:2395 | Minallo could not finish this response | Your question and document context are preserved. | true | retry | true | Typed |
+| request_id_mismatch | backend/python-ai/app/routers/stream.py:1292 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| request_routing_corrected | backend/python-ai/app/routers/stream.py:1224 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| request_state_initialization_failed | backend/python-ai/app/routers/stream.py:1516 | Response state unavailable | Minallo could not confirm the saved request state yet. | true | retry | true | Typed alias |
+| request_state_not_found | backend/python-ai/app/routers/stream.py:1092 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| request_superseded | backend/python-ai/app/routers/stream.py:2549 | Response replaced | This answer was replaced by your newer question. | false | none | false | Typed |
+| requested_documents_ambiguous | backend/python-ai/app/routers/stream.py:3423 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| requested_documents_not_resolved | backend/python-ai/app/routers/stream.py:3403 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| response_stage_stalled | backend/python-ai/app/routers/stream.py:2576 | Connection stalled | The tutor stopped sending updates. Please retry. | true | continue | true | Typed alias |
+| scoped_job_not_found | backend/python-ai/app/routers/stream.py:1114 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| scoped_job_precreation_failed | backend/python-ai/app/routers/stream.py:2240 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| scoped_job_state_unavailable | backend/python-ai/app/routers/stream.py:2475 | Response state unavailable | Minallo could not confirm the saved request state yet. | true | retry | true | Typed alias |
+| scoped_worker_interrupted | backend/python-ai/app/routers/stream.py:2507 | Connection interrupted | The saved response can be continued. | true | continue | true | Typed alias |
+| section_not_found | backend/python-ai/app/routers/stream.py:4144 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| section_questions_not_found | backend/python-ai/app/services/document_extraction.py:2740 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| shared_generation_check_failed | backend/python-ai/app/routers/stream.py:2378 | Chat state unavailable | Minallo could not verify the active response state. | true | retry | false | Typed |
+| stale_visual_revision | backend/python-ai/app/routers/course_visuals.py:43 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| stream_ended_without_terminal_event | backend/python-ai/app/routers/stream.py:2794 | Answer interrupted | The connection ended before the answer was confirmed complete. | true | continue | true | Typed |
+| strong_model_required | backend/python-ai/app/routers/stream.py:6051 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| task_identity_insufficient | backend/python-ai/app/routers/stream.py:5154 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| task_identity_mismatch | backend/python-ai/app/routers/stream.py:5936 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+| transcript_hydration_unavailable | backend/python-ai/app/routers/stream.py:1066 | Response state unavailable | Minallo could not confirm the saved request state yet. | true | retry | true | Typed alias |
+| tutor_state_creation_failed | backend/python-ai/app/routers/stream.py:1034 | Chat could not be saved | Minallo could not create this conversation. | true | retry | false | Typed alias |
+| visible_page_capture_failed | backend/python-ai/app/routers/stream.py:1733 | Page could not be read | Reopen the visible PDF page and retry. | true | read_current_page | false | Typed |
+| visible_page_snapshot_mismatch | backend/python-ai/app/routers/stream.py:1574 | Page changed | Keep the PDF page open and retry. | true | read_current_page | false | Typed alias |
+| visual_verification_failed | backend/python-ai/app/services/answer_stream.py:333 | Could not finish | Something interrupted the response. Please try again—your chat is still here. | true | retry | false | Legacy fallback |
+
+Mapped codes without a literal Python emission (may originate in frontend, proxy, or dynamic lane classification): stream_inactivity_timeout, internal_stream_error, general_generation_failed, contextual_generation_failed, fast_generation_failed, retrieval_failed, grounded_generation_failed, web_generation_failed, retrieval_timeout, visual_page_render_failed, generation_state_unavailable, visible_page_snapshot_unstable, original_pdf_context_unavailable, stream_transport_interrupted, request_state_unavailable, session_expired, session_refresh_failed, rag_service_unavailable, full_document_processing_failed, full_document_coverage_incomplete, full_document_scope_required, document_indexing, document_identity_unavailable, grounding_revision_unavailable, session_network_error

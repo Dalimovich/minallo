@@ -29,6 +29,7 @@ declare global {
     _activeSemesterId?: string;
     activeCourseId?: string | null;
     activeFileName?: string | null;
+    activeStorageName?: string | null;
     activeCourseRef?: LegacyCourse | null;
     activeCourseSection?: string;
 
@@ -39,22 +40,36 @@ declare global {
     renderCourses?: () => void;
     sdRenderCourses?: () => void;
     showPortalSection?: (section: string) => void;
+    _ssLoadPortalFeature?: (name: string) => Promise<void>;
+    _ssLoadFeatureSection?: (name: string) => Promise<void>;
+    _ssPrewarmPortalFeature?: (name: string) => Promise<void>;
+    _ncbHtmlPromise?: Promise<string>;
+    _ncbShellPromise?: Promise<void>;
     forceCloseAI?: () => void;
-    _aiBubbleClose?: () => void;
-    _aiBubbleSendMessage?: (text: string) => void;
     _statsStopFile?: () => void;
     _stRunning?: boolean;
     _glOpenSkill?: (skill: string) => void;
+    _glCloseListeningView?: () => void;
     _glOpenFile?: (uid: string, fileName: string) => void;
     _saveUserCourses?: () => void;
     _setAiChipsVisible?: (visible: boolean) => void;
     _generateStudyTool?: (...args: unknown[]) => unknown;
-    mountQuiz?: (el: HTMLElement, course: LegacyCourse, opts: { generate: unknown }) => void;
     mountFlashcards?: (el: HTMLElement, course: LegacyCourse, opts: { generate: unknown }) => void;
+    mountExamForge?: (el: HTMLElement, course: LegacyCourse, opts: { generate?: unknown }) => void;
 
     // ── i18n + toasts ──────────────────────────────────────────────────
     _t?: (key: string) => string;
     showToast?: (title: string, sub?: string) => void;
+
+    // Open a cited AI source (set by features/pdf-viewer/source-link). Lets
+    // non-module views (ExamForge) open the PDF popup at the cited page.
+    openCitedSource?: (
+      src: {
+        fileName?: string | null; documentId?: string | null; page?: number | null;
+        boundingBox?: { x: number; y: number; width: number; height: number } | null;
+      },
+      surface: 'sidebar' | 'popup'
+    ) => void;
 
     // ── Auth bridge ────────────────────────────────────────────────────
     _onLoginSuccess?: () => void;
@@ -86,9 +101,18 @@ declare global {
     _fetchPdfBytes?: (path: string, onOk: (bytes: Uint8Array) => void, onErr?: () => void) => void;
     _ssEnsurePdfJs?: () => Promise<unknown>;
 
+    // ── html2pdf.js (lazy-loaded from CDN for in-browser PDF export) ────
+    html2pdf?: () => {
+      set: (opts: Record<string, unknown>) => {
+        from: (el: Element) => { save: () => Promise<void> };
+      };
+    };
+    _ssHtml2PdfP?: Promise<unknown> | null;
+
     // ── AI typing config (set by ai-typing-config) ─────────────────────
     AI_TYPING?: {
       streamTokenInterval: number;
+      streamCharsPerFrame: number;
       fallbackWordsPerFrame: number;
       fallbackFrameInterval: number;
       chatbotCharInterval: number;
@@ -131,8 +155,30 @@ declare global {
     _authMode?: string;
     updateAuthIndicator?: (user: unknown) => void;
     loadUserData?: (uid: string) => unknown;
-    applyProfile?: (profile: Record<string, unknown> | null | undefined) => unknown;
+    applyProfile?: (
+      profile: Record<string, unknown> | null | undefined,
+      opts?: { authoritative?: boolean }
+    ) => unknown;
     _applyUserTypeUI?: () => void;
+    _resolveGermanExamProfileId?: (test: string | undefined, level: string | undefined) => string | null;
+    MinalloBoot?: {
+      hide: () => void; show: () => void; signedOut: () => void;
+      recovery: (kind?: string) => void; mark: (name: string) => void; isReady: () => boolean;
+    };
+    __minalloAppInitPromise?: Promise<unknown>;
+    __minalloBootDebug?: Record<string, unknown>;
+    _applySavedProfile?: (row: Record<string, unknown>) => void;
+    getGermanLearnerProfile?: () => {
+      state: 'loading' | 'ready' | 'error';
+      userType: string;
+      testFamily: string;
+      targetLevel: string;
+      examProfileId: string | null;
+    };
+    germanLevelOptionsHtml?: () => string;
+    isValidGermanTestLevel?: (test: string, level: string) => boolean;
+    populateGermanLevelSelect?: (sel: HTMLSelectElement | null, test: string, level: string) => void;
+    GERMAN_TEST_LEVELS?: Record<string, string[]>;
     _adminShowIfEligible?: (user: { id?: string } | null) => void;
     _showOnboarding?: (email?: string) => void;
     landShowAuth?: (mode?: 'signin' | 'signup') => void;
@@ -159,17 +205,46 @@ declare global {
     setNavActive?: (id: string) => void;
 
     // ── ai-ask bridge ──────────────────────────────────────────────────
-    askAI?: (q: string, skipUserBubble?: boolean, opts?: { forceRefresh?: boolean }) => unknown;
+    askAI?: (
+      q: string,
+      skipUserBubble?: boolean,
+      opts?: {
+        forceRefresh?: boolean;
+        problemSolver?: {
+          mode: string;
+          problem: string;
+          studentWork?: string;
+        };
+      }
+    ) => unknown;
     addBotMsg?: (text: string) => HTMLElement | null;
     _legacyAskAI?: (q: string) => unknown;
     addTyping?: () => unknown;
-    _pdfToImages?: (maxPages?: number) => Promise<string[]>;
+    _pdfToImages?: (maxPages?: number, denseVisualTask?: boolean) => Promise<Array<{
+      mediaType: 'image/png' | 'image/jpeg';
+      data: string;
+      page: number;
+      region: 'full_page' | 'formula_area' | 'drawing_area' | 'answer_grid';
+    }>>;
     stopGeneration?: () => void;
-    restoreCourseHistory?: (courseId?: string | null) => void;
-    clearCourseHistory?: (courseId: string) => void;
+    restoreCourseHistory?: (courseId?: string | null, fileId?: string | null) => void;
+    clearCourseHistory?: (courseId: string, fileId?: string | null) => void;
+    resetAiPanelChat?: () => void;
+    activeRagDocumentId?: string | null;
     _abortCurrentStream?: () => void;
     _activeStreamRender?: (() => void) | null;
     _attachedImages?: unknown[];
+    _lastAiImageContext?: {
+      images: Array<{ data: string; mediaType: string; page?: number }>;
+      courseId?: string;
+      documentId?: string;
+      fileName?: string;
+      page?: number;
+      conversationId?: string;
+      questionThreadId?: string;
+      timestamp: number;
+      remainingTurns: number;
+    };
 
     // ── KaTeX (cdn-loaded math renderer) ───────────────────────────────
     katex?: {
@@ -178,7 +253,15 @@ declare global {
     _ssEnsureKatex?: () => Promise<unknown>;
     _ssScheduleKatexRender?: () => void;
     renderMarkdown?: (text: string) => string;
+    /** Streaming-safe splitter (set by ai-render-bridge from the versioned
+     *  ai-markdown module): stable markdown prefix vs unclosed-math tail. */
+    _ssSplitStableStream?: (input: string) => { stable: string; tail: string };
     _renderMath?: (el: Element | null) => void;
+    _renderCode?: (el: Element | null) => void;
+    _ensureAiRenderBridge?: () => Promise<unknown>;
+    _minalloRenderMarkdownReady?: boolean;
+    _ssEnsureHljs?: () => Promise<void>;
+    hljs?: { highlightElement: (el: Element) => void };
     renderMathInElement?: (el: Element, opts: unknown) => void;
 
     // ── Message-actions extras (set by ai-message-actions.ts) ──────────
@@ -199,6 +282,14 @@ declare global {
     _loadUserCourses?: (data: unknown) => void;
     restoreState?: () => void;
     applySubscription?: (sub: unknown) => void;
+    refreshSubscriptionView?: () => Promise<void>;
+    renderNotifications?: () => void;
+    _ncbPdfWorkspaceActive?: boolean;
+    selectChatbotPdfSource?: (
+      course: { id: string; name?: string; short?: string },
+      file: { name: string; _document?: { id?: string } }
+    ) => void;
+    deselectChatbotSource?: (sourceId: string) => void;
     _userIsAdmin?: boolean;
     _userIsPro?: boolean;
     _showPaywall?: () => void;
@@ -207,10 +298,44 @@ declare global {
     _dwLoadAndRender?: () => void;
     _userVertiefung?: string;
     _userMajor?: string;
+    _userUniversity?: string;
     _chatUsername?: string;
     _userType?: string;
     _germanTest?: string;
     _germanLevel?: string;
+    // Canonical German Exam Engine profile id (e.g. "telc_c1_hochschule"),
+    // resolved from profiles.german_exam_profile_id or derived client-side
+    // from (_germanTest, _germanLevel) — see applyProfile() in user-data.ts.
+    // null/undefined means no supported exam profile for this learner.
+    _germanExamProfileId?: string | null;
+    // True once applyProfile() has run at least once WITH AUTHORITATIVE data
+    // for the current user (a fresh profiles-row fetch or a just-saved
+    // profile write) — distinguishes "profile still loading" (undefined)
+    // from "profile loaded and this learner genuinely has no supported exam
+    // profile" (true, with _germanExamProfileId still null). Deliberately
+    // NOT set by the boot-time cached-profile applyProfile() call (see
+    // applyProfile()'s `authoritative` param in user-data.ts) — that cache
+    // can be stale/incomplete (e.g. predates german_test/german_level being
+    // set) and must never be mistaken for a definitive "no exam profile"
+    // verdict. Consumers that decide whether to show generated vs. static
+    // content must check this before treating a null profile id as
+    // "unsupported".
+    _germanProfileLoaded?: boolean;
+    // Canonical profile-boot lifecycle state, independent of _userType/
+    // _germanProfileLoaded. 'loading' until the authoritative profiles fetch
+    // settles; 'ready' only after a genuine successful row (or explicit
+    // "no row" answer) was applied; 'error' after a failed/timed-out fetch
+    // that could NOT be distinguished from a real answer. UI role-gating
+    // (chatbot shell, sidebar) must treat anything other than 'ready' as
+    // unresolved and must never infer a role from it. See user-data.ts.
+    _profileResolutionState?: 'loading' | 'ready' | 'error';
+    // uid the current _profileResolutionState/_userType/_german* globals
+    // belong to — lets a stale async response (fetch resolves after the
+    // account already changed) be detected and ignored.
+    _currentProfileUid?: string | null;
+    _beginProfileResolution?: (uid: string) => void;
+    _resetProfileResolution?: () => void;
+    _ensureUserProfile?: (opts?: { force?: boolean }) => Promise<void>;
     MAJOR_LIST?: string[];
 
     // ── pdf controls extras ────────────────────────────────────────────
@@ -227,6 +352,7 @@ declare global {
     // ── course-folders state ───────────────────────────────────────────
     _openFolders?: Set<string>;
     _selectedFiles?: Array<{ name: string; folder: string | null; sname: string | null }>;
+    _updateMultiBar?: () => void;
     _ufDeleteRemote?: (
       uid: string,
       course: LegacyCourse,
@@ -257,6 +383,11 @@ declare global {
     pdfTotal?: number;
     pdfShowAll?: boolean;
     pdfScale?: number;
+    /** Scale the PDF canvases were last rasterised at; the live Ctrl+wheel CSS
+     *  zoom multiplier is pdfScale ÷ this. Set by renderPages. */
+    _pdfRenderedScale?: number;
+    _pdfRenderedWidth?: number;
+    _refitPdfWidth?: () => void;
     saveState?: () => void;
     _ssPushHistory?: (state: unknown, hash?: string) => void;
     _ssReplaceHistory?: (state: unknown, hash?: string) => void;
@@ -274,6 +405,8 @@ declare global {
     _ssImageRenderPagesOrig?: (() => void) | null;
     updatePageInfo?: () => void;
     _googleAuth?: () => void;
+    _oauthFallback?: () => void;
+    renderGoogleSignInButton?: () => boolean;
     _toggleLandingLang?: () => void;
     _ssIsLoggedIn?: boolean;
 
@@ -306,7 +439,10 @@ declare global {
 
     // ── course-files extras ────────────────────────────────────────────
     openAI?: () => void;
-    downloadFile?: (fname: string) => unknown;
+    downloadFile?: (
+      fname: string,
+      opts?: { storageName?: string | null; folder?: string | null; course?: LegacyCourse | null }
+    ) => unknown;
     _ufDelete?: (
       course: LegacyCourse,
       name: string,
@@ -322,12 +458,17 @@ declare global {
       toFolder: string | null,
       sname: string | null
     ) => Promise<unknown>;
+    _ufRenameFolder?: (
+      uid: string,
+      course: LegacyCourse,
+      oldName: string,
+      newName: string
+    ) => Promise<unknown>;
     _showFolderPickerPopup?: (
       anchor: HTMLElement,
       folders: string[],
       onPick: (chosen: string | null) => void
     ) => void;
-    resetQuizToGrid?: (panel: HTMLElement) => void;
     resetFlashcardsToGrid?: (panel: HTMLElement) => void;
   }
 }

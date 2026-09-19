@@ -1,4 +1,12 @@
-import { Page, expect } from '@playwright/test';
+import { Locator, Page, expect } from '@playwright/test';
+import {
+  assertNoCriticalConsoleErrors,
+  assertNoCriticalNetworkFailures,
+  clickAndAssertChanged,
+  detectModalOrPanel,
+  safeClick,
+} from '../utils/assertions';
+import { sectionSelectors, sidebarSelectors, MainSection } from '../utils/selectors';
 
 /**
  * Shared E2E page object.
@@ -25,9 +33,12 @@ export class AppPage {
       try {
         const hasSupabaseToken =
           !!localStorage.getItem('sb_token') ||
+          !!localStorage.getItem('sb_sess_refresh') ||
+          !!sessionStorage.getItem('sb_sess_token') ||
           Object.keys(localStorage).some(
             key =>
               key.startsWith('sb-') ||
+              key.startsWith('sb_sess_') ||
               key.includes('supabase') ||
               key.includes('auth-token')
           );
@@ -68,6 +79,8 @@ export class AppPage {
         const hasAuthUi =
           !!document.querySelector('#authEmail') ||
           !!document.querySelector('#authModal') ||
+          !!document.querySelector('#nlNavSignIn') ||
+          !!document.querySelector('#nlNavStartFree') ||
           !!document.querySelector('#landingLoginBtn') ||
           !!document.querySelector('[data-i18n="landing_nav_login"]');
 
@@ -79,6 +92,10 @@ export class AppPage {
       },
       { timeout }
     );
+  }
+
+  async waitForAppReady(timeout = 30000) {
+    await this.waitForAppShell(timeout);
   }
 
   async waitForAuthenticated(timeout = 30000) {
@@ -124,7 +141,7 @@ export class AppPage {
 
     // Session expired or invalid — find and click the login button
     const loginBtn = this.page.locator(
-      '[data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
+      '#nlNavSignIn, [data-i18n="nav.signIn"], [data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
     ).first();
 
     if (await loginBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -141,6 +158,108 @@ export class AppPage {
     } catch {
       return false;
     }
+  }
+
+  async navigateTo(section: MainSection) {
+    // Every account now lands directly in the fullbleed modern chatbot shell
+    // on login (_enterApp() always targets 'aipage'), which hides the legacy
+    // portal sidebar (#psbAIPage etc.) via body.ncb-fullbleed — see
+    // chatbot.css's fullbleed rules. If the section's content is already
+    // showing, there's nothing to click through; waiting on the (hidden)
+    // legacy nav item would just time out.
+    // Give the section a moment to actually mount (e.g. right after a fresh
+    // login/reload, before the lazy chatbot chunk finishes fetching) rather
+    // than a single instant isVisible() check that races the app's own boot.
+    const alreadyThere = await this.page
+      .locator(sectionSelectors[section])
+      .first()
+      .waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
+    if (alreadyThere) return;
+
+    const nav = this.page.locator(sidebarSelectors[section]).first();
+
+    if (await this.page.locator('#portalHamburger').isVisible().catch(() => false)) {
+      const sidebarVisible = await this.page.locator('.sidebar').evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.left >= 0 && rect.width > 40;
+      }).catch(() => true);
+      if (!sidebarVisible) await this.page.locator('#portalHamburger').click();
+    }
+
+    await nav.waitFor({ state: 'visible', timeout: 15000 });
+    await nav.click();
+    await expect(this.page.locator(sectionSelectors[section]).first()).toBeVisible({
+      timeout: 15000,
+    });
+  }
+
+  async clickAndAssertChanged(locator: Locator, label?: string) {
+    return clickAndAssertChanged(locator, { label });
+  }
+
+  async safeClick(locator: Locator) {
+    return safeClick(locator);
+  }
+
+  async detectModalOrPanel() {
+    return detectModalOrPanel(this.page);
+  }
+
+  async assertNoCriticalConsoleErrors(errors: string[]) {
+    await assertNoCriticalConsoleErrors(errors);
+  }
+
+  async assertNoCriticalNetworkFailures(failures: string[]) {
+    await assertNoCriticalNetworkFailures(failures);
+  }
+
+  async ensureQaCourse() {
+    await this.navigateTo('courses');
+    await this.page.waitForTimeout(250);
+
+    const existing = await this.courseCards.count().catch(() => 0);
+    if (existing > 0) return;
+
+    await this.page.evaluate(() => {
+      const w = window as any;
+      const course = {
+        id: 'e2e-course',
+        name: 'E2E QA Course',
+        meta: 'Deterministic Playwright test course',
+        files: [
+          {
+            name: 'qa-lecture.pdf',
+            size: '24 KB',
+            date: 'Today',
+            _uploaded: false,
+          },
+        ],
+        userFolders: [],
+      };
+
+      const sems = w.SEMS || w.sems || null;
+      const activeId = w.activeSemId || w.sdActiveSemId || (sems ? Object.keys(sems)[0] : null);
+      const sem = activeId && sems ? sems[activeId] : null;
+      if (sem && Array.isArray(sem.courses)) {
+        if (!sem.courses.some((item: any) => item.id === course.id || item.name === course.name)) {
+          sem.courses.push(course);
+        }
+      }
+
+      try {
+        localStorage.setItem('ss_fc_e2e-course', '1');
+      } catch {
+        // localStorage can be unavailable in hardened browser modes.
+      }
+
+      if (typeof w.renderCourses === 'function') w.renderCourses();
+      if (typeof w.sdRenderCourses === 'function') w.sdRenderCourses();
+      if (typeof w.renderSemesters === 'function') w.renderSemesters();
+    });
+
+    await expect(this.courseCards.first()).toBeVisible({ timeout: 10000 });
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────

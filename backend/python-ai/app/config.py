@@ -23,14 +23,39 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(..., alias="OPENAI_API_KEY")
     openai_generate_model: str = Field("gpt-4o-mini", alias="OPENAI_GENERATE_MODEL")
     openai_generate_model_strong: str = Field("gpt-4o", alias="OPENAI_GENERATE_MODEL_STRONG")
+    german_exam_model: str = Field("gpt-5.4-mini", alias="GERMAN_EXAM_MODEL")
+    # Sprachbausteine Stage A only (see german_exam_language_elements.py):
+    # live testing found gpt-5.4-mini unreliably following "insert exactly
+    # these placeholders at these positions" (missing 1-3 of 22 gaps on
+    # ~35-40% of attempts, even after a bounded targeted-repair pass), while
+    # gpt-4o got all 22 placeholders right on 5/5 trials — reuses the
+    # existing generic "strong" tier rather than inventing a new one.
+    german_exam_model_stage_a: str = Field("gpt-4o", alias="GERMAN_EXAM_MODEL_STAGE_A")
+    # Reasoning effort for o-series strong models (low | medium | high).
+    # "low" is faster/cheaper; "medium" is the safe default that solves the
+    # multi-phase kinematics correctly. Ignored for non-reasoning models.
+    openai_reasoning_effort: str = Field("medium", alias="OPENAI_REASONING_EFFORT")
+    # Monthly per-user allowance of strong-model (o4-mini) answers. Beyond it,
+    # math/diagram questions silently fall back to the standard model with a
+    # notice. This bounds worst-case AI cost per subscriber: the strong model
+    # is ~13x the per-call cost of the mini model, so without this cap a user
+    # maxing the 2000-call interactive bucket on math could cost ~4x their
+    # subscription price in OpenAI spend alone.
+    heavy_monthly_cap: int = Field(400, alias="MINALLO_HEAVY_MONTHLY_CAP")
     openai_embedding_model: str = Field(
         "text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL"
     )
     openai_embedding_dim: int = Field(1536, alias="OPENAI_EMBEDDING_DIM")
+    web_search_enabled: bool = Field(True, alias="MINALLO_WEB_SEARCH_ENABLED")
+    web_search_model: str = Field("gpt-4.1-mini", alias="MINALLO_WEB_SEARCH_MODEL")
+    full_document_max_documents: int = Field(5, alias="FULL_DOCUMENT_MAX_DOCUMENTS")
+    full_document_max_total_expected_pages: int = Field(
+        500, alias="FULL_DOCUMENT_MAX_TOTAL_EXPECTED_PAGES"
+    )
 
     # --- Supabase Storage bucket holding the uploaded PDFs.
     # Same env var the existing Netlify uploader reads (defaults match).
-    rag_storage_bucket: str = Field("course-documents", alias="RAG_STORAGE_BUCKET")
+    rag_storage_bucket: str = Field("course-uploads", alias="RAG_STORAGE_BUCKET")
 
     # --- Shared secret between Netlify and this service.
     # Same env var the existing Netlify trigger-processing flow already uses
@@ -38,10 +63,86 @@ class Settings(BaseSettings):
     # secret to rotate. Every internal request must arrive with
     # `X-Internal-Token: <this value>`.
     ai_service_internal_token: str = Field(..., alias="INTERNAL_SECRET")
+    # Set ONLY during a rotation window: the previous secret is still accepted so
+    # the edge and this service can be switched over without downtime, then removed.
+    ai_service_internal_token_previous: str | None = Field(None, alias="INTERNAL_SECRET_PREVIOUS")
+
+    # --- Phase 12: vision OCR fallback. Enabled by default for weak pages
+    # that the OCR-need detector flags; set the env var to false to avoid
+    # vision-model indexing costs.
+    vision_ocr_enabled: bool = Field(True, alias="MINALLO_VISION_OCR_ENABLED")
+    vision_ocr_model: str = Field("gpt-4o-mini", alias="MINALLO_VISION_OCR_MODEL")
+    vision_ocr_max_pages: int = Field(20, alias="MINALLO_VISION_OCR_MAX_PAGES")
+    region_ocr_monthly_cap: int = Field(
+        200, alias="MINALLO_REGION_OCR_MONTHLY_CAP"
+    )
+    vision_ocr_render_dpi: int = Field(150, alias="MINALLO_VISION_OCR_DPI")
+    # Handwritten notes need a little more raster detail than printed pages,
+    # but usually not the full Mathpix/formula-sheet DPI.
+    vision_ocr_handwriting_dpi: int = Field(
+        220, alias="MINALLO_VISION_OCR_HANDWRITING_DPI"
+    )
+    # Kept under the main vision OCR gate; this only chooses the handwriting
+    # prompt/preprocess path for likely handwritten pages.
+    handwriting_ocr_enabled: bool = Field(True, alias="MINALLO_HANDWRITING_OCR_ENABLED")
+    # Formula pages need finer rendering — subscripts, indices and the
+    # numerator/denominator of small fractions blur at 150 DPI. Mathpix
+    # (the formula path) renders at this higher DPI; the OpenAI path keeps
+    # the cheaper default above.
+    vision_ocr_mathpix_dpi: int = Field(300, alias="MINALLO_VISION_OCR_MATHPIX_DPI")
+
+    # --- Schreibtrainer: persistence stays off until the migrations land.
+    # Flip to true once user_writing_submissions / user_writing_weaknesses
+    # tables exist (docs/schreibtrainer-ai-spec.md §14 + §20).
+    writing_coach_persistence_enabled: bool = Field(
+        False, alias="WRITING_COACH_PERSISTENCE_ENABLED"
+    )
+
+    # --- Transactional email (welcome mail on first login). Same Zoho account
+    # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho
+    # rejects account passwords on SMTP). Endpoint 503s while these are unset.
+    smtp_host: str = Field("smtp.zoho.eu", alias="SMTP_HOST")
+    smtp_port: int = Field(465, alias="SMTP_PORT")
+    smtp_username: str | None = Field(None, alias="SMTP_USERNAME")
+    smtp_password: str | None = Field(None, alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field("noreply@minallo.de", alias="SMTP_FROM_EMAIL")
+    smtp_from_name: str = Field("Minallo", alias="SMTP_FROM_NAME")
+    welcome_email_enabled: bool = Field(True, alias="WELCOME_EMAIL_ENABLED")
 
     # --- Misc
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     environment: str = Field("development", alias="ENVIRONMENT")
+
+
+    # --- Mathpix vision OCR. Optional second provider routed to from
+    # `vision_ocr.pages_via_vision` for formula-dense pages when both
+    # credentials are present and routing != "off". Stays disabled if
+    # either credential is missing.
+    mathpix_app_id: str | None = Field(None, alias="MATHPIX_APP_ID")
+    mathpix_app_key: str | None = Field(None, alias="MATHPIX_APP_KEY")
+    mathpix_routing: str = Field("off", alias="MINALLO_MATHPIX_ROUTING")
+    # "off"                — never use Mathpix
+    # "formulasheet_only"  — only for filenames matching the Formelzettel pattern
+    # "always"             — every OCR page goes to Mathpix
+
+    # --- Hören TTS: isolated Qwen3-TTS host (backend/qwen-tts/), reachable
+    # only from this service. Left unset in production until that host is
+    # provisioned and measured — see backend/qwen-tts/deploy/README.md.
+    # TTSProvider (services/tts_provider.py) reports "unavailable" whenever
+    # this is empty, and the frontend falls back to browser SpeechSynthesis.
+    qwen_tts_service_url: str | None = Field(None, alias="QWEN_TTS_SERVICE_URL")
+    qwen_tts_internal_secret: str | None = Field(None, alias="QWEN_TTS_INTERNAL_SECRET")
+    qwen_tts_timeout_s: float = Field(45.0, alias="QWEN_TTS_TIMEOUT_S")
+    qwen_tts_model_version: str = Field("qwen3-tts-12hz-0.6b-base-v1", alias="QWEN_TTS_MODEL_VERSION")
+    qwen_tts_voice: str = Field("minallo-de-1", alias="QWEN_TTS_VOICE")
+    tts_audio_bucket: str = Field("generated-audio", alias="TTS_AUDIO_BUCKET")
+    # How many segments this service generates against Qwen at once for one
+    # /tts/generate-batch call. This is a SEPARATE, tighter backstop than
+    # qwen-tts's own QWEN_TTS_MAX_CONCURRENCY (which caps true model-level
+    # concurrency across ALL callers/hosts) — it exists so one browser
+    # session's 8-12 segment lesson can't itself open that many simultaneous
+    # requests against the single Qwen instance. Keep <= the Qwen-side limit.
+    tts_batch_max_concurrency: int = Field(2, alias="TTS_BATCH_MAX_CONCURRENCY")
 
 
 @lru_cache(maxsize=1)

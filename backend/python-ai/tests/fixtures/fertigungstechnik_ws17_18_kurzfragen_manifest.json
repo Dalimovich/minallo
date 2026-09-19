@@ -1,0 +1,25 @@
+{
+  "document": "Fertigungstechnik_WS17-18_blank.pdf",
+  "document_id": "de6a16a1-3859-4cea-a378-85eaa4b38293",
+  "document_revision_id": "487d88cb07f0f1866275a9fc4652c82bb8708a99c7c4b8b624e621e6b302ac6a",
+  "canonical_target": "kurzfragen",
+  "included_sections": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11"],
+  "excluded_sections": ["1", "12", "13", "14"],
+  "question_pages": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+  "expected_ids": [
+    "2.1", "2.2", "2.3", "2.4",
+    "3.1", "3.2", "3.3", "3.4",
+    "4.1", "4.2", "4.3", "4.4",
+    "5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7", "5.8", "5.9", "5.10",
+    "5.11", "5.12", "5.13", "5.14", "5.15", "5.16", "5.17", "5.18", "5.19",
+    "6.1", "6.2", "6.3", "6.4",
+    "7.1", "7.2", "7.3",
+    "8.1",
+    "9.1", "9.2", "9.3",
+    "10.1", "10.2",
+    "11.1"
+  ],
+  "expected_count": 45,
+  "verified_by": "production page-image extraction plus targeted transition-page verification",
+  "verified_at": "2026-07-26"
+}

@@ -1,0 +1,661 @@
+{
+  "results": [
+    {
+      "journey": "send-complete",
+      "result": "pass",
+      "text": "Explain torque\n\nTorque is force multiplied by perpendicular distance.\n\nCopy\nDownload PDF\nRegenerate\nBookmark"
+    },
+    {
+      "journey": "empty-completed",
+      "result": "pass",
+      "message": {
+        "id": "ncb_msg_mtwzpixw_y9lunmbf",
+        "role": "assistant",
+        "text": "",
+        "completionState": "failed_recoverable",
+        "requestId": "ncb_msg_mtwzpixw_34w9i82p",
+        "parentUserMessageId": "ncb_msg_mtwzpixv_ik5lppa9",
+        "exportable": false,
+        "retryable": true,
+        "errorCode": "empty_completed_response",
+        "failureStage": "terminal_validation",
+        "recoveryAction": "retry",
+        "requestSnapshot": {
+          "userText": "Explain angular momentum",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "createdAt": "2026-09-11T13:26:32.996Z",
+        "updatedAt": "2026-09-11T13:26:33.017Z",
+        "allowDiagrams": false
+      },
+      "dom": "Explain torque\n\nTorque is force multiplied by perpendicular distance.\n\nCopy\nDownload PDF\nRegenerate\nBookmark\n\nExplain angular momentum\n\nEmpty answer\n\nEmpty answer\n\nThe tutor finished without returning an answer.\n\nReference: ncb_msg_mtwzpixw_34w9i82p\nTry again"
+    },
+    {
+      "journey": "error-retry",
+      "result": "pass"
+    },
+    {
+      "journey": "partial-disconnect",
+      "result": "pass",
+      "message": {
+        "id": "ncb_msg_mtwzpjs1_vag3wksu",
+        "role": "assistant",
+        "text": "Useful partial explanation survives connection failure.",
+        "completionState": "interrupted",
+        "requestId": "ncb_msg_mtwzpjs1_8j1yiqr3",
+        "parentUserMessageId": "ncb_msg_mtwzpjs0_6h191ven",
+        "exportable": true,
+        "retryable": true,
+        "errorCode": "stream_transport_interrupted",
+        "failureStage": "sse_read",
+        "recoveryAction": "continue",
+        "requestSnapshot": {
+          "userText": "Explain rotational inertia",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "createdAt": "2026-09-11T13:26:34.081Z",
+        "updatedAt": "2026-09-11T13:26:36.314Z",
+        "allowDiagrams": false
+      },
+      "dom": "Explain torque\n\nTorque is force multiplied by perpendicular distance.\n\nCopy\nDownload PDF\nRegenerate\nBookmark\n\nExplain angular momentum\n\nTorque is force multiplied by perpendicular distance.\n\nCopy\nDownload PDF\nRegenerate\nBookmark\n\nExplain rotational inertia\n\nConnection interrupted\n\nUseful partial explanation survives connection failure.\n\nThis answer was interrupted before completion. You can retry to continue.\nRetry\nCopy\nDownload PDF\nRegenerate\nBookmark"
+    },
+    {
+      "journey": "reload-interrupted",
+      "result": "pass",
+      "dom": "Explain torque\n\nBuilding the explanation…\n\nTorque is force multiplied by perpendicular distance.\n\nCopy\nDownload PDF\nRegenerate\nBookmark\n\nExplain angular momentum\n\nBuilding the explanation…\n\nTorque is force multiplied by perpendicular distance.\n\nCopy\nDownload PDF\nRegenerate\nBookmark\n\nExplain rotational inertia\n\nBuilding the explanation…\n\nUseful partial explanation survives connection failure.\n\nThis answer stopped before completion.\nContinue\nCopy\nDownload PDF\nRegenerate\nBookmark"
+    },
+    {
+      "journey": "stop",
+      "result": "pass",
+      "message": {
+        "id": "ncb_msg_mtwzplyr_otkjo10l",
+        "role": "assistant",
+        "text": "Partial before stop.",
+        "completionState": "stopped",
+        "requestId": "ncb_msg_mtwzplyr_ghdlrae4",
+        "parentUserMessageId": "ncb_msg_mtwzplyq_87p9ix8s",
+        "exportable": true,
+        "retryable": true,
+        "errorCode": "user_cancelled",
+        "failureStage": "sse_read",
+        "recoveryAction": "continue",
+        "requestSnapshot": {
+          "userText": "Explain angular acceleration",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "createdAt": "2026-09-11T13:26:36.915Z",
+        "updatedAt": "2026-09-11T13:26:37.797Z",
+        "allowDiagrams": false
+      }
+    },
+    {
+      "journey": "stop-next",
+      "result": "pass"
+    },
+    {
+      "journey": "switch-before-submission",
+      "result": "pass",
+      "sourceMode": "internet",
+      "dom": ""
+    }
+  ],
+  "requests": [
+    {
+      "path": "/api/admin-users",
+      "body": {
+        "action": "status"
+      }
+    },
+    {
+      "path": "/mock/conversations/ensure",
+      "body": {
+        "clientConversationId": "Chat A",
+        "titleSeed": "Chat A",
+        "clientMessageId": "ncb_msg_mtwzpi81_9ybg7bgk",
+        "messageText": "Explain torque",
+        "assistantMessageId": "ncb_msg_mtwzpi88_29r2xhjk",
+        "requestId": "ncb_msg_mtwzpi88_c5s3trlr",
+        "requestSnapshot": {
+          "userText": "Explain torque",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzpi81_9ybg7bgk",
+        "assistantMessageId": "ncb_msg_mtwzpi88_29r2xhjk",
+        "requestId": "ncb_msg_mtwzpi88_c5s3trlr",
+        "requestSnapshot": {
+          "userText": "Explain torque",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain torque",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": []
+      }
+    },
+    {
+      "path": "/api/ai",
+      "body": {
+        "model": "gpt-4o",
+        "max_tokens": 30,
+        "system": "You title chat conversations. Reply with ONLY a 3-6 word title in Title Case. No quotes, no punctuation at the end, no preamble. Match the language of the user.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Explain torque\n\nTorque is force multiplied by perpendicular distance."
+          }
+        ]
+      }
+    },
+    {
+      "path": "/mock/conversations/ensure",
+      "body": {
+        "clientConversationId": "Chat A",
+        "titleSeed": "A concise title",
+        "clientMessageId": "ncb_msg_mtwzpixv_ik5lppa9",
+        "messageText": "Explain angular momentum",
+        "assistantMessageId": "ncb_msg_mtwzpixw_y9lunmbf",
+        "requestId": "ncb_msg_mtwzpixw_34w9i82p",
+        "requestSnapshot": {
+          "userText": "Explain angular momentum",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzpixv_ik5lppa9",
+        "assistantMessageId": "ncb_msg_mtwzpixw_y9lunmbf",
+        "requestId": "ncb_msg_mtwzpixw_34w9i82p",
+        "requestSnapshot": {
+          "userText": "Explain angular momentum",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain angular momentum",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": [
+          {
+            "role": "user",
+            "text": "Explain torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "answerMode": "general",
+            "sourceScope": "general_knowledge"
+          }
+        ]
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzpixv_ik5lppa9",
+        "assistantMessageId": "ncb_msg_mtwzpixw_y9lunmbf",
+        "requestId": "ncb_msg_mtwzpixw_34w9i82p",
+        "requestSnapshot": {
+          "userText": "Explain angular momentum",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain angular momentum",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": [
+          {
+            "role": "user",
+            "text": "Explain torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "answerMode": "general",
+            "sourceScope": "general_knowledge"
+          }
+        ]
+      }
+    },
+    {
+      "path": "/mock/conversations/ensure",
+      "body": {
+        "clientConversationId": "Chat A",
+        "titleSeed": "A concise title",
+        "clientMessageId": "ncb_msg_mtwzpjs0_6h191ven",
+        "messageText": "Explain rotational inertia",
+        "assistantMessageId": "ncb_msg_mtwzpjs1_vag3wksu",
+        "requestId": "ncb_msg_mtwzpjs1_8j1yiqr3",
+        "requestSnapshot": {
+          "userText": "Explain rotational inertia",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzpjs0_6h191ven",
+        "assistantMessageId": "ncb_msg_mtwzpjs1_vag3wksu",
+        "requestId": "ncb_msg_mtwzpjs1_8j1yiqr3",
+        "requestSnapshot": {
+          "userText": "Explain rotational inertia",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain rotational inertia",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": [
+          {
+            "role": "user",
+            "text": "Explain torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "answerMode": "general",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain angular momentum"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "answerMode": "general",
+            "sourceScope": "general_knowledge"
+          }
+        ]
+      }
+    },
+    {
+      "path": "/api/admin-users",
+      "body": {
+        "action": "status"
+      }
+    },
+    {
+      "path": "/mock/conversations/00000000-0000-4000-8000-000000000001/messages",
+      "body": {}
+    },
+    {
+      "path": "/mock/conversations/ensure",
+      "body": {
+        "clientConversationId": "Chat A",
+        "titleSeed": "A concise title",
+        "clientMessageId": "ncb_msg_mtwzplyq_87p9ix8s",
+        "messageText": "Explain angular acceleration",
+        "assistantMessageId": "ncb_msg_mtwzplyr_otkjo10l",
+        "requestId": "ncb_msg_mtwzplyr_ghdlrae4",
+        "requestSnapshot": {
+          "userText": "Explain angular acceleration",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzplyq_87p9ix8s",
+        "assistantMessageId": "ncb_msg_mtwzplyr_otkjo10l",
+        "requestId": "ncb_msg_mtwzplyr_ghdlrae4",
+        "requestSnapshot": {
+          "userText": "Explain angular acceleration",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain angular acceleration",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": [
+          {
+            "role": "user",
+            "text": "Explain torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain angular momentum"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain rotational inertia"
+          },
+          {
+            "role": "assistant",
+            "text": "Useful partial explanation survives connection failure."
+          }
+        ]
+      }
+    },
+    {
+      "path": "/mock/conversations/ensure",
+      "body": {
+        "clientConversationId": "Chat A",
+        "titleSeed": "A concise title",
+        "clientMessageId": "ncb_msg_mtwzpmum_gmo819fu",
+        "messageText": "Explain net torque",
+        "assistantMessageId": "ncb_msg_mtwzpmum_vx6rz73o",
+        "requestId": "ncb_msg_mtwzpmum_u80lushv",
+        "requestSnapshot": {
+          "userText": "Explain net torque",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzpmum_gmo819fu",
+        "assistantMessageId": "ncb_msg_mtwzpmum_vx6rz73o",
+        "requestId": "ncb_msg_mtwzpmum_u80lushv",
+        "requestSnapshot": {
+          "userText": "Explain net torque",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain net torque",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": [
+          {
+            "role": "user",
+            "text": "Explain torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain angular momentum"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain rotational inertia"
+          },
+          {
+            "role": "assistant",
+            "text": "Useful partial explanation survives connection failure."
+          },
+          {
+            "role": "user",
+            "text": "Explain angular acceleration"
+          },
+          {
+            "role": "assistant",
+            "text": "Partial before stop."
+          }
+        ]
+      }
+    },
+    {
+      "path": "/mock/conversations/ensure",
+      "body": {
+        "clientConversationId": "Chat A",
+        "titleSeed": "A concise title",
+        "clientMessageId": "ncb_msg_mtwzpnht_nth6jfni",
+        "messageText": "Explain conservation of angular momentum",
+        "assistantMessageId": "ncb_msg_mtwzpnhv_zrg025e7",
+        "requestId": "ncb_msg_mtwzpnhv_5z2h7fag",
+        "requestSnapshot": {
+          "userText": "Explain conservation of angular momentum",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/mock/ask-stream",
+      "body": {
+        "courseId": "",
+        "conversationId": "00000000-0000-4000-8000-000000000001",
+        "durableConversation": true,
+        "clientMessageId": "ncb_msg_mtwzpnht_nth6jfni",
+        "assistantMessageId": "ncb_msg_mtwzpnhv_zrg025e7",
+        "requestId": "ncb_msg_mtwzpnhv_5z2h7fag",
+        "requestSnapshot": {
+          "userText": "Explain conservation of angular momentum",
+          "sourceMode": "internet",
+          "courseFileScope": "all_course_files",
+          "selectedSourceIds": [],
+          "groundingRequest": {
+            "retrievalScope": {
+              "type": "course"
+            }
+          }
+        },
+        "groundingRequest": {
+          "retrievalScope": {
+            "type": "course"
+          }
+        },
+        "question": "Explain conservation of angular momentum",
+        "tutorMode": "explain",
+        "sourceMode": "internet",
+        "courseFileScope": "all_course_files",
+        "previousTurns": [
+          {
+            "role": "user",
+            "text": "Explain torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain angular momentum"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "sourceScope": "general_knowledge"
+          },
+          {
+            "role": "user",
+            "text": "Explain rotational inertia"
+          },
+          {
+            "role": "assistant",
+            "text": "Useful partial explanation survives connection failure."
+          },
+          {
+            "role": "user",
+            "text": "Explain angular acceleration"
+          },
+          {
+            "role": "assistant",
+            "text": "Partial before stop."
+          },
+          {
+            "role": "user",
+            "text": "Explain net torque"
+          },
+          {
+            "role": "assistant",
+            "text": "Torque is force multiplied by perpendicular distance.",
+            "answerMode": "general",
+            "sourceScope": "general_knowledge"
+          }
+        ]
+      }
+    }
+  ]
+}

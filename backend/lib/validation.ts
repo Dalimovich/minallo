@@ -4,6 +4,14 @@ export function isUuid(value: unknown): boolean {
   );
 }
 
+export function isSafeCourseId(value: unknown): boolean {
+  return /^[a-zA-Z0-9._:-]{1,160}$/.test(String(value || ''));
+}
+
+export function isSafePdfStorageName(value: unknown): boolean {
+  return /^[^<>:"\\|?*\x00-\x1F/]{1,220}\.pdf$/i.test(String(value || ''));
+}
+
 // Trims and enforces a max byte length. Returns the cleaned string or throws.
 export function cleanText(value: unknown, maxLength: number): string {
   const str = String(value || '').trim();

@@ -2,7 +2,6 @@
 // The rail module exposes itself via window.__minalloDocRail to avoid a
 // hard module dependency from core/panels into a feature module.
 function _notifyDocRail(route: 'pdf' | 'courses' | 'other'): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dr = (window as any).__minalloDocRail as
     | { setRouteVisibility: (route: 'pdf' | 'courses' | 'other') => void }
     | undefined;
@@ -45,6 +44,11 @@ export function showFilesView(stRunning?: boolean): void {
   if (stBtn) stBtn.style.display = 'flex';
   const stMini = document.getElementById('stMiniTimer');
   if (stMini) stMini.style.display = stRunning ? 'flex' : 'none';
+  // The PDF view has its own self-contained toolbar (back, filename, study,
+  // tabs, page controls). Hide the global topbar so it doesn't stack a second,
+  // redundant header above it.
+  const topbar = document.querySelector<HTMLElement>('.topbar');
+  if (topbar) topbar.style.display = 'none';
   _notifyDocRail('pdf');
 }
 
@@ -75,6 +79,7 @@ export function selectTopLevelView(which: TopLevelView, opts?: { stRunning?: boo
     // responsible for revealing the specific .portal-section they want.
     if (mainScroll) mainScroll.style.display = '';
     if (app) app.style.display = 'none';
+    document.body.classList.remove('minallo-in-course');
     _applyPortalChrome();
   }
 }
@@ -92,9 +97,14 @@ function _applyFileChrome(stRunning: boolean): void {
   if (stBtn) stBtn.style.display = 'flex';
   const stMini = document.getElementById('stMiniTimer');
   if (stMini) stMini.style.display = stRunning ? 'flex' : 'none';
+  // PDF view owns its toolbar — hide the global topbar to avoid a duplicate header.
+  const topbar = document.querySelector<HTMLElement>('.topbar');
+  if (topbar) topbar.style.display = 'none';
 }
 
 function _applyPortalChrome(): void {
+  const topbar = document.querySelector<HTMLElement>('.topbar');
+  if (topbar) topbar.style.display = '';
   const back = document.getElementById('goPortal');
   if (back) back.style.display = 'none';
   const title = document.getElementById('topTitle');
@@ -109,6 +119,8 @@ function _applyPortalChrome(): void {
 
 export function hideFilesView(): void {
   _notifyDocRail('other');
+  const topbar = document.querySelector<HTMLElement>('.topbar');
+  if (topbar) topbar.style.display = '';
   const ms = document.querySelector<HTMLElement>('#portal .main-scroll');
   if (ms) ms.style.display = '';
   const app = document.getElementById('app');

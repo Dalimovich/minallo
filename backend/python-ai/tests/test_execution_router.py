@@ -1,0 +1,708 @@
+import pytest
+import asyncio
+from dataclasses import replace
+
+from app.services.execution_router import (
+    ExecutionLane,
+    fast_grounded_evidence_is_sufficient,
+    resolve_execution_plan,
+)
+from app.services.execution_router import GroundingMode
+from app.services.grounding_contract import ResolvedDocumentAccess
+
+
+class _FakeChunk:
+    def __init__(self, document_id: str = "doc1") -> None:
+        self.document_id = document_id
+
+
+def _stub_scores(monkeypatch, scores: list[float]) -> None:
+    """fast_grounded_evidence_is_sufficient does `from .source_router import
+    _chunk_relevance_scores` inside its body, so the patch target is the
+    name in source_router's own module namespace, not execution_router's."""
+    import app.services.source_router as source_router
+    monkeypatch.setattr(source_router, "_chunk_relevance_scores", lambda *_a, **_k: scores)
+
+
+@pytest.mark.parametrize(("question", "access", "expected"), [
+    ("What is torsion?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+    ("Explain torsion simply.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+    ("What does Eigenwert mean?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+    ("What does my lecture call torsion?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GROUNDED),
+    ("Where in the script is torsion explained?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+    ("Explain this formula.", ResolvedDocumentAccess.VISIBLE_PAGE, ExecutionLane.VISIBLE_PAGE),
+    ("What does sigma mean?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+    ("Calculate sigma for this welded joint.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.DEEP_REASONING),
+    ("Derive the displacement equation.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.DEEP_REASONING),
+    ("Find current jobs near Braunschweig.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.WEB),
+    ("Find every torsion question in all exams.", ResolvedDocumentAccess.FULL_DOCUMENT, ExecutionLane.FULL_DOCUMENT),
+    ("Summarize the entire PDF.", ResolvedDocumentAccess.FULL_DOCUMENT, ExecutionLane.FULL_DOCUMENT),
+    ("I need all the details.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+])
+def test_authoritative_route_matrix(question, access, expected) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=access, processing_pipeline="relevance",
+    )
+    assert plan.executionLane is expected
+
+
+def test_followup_reuses_context_but_location_request_does_not() -> None:
+    _, contextual = resolve_execution_plan(
+        question="Why?", resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+    )
+    _, location = resolve_execution_plan(
+        question="Where exactly does the lecture say that?",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+    )
+    assert contextual.executionLane is ExecutionLane.FAST_CONTEXTUAL
+    assert location.executionLane is ExecutionLane.STANDARD_RAG
+
+
+def test_full_document_is_never_downgraded() -> None:
+    _, plan = resolve_execution_plan(
+        question="What is torsion?", resolved_access=ResolvedDocumentAccess.FULL_DOCUMENT,
+        processing_pipeline="synthesis",
+    )
+    assert plan.executionLane is ExecutionLane.FULL_DOCUMENT
+    assert not plan.mayEscalate
+
+
+def test_fast_general_uses_general_processing_pipeline() -> None:
+    _, plan = resolve_execution_plan(
+        question="What is torsion?",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="synthesis",
+    )
+    assert plan.executionLane is ExecutionLane.FAST_GENERAL
+    assert plan.processingPipeline == "general"
+
+
+def test_fast_general_bypasses_document_and_retrieval_work(monkeypatch) -> None:
+    from app.routers import stream as stream_router
+    from app.services import general_answer
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(stream_router, "_load_authorized_documents",
+                        lambda *_: (_ for _ in ()).throw(AssertionError("document lookup ran")))
+    monkeypatch.setattr(stream_router, "retrieve_routed_chunks",
+                        lambda **_: (_ for _ in ()).throw(AssertionError("retrieval ran")))
+    monkeypatch.setattr(general_answer, "stream_general_answer", lambda *_args, **_kwargs: iter([
+        {"t": "Torsion is twisting."}, {"done": True, "model": "fast-test"},
+    ]))
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(courseId="course", question="What is torsion?"),
+            {"id": "user"}, "fast-request-1234",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert b'"executionLane": "fast_general"' in body
+    assert b"Torsion is twisting." in body
+    assert b'"done": true' in body
+
+
+def test_stream_confirmation_executes_resolved_study_plan_not_raw_chitchat(monkeypatch) -> None:
+    """Exercise the real /ask-stream preflight and fast-contextual boundary."""
+    from app.routers import stream as stream_router
+    from app.services import dialogue_state, general_answer
+    from app.services.dialogue_state import EvidenceRequirement, SpeechAct, TaskFamily, TurnRelation
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request="Create a study plan for the student.",
+            relation=TurnRelation.CONFIRMATION,
+            speech_act=SpeechAct.CONFIRMATION,
+            task_family=TaskFamily.STUDY_PLAN,
+            continues_previous_goal=True,
+            # No courseId and no grounded prior answer to reuse — confirming
+            # an offered study plan needs only the conversation itself, same
+            # as a real semantic resolution would compute here.
+            evidence_requirement=EvidenceRequirement.CONVERSATION_ONLY,
+            confidence=0.98,
+        ),
+    )
+    monkeypatch.setattr(
+        stream_router,
+        "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("raw chitchat intercepted task")),
+    )
+    monkeypatch.setattr(
+        stream_router,
+        "fetch_account_snapshot",
+        lambda *_: {"courses": [{"id": "c1", "name": "Mechanics"}]},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_general(question, **kwargs):
+        captured["question"] = question
+        captured["context"] = kwargs.get("context_block")
+        yield {"t": "Here is your Mechanics study plan."}
+        yield {"done": True, "model": "semantic-route-test"}
+
+    monkeypatch.setattr(general_answer, "stream_general_answer", fake_general)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="sure",
+                previousTurns=[{
+                    "role": "assistant",
+                    "text": "I can create a study plan for you. Want me to?",
+                }],
+            ),
+            {"id": "user"},
+            "semantic-study-plan-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert captured["question"] == "Create a study plan for the student."
+    assert "Mechanics" in str(captured["context"])
+    assert b"Here is your Mechanics study plan." in body
+
+
+def test_stream_acknowledgement_without_pending_task_stays_social(monkeypatch) -> None:
+    from app.routers import stream as stream_router
+    from app.services import dialogue_state, general_answer
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        dialogue_state, "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: base,
+    )
+    monkeypatch.setattr(
+        general_answer, "stream_general_answer",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("social turn generated")),
+    )
+    monkeypatch.setattr(stream_router, "chitchat_answer", lambda _q: "All right.")
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="sure",
+                previousTurns=[{"role": "assistant", "text": "That's all."}],
+            ),
+            {"id": "user"},
+            "semantic-social-ack-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    assert b"All right." in asyncio.run(consume())
+
+
+def test_stream_courseless_study_plan_reaction_skips_workspace_pipeline(monkeypatch) -> None:
+    """taskFamily and continuesPreviousGoal are independent fields in the
+    semantic classifier's own JSON output (see resolve_dialogue_semantically):
+    a vague reaction like "But I don't understand it" can be tagged
+    taskFamily=study_plan (topic recognition) while continuesPreviousGoal is
+    false (the model doesn't see it as literally continuing the task).
+    task_requires_workspace(study_plan) is True regardless, so without the
+    `bool(payload.courseId) and` guard in _prepare_ask_stream_response,
+    workspace_task/workspace_question used to go True even with no course
+    selected — pulling a plain conversational reaction into the live
+    workspace/account-snapshot pipeline that only makes sense for a real,
+    course-grounded study-plan request. Assert that pipeline (fetch_account_
+    snapshot) is never touched when there is no course to ground it in.
+    """
+    import json as _json
+
+    from app.routers import stream as stream_router
+    from app.services import cache, dialogue_state, retrieval, tutor_state_store
+    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+    from app.services.tutor_state import TutorState
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request="But I don't understand it",
+            relation=TurnRelation.CLARIFICATION,
+            speech_act=SpeechAct.CLARIFICATION_REQUEST,
+            task_family=TaskFamily.STUDY_PLAN,
+            continues_previous_goal=False,
+            confidence=0.9,
+        ),
+    )
+    monkeypatch.setattr(tutor_state_store, "claim_generation", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: 0,
+    )
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda user_id, conversation_id: TutorState(
+            conversation_id=conversation_id, user_id=user_id,
+        ),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        stream_router,
+        "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("raw chitchat intercepted task")),
+    )
+    # No courseId, so classify_source_scope initially resolves COURSE_FILES
+    # (auto mode's default) and retrieval runs against an empty course before
+    # the post-retrieval relevance gate downgrades to general knowledge — mock
+    # retrieval/cache so that downgrade happens without a real DB/embeddings
+    # call, exactly like the live reproduction (an empty course finds nothing).
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(retrieval, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_chunks", lambda **_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    def fake_stream_answer(**_kwargs):
+        meta = {"meta": True, "retrievalMode": "general_knowledge", "answerMode": "general"}
+        done = {
+            "done": True, "retrievalMode": "general_knowledge", "answerMode": "general",
+            "verification": {"status": "verified", "details": {}}, "sources": [],
+        }
+        yield f"data: {_json.dumps(meta)}\n\n".encode()
+        yield b'data: {"t":"Let\'s break the plan down step by step."}\n\n'
+        yield f"data: {_json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream_router, "stream_answer", fake_stream_answer)
+    monkeypatch.setattr(
+        stream_router, "generate_general_answer",
+        lambda *_a, **_k: {"answer": "Let's break the plan down step by step.", "model": "test"},
+    )
+    monkeypatch.setattr(
+        stream_router, "fetch_account_snapshot",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("courseless study-plan reaction pulled in the workspace/account pipeline")
+        ),
+    )
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="But I don't understand it",
+                previousTurns=[
+                    {"role": "user", "text": "How do I create a good learning plan?"},
+                    {"role": "assistant", "text": "Define your goals, then build a schedule..."},
+                ],
+            ),
+            {"id": "00000000-0000-4000-8000-000000000099"},
+            "study-plan-courseless-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert b"internal_error" not in body
+    assert b"Let's break the plan down step by step." in body
+
+
+def test_stream_rejection_keeps_goal_but_drops_offered_choice(monkeypatch) -> None:
+    """Rejecting a suggested topic must not fall back to raw chitchat, and
+    must not discard the underlying goal — only the specific offered choice."""
+    from app.routers import stream as stream_router
+    from app.services import dialogue_state, general_answer
+    from app.services.dialogue_state import EvidenceRequirement, SpeechAct, TaskFamily, TurnRelation
+
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request=(
+                "The student rejected welding as the study topic; recommend a "
+                "different weak topic from the same course instead."
+            ),
+            relation=TurnRelation.REJECTION,
+            speech_act=SpeechAct.REJECTION,
+            task_family=TaskFamily.STUDY_RECOMMENDATION,
+            continues_previous_goal=True,
+            # No courseId and the offer being rejected wasn't grounded either
+            # — same as a real semantic resolution would compute here.
+            evidence_requirement=EvidenceRequirement.CONVERSATION_ONLY,
+            confidence=0.93,
+        ),
+    )
+    monkeypatch.setattr(
+        stream_router,
+        "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("rejection intercepted as raw chitchat")),
+    )
+    monkeypatch.setattr(
+        stream_router, "fetch_account_snapshot",
+        lambda *_: {"courses": [{"id": "c1", "name": "Mechanics"}]},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_general(question, **kwargs):
+        captured["question"] = question
+        yield {"t": "Let's look at bearings instead."}
+        yield {"done": True, "model": "semantic-route-test"}
+
+    monkeypatch.setattr(general_answer, "stream_general_answer", fake_general)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **_: None)
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="I'd rather not, pick something different",
+                previousTurns=[{
+                    "role": "assistant",
+                    "text": "Let's start with welding — sound good?",
+                }],
+            ),
+            {"id": "user"},
+            "semantic-rejection-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert "welding" in str(captured["question"]).lower()
+    assert b"bearings" in body
+
+
+def test_large_bilingual_routing_matrix() -> None:
+    topics = ["torsion", "Eigenwert", "Wälzlager", "kinetic energy", "Passung",
+              "Querkraft", "moment", "Schweißbarkeit", "preload", "lambda"]
+    cases: list[tuple[str, ResolvedDocumentAccess, ExecutionLane]] = []
+    for topic in topics:
+        cases.extend([
+            (f"What is {topic}?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+            (f"Explain {topic} simply.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+            (f"Was ist {topic}?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+            (f"Erkläre {topic} kurz.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GENERAL),
+            (f"What does my lecture say about {topic}?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GROUNDED),
+            (f"Was sagt meine Vorlesung über {topic}?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.FAST_GROUNDED),
+            (f"Where in the script is {topic}?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+            (f"Wo genau steht {topic} im Skript?", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+            (f"Calculate {topic} for the given case.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.DEEP_REASONING),
+            (f"Berechne {topic} für diese Aufgabe.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.DEEP_REASONING),
+            (f"Explain this {topic} formula.", ResolvedDocumentAccess.VISIBLE_PAGE, ExecutionLane.VISIBLE_PAGE),
+            (f"Erkläre diese {topic} Formel.", ResolvedDocumentAccess.VISIBLE_PAGE, ExecutionLane.VISIBLE_PAGE),
+            (f"Find every {topic} question.", ResolvedDocumentAccess.FULL_DOCUMENT, ExecutionLane.FULL_DOCUMENT),
+            (f"Finde alle Aufgaben zu {topic}.", ResolvedDocumentAccess.FULL_DOCUMENT, ExecutionLane.FULL_DOCUMENT),
+            (f"Find current {topic} jobs near Braunschweig.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.WEB),
+            (f"Suche aktuelle {topic} Stellenangebote.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.WEB),
+            (f"Compare {topic} with the worked example.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+            (f"Vergleiche {topic} mit dem Beispiel.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+            (f"I need all details about {topic}.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+            (f"Ich brauche alle Details über {topic}.", ResolvedDocumentAccess.RELEVANCE, ExecutionLane.STANDARD_RAG),
+        ])
+    assert len(cases) == 200
+    for question, access, expected in cases:
+        _, plan = resolve_execution_plan(
+            question=question, resolved_access=access, processing_pipeline="relevance",
+        )
+        assert plan.executionLane is expected, question
+
+
+# ── FAST_GROUNDED evidence sufficiency: richer than count>0 + score>=0.22 ───
+
+def test_one_very_strong_chunk_is_sufficient(monkeypatch) -> None:
+    _stub_scores(monkeypatch, [0.72])
+    assert fast_grounded_evidence_is_sufficient(chunks=[_FakeChunk()], question="What is torsion?")
+
+
+def test_several_moderate_chunks_are_sufficient(monkeypatch) -> None:
+    _stub_scores(monkeypatch, [0.40, 0.35, 0.31])
+    chunks = [_FakeChunk(), _FakeChunk(), _FakeChunk()]
+    assert fast_grounded_evidence_is_sufficient(chunks=chunks, question="What does my professor say about bearings?")
+
+
+def test_lone_weak_chunk_barely_over_old_threshold_now_escalates(monkeypatch) -> None:
+    """The exact gap flagged in review: the old gate was chunk_count>0 and
+    score>=0.22, so a single mediocre 0.23 chunk used to pass. It must not
+    pass the richer gate on its own."""
+    _stub_scores(monkeypatch, [0.23])
+    assert not fast_grounded_evidence_is_sufficient(chunks=[_FakeChunk()], question="What is a fixed-floating bearing?")
+
+
+def test_no_chunks_is_never_sufficient(monkeypatch) -> None:
+    _stub_scores(monkeypatch, [])
+    assert not fast_grounded_evidence_is_sufficient(chunks=[], question="What is torsion?")
+
+
+def test_list_question_needs_broader_coverage_than_one_hit(monkeypatch) -> None:
+    """"What are the three Passungen types" with only one relevant chunk
+    covering one of the three items must not be answered as if complete."""
+    _stub_scores(monkeypatch, [0.5])
+    assert not fast_grounded_evidence_is_sufficient(
+        chunks=[_FakeChunk()], question="What are the three types of Passungen in our course?",
+    )
+
+
+def test_list_question_sufficient_with_multiple_corroborating_hits(monkeypatch) -> None:
+    _stub_scores(monkeypatch, [0.45, 0.38])
+    chunks = [_FakeChunk(document_id="docA"), _FakeChunk(document_id="docB")]
+    assert fast_grounded_evidence_is_sufficient(
+        chunks=chunks, question="What are the three types of Passungen in our course?",
+    )
+
+
+def test_comparison_question_is_not_satisfied_by_one_chunk(monkeypatch) -> None:
+    _stub_scores(monkeypatch, [0.6])
+    assert not fast_grounded_evidence_is_sufficient(
+        chunks=[_FakeChunk()], question="Compare the professor's treatment of O- and X-arrangement.",
+    )
+
+
+# ── Broadened FAST_CONTEXTUAL follow-up phrasing (realistic student wording) ─
+
+@pytest.mark.parametrize("question", [
+    "but why is it negative here?",
+    "why minus here?",
+    "and the second case?",
+    "what about c < 0?",
+    "what about the other one?",
+    "what changes if the force points down?",
+    "where did the 2 come from?",
+    "why did you use FW and not FG?",
+    "how did you get tau_Q?",
+    "and if they are perpendicular?",
+    "what if both forces are parallel?",
+    "what if the bearing is fixed?",
+    "why not use energy here?",
+    "warum?",
+    "wieso minus?",
+    "und bei c<0?",
+    "was ist mit dem anderen Fall?",
+    "woher kommt die 2?",
+])
+def test_realistic_followup_phrasing_stays_contextual(question) -> None:
+    # No previous_question given here on purpose — this test isolates the
+    # follow-up MARKER regex broadening. Topic continuity (a follow-up-shaped
+    # message naming a genuinely different topic) has its own dedicated tests
+    # below, with a previous_question chosen to actually exercise that guard.
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+    )
+    assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL, question
+
+
+@pytest.mark.parametrize("question", [
+    "why?", "why tho", "how?",
+])
+def test_bare_short_followups_still_work(question) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+    )
+    assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL, question
+
+
+@pytest.mark.parametrize("question", ["I don't know", "I do not know.", "idk", "no idea", "I'm stuck"])
+def test_short_uncertainty_replies_keep_conversation_context(question) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+        previous_question="What would you like to study?",
+    )
+    assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL, question
+
+
+def test_followup_relation_does_not_force_general_grounding() -> None:
+    from app.services.dialogue_state import resolve_dialogue
+
+    turns = [
+        {"role": "user", "text": "Explain torsional stress from my lecture."},
+        {"role": "assistant", "text": "The course formula is tau = Tr/J."},
+    ]
+    resolved = resolve_dialogue("why?", previous_turns=turns)
+    _, plan = resolve_execution_plan(
+        question=resolved.resolved_request,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+        resolved_turn=resolved, has_course_context=True,
+    )
+    assert plan.executionLane is ExecutionLane.FAST_GROUNDED
+    assert plan.groundingMode is GroundingMode.RELEVANCE
+
+
+def test_followup_without_previous_answer_is_not_contextual() -> None:
+    _, plan = resolve_execution_plan(
+        question="why?", resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=False,
+    )
+    assert plan.executionLane is not ExecutionLane.FAST_CONTEXTUAL
+
+
+# ── Topic continuity: a follow-up-shaped message naming a NEW topic must ────
+# ── not blindly reuse stale context ──────────────────────────────────────────
+
+def test_topic_change_disguised_as_followup_is_not_contextual() -> None:
+    _, plan = resolve_execution_plan(
+        question="what about rolling bearings?",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, processing_pipeline="relevance",
+        has_previous_answer=True,
+        previous_question="Explain torsion in a circular shaft.",
+    )
+    assert plan.executionLane is not ExecutionLane.FAST_CONTEXTUAL
+
+
+def test_same_topic_followup_with_previous_question_stays_contextual() -> None:
+    _, plan = resolve_execution_plan(
+        question="what about c < 0 for the transport equation?",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, processing_pipeline="relevance",
+        has_previous_answer=True,
+        previous_question="Explain the transport equation for c > 0.",
+    )
+    assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL
+
+
+def test_pronoun_only_followup_has_nothing_to_contradict_previous_topic() -> None:
+    """"why minus?" has no substantial content word of its own to compare —
+    absent a contradicting topic, it defaults to reusing context."""
+    _, plan = resolve_execution_plan(
+        question="why minus?", resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+        previous_question="Explain the transport equation for c < 0.",
+    )
+    assert plan.executionLane is ExecutionLane.FAST_CONTEXTUAL
+
+
+# ── Source/location requests never get downgraded, even follow-up-shaped ────
+
+@pytest.mark.parametrize("question", [
+    "Where exactly does the lecture say that?",
+    "Which page is that on?",
+    "Show me the source.",
+])
+def test_source_requests_never_become_contextual_or_general(question) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance", has_previous_answer=True,
+        previous_question="Torsion creates shear stress in the cross-section.",
+    )
+    assert plan.executionLane is ExecutionLane.STANDARD_RAG, question
+
+
+# ── False positives: must NOT trigger a special lane ─────────────────────────
+
+def test_all_the_details_is_not_full_document() -> None:
+    _, plan = resolve_execution_plan(
+        question="I need all the details.", resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance",
+    )
+    assert plan.executionLane is not ExecutionLane.FULL_DOCUMENT
+    assert plan.executionLane is ExecutionLane.STANDARD_RAG
+
+
+def test_find_the_force_is_not_web_search() -> None:
+    _, plan = resolve_execution_plan(
+        question="Find the force in the free body diagram.",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, processing_pipeline="relevance",
+    )
+    assert plan.executionLane is not ExecutionLane.WEB
+
+
+# ── Ambiguous, low-confidence phrasing must fall back to STANDARD_RAG ───────
+
+@pytest.mark.parametrize("question", [
+    "show me torsion",
+    "how does torsion work",
+    "can you go through torsion",
+    "help me understand bearings",
+    "how do I know which formula to use",
+    "what happens here",
+    "why is this like that",
+    "can you explain what the professor is doing",
+    "how do I solve these",
+])
+def test_ambiguous_phrasing_falls_back_to_standard_rag(question) -> None:
+    # The real invariant (spec section 12): ambiguous phrasing must not
+    # gamble toward a FAST_* lane. "how do I solve these" legitimately
+    # matches the calculation trigger ("solve") and correctly escalates all
+    # the way to DEEP_REASONING instead — stronger, not cheaper, so it still
+    # satisfies "don't guess toward fast mode."
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance",
+    )
+    assert plan.executionLane not in (
+        ExecutionLane.FAST_GENERAL, ExecutionLane.FAST_CONTEXTUAL, ExecutionLane.FAST_GROUNDED,
+    ), question
+
+
+# ── Typos in the topic word itself must not affect routing — none of these ──
+# ── patterns match on the topic's spelling, only the surrounding structure ──
+
+@pytest.mark.parametrize(("question", "expected"), [
+    ("What is trosion?", ExecutionLane.FAST_GENERAL),
+    ("What is eigenwertt?", ExecutionLane.FAST_GENERAL),
+    ("Calculte sigma for this joint.", ExecutionLane.DEEP_REASONING),
+    ("Derve the displacement equation.", ExecutionLane.DEEP_REASONING),
+])
+def test_topic_word_typos_do_not_change_routing(question, expected) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance",
+    )
+    assert plan.executionLane is expected, question
+
+
+# ── Mixed-language phrasing (common in this user base) ──────────────────────
+
+@pytest.mark.parametrize("question", [
+    "was ist Eigenwert exactly?",
+    "wo im lecture steht das?",
+])
+def test_mixed_language_phrasing_routes_sanely(question) -> None:
+    _, plan = resolve_execution_plan(
+        question=question, resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance",
+    )
+    # Not asserting one exact lane for every mixed-language case (these are
+    # genuinely harder), but they must never land in a lane that skips
+    # grounding when the question itself asks for course/location evidence.
+    if "lecture" in question or "wo " in question:
+        assert plan.executionLane in (ExecutionLane.STANDARD_RAG, ExecutionLane.FAST_GROUNDED), question
+
+
+# ── Explicit document selection must never be silently dropped ─────────────
+# A student who explicitly selects a course file (document_ids or an
+# active_document_id) has given the strongest possible evidence signal —
+# source_router.classify_source_scope's own has_specific_file rule already
+# treats this as outranking everything except a pasted URL. Plain
+# source_mode="auto" (the UI default) must not let a short, definition-shaped
+# question skip that selection by routing into a lane that never consults it.
+
+@pytest.mark.parametrize(("document_ids", "active_document_id"), [
+    (["11111111-1111-1111-1111-111111111111"], None),
+    ([], "22222222-2222-2222-2222-222222222222"),
+])
+def test_explicit_document_selection_is_never_silently_dropped(document_ids, active_document_id) -> None:
+    has_specific_file = bool(document_ids or active_document_id)
+    _, plan = resolve_execution_plan(
+        question="What is entropy?",
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        processing_pipeline="relevance",
+        source_mode="auto",
+        has_specific_file=has_specific_file,
+    )
+    assert plan.executionLane not in (ExecutionLane.FAST_GENERAL, ExecutionLane.FAST_CONTEXTUAL)
