@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # secret to rotate. Every internal request must arrive with
     # `X-Internal-Token: <this value>`.
     ai_service_internal_token: str = Field(..., alias="INTERNAL_SECRET")
+    # Set ONLY during a rotation window: the previous secret is still accepted so
+    # the edge and this service can be switched over without downtime, then removed.
+    ai_service_internal_token_previous: str | None = Field(None, alias="INTERNAL_SECRET_PREVIOUS")
 
     # --- Phase 12: vision OCR fallback. Enabled by default for weak pages
     # that the OCR-need detector flags; set the env var to false to avoid

@@ -264,7 +264,11 @@ def chat_json(
                     # A single provider call may never outlive the request.
                     extra_timeout = {"timeout": remaining}
                 try:
-                    resp = client.chat.completions.create(
+                    # Under a request budget the SDK's own retries (max_retries=2) would
+                    # multiply the per-call timeout to 3x the remaining budget, so they are
+                    # off; rate limits are still retried by the loop below, within budget.
+                    call_client = client.with_options(max_retries=0) if timer is not None else client
+                    resp = call_client.chat.completions.create(
                         **extra_timeout,
                         model=chosen,
                         **token_param,
