@@ -49,6 +49,7 @@ from ..config import get_settings
 
 from .german_exam_adaptation import AdaptationInstruction
 from .german_exam_profiles import ExamProfile, PartBlueprint
+from .german_exam_semantic_chunked import verify_semantic_chunked
 from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
 from .german_exam_semantic_verify import SemanticVerificationResult
@@ -779,13 +780,18 @@ def _wrong_options_valid(item: dict[str, Any], correct_answer: str) -> bool:
     return _wrong_options_reason(item, correct_answer) is None  # 3 distinct wrong options, none equal to the correct answer
 
 
-def _record_gap_outcome(gap_id: str, category: str, reason: str | None, round_no: int, resolved: bool) -> None:
-    """Safe per-gap diagnostics (ids, category, reason code; never passage or answer text)."""
+def _record_gap_outcome(gap_id: str, category: str, reason: str | None, round_no: int, resolved: bool,
+                        initial_reason: str | None = None) -> None:
+    """Safe per-gap diagnostics (ids, category, reason codes; never passage or answer text).
+
+    ``reason`` is the validation reason of the repair CANDIDATE returned in this round
+    (None when it passed); ``initialReason`` is why the gap needed repair at all."""
     from . import gen_timing  # noqa: WPS433
     timer = gen_timing.current()
     if timer is not None:
         timer.add_validation({"stage": "sprachbausteine_stage_b", "gapId": gap_id, "category": category,
-                              "reason": reason, "repairRound": round_no, "resolved": resolved})
+                              "reason": reason, "initialReason": initial_reason,
+                              "repairRound": round_no, "resolved": resolved})
 
 
 def _prompt_item_repair(
@@ -830,11 +836,18 @@ def _call_item_repair(*, system: str, user: str) -> LlmResult:
 
 def _repair_stage_b_items(
     gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str], items_by_gap: dict[str, dict[str, Any]],
-    gap_context_by_id: dict[str, dict[str, Any]], round_no: int = 1
+    gap_context_by_id: dict[str, dict[str, Any]], round_no: int = 1,
+    rejected: dict[str, tuple[list[Any] | None, str]] | None = None
 ) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
     """Deterministic, per-item repair — mirrors german_exam_reading.py's
     _repair_items shape. Never touches the passage or any other item.
-    Returns (items_by_gap, repaired_count, unresolved_gap_ids)."""
+    Returns (items_by_gap, repaired_count, unresolved_gap_ids).
+
+    ``rejected`` carries, per gap, the previous round's REJECTED repair candidate and its
+    own validation reason, so the next round repairs that candidate (not the original item).
+    Invalid candidates are never written into ``items_by_gap``; only a candidate that passes
+    validation becomes the accepted item."""
+    rejected = rejected if rejected is not None else {}
     spec_by_gap = {g["gapId"]: g for g in gap_specs}
     # Every gap the plan expects, so a gap the model omitted is repaired like any other.
     bad_reason = {
@@ -845,11 +858,21 @@ def _repair_stage_b_items(
     if not bad_gap_ids:
         return items_by_gap, 0, []
 
-    def _fix_one(gap_id: str) -> tuple[str, dict[str, Any] | None]:
-        prior_item = items_by_gap.get(gap_id)
-        prior_wrong = prior_item.get("wrongOptions") if isinstance(prior_item, dict) else None
-        prior_wrong = prior_wrong if isinstance(prior_wrong, list) else None
-        reason = bad_reason.get(gap_id) if prior_wrong else None
+    # (gap_id, accepted candidate | None, candidate's OWN wrongOptions, candidate's OWN reason)
+    _Outcome = tuple[str, "dict[str, Any] | None", "list[Any] | None", "str | None"]
+
+    def _fix_one(gap_id: str) -> _Outcome:
+        carried = rejected.get(gap_id)
+        if carried is not None:
+            # Round >= 2: repair the candidate that was just rejected, told its actual reason.
+            prior_wrong, reason = carried
+        else:
+            prior_item = items_by_gap.get(gap_id)
+            prior_wrong = prior_item.get("wrongOptions") if isinstance(prior_item, dict) else None
+            prior_wrong = prior_wrong if isinstance(prior_wrong, list) else None
+            reason = bad_reason.get(gap_id) if prior_wrong else None
+        candidate_wrong: list[Any] | None = None
+        candidate_reason: str | None = "repair_call_error"
         for _attempt in range(_MAX_ITEM_REPAIR_ATTEMPTS):
             try:
                 system, user = _prompt_item_repair(
@@ -857,23 +880,33 @@ def _repair_stage_b_items(
                 )
                 result = _call_item_repair(system=system, user=user)
                 fixed = result.data
-                if isinstance(fixed, dict) and _wrong_options_valid(fixed, answers_by_gap[gap_id]):
-                    return gap_id, fixed
+                # Validate the candidate ITSELF: its reason is what gets recorded and carried.
+                candidate_reason = _wrong_options_reason(fixed, answers_by_gap[gap_id])
+                if isinstance(fixed, dict) and isinstance(fixed.get("wrongOptions"), list):
+                    candidate_wrong = fixed["wrongOptions"]
+                if candidate_reason is None:
+                    return gap_id, fixed, candidate_wrong, None
             except Exception:  # noqa: BLE001
                 log.warning("Sprachbausteine item repair failed for gap %s", gap_id, exc_info=True)
-        return gap_id, None
+                candidate_reason = "repair_call_error"
+        return gap_id, None, candidate_wrong, candidate_reason
 
     with ThreadPoolExecutor(max_workers=min(4, len(bad_gap_ids))) as pool:
         results = list(pool.map(_fix_one, bad_gap_ids))
 
     unresolved: list[str] = []
     repaired = 0
-    for gap_id, fixed in results:
-        _record_gap_outcome(gap_id, spec_by_gap[gap_id]["category"], bad_reason.get(gap_id), round_no, fixed is not None)
+    for gap_id, fixed, candidate_wrong, candidate_reason in results:
+        _record_gap_outcome(gap_id, spec_by_gap[gap_id]["category"], candidate_reason, round_no,
+                            fixed is not None, initial_reason=bad_reason.get(gap_id))
         if fixed is not None:
             items_by_gap[gap_id] = fixed
+            rejected.pop(gap_id, None)
             repaired += 1
         else:
+            # Kept OUT of items_by_gap; only fed to the next round as repair context.
+            if candidate_wrong is not None and candidate_reason:
+                rejected[gap_id] = (candidate_wrong, candidate_reason)
             unresolved.append(gap_id)
     return items_by_gap, repaired, unresolved
 
@@ -909,9 +942,10 @@ def _run_stage_b(
         # answers and every already-valid distractor set stay frozen, so one bad
         # gap no longer doubles the whole Stage B cost.
         unresolved: list[str] = []
+        rejected: dict[str, tuple[list[Any] | None, str]] = {}
         for round_no in range(1, _MAX_TARGETED_REPAIR_ROUNDS + 1):
             items_by_gap, repaired, unresolved = _repair_stage_b_items(
-                gap_specs, answers_by_gap, items_by_gap, gap_context_by_id, round_no
+                gap_specs, answers_by_gap, items_by_gap, gap_context_by_id, round_no, rejected
             )
             item_repair_total += repaired
             if not unresolved:
@@ -1000,12 +1034,16 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
         nonlocal verification_count
         result: SemanticVerificationResult | None = None
         for attempt in range(2):
-            result = verify_semantic(part, content)
+            # Same verifier, same rules: only the transport differs (3 concurrent chunks, one
+            # shared token ceiling and deadline) so hidden reasoning cannot exhaust one huge call.
+            result = verify_semantic_chunked(part, content, verify_semantic)
             record_findings(result)
             verification_count += 1
             findings = list(result.part_wide_issues) + [issue for item in result.items for issue in item.issues]
             if not any(issue.code == "VERIFIER_RESPONSE_INVALID" for issue in findings):
                 return result
+            if result.terminal_verifier_failure:
+                return result  # chunk fallback already exhausted: never re-run all chunks
         assert result is not None
         return result
 

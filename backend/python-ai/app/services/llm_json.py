@@ -184,6 +184,7 @@ class LlmResult:
     model: str
     prompt_tokens: int | None
     completion_tokens: int | None
+    reasoning_tokens: int | None = None
 
 
 def _caller_label() -> str:
@@ -324,4 +325,5 @@ def chat_json(
         model=chosen,
         prompt_tokens=resp.usage.prompt_tokens if resp.usage else None,
         completion_tokens=resp.usage.completion_tokens if resp.usage else None,
+        reasoning_tokens=reasoning_tokens_from_response(resp),
     )

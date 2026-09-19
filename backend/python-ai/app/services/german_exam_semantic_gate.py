@@ -36,8 +36,8 @@ from .german_exam_semantic_verify import SemanticVerificationResult, verify_sema
 _ADJUDICATION_ENABLED = False
 
 
-def verify_semantic_full(part: PartBlueprint, content: dict[str, Any]) -> SemanticVerificationResult:
-    result = verify_semantic(part, content)
+def verify_semantic_full(part: PartBlueprint, content: dict[str, Any], *, max_tokens: int | None = None) -> SemanticVerificationResult:
+    result = verify_semantic(part, content, **({} if max_tokens is None else {"max_tokens": max_tokens}))
     if not _ADJUDICATION_ENABLED:
         return result
 

@@ -96,6 +96,11 @@ class SemanticVerificationResult:
     passed: bool
     part_wide_issues: list[SemanticIssue] = field(default_factory=list)
     items: list[ItemSemanticResult] = field(default_factory=list)
+    # Token counts of the call that produced this result (diagnostics only).
+    usage: dict[str, int] | None = None
+    # True only when the chunked verifier has exhausted its own bounded fallback: the
+    # caller must not restart the whole verification (see german_exam_semantic_chunked).
+    terminal_verifier_failure: bool = False
 
     def item_error_issues(self) -> dict[str, list[SemanticIssue]]:
         """questionId -> its error-severity issues, for items that failed.
@@ -639,7 +644,7 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
     return result
 
 
-def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVerificationResult:
+def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens: int | None = None) -> SemanticVerificationResult:
     """One batched call for the whole part. Deliberately does NOT receive the
     adaptation plan or topic-selection rationale — the verifier judges the
     frozen content on its own merits, not biased by why it was generated."""
@@ -730,7 +735,7 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVer
         # fixed budget. Scale by item count instead of raising it globally —
         # unchanged (10000 floor) for every task type with <=15 items.
         item_count = len(content.get("questions") or [])
-        verify_max_tokens = max(10000, 6000 + item_count * 400)
+        verify_max_tokens = max_tokens if max_tokens is not None else max(10000, 6000 + item_count * 400)
         result = chat_json(system=system, user=user, max_tokens=verify_max_tokens,
                            model=model, json_schema=_verification_schema(part, content),
                            reasoning_effort="medium" if model.startswith("gpt-5") else None)
@@ -738,7 +743,10 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any]) -> SemanticVer
         log.warning("Semantic verifier call failed", exc_info=True)
         return _parse_result(None, expected_ids)
     parsed = _parse_result(result.data, expected_ids)
-    return _apply_audits(parsed, result.data, part, content) if isinstance(result.data, dict) else parsed
+    final = _apply_audits(parsed, result.data, part, content) if isinstance(result.data, dict) else parsed
+    final.usage = {"completionTokens": int(result.completion_tokens or 0),
+                   "reasoningTokens": int(getattr(result, "reasoning_tokens", 0) or 0)}
+    return final
 
 
 def is_part_wide_only(issue: SemanticIssue) -> bool:

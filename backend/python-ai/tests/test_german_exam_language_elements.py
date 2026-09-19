@@ -30,7 +30,7 @@ class _FakeResult:
         self.completion_tokens = 10
 
 
-def _passing_semantic_result(part, content):
+def _passing_semantic_result(part, content, **kw):
     from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticVerificationResult
 
     items = [ItemSemanticResult(item_id=q["questionId"], passed=True, issues=[]) for q in content.get("questions") or []]
@@ -567,7 +567,7 @@ def test_gap_outcomes_are_recorded_without_content(monkeypatch: pytest.MonkeyPat
         mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
         entries = [e for e in timer.summary("ok")["validation"] if e.get("stage") == "sprachbausteine_stage_b"]
     assert entries and entries[0]["gapId"] == "g5" and entries[0]["resolved"] is True
-    assert set(entries[0]) == {"stage", "gapId", "category", "reason", "repairRound", "resolved"}
+    assert set(entries[0]) == {"stage", "gapId", "category", "reason", "initialReason", "repairRound", "resolved"}
     assert "alpha" not in str(entries)
 
 
@@ -585,7 +585,7 @@ def test_unsupported_correct_answer_skips_repair_and_fails_fast(monkeypatch: pyt
     mod, _counters = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
     profile, part = _profile_and_part()
 
-    def _always_unsupported(part, content):
+    def _always_unsupported(part, content, **kw):
         issue = SemanticIssue("UNSUPPORTED_CORRECT_ANSWER", "error", "doesn't fit")
         items = [ItemSemanticResult(item_id=q["questionId"], passed=(q["gapId"] != "g5"), issues=([issue] if q["gapId"] == "g5" else []))
                  for q in content.get("questions") or []]
@@ -622,7 +622,7 @@ def test_semantic_verifier_still_runs_after_assembly(monkeypatch: pytest.MonkeyP
 
     verify_calls = {"n": 0}
 
-    def _counting_verify(part, content):
+    def _counting_verify(part, content, **kw):
         verify_calls["n"] += 1
         return _passing_semantic_result(part, content)
 
@@ -718,3 +718,120 @@ def test_too_many_missing_gaps_skips_repair_and_regenerates(monkeypatch: pytest.
     assert counters["missing_gap_repair"] == 0, "too many missing gaps must skip the targeted repair"
     assert counters["stage_a"] == 2, "must fall back to a full Stage A regeneration instead"
     assert len(content["text"]["gaps"]) == 22
+
+
+# ── Stage B per-gap repair: candidate-specific reasons + round 2 repairs round 1 ──
+
+def _repair_env(monkeypatch, outputs):
+    """One orthography gap whose ORIGINAL distractors equal the correct answer after _norm."""
+    from app.services import german_exam_language_elements as mod
+
+    specs = [{"gapId": "g1", "questionId": "q1", "category": "orthography"}]
+    answers = {"g1": "Beispiel"}
+    ctx = {"g1": {"sentenceWithCorrectAnswer": "Das ist ein Beispiel."}}
+    original = {"wrongOptions": ["beispiel", "Bespiel", "Beispill"], "skillTags": ["register"]}
+    prompts: list[str] = []
+    queue = list(outputs)
+
+    def _call(*, system, user):
+        prompts.append(system)
+        return _FakeResult(queue.pop(0))
+
+    monkeypatch.setattr(mod, "_call_item_repair", _call)
+    return mod, specs, answers, ctx, original, prompts
+
+
+_B = {"wrongOptions": ["Fehler", "Fehler", "Irrtum"], "skillTags": ["register"]}       # duplicate_option
+_C = {"wrongOptions": ["Beispiehl", "Bayspiel", "Beispeel"], "skillTags": ["register"]}  # valid
+
+
+def _two_rounds(mod, specs, answers, ctx, items):
+    rejected: dict = {}
+    out = []
+    for round_no in (1, 2):
+        items, repaired, unresolved = mod._repair_stage_b_items(specs, answers, items, ctx, round_no, rejected)
+        out.append((repaired, list(unresolved)))
+        if not unresolved:
+            break
+    return items, out
+
+
+def test_repair_round_two_receives_the_round_one_candidate_not_the_original(monkeypatch):
+    mod, specs, answers, ctx, original, prompts = _repair_env(monkeypatch, [_B, _C])
+    _two_rounds(mod, specs, answers, ctx, {"g1": dict(original)})
+    assert len(prompts) == 2
+    assert '["beispiel", "Bespiel", "Beispill"]' in prompts[0]          # round 1 sees the original
+    assert '["Fehler", "Fehler", "Irrtum"]' in prompts[1]                # round 2 sees round 1's candidate
+    assert '"Bespiel"' not in prompts[1]                                  # ...and NOT the original
+
+
+def test_repair_round_two_is_told_the_round_one_candidates_actual_reason(monkeypatch):
+    mod, specs, answers, ctx, original, prompts = _repair_env(monkeypatch, [_B, _C])
+    _two_rounds(mod, specs, answers, ctx, {"g1": dict(original)})
+    assert "(equals_correct_answer)" in prompts[0]      # the ORIGINAL item's reason
+    assert "(duplicate_option)" in prompts[1]            # round 1 candidate's own reason
+    assert "(equals_correct_answer)" not in prompts[1]
+
+
+def test_invalid_candidates_never_become_the_accepted_item(monkeypatch):
+    mod, specs, answers, ctx, original, _ = _repair_env(monkeypatch, [_B, _B])
+    items = {"g1": dict(original)}
+    items_out, rounds = _two_rounds(mod, specs, answers, ctx, items)
+    assert rounds[-1] == (0, ["g1"])
+    assert items_out["g1"]["wrongOptions"] == original["wrongOptions"], "no invalid Stage B item may leak downstream"
+    assert items_out["g1"] is items["g1"]
+
+
+def test_a_valid_round_two_candidate_is_the_only_one_stored(monkeypatch):
+    mod, specs, answers, ctx, original, _ = _repair_env(monkeypatch, [_B, _C])
+    items_out, rounds = _two_rounds(mod, specs, answers, ctx, {"g1": dict(original)})
+    assert rounds == [(0, ["g1"]), (1, [])]
+    assert items_out["g1"] == _C
+
+
+def test_diagnostics_record_each_candidates_own_reason_without_content(monkeypatch):
+    from app.services import gen_timing
+
+    equals = {"wrongOptions": ["Beispiel", "Irrtum", "Fehlern"], "skillTags": ["register"]}  # equals_correct_answer
+    mod, specs, answers, ctx, original, _ = _repair_env(monkeypatch, [equals, _B])
+    with gen_timing.timed_request("language_elements", "sprachbausteine_1") as timer:
+        _two_rounds(mod, specs, answers, ctx, {"g1": dict(original)})
+        entries = [e for e in timer.summary("ok")["validation"] if e.get("stage") == "sprachbausteine_stage_b"]
+    assert [(e["repairRound"], e["reason"], e["resolved"]) for e in entries] == [
+        (1, "equals_correct_answer", False), (2, "duplicate_option", False)]
+    assert all(e["initialReason"] == "equals_correct_answer" for e in entries)
+    assert not any(w in str(entries) for w in ("Beispiel", "Fehler", "Irrtum"))
+
+
+def test_round_one_success_is_unchanged(monkeypatch):
+    from app.services import gen_timing
+
+    mod, specs, answers, ctx, original, prompts = _repair_env(monkeypatch, [_C])
+    with gen_timing.timed_request("language_elements", "sprachbausteine_1") as timer:
+        items_out, rounds = _two_rounds(mod, specs, answers, ctx, {"g1": dict(original)})
+        entries = [e for e in timer.summary("ok")["validation"] if e.get("stage") == "sprachbausteine_stage_b"]
+    assert len(prompts) == 1 and rounds == [(1, [])]
+    assert items_out["g1"] == _C
+    assert [(e["repairRound"], e["reason"], e["resolved"]) for e in entries] == [(1, None, True)]
+
+
+def test_stage_b_runner_threads_the_rejected_candidate_between_rounds(monkeypatch):
+    specs = _gap_specs()
+    seen: list[str] = []
+    mod, _ = _setup(
+        monkeypatch, stage_a_calls=[_stage_a_content(specs)],
+        stage_b_calls=[_stage_b_payload(specs, bad_gap_id="g5")],
+        item_repair=[{"wrongOptions": ["x", "x", "y"], "skillTags": ["grammar"]},
+                     {"wrongOptions": ["alpha", "beta", "gamma"], "skillTags": ["grammar"]}],
+    )
+    real = mod._prompt_item_repair
+
+    def spy(gap_spec, correct, context, prior_wrong, reason):
+        seen.append((prior_wrong, reason))
+        return real(gap_spec, correct, context, prior_wrong, reason)
+
+    monkeypatch.setattr(mod, "_prompt_item_repair", spy)
+    profile, part = _profile_and_part()
+    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    assert len(content["questions"]) == 22 and len(seen) == 2
+    assert seen[1] == (["x", "x", "y"], "duplicate_option"), "round 2 repairs round 1's rejected candidate"
