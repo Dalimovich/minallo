@@ -159,3 +159,10 @@ test('Writing Coach reads the level through the accessor', () => {
   const src = read('frontend/js/features/writing-coach/writing-coach.ts');
   assert.match(src, /getGermanLearnerProfile\(\)\.targetLevel/);
 });
+
+test('applyProfile: a cache-sourced apply cannot override an already-authoritative runtime profile', () => {
+  const src = read('frontend/js/features/auth/user-data.ts');
+  const guard = src.search(/!authoritative\s*&&\s*window\._profileResolutionState === 'ready'/);
+  const writer = src.indexOf('window._germanLevel = hasGermanLevel');
+  assert.ok(guard > 0 && writer > guard, 'guard must run before the german globals are written');
+});

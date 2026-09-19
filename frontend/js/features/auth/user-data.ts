@@ -500,6 +500,19 @@ export function applyProfile(
   // key that's genuinely present (present-but-falsy is a real "cleared"
   // value) may override the current in-memory state; an absent key falls
   // back to whatever's already there.
+  // Cache may accelerate display but must never override newer server values:
+  // once the authoritative profile is in, a later cache-sourced apply (e.g. the
+  // Profile section re-mounting from profile_cache_<uid>) only refreshes the
+  // form from the runtime state; it never rewrites user_type / german_*.
+  if (
+    !authoritative &&
+    window._profileResolutionState === 'ready' &&
+    window._germanProfileLoaded === true &&
+    window._currentProfileUid === uid
+  ) {
+    applyUserTypeUI();
+    return;
+  }
   const hasUserType = Object.prototype.hasOwnProperty.call(p, 'user_type');
   const hasGermanTest = Object.prototype.hasOwnProperty.call(p, 'german_test');
   const hasGermanLevel = Object.prototype.hasOwnProperty.call(p, 'german_level');
