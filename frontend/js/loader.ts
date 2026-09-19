@@ -760,7 +760,6 @@ interface LandingTranslation {
           };
 
           async function mountAuthenticatedChatbotHome(): Promise<void> {
-            const bootGuard = document.getElementById('minalloChatbotBootGuard');
             try {
               await loadPortalRoute('aipage');
               const mountPromise = (window as unknown as {
@@ -781,13 +780,10 @@ interface LandingTranslation {
                 window.setNavActive?.('psbAIPage');
               }
               document.body.classList.remove('minallo-chatbot-booting');
-              bootGuard?.remove();
             } catch (error) {
               console.error('[loader] chatbot home failed to mount', error);
-              if (bootGuard) {
-                bootGuard.innerHTML = '<div><span>Minallo could not open.</span><button type="button">Retry</button></div>';
-                bootGuard.querySelector('button')?.addEventListener('click', () => window.location.reload());
-              }
+              // One centralized recovery surface (boot cover): Retry / Sign out.
+              window.MinalloBoot?.recovery('auth');
             }
           }
           void mountAuthenticatedChatbotHome();

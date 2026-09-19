@@ -263,6 +263,9 @@ async function runLoadUserData(uid: string): Promise<void> {
     // the same flag) on "Loading your exam profile…" forever after a
     // transient 503/403 during boot. Resolve null on error too, same as a
     // timeout — the caller already treats null as "couldn't get this".
+    // The profile row is what the boot cover waits on, so it gets a generous
+    // budget (a slow-but-successful fetch must not become an error state);
+    // the non-critical queries keep the short one.
     const withTimeout = <T,>(p: Promise<T>, label: string): Promise<T | null> =>
       Promise.race<T | null>([
         p.catch((err: unknown) => {
@@ -275,7 +278,7 @@ async function runLoadUserData(uid: string): Promise<void> {
             console.warn('[loadUserData] ' + label + ' timed out');
             timedOut[label] = true;
             resolve(null);
-          }, 2000)
+          }, label === 'profiles' ? 10000 : 2000)
         ),
       ]);
     // Fire all three queries in parallel. Was sequential awaits — that

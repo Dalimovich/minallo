@@ -190,14 +190,9 @@ function _ssForceSplashOff(reason) {
       if (!document.getElementById('minalloChatbotBootStyle')) {
         var _bootStyle = document.createElement('style');
         _bootStyle.id = 'minalloChatbotBootStyle';
-        _bootStyle.textContent =
-          'body.minallo-chatbot-booting #portal>*{visibility:hidden!important}' +
-          'body.minallo-chatbot-booting #minalloChatbotBootGuard{visibility:visible!important}' +
-          '#minalloChatbotBootGuard{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#071224;color:#dbeafe;font-family:Manrope,system-ui,sans-serif}' +
-          '#minalloChatbotBootGuard>div{display:flex;align-items:center;gap:12px;padding:14px 18px;border:1px solid rgba(147,197,253,.16);border-radius:18px;background:rgba(14,31,55,.82);box-shadow:0 24px 70px rgba(0,0,0,.38);backdrop-filter:blur(22px)}' +
-          '#minalloChatbotBootGuard i{width:18px;height:18px;border:2px solid rgba(147,197,253,.22);border-top-color:#60a5fa;border-radius:50%;animation:minalloBootSpin .75s linear infinite}' +
-          '#minalloChatbotBootGuard button{border:1px solid rgba(147,197,253,.25);border-radius:10px;padding:8px 12px;color:#eff6ff;background:#17345b;cursor:pointer}' +
-          '@keyframes minalloBootSpin{to{transform:rotate(360deg)}}';
+        // The visible boot state is the single logo cover (#minalloBootCover,
+        // owned by js/boot-cover.js); there is no second boot overlay.
+        _bootStyle.textContent = 'body.minallo-chatbot-booting #portal>*{visibility:hidden!important}';
         _bootStyle.textContent +=
           'html body.minallo-chatbot-only #portal .sidebar,html body.minallo-chatbot-only #portal .main>.topbar,html body.minallo-chatbot-only #portal>.page-bg{display:none!important}' +
           'html body.minallo-chatbot-only #portal{position:fixed!important;inset:0!important;display:block!important;overflow:hidden!important}' +
@@ -206,12 +201,6 @@ function _ssForceSplashOff(reason) {
           'html body.minallo-chatbot-only #portal .portal-section:not(#psec-aipage){display:none!important}' +
           'html body.minallo-chatbot-only #psec-aipage{position:fixed!important;inset:0!important;display:block!important;width:100%!important;height:100dvh!important;min-height:0!important;padding:0!important}';
         document.head.appendChild(_bootStyle);
-      }
-      if (!document.getElementById('minalloChatbotBootGuard')) {
-        var _bootGuard = document.createElement('div');
-        _bootGuard.id = 'minalloChatbotBootGuard';
-        _bootGuard.innerHTML = '<div><i aria-hidden="true"></i><span>Opening Minallo…</span></div>';
-        document.body.appendChild(_bootGuard);
       }
       sessionStorage.setItem('ss_portal_tab', 'aipage');
       localStorage.setItem('ss_last_section', 'aipage');

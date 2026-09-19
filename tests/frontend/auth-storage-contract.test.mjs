@@ -58,13 +58,13 @@ test('authenticated boot and successful sign-in always enter the chatbot workspa
 
 test('authenticated boot mounts the chatbot before revealing the application', () => {
   assert.match(AUTH_BOOTSTRAP, /document\.body\.classList\.add\('minallo-chatbot-booting'\)/);
-  assert.match(AUTH_BOOTSTRAP, /id = 'minalloChatbotBootGuard'/);
+  assert.doesNotMatch(AUTH_BOOTSTRAP, /minalloChatbotBootGuard|Opening Minallo/, 'no second boot overlay competes with the logo cover');
   assert.match(CHATBOT_DISPATCHER, /window\._ncbMountPromise = Promise\.all/);
   assert.match(LOADER_TS, /await loadPortalRoute\('aipage'\)/);
   assert.match(LOADER_TS, /await mountPromise/);
   assert.match(LOADER_TS, /navigate\('aipage'\)/);
   assert.match(LOADER_TS, /document\.body\.classList\.remove\('minallo-chatbot-booting'\)/);
-  assert.match(LOADER_TS, /Minallo could not open\.[\s\S]*Retry/);
+  assert.match(LOADER_TS, /chatbot home failed to mount[\s\S]*MinalloBoot\?\.recovery\('auth'\)/);
 });
 
 test('authenticated application permanently detaches the legacy visible shell', () => {
