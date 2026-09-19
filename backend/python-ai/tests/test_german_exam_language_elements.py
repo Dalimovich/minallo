@@ -43,11 +43,10 @@ def _gap_specs():
 
 
 def _stage_a_content(gap_specs, word_count: int = 330) -> dict:
-    """A structurally valid Stage A response: all placeholders present
-    exactly once in reading order, one answer per gap, total split()-word
-    count (placeholder tokens included, matching how both the pipeline's
-    _passage_word_count and the real validator count) controllable for the
-    repair-path tests."""
+    """A structurally valid Stage A response in the TAGGED representation: every gap is one
+    "{{gN::answer}}" marker, all present exactly once in reading order. The total word count
+    (each tagged gap = ONE word, like the public placeholder the real validator counts) is
+    controllable for the repair-path tests. There is no separate answers list any more."""
     filler_count = max(len(gap_specs), word_count - len(gap_specs))
     filler = ["Wort"] * filler_count
     per_gap = max(1, len(filler) // len(gap_specs))
@@ -56,14 +55,15 @@ def _stage_a_content(gap_specs, word_count: int = 330) -> dict:
     for g in gap_specs:
         tokens.extend(filler[fi:fi + per_gap])
         fi += per_gap
-        tokens.append("{{" + g["gapId"] + "}}")
+        tokens.append("{{" + g["gapId"] + "::antwort_" + g["gapId"] + "}}")
     tokens.extend(filler[fi:])
-    from app.services.german_exam_language_elements import _CATEGORY_SKILL_TAGS
-    answers = [
-        {"gapId": g["gapId"], "answer": f"antwort_{g['gapId']}", "skillTags": [_CATEGORY_SKILL_TAGS[g["category"]][0]]}
-        for g in gap_specs
-    ]
-    return {"text": {"title": "Titel", "paragraphs": [" ".join(tokens)]}, "answers": answers}
+    return {"text": {"title": "Titel", "paragraphs": [" ".join(tokens)]}}
+
+
+def _public_text(gap_specs, word_count: int = 330) -> dict:
+    """The materialized (student-visible) text of _stage_a_content: plain {{gN}} placeholders."""
+    from app.services.german_exam_language_elements import _materialize_stage_a_text
+    return _materialize_stage_a_text(_stage_a_content(gap_specs, word_count)["text"], gap_specs)[0]
 
 
 def _stage_b_payload(gap_specs, bad_gap_id: str | None = None) -> dict:
@@ -226,24 +226,20 @@ def test_deterministic_trim_removes_only_non_gap_sentences() -> None:
     from app.services.german_exam_language_elements import _trim_passage_deterministic, _passage_word_count
 
     specs = _gap_specs()[:2]
-    gap_sentence_1 = "Der Student braucht {{g1}} fuer sein Studium."
-    gap_sentence_2 = "Am Ende sagt er {{g2}} klar und deutlich."
+    gap_sentence_1 = "Der Student braucht {{g1::etwas}} fuer sein Studium."
+    gap_sentence_2 = "Am Ende sagt er {{g2::alles}} klar und deutlich."
     filler_1 = "Dies ist ein zusaetzlicher Fuellsatz der ruhig entfernt werden kann heute."
     filler_2 = "Noch ein weiterer langer Fuellsatz der problemlos komplett gestrichen werden darf."
     content = {
         "text": {"title": "t", "paragraphs": [f"{gap_sentence_1} {filler_1} {gap_sentence_2} {filler_2}"]},
-        "answers": [
-            {"gapId": "g1", "answer": "a", "skillTags": ["grammar"]},
-            {"gapId": "g2", "answer": "b", "skillTags": ["grammar"]},
-        ],
     }
 
     trimmed = _trim_passage_deterministic(content, specs, word_min=10, word_max=20)
 
     assert trimmed is not None
     joined = " ".join(trimmed["text"]["paragraphs"])
-    assert "{{g1}}" in joined
-    assert "{{g2}}" in joined
+    assert "{{g1::etwas}}" in joined
+    assert "{{g2::alles}}" in joined
     assert 10 <= _passage_word_count(trimmed) <= 20
 
 
@@ -255,8 +251,7 @@ def test_deterministic_trim_returns_none_when_nothing_removable() -> None:
 
     specs = _gap_specs()[:1]
     content = {
-        "text": {"title": "t", "paragraphs": ["Ein einziger Satz mit {{g1}} und sonst nichts drin."]},
-        "answers": [{"gapId": "g1", "answer": "a", "skillTags": ["grammar"]}],
+        "text": {"title": "t", "paragraphs": ["Ein einziger Satz mit {{g1::etwas}} und sonst nichts drin."]},
     }
 
     assert _trim_passage_deterministic(content, specs, word_min=5, word_max=3) is None
@@ -269,14 +264,10 @@ def test_deterministic_trim_avoids_any_llm_repair_call(monkeypatch: pytest.Monke
     specs = _gap_specs()
     from app.services.german_exam_language_elements import _CATEGORY_SKILL_TAGS
 
-    gap_sentences = " ".join(f"Punkt {g['gapId']} betrifft {{{{{g['gapId']}}}}} klar." for g in specs)
+    gap_sentences = " ".join(f"Punkt {g['gapId']} betrifft {{{{{g['gapId']}::antwort_{g['gapId']}}}}} klar." for g in specs)
     filler_sentence = "Dies ist ein zusaetzlicher Fuellsatz der ruhig komplett entfernt werden kann heute noch."
     paragraph = gap_sentences + " " + (filler_sentence + " ") * 40
-    answers = [
-        {"gapId": g["gapId"], "answer": f"antwort_{g['gapId']}", "skillTags": [_CATEGORY_SKILL_TAGS[g["category"]][0]]}
-        for g in specs
-    ]
-    too_long = {"text": {"title": "Titel", "paragraphs": [paragraph]}, "answers": answers}
+    too_long = {"text": {"title": "Titel", "paragraphs": [paragraph]}}
 
     mod, counters = _setup(monkeypatch, stage_a_calls=[too_long], stage_b_calls=[_stage_b_payload(specs)])
     profile, part = _profile_and_part()
@@ -290,7 +281,7 @@ def test_deterministic_trim_avoids_any_llm_repair_call(monkeypatch: pytest.Monke
 
 
 def test_zero_gap_stage_a_is_rejected_before_stage_b_is_ever_called(monkeypatch: pytest.MonkeyPatch) -> None:
-    broken = {"text": {"title": "x", "paragraphs": ["kein einziger Platzhalter hier"]}, "answers": []}
+    broken = {"text": {"title": "x", "paragraphs": ["kein einziger Platzhalter hier"]}}
     mod, counters = _setup(monkeypatch, stage_a_calls=[broken, broken])
     profile, part = _profile_and_part()
 
@@ -421,7 +412,7 @@ def test_stage_b_prompt_text_carries_each_gaps_context(monkeypatch: pytest.Monke
     specs = _gap_specs()
     mod, _counters = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
     profile, part = _profile_and_part()
-    gap_context = mod._build_gap_context(_stage_a_content(specs)["text"], specs, {s["gapId"]: f"antwort_{s['gapId']}" for s in specs})
+    gap_context = mod._build_gap_context(_public_text(specs), specs, {s["gapId"]: f"antwort_{s['gapId']}" for s in specs})
     answers = {s["gapId"]: f"antwort_{s['gapId']}" for s in specs}
 
     system, _user = mod._prompt_stage_b(profile, part, specs, answers, gap_context)
@@ -655,7 +646,7 @@ def test_external_envelope_shape_is_unchanged(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_persistently_invalid_stage_a_raises_after_regeneration_budget(monkeypatch: pytest.MonkeyPatch) -> None:
-    always_broken = {"text": {"title": "x", "paragraphs": ["x"]}, "answers": []}
+    always_broken = {"text": {"title": "x", "paragraphs": ["x"]}}
     mod, counters = _setup(monkeypatch, stage_a_calls=[always_broken, always_broken, always_broken])
     profile, part = _profile_and_part()
 
@@ -672,7 +663,7 @@ def test_a_small_number_of_missing_gaps_is_repaired_not_fully_regenerated(monkey
     missing_two = dict(complete)
     missing_two["text"] = dict(complete["text"])
     missing_two["text"]["paragraphs"] = [
-        p.replace("{{g5}}", "wenig").replace("{{g12}}", "sehr") for p in complete["text"]["paragraphs"]
+        p.replace("{{g5::antwort_g5}}", "wenig").replace("{{g12::antwort_g12}}", "sehr") for p in complete["text"]["paragraphs"]
     ]
 
     mod, counters = _setup(
@@ -680,11 +671,7 @@ def test_a_small_number_of_missing_gaps_is_repaired_not_fully_regenerated(monkey
         stage_a_calls=[missing_two],
         stage_b_calls=[_stage_b_payload(specs)],
         missing_gap_repair=[{
-            "text": complete["text"],  # the "fixed" passage has all 22 placeholders again
-            "newAnswers": [
-                {"gapId": "g5", "answer": "antwort_g5", "skillTags": ["grammar"]},
-                {"gapId": "g12", "answer": "antwort_g12", "skillTags": ["word_formation"]},
-            ],
+            "text": complete["text"],  # the "fixed" passage has all 22 tagged gaps again (answers inline)
         }],
     )
     profile, part = _profile_and_part()
@@ -707,7 +694,7 @@ def test_too_many_missing_gaps_skips_repair_and_regenerates(monkeypatch: pytest.
     too_broken["text"] = dict(complete["text"])
     paragraphs = complete["text"]["paragraphs"]
     for gid in [f"g{i}" for i in range(1, _MAX_MISSING_GAPS_FOR_REPAIR + 3)]:
-        paragraphs = [p.replace("{{" + gid + "}}", "Wort") for p in paragraphs]
+        paragraphs = [p.replace("{{" + gid + "::antwort_" + gid + "}}", "Wort") for p in paragraphs]
     too_broken["text"]["paragraphs"] = paragraphs
 
     mod, counters = _setup(monkeypatch, stage_a_calls=[too_broken, complete], stage_b_calls=[_stage_b_payload(specs)])
@@ -835,3 +822,157 @@ def test_stage_b_runner_threads_the_rejected_candidate_between_rounds(monkeypatc
     content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
     assert len(content["questions"]) == 22 and len(seen) == 2
     assert seen[1] == (["x", "x", "y"], "duplicate_option"), "round 2 repairs round 1's rejected candidate"
+
+
+# ── Stage A: TAGGED gaps ("{{gN::answer}}") are the single source of truth ─────
+
+def _mod():
+    import app.services.german_exam_language_elements as m
+    return m
+
+
+def _tagged(*pairs, filler="Text"):
+    return {"text": {"title": "t", "paragraphs": [" ".join(f"{filler} {{{{{g}::{a}}}}}" for g, a in pairs)]}}
+
+
+def test_tagged_parser_extracts_gap_id_and_exact_answer_in_reading_order() -> None:
+    m = _mod()
+    assert m._extract_tagged_gaps("Das {{g1::ist}} wichtig, {{g2::dennoch}} sicher.") == [("g1", "ist"), ("g2", "dennoch")]
+
+
+def test_multiword_answer_is_one_gap_and_one_word() -> None:
+    m = _mod()
+    text = "Wir arbeiten {{g1::im Hinblick auf}} das Ziel."
+    assert m._extract_tagged_gaps(text) == [("g1", "im Hinblick auf")]
+    assert m._count_words_tagged(text) == 5  # Wir arbeiten <gap> das Ziel.
+    public = m._materialize_stage_a_text({"title": "t", "paragraphs": [text]}, _gap_specs()[:1])[0]["paragraphs"][0]
+    assert len(public.split()) == m._count_words_tagged(text)  # what the final validator will count
+
+
+def test_materialization_derives_public_text_and_answers_from_the_tags() -> None:
+    m = _mod()
+    src = {"title": "T", "paragraphs": ["Interkulturelle Kompetenz {{g1::ist}} ein zentraler Baustein."]}
+    final, answers = m._materialize_stage_a_text(src, _gap_specs()[:1])
+    assert final["paragraphs"] == ["Interkulturelle Kompetenz {{g1}} ein zentraler Baustein."]
+    assert answers == {"g1": "ist"} and final["title"] == "T"
+    assert "::" in src["paragraphs"][0], "the input is not mutated"
+
+
+def test_out_of_order_gaps_fail_structural_validation() -> None:
+    m = _mod()
+    issues = m._stage_a_structural_issues(_tagged(("g1", "a1"), ("g3", "a3"), ("g2", "a2")), _gap_specs()[:3])
+    assert any("out of reading order" in i for i in issues)
+
+
+def test_duplicate_gap_fails() -> None:
+    m = _mod()
+    assert m._stage_a_structural_issues(_tagged(("g1", "a1"), ("g1", "a1x")), _gap_specs()[:2])
+
+
+def test_empty_tagged_answer_fails() -> None:
+    m = _mod()
+    assert m._stage_a_structural_issues(_tagged(("g1", "  ")), _gap_specs()[:1])
+
+
+def test_a_plain_or_nested_marker_in_stage_a_is_rejected() -> None:
+    m = _mod()
+    specs = _gap_specs()[:2]
+    plain = {"text": {"title": "t", "paragraphs": ["Text {{g1}} und {{g2::b}} Text"]}}
+    nested = {"text": {"title": "t", "paragraphs": ["Text {{g1::{{g2::b}}}} Text"]}}
+    assert m._stage_a_structural_issues(plain, specs)
+    assert m._stage_a_structural_issues(nested, specs)
+    assert m._missing_gap_ids(plain, specs) is None, "an untagged marker is not a simple missing-gap case"
+
+
+def test_passage_rewrite_may_change_prose_but_never_a_tagged_gap(monkeypatch: pytest.MonkeyPatch) -> None:
+    m = _mod()
+    specs = _gap_specs()[:2]
+    words = " ".join(["Wort"] * 60)
+    original = {"text": {"title": "t", "paragraphs": [words + " Er ging {{g1::obwohl}} es regnete. Sie kam {{g2::dennoch}} an."]}}
+    tail = "Kurz. Er ging GAP1 es regnete. Sie kam {{g2::dennoch}} an. " + " ".join(["Wort"] * 30)
+    good = {"text": {"title": "t", "paragraphs": [tail.replace("GAP1", "{{g1::obwohl}}")]}}
+    bad_shortened = {"text": {"title": "t", "paragraphs": [tail.replace("GAP1", "{{g1}}")]}}
+    bad_edited = {"text": {"title": "t", "paragraphs": [tail.replace("GAP1", "{{g1::weil}}")]}}
+    prompts: list[str] = []
+
+    def run(candidate):
+        def fake(*, system, user):
+            prompts.append(system)
+            return _FakeResult(candidate)
+        monkeypatch.setattr(m, "_call_passage_repair", fake)
+        monkeypatch.setattr(m, "_trim_passage_deterministic", lambda *a, **k: None)
+        return m._repair_passage_word_count(original, specs, 30, 60)
+
+    assert "{{g1::obwohl}}" in run(good)["text"]["paragraphs"][0]
+    assert run(bad_shortened) == original, "a rewrite that shortens a tag to {{gN}} is discarded"
+    assert run(bad_edited) == original, "a rewrite that edits a tagged answer is discarded"
+    assert "COMPLETE and UNCHANGED" in prompts[0] and "{{gN::answer}}" in prompts[0]
+
+
+def test_deterministic_trim_never_removes_a_sentence_containing_a_tagged_gap() -> None:
+    m = _mod()
+    specs = _gap_specs()[:1]
+    text = "Der Satz mit {{g1::Gap}} hat viele Woerter und bleibt. " + "Fueller Satz eins ist hier. " * 20
+    out = m._trim_passage_deterministic({"text": {"title": "t", "paragraphs": [text]}}, specs, 15, 30)
+    assert out is not None and "{{g1::Gap}}" in out["text"]["paragraphs"][0]
+    assert m._has_tagged_gap("Wir {{g1::z. B.}} tun") and not m._has_tagged_gap("Wir tun {{g1}} das")
+
+
+def test_sentence_split_never_falls_inside_a_tagged_marker() -> None:
+    m = _mod()
+    parts = m._split_sentences("Das gilt {{g3::z. B.}} heute. Danach {{g4::bzw. sogar}} morgen.")
+    assert parts == ["Das gilt {{g3::z. B.}} heute.", "Danach {{g4::bzw. sogar}} morgen."]
+
+
+def test_missing_gap_repair_keeps_existing_markers_and_takes_the_new_answer_from_its_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    m = _mod()
+    specs = _gap_specs()[:3]
+    content = _tagged(("g1", "a1"), ("g3", "a3"))
+    repaired_ok = {"text": {"title": "t", "paragraphs": ["Text {{g1::a1}} Text {{g2::neu}} Text {{g3::a3}}"]}}
+    monkeypatch.setattr(m, "_call_missing_gap_repair", lambda *, system, user: _FakeResult(repaired_ok))
+    out = m._repair_missing_gaps(content, specs, ["g2"])
+    assert out is not None
+    _final, answers = m._materialize_stage_a_text(out["text"], specs)
+    assert answers == {"g1": "a1", "g2": "neu", "g3": "a3"}
+    tampered = {"text": {"title": "t", "paragraphs": ["Text {{g1::CHANGED}} Text {{g2::neu}} Text {{g3::a3}}"]}}
+    monkeypatch.setattr(m, "_call_missing_gap_repair", lambda *, system, user: _FakeResult(tampered))
+    assert m._repair_missing_gaps(content, specs, ["g2"]) is None, "an existing tagged answer must not change"
+
+
+def test_a_legacy_answers_field_never_overrides_the_inline_tag(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    payload = _stage_a_content(specs)
+    payload["answers"] = [{"gapId": s["gapId"], "answer": "GEGENANTWORT", "skillTags": []} for s in specs]
+    mod, _ = _setup(monkeypatch, stage_a_calls=[payload], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    for q in content["questions"]:
+        assert q["options"][q["correctIndex"]] == f"antwort_{q['gapId']}"
+
+
+def test_the_public_passage_never_contains_tags_or_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    mod, _ = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
+    profile, part = _profile_and_part()
+    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    text = " ".join(content["text"]["paragraphs"])
+    assert "::" not in text and "antwort_" not in text
+    assert all("{{" + s["gapId"] + "}}" in text for s in specs)
+
+
+def test_adjacent_duplicate_guard_is_narrow() -> None:
+    m = _mod()
+    assert m._adjacent_duplicate_gap_ids("Programme bieten {{g10::bieten}} Studierenden") == ["g10"]
+    assert m._adjacent_duplicate_gap_ids("Ich weiss, dass {{g1::das}} das Problem ist") == []   # short function word
+    assert m._adjacent_duplicate_gap_ids("Diejenigen, {{g2::die}} die Regel kennen") == []
+    assert m._adjacent_duplicate_gap_ids("Programme {{g10::bieten}} Studierenden Unterstuetzung") == []
+
+
+def test_stage_a_prompts_use_the_tagged_contract() -> None:
+    m = _mod()
+    profile, part = _profile_and_part()
+    system, _user = m._prompt_stage_a(profile, part, [], {"topicId": "t", "label": "T"}, _gap_specs(), 320, 350)
+    assert "{{g5::ist}}" in system and "bieten" in system
+    assert "NO separate answer list" in system
+    sysm, _u = m._prompt_missing_gap_repair({"g2": {"category": "grammar"}}, {"paragraphs": []}, ["g2"])
+    assert "{{gN::answer}}" in sysm and "newAnswers" not in sysm

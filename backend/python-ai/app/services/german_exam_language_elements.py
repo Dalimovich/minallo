@@ -86,6 +86,77 @@ _MAX_SEMANTIC_REPAIR_ROUNDS = 1
 
 _GAP_PLACEHOLDER_RE = re.compile(r"\{\{(g\d+)\}\}")
 
+# ── Stage A works on TAGGED gaps: "{{g5::ist}}" ────────────────────────────
+# The gap id and its answer are ONE atomic marker inside the passage, so the
+# answer can never drift away from the sentence it belongs to (an independently
+# reported answers[] list used to, and a passage rewrite could reword the
+# surrounding sentence while the frozen answer stayed put). The tagged passage is
+# the single source of truth; the public "{{gN}}" text and answers_by_gap are
+# DERIVED from it in _materialize_stage_a_text, only after every Stage A repair.
+# The tagged form never leaves Stage A.
+_TAGGED_GAP_RE = re.compile(r"\{\{(g\d+)::(.+?)\}\}", re.S)
+_ADJACENT_DUPLICATE_MIN_LEN = 5  # content words only: "die die"/"das das" can be valid German
+
+
+def _extract_tagged_gaps(text: str) -> list[tuple[str, str]]:
+    """Tagged gaps in reading order as (gapId, exact answer text)."""
+    return [(m.group(1), m.group(2)) for m in _TAGGED_GAP_RE.finditer(text)]
+
+
+def _count_words_tagged(text: str) -> int:
+    """Word count where each COMPLETE tagged marker is ONE word, exactly like the
+    public "{{gN}}" placeholder the final validator counts (an answer may be a
+    multi-word phrase; its inner spaces must not be counted)."""
+    return len(_TAGGED_GAP_RE.sub("X", text).split())
+
+
+def _has_tagged_gap(text: str) -> bool:
+    return _TAGGED_GAP_RE.search(text) is not None
+
+
+def _tagged_paragraphs(content: Any) -> list[str] | None:
+    text = content.get("text") if isinstance(content, dict) else None
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
+        return None
+    return paragraphs
+
+
+def _adjacent_duplicate_gap_ids(text: str) -> list[str]:
+    """Gaps whose answer merely repeats the word right before/after the marker
+    ("bieten {{g10::bieten}} Studierenden"). Deliberately narrow: only identical,
+    longer (content) words, never a German-grammar heuristic."""
+    bad: list[str] = []
+    for m in _TAGGED_GAP_RE.finditer(text):
+        answer = m.group(2).strip().casefold()
+        if len(answer) < _ADJACENT_DUPLICATE_MIN_LEN or " " in answer:
+            continue
+        left = re.findall(r"[\wÄÖÜäöüß]+", text[:m.start()])
+        right = re.findall(r"[\wÄÖÜäöüß]+", text[m.end():])
+        if (left and left[-1].casefold() == answer) or (right and right[0].casefold() == answer):
+            bad.append(m.group(1))
+    return bad
+
+
+def _materialize_stage_a_text(
+    text: dict[str, Any], gap_specs: list[dict[str, str]]
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """The ONLY place answers_by_gap is created for the normal flow: tagged passage in,
+    public {{gN}} passage + exact answers out. Requires every expected gap exactly once,
+    in reading order; replaces only the complete tagged markers."""
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list) or not all(isinstance(p, str) for p in paragraphs):
+        raise LanguageElementsGenerationError("cannot materialize a Stage A passage without string paragraphs")
+    expected = [g["gapId"] for g in gap_specs]
+    found = _extract_tagged_gaps("\n".join(paragraphs))
+    if [gid for gid, _ in found] != expected or any(not ans.strip() for _, ans in found):
+        raise LanguageElementsGenerationError("Stage A tagged gaps do not match the expected gaps")
+    answers_by_gap = {gid: ans.strip() for gid, ans in found}
+    final_paragraphs = [_TAGGED_GAP_RE.sub(lambda m: "{{" + m.group(1) + "}}", p) for p in paragraphs]
+    final_text = dict(text)
+    final_text["paragraphs"] = final_paragraphs
+    return final_text, answers_by_gap
+
 
 class LanguageElementsGenerationError(Exception):
     pass
@@ -185,7 +256,7 @@ def _adaptation_guidance(instructions: list[AdaptationInstruction]) -> str:
     return "\n".join(lines)
 
 
-# ── Stage A: passage + correct answers only ─────────────────────────────────
+# ── Stage A: tagged passage (gap id + answer are one marker) ─────────────────
 
 def _prompt_stage_a(
     profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
@@ -210,11 +281,11 @@ def _prompt_stage_a(
     }
     paragraph_lines = []
     for i, chunk in enumerate(paragraph_plan, start=1):
-        gap_list = ", ".join(f'"{{{{{g["gapId"]}}}}}"' for g in chunk)
+        gap_list = ", ".join(f'"{{{{{g["gapId"]}::answer}}}}"' for g in chunk)
         cat_list = "; ".join(f'{g["gapId"]}: {category_hint[g["category"]]}' for g in chunk)
         paragraph_lines.append(
             f"Paragraph {i}: EXACTLY {_SENTENCES_PER_PARAGRAPH} sentences — no more, no fewer. Must contain "
-            f"ALL of these placeholders, in this exact order, and NONE of any other paragraph's: {gap_list}."
+            f"ALL of these tagged gaps, in this exact order, and NONE of any other paragraph's: {gap_list}."
             f"\n    {cat_list}"
         )
     paragraph_block = "\n\n  ".join(paragraph_lines)
@@ -226,32 +297,42 @@ def _prompt_stage_a(
         f"Write EXACTLY {len(paragraph_plan)} paragraphs on the topic '{topic['label']}'. Sentence count per "
         "paragraph is the PRIMARY constraint below — follow it exactly, even if that means being more "
         "concise or more detailed than you otherwise would. The total should land near "
-        f"{word_min}-{word_max} words (each placeholder token, e.g. \"{{{{g1}}}}\", counts as ONE word "
-        "toward that total), but getting the sentence count exactly right matters more than hitting the "
-        "word count precisely — a later pass will adjust length if needed. Each paragraph below MUST "
-        "contain every placeholder listed for it — this is the single most important rule: a paragraph "
-        "missing even one of its required placeholders, or containing a placeholder meant for a different "
-        "paragraph, makes the whole response unusable. Remove one word or short phrase from the running "
-        'text at each position and replace it inline with the literal placeholder "{{gapId}}":\n\n'
+        f"{word_min}-{word_max} words (each tagged gap, e.g. \"{{{{g1::ist}}}}\", counts as ONE word "
+        "toward that total, however long its answer is), but getting the sentence count exactly right "
+        "matters more than hitting the word count precisely — a later pass will adjust length if needed.\n\n"
+        "GAP FORMAT. Write the passage with each gap as ONE tagged marker that contains BOTH the gap id and "
+        'the correct answer: "{{gN::answer}}". The answer is the word or short phrase that stands at that '
+        "exact spot in the sentence. There is NO separate answer list — the marker IS the answer.\n"
+        "THE KEY RULE: if you delete only the marker syntax and leave the answer text in place, the passage "
+        "must read as a natural, grammatically correct German text. So the answer inside the marker is "
+        "exactly the word(s) that belong there, with the correct form/case/ending, and the words around it "
+        "must fit it.\n"
+        '  Correct:   "Interkulturelle Kompetenz {{g5::ist}} ein zentraler Baustein."\n'
+        '  Incorrect: "Interkulturelle Kompetenz {{g5::ein}} zentraler Baustein."  (the verb is missing; '
+        '"ein" is not what stands at that spot)\n'
+        '  Incorrect: "Programme bieten {{g10::bieten}} Studierenden Unterstützung."  (the answer repeats a '
+        "neighbouring word)\n"
+        '  Correct:   "Programme {{g10::bieten}} Studierenden Unterstützung."  or  "Programme bieten '
+        '{{g10::den}} Studierenden Unterstützung."\n'
+        "Put a marker INSIDE the running sentence, never before/after a word it merely repeats. Each "
+        "paragraph below MUST contain every tagged gap listed for it — this is the single most important "
+        "structural rule: a paragraph missing a required gap, or containing a gap meant for a different "
+        "paragraph, makes the whole response unusable:\n\n"
         f"  {paragraph_block}\n\n"
-        "For each gap, report the single correct word/phrase you removed (exactly as it must be reinserted "
-        "to make the sentence correct) and 1-2 skillTags describing why that gap tests what it tests: "
-        "grammar/connectors/prepositions/syntax for grammar gaps, word_formation/collocation/lexical_choice "
-        "for lexicon gaps, register for orthography gaps.\n\n"
+        "Choose the answer so that it tests what the gap's category names: grammar/connectors/prepositions/"
+        "syntax for grammar gaps, word_formation/collocation/lexical_choice for lexicon gaps, a spelling/"
+        "capitalization choice for orthography gaps.\n\n"
         "Do NOT invent multiple-choice distractors, do not assign a correctIndex, and do not decide category "
         "counts — those are fixed separately and are not your job.\n\n"
-        f"BEFORE YOU OUTPUT: go paragraph by paragraph and check off each of its required placeholders is "
-        f"literally present (search for each \"{{{{gapId}}}}\" string) — {item_count} placeholders total, "
-        f"none missing, none duplicated, none in the wrong paragraph. Then count every word INCLUDING each "
-        f"placeholder token as one word and confirm the total is {word_min}-{word_max}.\n\n"
+        f"BEFORE YOU OUTPUT: go paragraph by paragraph and check that each of its required tagged gaps is "
+        f"literally present — {item_count} tagged gaps total, none missing, none duplicated, none in the wrong "
+        f"paragraph, every one written exactly as {{{{gN::answer}}}}. Read each sentence once more with the "
+        f"answers in place to confirm it is correct German. Then count every word, each tagged gap as one "
+        f"word, and confirm the total is {word_min}-{word_max}.\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
         "Output JSON shape exactly:\n"
         "{\n"
-        '  "text": {"title": "...", "paragraphs": ["Erster Absatz ... {{g1}} ...", "Zweiter Absatz ... {{g5}} ..."]},\n'
-        '  "answers": [\n'
-        '    {"gapId": "g1", "answer": "...", "skillTags": ["..."]},\n'
-        "    ...\n"
-        f'  ] // exactly {item_count} entries, one per gap, in gap order\n'
+        '  "text": {"title": "...", "paragraphs": ["Erster Absatz ... {{g1::wort}} ...", "Zweiter Absatz ... {{g5::wort}} ..."]}\n'
         "}\n"
     )
     user = f"Generate the passage now. Topic: {topic['label']}."
@@ -268,70 +349,69 @@ def _call_stage_a(*, system: str, user: str) -> LlmResult:
 
 
 def _passage_word_count(content: dict[str, Any]) -> int:
-    """Deliberately mirrors german_exam_validator.py's
-    validate_cloze_mc4_language_elements exactly (sum of str(p).split() over
-    paragraphs, NOT stripping "{{gapId}}" placeholders first) — that
-    validator is the final authority this pipeline must satisfy, and each
-    placeholder token counts as one word there. Counting differently here
-    would silently target a different word-count window than what actually
-    gets checked at the end."""
-    text = content.get("text") if isinstance(content, dict) else None
-    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
-    if not isinstance(paragraphs, list):
+    """Mirrors german_exam_validator.py's validate_cloze_mc4_language_elements exactly
+    (each gap placeholder counts as ONE word). During Stage A the gaps are TAGGED
+    ("{{g5::im Hinblick auf}}"), so a complete marker is collapsed to one token first —
+    the answer's inner spaces must not be counted; after materialization the public
+    "{{gN}}" is one token, so the count is identical."""
+    paragraphs = _tagged_paragraphs(content)
+    if paragraphs is None:
         return 0
-    return sum(len(str(p).split()) for p in paragraphs)
+    return sum(_count_words_tagged(str(p)) for p in paragraphs)
 
 
 def _stage_a_structural_issues(content: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str]:
-    """Structural checks ONLY (placeholder bijection/order, answer coverage)
-    — deliberately excludes word count, which gets its own cheap repair path
-    instead of forcing a full regeneration."""
+    """Structural checks ONLY on the TAGGED Stage A passage (word count is excluded:
+    it has its own cheap repair path). The tags themselves prove answer coverage;
+    a separately supplied answers list is never consulted."""
     issues: list[str] = []
     expected_ids = [g["gapId"] for g in gap_specs]
-    text = content.get("text") if isinstance(content, dict) else None
-    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
-    if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
-        issues.append("text.paragraphs must be a non-empty list of strings")
-        paragraphs = []
-    joined = "\n".join(str(p) for p in paragraphs)
-    found_ids = _GAP_PLACEHOLDER_RE.findall(joined)
+    paragraphs = _tagged_paragraphs(content)
+    if paragraphs is None:
+        return ["text.paragraphs must be a non-empty list of strings"]
+    joined = "\n".join(paragraphs)
+    found = _extract_tagged_gaps(joined)
+    found_ids = [gid for gid, _ in found]
     if found_ids != expected_ids:
         if sorted(found_ids) != sorted(expected_ids) or len(found_ids) != len(set(found_ids)):
-            issues.append(f"expected placeholders {expected_ids}, found {found_ids}")
+            issues.append(f"expected tagged gaps {expected_ids}, found {found_ids}")
         else:
-            issues.append(f"placeholders present but out of reading order: found {found_ids}")
-
-    answers = content.get("answers") if isinstance(content, dict) else None
-    if not isinstance(answers, list) or len(answers) != len(gap_specs):
-        issues.append(f"expected {len(gap_specs)} answers, got {len(answers) if isinstance(answers, list) else 0}")
-    else:
-        answer_gap_ids = [a.get("gapId") for a in answers if isinstance(a, dict)]
-        if set(answer_gap_ids) != set(expected_ids) or len(answer_gap_ids) != len(set(answer_gap_ids)):
-            issues.append("answers must cover every gap exactly once")
-        if not all(isinstance(a, dict) and isinstance(a.get("answer"), str) and a.get("answer", "").strip() for a in answers):
-            issues.append("every answer must be a non-empty string")
+            issues.append(f"tagged gaps present but out of reading order: found {found_ids}")
+    # Anything brace-like left once complete tagged markers are removed is malformed:
+    # a plain "{{gN}}" (no inline answer), a nested/unterminated marker, a stray brace.
+    leftover = _TAGGED_GAP_RE.sub("", joined)
+    if "{{" in leftover or "}}" in leftover:
+        issues.append("malformed or untagged gap marker present (every gap must be {{gN::answer}})")
+    if any(not ans.strip() for _, ans in found) or any("{{" in ans or "}}" in ans for _, ans in found):
+        issues.append("every tagged gap must contain a non-empty answer and no nested markers")
+    for gid in _adjacent_duplicate_gap_ids(joined):
+        issues.append(f"gap {gid}: the answer repeats the neighbouring word")
     return issues
 
 
 def _missing_gap_ids(content: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str] | None:
-    """Returns the missing gapIds (in expected order) if the passage's ONLY
-    placeholder problem is that some are missing — i.e. every placeholder
-    that IS present is a real, distinct, correctly-ordered gap. Returns None
-    for any other kind of malformation (duplicates, extras, out-of-order),
-    which isn't safe to patch by insertion alone and must fall back to a
-    full Stage A regeneration."""
-    text = content.get("text") if isinstance(content, dict) else None
-    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
-    if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
+    """Returns the missing gapIds (in expected order) if the passage's ONLY tagged-gap
+    problem is that some are missing — every gap that IS present is a real, distinct,
+    correctly-ordered, well-formed tagged gap. Returns None for any other kind of
+    malformation (duplicates, extras, out-of-order, untagged markers), which isn't safe
+    to patch by insertion alone and must fall back to a full Stage A regeneration."""
+    paragraphs = _tagged_paragraphs(content)
+    if paragraphs is None:
         return None
-    joined = "\n".join(str(p) for p in paragraphs)
-    found_ids = _GAP_PLACEHOLDER_RE.findall(joined)
+    joined = "\n".join(paragraphs)
+    leftover = _TAGGED_GAP_RE.sub("", joined)
+    if "{{" in leftover or "}}" in leftover:
+        return None
+    found = _extract_tagged_gaps(joined)
+    found_ids = [gid for gid, _ in found]
+    if any(not ans.strip() for _, ans in found):
+        return None
     expected_ids = [g["gapId"] for g in gap_specs]
     if len(found_ids) != len(set(found_ids)):
         return None  # a duplicate — not a simple "missing" case
     expected_set = set(expected_ids)
     if any(gid not in expected_set for gid in found_ids):
-        return None  # an unknown placeholder — not a simple "missing" case
+        return None  # an unknown gap — not a simple "missing" case
     # found_ids must also preserve relative reading order among themselves
     if [gid for gid in expected_ids if gid in found_ids] != found_ids:
         return None
@@ -346,21 +426,21 @@ def _prompt_missing_gap_repair(
         f'  {{"gapId": "{gid}", "category": "{gap_specs_by_id[gid]["category"]}"}}' for gid in missing_ids
     )
     system = (
-        "You are fixing a German Sprachbausteine passage that is missing some of its required gap "
-        f"placeholders. Insert EXACTLY these {len(missing_ids)} missing placeholders somewhere natural in "
-        "the existing text, each at a point where removing one word or short phrase and replacing it with "
-        "the placeholder tests the given category. Do NOT remove, move, or renumber any placeholder that is "
-        "already present, and do not otherwise reword the passage beyond what's needed to fit each new gap "
-        "in naturally:\n"
+        "You are fixing a German Sprachbausteine passage that is missing some of its required tagged gaps. "
+        "Every gap is ONE marker containing both its id and its correct answer, written {{gN::answer}}. "
+        f"Insert EXACTLY these {len(missing_ids)} missing tagged gaps somewhere natural in the existing text, "
+        "each at a point where the answer is the word or short phrase that really stands there, and each "
+        "testing the given category. Put the answer INSIDE the marker. Do NOT change, move, or renumber any "
+        "tagged gap that is already present — every existing marker, including its answer, must stay "
+        "character-for-character identical — and do not otherwise reword the passage beyond what's needed to "
+        "fit each new gap in naturally. With the marker syntax removed and the answer left in place, the text "
+        "must be natural, correct German; the answer must not just repeat a neighbouring word:\n"
         f"{lines}\n\n"
-        "targetCategory meanings: grammar = a verb form/case ending/connector/preposition/word-order choice; "
+        "Category meanings: grammar = a verb form/case ending/connector/preposition/word-order choice; "
         "lexicon = a collocation/word choice/word-formation choice; orthography = a spelling/capitalization/"
         "punctuation-sensitive choice.\n\n"
-        "For each newly inserted gap, report the correct word/phrase you removed (exactly as it must be "
-        "reinserted) and 1-2 fitting skillTags. Reply with ONLY valid JSON, no markdown fences, no "
-        'commentary, shape exactly:\n'
-        '{"text": {"title": "...", "paragraphs": [...]}, "newAnswers": '
-        '[{"gapId": "...", "answer": "...", "skillTags": ["..."]}]}'
+        "Reply with ONLY valid JSON, no markdown fences, no commentary, shape exactly:\n"
+        '{"text": {"title": "...", "paragraphs": [...]}}'
     )
     user = f"Passage to fix (missing {missing_ids}):\n{json.dumps(text, ensure_ascii=False)}"
     return system, user
@@ -393,24 +473,17 @@ def _repair_missing_gaps(
     if not isinstance(data, dict):
         return None
     fixed_text = data.get("text")
-    new_answers = data.get("newAnswers")
-    if not isinstance(fixed_text, dict) or not isinstance(new_answers, list):
+    if not isinstance(fixed_text, dict):
         return None
 
-    candidate = dict(content)
-    candidate["text"] = fixed_text
-    # Keep only answers for gaps that genuinely still appear as a
-    # placeholder in the (possibly re-touched) text, then add the repair's
-    # new ones — discards any fabricated answer entries for gaps that were
-    # never actually placed in the original passage.
-    joined = "\n".join(str(p) for p in fixed_text.get("paragraphs") or [])
-    present_ids = set(_GAP_PLACEHOLDER_RE.findall(joined))
-    kept = [a for a in (content.get("answers") or []) if isinstance(a, dict) and a.get("gapId") in present_ids]
-    kept_ids = {a["gapId"] for a in kept}
-    added = [a for a in new_answers if isinstance(a, dict) and a.get("gapId") in present_ids and a.get("gapId") not in kept_ids]
-    candidate["answers"] = kept + added
-
+    candidate = {"text": fixed_text}
     if _stage_a_structural_issues(candidate, gap_specs):
+        return None
+    # The gaps that were already present must survive byte-for-byte (id AND answer);
+    # the new gaps' answers come from their own markers, nothing else.
+    before = dict(_extract_tagged_gaps("\n".join(_tagged_paragraphs(content) or [])))
+    after = dict(_extract_tagged_gaps("\n".join(_tagged_paragraphs(candidate) or [])))
+    if any(after.get(gid) != answer for gid, answer in before.items()):
         return None
     return candidate
 
@@ -432,11 +505,14 @@ def _prompt_passage_repair(
         f"word count. It is currently {current_count} words; the target is {word_min}-{word_max} (aim for "
         f"about {target}), so you must {direction}. Overshooting past the target range in the opposite "
         "direction is just as wrong as not fixing it at all. Preserve: the title and topic, "
-        f"all {len(gap_specs)} placeholders \"{{{{gapId}}}}\" exactly once each in the same reading order, "
-        "the meaning and grammatical fit immediately around every gap (the existing correct answers must "
-        "remain correct), and natural paragraph breaks. Reply with ONLY valid JSON, no markdown fences, no "
+        f"all {len(gap_specs)} tagged gaps \"{{{{gN::answer}}}}\" exactly once each in the same reading order, "
+        "and natural paragraph breaks. Every tagged gap must stay COMPLETE and UNCHANGED: keep its id and its "
+        "inline answer character-for-character (never shorten it to {{gN}}, never edit the answer, never "
+        "move it into a sentence where that answer would no longer be correct). When you read a sentence, "
+        "treat the answer inside the marker as the actual text at that spot, and keep the words around it "
+        "grammatically correct for THAT answer. Reply with ONLY valid JSON, no markdown fences, no "
         'commentary, in the exact same {"text": {"title", "paragraphs"}} shape as the input. Each '
-        "placeholder token counts as one word toward the target, same as any other word.\n\n"
+        "tagged gap counts as ONE word toward the target, however long its answer is.\n\n"
         "BEFORE YOU OUTPUT, count the new total (placeholders included) and confirm it is within "
         f"{word_min}-{word_max}; if not, adjust again and recount."
     )
@@ -453,7 +529,17 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _split_sentences(paragraph: str) -> list[str]:
-    return [s for s in _SENTENCE_SPLIT_RE.split(paragraph.strip()) if s]
+    # A tagged answer such as "{{g3::z. B.}}" holds sentence punctuation; shield each
+    # complete marker so a sentence break can never fall inside one.
+    shielded: list[str] = []
+
+    def _shield(m: re.Match[str]) -> str:
+        shielded.append(m.group(0))
+        return f"\x00{len(shielded) - 1}\x00"
+
+    text = _TAGGED_GAP_RE.sub(_shield, paragraph.strip())
+    parts = [s for s in _SENTENCE_SPLIT_RE.split(text) if s]
+    return [re.sub(r"\x00(\d+)\x00", lambda m: shielded[int(m.group(1))], p) for p in parts]
 
 
 def _trim_passage_deterministic(
@@ -472,7 +558,7 @@ def _trim_passage_deterministic(
     if not isinstance(paragraphs, list) or not paragraphs or not all(isinstance(p, str) for p in paragraphs):
         return None
 
-    total = sum(len(p.split()) for p in paragraphs)
+    total = sum(_count_words_tagged(p) for p in paragraphs)
     if total <= word_max:
         return content
 
@@ -480,8 +566,8 @@ def _trim_passage_deterministic(
     removable: list[tuple[int, int, int]] = []  # (paragraph idx, sentence idx, word count)
     for pi, sentences in enumerate(split_paragraphs):
         for si, sentence in enumerate(sentences):
-            if not _GAP_PLACEHOLDER_RE.search(sentence):
-                removable.append((pi, si, len(sentence.split())))
+            if not _has_tagged_gap(sentence):  # a sentence holding ANY gap is never removable
+                removable.append((pi, si, _count_words_tagged(sentence)))
     removable.sort(key=lambda item: item[2], reverse=True)
 
     removed: set[tuple[int, int]] = set()
@@ -537,9 +623,12 @@ def _repair_passage_word_count(
             log.warning("Sprachbausteine passage word-count repair attempt failed", exc_info=True)
             fixed_text = None
         if isinstance(fixed_text, dict):
-            candidate = dict(current)
-            candidate["text"] = fixed_text
-            if not _stage_a_structural_issues(candidate, gap_specs):
+            candidate = {"text": fixed_text}
+            # A rewrite is only accepted if every tagged gap survived EXACTLY (id and inline
+            # answer): prose may change, a gap and its answer may not.
+            same_gaps = _extract_tagged_gaps("\n".join(_tagged_paragraphs(candidate) or [])) == \
+                _extract_tagged_gaps("\n".join(_tagged_paragraphs(current) or []))
+            if same_gaps and not _stage_a_structural_issues(candidate, gap_specs):
                 current = candidate
                 word_count = _passage_word_count(current)
                 if word_count > word_max:
@@ -624,8 +713,10 @@ def _run_stage_a(
             content = _repair_passage_word_count(content, gap_specs, word_min, word_max)
             word_count = _passage_word_count(content)
             if word_min <= word_count <= word_max:
-                answers_by_gap = {a["gapId"]: a["answer"] for a in content["answers"]}
-                return content["text"], answers_by_gap, {"regenerationCount": regeneration}
+                # Every repair is finished: only NOW derive the public {{gN}} passage and the
+                # answers, both from the tagged text itself (no separate answer mapping).
+                final_text, answers_by_gap = _materialize_stage_a_text(content["text"], gap_specs)
+                return final_text, answers_by_gap, {"regenerationCount": regeneration}
             structural_issues = [f"word count still {word_count} after repair, expected {word_min}-{word_max}"]
 
         last_issues = structural_issues
