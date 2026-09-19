@@ -200,9 +200,9 @@ def test_small_parts_still_use_one_call():
     assert len(f.calls) == 1 and f.calls[0][1] is None and result.passed
 
 
-def test_outer_check_never_reruns_the_whole_chunked_verifier_after_fallback_exhaustion(monkeypatch):
-    """Primary q16-q22 fails, both fallback halves fail: the pipeline stops. The
-    old outer check() retry re-ran all three chunks (17 LLM calls in production)."""
+def test_production_check_does_not_use_the_experimental_chunk_wrapper(monkeypatch):
+    """The 8/7/7 wrapper is dormant: Sprachbausteine's check() verifies the whole part in
+    ONE call through verify_semantic, exactly as before the chunking experiment."""
     from tests.test_german_exam_language_elements import (
         _gap_specs, _profile_and_part, _setup, _stage_a_content, _stage_b_payload,
     )
@@ -210,39 +210,33 @@ def test_outer_check_never_reruns_the_whole_chunked_verifier_after_fallback_exha
     specs = _gap_specs()
     mod, _ = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
     calls = []
-    lock = threading.Lock()
 
     def verify(part, content, **kw):
-        ids = [q["questionId"] for q in content["questions"]]
-        with lock:
-            calls.append((tuple(ids), kw.get("max_tokens")))
-        if ids[0] in ("q16", "q20"):  # the q16-q22 chunk and BOTH its fallback halves (q16-q19, q20-q22)
-            return _invalid()
-        return _ok(ids)
+        calls.append((len(content["questions"]), kw))
+        return _ok([q["questionId"] for q in content["questions"]])
 
     monkeypatch.setattr(mod, "verify_semantic", verify)
     profile, part = _profile_and_part()
-    with pytest.raises(mod.LanguageElementsGenerationError) as exc:
-        mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
-
-    by_ids = {}
-    for ids, _cap in calls:
-        by_ids[ids] = by_ids.get(ids, 0) + 1
-    assert len(calls) == 5
-    assert by_ids[tuple(IDS[:8])] == 1 and by_ids[tuple(IDS[8:15])] == 1 and by_ids[tuple(IDS[15:])] == 1
-    assert by_ids[tuple(IDS[15:19])] == 1 and by_ids[tuple(IDS[19:])] == 1
-    assert "'verificationCount': 1" in str(exc.value), "the outer check() must not have started a second pass"
+    mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    assert calls == [(22, {})], "one whole-part call, no max_tokens override, no chunking"
+    assert "verify_semantic_chunked" not in inspect.getsource(mod)
+    assert "terminal_verifier_failure" not in inspect.getsource(mod)
 
 
-def test_semantic_rejection_still_flows_through_check_unchanged(monkeypatch):
-    """A legitimate rejection is not a terminal verifier failure and is handled by the existing code."""
+def test_check_retry_for_an_invalid_verifier_response_is_the_original_single_pass_behavior(monkeypatch):
     from tests.test_german_exam_language_elements import (
         _gap_specs, _profile_and_part, _setup, _stage_a_content, _stage_b_payload,
     )
 
     specs = _gap_specs()
     mod, _ = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
-    monkeypatch.setattr(mod, "verify_semantic", Fake(behave=lambda ids, n: "reject" if ids[0] == "q9" else "ok"))
+    calls = []
+
+    def verify(part, content, **kw):
+        calls.append(len(content["questions"]))
+        return _invalid() if len(calls) == 1 else _ok([q["questionId"] for q in content["questions"]])
+
+    monkeypatch.setattr(mod, "verify_semantic", verify)
     profile, part = _profile_and_part()
-    with pytest.raises(mod.LanguageElementsGenerationError):
-        mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    assert calls == [22, 22]

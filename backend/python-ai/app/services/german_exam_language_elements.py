@@ -49,7 +49,6 @@ from ..config import get_settings
 
 from .german_exam_adaptation import AdaptationInstruction
 from .german_exam_profiles import ExamProfile, PartBlueprint
-from .german_exam_semantic_chunked import verify_semantic_chunked
 from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
 from .german_exam_semantic_verify import SemanticVerificationResult
@@ -1034,16 +1033,12 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
         nonlocal verification_count
         result: SemanticVerificationResult | None = None
         for attempt in range(2):
-            # Same verifier, same rules: only the transport differs (3 concurrent chunks, one
-            # shared token ceiling and deadline) so hidden reasoning cannot exhaust one huge call.
-            result = verify_semantic_chunked(part, content, verify_semantic)
+            result = verify_semantic(part, content)
             record_findings(result)
             verification_count += 1
             findings = list(result.part_wide_issues) + [issue for item in result.items for issue in item.issues]
             if not any(issue.code == "VERIFIER_RESPONSE_INVALID" for issue in findings):
                 return result
-            if result.terminal_verifier_failure:
-                return result  # chunk fallback already exhausted: never re-run all chunks
         assert result is not None
         return result
 
