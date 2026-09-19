@@ -79,6 +79,9 @@ _MAX_MISSING_GAP_REPAIR_ATTEMPTS = 1
 _MAX_MISSING_GAPS_FOR_REPAIR = 5
 _MAX_STAGE_B_REGENERATIONS = 1
 _MAX_ITEM_REPAIR_ATTEMPTS = 1
+# Rounds of PER-GAP repair (only the still-invalid gaps are re-asked; the passage,
+# correct answers and every already-valid distractor set stay frozen).
+_MAX_TARGETED_REPAIR_ROUNDS = 2
 _MAX_SEMANTIC_REPAIR_ROUNDS = 1
 
 _GAP_PLACEHOLDER_RE = re.compile(r"\{\{(g\d+)\}\}")
@@ -704,8 +707,44 @@ def _prompt_stage_b(
     return system, user
 
 
+# Strict structured output: exactly three named distractor fields per gap, so the
+# option COUNT cannot be wrong. The backend still owns the correct answer,
+# insertion, shuffle and correctIndex; _wrong_options_reason checks uniqueness.
+_DISTRACTOR_FIELDS = ("distractor1", "distractor2", "distractor3")
+_STAGE_B_SCHEMA: dict[str, Any] = {
+    "type": "object", "additionalProperties": False, "required": ["items"],
+    "properties": {"items": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "required": ["questionId", "gapId", *_DISTRACTOR_FIELDS, "skillTags"],
+        "properties": {
+            "questionId": {"type": "string"}, "gapId": {"type": "string"},
+            **{f: {"type": "string"} for f in _DISTRACTOR_FIELDS},
+            "skillTags": {"type": "array", "items": {"type": "string"}},
+        },
+    }}},
+}
+_ITEM_REPAIR_SCHEMA: dict[str, Any] = {
+    "type": "object", "additionalProperties": False, "required": [*_DISTRACTOR_FIELDS, "skillTags"],
+    "properties": {**{f: {"type": "string"} for f in _DISTRACTOR_FIELDS},
+                   "skillTags": {"type": "array", "items": {"type": "string"}}},
+}
+
+
+def _with_wrong_options(entry: Any) -> Any:
+    """distractor1..3 -> the wrongOptions list the rest of the pipeline uses."""
+    if isinstance(entry, dict) and "wrongOptions" not in entry and all(f in entry for f in _DISTRACTOR_FIELDS):
+        out = {k: v for k, v in entry.items() if k not in _DISTRACTOR_FIELDS}
+        out["wrongOptions"] = [entry[f] for f in _DISTRACTOR_FIELDS]
+        return out
+    return entry
+
+
 def _call_stage_b(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
+    result = chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model,
+                       json_schema=_STAGE_B_SCHEMA)
+    if isinstance(result.data, dict) and isinstance(result.data.get("items"), list):
+        result.data = {**result.data, "items": [_with_wrong_options(it) for it in result.data["items"]]}
+    return result
 
 
 def _stage_b_issues(payload: dict[str, Any], gap_specs: list[dict[str, str]]) -> list[str]:
@@ -719,15 +758,34 @@ def _stage_b_issues(payload: dict[str, Any], gap_specs: list[dict[str, str]]) ->
     return []
 
 
-def _wrong_options_valid(item: dict[str, Any], correct_answer: str) -> bool:
+def _wrong_options_reason(item: Any, correct_answer: str) -> str | None:
+    """Content-free reason code why a gap's distractor set is unusable, else None."""
     wrong = item.get("wrongOptions") if isinstance(item, dict) else None
-    if not isinstance(wrong, list) or len(wrong) != 3:
-        return False
+    if not isinstance(wrong, list):
+        return "missing_options"
+    if len(wrong) != 3:
+        return "wrong_option_count"
     if not all(isinstance(w, str) and w.strip() for w in wrong):
-        return False
-    normalized = {_norm(w) for w in wrong}
-    normalized.add(_norm(correct_answer))
-    return len(normalized) == 4  # 3 distinct wrong options + the correct answer, all different
+        return "empty_option"
+    normalized = [_norm(w) for w in wrong]
+    if len(set(normalized)) != 3:
+        return "duplicate_option"
+    if _norm(correct_answer) in normalized:
+        return "equals_correct_answer"
+    return None
+
+
+def _wrong_options_valid(item: dict[str, Any], correct_answer: str) -> bool:
+    return _wrong_options_reason(item, correct_answer) is None  # 3 distinct wrong options, none equal to the correct answer
+
+
+def _record_gap_outcome(gap_id: str, category: str, reason: str | None, round_no: int, resolved: bool) -> None:
+    """Safe per-gap diagnostics (ids, category, reason code; never passage or answer text)."""
+    from . import gen_timing  # noqa: WPS433
+    timer = gen_timing.current()
+    if timer is not None:
+        timer.add_validation({"stage": "sprachbausteine_stage_b", "gapId": gap_id, "category": category,
+                              "reason": reason, "repairRound": round_no, "resolved": resolved})
 
 
 def _prompt_item_repair(
@@ -764,21 +822,26 @@ def _prompt_item_repair(
 
 
 def _call_item_repair(*, system: str, user: str) -> LlmResult:
-    return chat_json(system=system, user=user, max_tokens=800, model=get_settings().german_exam_model)
+    result = chat_json(system=system, user=user, max_tokens=800, model=get_settings().german_exam_model,
+                       json_schema=_ITEM_REPAIR_SCHEMA)
+    result.data = _with_wrong_options(result.data)
+    return result
 
 
 def _repair_stage_b_items(
     gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str], items_by_gap: dict[str, dict[str, Any]],
-    gap_context_by_id: dict[str, dict[str, Any]]
+    gap_context_by_id: dict[str, dict[str, Any]], round_no: int = 1
 ) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
     """Deterministic, per-item repair — mirrors german_exam_reading.py's
     _repair_items shape. Never touches the passage or any other item.
     Returns (items_by_gap, repaired_count, unresolved_gap_ids)."""
     spec_by_gap = {g["gapId"]: g for g in gap_specs}
-    bad_gap_ids = [
-        gid for gid, item in items_by_gap.items()
-        if not _wrong_options_valid(item, answers_by_gap[gid])
-    ]
+    # Every gap the plan expects, so a gap the model omitted is repaired like any other.
+    bad_reason = {
+        g["gapId"]: _wrong_options_reason(items_by_gap.get(g["gapId"]), answers_by_gap[g["gapId"]])
+        for g in gap_specs
+    }
+    bad_gap_ids = [gid for gid, reason in bad_reason.items() if reason]
     if not bad_gap_ids:
         return items_by_gap, 0, []
 
@@ -786,7 +849,7 @@ def _repair_stage_b_items(
         prior_item = items_by_gap.get(gap_id)
         prior_wrong = prior_item.get("wrongOptions") if isinstance(prior_item, dict) else None
         prior_wrong = prior_wrong if isinstance(prior_wrong, list) else None
-        reason = "wrong option count or duplicate/empty option" if prior_wrong else None
+        reason = bad_reason.get(gap_id) if prior_wrong else None
         for _attempt in range(_MAX_ITEM_REPAIR_ATTEMPTS):
             try:
                 system, user = _prompt_item_repair(
@@ -806,6 +869,7 @@ def _repair_stage_b_items(
     unresolved: list[str] = []
     repaired = 0
     for gap_id, fixed in results:
+        _record_gap_outcome(gap_id, spec_by_gap[gap_id]["category"], bad_reason.get(gap_id), round_no, fixed is not None)
         if fixed is not None:
             items_by_gap[gap_id] = fixed
             repaired += 1
@@ -818,30 +882,43 @@ def _run_stage_b(
     profile: ExamProfile, part: PartBlueprint, gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str],
     gap_context_by_id: dict[str, dict[str, Any]]
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    expected_ids = {g["gapId"] for g in gap_specs}
     last_issues: list[str] = []
     item_repair_total = 0
     for regeneration in range(_MAX_STAGE_B_REGENERATIONS + 1):
         system, user = _prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id)
         result = _call_stage_b(system=system, user=user)
         payload = result.data if isinstance(result.data, dict) else {}
+        raw_items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        items_by_gap: dict[str, dict[str, Any]] = {}
+        for it in raw_items:
+            gid = it.get("gapId") if isinstance(it, dict) else None
+            if gid in expected_ids and gid not in items_by_gap:
+                items_by_gap[gid] = it
+        if not items_by_gap:
+            # Nothing usable came back at all: the only case for another FULL Stage B call.
+            last_issues = ["no usable distractor sets returned"]
+            if regeneration < _MAX_STAGE_B_REGENERATIONS:
+                continue
+            raise LanguageElementsGenerationError(
+                f"could not produce valid Sprachbausteine distractors after {_MAX_STAGE_B_REGENERATIONS} "
+                "regenerations: " + "; ".join(last_issues)
+            )
 
-        issues = _stage_b_issues(payload, gap_specs)
-        if not issues:
-            items_by_gap = {it["gapId"]: it for it in payload["items"]}
+        # Repair ONLY the gaps that are missing/invalid. The passage, the correct
+        # answers and every already-valid distractor set stay frozen, so one bad
+        # gap no longer doubles the whole Stage B cost.
+        unresolved: list[str] = []
+        for round_no in range(1, _MAX_TARGETED_REPAIR_ROUNDS + 1):
             items_by_gap, repaired, unresolved = _repair_stage_b_items(
-                gap_specs, answers_by_gap, items_by_gap, gap_context_by_id
+                gap_specs, answers_by_gap, items_by_gap, gap_context_by_id, round_no
             )
             item_repair_total += repaired
             if not unresolved:
                 return items_by_gap, {"regenerationCount": regeneration, "itemRepairCount": item_repair_total}
-            issues = [f"gap {gid} distractors still invalid after item-level repair" for gid in unresolved]
-
-        last_issues = issues
-        if regeneration < _MAX_STAGE_B_REGENERATIONS:
-            continue
         raise LanguageElementsGenerationError(
-            f"could not produce valid Sprachbausteine distractors after {_MAX_STAGE_B_REGENERATIONS} "
-            "regenerations: " + "; ".join(last_issues)
+            "could not produce valid Sprachbausteine distractors after per-gap repair: "
+            + "; ".join(f"gap {gid} distractors still invalid" for gid in unresolved)
         )
     raise LanguageElementsGenerationError("unreachable: exhausted Stage B regeneration budget")
 

@@ -479,26 +479,96 @@ def test_stage_b_never_receives_a_gap_without_context(monkeypatch: pytest.Monkey
         assert ctx["sentenceWithCorrectAnswer"]
 
 
-def test_stage_b_regenerates_only_when_item_repair_cannot_fix_it(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stage_b_repairs_only_the_bad_gap_and_never_reruns_the_whole_stage(monkeypatch: pytest.MonkeyPatch) -> None:
     specs = _gap_specs()
     bad_gap = "g5"
     first = _stage_b_payload(specs, bad_gap_id=bad_gap)
-    second = _stage_b_payload(specs)  # a clean regeneration, no bad items
 
     mod, counters = _setup(
         monkeypatch,
         stage_a_calls=[_stage_a_content(specs)],
-        stage_b_calls=[first, second],
-        # item repair NEVER returns a valid fix, forcing the fallback to a
-        # full Stage B regeneration
-        item_repair=[{"wrongOptions": ["x", "x", "x"], "skillTags": ["grammar"]}] * 4,
+        stage_b_calls=[first],
+        # first per-gap attempt is still invalid, the second round fixes it
+        item_repair=[{"wrongOptions": ["x", "x", "x"], "skillTags": ["grammar"]},
+                     {"wrongOptions": ["alpha", "beta", "gamma"], "skillTags": ["grammar"]}],
     )
     profile, part = _profile_and_part()
 
-    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    content, meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
 
-    assert counters["stage_b"] == 2
+    assert counters["stage_b"] == 1, "one bad gap must not trigger a second full Stage B call"
+    assert counters["item_repair"] == 2, "only the affected gap is re-asked"
     assert len(content["questions"]) == 22
+
+
+def test_stage_b_gives_up_on_a_gap_without_a_full_regeneration(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    mod, counters = _setup(
+        monkeypatch,
+        stage_a_calls=[_stage_a_content(specs)],
+        stage_b_calls=[_stage_b_payload(specs, bad_gap_id="g5")],
+        item_repair=[{"wrongOptions": ["x", "x", "x"], "skillTags": ["grammar"]}] * 4,
+    )
+    profile, part = _profile_and_part()
+    with pytest.raises(mod.LanguageElementsGenerationError, match="g5"):
+        mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    assert counters["stage_b"] == 1
+
+
+def test_stage_b_omitted_gap_is_repaired_individually(monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = _gap_specs()
+    payload = _stage_b_payload(specs)
+    payload["items"] = [it for it in payload["items"] if it["gapId"] != "g7"]  # model skipped one gap
+    mod, counters = _setup(
+        monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[payload],
+        item_repair=[{"wrongOptions": ["alpha", "beta", "gamma"], "skillTags": ["grammar"]}],
+    )
+    profile, part = _profile_and_part()
+    content, _ = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    assert counters["stage_b"] == 1 and counters["item_repair"] == 1
+    assert len(content["questions"]) == 22
+
+
+def test_wrong_option_reason_codes_are_content_free() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    r = mod._wrong_options_reason
+    assert r(None, "x") == "missing_options"
+    assert r({"wrongOptions": ["a", "b"]}, "x") == "wrong_option_count"
+    assert r({"wrongOptions": ["a", "", "c"]}, "x") == "empty_option"
+    assert r({"wrongOptions": ["a", "A", "c"]}, "x") == "duplicate_option"
+    assert r({"wrongOptions": ["a", "b", "x"]}, "X") == "equals_correct_answer"
+    assert r({"wrongOptions": ["a", "b", "c"]}, "x") is None
+
+
+def test_stage_b_schema_makes_the_option_count_structural() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    item = mod._STAGE_B_SCHEMA["properties"]["items"]["items"]
+    assert set(item["required"]) == set(item["properties"])
+    assert {"distractor1", "distractor2", "distractor3"} <= set(item["required"])
+    assert item["additionalProperties"] is False
+    converted = mod._with_wrong_options({"gapId": "g1", "questionId": "q1", "distractor1": "a",
+                                          "distractor2": "b", "distractor3": "c", "skillTags": []})
+    assert converted["wrongOptions"] == ["a", "b", "c"] and "distractor1" not in converted
+
+
+def test_gap_outcomes_are_recorded_without_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import gen_timing
+
+    specs = _gap_specs()
+    mod, _ = _setup(
+        monkeypatch, stage_a_calls=[_stage_a_content(specs)],
+        stage_b_calls=[_stage_b_payload(specs, bad_gap_id="g5")],
+        item_repair=[{"wrongOptions": ["alpha", "beta", "gamma"], "skillTags": ["grammar"]}],
+    )
+    profile, part = _profile_and_part()
+    with gen_timing.timed_request("language_elements", "sprachbausteine_1") as timer:
+        mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+        entries = [e for e in timer.summary("ok")["validation"] if e.get("stage") == "sprachbausteine_stage_b"]
+    assert entries and entries[0]["gapId"] == "g5" and entries[0]["resolved"] is True
+    assert set(entries[0]) == {"stage", "gapId", "category", "reason", "repairRound", "resolved"}
+    assert "alpha" not in str(entries)
 
 
 def test_unsupported_correct_answer_skips_repair_and_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
