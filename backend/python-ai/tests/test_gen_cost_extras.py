@@ -28,8 +28,9 @@ def test_stage_a_and_stage_b_are_separate_callers(monkeypatch):
         def create(self, **kw):
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok":1}'))], usage=usage)
 
-    monkeypatch.setattr(llm_json, "get_openai_client",
-                        lambda: SimpleNamespace(chat=SimpleNamespace(completions=Completions())))
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    fake_client.with_options = lambda **kw: fake_client
+    monkeypatch.setattr(llm_json, "get_openai_client", lambda: fake_client)
     monkeypatch.setattr(llm_json, "record_usage", lambda **kw: None)
 
     def _call_stage_a():

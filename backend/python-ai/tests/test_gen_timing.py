@@ -13,6 +13,7 @@ class _FakeCompletions:
 
 def _patch(monkeypatch):
     client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions()))
+    client.with_options = lambda **kw: client
     monkeypatch.setattr(llm_json, "get_openai_client", lambda: client)
     monkeypatch.setattr(llm_json, "record_usage", lambda **kw: None)
     monkeypatch.setattr(llm_json, "usage_from_response", lambda resp: {})
