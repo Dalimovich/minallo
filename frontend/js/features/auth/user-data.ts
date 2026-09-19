@@ -136,9 +136,10 @@ export function ensureUserProfile(opts: { force?: boolean } = {}): Promise<void>
     _lastLoadUid = null;
     window._profileResolutionState = 'loading';
     window.dispatchEvent(new Event('ss-profile-updated'));
-  } else if (window._profileResolutionState === 'ready' || window._profileResolutionState === 'loading') {
-    return Promise.resolve();
+    return loadUserData(uid);
   }
+  if (window._profileResolutionState === 'ready' && _resolvedProfileUid === uid) return Promise.resolve();
+  // In flight → the SAME promise, so callers can genuinely wait for it.
   return loadUserData(uid);
 }
 
@@ -189,13 +190,33 @@ export function startPresenceHeartbeat(uid: string): void {
   _presenceTimer = setInterval(_beat, 60000);
 }
 
-export async function loadUserData(uid: string): Promise<void> {
+// One shared in-flight resolution per uid: every caller (_enterApp, retries,
+// ensureUserProfile, the auth-bridge self-heal) gets the same promise instead
+// of firing parallel profile fetches.
+let _profileResolutionPromise: Promise<void> | null = null;
+let _profileResolutionPromiseUid: string | null = null;
+
+export function loadUserData(uid: string): Promise<void> {
+  if (_profileResolutionPromise && _profileResolutionPromiseUid === uid) return _profileResolutionPromise;
+  const p = runLoadUserData(uid).finally(() => {
+    if (_profileResolutionPromise === p) {
+      _profileResolutionPromise = null;
+      _profileResolutionPromiseUid = null;
+    }
+  });
+  _profileResolutionPromise = p;
+  _profileResolutionPromiseUid = uid;
+  return p;
+}
+
+async function runLoadUserData(uid: string): Promise<void> {
   // Idempotent: no-ops if this uid is already 'ready', otherwise (re)marks
   // resolution as 'loading' so any UI mounting concurrently with this call
   // (e.g. a bounded retry firing while the chatbot shell is (re)rendering)
   // stays gated. Normally already called earlier, synchronously, by
   // _enterApp before this async function is even invoked.
   beginProfileResolution(uid);
+  window.MinalloBoot?.mark('profileStarted');
   // De-dup redundant runs from rapid repeated _enterApp / SIGNED_IN events.
   // The first run applies profile/settings/subscription and starts the
   // heartbeat; re-running within the window only re-spams the network.
@@ -297,6 +318,7 @@ export async function loadUserData(uid: string): Promise<void> {
         // fires.
         _resolvedProfileUid = uid;
         window._profileResolutionState = 'ready';
+        window.MinalloBoot?.mark('profileReady');
         _profileRetryAttempt = 0;
         if (_profileRetryTimer) {
           clearTimeout(_profileRetryTimer);

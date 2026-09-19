@@ -117,6 +117,16 @@ export function initAuthBridge(options: AuthBridgeOptions): AuthBridge {
   window.populateGermanLevelSelect = populateGermanLevelSelect;
   window.GERMAN_TEST_LEVELS = GERMAN_TEST_LEVELS;
 
+  window.MinalloBoot?.mark('authBridgeReady');
+  // Self-heal: if a session was restored before this bridge existed (any
+  // future loader-order regression), start profile resolution now. Shares the
+  // single in-flight promise, so it can never double-fetch.
+  const restoredUser = window._currentUser;
+  if (restoredUser?.id && window._profileResolutionState !== 'ready') {
+    beginProfileResolution(restoredUser.id);
+    void ensureUserProfile();
+  }
+
   return {
     showAuthModal: (mode) => authModal.showAuthModal(mode),
     getAuthMode: () => authModal.getAuthMode(),

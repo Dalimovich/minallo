@@ -161,6 +161,12 @@ declare global {
     ) => unknown;
     _applyUserTypeUI?: () => void;
     _resolveGermanExamProfileId?: (test: string | undefined, level: string | undefined) => string | null;
+    MinalloBoot?: {
+      hide: () => void; show: () => void; signedOut: () => void;
+      recovery: (kind?: string) => void; mark: (name: string) => void; isReady: () => boolean;
+    };
+    __minalloAppInitPromise?: Promise<unknown>;
+    __minalloBootDebug?: Record<string, unknown>;
     _applySavedProfile?: (row: Record<string, unknown>) => void;
     getGermanLearnerProfile?: () => {
       state: 'loading' | 'ready' | 'error';

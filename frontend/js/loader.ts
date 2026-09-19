@@ -486,6 +486,11 @@ interface LandingTranslation {
         return loadScript('js/app-data.js', 'app-data-script');
       })
       .then(() => loadScript('js/main.js', 'app-script', { type: 'module' }))
+      // Do not continue (and therefore never fire ss-ready) until app.js and the
+      // auth/profile bridge it installs have finished initialising.
+      .then(() => Promise.resolve(window.__minalloAppInitPromise).catch((err: unknown) => {
+        console.error('[loader] app.js failed to initialise:', err);
+      }))
       .then(() => {
         // app-storage.js and app-pdf.js extend app.js globals — load after app.js
         return Promise.all([
@@ -852,6 +857,19 @@ interface LandingTranslation {
             } else {
               console.error('[loader] js/ai.js failed or timed out — falling back');
               if (SS) SS.markReady('app', { ai: false });
+            }
+            // The auth/profile bridge is installed by app.js (via main.js). If it
+            // is missing, announcing readiness would let a restored session
+            // reach _enterApp with no profile resolver and hang forever, so
+            // surface a boot error instead of continuing.
+            if (
+              typeof window._beginProfileResolution !== 'function' ||
+              typeof window.loadUserData !== 'function' ||
+              typeof window._ensureUserProfile !== 'function'
+            ) {
+              console.error('[loader] auth/profile bridge missing — not announcing ss-ready');
+              window.MinalloBoot?.recovery('auth');
+              return;
             }
             window.dispatchEvent(new Event('ss-ready'));
             const scheduleDashboard = window.requestIdleCallback

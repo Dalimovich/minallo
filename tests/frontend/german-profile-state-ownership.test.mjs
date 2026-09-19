@@ -104,7 +104,7 @@ test('profile.js compat retry never drops german_test / german_level', () => {
 // ── loadUserData dedup must not commit before a real fetch can start ───────
 
 test('loadUserData does not commit the dedup window before window._sb is confirmed ready', () => {
-  const fnStart = USER_DATA_TS.indexOf('export async function loadUserData');
+  const fnStart = USER_DATA_TS.indexOf('async function runLoadUserData');
   assert.ok(fnStart >= 0, 'loadUserData not found');
   const sbCheckIdx = USER_DATA_TS.indexOf('if (!sb) return;', fnStart);
   assert.ok(sbCheckIdx >= 0, 'loadUserData must still check window._sb readiness');

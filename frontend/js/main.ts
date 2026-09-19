@@ -202,6 +202,16 @@ runIdle(() => {
   });
 });
 
-// @ts-ignore — dynamic import with cache-busting query string
+// The app module (app.js → auth/profile bridge: window._beginProfileResolution,
+// loadUserData, _ensureUserProfile) must be fully initialised before the
+// loader announces ss-ready, otherwise a restored session can reach _enterApp()
+// with no profile resolver and hang forever. The import is exposed as
+// window.__minalloAppInitPromise, which loader.ts awaits right after main.js
+// loads (a module's `load` event does NOT wait for top-level await in every
+// browser, so awaiting here alone is not enough — both are done).
+window.MinalloBoot?.mark('mainLoaded');
 const appAssetVersion = String(window.MinalloConfig?.assetVersion || '1');
-import(/* @vite-ignore */ './app.js?v=' + encodeURIComponent(appAssetVersion));
+// @ts-ignore — dynamic import with cache-busting query string
+window.__minalloAppInitPromise = import(/* @vite-ignore */ './app.js?v=' + encodeURIComponent(appAssetVersion));
+await window.__minalloAppInitPromise;
+window.MinalloBoot?.mark('appImported');

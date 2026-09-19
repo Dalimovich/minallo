@@ -23,8 +23,28 @@
 
   function el(id) { return document.getElementById(id); }
 
+  // Non-sensitive boot diagnostics (window.__minalloBootDebug). Timestamps are
+  // performance.now() ms; the boot ORDER must always be
+  //   authBridgeReadyAt <= ssReadyAt <= enterAppAt <= profileStartedAt
+  //   <= profileReadyAt <= interfaceRevealedAt
+  var debug = { marks: {} };
+  function mark(name) {
+    if (debug.marks[name + 'At'] === undefined) debug.marks[name + 'At'] = Math.round(performance.now());
+  }
+  Object.defineProperties(debug, {
+    appModuleReady: { get: function () { return debug.marks.appImportedAt !== undefined; }, enumerable: true },
+    authBridgeReady: { get: function () { return debug.marks.authBridgeReadyAt !== undefined; }, enumerable: true },
+    authUserReady: { get: function () { return debug.marks.enterAppAt !== undefined; }, enumerable: true },
+    profileRequestStarted: { get: function () { return debug.marks.profileStartedAt !== undefined; }, enumerable: true },
+    profileState: { get: function () { return window._profileResolutionState || null; }, enumerable: true },
+    experienceApplied: { get: function () { var r = el('ncbRoot'); return !!r && r.getAttribute('data-role-resolved') === 'true'; }, enumerable: true },
+    bootCoverVisible: { get: function () { return !doc.classList.contains('mn-boot-done'); }, enumerable: true },
+  });
+  window.__minalloBootDebug = debug;
+
   function hide() {
     done = true;
+    mark('interfaceRevealed');
     if (unmountedTimer) { clearTimeout(unmountedTimer); unmountedTimer = null; }
     doc.classList.add('mn-boot-done');
     var cover = el('minalloBootCover');
@@ -93,13 +113,14 @@
     rec.hidden = false;
   }
 
-  window.addEventListener('ss-ready', function () { appReady = true; check(); });
+  window.addEventListener('ss-ready', function () { mark('ssReady'); appReady = true; check(); });
   window.addEventListener('ss-profile-updated', check);
   window.addEventListener('ss-experience-applied', check);
   window.addEventListener('ss-profile-failed', function () { recovery('profile'); });
 
   window.MinalloBoot = {
     isReady: function () { return done; },
+    mark: mark,
     hide: hide,
     show: show,
     // Auth decided there is no session: the landing / auth modal is the interface.

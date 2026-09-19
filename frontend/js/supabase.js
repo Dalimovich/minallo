@@ -623,6 +623,7 @@ function _enterApp(user) {
   // window where the shell read window._userType before it was ever set and
   // silently treated that as "enrolled" (student). See
   // beginProfileResolution() in user-data.ts.
+  if (window.MinalloBoot) window.MinalloBoot.mark('enterApp');
   if (user && user.id && typeof window._beginProfileResolution === 'function') {
     window._beginProfileResolution(user.id);
   }
