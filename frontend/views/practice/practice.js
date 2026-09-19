@@ -3432,12 +3432,21 @@
 
       function sbFetchWeaknesses() {
         var panel = sbEl('glSprachbausteineWeakPanel');
+        // sb.profileId is only set once a generated part has loaded; a timed-out
+        // or still-pending generation leaves it null and the endpoint rejects a
+        // null profileId with 400. Fall back to the learner's resolved profile
+        // and never fetch without one.
+        var weakProfileId = sb.profileId || sbResolveProfileId();
+        if (!weakProfileId) {
+          if (panel) panel.innerHTML = '<div class="gl-reading-weak-areas"><p>Weak areas appear once you have completed a Sprachbausteine exercise.</p></div>';
+          return Promise.resolve();
+        }
         if (panel) panel.innerHTML = '<div class="gl-listen-generating">Loading your weak areas…</div>';
         return sbEnsureResultsSaved().then(function () {
           return _authFetch(BACKEND_URL + '/api/ai/german-exam/weaknesses', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profileId: sb.profileId, module: 'language_elements' })
+            body: JSON.stringify({ profileId: weakProfileId, module: 'language_elements' })
           });
         }).then(function (resp) {
           if (!resp.ok) throw new Error('weaknesses_http_' + resp.status);
